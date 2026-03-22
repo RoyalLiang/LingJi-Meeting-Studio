@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tts-postgres
+    environment:
+      POSTGRES_DB: tts
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - tts-postgres-data:/var/lib/postgresql/data
+
+volumes:
+  tts-postgres-data:
