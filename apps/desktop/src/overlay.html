@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TTS Floating Captions</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --bg: linear-gradient(145deg, rgba(8, 16, 24, 0.86), rgba(8, 23, 31, 0.74));
+        --ink: #f3f6f8;
+        --muted: #b8c5cc;
+        --accent: #a5f3fc;
+        --line: rgba(255, 255, 255, 0.14);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Noto Sans SC", "Manrope", sans-serif;
+        color: var(--ink);
+        background: transparent;
+      }
+      main {
+        padding: 14px;
+      }
+      .overlay {
+        min-height: 180px;
+        position: relative;
+        overflow: hidden;
+        border-radius: 24px;
+        border: 1px solid var(--line);
+        background: var(--bg);
+        box-shadow: 0 26px 68px rgba(0, 0, 0, 0.44);
+        backdrop-filter: blur(28px) saturate(145%);
+        padding: 16px;
+      }
+      .overlay::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background:
+          radial-gradient(circle at top left, rgba(125, 211, 252, 0.16), transparent 32%),
+          linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 42%);
+      }
+      .topbar {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 11px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.08);
+        font-size: 11px;
+        color: var(--accent);
+        letter-spacing: 0.18em;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+      .eyebrow::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #67e8f9, #86efac);
+        box-shadow: 0 0 16px rgba(103, 232, 249, 0.42);
+      }
+      #overlayTitle {
+        margin-top: 12px;
+        font-family: "Space Grotesk", "Noto Sans SC", sans-serif;
+        font-size: 22px;
+        letter-spacing: -0.04em;
+      }
+      select {
+        padding: 9px 12px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--ink);
+        outline: none;
+      }
+      .subtitle {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        gap: 12px;
+      }
+      .source {
+        padding: 14px 15px;
+        border-radius: 18px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.09);
+        font-size: 28px;
+        line-height: 1.45;
+      }
+      .translation {
+        padding: 14px 15px;
+        border-radius: 18px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.06);
+        font-size: 20px;
+        line-height: 1.6;
+        color: rgba(226, 232, 240, 0.82);
+      }
+      .meta {
+        position: relative;
+        z-index: 1;
+        margin-top: 14px;
+        padding: 10px 14px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.06);
+        font-size: 12px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: rgba(203, 213, 225, 0.7);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="overlay">
+        <div class="topbar">
+          <div>
+            <div class="eyebrow" data-i18n="hero.eyebrow"></div>
+            <div id="overlayTitle" data-i18n="overlay.title"></div>
+          </div>
+          <select id="languageSelect" aria-label="Language"></select>
+        </div>
+        <div class="subtitle">
+          <div class="source" id="sourceLine" data-i18n="overlay.empty"></div>
+          <div class="translation" id="translationLine"></div>
+        </div>
+        <div class="meta" id="overlayMeta"></div>
+      </section>
+    </main>
+    <script type="module" src="/overlay.js"></script>
+  </body>
+</html>

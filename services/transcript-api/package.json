@@ -1,0 +1,13 @@
+{
+  "name": "@tts/transcript-api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node ./src/server.mjs",
+    "db:migrate": "node ./src/migrate.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
+  }
+}

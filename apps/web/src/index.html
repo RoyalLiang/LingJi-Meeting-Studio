@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TTS Web Workspace</title>
+    <style>
+      :root {
+        --bg: #f3eee6;
+        --panel: rgba(255, 252, 247, 0.96);
+        --ink: #17212a;
+        --muted: #5f6f78;
+        --line: #d6cec1;
+        --accent: #145b4a;
+        --accent-soft: #d8eee7;
+        --warn: #a85a3d;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Segoe UI", "PingFang SC", sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(241, 208, 156, 0.84), transparent 24%),
+          radial-gradient(circle at top right, rgba(196, 226, 214, 0.82), transparent 28%),
+          linear-gradient(180deg, #f7f2e9 0%, var(--bg) 100%);
+      }
+      main {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 28px 18px 48px;
+      }
+      .hero, .panel {
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: var(--panel);
+        box-shadow: 0 14px 32px rgba(23, 33, 42, 0.06);
+      }
+      .hero {
+        display: grid;
+        grid-template-columns: 1.2fr 1fr;
+        gap: 18px;
+        padding: 22px;
+      }
+      .eyebrow {
+        display: inline-flex;
+        padding: 8px 10px;
+        border-radius: 999px;
+        background: rgba(20, 91, 74, 0.1);
+        color: var(--accent);
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      h1, h2, h3, p { margin: 0; }
+      p { color: var(--muted); }
+      .stack { display: grid; gap: 12px; }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 18px;
+        margin-top: 20px;
+      }
+      .transcript-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr 0.95fr;
+        gap: 18px;
+        margin-top: 20px;
+      }
+      .panel { padding: 18px; }
+      .row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      label {
+        display: block;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      input, textarea, select, button { font: inherit; }
+      input, textarea, select {
+        width: 100%;
+        margin-top: 6px;
+        padding: 10px 12px;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: #fff;
+        color: var(--ink);
+      }
+      textarea { min-height: 86px; resize: vertical; }
+      button {
+        border: 0;
+        border-radius: 999px;
+        padding: 10px 16px;
+        background: var(--accent);
+        color: #fff;
+        cursor: pointer;
+      }
+      button.secondary { background: #edf3ef; color: var(--ink); }
+      button.warn { background: var(--warn); }
+      .actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 9px 12px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-size: 13px;
+      }
+      .pill.warn {
+        background: rgba(168, 90, 61, 0.13);
+        color: var(--warn);
+      }
+      .summary-card {
+        padding: 14px;
+        border-radius: 16px;
+        background: rgba(20, 91, 74, 0.08);
+      }
+      .meter {
+        height: 12px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: #e2ebe5;
+      }
+      .meter-fill {
+        width: 0%;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #3d8d67, #145b4a, #dfab41);
+        transition: width 120ms linear;
+      }
+      .metric-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .metric {
+        padding: 12px;
+        border-radius: 14px;
+        background: #f8f3ea;
+        border: 1px solid rgba(214, 206, 193, 0.85);
+      }
+      .metric strong {
+        display: block;
+        margin-top: 4px;
+        font-size: 20px;
+      }
+      .log, .transcript-list, .audio-list {
+        max-height: 420px;
+        overflow: auto;
+        border: 1px dashed var(--line);
+        border-radius: 16px;
+        padding: 12px;
+        background: #fff;
+      }
+      .event, .transcript-item, .audio-item {
+        padding: 10px 0;
+        border-bottom: 1px solid rgba(214, 206, 193, 0.78);
+      }
+      .event:last-child, .transcript-item:last-child, .audio-item:last-child {
+        border-bottom: 0;
+      }
+      .transcript-meta {
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 4px;
+      }
+      .toolbar-right {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      .compact-select { min-width: 130px; }
+      audio { width: 100%; margin-top: 8px; }
+      pre {
+        margin: 8px 0 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      @media (max-width: 1080px) {
+        .hero, .transcript-grid, .row {
+          grid-template-columns: 1fr;
+        }
+        .toolbar-right {
+          justify-content: flex-start;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <div class="stack">
+          <div class="eyebrow" data-i18n="hero.eyebrow"></div>
+          <h1 data-i18n="hero.title"></h1>
+          <p data-i18n="hero.description"></p>
+          <div class="summary-card">
+            <p data-i18n="hero.note"></p>
+          </div>
+        </div>
+        <div class="stack">
+          <div class="toolbar-right">
+            <label for="pageLanguage" data-i18n="language.label"></label>
+            <select id="pageLanguage" class="compact-select">
+              <option value="en">English</option>
+              <option value="zh-CN">简体中文</option>
+            </select>
+          </div>
+          <div class="pill" id="webStatus"></div>
+          <div class="pill" id="gatewayStatus"></div>
+          <div class="pill" id="captureStatus"></div>
+          <div class="pill" id="permissionStatus"></div>
+        </div>
+      </section>
+
+      <section class="grid">
+        <div class="panel stack">
+          <h2 data-i18n="service.title"></h2>
+          <div class="row">
+            <label data-i18n="service.api">
+              <input id="apiBaseUrl" value="http://127.0.0.1:3020" />
+            </label>
+            <label data-i18n="service.gateway">
+              <input id="gatewayBaseUrl" value="http://127.0.0.1:3010" />
+            </label>
+          </div>
+        </div>
+
+        <div class="panel stack">
+          <h2 data-i18n="session.title"></h2>
+          <div class="row">
+            <label data-i18n="session.name">
+              <input id="sessionTitle" value="Web Workspace Review" />
+            </label>
+            <label data-i18n="session.sourceLanguage">
+              <input id="sourceLanguage" value="zh" />
+            </label>
+          </div>
+          <label data-i18n="session.targetLanguages">
+            <input id="targetLanguages" value="en" />
+          </label>
+          <label data-i18n="session.id">
+            <input id="sessionId" data-i18n-placeholder="session.idPlaceholder" placeholder="" />
+          </label>
+          <div class="actions">
+            <button id="createSessionButton" data-i18n="session.create"></button>
+            <button class="secondary" id="connectButton" data-i18n="session.connect"></button>
+            <button class="secondary" id="loadReplayButton" data-i18n="session.replay"></button>
+            <button class="secondary" id="shareButton" data-i18n="session.share"></button>
+            <button class="warn" id="stopButton" data-i18n="session.stop"></button>
+          </div>
+          <div class="summary-card" id="sessionInfo"></div>
+          <div class="summary-card" id="shareInfo"></div>
+        </div>
+      </section>
+
+      <section class="grid">
+        <div class="panel stack">
+          <h2 data-i18n="capture.title"></h2>
+          <div class="actions">
+            <button class="secondary" id="requestMicButton" data-i18n="capture.requestMic"></button>
+            <button class="secondary" id="refreshDevicesButton" data-i18n="capture.refreshDevices"></button>
+          </div>
+          <label data-i18n="capture.microphone">
+            <select id="microphoneSelect"></select>
+          </label>
+          <label data-i18n="capture.fallbackHint">
+            <textarea id="captureTranscriptHint">Please keep the translation stream aligned with the source text.</textarea>
+          </label>
+          <div class="actions">
+            <button id="startCaptureButton" data-i18n="capture.start"></button>
+            <button class="warn" id="stopCaptureButton" disabled data-i18n="capture.stop"></button>
+          </div>
+          <div class="meter">
+            <div class="meter-fill" id="captureLevelFill"></div>
+          </div>
+          <div class="metric-grid">
+            <div class="metric">
+              <div data-i18n="capture.chunks"></div>
+              <strong id="chunkCount">0</strong>
+            </div>
+            <div class="metric">
+              <div data-i18n="capture.bytes"></div>
+              <strong id="byteCount">0 B</strong>
+            </div>
+            <div class="metric">
+              <div data-i18n="capture.lastAck"></div>
+              <strong id="lastAck">none</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel stack">
+          <h2 data-i18n="manual.title"></h2>
+          <label data-i18n="manual.text">
+            <textarea id="textPayload">Please keep the translation view and the source view aligned.</textarea>
+          </label>
+          <label data-i18n="manual.file">
+            <input id="audioFileInput" type="file" accept=".wav,.webm,.ogg,audio/*" />
+          </label>
+          <label data-i18n="manual.fileHint">
+            <input id="fileTranscriptHint" value="Please keep the translation stream aligned with the source text." />
+          </label>
+          <div class="actions">
+            <button id="sendTextButton" data-i18n="manual.sendText"></button>
+            <button class="secondary" id="sendFileButton" data-i18n="manual.sendFile"></button>
+          </div>
+        </div>
+      </section>
+
+      <section class="transcript-grid">
+        <div class="panel stack">
+          <h2 data-i18n="source.title"></h2>
+          <div class="transcript-list" id="sourceTranscriptList"></div>
+        </div>
+        <div class="panel stack">
+          <h2 data-i18n="translation.title"></h2>
+          <div class="transcript-list" id="translationTranscriptList"></div>
+        </div>
+        <div class="panel stack">
+          <h2 data-i18n="summary.title"></h2>
+          <div class="summary-card">
+            <p id="summaryStatus"></p>
+          </div>
+          <div class="transcript-list" id="summaryList"></div>
+          <h3 data-i18n="audio.title"></h3>
+          <div class="audio-list" id="audioClipList"></div>
+        </div>
+      </section>
+
+      <section class="grid">
+        <div class="panel">
+          <h2 data-i18n="events.title"></h2>
+          <div class="log" id="eventLog"></div>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="/client.js"></script>
+  </body>
+</html>

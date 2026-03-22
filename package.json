@@ -1,0 +1,35 @@
+{
+  "name": "tts-platform",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "npm@10.8.1",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build:desktop:styles": "tailwindcss -i ./shell.tailwind.css -o ./shell.generated.css --cwd ./apps/desktop/src --optimize",
+    "dev:desktop": "node ./apps/desktop/src/shell-server.mjs",
+    "dev:desktop:mock": "node ./apps/desktop/src/mock-client.mjs",
+    "dev:web": "node ./apps/web/src/server.mjs",
+    "dev:gateway": "node ./services/session-gateway/src/server.mjs",
+    "dev:api": "node ./services/transcript-api/src/server.mjs",
+    "dev:ai": "node ./services/ai-worker/src/worker.mjs",
+    "db:migrate:transcript": "node ./services/transcript-api/src/migrate.mjs",
+    "lint": "echo \"TODO: configure lint\"",
+    "test": "node --test --test-concurrency=1 ./tests/memory-smoke.test.mjs ./tests/provider-and-desktop-preview.test.mjs",
+    "test:smoke": "node --test --test-concurrency=1 ./tests/memory-smoke.test.mjs ./tests/provider-and-desktop-preview.test.mjs",
+    "test:postgres": "node --test --test-concurrency=1 ./tests/postgres-smoke.test.mjs",
+    "typecheck": "echo \"TODO: configure typecheck\""
+  },
+  "dependencies": {
+    "protobufjs": "^8.0.0",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.2.2",
+    "tailwindcss": "^4.2.2"
+  }
+}
