@@ -15,7 +15,11 @@
 | GET /records/:id/events?after=cursor | 持久事件 SSE；过期 reset，失权 revoked |
 | POST /records/:id/import-text | 导入自然段，没有虚构音频时间 |
 | PATCH /records/:id/segments/:segmentId | revision + text + speaker，并发编辑校验 |
-| POST/PATCH /records/:id/minutes | 入队，或预期 revision 人工修订 |
+| POST/PATCH /records/:id/minutes | mode 为 extractive（本地）或 model（AI）的任务；或预期 revision 人工修订 |
+| POST /records/:id/insights | 显式授权该记录使用已配置模型分析；保留转录版本及引用 |
+| GET/PUT /settings/providers | 读取脱敏配置 / 更新服务配置；生产需 RECORD_CONFIG_ADMIN |
+| POST /settings/providers/test | kind 为 asr 或 minutes；仅使用静音或虚构连通性文本 |
+| GET /development-account | 仅开发模式提供默认本地账户信息；自定义密码不返回 |
 | GET /records/:id/minutes/versions/:revision | 有限历史纪要快照 |
 | GET /records/:id/audio/:sourceId | 保留原音的 WAV 与单范围 Range 回放 |
 | GET /records/:id/export?format=markdown/json/ics/issues | 记录与人工可审阅候选文件 |

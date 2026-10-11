@@ -41,3 +41,6 @@ npm run build:web
 当前是可运行的工程首版。自动化与本机 UI 已验证；跨系统真实采音、60 分钟长会话、真实 ASR/LLM、Postgres/S3 和用户试点仍需对应环境验收。新识别链路采用 2 秒 PCM 批次，尚未实现供应商流式 partial，不宣称生产延迟或识别质量目标已达标。
 
 从 [文档入口](docs/README.md) 阅读研究、设计与 [阶段验收表](docs/engineering/acceptance.md)。旧 Node 网关、桌面 shell 和 Go 实验保留；`npm run dev:legacy-web` 使用旧页面。
+
+
+本地开发默认账户：`dev@local.test` / `LocalMeeting2026!`，仅开发模式创建。转录默认豆包，地址与密钥可在工作台设置页管理；模型基础地址会自动补全接口路径。实际能力及尚未通过的环境验收见[当前状态](docs/engineering/current-state.md)和[验收表](docs/engineering/acceptance.md)。
