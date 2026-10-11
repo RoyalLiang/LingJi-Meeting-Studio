@@ -1,6 +1,17 @@
 let csrf = '';
 export const setCsrf = (token: string) => { csrf = token; };
 const messages: Record<string, string> = {
+  doubao_credentials_required: '请在设置中配置豆包语音密钥。',
+  doubao_http_401: '豆包语音鉴权失败，请核对语音 API Key 或旧版双密钥。',
+  doubao_http_403: '豆包语音资源无权限，请核对开通状态与资源 ID。',
+  doubao_completion_timeout: '豆包未在时限内返回最终转录，音频已保留待重试。',
+  doubao_incomplete_session: '转录连接提前结束，未把临时文字作为最终结果。',
+  provider_model_unavailable: '模型不存在或当前密钥无访问权限，请填写已开通的模型 / ep- 接入点 ID。',
+  provider_credentials_rejected: '模型密钥被拒绝，请核对对应平台与区域。',
+  provider_rate_limited: '模型服务限流或配额不足，请稍后重试。',
+  configuration_admin_required: '当前账户无权修改服务配置，请联系维护者。',
+  invalid_provider_url: '地址格式不正确。语音使用 wss://，纪要使用 https://。',
+
   login_required: '请先登录。', invalid_credentials: '邮箱或密码不正确。', password_length_10_128: '密码需要 10 至 128 个字符。',
   already_exists: '该邮箱已注册，请登录。', invite_required: '请输入有效的邀请码。', invalid_email: '请输入有效的邮箱。',
   asr_not_configured: '尚未配置语音识别服务。', minutes_not_configured: '尚未配置纪要模型，请联系服务维护者。',
