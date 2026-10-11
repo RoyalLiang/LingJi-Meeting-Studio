@@ -5,7 +5,8 @@ import { createRecord, addSource, acknowledge, seal, publicRecord, editSegment, 
   digest, DomainError, requireThat, emit } from '../../../packages/records/src/record.mjs';
 import { createRepository } from './repository.mjs';
 import { createAuth } from './auth.mjs';
-import { providerStatus, waveHeader } from './providers.mjs';
+import { readConfig, saveConfig, publicConfig, canConfigure } from './config.mjs';
+import { providerStatus, transcribe, completeJson, waveHeader } from './providers.mjs';
 
 async function readBody(request, max = 600000) {
   let size = 0; const chunks = [];
@@ -31,7 +32,7 @@ export function exportRecord(record, format = 'markdown') {
   if (record.notes) lines.push('## 人工笔记', '', record.notes); return lines.join('\n');
 }
 export async function createRecordServer(options = {}) {
-  const repo = options.repo || await createRepository(options); const auth = await createAuth(repo, options);
+  const repo = options.repo || await createRepository(options); const auth = await createAuth(repo, { seedDevelopment: !options.repo, ...options });
   const streams = new Set(); const attempts = new Map();
   const send = (res, status, data, headers = {}) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...headers }); res.end(JSON.stringify(data)); };
@@ -65,13 +66,30 @@ export async function createRecordServer(options = {}) {
         requireThat(r, 'share_expired_or_revoked', 404); const share = r.shares.find(s => s.hash === tokenHash);
         send(res, 200, share.scope === 'full' ? { title: r.title, segments: r.segments, minutes: r.minutes } : { title: r.title, minutes: r.minutes ? { ...r.minutes, evidenceSnapshot: r.minutes.evidenceSnapshot.filter(s => [...r.minutes.sections.flatMap(section => section.items), ...(r.minutes.actions || [])].some(item => item.evidence.some(ref => ref.segmentId === s.id && ref.revision === s.revision))) } : null }); return;
       }
+      if (path === '/api/development-account' && req.method === 'GET') {
+        requireThat(process.env.NODE_ENV !== 'production' && process.env.RECORD_DEV_ACCOUNT !== 'off', 'not_found', 404);
+        send(res, 200, { email: process.env.RECORD_DEV_EMAIL || 'dev@local.test', password: process.env.RECORD_DEV_PASSWORD ? null : 'LocalMeeting2026!' }); return;
+      }
       const user = await auth.user(req);
       if (!['GET', 'HEAD'].includes(req.method)) auth.checkCsrf(req, user);
       if (path === '/api/auth/logout' && req.method === 'POST') {
         await repo.change(user.id, u => { u.authVersion++; }); send(res, 200, { ok: true }, { 'Set-Cookie': auth.clear() }); return;
       }
       if (path === '/api/bootstrap' && req.method === 'GET') {
-        send(res, 200, { email: user.email, csrf: auth.csrf(user), providers: providerStatus(), limits: { maxMinutes: 120, maxRecords: 200, maxChunkSeconds: 15 }, storage: repo.backend }); return;
+        send(res, 200, { email: user.email, csrf: auth.csrf(user), providers: providerStatus(await readConfig(repo.root)), limits: { maxMinutes: 120, maxRecords: 200, maxChunkSeconds: 15 }, storage: repo.backend, canConfigure: canConfigure(user) }); return;
+      }
+      if (path === '/api/settings/providers/test' && req.method === 'POST') {
+        requireThat(canConfigure(user), 'configuration_admin_required', 403);
+        const {kind} = await readBody(req, 1000), config = await readConfig(repo.root);
+        requireThat(['asr', 'minutes'].includes(kind), 'invalid_provider_test', 400);
+        if (kind === 'asr') await transcribe(Buffer.alloc(6400), {language:'zh'}, {}, config);
+        else await completeJson([{role:'system', content:'Return JSON {ok:true}.'},{role:'user',content:'Synthetic connectivity check.'}], config);
+        send(res, 200, {message: '连接测试通过。真实会议识别质量仍需试录核对。'}); return;
+      }
+      if (path === '/api/settings/providers') {
+        requireThat(canConfigure(user), 'configuration_admin_required', 403);
+        if (req.method === 'GET') { send(res, 200, { values: publicConfig(await readConfig(repo.root)) }); return; }
+        if (req.method === 'PUT') { send(res, 200, { values: await saveConfig(repo.root, await readBody(req, 20000)) }); return; }
       }
       if (path === '/api/deletions' && req.method === 'GET') {
         send(res, 200, { deletions: (await repo.list()).filter(r => r.owner === user.id && r.deleted).map(r => ({ id: r.id, cleanup: r.cleanup || 'pending' })) }); return;
@@ -91,6 +109,11 @@ export async function createRecordServer(options = {}) {
       }
       const route = path.match(/^\/api\/records\/([a-f0-9-]{36})(?:\/(.*))?$/);
       requireThat(route, 'not_found', 404); const id = route[1], action = route[2] || ''; const record = await owned(id, user);
+      if (action === 'insights' && req.method === 'POST') {
+        requireThat(providerStatus(await readConfig(repo.root)).minutes, 'minutes_not_configured', 503);
+        await changeOwned(id, user, r => { r.analysisConsent = true; r.insights = null; delete r.intentRetryAt; emit(r, 'intents.requested'); });
+        send(res, 202, {queued:true}); return;
+      }
       if (action === '' && req.method === 'GET') { send(res, 200, publicRecord(record)); return; }
       if (action.startsWith('minutes/versions/') && req.method === 'GET') {
         const revision = Number(action.slice('minutes/versions/'.length));
@@ -175,8 +198,10 @@ export async function createRecordServer(options = {}) {
       });
       else if (action.startsWith('segments/') && req.method === 'PATCH') result = await changeOwned(id, user, r => { editSegment(r, action.slice(9), body); return publicRecord(r); });
       else if (action === 'minutes' && req.method === 'POST') {
-        requireThat(providerStatus().minutes || providerStatus().fixture, 'minutes_not_configured', 503);
-        result = await changeOwned(id, user, r => requestMinutes(r, { ...body, modelVersion: process.env.LLM_MODEL || 'fixture' }));
+        const config = await readConfig(repo.root), mode = body.mode || 'model';
+        requireThat(['model', 'extractive'].includes(mode), 'invalid_minutes_mode', 400);
+        requireThat(mode === 'extractive' || providerStatus(config).minutes || providerStatus(config).fixture, 'minutes_not_configured', 503);
+        result = await changeOwned(id, user, r => requestMinutes(r, { ...body, mode, modelVersion: mode === 'extractive' ? 'local-extractive-v1' : config.LLM_MODEL || 'default' }));
       }
       else if (action === 'minutes' && req.method === 'PATCH') result = await changeOwned(id, user, r => {
         requireThat(r.minutes && body.revision === r.minutesRevision, 'minutes_revision_conflict');
@@ -191,7 +216,7 @@ export async function createRecordServer(options = {}) {
         emit(r, 'record.updated'); return publicRecord(r);
       });
       else if (action === '' && req.method === 'DELETE') result = await changeOwned(id, user, r => {
-        r.deleted = true; r.generation++; r.title = '已删除'; r.segments = []; r.notes = ''; r.minutes = null; r.minutesHistory = []; r.jobs = []; r.shares = []; r.cleanup = 'pending';
+        r.deleted = true; r.generation++; r.title = '已删除'; r.segments = []; r.notes = ''; r.minutes = null; r.minutesHistory = []; r.insights = null; r.jobs = []; r.shares = []; r.cleanup = 'pending';
         emit(r, 'record.deleted'); return { deleted: true, cleanup: r.cleanup };
       });
       else if (action === 'shares' && req.method === 'POST') {

@@ -19,6 +19,7 @@ function schedule(value) {
       times.push(Math.max(chunk.lease || 0, chunk.retryAt || 0, now));
     }
   }
+  if (value.segments.length && value.insights?.transcriptRevision !== value.transcriptRevision) times.push(Math.max(value.intentLease || 0, value.intentRetryAt || 0, now));
   for (const job of value.jobs) { if (job.status === 'queued') times.push(now); else if (job.status === 'running') times.push(job.lease || now); }
   value.nextWorkAt = Math.min(...times);
 }

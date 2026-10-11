@@ -128,7 +128,7 @@ export function requestMinutes(record, input = {}) {
   if (existing) return existing;
   requireThat(record.jobs.filter(j => ['queued', 'running'].includes(j.status)).length < 3, 'job_limit', 429);
   const job = { id: randomUUID(), key, status: 'queued', transcriptRevision: record.transcriptRevision, notesRevision: record.notesRevision,
-    baseMinutesRevision: record.minutesRevision, generation: record.generation, template, snapshot, notes: record.notes, manifestHash,
+    baseMinutesRevision: record.minutesRevision, generation: record.generation, template, mode: input.mode || 'model', modelVersion: input.modelVersion || 'default', snapshot, notes: record.notes, manifestHash,
     createdAt: new Date().toISOString(), attempts: 0 };
   record.jobs.push(job); emit(record, 'minutes.queued', { jobId: job.id }); return job;
 }

@@ -46,3 +46,15 @@ node scripts/recover-audio.mjs pending-audio-RECORD.json ./recovered-audio
 ## 证据与依据
 
 实际验证见 [验收表](acceptance.md)。技术约束依据：[Node SQLite](https://nodejs.org/download/release/latest-jod/docs/api/sqlite.html)、[Vite 环境要求](https://vite.dev/guide/)、[MDN 共享采集](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getDisplayMedia)、[Deepgram PCM 采样率](https://developers.deepgram.com/docs/sample-rate/)、[S3 校验和](https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/s3-checksums.html)、[S3 条件上传](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/client/s3/command/PutObjectCommand/)。
+
+## 豆包与本地开发账户
+
+开发模式自动创建 `dev@local.test` / `LocalMeeting2026!`，重复启动保留既有密码和数据。登录页提供开发入口。生产环境不创建开发账户、不公开开发凭据；可用 `RECORD_DEV_ACCOUNT=off` 关闭开发入口。自定义 `RECORD_DEV_PASSWORD` 不通过 API 返回。
+
+设置 → 模型与转录服务可修改转录地址、资源 ID、模型与密钥。默认豆包 v3 ASR，支持新版语音 API Key；选择旧版 AST 时兼容 `DOUBAO_AST_APP_KEY/SECRET` 与 `DOUBAO_AST_ACCESS_KEY/ACCESS_TOKEN`。方舟纪要需要单独的已开通模型 ID 或 `ep-…` 接入点。语音 Key 与方舟 Key 的权限分别验证，不能仅凭模型目录可读判定生成可用。
+
+配置以服务端 `.data/records/providers.json` 为本地覆盖，权限 0600，已忽略；优先级为本地覆盖 → 环境变量 → 默认地址。后台每轮读取配置；空白密钥字段保留原值。设置读取只返回密钥是否已设置。生产写入配置需要 `RECORD_CONFIG_ADMIN` 中的账户；浏览器不保存供应商密钥。变更后使用“测试转录 / 测试纪要”发送静音或虚构文本验证，再开始会议。
+
+自动输入设备跟随系统默认麦克风。指定设备不可用时回退到默认；录音来源保留实际设备名。设备授权由用户点击触发，共享音轨仍由浏览器选择器决定。
+
+讨论脉络默认使用本地规则，旧记录不因保存模型密钥自动上传正文。用户逐条点击“使用模型分析”后，该记录的新转录版本可异步分析。纪要明确区分“本地提取”（规则引用原文）与“AI 整理”（发送转录及笔记至已配置模型），均保留引用版本；本地提取不是 AI 总结。
