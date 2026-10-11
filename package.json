@@ -13,24 +13,34 @@
     "build:desktop:styles": "tailwindcss -i ./shell.tailwind.css -o ./shell.generated.css --cwd ./apps/desktop/src --optimize",
     "dev:desktop": "node ./apps/desktop/src/shell-server.mjs",
     "dev:desktop:mock": "node ./apps/desktop/src/mock-client.mjs",
-    "dev:web": "node ./apps/web/src/server.mjs",
+    "dev:web": "npm run dev -w apps/web",
     "dev:gateway": "node ./services/session-gateway/src/server.mjs",
     "dev:api": "node ./services/transcript-api/src/server.mjs",
     "dev:ai": "node ./services/ai-worker/src/worker.mjs",
     "db:migrate:transcript": "node ./services/transcript-api/src/migrate.mjs",
-    "lint": "echo \"TODO: configure lint\"",
-    "test": "node --test --test-concurrency=1 ./tests/memory-smoke.test.mjs ./tests/provider-and-desktop-preview.test.mjs ./tests/domain-and-components.test.mjs",
+    "lint": "eslint services/records/src packages/records/src scripts tests/records*.mjs apps/web/src/production-server.mjs",
+    "test": "node --test --test-concurrency=1 ./tests/memory-smoke.test.mjs ./tests/provider-and-desktop-preview.test.mjs ./tests/domain-and-components.test.mjs ./tests/records.test.mjs ./tests/records-resilience.test.mjs",
     "test:smoke": "node --test --test-concurrency=1 ./tests/memory-smoke.test.mjs ./tests/provider-and-desktop-preview.test.mjs ./tests/domain-and-components.test.mjs",
     "test:domain": "node --test ./tests/domain-and-components.test.mjs",
     "test:postgres": "node --test --test-concurrency=1 ./tests/postgres-smoke.test.mjs",
-    "typecheck": "echo \"TODO: configure typecheck\""
+    "typecheck": "npm run typecheck -w apps/web",
+    "dev:legacy-web": "node ./apps/web/src/server.mjs",
+    "dev:records": "node services/records/src/server.mjs",
+    "dev:record-worker": "node services/records/src/worker.mjs",
+    "dev": "node scripts/dev.mjs",
+    "build:web": "npm run build -w apps/web",
+    "test:records": "node --test --test-concurrency=1 tests/records.test.mjs tests/records-resilience.test.mjs",
+    "start": "node scripts/dev.mjs --production"
   },
   "dependencies": {
     "protobufjs": "^8.0.0",
     "ws": "^8.19.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@tailwindcss/cli": "^4.2.2",
+    "eslint": "^10.12.0",
+    "globals": "^17.13.0",
     "tailwindcss": "^4.2.2"
   }
 }
