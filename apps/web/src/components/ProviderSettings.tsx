@@ -27,7 +27,7 @@ export function ProviderSettings({ saved }: { saved: () => Promise<void> }) {
       {provider === 'deepgram' && field('DEEPGRAM_API_KEY','Deepgram API Key',true)}
       {provider === 'openai-compatible' && <>{field('ASR_API_URL','转录请求地址')}{field('ASR_MODEL','语音模型')}{field('ASR_API_KEY','转录 API Key',true)}</>}
       <div className="settings-subheading"><CloudCheck size={18}/><h4>纪要、意图识别与翻译</h4></div>
-      {field('LLM_API_URL','模型服务地址（基础地址或完整接口）')}{field('LLM_MODEL','模型 / 接入点 ID',false,'填写已开通的 model ID 或 ep-…')}{field('LLM_API_KEY','方舟 / 兼容模型 API Key',true)}
+      <label>模型协议<Select label="模型协议" name="LLM_PROTOCOL" defaultValue={String(values?.LLM_PROTOCOL || 'chat-completions')} options={[{value:'chat-completions',label:'Chat Completions · /chat/completions'},{value:'responses',label:'Responses · /responses'}]}/></label>{field('LLM_API_URL','模型服务地址（基础地址或完整接口）')}{field('LLM_MODEL','模型 / 接入点 ID',false,'填写已开通的 model ID 或 ep-…')}{field('LLM_API_KEY','方舟 / 兼容模型 API Key',true)}
       <div className="actions"><Button disabled={busy} type="submit" variant="primary">{busy ? '处理中…' : '保存服务配置'}</Button><Button disabled={busy} onClick={() => void test('asr')}><Plug size={16}/>测试转录</Button><Button disabled={busy} onClick={() => void test('minutes')}>测试纪要</Button></div>
     </form>}
   </div>;

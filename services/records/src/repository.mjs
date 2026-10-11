@@ -1,3 +1,4 @@
+import { automaticMinutesAt } from '../../../packages/records/src/automation.mjs';
 import { mkdir, open, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -8,7 +9,7 @@ function schedule(value) {
   if (value.kind !== 'record') return;
   const now = Date.now();
   if (value.deleted) { value.nextWorkAt = value.cleanup === 'completed' ? (value.cleanupAt || 0) + 600000 : now; return; }
-  const times = [Date.parse(value.deleteAt), (value.gcAt || 0) + 3600000];
+  const times = [automaticMinutesAt(value, now), Date.parse(value.deleteAt), (value.gcAt || 0) + 3600000];
   if (!value.retainAudio && !value.audioPurged && value.capture === 'completed') times.push(now);
   for (const chunk of value.chunks) {
     if (chunk.expired) continue;
@@ -20,6 +21,7 @@ function schedule(value) {
     }
   }
   if (value.segments.length && value.insights?.transcriptRevision !== value.transcriptRevision) times.push(Math.max(value.intentLease || 0, value.intentRetryAt || 0, now));
+  if (value.translationTarget) for (const s of value.segments) if (s.translationLanguage !== value.translationTarget && (s.translationAttempts || 0) < 3) times.push(Math.max(s.translationLease || 0, s.translationRetryAt || 0, now));
   for (const job of value.jobs) { if (job.status === 'queued') times.push(now); else if (job.status === 'running') times.push(job.lease || now); }
   value.nextWorkAt = Math.min(...times);
 }

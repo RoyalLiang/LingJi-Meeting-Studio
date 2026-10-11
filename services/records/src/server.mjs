@@ -1,3 +1,4 @@
+import { setAutomation } from '../../../packages/records/src/automation.mjs';
 import http from 'node:http';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -96,7 +97,9 @@ export async function createRecordServer(options = {}) {
       }
       if (path === '/api/records' && req.method === 'POST') {
         const all = (await repo.list()).filter(r => r.owner === user.id && !r.deleted);
-        requireThat(all.length < 200, 'record_limit', 429); const r = await repo.insert(createRecord(user.id, await readBody(req, 4000)));
+        requireThat(all.length < 200, 'record_limit', 429); const input = await readBody(req, 4000);
+        requireThat(!input.autoMinutes || providerStatus(await readConfig(repo.root)).minutes, 'minutes_not_configured', 503);
+        const r = await repo.insert(createRecord(user.id, input));
         send(res, 201, publicRecord(r)); return;
       }
       if (path === '/api/records' && req.method === 'GET') {
@@ -109,6 +112,12 @@ export async function createRecordServer(options = {}) {
       }
       const route = path.match(/^\/api\/records\/([a-f0-9-]{36})(?:\/(.*))?$/);
       requireThat(route, 'not_found', 404); const id = route[1], action = route[2] || ''; const record = await owned(id, user);
+      if (action === 'automation' && req.method === 'PATCH') {
+        const body = await readBody(req, 4000);
+        requireThat(!body.enabled || providerStatus(await readConfig(repo.root)).minutes, 'minutes_not_configured', 503);
+        const result = await changeOwned(id, user, r => { setAutomation(r, body); return publicRecord(r); });
+        send(res, 200, result); return;
+      }
       if (action === 'insights' && req.method === 'POST') {
         requireThat(providerStatus(await readConfig(repo.root)).minutes, 'minutes_not_configured', 503);
         await changeOwned(id, user, r => { r.analysisConsent = true; r.insights = null; delete r.intentRetryAt; emit(r, 'intents.requested'); });
@@ -160,7 +169,7 @@ export async function createRecordServer(options = {}) {
             }
             res.write(': heartbeat\n\n');
           } catch { res.write('event: revoked\ndata: {}\n\n'); res.end(); } finally { busy = false; }
-        }, 1000);
+        }, 250);
         streams.add(res); req.on('close', () => { clearInterval(timer); streams.delete(res); }); return;
       }
       if (action === 'export' && req.method === 'GET') {
@@ -216,7 +225,7 @@ export async function createRecordServer(options = {}) {
         emit(r, 'record.updated'); return publicRecord(r);
       });
       else if (action === '' && req.method === 'DELETE') result = await changeOwned(id, user, r => {
-        r.deleted = true; r.generation++; r.title = '已删除'; r.segments = []; r.notes = ''; r.minutes = null; r.minutesHistory = []; r.insights = null; r.jobs = []; r.shares = []; r.cleanup = 'pending';
+        r.deleted = true; r.generation++; r.title = '已删除'; r.segments = []; r.notes = ''; r.minutes = null; r.liveMinutes = null; r.minutesHistory = []; r.insights = null; r.jobs = []; r.shares = []; r.cleanup = 'pending';
         emit(r, 'record.deleted'); return { deleted: true, cleanup: r.cleanup };
       });
       else if (action === 'shares' && req.method === 'POST') {
