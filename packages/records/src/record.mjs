@@ -20,7 +20,7 @@ export function createRecord(owner, input = {}) {
   const record = { id: randomUUID(), owner, kind: 'record', title: String(input.title || '未命名会议').slice(0, 160),
     language: input.language || 'zh', createdAt: now, updatedAt: now, cursor: '0', events: [], generation: 1,
     capture: 'idle', transcription: 'idle', sessions: [], sources: [], chunks: [], segments: [], transcriptRevision: 0,
-    notes: '', notesRevision: 0, minutes: null, minutesRevision: 0, minutesHistory: [], jobs: [], shares: [],
+    notes: '', notesRevision: 0, minutes: null, liveMinutes: null, autoMinutes: { enabled: input.autoMinutes === true, intervalSeconds: 30 }, minutesRevision: 0, minutesHistory: [], jobs: [], shares: [],
     retentionDays: days, retainAudio: input.retainAudio === true, deleteAt: new Date(Date.now() + days * 86400000).toISOString(),
     usage: { samples: 0, sampleRate: 16000, llmTokens: 0 }, deleted: false };
   emit(record, 'record.created'); return record;
@@ -114,21 +114,24 @@ export function editSegment(record, id, input) {
   const { versions, ...previous } = segment;
   segment.versions = [...(versions || []), previous].slice(-20);
   segment.text = input.text.trim(); segment.speaker = String(input.speaker ?? segment.speaker).slice(0, 80);
+  for (const field of ['translation', 'translationLanguage', 'translationLease', 'translationAttempts', 'translationRetryAt', 'translationError']) delete segment[field];
   segment.revision++; segment.edited = true; record.transcriptRevision++;
   emit(record, 'transcript.edited', { segmentId: id, transcriptRevision: record.transcriptRevision });
 }
 export function requestMinutes(record, input = {}) {
-  requireThat(record.capture === 'completed', 'record_not_finalized');
+  const scope = input.scope || 'final';
+  requireThat(['live', 'final'].includes(scope), 'invalid_minutes_scope', 400);
+  requireThat(scope === 'live' || record.capture === 'completed', 'record_not_finalized');
   requireThat(record.segments.length > 0, 'empty_transcript');
   const template = input.template || 'meeting'; requireThat(templates.includes(template), 'unknown_template', 400);
-  const snapshot = record.segments.map(s => ({ ...s }));
+  const snapshot = (scope === 'live' ? record.segments.slice(-120) : record.segments).map(({versions, ...s}) => ({ ...s }));
   const manifestHash = digest(JSON.stringify(snapshot));
-  const key = `${record.id}:${record.transcriptRevision}:${manifestHash}:${template}:v1:${record.notesRevision}:${input.modelVersion || 'default'}`;
+  const key = `${record.id}:${record.transcriptRevision}:${manifestHash}:${template}:v1:${record.notesRevision}:${input.modelVersion || 'default'}:${input.mode || 'model'}:${scope}`;
   const existing = record.jobs.find(j => j.key === key && !['failed', 'stale'].includes(j.status));
   if (existing) return existing;
   requireThat(record.jobs.filter(j => ['queued', 'running'].includes(j.status)).length < 3, 'job_limit', 429);
   const job = { id: randomUUID(), key, status: 'queued', transcriptRevision: record.transcriptRevision, notesRevision: record.notesRevision,
-    baseMinutesRevision: record.minutesRevision, generation: record.generation, template, mode: input.mode || 'model', modelVersion: input.modelVersion || 'default', snapshot, notes: record.notes, manifestHash,
+    baseMinutesRevision: record.minutesRevision, generation: record.generation, template, scope, automatic: input.automatic === true, mode: input.mode || 'model', modelVersion: input.modelVersion || 'default', snapshot, notes: record.notes, manifestHash,
     createdAt: new Date().toISOString(), attempts: 0 };
   record.jobs.push(job); emit(record, 'minutes.queued', { jobId: job.id }); return job;
 }
@@ -142,6 +145,10 @@ export function validateMinutes(result, snapshot) {
       for (const ref of item.evidence) requireThat(snapshot.some(s => s.id === ref.segmentId && s.revision === ref.revision), 'unknown_evidence', 422);
     }
   }
+  if (result.topics !== undefined) {
+    requireThat(Array.isArray(result.topics) && result.topics.length <= 30, 'invalid_minutes_topics', 422);
+    for (const topic of result.topics) requireThat(typeof topic.title === 'string' && topic.title.trim() && topic.title.length <= 200 && typeof topic.summary === 'string' && topic.summary.length <= 4000 && Array.isArray(topic.evidence) && topic.evidence.length > 0 && topic.evidence.length <= 500 && topic.evidence.every(ref => snapshot.some(s => s.id === ref.segmentId && s.revision === ref.revision)), 'invalid_minutes_topics', 422);
+  }
   requireThat(!result.actions || (Array.isArray(result.actions) && result.actions.length <= 100 && result.actions.every(a => typeof a.text === 'string' && a.text.trim() && a.text.length <= 8000 && (a.owner == null || (typeof a.owner === 'string' && a.owner.length <= 100)) && (a.due == null || (typeof a.due === 'string' && a.due.length <= 100))
     && Array.isArray(a.evidence) && a.evidence.length && a.evidence.every(ref => snapshot.some(s => s.id === ref.segmentId && s.revision === ref.revision)))), 'invalid_actions', 422);
   return result;
@@ -150,14 +157,22 @@ export function commitMinutes(record, jobId, result, fence) {
   const job = record.jobs.find(j => j.id === jobId);
   requireThat(job && !record.deleted && job.generation === record.generation && job.fence === fence, 'stale_job', 410);
   validateMinutes(result, job.snapshot);
-  if (job.transcriptRevision !== record.transcriptRevision || job.notesRevision !== record.notesRevision || job.baseMinutesRevision !== record.minutesRevision) {
-    job.status = 'stale'; emit(record, 'minutes.stale', { jobId }); return;
+  job.runtime = result.runtime || job.runtime;
+  const transcriptChanged = job.scope === 'live' ? job.snapshot.some(s => !record.segments.some(current => current.id === s.id && current.revision === s.revision)) : job.transcriptRevision !== record.transcriptRevision;
+  if (transcriptChanged || job.notesRevision !== record.notesRevision || job.baseMinutesRevision !== record.minutesRevision) {
+    job.status = 'stale'; delete job.preview; job.snapshot = []; emit(record, 'minutes.stale', { jobId }); return;
+  }
+  if (job.scope === 'live') {
+    record.liveMinutes = { ...result, actions: result.actions || [], transcriptRevision: job.transcriptRevision, evidenceSnapshot: job.snapshot, generatedAt: new Date().toISOString() };
+    job.status = 'completed'; job.snapshot = []; delete job.preview;
+    record.usage.llmTokens += Number.isSafeInteger(result.usageTokens) && result.usageTokens >= 0 ? result.usageTokens : 0;
+    emit(record, 'minutes.live', { transcriptRevision: job.transcriptRevision }); return;
   }
   if (record.minutes) record.minutesHistory = [...(record.minutesHistory || []), record.minutes].slice(-10);
   record.minutesRevision++;
   record.minutes = { ...result, actions: result.actions || [], revision: record.minutesRevision, transcriptRevision: job.transcriptRevision, manifestHash: job.manifestHash,
     evidenceSnapshot: job.snapshot, edited: false, generatedAt: new Date().toISOString() };
-  job.status = 'completed'; job.snapshot = []; record.usage.llmTokens += Number.isSafeInteger(result.usageTokens) && result.usageTokens >= 0 ? result.usageTokens : 0;
+  job.status = 'completed'; job.snapshot = []; delete job.preview; record.usage.llmTokens += Number.isSafeInteger(result.usageTokens) && result.usageTokens >= 0 ? result.usageTokens : 0;
   emit(record, 'minutes.committed', { revision: record.minutesRevision });
 }
 export function publicRecord(record) {

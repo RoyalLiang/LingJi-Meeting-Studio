@@ -38,3 +38,9 @@
 | [迭代 3](iteration-3-adr.md)、[团队模型](team-operating-model-v1.md)、[团队交付](team-delivery-plan-v2.md) | 历史工作组织设想，需结合最新实现和资源重新评估 |
 
 不删除历史内容。本轮在历史文档顶部添加阅读边界，避免新旧方向混用；旧机器绝对路径链接已改为仓库相对链接，便于跨环境阅读。
+
+## 会中 AI 纪要（2026-10-12）
+
+- [飞书一手资料与方案](research/feishu-minutes-analysis-2026-10-12.md)
+- [Responses、自动纪要、流式与主题实现](engineering/live-minutes.md)
+- [增量纪要 ADR](adr/0006-live-minutes-and-protocols.md)

@@ -34,3 +34,12 @@
 Record capture 与 transcription 分离。seal 后只有音频连续且所有处理成功才转 completed；模型缺配置/失败会 blocked/failed，不能假装结束。纪要必须使用已完成转录；输入快照、笔记修订、模型配置与模板组成任务身份，租约/fence 和预期人工版本隔离旧结果。
 
 事件 cursor 是十进制字符串，仅在同一记录内单调。事件日志最多 1000 条。收到消息后客户端取一致快照；reset 也重新取快照。每条纪要内容的 evidence 必须匹配生成时的 segmentId/revision。
+
+## 自动与流式纪要
+
+- 创建记录可传 `autoMinutes:boolean`，启用前要求服务端已配置模型。
+- `PATCH /api/records/:id/automation`：`{enabled:boolean,intervalSeconds:15|30|60|120}`；鉴权、Origin 和 CSRF 与其他写接口一致。关闭取消自动任务。
+- `POST /api/records/:id/minutes` 新增 `scope:live|final`；默认 final，live 不要求会话结束。mode、scope、模型和版本参与幂等键。
+- GET 记录新增 `autoMinutes`、`liveMinutes`；jobs 可有 `preview:[{kind,text}]` 和 `runtime`。预览不是可导出的正式纪要。
+- SSE 新增 `minutes.delta`、`minutes.live`、`minutes.automation`、`transcript.translated`，仍用持久 cursor 补历史。
+- 模型设置新增 `LLM_PROTOCOL:chat-completions|responses`，基础地址按协议补全；密钥仍只返回是否配置。

@@ -3,10 +3,12 @@ export interface Source { id: string; sessionId: string; epoch: string; kind: So
 export interface Evidence { segmentId: string; revision: number }
 export interface Segment { id: string; revision: number; sourceId: string; text: string; speaker: string; startMs: number; endMs: number; translation?: string; edited: boolean }
 export interface MinutesItem { text: string; evidence: Evidence[] }
-export interface Minutes { method?: string; title: string; sections: { heading: string; items: MinutesItem[] }[]; actions: (MinutesItem & { owner?: string; due?: string })[];
+export interface Topic { title: string; summary: string; evidence: Evidence[] }
+export interface ModelRuntime { protocol?: string; streamed?: boolean; firstTokenMs?: number | null; durationMs?: number; elapsedMs?: number }
+export interface Minutes { topics?: Topic[]; runtime?: ModelRuntime; method?: string; title: string; sections: { heading: string; items: MinutesItem[] }[]; actions: (MinutesItem & { owner?: string; due?: string })[];
   revision: number; transcriptRevision: number; edited: boolean; evidenceSnapshot: Segment[] }
-export interface Job { id: string; status: string; error?: string; transcriptRevision: number }
-export interface RecordDetail {
+export interface Job { scope?: string; automatic?: boolean; preview?: {kind:string;text:string}[]; runtime?: ModelRuntime; id: string; status: string; error?: string; transcriptRevision: number }
+export interface RecordDetail { autoMinutes?: {enabled:boolean;intervalSeconds:number}; liveMinutes?: Minutes | null;
   insights?: {transcriptRevision: number; method: string; items: {kind: string; text: string; evidence: Evidence[]}[]; evidenceSnapshot: Segment[]}; intentError?: string; id: string; title: string; language: string; capture: string; transcription: string; sources: Source[]; segments: Segment[];
   notes: string; notesRevision: number; minutes: Minutes | null; minutesRevision: number; minuteVersions: { revision: number; transcriptRevision: number; edited: boolean }[]; transcriptRevision: number; cursor: string; jobs: Job[]; pendingChunks: number;
   retainAudio: boolean; audioPurged?: boolean; retentionDays: number; deleteAt: string; translationTarget?: string; usage: { samples: number; llmTokens: number } }
