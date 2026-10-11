@@ -1,3 +1,5 @@
+> 历史文档（2026-10-11 整理）：首版方向已改为浏览器优先、尽量免安装。本文保留原有设计背景，不作为当前实现或排期承诺；先读 [新文档入口](README.md) 与 [当前状态](engineering/current-state.md)。
+
 # React + Vite + Tauri 2 Migration Plan v1
 
 - Status: Draft
@@ -539,10 +541,10 @@ Suggested shortcuts:
 
 Current sources:
 
-- [shell.js](C:/Users/westwell/projects/TTS/apps/desktop/src/shell.js)
-- [shell.html](C:/Users/westwell/projects/TTS/apps/desktop/src/shell.html)
-- [overlay.js](C:/Users/westwell/projects/TTS/apps/desktop/src/overlay.js)
-- [preview-channel.js](C:/Users/westwell/projects/TTS/apps/desktop/src/preview-channel.js)
+- [shell.js](../apps/desktop/src/shell.js)
+- [shell.html](../apps/desktop/src/shell.html)
+- [overlay.js](../apps/desktop/src/overlay.js)
+- [preview-channel.js](../apps/desktop/src/preview-channel.js)
 
 Target migration map:
 

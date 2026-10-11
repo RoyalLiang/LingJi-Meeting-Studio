@@ -1,3 +1,5 @@
+> 历史文档（2026-10-11 整理）：首版方向已改为浏览器优先、尽量免安装。本文保留原有设计背景，不作为当前实现或排期承诺；先读 [新文档入口](README.md) 与 [当前状态](engineering/current-state.md)。
+
 # Frontend And Runtime ADR v1
 
 - Status: Draft
@@ -10,19 +12,19 @@ The repository plan never intended the long-term product to stay on `Node + raw 
 
 Existing planning documents already point to a framework-based direction:
 
-- [README](C:/Users/westwell/projects/TTS/README.md) describes `apps/desktop` as `Electron + React`.
-- [architecture-v1](C:/Users/westwell/projects/TTS/docs/architecture-v1.md) lists:
+- [README](../README.md) describes `apps/desktop` as `Electron + React`.
+- [architecture-v1](architecture-v1.md) lists:
   - desktop: `Electron + React + Vite`
   - web: `Next.js` or `React + Vite`
-- [iteration-3-adr](C:/Users/westwell/projects/TTS/docs/iteration-3-adr.md) explicitly downgraded the desktop app to a `shell preview` first, in order to validate the session and audio pipeline before committing to Electron.
-- [apps/desktop/README](C:/Users/westwell/projects/TTS/apps/desktop/README.md) says the current desktop shell preview is not Electron and not the final desktop app.
+- [iteration-3-adr](iteration-3-adr.md) explicitly downgraded the desktop app to a `shell preview` first, in order to validate the session and audio pipeline before committing to Electron.
+- [apps/desktop/README](../apps/desktop/README.md) says the current desktop shell preview is not Electron and not the final desktop app.
 
 That tradeoff was reasonable early on.
 
 It is less reasonable now:
 
-- [shell.js](C:/Users/westwell/projects/TTS/apps/desktop/src/shell.js) is already large enough to be a real app surface.
-- [shell.html](C:/Users/westwell/projects/TTS/apps/desktop/src/shell.html) carries a large amount of layout and interaction logic.
+- [shell.js](../apps/desktop/src/shell.js) is already large enough to be a real app surface.
+- [shell.html](../apps/desktop/src/shell.html) carries a large amount of layout and interaction logic.
 - The product now has cross-view state, replay navigation, preview drawers, i18n, audio playback, and live capture state machines.
 
 The UI complexity has crossed the point where hand-written DOM state is still the cheapest option.

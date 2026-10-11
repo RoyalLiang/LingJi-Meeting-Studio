@@ -1,0 +1,11 @@
+version: 1
+required:
+  - outcome
+  - changed_files_or_scope
+  - validation
+  - remaining_gaps
+rules:
+  - lead with the completed result
+  - distinguish local validation from remote runtime evidence
+  - include rollback or backup location after material cleanup
+  - keep the answer proportional to the task

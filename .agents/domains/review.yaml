@@ -1,0 +1,6 @@
+version: 1
+rules:
+  - fix the comparison point before reviewing
+  - review standards and specification compliance separately
+  - lead with actionable findings and tight file references
+  - do not mutate the reviewed change unless asked

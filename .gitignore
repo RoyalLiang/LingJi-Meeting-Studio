@@ -14,3 +14,6 @@ Thumbs.db
 out/
 tmp/
 temp/
+# codex-agent-rules runtime
+.agent-runtime/
+# end codex-agent-rules runtime

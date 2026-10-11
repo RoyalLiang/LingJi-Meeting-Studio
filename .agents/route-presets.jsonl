@@ -1,0 +1,5 @@
+{"id":"default","match":["implementation","maintenance","explanation"],"load":[".agents/core-lite.yaml",".agents/workflow/default.yaml"],"skills":[]}
+{"id":"diagnosis","match":["bug","failure","regression","performance"],"load":[".agents/core-lite.yaml",".agents/workflow/default.yaml",".agents/domains/coding.yaml"],"skills":["diagnosing-bugs"]}
+{"id":"architecture","match":["module","interface","boundary","deepening"],"load":[".agents/core-lite.yaml",".agents/workflow/default.yaml",".agents/domains/design.yaml"],"skills":["codebase-design"]}
+{"id":"review","match":["review","diff","branch","commit","specification"],"load":[".agents/core-lite.yaml",".agents/domains/review.yaml",".agents/output/delivery.yaml"],"skills":["code-review"]}
+{"id":"research","match":["research","primary sources","cited report"],"load":[".agents/core-lite.yaml",".agents/domains/research.yaml",".agents/output/delivery.yaml"],"skills":["research"]}

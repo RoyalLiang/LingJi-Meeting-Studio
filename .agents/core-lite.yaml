@@ -1,0 +1,22 @@
+version: 1
+
+principles:
+  - inspect before changing
+  - preserve user work and unrelated dirty files
+  - make the smallest reversible in-scope change
+  - distinguish verified evidence from inference
+  - validate in proportion to risk
+  - do not expand local scope into remote or production scope
+
+active_context:
+  - goal
+  - phase
+  - constraints
+  - findings
+  - touched_files
+  - validation
+  - next_action
+
+project_state:
+  location: .agent-runtime
+  tracked: false
