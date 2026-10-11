@@ -1,0 +1,45 @@
+version: 1
+runtime_root: .agent-runtime
+
+startup:
+  read:
+    - .agent-runtime/state-lite.json
+  then:
+    - load only a bounded batch matching the current scope
+    - load full event details only when summaries are insufficient
+
+checkpoint:
+  cadence: every substantive completed turn
+  fields:
+    - cursor
+    - request
+    - summary
+    - decisions
+    - findings
+    - validation
+    - next_actions
+    - evidence
+    - confirmation
+    - supersedes
+
+confirmation:
+  values:
+    - inferred
+    - pending_confirmation
+    - confirmed
+  ask_when:
+    - an unverified memory would materially change implementation
+    - an inferred decision would authorize external or destructive action
+
+limits:
+  default_batch: 5
+  maximum_batch: 20
+  summary_characters: 800
+  request_characters: 500
+
+prohibited:
+  - credentials
+  - raw secrets
+  - full transcripts
+  - large tool output
+  - global project state

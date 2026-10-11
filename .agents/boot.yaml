@@ -1,0 +1,33 @@
+version: 1
+mode: progressive
+
+cold_start:
+  - .agents/core-lite.yaml
+  - .agent-runtime/state-lite.json
+  - .agents/route-presets.jsonl
+
+upgrade_triggers:
+  diagnosis:
+    when: reproducible failure, regression, or unexplained performance issue
+    load:
+      - .agents/domains/coding.yaml
+  architecture:
+    when: module boundary, interface, ownership, or deepening decision
+    load:
+      - .agents/domains/design.yaml
+  review:
+    when: review against a fixed commit, branch, diff, or specification
+    load:
+      - .agents/domains/review.yaml
+  research:
+    when: primary-source investigation or cited repository report
+    load:
+      - .agents/domains/research.yaml
+  delivery:
+    when: preparing the final implementation handoff
+    load:
+      - .agents/output/delivery.yaml
+
+memory:
+  policy: .agents/runtime/memory.yaml
+  runtime_root: .agent-runtime

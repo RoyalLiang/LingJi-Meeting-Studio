@@ -1,0 +1,6 @@
+version: 1
+rules:
+  - prefer current primary sources
+  - separate sourced fact, repository evidence, and inference
+  - capture citations near the supported claim
+  - persist a repository report only when requested

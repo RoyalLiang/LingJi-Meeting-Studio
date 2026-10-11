@@ -1,0 +1,6 @@
+version: 1
+rules:
+  - identify ownership, source of truth, lifecycle, and write authority
+  - prefer a small number of deep interfaces over many forwarding layers
+  - separate policy from runtime state
+  - make invalid states difficult to represent

@@ -1,0 +1,6 @@
+version: 1
+rules:
+  - reproduce or trace the failure before editing
+  - prefer existing test seams and project commands
+  - keep fixes local to the confirmed cause
+  - report environment limits separately from code correctness

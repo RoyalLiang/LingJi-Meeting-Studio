@@ -1,0 +1,15 @@
+version: 1
+
+phases:
+  - name: inspect
+    outcome: establish current state and constraints
+  - name: decide
+    outcome: select the smallest safe implementation
+  - name: implement
+    outcome: make only in-scope changes
+  - name: validate
+    outcome: collect evidence proportional to risk
+  - name: checkpoint
+    outcome: compress durable project context
+  - name: deliver
+    outcome: report result, evidence, and remaining gaps
