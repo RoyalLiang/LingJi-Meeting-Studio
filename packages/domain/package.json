@@ -1,0 +1,12 @@
+{
+  "name": "@tts/domain",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/index.mjs",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./*": "./src/*"
+  }
+}

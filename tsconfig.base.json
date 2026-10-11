@@ -15,6 +15,12 @@
       ],
       "@tts/config/*": [
         "packages/config/*"
+      ],
+      "@tts/domain": [
+        "packages/domain/src/index.mjs"
+      ],
+      "@tts/domain/*": [
+        "packages/domain/src/*"
       ]
     }
   }
