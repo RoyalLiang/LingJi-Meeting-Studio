@@ -18,7 +18,7 @@ export async function createAuth(repo, options = {}) {
   const sign = value => createHmac('sha256', secret).update(value).digest('hex');
   const cookies = request => Object.fromEntries((request.headers.cookie || '').split(';').map(c => c.trim().split('=')));
   const cookie = token => `record_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=604800${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`;
-  return {
+  const auth = {
     csrf: user => sign(`csrf:${user.id}:${user.authVersion}`),
     async register(body) {
       const email = String(body.email || '').trim().toLowerCase();
@@ -49,4 +49,12 @@ export async function createAuth(repo, options = {}) {
     },
     checkCsrf(request, user) { requireThat(same(request.headers['x-csrf-token'], sign(`csrf:${user.id}:${user.authVersion}`)), 'csrf_required', 403); }
   };
+  if (options.seedDevelopment && process.env.NODE_ENV !== 'production' && process.env.RECORD_DEV_ACCOUNT !== 'off') {
+    const email = process.env.RECORD_DEV_EMAIL || 'dev@local.test';
+    if (!await repo.get(`user:${digest(email.trim().toLowerCase())}`)) {
+      const salt = randomBytes(16).toString('hex');
+      await repo.insert({ id: `user:${digest(email.trim().toLowerCase())}`, kind: 'user', email: email.trim().toLowerCase(), salt, password: scryptSync(process.env.RECORD_DEV_PASSWORD || 'LocalMeeting2026!', salt, 64).toString('hex'), authVersion: 1 });
+    }
+  }
+  return auth;
 }

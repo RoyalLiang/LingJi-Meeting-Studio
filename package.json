@@ -19,7 +19,7 @@
     "dev:ai": "node ./services/ai-worker/src/worker.mjs",
     "db:migrate:transcript": "node ./services/transcript-api/src/migrate.mjs",
     "lint": "eslint services/records/src packages/records/src scripts tests/records*.mjs apps/web/src/production-server.mjs",
-    "test": "node --test --test-concurrency=1 ./tests/memory-smoke.test.mjs ./tests/provider-and-desktop-preview.test.mjs ./tests/domain-and-components.test.mjs ./tests/records.test.mjs ./tests/records-resilience.test.mjs",
+    "test": "node --test --test-concurrency=1 ./tests/memory-smoke.test.mjs ./tests/provider-and-desktop-preview.test.mjs ./tests/domain-and-components.test.mjs ./tests/records.test.mjs ./tests/records-resilience.test.mjs ./tests/records-providers.test.mjs",
     "test:smoke": "node --test --test-concurrency=1 ./tests/memory-smoke.test.mjs ./tests/provider-and-desktop-preview.test.mjs ./tests/domain-and-components.test.mjs",
     "test:domain": "node --test ./tests/domain-and-components.test.mjs",
     "test:postgres": "node --test --test-concurrency=1 ./tests/postgres-smoke.test.mjs",
@@ -29,7 +29,7 @@
     "dev:record-worker": "node services/records/src/worker.mjs",
     "dev": "node scripts/dev.mjs",
     "build:web": "npm run build -w apps/web",
-    "test:records": "node --test --test-concurrency=1 tests/records.test.mjs tests/records-resilience.test.mjs",
+    "test:records": "node --test --test-concurrency=1 tests/records.test.mjs tests/records-resilience.test.mjs tests/records-providers.test.mjs",
     "start": "node scripts/dev.mjs --production",
     "test:records:postgres": "node --test tests/records-postgres.test.mjs",
     "check:docs": "node scripts/check-docs.mjs"
