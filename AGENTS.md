@@ -14,7 +14,9 @@
 - AI 纪要与行动候选需要引用转录版本和片段；人工编辑不能被后台重生成覆盖。外发行动需要单独授权。
 - 不把浏览器屏幕共享授权、录音告知、原音留存、云端识别和分享权限视为同一个同意。
 - Provider 的 mock 仅用于明确的开发和测试配置；真实录制失败不能静默变成模拟结果。
-- 现有 Node 检查运行 `npm test`；Go 实验检查在 `services/engine-go` 运行 `go test ./...`。`lint` 与 `typecheck` 在接入真实工具前不能作为质量证据。
+- 当前主入口是 `npm run dev`，启动 React/Vite Web、Record API 与 worker；旧页面使用 `npm run dev:legacy-web`。模型配置只放后端 `.env`，不得放入 `VITE_*`。
+- Node 回归运行 `npm test`；新增服务与脚本运行 `npm run lint`（ESLint），新 Web 运行 `npm run typecheck` 和 `npm run build:web`。这些检查不覆盖全部历史代码。Go 实验在 `services/engine-go` 运行 `go test ./...`。
+- 新 Record 协议包含 record/session/source/epoch/sequence；SQLite/文件、PG/S3、真实供应商是不同验证层。短批次识别不能标记为供应商流式 partial。
 - 浏览器原生采集、Postgres、真实 ASR/LLM、长会话与部署验证必须单独报告，不能由 mock 测试代替。
 - 可维护的实现实践见 `docs/engineering/practices.md`；新架构建议先落 proposed ADR，不默认视为用户已批准实现。
 

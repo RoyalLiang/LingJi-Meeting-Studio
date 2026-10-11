@@ -1,6 +1,8 @@
 # 项目文档入口
 
-本轮整理日期：2026-10-11。产品目标：通用实时语音转录、会议 AI 总结与纪要；用户已确认**浏览器优先、尽量免安装**。设计建议不是上线能力。
+更新日期：2026-10-11。产品目标：通用实时语音转录、会议 AI 总结与纪要；用户已确认**浏览器优先、尽量免安装**。全阶段工程首版已形成可运行闭环，环境退出门仍逐项保留。
+
+先看 [运行手册](engineering/runbook.md)、[实际 API](engineering/api.md)、[全阶段验收表](engineering/acceptance.md) 和 [本轮实现决策](adr/0004-record-workbench-implementation.md)。视觉依据见 [已确认方向](design/visual-direction.md)。
 
 ## 按这个顺序阅读
 
@@ -13,7 +15,7 @@
 7. [实现与验收实践](engineering/practices.md)：启动、CodeGraph、测试、质量、容量、成本与证据层级。
 8. [阶段路线图](design/roadmap.md)：以退出条件推进，不把时间表当成果。
 9. [ADR](adr/)：浏览器入口、可靠内容提交、版本化纪要，均标明提议状态。
-10. [实现协议切片](design/protocol.md)：提议接口、事件、水位、纪要结构与失败分类；这些接口尚未实现。
+10. [目标协议切片](design/protocol.md)：目标接口与失败分类；本轮实际接口使用 `/api/records`，实现范围以 [当前状态](engineering/current-state.md) 为准。
 
 ## 规则与工程技能配置
 

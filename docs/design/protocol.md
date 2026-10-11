@@ -1,3 +1,5 @@
+> 本文是目标协议设计。本轮实际路由为 `/api/records`，差异见 [当前状态](../engineering/current-state.md) 与 [ADR 0004](../adr/0004-record-workbench-implementation.md)。
+
 # 将设计落实为可验收的协议切片
 
 状态：proposed；2026-10-11。下面的 `/v1`、事件和字段**尚未实现**，用于后续开发评审；现有 `/sessions` HTTP/SSE 路由通过兼容 adapter 逐步迁移。不要将示例当成现在可调用的接口。
