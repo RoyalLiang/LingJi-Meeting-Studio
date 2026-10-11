@@ -29,7 +29,7 @@ export class CaptureController {
         if (event.data.type === 'flushed') { this.flushes.shift()?.(); return; }
         if (event.data.type !== 'pcm') return;
         const current = sequence++, start = offset; offset += event.data.buffer.byteLength / 2;
-        const write = makeChunk(source.id, source.epoch, current, start, event.data.buffer).then(chunk => enqueue(this.recordId, chunk)).then(this.onSaved)
+        const write = makeChunk(source.id, source.epoch, current, start, event.data.buffer, source.sessionId).then(chunk => enqueue(this.recordId, chunk)).then(this.onSaved)
           .catch(error => { this.onFailure(error); void this.stop(); });
         this.writes.push(write);
         if (this.writes.length > 100) this.writes.splice(0, this.writes.length - 100);
@@ -60,7 +60,7 @@ export async function importAudio(file: File, record: RecordDetail, progress: (v
     for (let offset = 0, sequence = 0; offset < values.length; offset += 32000, sequence++) {
       const length = Math.min(32000, values.length - offset), pcm = new ArrayBuffer(length * 2), view = new DataView(pcm);
       for (let i = 0; i < length; i++) view.setInt16(i * 2, Math.round(Math.max(-1, Math.min(1, values[offset + i])) * 32767), true);
-      await enqueue(record.id, await makeChunk(source.id, source.epoch, sequence, offset, pcm)); await drainQueue(); progress((offset + length) / values.length);
+      await enqueue(record.id, await makeChunk(source.id, source.epoch, sequence, offset, pcm, source.sessionId)); await drainQueue(); progress((offset + length) / values.length);
     }
   } finally { await context.close(); }
 }

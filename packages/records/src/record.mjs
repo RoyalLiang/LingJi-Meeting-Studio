@@ -5,7 +5,7 @@ export class DomainError extends Error {
 }
 export const requireThat = (condition, code, status) => { if (!condition) throw new DomainError(code, status); };
 export const digest = data => createHash('sha256').update(data).digest('hex');
-export const keyOf = chunk => `${chunk.sourceId}:${chunk.epoch}:${chunk.sequence}`;
+export const keyOf = chunk => `${chunk.sessionId}:${chunk.sourceId}:${chunk.epoch}:${chunk.sequence}`;
 export const templates = ['meeting', 'interview', 'lecture'];
 export function emit(record, type, payload = {}) {
   record.cursor = String(BigInt(record.cursor) + 1n);
@@ -19,8 +19,8 @@ export function createRecord(owner, input = {}) {
   const now = new Date().toISOString();
   const record = { id: randomUUID(), owner, kind: 'record', title: String(input.title || '未命名会议').slice(0, 160),
     language: input.language || 'zh', createdAt: now, updatedAt: now, cursor: '0', events: [], generation: 1,
-    capture: 'idle', transcription: 'idle', sources: [], chunks: [], segments: [], transcriptRevision: 0,
-    notes: '', notesRevision: 0, minutes: null, minutesRevision: 0, jobs: [], shares: [],
+    capture: 'idle', transcription: 'idle', sessions: [], sources: [], chunks: [], segments: [], transcriptRevision: 0,
+    notes: '', notesRevision: 0, minutes: null, minutesRevision: 0, minutesHistory: [], jobs: [], shares: [],
     retentionDays: days, retainAudio: input.retainAudio === true, deleteAt: new Date(Date.now() + days * 86400000).toISOString(),
     usage: { samples: 0, sampleRate: 16000, llmTokens: 0 }, deleted: false };
   emit(record, 'record.created'); return record;
@@ -28,9 +28,13 @@ export function createRecord(owner, input = {}) {
 export function addSource(record, input) {
   requireThat(!record.deleted, 'record_deleted', 410);
   requireThat(record.capture !== 'sealed', 'record_draining');
+  requireThat(!record.audioCleanup, 'audio_cleanup_in_progress'); record.audioPurged = false;
   requireThat(['microphone', 'display', 'import'].includes(input.kind), 'invalid_source', 400);
   requireThat(record.sources.length < 100, 'source_limit', 429);
-  const source = { id: randomUUID(), epoch: randomUUID(), kind: input.kind, label: String(input.label || input.kind).slice(0, 80),
+  record.sessions ||= [];
+  let session = record.sessions.at(-1);
+  if (!session || session.status !== 'recording') { session = { id: randomUUID(), status: 'recording', startedAt: new Date().toISOString() }; record.sessions.push(session); }
+  const source = { id: randomUUID(), sessionId: session.id, epoch: randomUUID(), kind: input.kind, label: String(input.label || input.kind).slice(0, 80),
     lastSequence: null, watermark: -1, stopped: false };
   record.sources.push(source); record.capture = 'recording'; record.transcription = 'queued';
   emit(record, 'source.started', { sourceId: source.id }); return source;
@@ -39,6 +43,7 @@ export function acknowledge(record, chunk) {
   requireThat(!record.deleted, 'record_deleted', 410);
   const source = record.sources.find(s => s.id === chunk.sourceId && s.epoch === chunk.epoch);
   requireThat(source, 'unknown_source', 400);
+  requireThat(source.sessionId === chunk.sessionId, 'audio_session_mismatch', 400);
   requireThat(Number.isSafeInteger(chunk.sequence) && chunk.sequence >= 0 && chunk.sequence < 100000, 'invalid_sequence', 400);
   requireThat(Number.isSafeInteger(chunk.sampleOffset) && chunk.sampleOffset >= 0 && Number.isSafeInteger(chunk.sampleCount)
     && chunk.sampleCount > 0 && chunk.sampleCount <= 16000 * 15 && chunk.sampleRate === 16000, 'invalid_audio_timing', 400);
@@ -48,6 +53,7 @@ export function acknowledge(record, chunk) {
     return receipt(record, source);
   }
   requireThat(source.lastSequence === null || chunk.sequence <= source.lastSequence, 'outside_sealed_manifest');
+  requireThat(!record.audioCleanup, 'audio_cleanup_in_progress');
   requireThat(!source.stopped || source.lastSequence !== null, 'source_stopped');
   requireThat(record.chunks.length < 10000, 'record_chunk_limit', 429);
   requireThat(record.usage.samples + chunk.sampleCount <= 16000 * 60 * 120, 'record_duration_limit', 429);
@@ -79,13 +85,14 @@ export function seal(record, manifest) {
     requireThat(!record.chunks.some(c => c.sourceId === source.id && c.sequence > entry.lastSequence), 'manifest_precedes_received_audio');
     source.lastSequence = entry.lastSequence; source.stopped = true;
   }
+  for (const session of record.sessions || []) if (session.status === 'recording') session.status = 'sealed';
   record.capture = 'sealed'; emit(record, 'capture.sealed'); finalize(record);
 }
 export function finalize(record) {
   if (record.capture !== 'sealed') return;
   const complete = record.sources.every(s => s.watermark === s.lastSequence)
     && record.chunks.every(c => c.state === 'done');
-  if (complete) { record.capture = 'completed'; record.transcription = 'ready'; emit(record, 'record.finalized', { transcriptRevision: record.transcriptRevision }); }
+  if (complete) { for (const session of record.sessions || []) { session.status = 'completed'; session.endedAt ||= new Date().toISOString(); } record.capture = 'completed'; record.transcription = 'ready'; emit(record, 'record.finalized', { transcriptRevision: record.transcriptRevision }); }
 }
 export function commitTranscript(record, chunkKey, text, generation, translation = null) {
   requireThat(!record.deleted && record.generation === generation, 'stale_generation', 410);
@@ -104,6 +111,8 @@ export function editSegment(record, id, input) {
   requireThat(segment, 'segment_not_found', 404);
   requireThat(segment.revision === input.revision, 'segment_revision_conflict');
   requireThat(typeof input.text === 'string' && input.text.trim() && input.text.length <= 8000, 'invalid_segment_text', 400);
+  const { versions, ...previous } = segment;
+  segment.versions = [...(versions || []), previous].slice(-20);
   segment.text = input.text.trim(); segment.speaker = String(input.speaker ?? segment.speaker).slice(0, 80);
   segment.revision++; segment.edited = true; record.transcriptRevision++;
   emit(record, 'transcript.edited', { segmentId: id, transcriptRevision: record.transcriptRevision });
@@ -124,7 +133,7 @@ export function requestMinutes(record, input = {}) {
   record.jobs.push(job); emit(record, 'minutes.queued', { jobId: job.id }); return job;
 }
 export function validateMinutes(result, snapshot) {
-  requireThat(result && typeof result.title === 'string' && result.title.length <= 300 && Array.isArray(result.sections) && result.sections.length <= 20, 'invalid_minutes_schema', 422);
+  requireThat(result && typeof result.title === 'string' && result.title.trim() && result.title.length <= 300 && Array.isArray(result.sections) && result.sections.length <= 20, 'invalid_minutes_schema', 422);
   requireThat(result.sections.length > 0, 'empty_minutes', 422);
   for (const section of result.sections) {
     requireThat(typeof section.heading === 'string' && section.heading.length <= 200 && Array.isArray(section.items) && section.items.length <= 100, 'invalid_minutes_section', 422);
@@ -133,7 +142,7 @@ export function validateMinutes(result, snapshot) {
       for (const ref of item.evidence) requireThat(snapshot.some(s => s.id === ref.segmentId && s.revision === ref.revision), 'unknown_evidence', 422);
     }
   }
-  requireThat(!result.actions || (Array.isArray(result.actions) && result.actions.length <= 100 && result.actions.every(a => typeof a.text === 'string'
+  requireThat(!result.actions || (Array.isArray(result.actions) && result.actions.length <= 100 && result.actions.every(a => typeof a.text === 'string' && a.text.trim() && a.text.length <= 8000 && (a.owner == null || (typeof a.owner === 'string' && a.owner.length <= 100)) && (a.due == null || (typeof a.due === 'string' && a.due.length <= 100))
     && Array.isArray(a.evidence) && a.evidence.length && a.evidence.every(ref => snapshot.some(s => s.id === ref.segmentId && s.revision === ref.revision)))), 'invalid_actions', 422);
   return result;
 }
@@ -144,15 +153,17 @@ export function commitMinutes(record, jobId, result, fence) {
   if (job.transcriptRevision !== record.transcriptRevision || job.notesRevision !== record.notesRevision || job.baseMinutesRevision !== record.minutesRevision) {
     job.status = 'stale'; emit(record, 'minutes.stale', { jobId }); return;
   }
+  if (record.minutes) record.minutesHistory = [...(record.minutesHistory || []), record.minutes].slice(-10);
   record.minutesRevision++;
   record.minutes = { ...result, actions: result.actions || [], revision: record.minutesRevision, transcriptRevision: job.transcriptRevision, manifestHash: job.manifestHash,
     evidenceSnapshot: job.snapshot, edited: false, generatedAt: new Date().toISOString() };
-  job.status = 'completed'; job.snapshot = []; record.usage.llmTokens += Number(result.usageTokens || 0);
+  job.status = 'completed'; job.snapshot = []; record.usage.llmTokens += Number.isSafeInteger(result.usageTokens) && result.usageTokens >= 0 ? result.usageTokens : 0;
   emit(record, 'minutes.committed', { revision: record.minutesRevision });
 }
 export function publicRecord(record) {
-  const { owner, events, chunks, shares, jobs, ...rest } = record;
+  const { owner, events, chunks, shares, jobs, minutesHistory, ...rest } = record;
   return { ...rest, audio: record.sources.map(s => receipt(record, s)),
     pendingChunks: chunks.filter(c => c.state !== 'done').length,
+    minuteVersions: [...(minutesHistory || []), ...(record.minutes ? [record.minutes] : [])].map(m => ({ revision: m.revision, transcriptRevision: m.transcriptRevision, edited: m.edited })),
     jobs: jobs.map(({ snapshot, notes, fence, ...job }) => job) };
 }

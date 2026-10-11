@@ -20,13 +20,25 @@ async function write(store: string, value: unknown, remove = false) {
   });
 }
 export const localManifests = async (recordId: string) => (await all<Manifest>('manifests')).filter(m => m.recordId === recordId);
-export const pendingCount = async (recordId?: string) => (await all<Pending>('chunks')).filter(c => !recordId || c.recordId === recordId).length;
+export const pendingCount = async (recordId?: string) => (await all<Pending>('chunks')).filter(c => recordId ? c.recordId === recordId : permittedRecords.has(c.recordId)).length;
 export async function enqueue(recordId: string, chunk: AudioChunk) {
-  const pending = await all<Pending>('chunks');
-  if (pending.reduce((n, c) => n + c.bytes, 0) + chunk.sampleCount * 2 > 48 * 1024 * 1024) throw new Error('本地待传音频超过 48 MB，录音已暂停。请恢复网络后继续。');
-  const key = `${recordId}:${chunk.sourceId}:${chunk.epoch}:${chunk.sequence}`;
-  await write('chunks', { key, recordId, chunk, bytes: chunk.sampleCount * 2, createdAt: Date.now() });
-  await write('manifests', { key: `${recordId}:${chunk.sourceId}`, recordId, sourceId: chunk.sourceId, epoch: chunk.epoch, lastSequence: chunk.sequence });
+  const database = await db();
+  return new Promise<void>((resolve, reject) => {
+    const tx = database.transaction(['chunks', 'manifests'], 'readwrite'), chunks = tx.objectStore('chunks'), manifests = tx.objectStore('manifests');
+    const entries = chunks.getAll(); let failure: Error | undefined;
+    entries.onsuccess = () => {
+      const pending = entries.result as Pending[];
+      if (pending.reduce((n, c) => n + c.bytes, 0) + chunk.sampleCount * 2 > 48 * 1024 * 1024) {
+        failure = new Error('本地待传音频超过 48 MB；最后一个片段未能保存，录音已暂停。请恢复网络后继续。'); tx.abort(); return;
+      }
+      const key = `${recordId}:${chunk.sourceId}:${chunk.epoch}:${chunk.sequence}`;
+      chunks.put({ key, recordId, chunk, bytes: chunk.sampleCount * 2, createdAt: Date.now() });
+      const manifestKey = `${recordId}:${chunk.sourceId}`, previous = manifests.get(manifestKey);
+      previous.onsuccess = () => manifests.put({ key: manifestKey, recordId, sourceId: chunk.sourceId, epoch: chunk.epoch,
+        lastSequence: Math.max(chunk.sequence, previous.result?.lastSequence ?? -1) });
+    };
+    tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); tx.onabort = () => reject(failure || tx.error || new Error('音频未能保存到浏览器。'));
+  });
 }
 let uploading = false;
 let permittedRecords = new Set<string>();
@@ -49,9 +61,18 @@ export async function clearRecordAudio(recordId: string) {
   for (const c of await all<Pending>('chunks')) if (c.recordId === recordId) await write('chunks', c.key, true);
   for (const m of await localManifests(recordId)) await write('manifests', m.key, true);
 }
-export async function makeChunk(sourceId: string, epoch: string, sequence: number, sampleOffset: number, buffer: ArrayBuffer): Promise<AudioChunk> {
+export async function downloadPendingAudio(recordId: string) {
+  const entries = (await all<Pending>('chunks')).filter(entry => entry.recordId === recordId)
+    .sort((a, b) => a.chunk.sourceId.localeCompare(b.chunk.sourceId) || a.chunk.sequence - b.chunk.sequence);
+  if (!entries.length) throw new Error('本机没有这条记录的待传音频。');
+  const archive = { format: 'meeting-audio-backup/v1', recordId, manifests: await localManifests(recordId), chunks: entries.map(entry => entry.chunk) };
+  const blob = new Blob([JSON.stringify(archive)], { type: 'application/json' }), url = URL.createObjectURL(blob);
+  const link = document.createElement('a'); link.href = url; link.download = `pending-audio-${recordId}.json`; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+export async function makeChunk(sourceId: string, epoch: string, sequence: number, sampleOffset: number, buffer: ArrayBuffer, sessionId: string): Promise<AudioChunk> {
   const bytes = new Uint8Array(buffer); const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', buffer));
   let binary = ''; for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
-  return { sourceId, epoch, sequence, sampleOffset, sampleCount: bytes.length / 2, sampleRate: 16000,
+  return { sessionId, sourceId, epoch, sequence, sampleOffset, sampleCount: bytes.length / 2, sampleRate: 16000,
     digest: Array.from(hash, b => b.toString(16).padStart(2, '0')).join(''), pcm: btoa(binary) };
 }

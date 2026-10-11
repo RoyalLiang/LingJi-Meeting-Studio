@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 try { process.loadEnvFile(resolve(root, '.env')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
 const production = process.argv.includes('--production');
+if (production) process.env.NODE_ENV = 'production';
 const commands = [[process.execPath, ['services/records/src/server.mjs']], [process.execPath, ['services/records/src/worker.mjs']],
   production ? [process.execPath, ['apps/web/src/production-server.mjs']] : ['npm', ['run', 'dev', '-w', 'apps/web']]];
 const children = commands.map(([command, args]) => spawn(command, args, { cwd: root, env: process.env, stdio: 'inherit' }));

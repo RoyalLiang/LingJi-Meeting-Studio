@@ -30,7 +30,8 @@
     "dev": "node scripts/dev.mjs",
     "build:web": "npm run build -w apps/web",
     "test:records": "node --test --test-concurrency=1 tests/records.test.mjs tests/records-resilience.test.mjs",
-    "start": "node scripts/dev.mjs --production"
+    "start": "node scripts/dev.mjs --production",
+    "test:records:postgres": "node --test tests/records-postgres.test.mjs"
   },
   "dependencies": {
     "protobufjs": "^8.0.0",

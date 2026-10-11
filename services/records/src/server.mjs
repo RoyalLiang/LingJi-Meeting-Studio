@@ -5,7 +5,7 @@ import { createRecord, addSource, acknowledge, seal, publicRecord, editSegment, 
   digest, DomainError, requireThat, emit } from '../../../packages/records/src/record.mjs';
 import { createRepository } from './repository.mjs';
 import { createAuth } from './auth.mjs';
-import { providerStatus } from './providers.mjs';
+import { providerStatus, waveHeader } from './providers.mjs';
 
 async function readBody(request, max = 600000) {
   let size = 0; const chunks = [];
@@ -15,6 +15,10 @@ async function readBody(request, max = 600000) {
 const escapeIcs = text => String(text).replace(/\\/g, '\\\\').replace(/\r?\n/g, '\\n').replace(/[,;]/g, '\\$&');
 export function exportRecord(record, format = 'markdown') {
   if (format === 'json') return JSON.stringify(publicRecord(record), null, 2);
+  if (format === 'issues') return JSON.stringify({ recordId: record.id, minutesRevision: record.minutesRevision,
+    candidates: (record.minutes?.actions || []).map(action => ({ title: action.text,
+      body: `${action.text}\n\n负责人：${action.owner || '待确认'}\n日期：${action.due || '待确认'}\n来源：${action.evidence.map(e => `${e.segmentId}@${e.revision}`).join(', ')}`,
+      evidence: action.evidence })) }, null, 2);
   if (format === 'ics') return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Meeting Studio//Actions//ZH',
     ...(record.minutes?.actions || []).flatMap((a, i) => ['BEGIN:VTODO', `UID:${record.id}-${i}@meeting.local`,
       `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z')}`, `SUMMARY:${escapeIcs(a.text)}`,
@@ -39,7 +43,7 @@ export async function createRecordServer(options = {}) {
   const server = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, 'http://localhost'), path = url.pathname;
-      if (path === '/api/health') { send(res, 200, { ok: true, service: 'records', storage: repo.backend }); return; }
+      if (path === '/api/health') { await repo.list('health-probe'); send(res, 200, { ok: true, service: 'records', storage: repo.backend, audioStorage: repo.audioBackend }); return; }
       requireThat(path.startsWith('/api/'), 'not_found', 404);
       if (!['GET', 'HEAD'].includes(req.method) && req.headers.origin) {
         const allowed = options.origin || process.env.RECORD_PUBLIC_ORIGIN;
@@ -69,6 +73,9 @@ export async function createRecordServer(options = {}) {
       if (path === '/api/bootstrap' && req.method === 'GET') {
         send(res, 200, { email: user.email, csrf: auth.csrf(user), providers: providerStatus(), limits: { maxMinutes: 120, maxRecords: 200, maxChunkSeconds: 15 }, storage: repo.backend }); return;
       }
+      if (path === '/api/deletions' && req.method === 'GET') {
+        send(res, 200, { deletions: (await repo.list()).filter(r => r.owner === user.id && r.deleted).map(r => ({ id: r.id, cleanup: r.cleanup || 'pending' })) }); return;
+      }
       if (path === '/api/records' && req.method === 'POST') {
         const all = (await repo.list()).filter(r => r.owner === user.id && !r.deleted);
         requireThat(all.length < 200, 'record_limit', 429); const r = await repo.insert(createRecord(user.id, await readBody(req, 4000)));
@@ -85,6 +92,33 @@ export async function createRecordServer(options = {}) {
       const route = path.match(/^\/api\/records\/([a-f0-9-]{36})(?:\/(.*))?$/);
       requireThat(route, 'not_found', 404); const id = route[1], action = route[2] || ''; const record = await owned(id, user);
       if (action === '' && req.method === 'GET') { send(res, 200, publicRecord(record)); return; }
+      if (action.startsWith('minutes/versions/') && req.method === 'GET') {
+        const revision = Number(action.slice('minutes/versions/'.length));
+        const minutes = [...(record.minutesHistory || []), record.minutes].find(m => m?.revision === revision);
+        requireThat(minutes, 'version_not_found', 404); send(res, 200, minutes); return;
+      }
+      if (action.startsWith('audio/') && req.method === 'GET') {
+        requireThat(record.retainAudio && !record.audioPurged && record.capture === 'completed', 'audio_unavailable', 404);
+        const chunks = record.chunks.filter(c => c.sourceId === action.slice(6)).sort((a, b) => a.sequence - b.sequence);
+        requireThat(chunks.length, 'audio_unavailable', 404);
+        const length = chunks.reduce((n, c) => n + c.sampleCount * 2, 0), total = length + 44;
+        const range = req.headers.range?.match(/^bytes=(\d+)-(\d*)$/);
+        const start = range ? Number(range[1]) : 0, end = range && range[2] ? Math.min(Number(range[2]), total - 1) : total - 1;
+        requireThat(start <= end && start < total, 'range_not_satisfiable', 416);
+        res.writeHead(range ? 206 : 200, { 'Content-Type': 'audio/wav', 'Accept-Ranges': 'bytes', 'Cache-Control': 'no-store',
+          'Content-Length': end - start + 1, ...(range ? { 'Content-Range': `bytes ${start}-${end}/${total}` } : {}) });
+        let offset = 0;
+        for (let i = -1; i < chunks.length; i++) {
+          if (res.destroyed) break;
+          const bytes = i < 0 ? waveHeader(length) : await repo.readAudio(chunks[i].object);
+          if (offset <= end && offset + bytes.length > start) {
+            const slice = bytes.subarray(Math.max(0, start - offset), Math.min(bytes.length, end - offset + 1));
+            if (!res.write(slice)) await new Promise(resolve => { res.once('drain', resolve); res.once('close', resolve); });
+          }
+          offset += bytes.length; if (offset > end) break;
+        }
+        res.end(); return;
+      }
       if (action === 'events' && req.method === 'GET') {
         let cursor = String(req.headers['last-event-id'] || url.searchParams.get('after') || record.cursor);
         requireThat(/^\d{1,20}$/.test(cursor), 'invalid_cursor', 400);
@@ -107,18 +141,19 @@ export async function createRecordServer(options = {}) {
         streams.add(res); req.on('close', () => { clearInterval(timer); streams.delete(res); }); return;
       }
       if (action === 'export' && req.method === 'GET') {
-        const format = url.searchParams.get('format') || 'markdown'; requireThat(['markdown', 'json', 'ics'].includes(format), 'invalid_format', 400);
-        res.writeHead(200, { 'Content-Type': format === 'json' ? 'application/json' : format === 'ics' ? 'text/calendar; charset=utf-8' : 'text/markdown; charset=utf-8',
-          'Content-Disposition': `attachment; filename="meeting.${format === 'markdown' ? 'md' : format}"`, 'Cache-Control': 'no-store' }); res.end(exportRecord(record, format)); return;
+        const format = url.searchParams.get('format') || 'markdown'; requireThat(['markdown', 'json', 'ics', 'issues'].includes(format), 'invalid_format', 400);
+        res.writeHead(200, { 'Content-Type': ['json', 'issues'].includes(format) ? 'application/json' : format === 'ics' ? 'text/calendar; charset=utf-8' : 'text/markdown; charset=utf-8',
+          'Content-Disposition': `attachment; filename="meeting.${format === 'markdown' ? 'md' : format === 'issues' ? 'issues.json' : format}"`, 'Cache-Control': 'no-store' }); res.end(exportRecord(record, format)); return;
       }
       if (action === 'audio' && req.method === 'POST') {
         const body = await readBody(req); requireThat(typeof body.pcm === 'string' && /^[A-Za-z0-9+/]*={0,2}$/.test(body.pcm), 'invalid_pcm', 400);
         const bytes = Buffer.from(body.pcm, 'base64'); requireThat(bytes.length === body.sampleCount * 2 && bytes.length > 0 && bytes.length <= 480000, 'audio_size_mismatch', 400);
         requireThat(digest(bytes) === body.digest, 'audio_digest_mismatch', 400);
-        acknowledge(structuredClone(record), { sourceId: body.sourceId, epoch: body.epoch, sequence: body.sequence, sampleOffset: body.sampleOffset, sampleCount: body.sampleCount, sampleRate: body.sampleRate, digest: body.digest, object: 'preflight' });
+        const preflight = acknowledge(structuredClone(record), { sessionId: body.sessionId, sourceId: body.sourceId, epoch: body.epoch, sequence: body.sequence, sampleOffset: body.sampleOffset, sampleCount: body.sampleCount, sampleRate: body.sampleRate, digest: body.digest, object: 'preflight' });
+        if (record.chunks.some(c => c.sourceId === body.sourceId && c.epoch === body.epoch && c.sequence === body.sequence)) { send(res, 200, preflight); return; }
         const object = await repo.putAudio(id, bytes);
         const ack = await changeOwned(id, user, r => { requireThat(r.owner === user.id, 'not_found', 404); return acknowledge(r, {
-          sourceId: body.sourceId, epoch: body.epoch, sequence: body.sequence, sampleOffset: body.sampleOffset, sampleCount: body.sampleCount, sampleRate: body.sampleRate, ...object }); });
+          sessionId: body.sessionId, sourceId: body.sourceId, epoch: body.epoch, sequence: body.sequence, sampleOffset: body.sampleOffset, sampleCount: body.sampleCount, sampleRate: body.sampleRate, ...object }); });
         send(res, 200, ack); return;
       }
       if (action === 'shares' && req.method === 'GET') { send(res, 200, { shares: record.shares.map(({ hash, ...s }) => s) }); return; }
@@ -146,6 +181,7 @@ export async function createRecordServer(options = {}) {
       else if (action === 'minutes' && req.method === 'PATCH') result = await changeOwned(id, user, r => {
         requireThat(r.minutes && body.revision === r.minutesRevision, 'minutes_revision_conflict');
         validateMinutes(body.minutes, r.minutes.evidenceSnapshot);
+        r.minutesHistory = [...(r.minutesHistory || []), r.minutes].slice(-10);
         r.minutesRevision++; r.minutes = { ...r.minutes, title: body.minutes.title, sections: body.minutes.sections, actions: body.minutes.actions || [], revision: r.minutesRevision, edited: true }; emit(r, 'minutes.edited'); return publicRecord(r);
       });
       else if (action === '' && req.method === 'PATCH') result = await changeOwned(id, user, r => {
@@ -155,7 +191,7 @@ export async function createRecordServer(options = {}) {
         emit(r, 'record.updated'); return publicRecord(r);
       });
       else if (action === '' && req.method === 'DELETE') result = await changeOwned(id, user, r => {
-        r.deleted = true; r.generation++; r.title = '已删除'; r.segments = []; r.notes = ''; r.minutes = null; r.jobs = []; r.shares = []; r.cleanup = 'pending';
+        r.deleted = true; r.generation++; r.title = '已删除'; r.segments = []; r.notes = ''; r.minutes = null; r.minutesHistory = []; r.jobs = []; r.shares = []; r.cleanup = 'pending';
         emit(r, 'record.deleted'); return { deleted: true, cleanup: r.cleanup };
       });
       else if (action === 'shares' && req.method === 'POST') {

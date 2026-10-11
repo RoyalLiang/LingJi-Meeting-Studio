@@ -5,29 +5,30 @@ import { createRepository } from './repository.mjs';
 import { generateMinutes, transcribe, translateText } from './providers.mjs';
 
 export async function runCycle(repo, providers = {}) {
-  const records = await repo.list();
-  for (const candidate of records) {
+  const records = await repo.listWork();
+  async function processCandidate(candidate) {
+    if (candidate.deleted && candidate.cleanup === 'completed' && Date.now() - (candidate.cleanupAt || 0) < 600000) return;
     if (candidate.deleted || Date.parse(candidate.deleteAt) < Date.now()) {
       await repo.change(candidate.id, r => {
         if (!r.deleted) { r.deleted = true; r.generation++; r.title = '已删除'; r.segments = []; r.notes = ''; r.minutes = null;
-          r.jobs = []; r.shares = []; emit(r, 'record.deleted'); }
+          r.jobs = []; r.shares = []; r.minutesHistory = []; emit(r, 'record.deleted'); }
         r.cleanup = 'pending';
       });
-      await repo.cleanAudio(candidate.id); await repo.change(candidate.id, r => { r.chunks = []; r.cleanup = 'completed'; }); continue;
+      await repo.cleanAudio(candidate.id); await repo.change(candidate.id, r => { r.chunks = []; r.cleanup = 'completed'; r.cleanupAt = Date.now(); }); return;
     }
-    const expired = candidate.chunks.filter(c => !candidate.retainAudio && Date.now() - (c.acceptedAt || Date.parse(candidate.createdAt)) > 86400000 && c.state !== 'done');
+    const expired = candidate.chunks.filter(c => !c.expired && !candidate.retainAudio && Date.now() - (c.acceptedAt || Date.parse(candidate.createdAt)) > 86400000);
     if (expired.length) {
-      await repo.change(candidate.id, r => { for (const c of r.chunks) if (expired.some(e => e.key === c.key)) { c.expired = true; c.attempts = 5; c.error = 'temporary_audio_expired'; delete c.lease; } r.transcription = 'failed'; emit(r, 'audio.expired'); });
+      await repo.change(candidate.id, r => { for (const c of r.chunks) if (expired.some(e => e.key === c.key)) { c.expired = true; if (c.state !== 'done') { c.attempts = 5; c.error = 'temporary_audio_expired'; r.transcription = 'failed'; delete c.lease; } } emit(r, 'audio.expired'); });
       await repo.cleanAudio(candidate.id, new Set(candidate.chunks.filter(c => !expired.some(e => e.key === c.key)).map(c => c.object)));
     }
     let claimed;
-    await repo.change(candidate.id, r => {
+    if (candidate.chunks.some(c => c.state !== 'done' && c.attempts < 5 && (!c.retryAt || c.retryAt <= Date.now()) && (!c.lease || c.lease < Date.now()))) await repo.change(candidate.id, r => {
       if (r.deleted || Date.parse(r.deleteAt) <= Date.now()) return;
       const chunk = r.chunks.find(c => c.state !== 'done' && c.attempts < 5 && (!c.retryAt || c.retryAt <= Date.now())
         && (!c.lease || c.lease < Date.now()) && !r.chunks.some(p => p.sourceId === c.sourceId && p.sequence < c.sequence && p.state !== 'done')
         && r.sources.find(s => s.id === c.sourceId)?.watermark >= c.sequence);
       if (!chunk) return;
-      chunk.lease = Date.now() + 60000; chunk.fence = randomUUID(); chunk.state = 'processing';
+      chunk.lease = Date.now() + 240000; chunk.fence = randomUUID(); chunk.state = 'processing';
       claimed = { record: structuredClone(r), chunk: structuredClone(chunk) };
     });
     if (claimed) {
@@ -54,7 +55,7 @@ export async function runCycle(repo, providers = {}) {
       }
     }
     let jobClaim;
-    await repo.change(candidate.id, r => {
+    if (candidate.jobs.some(j => j.status === 'queued' || (j.status === 'running' && j.lease < Date.now()))) await repo.change(candidate.id, r => {
       if (r.deleted) return;
       const job = r.jobs.find(j => (j.status === 'queued' || (j.status === 'running' && j.lease < Date.now())) && j.attempts < 3);
       if (!job) return;
@@ -74,13 +75,23 @@ export async function runCycle(repo, providers = {}) {
       }
     }
     const latest = await repo.get(candidate.id);
-    if (!latest.retainAudio && latest.capture === 'completed' && latest.chunks.every(c => c.state === 'done')) {
-      await repo.cleanAudio(latest.id); await repo.change(latest.id, r => { r.audioPurged = true; });
+    if (!latest.audioPurged && !latest.retainAudio && latest.capture === 'completed' && latest.chunks.every(c => c.state === 'done')) {
+      let purge = false;
+      await repo.change(latest.id, r => { if (r.capture === 'completed' && !r.retainAudio) { r.audioCleanup = true; purge = true; } });
+      if (purge) { await repo.cleanAudio(latest.id); await repo.change(latest.id, r => { r.audioPurged = true; r.audioCleanup = false; }); }
     } else {
       // Objects written before a failed metadata transaction are removed after a one-hour grace period.
-      await repo.cleanAudio(latest.id, new Set(latest.chunks.filter(c => !c.expired).map(c => c.object)), Date.now() - 3600000);
+      if (Date.now() - (latest.gcAt || 0) > 3600000) {
+        await repo.cleanAudio(latest.id, new Set(latest.chunks.filter(c => !c.expired).map(c => c.object)), Date.now() - 3600000);
+        await repo.change(latest.id, r => { r.gcAt = Date.now(); });
+      }
     }
   }
+  let next = 0;
+  const concurrency = Math.max(1, Math.min(8, Number(process.env.RECORD_WORKER_CONCURRENCY || 3)));
+  await Promise.all(Array.from({ length: concurrency }, async () => {
+    while (next < records.length) await processCandidate(records[next++]);
+  }));
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const repo = await createRepository(); let stop = false;

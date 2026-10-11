@@ -8,12 +8,12 @@ import { createRepository } from '../services/records/src/repository.mjs';
 import { createRecordServer } from '../services/records/src/server.mjs';
 import { runCycle } from '../services/records/src/worker.mjs';
 
-const audio = (source, sequence, bytes = Buffer.alloc(3200)) => ({ sourceId: source.id, epoch: source.epoch, sequence,
+const audio = (source, sequence, bytes = Buffer.alloc(3200)) => ({ sessionId: source.sessionId, sourceId: source.id, epoch: source.epoch, sequence,
   sampleOffset: sequence * 1600, sampleCount: 1600, sampleRate: 16000, digest: digest(bytes), object: 'test' });
 test('durable identity, missing ranges, seal repair and finalization barrier', () => {
   const r = createRecord('a'), s = addSource(r, { kind: 'microphone' });
   assert.deepEqual(acknowledge(r, audio(s, 1)).missing, [0]);
-  seal(r, [{ sourceId: s.id, epoch: s.epoch, lastSequence: 1 }]); assert.equal(r.capture, 'sealed');
+  seal(r, [{ sessionId: s.sessionId, sourceId: s.id, epoch: s.epoch, lastSequence: 1 }]); assert.equal(r.capture, 'sealed');
   assert.equal(acknowledge(r, audio(s, 0)).watermark, 1);
   const count = r.chunks.length; acknowledge(r, audio(s, 0)); assert.equal(r.chunks.length, count);
   assert.throws(() => acknowledge(r, { ...audio(s, 0), digest: 'different' }), /audio_identity_conflict/);
@@ -23,7 +23,7 @@ test('durable identity, missing ranges, seal repair and finalization barrier', (
 });
 test('minutes preserve transcript evidence and fence stale results and human edits', () => {
   const r = createRecord('a'), s = addSource(r, { kind: 'microphone' }); acknowledge(r, audio(s, 0));
-  commitTranscript(r, r.chunks[0].key, '明天评审', r.generation); seal(r, [{ sourceId: s.id, epoch: s.epoch, lastSequence: 0 }]);
+  commitTranscript(r, r.chunks[0].key, '明天评审', r.generation); seal(r, [{ sessionId: s.sessionId, sourceId: s.id, epoch: s.epoch, lastSequence: 0 }]);
   const job = requestMinutes(r); job.fence = 'one';
   const result = { title: '评审', sections: [{ heading: '决定', items: [{ text: '明天评审', evidence: [{ segmentId: r.segments[0].id, revision: 1 }] }] }], actions: [] };
   assert.throws(() => commitMinutes(r, job.id, result, 'two'), /stale_job/);
