@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowClockwise, ArrowSquareOut, Check, Sparkle, X, PencilSimple } from '@phosphor-icons/react';
 import type { Evidence, Minutes as MinutesModel, RecordDetail, Segment } from '../model';
 import { api, messageOf } from '../api';
+import { Select } from './Select';
 import { Button, Download, Empty, Status } from './ui';
 export function MinutesPanel({ record, busy, onClose, generate, edit, cite }: { record: RecordDetail; busy: boolean; onClose: () => void;
-  generate: (template: string) => Promise<void>; edit: (minutes: MinutesModel) => Promise<boolean>; cite: (evidence: Evidence, snapshot?: Segment[]) => void }) {
+  generate: (template: string, mode: string) => Promise<void>; edit: (minutes: MinutesModel) => Promise<boolean>; cite: (evidence: Evidence, snapshot?: Segment[]) => void }) {
   const panel = useRef<HTMLElement>(null);
   const mobile = matchMedia('(max-width: 700px)').matches;
   useEffect(() => {
@@ -22,17 +23,18 @@ export function MinutesPanel({ record, busy, onClose, generate, edit, cite }: { 
     document.addEventListener('keydown', trap);
     return () => { children.forEach(element => { element.inert = false; }); document.removeEventListener('keydown', trap); document.querySelector<HTMLButtonElement>('[aria-expanded]')?.focus(); };
   }, [mobile]);
+  const [mode,setMode] = useState('extractive');
   const [template, setTemplate] = useState('meeting'), [draft, setDraft] = useState<MinutesModel | null>(null);
   const [historical, setHistorical] = useState<MinutesModel | null>(null), [historyError, setHistoryError] = useState('');
   const job = record.jobs.at(-1), running = ['queued', 'running'].includes(job?.status || ''); const minutes = historical || record.minutes;
   return <aside ref={panel} role={mobile ? 'dialog' : undefined} aria-modal={mobile || undefined} className="minutes-panel glass" aria-label="会议纪要"><header><div className="heading-icon"><Sparkle size={20}/><h2>会议纪要</h2></div><Button variant="ghost" aria-label="收起纪要" onClick={onClose}><X size={20}/></Button></header>
-    <div className="minutes-content">{record.minuteVersions?.length > 1 && <label className="history-select">纪要版本<select value={historical?.revision || record.minutesRevision} onChange={async e => { const revision = Number(e.target.value); setDraft(null); if (revision === record.minutesRevision) { setHistorical(null); return; } try { setHistorical(await api<MinutesModel>(`/records/${record.id}/minutes/versions/${revision}`)); setHistoryError(''); } catch (error) { setHistoryError(messageOf(error)); } }}>{[...record.minuteVersions].reverse().map(version => <option key={version.revision} value={version.revision}>v{version.revision} · {version.edited ? '人工修订' : 'AI 草稿'}{version.revision === record.minutesRevision ? ' · 当前' : ''}</option>)}</select></label>}{historyError && <p role="alert">{historyError}</p>}<div className="minutes-toolbar"><label className="sr-only" htmlFor="template">纪要模板</label><select id="template" value={template} onChange={e => setTemplate(e.target.value)}><option value="meeting">会议纪要</option><option value="interview">访谈整理</option><option value="lecture">学习笔记</option></select>
-      <Button disabled={busy || running || record.capture !== 'completed'} onClick={() => void generate(template)}><ArrowClockwise size={16}/>{running ? '整理中…' : minutes ? '重新整理' : '生成纪要'}</Button></div>
+    <div className="minutes-content">{record.minuteVersions?.length > 1 && <label className="history-select">纪要版本<Select label="纪要版本" value={String(historical?.revision || record.minutesRevision)} onChange={async value => { const revision = Number(value); setDraft(null); setHistoryError(''); try { setHistorical(revision === record.minutesRevision ? null : await api<MinutesModel>(`/records/${record.id}/minutes/versions/${revision}`)); } catch (e) { setHistoryError(messageOf(e)); } }} options={[...record.minuteVersions].reverse().map(version => ({value:String(version.revision),label:`v${version.revision} · ${version.edited ? '人工修订' : 'AI 草稿'}${version.revision === record.minutesRevision ? ' · 当前' : ''}`}))}/></label>}{historyError && <p role="alert">{historyError}</p>}<div className="minutes-mode"><Select label="纪要处理方式" value={mode} onChange={setMode} options={[{value:'extractive',label:'本地提取 · 无需模型'},{value:'model',label:'AI 整理 · 使用已配置模型'}]}/><p className="fine-print">{mode === 'model' ? '转录与笔记将发送到已配置模型。' : '按规则引用原文，不发送到云端；不等同于 AI 总结。'}</p></div><div className="minutes-toolbar"><label className="sr-only" htmlFor="template">纪要模板</label><Select label="纪要模板" value={template} onChange={setTemplate} options={[{value:'meeting',label:'会议纪要'},{value:'interview',label:'访谈整理'},{value:'lecture',label:'学习笔记'}]}/>
+      <Button disabled={busy || running || record.capture !== 'completed'} onClick={() => void generate(template,mode)}><ArrowClockwise size={16}/>{running ? '整理中…' : minutes ? '重新整理' : '生成纪要'}</Button></div>
       {job?.status === 'failed' && <div className="notice error" role="alert">整理未完成（{job.error}）。检查模型配置后可重新生成。</div>}
       {job?.status === 'stale' && <div className="notice">转录或人工内容已变化，本次旧结果已隔离，请重新整理。</div>}
       {minutes && minutes.transcriptRevision !== record.transcriptRevision && <div className="notice">此纪要引用转录 v{minutes.transcriptRevision}，当前为 v{record.transcriptRevision}。请重新核对。</div>}
       {!minutes ? <Empty icon={<Sparkle size={32}/>} title={running ? '正在梳理讨论脉络' : '从讨论，到共识'}>{record.capture === 'completed' ? '选择模板，整理重点与行动候选。每条内容都会保留转录引用。' : '结束录音并完成转录后，即可生成纪要。'}</Empty>
-        : <><div className="minutes-title"><h3>{minutes.title}</h3><Status>{minutes.edited ? '人工修订' : 'AI 草稿'} · v{minutes.revision}</Status></div>
+        : <><div className="minutes-title"><h3>{minutes.title}</h3><Status>{minutes.edited ? '人工修订' : minutes.method === 'extractive' ? '本地提取' : 'AI 草稿'} · v{minutes.revision}</Status></div>
           <div className="actions"><Button disabled={Boolean(historical)} onClick={() => setDraft(structuredClone(minutes))}><PencilSimple size={16}/>修订</Button><Download href={`/api/records/${record.id}/export?format=markdown`}><ArrowSquareOut size={16}/>导出</Download></div>
           {(draft || minutes).sections.map((section, sectionIndex) => <section className="minutes-section" key={sectionIndex}><h4>{section.heading}</h4>{section.items.map((item, itemIndex) => <div className="minute-item" key={itemIndex}>
             {draft ? <textarea aria-label={`${section.heading}第 ${itemIndex + 1} 项`} value={item.text} onChange={e => { const next = structuredClone(draft); next.sections[sectionIndex].items[itemIndex].text = e.target.value; setDraft(next); }}/>

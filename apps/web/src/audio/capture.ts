@@ -1,3 +1,4 @@
+import { preferredDevice, inputDevices, microphoneConstraints } from './devices';
 import { api } from '../api';
 import type { RecordDetail, Source, SourceKind } from '../model';
 import { drainQueue, enqueue, makeChunk } from './queue';
@@ -11,15 +12,15 @@ export class CaptureController {
   sources: Source[] = []; active = false;
   constructor(private recordId: string, private onMeter: (value: number) => void, private onFailure: (error: Error) => void,
     private onSaved: () => void, private onEnded: () => void) {}
-  async start(kind: Exclude<SourceKind, 'import'>) {
+  async start(kind: Exclude<SourceKind, 'import'>, selectedDevice = preferredDevice()) {
     // The browser permission request must remain in the original user gesture.
     const permission = kind === 'display' ? navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
-      : navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false });
+      : inputDevices().then(devices => navigator.mediaDevices.getUserMedia({audio: microphoneConstraints(selectedDevice, devices), video: false})).catch(error => { if (error.name !== 'OverconstrainedError' && error.name !== 'NotFoundError') throw error; return navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true},video:false}); });
     const stream = await permission;
     if (!stream.getAudioTracks().length) { stream.getTracks().forEach(t => t.stop()); throw new Error('共享来源没有音轨。请选择带音频的标签页并勾选共享音频，或改用麦克风/导入。'); }
     let context: AudioContext | undefined;
     try {
-      const source = await api<Source>(`/records/${this.recordId}/sources`, 'POST', { kind, label: kind === 'display' ? '共享音轨' : '麦克风' });
+      const source = await api<Source>(`/records/${this.recordId}/sources`, 'POST', { kind, label: stream.getAudioTracks()[0]?.label || (kind === 'display' ? '共享音轨' : '默认麦克风') });
       context = new AudioContext(); await context.audioWorklet.addModule('/audio-worklet.js'); await context.resume();
       const input = context.createMediaStreamSource(stream), node = new AudioWorkletNode(context, 'meeting-pcm');
       const mute = context.createGain(); mute.gain.value = 0; input.connect(node).connect(mute).connect(context.destination);
