@@ -19,8 +19,9 @@
     "dev:ai": "node ./services/ai-worker/src/worker.mjs",
     "db:migrate:transcript": "node ./services/transcript-api/src/migrate.mjs",
     "lint": "echo \"TODO: configure lint\"",
-    "test": "node --test --test-concurrency=1 ./tests/memory-smoke.test.mjs ./tests/provider-and-desktop-preview.test.mjs",
-    "test:smoke": "node --test --test-concurrency=1 ./tests/memory-smoke.test.mjs ./tests/provider-and-desktop-preview.test.mjs",
+    "test": "node --test --test-concurrency=1 ./tests/memory-smoke.test.mjs ./tests/provider-and-desktop-preview.test.mjs ./tests/domain-and-components.test.mjs",
+    "test:smoke": "node --test --test-concurrency=1 ./tests/memory-smoke.test.mjs ./tests/provider-and-desktop-preview.test.mjs ./tests/domain-and-components.test.mjs",
+    "test:domain": "node --test ./tests/domain-and-components.test.mjs",
     "test:postgres": "node --test --test-concurrency=1 ./tests/postgres-smoke.test.mjs",
     "typecheck": "echo \"TODO: configure typecheck\""
   },

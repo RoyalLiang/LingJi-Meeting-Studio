@@ -45,7 +45,12 @@ export async function runWithStack(options, callback) {
   });
 
   await api.start();
-  await gateway.start();
+  try {
+    await gateway.start();
+  } catch (startError) {
+    await api.stop();
+    throw startError;
+  }
 
   try {
     await callback({

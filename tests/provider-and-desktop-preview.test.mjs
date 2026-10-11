@@ -182,8 +182,8 @@ test("gateway falls back to mock when deepgram is configured but unavailable", a
   try {
     await runWithStack(
       {
-        apiPort: 4734,
-        gatewayPort: 4735,
+        apiPort: 4744,
+        gatewayPort: 4745,
         storageBackend: "memory",
         gatewayOptions: {
           asrProvider: "deepgram",
