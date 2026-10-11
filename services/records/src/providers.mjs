@@ -5,11 +5,11 @@ export function providerStatus(env = process.env) {
     minutes: Boolean(env.LLM_API_URL && env.LLM_API_KEY && env.LLM_MODEL),
     fixture: env.RECORD_PROVIDER === 'fixture' && env.NODE_ENV !== 'production' };
 }
-function wave(pcm) {
-  const header = Buffer.alloc(44); header.write('RIFF'); header.writeUInt32LE(36 + pcm.length, 4); header.write('WAVEfmt ', 8);
+export function waveHeader(length) {
+  const header = Buffer.alloc(44); header.write('RIFF'); header.writeUInt32LE(36 + length, 4); header.write('WAVEfmt ', 8);
   header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20); header.writeUInt16LE(1, 22); header.writeUInt32LE(16000, 24);
-  header.writeUInt32LE(32000, 28); header.writeUInt16LE(2, 32); header.writeUInt16LE(16, 34); header.write('data', 36); header.writeUInt32LE(pcm.length, 40);
-  return Buffer.concat([header, pcm]);
+  header.writeUInt32LE(32000, 28); header.writeUInt16LE(2, 32); header.writeUInt16LE(16, 34); header.write('data', 36); header.writeUInt32LE(length, 40);
+  return header;
 }
 async function checkedFetch(url, options, timeout = 45000) {
   const response = await fetch(url, { ...options, signal: AbortSignal.timeout(timeout) });
@@ -28,7 +28,7 @@ export async function transcribe(bytes, record, chunk, env = process.env) {
     return alternative.transcript;
   }
   requireThat(env.ASR_API_URL && env.ASR_API_KEY, 'asr_not_configured', 503);
-  const form = new FormData(); form.append('file', new Blob([wave(bytes)], { type: 'audio/wav' }), 'chunk.wav');
+  const form = new FormData(); form.append('file', new Blob([waveHeader(bytes.length), bytes], { type: 'audio/wav' }), 'chunk.wav');
   form.append('model', env.ASR_MODEL || 'whisper-1'); form.append('language', record.language);
   const result = await checkedFetch(env.ASR_API_URL, { method: 'POST', headers: { Authorization: `Bearer ${env.ASR_API_KEY}` }, body: form });
   requireThat(typeof result.text === 'string', 'invalid_asr_response', 502); return result.text;
