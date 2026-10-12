@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
 import { stripTypeScriptTypes } from 'node:module';
 
-async function captureHarness({ noDisplayAudio = false, micFailure = false, displayDenied = false, displayUnsupported = false } = {}) {
+async function captureHarness({ noDisplayAudio = false, micFailure = false, displayDenied = false, displayUnsupported = false, recordId = 'record' } = {}) {
   let source = await readFile(new URL('../apps/web/src/audio/capture.ts', import.meta.url), 'utf8');
   source = stripTypeScriptTypes(source, { mode: 'transform' }).replace(/^import .*$/gm, '').replace(/export /g, '');
   const signalSource = stripTypeScriptTypes(await readFile(new URL('../apps/web/src/audio/signal.ts', import.meta.url), 'utf8')).replace(/^import .*$/gm, '').replace(/export /g, '');
@@ -32,9 +32,37 @@ async function captureHarness({ noDisplayAudio = false, micFailure = false, disp
   };
   sandbox.openMicrophone = () => sandbox.navigator.mediaDevices.getUserMedia({ audio: true });
   vm.runInNewContext(signalSource + '\n' + source + '\nexports.CaptureController = CaptureController;', sandbox);
-  const controller = new sandbox.exports.CaptureController('record', () => {}, () => {}, () => {}, () => {}, sources => health.push(structuredClone(sources)));
+  const controller = new sandbox.exports.CaptureController(recordId, () => {}, () => {}, () => {}, () => {}, sources => health.push(structuredClone(sources)));
   return { controller, nodes, health, calls, contexts, mic, display, uploads };
 }
+
+test('quick recording requests permissions before record creation completes', async () => {
+  let resolveRecord;
+  const recordId = new Promise(resolve => { resolveRecord = resolve; });
+  const h = await captureHarness({ recordId });
+  const started = h.controller.startMeeting();
+  assert.equal(h.calls.filter(call => call === 'microphone').length, 1);
+  assert.equal(h.calls.filter(call => typeof call === 'object').length, 1);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.controller.sources.length, 0);
+  resolveRecord('quick-record');
+  assert.equal((await started).length, 0);
+  assert.equal(h.controller.sources.length, 2);
+  await h.controller.stop();
+});
+
+test('failed quick record creation releases both permission streams', async () => {
+  let rejectRecord;
+  const recordId = new Promise((_, reject) => { rejectRecord = reject; });
+  const h = await captureHarness({ recordId });
+  const started = h.controller.startMeeting();
+  await new Promise(resolve => setImmediate(resolve));
+  rejectRecord(new Error('record creation failed'));
+  assert.equal((await started).length, 2);
+  assert.equal(h.controller.active, false);
+  assert.equal(h.mic.audioTrack.readyState, 'ended');
+  assert.equal(h.display.audioTrack.readyState, 'ended');
+});
 
 test('actual capture path reports zero PCM as silence instead of indefinitely appearing healthy', async () => {
   const h = await captureHarness();

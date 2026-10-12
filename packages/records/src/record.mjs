@@ -27,14 +27,20 @@ export function createRecord(owner, input = {}) {
 }
 export function addSource(record, input) {
   requireThat(!record.deleted, 'record_deleted', 410);
+  requireThat(record.capture !== 'completed', 'record_completed');
   requireThat(record.capture !== 'sealed', 'record_draining');
+  requireThat(record.capture !== 'paused' || record.sources.every(s => s.watermark === s.lastSequence), 'pause_audio_pending');
   requireThat(!record.audioCleanup, 'audio_cleanup_in_progress'); record.audioPurged = false;
   requireThat(['microphone', 'display', 'import'].includes(input.kind), 'invalid_source', 400);
   requireThat(record.sources.length < 100, 'source_limit', 429);
   record.sessions ||= [];
   let session = record.sessions.at(-1);
-  if (!session || session.status !== 'recording') { session = { id: randomUUID(), status: 'recording', startedAt: new Date().toISOString() }; record.sessions.push(session); }
-  const source = { id: randomUUID(), sessionId: session.id, epoch: randomUUID(), kind: input.kind, label: String(input.label || input.kind).slice(0, 80),
+  if (!session || session.status !== 'recording') {
+    const timelineOffsetMs = Math.max(0, ...record.sources.map(s => (s.timelineOffsetMs || 0) + Math.max(0,
+      ...record.chunks.filter(c => c.sourceId === s.id).map(c => (c.sampleOffset + c.sampleCount) / 16))));
+    session = { id: randomUUID(), status: 'recording', timelineOffsetMs, startedAt: new Date().toISOString() }; record.sessions.push(session);
+  }
+  const source = { id: randomUUID(), sessionId: session.id, timelineOffsetMs: session.timelineOffsetMs || 0, epoch: randomUUID(), kind: input.kind, label: String(input.label || input.kind).slice(0, 80),
     lastSequence: null, watermark: -1, stopped: false };
   record.sources.push(source); record.capture = 'recording'; record.transcription = 'queued';
   emit(record, 'source.started', { sourceId: source.id }); return source;
@@ -74,7 +80,8 @@ export function receipt(record, source) {
   const missing = []; for (let i = source.watermark + 1; i <= highest; i++) if (!present.has(i)) missing.push(i);
   return { durable: true, sourceId: source.id, epoch: source.epoch, watermark: source.watermark, missing, cursor: record.cursor };
 }
-export function seal(record, manifest) {
+function stopSources(record, manifest) {
+  requireThat(!record.deleted, 'record_deleted', 410);
   requireThat(Array.isArray(manifest) && manifest.length === record.sources.length, 'incomplete_manifest', 400);
   const ids = new Set(manifest.map(m => m.sourceId));
   requireThat(ids.size === manifest.length, 'duplicate_manifest_source', 400);
@@ -83,9 +90,22 @@ export function seal(record, manifest) {
     requireThat(entry && Number.isInteger(entry.lastSequence) && entry.lastSequence >= -1 && entry.lastSequence < 100000, 'invalid_manifest', 400);
     requireThat(source.lastSequence === null || source.lastSequence === entry.lastSequence, 'manifest_immutable');
     requireThat(!record.chunks.some(c => c.sourceId === source.id && c.sequence > entry.lastSequence), 'manifest_precedes_received_audio');
-    source.lastSequence = entry.lastSequence; source.stopped = true;
+  }
+  for (const source of record.sources) {
+    source.lastSequence = manifest.find(m => m.sourceId === source.id).lastSequence; source.stopped = true;
   }
   for (const session of record.sessions || []) if (session.status === 'recording') session.status = 'sealed';
+}
+export function pause(record, manifest) {
+  requireThat(record.capture !== 'completed', 'record_completed');
+  requireThat(record.capture === 'recording' || record.capture === 'paused', 'capture_not_recording');
+  stopSources(record, manifest);
+  if (record.capture === 'paused') return;
+  record.capture = 'paused'; emit(record, 'capture.paused');
+}
+export function seal(record, manifest) {
+  stopSources(record, manifest);
+  if (record.capture === 'completed') return;
   record.capture = 'sealed'; emit(record, 'capture.sealed'); finalize(record);
 }
 export function finalize(record) {
@@ -99,8 +119,9 @@ export function commitTranscript(record, chunkKey, text, generation, translation
   const chunk = record.chunks.find(c => c.key === chunkKey);
   requireThat(chunk, 'chunk_not_found', 404);
   if (chunk.state === 'done') return;
+  const timelineOffsetMs = record.sources.find(s => s.id === chunk.sourceId)?.timelineOffsetMs || 0;
   if (text.trim()) record.segments.push({ id: randomUUID(), revision: 1, sourceId: chunk.sourceId, chunkKey,
-    startMs: chunk.sampleOffset / 16, endMs: (chunk.sampleOffset + chunk.sampleCount) / 16,
+    startMs: timelineOffsetMs + chunk.sampleOffset / 16, endMs: timelineOffsetMs + (chunk.sampleOffset + chunk.sampleCount) / 16,
     text: text.trim(), speaker: '', translation, edited: false });
   chunk.state = 'done'; delete chunk.error; delete chunk.lease;
   record.transcriptRevision++; record.transcription = 'processing';

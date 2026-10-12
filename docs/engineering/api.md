@@ -8,8 +8,9 @@
 | GET /bootstrap | csrf、账户、模型配置可用性、配额 |
 | GET/POST /records | 自有记录列表/搜索（q）与创建 |
 | GET/PATCH/DELETE /records/:id | 一致快照、标题/笔记/翻译目标、墓碑删除 |
-| POST /records/:id/sources | 启动来源；返回 sessionId、source id、epoch |
+| POST /records/:id/sources | 启动或继续来源；返回 sessionId、source id、epoch、timelineOffsetMs；已结束会议拒绝新增音轨 |
 | POST /records/:id/audio | PCM16、16kHz、单声道，持久元数据回执 |
+| POST /records/:id/pause | 全部来源的 epoch 与 lastSequence；封存当前采集段并进入 paused，可继续本场会议 |
 | POST /records/:id/seal | 全部来源的 epoch 与 lastSequence；范围内仍可补缺片 |
 | POST /records/:id/retry | 配置修正后重试未完成识别；已过期原音不能恢复 |
 | GET /records/:id/events?after=cursor | 持久事件 SSE；过期 reset，失权 revoked |
@@ -31,7 +32,7 @@
 
 回执 `durable, sourceId, epoch, watermark, missing, cursor` 表示对象与元数据曾在接收时持久提交；原音之后仍受用户选择的 TTL 约束，回执不代表永久留存、识别完成或模型正确。乱序片段不推进连续 watermark。
 
-Record capture 与 transcription 分离。seal 后只有音频连续且所有处理成功才转 completed；模型缺配置/失败会 blocked/failed，不能假装结束。纪要必须使用已完成转录；输入快照、笔记修订、模型配置与模板组成任务身份，租约/fence 和预期人工版本隔离旧结果。
+Record capture 与 transcription 分离。创建时可不提供标题，会后通过 PATCH 补填。paused 保留同一会议，下一次来源接在上一连续采集段的最长音轨之后，缺片补传完成后才可继续。sealed/completed 不接受新音轨，下一场需创建新记录。seal 后只有音频连续且所有处理成功才转 completed；转录服务缺配置或失败会 blocked/failed，不能假装完成。终稿纪要使用已完成转录，会中纪要使用带版本的已确认片段；输入快照、笔记修订、模型配置与模板组成任务身份，租约/fence 和预期人工版本隔离旧结果。
 
 事件 cursor 是十进制字符串，仅在同一记录内单调。事件日志最多 1000 条。收到消息后客户端取一致快照；reset 也重新取快照。每条纪要内容的 evidence 必须匹配生成时的 segmentId/revision。
 

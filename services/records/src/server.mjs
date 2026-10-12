@@ -2,7 +2,7 @@ import { setAutomation } from '../../../packages/records/src/automation.mjs';
 import http from 'node:http';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { createRecord, addSource, acknowledge, seal, publicRecord, editSegment, requestMinutes, validateMinutes,
+import { createRecord, addSource, acknowledge, seal, pause, publicRecord, editSegment, requestMinutes, validateMinutes,
   digest, DomainError, requireThat, emit } from '../../../packages/records/src/record.mjs';
 import { createRepository } from './repository.mjs';
 import { createAuth } from './auth.mjs';
@@ -193,6 +193,7 @@ export async function createRecordServer(options = {}) {
       let result;
       if (action === 'sources' && req.method === 'POST') result = await changeOwned(id, user, r => addSource(r, body));
       else if (action === 'seal' && req.method === 'POST') result = await changeOwned(id, user, r => { seal(r, body.sources); return publicRecord(r); });
+      else if (action === 'pause' && req.method === 'POST') result = await changeOwned(id, user, r => { pause(r, body.sources); return publicRecord(r); });
       else if (action === 'retry' && req.method === 'POST') result = await changeOwned(id, user, r => {
         requireThat(!r.chunks.some(c => c.expired), 'temporary_audio_expired', 410);
         for (const c of r.chunks) if (c.state !== 'done') { c.attempts = 0; c.retryAt = 0; }

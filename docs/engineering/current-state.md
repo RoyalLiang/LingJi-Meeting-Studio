@@ -21,9 +21,9 @@ flowchart LR
 
 | 能力 | 当前实现 | 已有证据 |
 | --- | --- | --- |
-| 页面 | 固定居中的玻璃框架、内部滚动、按需纪要、浅/深主题、自定义选择器与播放器 | 桌面 1280×720、手机 390×844/320×740；外层不滚动；原生 select 与 audio controls 数量为 0 |
+| 页面 | 固定居中的玻璃框架、内部滚动、按需纪要、浅/深主题、自定义选择器与播放器；全宽 13px 紧凑转录、双音源摘要 | 桌面 1280×720、手机 390×844/320×740；外层不滚动；原生 select 与 audio controls 数量为 0 |
 | 来源 | 默认会议录音同时采集共享音轨与麦克风，分别诊断信号；自动模式优先已识别实体麦克风，可指定设备；音频/文字导入 | 合成语音经过实际浏览器采集、AudioWorklet、上传、真实豆包与 SSE 显示；实体设备矩阵未验 |
-| 领域 | Record 长期容器；Session 可中断采集；Source/epoch/sequence/sampleOffset 定位音频 | 领域、乱序、重传及停止协议故障测试 |
+| 领域 | Record 长期容器；快速记录可空标题；暂停后新 Session 继续本场，结束后新建；Source/epoch/sequence/sampleOffset 定位音频 | 领域、乱序、重传及停止协议故障测试 |
 | 持久化 | SQLite FULL/WAL；Postgres JSONB 行锁；音频 fsync 或 S3 条件写 | SQLite 重启恢复；PG 未集成；S3 仅 SDK 契约 fixture |
 | 接收 | 先对象后元数据，哈希、乱序水位、缺片范围、冲突校验 | 持久 ACK、seal 后补传、冲突及 WAV Range 测试 |
 | 事件 | 聚合内原子事件日志，最多 1000 条；SSE id/cursor、过期 reset | SSE 与权限测试；浏览器导入后转录自动出现 |
