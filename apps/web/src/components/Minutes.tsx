@@ -1,6 +1,5 @@
 import { SummaryTables } from './SummaryTables';
 import { SummaryCharts } from './SummaryCharts';
-import { CurrentDiscussion } from './CurrentDiscussion';
 import { useContentFollow } from './useContentFollow';
 import { TopicMap } from './TopicMap';
 import { MinutesTree, SpeakerMinutes, DecisionMinutes } from './MinutesViews';
@@ -68,7 +67,6 @@ export function MinutesPanel({ record, busy, onClose, generate, edit, cite, auto
           </div>{!inline && <Button variant="ghost" className="topic-chart-toggle" onClick={()=>{setView(view==='topics'?'ai':'topics');}}>{view==='topics'?'返回 AI 主题视图':'查看主题时长'}</Button>}<p className="fine-print">AI 可能遗漏或误解。请沿引用核对原文后使用纪要。</p>
         </>}
       {!minutes && !running && <div className="minutes-empty-actions">{record.capture !== 'completed' && !record.autoMinutes?.enabled && modelReady ? <Button variant="primary" disabled={busy} onClick={()=>void automate(true,record.autoMinutes?.intervalSeconds || 30)}>开启自动 AI 纪要</Button> : <Button onClick={()=>setSettingsOpen(true)}>整理会议纪要</Button>}</div>}
-      {inline && !historical && !draft && <CurrentDiscussion record={record} minutes={minutes || null} job={job} cite={cite}/>}
       <div ref={follow.end} className="content-follow-anchor" aria-hidden="true"/>
       {active && view === 'ai' && !follow.following && <Button className="minutes-follow" onClick={follow.resume}>回到最新纪要</Button>}
     </div></Container>;
