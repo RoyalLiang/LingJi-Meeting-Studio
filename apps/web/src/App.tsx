@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { ArrowDown, ArrowSquareOut, Check, CloudCheck, CloudSlash, FileText, GearSix, Headphones, Microphone, Moon,
+import { ArrowDown, ArrowSquareOut, Check, CloudCheck, CloudSlash, FileText, GearSix, Microphone, Moon,
   Plus, MagnifyingGlass, ShareNetwork, SignOut, Sparkle, Sun, Trash, WarningCircle, X, CaretRight } from '@phosphor-icons/react';
 import { api, messageOf, setCsrf, ApiError } from './api';
 import { subscribeToRecord, type ConnectionState } from './record-subscription';
 import type { Bootstrap, RecordDetail, RecordListItem, Segment, Minutes, Evidence } from './model';
 import { timecode } from './model';
+import { Brand } from './components/Brand';
+import { ScrollToTop } from './components/ScrollToTop';
 import { Select } from './components/Select';
 import { AudioPlayer } from './components/AudioPlayer';
 import { ProviderSettings } from './components/ProviderSettings';
@@ -31,7 +33,7 @@ function Auth({ ready }: { ready: () => void }) {
     try { const response = await api<{ csrf: string }>(`/auth/${register ? 'register' : 'login'}`, 'POST', Object.fromEntries(form)); setCsrf(response.csrf); ready(); }
     catch (e) { setError(messageOf(e)); } finally { setBusy(false); }
   }
-  return <main className="auth-page"><section className="auth-story"><div className="brand"><span className="brand-mark"><Headphones size={24} weight="duotone"/></span><b>聆记</b><span>Meeting Studio</span></div>
+  return <main className="auth-page"><section className="auth-story"><Brand/>
     <div><p className="kicker">让注意力，回到对话</p><h1>好好听。<br/>值得记住的，<br/><em>交给聆记。</em></h1><p>实时转录，梳理共识。<br/>从一句话，追溯每一个决定。</p></div><span className="auth-foot">浏览器打开即用 · 数据按账户隔离</span></section>
     <section className="auth-card glass"><p className="kicker">你的会议空间</p><h2>{register ? '创建账户' : '欢迎回来'}</h2><p className="muted">{register ? '记录、回看与整理，从这里开始。' : '继续上次的讨论，或开始一场新对话。'}</p>
       <form onSubmit={submit}><label>用户名 / 邮箱<input name="email" type="email" autoComplete="email" required placeholder="you@example.com"/></label><label>密码<input name="password" type="password" autoComplete={register ? 'new-password' : 'current-password'} minLength={10} maxLength={128} required placeholder="至少 10 个字符"/></label>
@@ -43,7 +45,7 @@ function Auth({ ready }: { ready: () => void }) {
 function SharedView({ token }: { token: string }) {
   const [data, setData] = useState<{ title: string; minutes: Minutes | null; segments?: Segment[] }>(), [error, setError] = useState('');
   useEffect(() => { const load = () => api<typeof data>(`/shared/${token}`).then(setData).catch(e => { setError(messageOf(e)); setData(undefined); }); void load(); const timer = setInterval(load, 15000); return () => clearInterval(timer); }, [token]);
-  return <main className="shared-page glass"><p className="kicker">聆记 · 只读分享</p>{error ? <p role="alert">{error}</p> : !data ? <p role="status">正在读取分享…</p> : <><h1>{data.title}</h1><p className="muted">内容会随记录更新；链接有效期最长 24 小时。</p>{data.minutes?.sections.map((s, i) => <section key={i}><h2>{s.heading}</h2>{s.items.map((item, j) => <p key={j}>{item.text}</p>)}</section>)}{data.segments && <section><h2>转录</h2>{data.segments.map(s => <p key={s.id}>{s.speaker && `${s.speaker}：`}{s.text}</p>)}</section>}</>}</main>;
+  return <main className="shared-page glass"><Brand/><p className="kicker">聆记 · 只读分享</p>{error ? <p role="alert">{error}</p> : !data ? <p role="status">正在读取分享…</p> : <><h1>{data.title}</h1><p className="muted">内容会随记录更新；链接有效期最长 24 小时。</p>{data.minutes?.sections.map((s, i) => <section key={i}><h2>{s.heading}</h2>{s.items.map((item, j) => <p key={j}>{item.text}</p>)}</section>)}{data.segments && <section><h2>转录</h2>{data.segments.map(s => <p key={s.id}>{s.speaker && `${s.speaker}：`}{s.text}</p>)}</section>}</>}</main>;
 }
 export default function App() {
   const shared = location.pathname.match(/^\/share\/([A-Za-z0-9_-]+)$/);
@@ -59,6 +61,7 @@ function Workspace() {
   const [captureIssues, setCaptureIssues] = useState<CaptureIssue[]>([]);
   const [recording, setRecording] = useState(false), [pending, setPending] = useState(0), [online, setOnline] = useState(navigator.onLine);
   const [highlight, setHighlight] = useState(''), [evidence, setEvidence] = useState<Segment | null>(null), [importProgress, setImportProgress] = useState<number | null>(null);
+  const scrollRoot = useRef<HTMLDivElement>(null);
   const stopping = useRef(false), capture = useRef<CaptureController | null>(null), activeId = useRef(''), mounted = useRef(true), fileInput = useRef<HTMLInputElement>(null);
   const [deletions, setDeletions] = useState<{ id: string; cleanup: string }[]>([]);
   const [shares, setShares] = useState<{ id: string; scope: string; expires: number; revoked: boolean }[]>([]), [shareUrl, setShareUrl] = useState('');
@@ -186,11 +189,11 @@ function Workspace() {
     setEvidence(snapshot || null); setHighlight(ref.segmentId); document.getElementById(`segment-${ref.segmentId}`)?.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   }
   async function openShare() { if (!record) return; setShareUrl(''); setModal('share'); try { setShares((await api<{ shares: typeof shares }>(`/records/${record.id}/shares`)).shares); } catch (e) { setError(messageOf(e)); } }
-  if (loading) return <main className="loading-page" role="status"><Headphones size={32}/><p>正在打开会议空间…</p></main>;
+  if (loading) return <main className="loading-page" role="status"><Brand markOnly/><p>正在打开会议空间…</p></main>;
   if (!authReady || !boot) return <Auth ready={() => void loadBoot()}/>;
   const sourceReady = boot.providers.asr || boot.providers.fixture;
   return <div className="app-shell"><a className="skip-link" href="#workspace">跳到会议内容</a>
-    <aside className="sidebar glass"><div className="brand"><span className="brand-mark"><Headphones size={22} weight="duotone"/></span><b>聆记</b><span>Meeting Studio</span></div>
+    <aside className="sidebar glass"><Brand/>
       <Button variant="primary" className="new-record" onClick={() => void quickRecord()} disabled={recording || busy || !sourceReady}><Plus size={18}/>快速记录</Button>
       <Button className="prepare-record" variant="ghost" onClick={() => setModal('new')} disabled={recording || busy}>提前准备会议</Button>
       <div className="search-box"><MagnifyingGlass size={17}/><input aria-label="搜索所有会议内容" placeholder="搜索会议与内容" value={query} onChange={e => setQuery(e.target.value)}/></div>
@@ -200,7 +203,7 @@ function Workspace() {
       <footer className="rail-footer"><div className="account"><span className="avatar">{boot.email[0].toUpperCase()}</span><span><b>{boot.email.split('@')[0]}</b><small>个人会议空间</small></span></div><div className="actions"><Button variant="ghost" aria-label="设置与诊断" onClick={() => { setModal('settings'); void api<{deletions: typeof deletions}>('/deletions').then(d => setDeletions(d.deletions)).catch(e => setError(messageOf(e))); }}><GearSix size={19}/></Button><Button variant="ghost" aria-label={theme === 'light' ? '切换深色' : '切换浅色'} onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>{theme === 'light' ? <Moon size={19}/> : <Sun size={19}/>}</Button><Button variant="ghost" aria-label="退出登录" disabled={recording} onClick={async () => { try { await api('/auth/logout', 'POST'); setQueueRecords([]); setAuthReady(false); setId(''); } catch (e) { setError(messageOf(e)); } }}><SignOut size={19}/></Button></div></footer>
     </aside>
     <main id="workspace" className={`workspace ${minutesOpen ? 'with-minutes' : ''}`}><header className="topbar glass"><div><span className="breadcrumb">会议空间</span><CaretRight size={14}/><span>{record ? '记录详情' : '所有记录'}</span></div><div className="sync-state" data-connection-state={connectionState}>{online && (!id || connectionState==='connected') ? <CloudCheck size={18}/> : <CloudSlash size={18}/>}<span>{!online ? '离线 · 本地保留' : !id ? '网络可用' : connectionState!=='connected' ? ({idle:'未连接',connecting:'连接中',reconnecting:'正在重连',offline:'离线',unavailable:'连接不可用'}[connectionState]) : pending ? `${pending} 段待上传` : '已连接'}</span></div></header>
-      <div className="workspace-scroll" tabIndex={0} aria-label="会议内容滚动区">
+      <div ref={scrollRoot} className="workspace-scroll" tabIndex={0} aria-label="会议内容滚动区">
       {error && <div className="global-message error" role="alert"><WarningCircle size={19}/><span>{error}</span><button aria-label="关闭错误提示" onClick={() => setError('')}><X size={17}/></button></div>}
       {id && connectionState==='reconnecting' && <div className="global-message" role="status"><span>实时连接中断，正在自动重连；本地音频仍会保留。</span></div>}
       {notice && <div className="global-message" role="status"><span>{notice}</span><button aria-label="关闭提示" onClick={() => setNotice('')}><X size={17}/></button></div>}
@@ -226,7 +229,7 @@ function Workspace() {
       </>}
       </div>
       {record && minutesOpen && <MinutesPanel automate={async (enabled, intervalSeconds) => { await mutate(`/records/${id}/automation`, 'PATCH', {enabled,intervalSeconds}); }} record={record} busy={busy} onClose={() => setMinutesOpen(false)} cite={cite} generate={async (template,mode) => { await mutate(`/records/${id}/minutes`, 'POST', { template,mode }); }} edit={async minutes => { return mutate(`/records/${id}/minutes`, 'PATCH', { revision: minutes.revision, minutes }); }}/>}
-    </main><input ref={fileInput} className="sr-only" type="file" accept="audio/*" aria-label="导入音频文件" onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void onImport(file); }}/>
+    <ScrollToTop root={scrollRoot}/></main><input ref={fileInput} className="sr-only" type="file" accept="audio/*" aria-label="导入音频文件" onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void onImport(file); }}/>
   {modal === 'capture' && <CaptureSetup connected={signals.map(source => source.kind)} signals={signals} issues={captureIssues} busy={busy} onRetry={() => void startCapture('meeting')} onClose={() => setModal(null)}/>}
     {modal === 'finish' && record && <MeetingFinish title={record.title} paused={record.capture === 'paused'} busy={busy} error={error} pause={title => void stopCapture('pause',title)} finish={title => void stopCapture('seal',title)} close={() => setModal(null)}/>}
     {modal === 'new' && <Modal title="新建一段记录" onClose={() => setModal(null)}><form onSubmit={create}><label>记录标题 <span className="muted">可稍后填写</span><input autoFocus name="title" maxLength={160} placeholder="例如：产品周会"/></label><div className="form-grid"><label>主要语言<Select label="主要语言" name="language" options={[{"value": "zh", "label": "中文"}, {"value": "en", "label": "English"}, {"value": "ja", "label": "日本語"}]}/></label><label>记录留存<Select label="记录留存" name="retentionDays" defaultValue="30" options={[{"value": "1", "label": "1 天"}, {"value": "7", "label": "7 天"}, {"value": "30", "label": "30 天"}, {"value": "90", "label": "90 天"}]}/></label></div><label className="checkbox-label"><input type="checkbox" name="autoMinutes" defaultChecked={boot.providers.minutes} disabled={!boot.providers.minutes}/><span>自动生成 AI 纪要<small>会中持续归纳主题，停止后整理终稿；转录和笔记将发送到已配置模型。</small></span></label><label className="checkbox-label"><input type="checkbox" name="retainAudio"/>保留原始音频至记录到期</label><p className="fine-print">默认只保留处理所需的临时音频，完成转录后清理；失败片段最长保留 24 小时。以上设置不替代参会者知情与录音许可。</p><Button disabled={busy} variant="primary" type="submit"><Plus size={18}/>创建记录</Button></form></Modal>}
