@@ -8,6 +8,10 @@ Node 22.14+、npm，执行 `npm ci`、`npm run dev`。访问 [工作台](http://
 
 ASR 默认使用豆包，兼容 `DEEPGRAM_API_KEY`（模型可调），或完整的 multipart `ASR_API_URL`、`ASR_API_KEY`、`ASR_MODEL`。纪要使用完整接口 `LLM_API_URL`、`LLM_API_KEY`、`LLM_MODEL`，协议由 `LLM_PROTOCOL` 选择 Chat Completions 或 Responses。翻译使用独立的豆包 Responses 请求，配置见下方[实时翻译](#实时翻译)。接口兼容不等于模型质量达标。
 
+模型地址必须指向 API，不能填写返回管理网页的站点首页。例如兼容服务的完整 Responses 地址可能是 `https://your-provider.example/v1/responses`，具体路径以服务方为准。程序按保存值请求，不自动追加路径。若服务返回 HTML，即使 HTTP 状态是 200，也会提示“模型服务返回了网页”（`llm_endpoint_not_api`）；模型正文不是有效 JSON 时仍报 `invalid_llm_response`。修正地址并测试纪要连接后，可以重新整理失败的会议。
+
+模型连接或流式输出超时单独报 `llm_timeout`，保留转录。会中草稿最多等待 2 分钟，会议终稿最多等待 4 分钟；任务租约分别为 3 分钟、5 分钟，留出校验和保存时间，避免另一个 worker 在原请求仍有效时抢占。终稿完整读取转录，提示模型合并重复信息、限制摘要篇幅；未完成的输出不能保存为正式纪要。
+
 实时采集首个 PCM 包约 400 毫秒，后续约 1 秒；文件导入按 2 秒分片，最后短片在停止时 flush。服务器持久接收不表示识别完成。供应商有显式超时和有限重试；修正配置后在页面点击重新处理。摘要超过当前输入预算会报错，不能静默截断正文。
 
 ## 持久部署

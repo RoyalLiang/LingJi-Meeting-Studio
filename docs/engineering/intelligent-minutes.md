@@ -26,8 +26,10 @@
 
 ## 当前证据与冻结版本
 
-当前工作区 119 项 Node 回归、ESLint、Web 类型检查与构建通过；结构校验、引用定位、翻译请求契约、切换/暂停竞态和人工修订保护有本地回归。隔离浏览器使用虚构会议与本地模型 fixture 验收桌面、手机、浅深主题和阅读交互，布局增量已检查顶部搜索、底部等待/总结、准备会议 hover、目录选择和归档按钮；两轮桌面/手机截图已确认。测试未连接真实豆包翻译服务；真实纪要/译文质量、长会话、本轮真实浏览器音频采集、PG/S3 与部署仍需独立验证。
+当前工作区 123 项 Node 回归、ESLint、Web 类型检查与构建通过；结构校验、引用定位、翻译请求契约、切换/暂停竞态和人工修订保护有本地回归。隔离浏览器使用虚构会议与本地模型 fixture 验收桌面、手机、浅深主题和阅读交互，布局增量已检查顶部搜索、底部等待/总结、准备会议 hover、目录选择和归档按钮；两轮桌面/手机截图已确认。本轮模型接口排查增加网页响应识别、超时分类、终稿租约、错误提示与恢复显示验证，并完成真实虚构文本 JSON 连接测试。测试未连接真实豆包翻译服务；真实纪要/译文质量、长会话、本轮真实浏览器音频采集、PG/S3 与部署仍需独立验证。
 
 原逐字记录工作台保存在本地 annotated tag `transcript-v1-frozen-20261012`，指向 `2846797439a7fc67960181df0be640e479f9f8c0`，尚未推送。该标签保存代码版本，记录数据仍遵循原有持久化和留存规则。
+
+本次故障修复还使用当前配置的真实模型恢复了一场失败会议：完整 141 段转录生成纪要 v1，引用校验与持久化通过，耗时约 139 秒，未改动转录。该结果不代表所有长会议都能在时限内完成，也未独立评估摘要语义质量。
 
 实现依据：[主纪要组件](../../apps/web/src/components/Minutes.tsx)、[当前讨论](../../apps/web/src/components/CurrentDiscussion.tsx)、[表格](../../apps/web/src/components/SummaryTables.tsx)、[图表](../../apps/web/src/components/SummaryCharts.tsx)、[翻译面板](../../apps/web/src/components/TranslationPanel.tsx)、[结构校验](../../packages/records/src/minutes-structure.mjs)、[翻译状态](../../packages/records/src/translation.mjs)及[豆包翻译请求](../../services/records/src/seed-translation.mjs)。视觉约束见[视觉方向](../design/visual-direction.md)。

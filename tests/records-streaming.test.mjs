@@ -67,3 +67,41 @@ test('protocol normalization preserves vendor prefixes and rejects unknown proto
  assert.equal(normalizeConfig({LLM_API_URL:'https://example.test/v1/responses'}).LLM_PROTOCOL,'responses');
  const root=await mkdtemp(join(tmpdir(),'tts-protocol-'));try{await assert.rejects(saveConfig(root,{LLM_PROTOCOL:'unknown'},{}),{code:'invalid_llm_protocol'});}finally{await rm(root,{recursive:true,force:true});}
 });
+
+
+test('HTML model landing pages report a wrong endpoint and preserve the exact configured URL', async () => {
+ for (const contentType of ['text/html; charset=utf-8', 'application/json']) {
+  await endpoint((_req, res) => {
+   res.setHeader('Content-Type', contentType);
+   res.end('<!doctype html><html><body>Model gateway console</body></html>');
+  }, async (base, requests) => {
+   let deltas = 0;
+   await assert.rejects(completeJson([{role:'user',content:'Synthetic diagnostic.'}], {...credentials,LLM_API_URL:base,LLM_PROTOCOL:'responses'}, {onDelta:()=>{deltas++;}}), {code:'llm_endpoint_not_api'});
+   assert.equal(requests.length,1);
+   assert.equal(requests[0].path,'/');
+   assert.equal(deltas,0);
+  });
+ }
+});
+
+
+test('malformed model JSON remains an invalid response rather than a landing-page error', async () => {
+ await endpoint((_req,res) => {
+  res.setHeader('Content-Type','application/json');
+  res.end(JSON.stringify({status:'completed',output_text:'{broken JSON'}));
+ },async base => assert.rejects(completeJson([], {...credentials,LLM_API_URL:base,LLM_PROTOCOL:'responses'}),{code:'invalid_llm_response'}));
+});
+
+
+test('a timeout during model streaming is not misreported as invalid JSON', async () => {
+ await endpoint((_req,res) => {
+  res.setHeader('Content-Type','text/event-stream');
+  res.write(`data: ${JSON.stringify({type:'response.output_text.delta',delta:'{"title":"Pending"'})}\n\n`);
+ },async base => {
+  const controller=new AbortController();
+  await assert.rejects(completeJson([], {...credentials,LLM_API_URL:base,LLM_PROTOCOL:'responses'}, {
+   signal:controller.signal,
+   onDelta:()=>controller.abort(new DOMException('Deadline exceeded','TimeoutError'))
+  }),{code:'llm_timeout'});
+ });
+});
