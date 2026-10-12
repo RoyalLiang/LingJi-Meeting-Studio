@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { ArrowDown, ArrowSquareOut, Folder, FolderPlus, House, Check, CloudCheck, CloudSlash, FileText, GearSix, Microphone, Moon,
   Plus, Translate, MagnifyingGlass, ShareNetwork, SignOut, Sparkle, Sun, Trash, WarningCircle, X, CaretRight } from '@phosphor-icons/react';
 import { api, messageOf, setCsrf, ApiError } from './api';
-import { subscribeToRecord, type ConnectionState } from './record-subscription';
+import { applyRecordDelta, subscribeToRecord, type ConnectionState } from './record-subscription';
 import type { Bootstrap, RecordDetail, RecordListItem, Segment, Minutes, Evidence } from './model';
 import { timecode } from './model';
 import type { WorkspaceDirectory } from './workspace-model';
@@ -101,6 +101,7 @@ function Workspace() {
     if (!id || !authReady) { setConnectionState('idle'); return; }
     return subscribeToRecord<RecordDetail>({
       recordId: id,
+      applyDelta: applyRecordDelta,
       loadRecord: signal => api<RecordDetail>(`/records/${id}`, 'GET', undefined, signal),
       onRecord: detail => { if (mounted.current && activeId.current === id) setRecord(detail); },
       onState: setConnectionState,

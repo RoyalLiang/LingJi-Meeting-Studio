@@ -6,6 +6,7 @@ interface SubscriptionOptions<T extends { cursor: string }> {
   onRecord: (record: T) => void;
   onState: (state: ConnectionState) => void;
   onFatal: (error: unknown) => void;
+  applyDelta?: (record: T, delta: unknown) => T | null;
 }
 
 // Own retries rather than relying on native EventSource: HTTP 502 can close it permanently.
@@ -44,7 +45,7 @@ export function subscribeToRecord<T extends { cursor: string }>(options: Subscri
     options.onState(retries ? 'reconnecting' : 'connecting');
     try {
       // A fresh snapshot validates access and includes updates missed during the outage.
-      const record = await options.loadRecord(signal);
+      let record = await options.loadRecord(signal);
       if (!current(version)) return;
       options.onRecord(record);
       const stream = new EventSource(`/api/records/${encodeURIComponent(options.recordId)}/events?after=${encodeURIComponent(record.cursor)}`);
@@ -64,15 +65,39 @@ export function subscribeToRecord<T extends { cursor: string }>(options: Subscri
             dirty = false;
             const latest = await options.loadRecord(signal);
             if (!current(version)) return;
-            options.onRecord(latest);
+            record = latest;
+              options.onRecord(latest);
           } while (dirty);
         } catch (error) { failed(error, version); }
         finally { refreshing = false; }
       }
-      stream.onmessage = () => { void refresh(); };
+      stream.onmessage = event => {
+          try {
+            const message = JSON.parse(event.data);
+            if(message.delta && options.applyDelta && !refreshing){
+              const latest=options.applyDelta(record,message.delta);
+              if(latest){record=latest;options.onRecord(latest);return;}
+            } else if(message.projection && !message.delta) return;
+          } catch { /* Malformed or incompatible event requires a fresh snapshot. */ }
+          void refresh();
+        };
       stream.addEventListener('reset', () => { void refresh(); });
     } catch (error) { failed(error, version); }
   }
   void connect();
   return dispose;
+}
+
+
+export function applyRecordDelta<T extends {cursor:string;segments:{id:string}[]}>(record:T,input:unknown):T|null {
+  const delta=input as {baseCursor:string;cursor:string;set:Partial<T>;remove:string[];segments:{upsert:T['segments'];remove:string[];order?:string[]}};
+  if(!delta || !/^\d{1,20}$/.test(delta.cursor))return null;
+  if(BigInt(delta.cursor)<=BigInt(record.cursor))return record;
+  if(delta.baseCursor!==record.cursor || !delta.set || !delta.segments)return null;
+  const segments=new Map(record.segments.map(segment=>[segment.id,segment]));
+  for(const id of delta.segments.remove)segments.delete(id);
+  for(const segment of delta.segments.upsert)segments.set(segment.id,segment);
+  const next={...record,...delta.set,cursor:delta.cursor,segments:delta.segments.order ? delta.segments.order.map(id=>segments.get(id)) : [...segments.values()]};
+  for(const key of delta.remove)delete (next as Record<string,unknown>)[key];
+  return next as T;
 }

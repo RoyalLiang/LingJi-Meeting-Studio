@@ -2,7 +2,6 @@ import { telemetry } from './telemetry.mjs';
 import { performance } from 'node:perf_hooks';
 import { setTranslationTarget } from '../../../packages/records/src/translation.mjs';
 import { workspaceRoutes, requireWorkspace } from './workspace-routes.mjs';
-import { belongsToScope, meetingSeconds } from '../../../packages/records/src/workspaces.mjs';
 import { setAutomation } from '../../../packages/records/src/automation.mjs';
 import http from 'node:http';
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -117,10 +116,7 @@ export async function createRecordServer(options = {}) {
       if (path === '/api/records' && req.method === 'GET') {
         const query = (url.searchParams.get('q') || '').toLowerCase().slice(0, 200);
         const scope = url.searchParams.get('workspace') || 'all'; await requireWorkspace(repo, user.id, scope);
-        const all = (await repo.list()).filter(r => r.owner === user.id && !r.deleted && Date.parse(r.deleteAt) > Date.now());
-        const records = all.filter(r => belongsToScope(r, scope)).filter(r => !query || `${r.title} ${r.segments.map(s => s.text).join(' ')} ${JSON.stringify(r.minutes || '')}`.toLowerCase().includes(query))
-          .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(r => ({ id: r.id, title: r.title, workspaceId: r.workspaceId || null, createdAt: r.createdAt, updatedAt: r.updatedAt,
-            capture: r.capture, transcription: r.transcription, segments: r.segments.length, hasMinutes: Boolean(r.minutes), seconds: meetingSeconds(r) }));
+        const records = await repo.listSummaries(user.id,scope,query);
         send(res, 200, { records }); return;
       }
       const route = path.match(/^\/api\/records\/([a-f0-9-]{36})(?:\/(.*))?$/);

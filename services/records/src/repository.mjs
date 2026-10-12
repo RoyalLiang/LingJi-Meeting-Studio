@@ -1,3 +1,4 @@
+import { cursorKey, deriveProjection, visibleSnapshot } from './projections.mjs';
 import { automaticMinutesAt } from '../../../packages/records/src/automation.mjs';
 import { mkdir, open, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -46,11 +47,40 @@ export async function createRepository(options = {}) {
     db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS aggregates (id TEXT PRIMARY KEY, data TEXT NOT NULL)');
     db.exec("CREATE INDEX IF NOT EXISTS work_due ON aggregates(json_extract(data, '$.nextWorkAt'))");
   }
+  if (pool) {
+    await pool.query('CREATE TABLE IF NOT EXISTS record_list_projection(id text PRIMARY KEY,data jsonb NOT NULL)');
+    await pool.query('CREATE TABLE IF NOT EXISTS record_feed_meta(id text PRIMARY KEY, data jsonb NOT NULL)');
+    await pool.query('CREATE TABLE IF NOT EXISTS record_feed_events(record_id text NOT NULL, cursor text NOT NULL, data jsonb NOT NULL, PRIMARY KEY(record_id,cursor))');
+  } else db.exec('CREATE TABLE IF NOT EXISTS record_list_projection(id TEXT PRIMARY KEY,data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS record_feed_meta(id TEXT PRIMARY KEY,data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS record_feed_events(record_id TEXT NOT NULL,cursor TEXT NOT NULL,data TEXT NOT NULL,PRIMARY KEY(record_id,cursor))');
+  function writeSqliteProjection(value, before) {
+    const projection=deriveProjection(value,before); if(!projection)return;
+    db.prepare('INSERT INTO record_list_projection(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(value.id,JSON.stringify(projection.list));
+    db.prepare('INSERT INTO record_feed_meta(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(value.id,JSON.stringify(projection.meta));
+    for(const event of projection.events) db.prepare('INSERT INTO record_feed_events(record_id,cursor,data) VALUES(?,?,?) ON CONFLICT(record_id,cursor) DO UPDATE SET data=excluded.data').run(value.id,cursorKey(event.cursor),JSON.stringify(event));
+    db.prepare('DELETE FROM record_feed_events WHERE record_id=? AND cursor<?').run(value.id,cursorKey(projection.meta.first));
+  }
+  async function writePgProjection(client,value,before) {
+    const projection=deriveProjection(value,before); if(!projection)return;
+    await client.query('INSERT INTO record_list_projection(id,data) VALUES($1,$2) ON CONFLICT(id) DO UPDATE SET data=excluded.data',[value.id,JSON.stringify(projection.list)]);
+    await client.query('INSERT INTO record_feed_meta(id,data) VALUES($1,$2) ON CONFLICT(id) DO UPDATE SET data=excluded.data',[value.id,JSON.stringify(projection.meta)]);
+    for(const event of projection.events) await client.query('INSERT INTO record_feed_events(record_id,cursor,data) VALUES($1,$2,$3) ON CONFLICT(record_id,cursor) DO UPDATE SET data=excluded.data',[value.id,cursorKey(event.cursor),JSON.stringify(event)]);
+    await client.query('DELETE FROM record_feed_events WHERE record_id=$1 AND cursor<$2',[value.id,cursorKey(projection.meta.first)]);
+  }
   const decode = row => row ? typeof row.data === 'string' ? JSON.parse(row.data) : row.data : null;
   const repository = {
     root, backend: pool ? 'postgres' : 'sqlite', audioBackend: objects ? 's3' : 'filesystem',
     async get(id) { return decode(pool ? (await pool.query('SELECT data FROM record_aggregates WHERE id=$1', [id])).rows[0]
       : db.prepare('SELECT data FROM aggregates WHERE id=?').get(id)); },
+    async listSummaries(owner,scope='all',query='') {
+      const rows=pool ? (await pool.query(`SELECT data->'summary' AS data FROM record_list_projection WHERE data->>'owner'=$1 AND data->>'deleted'='false' AND data->>'deleteAt'>$2 AND ($3='all' OR ($3='inbox' AND data->'summary'->>'workspaceId' IS NULL) OR data->'summary'->>'workspaceId'=$3) AND strpos(data->>'search',$4)>0 ORDER BY data->'summary'->>'updatedAt' DESC LIMIT 200`,[owner,new Date().toISOString(),scope,query])).rows : db.prepare(`SELECT json_extract(data,'$.summary') AS data FROM record_list_projection WHERE json_extract(data,'$.owner')=? AND json_extract(data,'$.deleted')=0 AND json_extract(data,'$.deleteAt')>? AND (?='all' OR (?='inbox' AND json_extract(data,'$.summary.workspaceId') IS NULL) OR json_extract(data,'$.summary.workspaceId')=?) AND instr(json_extract(data,'$.search'),?)>0 ORDER BY json_extract(data,'$.summary.updatedAt') DESC LIMIT 200`).all(owner,new Date().toISOString(),scope,scope,scope,query);
+      return rows.map(decode);
+    },
+    async eventsAfter(id,cursor) {
+      const meta=decode(pool ? (await pool.query('SELECT data FROM record_feed_meta WHERE id=$1',[id])).rows[0] : db.prepare('SELECT data FROM record_feed_meta WHERE id=?').get(id));
+      if(!meta)return null;
+      const rows=pool ? (await pool.query('SELECT data FROM record_feed_events WHERE record_id=$1 AND cursor>$2 ORDER BY cursor LIMIT 1000',[id,cursorKey(cursor)])).rows : db.prepare('SELECT data FROM record_feed_events WHERE record_id=? AND cursor>? ORDER BY cursor LIMIT 1000').all(id,cursorKey(cursor));
+      return {...meta,events:rows.map(decode)};
+    },
     async list(kind = 'record') {
       const rows = pool ? (await pool.query("SELECT data FROM record_aggregates WHERE data->>'kind'=$1", [kind])).rows
         : db.prepare("SELECT data FROM aggregates WHERE json_extract(data, '$.kind')=?").all(kind);
@@ -63,20 +93,23 @@ export async function createRepository(options = {}) {
     },
     async insert(value) {
       schedule(value);
+      const client=pool ? await pool.connect() : null;
       try {
-        if (pool) await pool.query('INSERT INTO record_aggregates(id,data) VALUES($1,$2)', [value.id, JSON.stringify(value)]);
+        if(client) await client.query('BEGIN'); else db.exec('BEGIN IMMEDIATE');
+        if (client) await client.query('INSERT INTO record_aggregates(id,data) VALUES($1,$2)', [value.id, JSON.stringify(value)]);
         else db.prepare('INSERT INTO aggregates(id,data) VALUES(?,?)').run(value.id, JSON.stringify(value));
-      } catch (error) { if (error.code === '23505' || error.code?.startsWith('ERR_SQLITE')) throw new DomainError('already_exists'); throw error; }
+        if(client){await writePgProjection(client,value);await client.query('COMMIT');}else{writeSqliteProjection(value);db.exec('COMMIT');}
+      } catch (error) { if(client)await client.query('ROLLBACK');else db.exec('ROLLBACK'); if (error.code === '23505' || error.code?.startsWith('ERR_SQLITE')) throw new DomainError('already_exists'); throw error; } finally {client?.release();}
       return value;
     },
     async changeMany(ids, mutate) {
       const client = pool ? await pool.connect() : null;
       try {
         if (client) await client.query('BEGIN'); else db.exec('BEGIN IMMEDIATE');
-        const values = [];
+        const values = [], snapshots = new Map();
         for (const id of [...new Set(ids)].sort()) {
           const value = decode(client ? (await client.query('SELECT data FROM record_aggregates WHERE id=$1 FOR UPDATE', [id])).rows[0] : db.prepare('SELECT data FROM aggregates WHERE id=?').get(id));
-          requireThat(value, 'not_found', 404); values.push(value);
+          requireThat(value, 'not_found', 404); values.push(value); snapshots.set(value.id,visibleSnapshot(value));
         }
         const result = mutate(values);
         requireThat(!(result instanceof Promise), 'transaction_must_be_synchronous', 500);
@@ -84,6 +117,7 @@ export async function createRepository(options = {}) {
           schedule(value);
           if (client) await client.query('UPDATE record_aggregates SET data=$2 WHERE id=$1', [value.id, JSON.stringify(value)]);
           else db.prepare('UPDATE aggregates SET data=? WHERE id=?').run(JSON.stringify(value), value.id);
+          if(client)await writePgProjection(client,value,snapshots.get(value.id));else writeSqliteProjection(value,snapshots.get(value.id));
         }
         if (client) await client.query('COMMIT'); else db.exec('COMMIT');
         return structuredClone(result ?? values);
@@ -92,18 +126,20 @@ export async function createRepository(options = {}) {
         throw error;
       } finally { client?.release(); }
     },
-    async change(id, mutate) {
+    async change(id, mutate, { rebuild = false } = {}) {
       const client = pool ? await pool.connect() : null;
       try {
         if (client) await client.query('BEGIN'); else db.exec('BEGIN IMMEDIATE');
         const value = decode(client ? (await client.query('SELECT data FROM record_aggregates WHERE id=$1 FOR UPDATE', [id])).rows[0]
           : db.prepare('SELECT data FROM aggregates WHERE id=?').get(id));
         requireThat(value, 'not_found', 404);
-        const result = mutate(value);
+        const before=rebuild ? null : visibleSnapshot(value);
+      const result = mutate(value);
         requireThat(!(result instanceof Promise), 'transaction_must_be_synchronous', 500);
         schedule(value);
         if (client) await client.query('UPDATE record_aggregates SET data=$2 WHERE id=$1', [id, JSON.stringify(value)]);
         else db.prepare('UPDATE aggregates SET data=? WHERE id=?').run(JSON.stringify(value), id);
+        if(client)await writePgProjection(client,value,before);else writeSqliteProjection(value,before);
         if (client) await client.query('COMMIT'); else db.exec('COMMIT');
         return structuredClone(result ?? value);
       } catch (error) { if (client) await client.query('ROLLBACK'); else db.exec('ROLLBACK'); throw error; }
@@ -137,7 +173,9 @@ export async function createRepository(options = {}) {
     },
     async close() { objects?.close(); if (pool) await pool.end(); else db.close(); }
   };
-  for (const name of ['get', 'list', 'listWork', 'change', 'changeMany', 'putAudio']) {
+  const missing=pool ? (await pool.query("SELECT a.id FROM record_aggregates a LEFT JOIN record_feed_meta m ON a.id=m.id LEFT JOIN record_list_projection l ON a.id=l.id WHERE a.data->>'kind'='record' AND (m.id IS NULL OR l.id IS NULL)")).rows : db.prepare("SELECT a.id FROM aggregates a LEFT JOIN record_feed_meta m ON a.id=m.id LEFT JOIN record_list_projection l ON a.id=l.id WHERE json_extract(a.data,'$.kind')='record' AND (m.id IS NULL OR l.id IS NULL)").all();
+  for(const {id} of missing)await repository.change(id,()=>{}, {rebuild:true});
+  for (const name of ['listSummaries','eventsAfter','get', 'list', 'listWork', 'change', 'changeMany', 'putAudio']) {
     const operation = repository[name];
     repository[name] = (...args) => telemetry.measure(`db.${name}`, { backend: repository.backend, ...(typeof args[0] === 'string' && name !== 'list' ? {recordId:args[0]} : {}) }, () => operation(...args));
   }

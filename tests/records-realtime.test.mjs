@@ -5,9 +5,9 @@ import {readFile} from 'node:fs/promises';
 import {stripTypeScriptTypes} from 'node:module';
 
 const source=await readFile(new URL('../apps/web/src/record-subscription.ts',import.meta.url),'utf8');
-const javascript=stripTypeScriptTypes(source).replace('export function subscribeToRecord','function subscribeToRecord')+'\nexports.subscribeToRecord=subscribeToRecord;';
+const javascript=stripTypeScriptTypes(source).replaceAll('export function','function')+'\nexports.subscribeToRecord=subscribeToRecord;exports.applyRecordDelta=applyRecordDelta;';
 const settle=async()=>{for(let i=0;i<12;i++)await Promise.resolve();};
-function harness(loadRecord=async()=>({cursor:'1'})){
+function harness(loadRecord=async()=>({cursor:'1'}),applyDelta){
   const streams=[],timers=new Map(),states=[],records=[],errors=[],navigator={onLine:true};let next=0;
   class EventSource{
     constructor(url){this.url=url;this.listeners={};this.closed=false;streams.push(this);}
@@ -15,7 +15,7 @@ function harness(loadRecord=async()=>({cursor:'1'})){
     close(){this.closed=true;}
   }
   const exports={};vm.runInNewContext(javascript,{exports,EventSource,navigator,AbortController,setTimeout(fn,delay){const id=++next;timers.set(id,{fn,delay});return id;},clearTimeout(id){timers.delete(id);}});
-  const stop=exports.subscribeToRecord({recordId:'test-record',loadRecord,onRecord:r=>records.push(r),onState:s=>states.push(s),onFatal:e=>errors.push(e)});
+  const stop=exports.subscribeToRecord({recordId:'test-record',loadRecord,applyDelta,onRecord:r=>records.push(r),onState:s=>states.push(s),onFatal:e=>errors.push(e)});
   return{streams,timers,states,records,errors,navigator,stop,async tick(){const [id,timer]=timers.entries().next().value;timers.delete(id);timer.fn();await settle();return timer.delay;}};
 }
 
