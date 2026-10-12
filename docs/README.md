@@ -1,6 +1,7 @@
 # 项目文档入口
 
 - [跨平台客户端、性能与最强大脑演进调研](research/client-brain-evolution-2026-10-12.md)：当前代码、合成基准、端云分工与分层更新路线；[架构提议](adr/0010-cross-platform-brain-evolution.md)尚未批准实施。
+- [分阶段演进方案](design/evolution-plan-2026-10-12.md)：P0～P5 依赖、15 项本地任务、验收目标与迁移回退；首包为观测、投影、离线队列和分层终稿。
 
 本轮新增：[服务与分析边界 ADR](adr/0005-provider-and-analysis-boundaries.md)、[开发账户与配置运行手册](engineering/runbook.md)、[真实合成 ASR 与界面验收](engineering/acceptance.md)。
 
