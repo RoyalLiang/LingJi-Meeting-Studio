@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { WebSocketServer } from 'ws';
 import { gzipSync, gunzipSync } from 'node:zlib';
-import { readConfig, saveConfig, publicConfig } from '../services/records/src/config.mjs';
+import { readConfig, saveConfig, publicConfig, normalizeConfig } from '../services/records/src/config.mjs';
 import { providerStatus } from '../services/records/src/providers.mjs';
 import { transcribeDoubaoAsr } from '../services/records/src/doubao.mjs';
 import { createRepository } from '../services/records/src/repository.mjs';
@@ -17,6 +17,14 @@ async function temporary(fn) {
   const root = await mkdtemp(join(tmpdir(), 'meeting-providers-'));
   try { await fn(root); } finally { await rm(root, {recursive:true, force:true}); }
 }
+test('new model base addresses default to Responses and explicit Chat endpoints remain compatible', () => {
+  const config=normalizeConfig({LLM_API_URL:'https://models.example/v1'});
+  assert.equal(config.LLM_PROTOCOL,'responses');
+  assert.equal(config.LLM_API_URL,'https://models.example/v1/responses');
+  const legacy=normalizeConfig({LLM_API_URL:'https://models.example/v1/chat/completions'});
+  assert.equal(legacy.LLM_PROTOCOL,'chat-completions');
+  assert.equal(normalizeConfig({LLM_API_URL:'https://models.example/v1',LLM_PROTOCOL:'chat-completions'}).LLM_PROTOCOL,'chat-completions');
+});
 test('legacy Doubao credentials enable the workbench; persisted settings hot reload and never return keys', async () => temporary(async root => {
   const legacy = {DOUBAO_AST_SECRET:'valid-app',DOUBAO_AST_ACCESS_TOKEN:'valid-token'};
   assert.equal(providerStatus(legacy).asr,true);
@@ -136,6 +144,6 @@ test('chat base URL resolves to a real completions route and accounts model usag
   const {createServer}=await import('node:http'),{completeJson}=await import('../services/records/src/providers.mjs');
   const server=createServer((req,res)=>{assert.equal(req.url,'/v1/chat/completions');assert.equal(req.headers.authorization,'Bearer fixture-key');req.resume();res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({choices:[{message:{content:'{"ok":true}'}}],usage:{total_tokens:17}}));});
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
-  try {const result=await completeJson([{role:'user',content:'fixture'}],{LLM_API_URL:`http://127.0.0.1:${server.address().port}`,LLM_MODEL:'fixture-model',LLM_API_KEY:'fixture-key'});assert.equal(result.ok,true);assert.equal(result.usageTokens,17);}
+  try {const result=await completeJson([{role:'user',content:'fixture'}],{LLM_API_URL:`http://127.0.0.1:${server.address().port}`,LLM_PROTOCOL:'chat-completions',LLM_MODEL:'fixture-model',LLM_API_KEY:'fixture-key'});assert.equal(result.ok,true);assert.equal(result.usageTokens,17);}
   finally {server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
 });

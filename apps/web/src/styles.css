@@ -473,3 +473,21 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 .topic-chart-toggle { margin:24px 0 8px; font-size:12px; }
 @media(max-width:420px) { .minutes-tabs { gap:14px; } .branch-children { margin-left:10px; padding-left:14px; } .branch-node::before { left:-15px; width:14px; } }
 @media(prefers-reduced-motion:reduce) { .branch-toggle svg { transition:none; } }
+.toast { position:fixed; z-index:1200; inset:auto 24px 24px auto; margin:0; display:flex; align-items:center; gap:12px; max-width:min(460px,calc(100vw - 40px)); padding:14px 16px; border:1px solid var(--border); border-radius:18px; color:var(--ink-1); box-shadow:0 12px 40px rgba(18,44,34,.16); font-size:13px; line-height:1.65; }
+.toast[popover]:not(:popover-open) { display:none; }
+.toast > svg { flex:none; color:var(--accent); }
+.toast .button { padding:5px; min-width:32px; min-height:32px; flex:none; }
+.toast.is-error > svg { color:var(--down); }
+.download-control { display:inline-flex; align-items:center; flex-wrap:wrap; gap:8px; max-width:100%; }
+.download-retry { color:var(--accent); font-size:12px; text-underline-offset:4px; }
+.download-error { width:100%; font-size:12px; color:var(--down); }
+.remote-audio-notice { display:flex; align-items:center; gap:14px; margin:14px 0; padding:16px 18px; background:var(--accent-soft); border:1px solid var(--border); border-radius:18px; }
+.remote-audio-notice > svg { flex:none; color:var(--accent); }
+.remote-audio-notice > div { flex:1; min-width:0; }
+.remote-audio-notice b { font-size:13px; }
+.remote-audio-notice p { margin:5px 0 0; font-size:12px; color:var(--ink-3); line-height:1.7; }
+.remote-audio-notice .button { flex:none; font-size:12px; }
+.transcript-end { height:1px; }
+.transcript-follow { position:sticky; bottom:16px; display:flex; justify-content:center; z-index:3; pointer-events:none; }
+.transcript-follow .button { pointer-events:auto; border-radius:30px; background:var(--accent-soft); color:var(--accent); box-shadow:0 4px 18px rgba(18,44,34,.1); }
+@media(max-width:700px) { .toast { right:16px; bottom:16px; max-width:calc(100vw - 32px); }.remote-audio-notice { align-items:flex-start; flex-wrap:wrap; }.remote-audio-notice .button { margin-left:35px; }.capture-controls .button.primary { flex-basis:100%; } }

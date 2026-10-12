@@ -57,6 +57,9 @@ test('meeting capture requests shared audio in the user gesture and keeps indepe
   await started;
   assert.deepEqual(Array.from(h.controller.sources, s => s.kind), ['display', 'microphone']);
   assert.equal(h.calls[0].display.systemAudio, 'include');
+  assert.equal(h.calls[0].display.windowAudio, 'system');
+  assert.equal(h.calls[0].display.selfBrowserSurface, 'exclude');
+  assert.equal(h.calls[0].display.audio.suppressLocalAudioPlayback, false);
   assert.equal(h.health.at(-1).length, 2);
 });
 
@@ -65,6 +68,14 @@ test('missing shared audio never silently turns into successful meeting capture'
   await assert.rejects(h.controller.start('display'), /没有音轨/);
   assert.equal(h.controller.active, false);
   assert.equal(h.display.audioTrack.readyState, 'ended');
+});
+test('failed remote audio sharing preserves an already recording microphone', async () => {
+  const h=await captureHarness({noDisplayAudio:true});
+  await h.controller.start('microphone');
+  await assert.rejects(h.controller.start('display'), /没有音轨/);
+  assert.equal(h.controller.active,true);
+  assert.deepEqual(Array.from(h.controller.sources,s=>s.kind),['microphone']);
+  assert.equal(h.mic.audioTrack.readyState,'live');
 });
 
 test('microphone denial after shared capture preserves the working source and explains partial capture', async () => {
