@@ -62,7 +62,7 @@ function Workspace() {
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false), [translationOpen, setTranslationOpen] = useState(false);
   const [workspaceToast,setWorkspaceToast] = useState('');
   const dismissWorkspaceToast=useCallback(()=>setWorkspaceToast(''),[]);
-  const [directories,setDirectories] = useState<WorkspaceDirectory[]>([]), [scope,setScope] = useState(() => { const value=new URLSearchParams(location.search).get('workspace') || 'all'; return /^(all|inbox|[a-f0-9-]{36})$/.test(value) ? value : 'all'; });
+  const [directories,setDirectories] = useState<WorkspaceDirectory[]>([]), [scope,setScope] = useState(() => { const value=new URLSearchParams(location.search).get('workspace') || 'all'; return /^(all|[a-f0-9-]{36})$/.test(value) ? value : 'all'; });
   const [archiveIds,setArchiveIds] = useState<string[]>([]), [archiveInitial,setArchiveInitial] = useState<string|null>(null), [editingDirectory,setEditingDirectory] = useState<WorkspaceDirectory|undefined>(), [homeVersion,setHomeVersion] = useState(0);
   const [connectionState, setConnectionState] = useState<ConnectionState>('idle');
   const [modal, setModal] = useState<'new' | 'settings' | 'share' | 'delete' | 'import-text' | 'capture' | 'finish' | 'directory' | 'archive' | null>(null), [theme, setTheme] = useState(localStorage.getItem('meeting-theme') || 'light');
@@ -124,7 +124,7 @@ function Workspace() {
   }
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = new FormData(event.currentTarget); setBusy(true); setError('');
-    try { const r = await api<RecordDetail>('/records', 'POST', { workspaceId: ['all','inbox'].includes(scope)?null:scope, title: form.get('title'), language: form.get('language'), retentionDays: Number(form.get('retentionDays')), retainAudio: form.has('retainAudio'), autoMinutes: form.has('autoMinutes') });
+    try { const r = await api<RecordDetail>('/records', 'POST', { workspaceId: scope==='all'?null:scope, title: form.get('title'), language: form.get('language'), retentionDays: Number(form.get('retentionDays')), retainAudio: form.has('retainAudio'), autoMinutes: form.has('autoMinutes') });
       const list = await api<{records: RecordListItem[]}>('/records'); setQueueRecords(list.records.map(r => r.id)); await loadList(); setId(r.id); setModal(null); await loadList(); } catch (e) { setError(messageOf(e)); } finally { setBusy(false); }
   }
   async function stopCapture(mode: 'pause' | 'seal' = 'seal', title = '') {
@@ -156,7 +156,7 @@ function Workspace() {
   async function quickRecord() {
     if (recording || busy || !captureAllowed()) return;
     setError(''); setCaptureIssues([]); setBusy(true);
-    const created = api<RecordDetail>('/records', 'POST', { workspaceId: ['all','inbox'].includes(scope)?null:scope, autoMinutes: Boolean(boot?.providers.minutes) });
+    const created = api<RecordDetail>('/records', 'POST', { workspaceId: scope==='all'?null:scope, autoMinutes: Boolean(boot?.providers.minutes) });
     const controller = capture.current = controllerFor(created.then(next => next.id));
     // Request permissions in this click, before waiting for the new record ID.
     const started = controller.startMeeting();
@@ -200,10 +200,10 @@ function Workspace() {
     setEvidence(snapshot || null); setHighlight(ref.segmentId); document.getElementById(`segment-${ref.segmentId}`)?.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   }
   async function openShare() { if (!record) return; setShareUrl(''); setModal('share'); try { setShares((await api<{ shares: typeof shares }>(`/records/${record.id}/shares`)).shares); } catch (e) { setError(messageOf(e)); } }
-  const directoryName = scope==='all'?'所有会议':scope==='inbox'?'未归档':directories.find(w=>w.id===scope)?.name || '工作目录';
+  const directoryName = scope==='all'?'所有会议':directories.find(w=>w.id===scope)?.name || '工作目录';
   const chooseScope = (next:string) => { setScope(next);setId('');setQuery('');scrollRoot.current?.scrollTo({top:0,behavior:'instant'}); };
   const newDirectory = () => {setEditingDirectory(undefined);setModal('directory');};
-  const openArchive = (ids:string[]) => {setArchiveIds(ids);setArchiveInitial(record?.workspaceId || (scope==='all'||scope==='inbox'?null:scope));setModal('archive');};
+  const openArchive = (ids:string[]) => {setArchiveIds(ids);setArchiveInitial(record?.workspaceId || (scope==='all'?null:scope));setModal('archive');};
   async function saveDirectory(name:string,description:string) {
     try {
       const directory=await api<WorkspaceDirectory>(editingDirectory?`/workspaces/${editingDirectory.id}`:'/workspaces',editingDirectory?'PATCH':'POST',{name,description});
@@ -221,7 +221,7 @@ function Workspace() {
     <aside className="sidebar glass"><Brand/>
       <Button variant="primary" className="new-record" onClick={() => void quickRecord()} disabled={recording || busy || !sourceReady}><Plus size={18}/>快速记录</Button>
       <Button className="prepare-record" variant="ghost" onClick={() => setModal('new')} disabled={recording || busy}>提前准备会议</Button>
-      <div className="workspace-switch"><div><span>工作目录</span><Button variant="ghost" aria-label="新建工作目录" onClick={newDirectory} disabled={recording||busy}><FolderPlus size={17}/></Button></div><Select label="选择工作目录" value={scope} onChange={chooseScope} disabled={recording||busy} options={[{value:'all',label:'所有会议'},{value:'inbox',label:'未归档'},...directories.map(w=>({value:w.id,label:w.name}))]}/><Button className={`directory-home-link ${!id?'selected':''}`} variant="ghost" disabled={recording||busy} onClick={()=>chooseScope(scope)}><House size={16}/>目录概览</Button></div>
+      <div className="workspace-switch"><div><span>工作目录</span><Button variant="ghost" aria-label="新建工作目录" onClick={newDirectory} disabled={recording||busy}><FolderPlus size={17}/></Button></div><Select label="选择工作目录" value={scope} onChange={chooseScope} disabled={recording||busy} options={[{value:'all',label:'所有会议'},...directories.map(w=>({value:w.id,label:w.name}))]}/><Button className={`directory-home-link ${!id?'selected':''}`} variant="ghost" disabled={recording||busy} onClick={()=>chooseScope(scope)}><House size={16}/>目录概览</Button></div>
       <div className="rail-heading">我的记录 <span>{records.length}</span></div><nav className="record-list" aria-label="会议记录">{records.map(r => <button key={r.id} className={`record-row ${r.id === id ? 'selected' : ''}`} disabled={(recording || busy) && r.id !== id} onClick={() => setId(r.id)}>
         <span className="record-icon">{r.hasMinutes ? <FileText size={18}/> : <Microphone size={18}/>}</span><span><b>{r.title}</b><small>{new Date(r.createdAt).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })} · {r.capture === 'recording' ? '记录中' : `${Math.ceil(r.seconds / 60)} 分钟`}</small></span><CaretRight size={14}/></button>)}
         {!records.length && <p className="rail-empty">{query ? '没有匹配记录' : '你的第一场对话，值得留住。'}</p>}</nav>
