@@ -7,7 +7,7 @@ import { commitMinutes, commitTranscript, emit } from '../../../packages/records
 import { createRepository } from './repository.mjs';
 import { readConfig } from './config.mjs';
 import { commitIntents, ruleIntents } from '../../../packages/records/src/intents.mjs';
-import { providerStatus, analyzeIntents, generateMinutes, transcribe, translateText } from './providers.mjs';
+import { providerStatus, analyzeIntents, generateMinutes, minutesTimeoutMs, transcribe, translateText } from './providers.mjs';
 
 export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
   const config = await readConfig(repo.root);
@@ -115,7 +115,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
       if (r.deleted) return;
       const job = r.jobs.find(j => (j.status === 'queued' || (j.status === 'running' && j.lease < Date.now())) && j.attempts < 3);
       if (!job) return;
-      job.status = 'running'; job.attempts++; job.fence = randomUUID(); job.lease = Date.now() + 180000;
+      job.status = 'running'; job.attempts++; job.fence = randomUUID(); job.lease = Date.now() + minutesTimeoutMs(job) + 60000;
       jobClaim = structuredClone(job); emit(r, 'minutes.running', { jobId: job.id });
     });
     if (jobClaim) {

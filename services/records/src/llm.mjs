@@ -5,16 +5,17 @@ const outputText = response => response.output_text || (response.output || []).f
 
 // One interface hides Chat Completions / Responses and buffered / SSE transports.
 // Deltas are provisional; only the returned JSON may enter domain validation.
-export async function completeModelJson(messages, input = process.env, { onDelta, signal } = {}) {
+export async function completeModelJson(messages, input = process.env, { onDelta, signal, timeoutMs = 120000 } = {}) {
   const env = normalizeConfig(input), responses = env.LLM_PROTOCOL === 'responses';
   requireThat(configured(env.LLM_API_KEY) && env.LLM_MODEL, 'minutes_not_configured', 503);
   const streaming = typeof onDelta === 'function', started = Date.now();
+  const deadline = AbortSignal.timeout(timeoutMs), requestSignal = signal ? AbortSignal.any([signal, deadline]) : deadline;
   const body = responses
     ? { model: env.LLM_MODEL, input: messages, store: false, text: { format: { type: 'json_object' } }, stream: streaming }
     : { model: env.LLM_MODEL, messages, response_format: { type: 'json_object' }, stream: streaming, ...(streaming ? { stream_options: { include_usage: true } } : {}) };
   let response;
-  try { response = await fetch(env.LLM_API_URL, { method: 'POST', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(120000)]) : AbortSignal.timeout(120000), headers: { Authorization: `Bearer ${env.LLM_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); }
-  catch { throw new DomainError('llm_connection_failed', 502); }
+  try { response = await fetch(env.LLM_API_URL, { method: 'POST', signal: requestSignal, headers: { Authorization: `Bearer ${env.LLM_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); }
+  catch { throw new DomainError(requestSignal.reason?.name === 'TimeoutError' ? 'llm_timeout' : 'llm_connection_failed', 502); }
   if (!response.ok) {
     let code; try { code = (await response.json()).error?.code; } catch { /* Upstream bodies may contain sensitive details. */ }
     throw new DomainError(code === 'InvalidEndpointOrModel.NotFound' ? 'llm_model_unavailable' : response.status === 401 ? 'provider_unauthorized' : response.status === 429 ? 'provider_rate_limited' : `provider_http_${response.status}`, 502);
@@ -31,6 +32,7 @@ export async function completeModelJson(messages, input = process.env, { onDelta
   try {
     if (!streamed) {
       const source = await response.text(); requireThat(source.length <= 2000000, 'llm_response_too_large', 502);
+      requireThat(!(response.headers.get('content-type') || '').toLowerCase().includes('text/html') && !/^\s*(?:<!doctype\s+html\b|<html\b)/i.test(source), 'llm_endpoint_not_api', 502);
       const result = JSON.parse(source);
       requireThat(!responses || !result.status || result.status === 'completed', 'llm_stream_incomplete', 502);
       await append(responses ? outputText(result) : result.choices?.[0]?.message?.content);
@@ -72,5 +74,5 @@ export async function completeModelJson(messages, input = process.env, { onDelta
     const result = JSON.parse(text.trim().replace(/^```(?:json)?\s*|\s*```$/g, ''));
     requireThat(result && typeof result === 'object' && !Array.isArray(result), 'invalid_llm_response', 502);
     return { ...result, usageTokens: Number.isSafeInteger(usageTokens) && usageTokens >= 0 ? usageTokens : 0, runtime: { protocol: env.LLM_PROTOCOL, streamed, firstTokenMs, durationMs: Date.now() - started } };
-  } catch (error) { if (error instanceof DomainError) throw error; throw new DomainError('invalid_llm_response', 502); }
+  } catch (error) { if (error instanceof DomainError) throw error; throw new DomainError(requestSignal.reason?.name === 'TimeoutError' ? 'llm_timeout' : 'invalid_llm_response', 502); }
 }

@@ -60,3 +60,21 @@ test('translation waiting never delays audio transcript persistence', async () =
   release();await pending;assert.equal((await repo.get(r.id)).segments[0].translation,'Synthetic translation');
  } finally {release();await repo.close();await rm(root,{recursive:true,force:true});}
 });
+
+
+test('a final minutes job keeps its lease while a longer model request is in flight', async () => {
+ const root=await mkdtemp(join(tmpdir(),'tts-final-lease-')),repo=await createRepository({root,databaseUrl:''});
+ const originalNow=Date.now;let now=originalNow();Date.now=()=>now;
+ let release,started,pending,calls=0;const blocked=new Promise(resolve=>{release=resolve;});const ready=new Promise(resolve=>{started=resolve;});
+ const r=record();r.capture='completed';requestMinutes(r);await repo.insert(r);
+ try{
+  pending=runCycle(repo,{minutes:async()=>{calls++;started();await blocked;return result;}},{lane:'minutes'});
+  await ready;
+  const fence=(await repo.get(r.id)).jobs[0].fence;
+  now+=190000;
+  await runCycle(repo,{minutes:async()=>{calls++;return result;}},{lane:'minutes'});
+  assert.equal(calls,1,'another worker reclaimed the final job before its model deadline');
+  assert.equal((await repo.get(r.id)).jobs[0].fence,fence);
+  release();await pending;assert.equal((await repo.get(r.id)).jobs[0].status,'completed');
+ }finally{release();await pending;Date.now=originalNow;await repo.close();await rm(root,{recursive:true,force:true});}
+});
