@@ -1,7 +1,9 @@
-import { preferredDevice, inputDevices, microphoneConstraints } from './devices';
+import { preferredDevice, openMicrophone } from './devices';
 import { api } from '../api';
 import type { RecordDetail, Source, SourceKind } from '../model';
 import { drainQueue, enqueue, makeChunk } from './queue';
+import { pcmSignal, signalMessage } from './signal';
+import type { CaptureSignal } from './signal';
 
 export const capabilities = () => ({ secure: window.isSecureContext, microphone: Boolean(navigator.mediaDevices?.getUserMedia),
   display: Boolean(navigator.mediaDevices?.getDisplayMedia), worklet: Boolean(window.AudioWorkletNode), indexedDB: Boolean(window.indexedDB),
@@ -9,26 +11,46 @@ export const capabilities = () => ({ secure: window.isSecureContext, microphone:
 export class CaptureController {
   private streams: MediaStream[] = []; private contexts: AudioContext[] = []; private nodes: AudioWorkletNode[] = [];
   private writes: Promise<void>[] = []; private flushes: (() => void)[] = [];
+  private signals: CaptureSignal[] = [];
   sources: Source[] = []; active = false;
   constructor(private recordId: string, private onMeter: (value: number) => void, private onFailure: (error: Error) => void,
-    private onSaved: () => void, private onEnded: () => void) {}
+    private onSaved: () => void, private onEnded: () => void, private onSignals: (signals: CaptureSignal[]) => void = () => {}) {}
+  async startMeeting() {
+    await this.start('display');
+    try { await this.start('microphone'); }
+    catch { throw new Error('共享音频已开始，但麦克风未启用。当前只记录共享声音；可点击“加麦克风”重试或结束录音。'); }
+  }
   async start(kind: Exclude<SourceKind, 'import'>, selectedDevice = preferredDevice()) {
     // The browser permission request must remain in the original user gesture.
-    const permission = kind === 'display' ? navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
-      : inputDevices().then(devices => navigator.mediaDevices.getUserMedia({audio: microphoneConstraints(selectedDevice, devices), video: false})).catch(error => { if (error.name !== 'OverconstrainedError' && error.name !== 'NotFoundError') throw error; return navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true},video:false}); });
+    const displayOptions = { video: true, audio: true, systemAudio: 'include', surfaceSwitching: 'include' };
+    const permission = kind === 'display' ? navigator.mediaDevices.getDisplayMedia(displayOptions)
+      : openMicrophone(selectedDevice);
     const stream = await permission;
     if (!stream.getAudioTracks().length) { stream.getTracks().forEach(t => t.stop()); throw new Error('共享来源没有音轨。请选择带音频的标签页并勾选共享音频，或改用麦克风/导入。'); }
     let context: AudioContext | undefined;
     try {
+      context = new AudioContext({ latencyHint: 'interactive' }); await context.resume();
+      if (context.state !== 'running') throw new Error('浏览器未启动音频处理，请检查站点权限后重新开始。');
       const source = await api<Source>(`/records/${this.recordId}/sources`, 'POST', { kind, label: stream.getAudioTracks()[0]?.label || (kind === 'display' ? '共享音轨' : '默认麦克风') });
-      context = new AudioContext(); await context.audioWorklet.addModule('/audio-worklet.js'); await context.resume();
+      await context.audioWorklet.addModule('/audio-worklet.js');
       const input = context.createMediaStreamSource(stream), node = new AudioWorkletNode(context, 'meeting-pcm');
       const mute = context.createGain(); mute.gain.value = 0; input.connect(node).connect(mute).connect(context.destination);
       let sequence = 0, offset = 0;
+      const track = stream.getAudioTracks()[0]; let quietSeconds = 0;
+      const signal: CaptureSignal = { sourceId: source.id, kind, label: source.label, rms: 0, seconds: 0, status: 'checking', message: '' };
+      this.signals.push(signal);
+      const report = () => {
+        Object.assign(signal, signalMessage(signal, quietSeconds, track.muted, context!.state));
+        this.onSignals(this.signals.map(item => ({ ...item })));
+      };
+      track.addEventListener('mute', report); track.addEventListener('unmute', report);
+      context.addEventListener('statechange', report); report();
       node.port.onmessage = event => {
         if (event.data.type === 'meter') { this.onMeter(event.data.value); return; }
         if (event.data.type === 'flushed') { this.flushes.shift()?.(); return; }
         if (event.data.type !== 'pcm') return;
+        const { rms } = pcmSignal(event.data.buffer), seconds = event.data.buffer.byteLength / 32000;
+        signal.rms = rms; signal.seconds += seconds; quietSeconds = rms >= 0.0005 ? 0 : quietSeconds + seconds; report();
         const current = sequence++, start = offset; offset += event.data.buffer.byteLength / 2;
         const write = makeChunk(source.id, source.epoch, current, start, event.data.buffer, source.sessionId).then(chunk => enqueue(this.recordId, chunk)).then(this.onSaved)
           .catch(error => { this.onFailure(error); void this.stop(); });
@@ -46,7 +68,7 @@ export class CaptureController {
       const timer = window.setTimeout(resolve, 2000); this.flushes.push(() => { clearTimeout(timer); resolve(); }); node.port.postMessage({ type: 'flush' });
     })));
     this.streams.forEach(s => s.getTracks().forEach(t => t.stop())); await Promise.all(this.contexts.map(c => c.close()));
-    await Promise.all(this.writes); this.streams = []; this.nodes = []; this.contexts = []; this.onMeter(0);
+    await Promise.all(this.writes); this.streams = []; this.nodes = []; this.contexts = []; this.onMeter(0); this.signals = []; this.onSignals([]);
   }
 }
 export async function importAudio(file: File, record: RecordDetail, progress: (value: number) => void) {

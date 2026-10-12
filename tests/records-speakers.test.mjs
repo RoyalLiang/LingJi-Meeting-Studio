@@ -13,6 +13,16 @@ import { createDoubaoSpeakerStream } from '../services/records/src/doubao.mjs';
 const wait=()=>new Promise(r=>setTimeout(r,5));
 function fixture(){const r=createRecord('owner',{retainAudio:true}),s=addSource(r,{kind:'microphone',label:'测试音轨'});for(let i=0;i<3;i++)acknowledge(r,{sessionId:s.sessionId,sourceId:s.id,epoch:s.epoch,sequence:i,sampleOffset:i*3200,sampleCount:3200,sampleRate:16000,digest:`digest${i}`,object:`object${i}`});s.asr={fence:'one',speakerMap:{},mayAllocate:true};return {r,s};}
 const turns=[{text:'甲第一次发言',startMs:0,endMs:200,speakerId:'0'},{text:'乙发言',startMs:200,endMs:400,speakerId:'1'},{text:'甲再次发言',startMs:400,endMs:600,speakerId:'0'}];
+test('a silent first shared source cannot prevent the first audible microphone from allocating speaker identities',()=>{
+  const {r,s}=fixture();s.kind='display';r.speakerOriginSourceId=s.id;
+  const microphone=addSource(r,{kind:'microphone',label:'真实麦克风'});
+  acknowledge(r,{sessionId:microphone.sessionId,sourceId:microphone.id,epoch:microphone.epoch,sequence:0,sampleOffset:0,sampleCount:9600,sampleRate:16000,digest:'microphone-digest',object:'microphone-object'});
+  microphone.asr={fence:'microphone',speakerMap:{},mayAllocate:false};
+  commitSpeakerTurns(r,microphone.id,'microphone',turns,r.generation);
+  assert.deepEqual(r.segments.map(segment=>segment.speaker),['说话人 1','说话人 2','说话人 1']);
+  assert.equal(r.speakerOriginSourceId,microphone.id);
+  assert.equal(s.asr.mayAllocate,false);
+});
 test('A-B-A reuses numbered acoustic identities including vendor zero; replay is idempotent',()=>{const {r,s}=fixture();commitSpeakerTurns(r,s.id,'one',turns,1);assert.deepEqual(r.segments.map(s=>s.speaker),['说话人 1','说话人 2','说话人 1']);const rev=r.transcriptRevision;commitSpeakerTurns(r,s.id,'one',turns,1);assert.equal(r.transcriptRevision,rev);assert.equal(r.speakers.length,2);});
 test('reconnection replays audio anchors even when vendor IDs swap; manual edits survive',()=>{const {r,s}=fixture();commitSpeakerTurns(r,s.id,'one',turns,1);editSegment(r,r.segments[0].id,{revision:1,text:'人工文字',speaker:'甲'});s.asr={fence:'two',speakerMap:{},mayAllocate:false};commitSpeakerTurns(r,s.id,'two',turns.map(t=>({...t,speakerId:t.speakerId==='0'?'1':'0'})),1);assert.deepEqual(r.segments.map(s=>s.speaker),['甲','说话人 2','说话人 1']);assert.equal(r.segments.length,3);assert.equal(r.segments[0].text,'人工文字');assert.equal(r.speakers.length,2);});
 test('speaker count is bounded; missing, excess and unrelated connection identities remain unconfirmed',()=>{const {r,s}=fixture();r.chunks[2].sampleCount=16000;const many=Array.from({length:12},(_,i)=>({text:`句子${i}`,startMs:i*100,endMs:(i+1)*100,speakerId:String(i)}));commitSpeakerTurns(r,s.id,'one',many,1);assert.equal(r.speakers.length,10);assert.equal(r.segments.at(-1).speaker,'');const source=addSource(r,{kind:'microphone'});source.asr={fence:'other',speakerMap:{},mayAllocate:false};r.chunks.push({...r.chunks[0],sourceId:source.id});commitSpeakerTurns(r,source.id,'other',[turns[0]],1);assert.equal(r.segments.at(-1).speaker,'');assert.equal(r.speakers.length,10);});

@@ -404,3 +404,20 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 .live-caret{display:inline-block;width:2px;height:1em;margin-left:3px;vertical-align:-.12em;background:var(--accent);animation:live-caret 1s steps(2,end) infinite}
 @keyframes live-caret{50%{opacity:0}}
 @media(prefers-reduced-motion:reduce){.live-caret{animation:none}}
+/* Independent capture signal feedback. */
+.capture-signals { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr)); gap:12px; margin:12px 0; }
+.source-signal { min-width:0; padding:16px; border:1px solid var(--border); border-radius:var(--r-sm); background:var(--glass); }
+.source-signal-heading { display:flex; align-items:center; gap:8px; font-size:12px; }
+.source-signal-heading > span:not(.source-signal-state) { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--ink-3); }
+.source-signal-state { margin-left:auto; font-size:11px; color:var(--accent); }
+.source-signal-meter { height:4px; overflow:hidden; border-radius:9px; background:var(--accent-soft); margin-top:12px; }
+.source-signal-meter i { display:block; width:100%; height:100%; transform-origin:left; background:var(--accent); transition:transform .15s ease; }
+.source-signal p, .capture-guide, .microphone-test p { font-size:12px; line-height:1.75; color:var(--ink-3); }
+.source-signal p { display:flex; gap:5px; align-items:flex-start; margin:9px 0 0; }
+.source-signal p svg { flex:none; margin-top:3px; }
+.source-signal:is([data-status=silent],[data-status=muted],[data-status=suspended]) { background:var(--warn-soft); border-color:color-mix(in srgb,var(--warn) 25%,transparent); }
+.source-signal:is([data-status=silent],[data-status=muted],[data-status=suspended]) :is(p,.source-signal-state) { color:var(--warn); }
+.capture-guide { margin:12px 0 24px; max-width:80ch; }
+.microphone-test { margin-top:16px; }
+.audio-empty-result { margin-top:24px; }
+@media (prefers-reduced-motion:reduce) { .source-signal-meter i { transition:none; } }

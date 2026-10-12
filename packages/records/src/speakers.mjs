@@ -20,6 +20,11 @@ export function commitSpeakerTurns(record, sourceId, fence, turns, generation) {
     if(previous.length>1){source.asr.identityWarning='ambiguous_replay';continue;}
     const old=previous[0];
     const providerId=turn.speakerId != null && /^\d{1,3}$/.test(String(turn.speakerId)) ? String(turn.speakerId) : null;
+    // A silent source can claim a stream first. Allocate identities only when the first real turn arrives.
+    if (providerId!==null && !record.speakers.length && !record.segments.some(segment=>segment.speakerId || segment.speakerAnchorId || segment.speaker)) {
+      record.speakerOriginSourceId=sourceId;
+      for(const input of record.sources) if(input.asr) input.asr.mayAllocate=input.id===sourceId;
+    }
     let identity=providerId===null ? null : source.asr.speakerMap[providerId];
     // Replaying the same audio interval anchors IDs after a reconnect. Text similarity is not identity evidence.
     const anchorIdentity=old?.speakerAnchorId || old?.speakerId;
