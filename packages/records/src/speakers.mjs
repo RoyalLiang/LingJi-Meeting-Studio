@@ -12,9 +12,11 @@ export function commitSpeakerTurns(record, sourceId, fence, turns, generation) {
   for(const speaker of record.speakers) speaker.hash ||= speakerHash(record.id,speaker.id);
   source.asr.speakerMap ||= {};
   let changed=false;
-  const audioEnd=Math.max(0,...record.chunks.filter(c=>c.sourceId===sourceId).map(c=>(c.sampleOffset+c.sampleCount)/16));
-  for (const turn of turns) {
-    if (!turn.text?.trim() || !Number.isFinite(turn.startMs) || !Number.isFinite(turn.endMs) || turn.startMs<0 || turn.endMs<=turn.startMs || turn.endMs>audioEnd+250) continue;
+  const offset=source.timelineOffsetMs || 0;
+  const audioEnd=offset+Math.max(0,...record.chunks.filter(c=>c.sourceId===sourceId).map(c=>(c.sampleOffset+c.sampleCount)/16));
+  for (const incoming of turns) {
+    const turn={...incoming,startMs:incoming.startMs+offset,endMs:incoming.endMs+offset};
+    if (!turn.text?.trim() || !Number.isFinite(turn.startMs) || !Number.isFinite(turn.endMs) || turn.startMs<offset || turn.endMs<=turn.startMs || turn.endMs>audioEnd+250) continue;
     const overlap=s=>Math.max(0,Math.min(s.endMs,turn.endMs)-Math.max(s.startMs,turn.startMs));
     const previous=record.segments.filter(s=>s.sourceId===sourceId && overlap(s)>=Math.min(s.endMs-s.startMs,turn.endMs-turn.startMs)*0.7);
     if(previous.length>1){source.asr.identityWarning='ambiguous_replay';continue;}
@@ -38,7 +40,7 @@ export function commitSpeakerTurns(record, sourceId, fence, turns, generation) {
     const identityHash=registered?.hash || old?.speakerHash || null;
     identity ||= old?.speakerId || null;
     if (old?.edited) { if(old.speakerId) old.speakerHash ||= record.speakers.find(s=>s.id===old.speakerId)?.hash;continue; }
-    const chunk=record.chunks.find(c=>c.sourceId===sourceId && c.sampleOffset/16<=turn.startMs && (c.sampleOffset+c.sampleCount)/16>turn.startMs);
+    const chunk=record.chunks.find(c=>c.sourceId===sourceId && c.sampleOffset/16<=turn.startMs-offset && (c.sampleOffset+c.sampleCount)/16>turn.startMs-offset);
     if (old) {
       if (old.text===turn.text.trim() && old.speaker===speaker && old.speakerHash===identityHash && old.startMs===turn.startMs && old.endMs===turn.endMs) continue;
       Object.assign(old,{text:turn.text.trim(),speaker,speakerId:identity,speakerHash:identityHash,startMs:turn.startMs,endMs:turn.endMs,revision:old.revision+1,translation:null});
@@ -68,7 +70,7 @@ export function updateTranscriptPreview(record,sourceId,fence,preview,runtime,ge
   const firstUiReadyMs=source.asr.runtime?.firstUiReadyMs ?? (text && Number.isFinite(firstAccepted) ? Date.now()-firstAccepted : undefined);
   const nextRuntime={...runtime,...(firstUiReadyMs!=null ? {firstUiReadyMs} : {})};
   if((source.asr.preview?.text||'')===text && JSON.stringify(source.asr.runtime)===JSON.stringify(nextRuntime))return false;
-  source.asr.preview=text ? {text,startMs:preview.startMs||0,updatedAt:Date.now()} : null;
+  source.asr.preview=text ? {text,startMs:(source.timelineOffsetMs||0)+(preview.startMs||0),updatedAt:Date.now()} : null;
   source.asr.runtime=nextRuntime;
   emit(record,'transcript.preview',{sourceId});return true;
 }

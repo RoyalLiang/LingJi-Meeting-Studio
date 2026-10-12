@@ -17,6 +17,6 @@ export function signalMessage(signal: CaptureSignal, quietSeconds: number, muted
   if (quietSeconds >= 5) return { status: 'silent' as const, message: signal.kind === 'display'
     ? '连续 5 秒没有收到声音；请播放共享标签页，并确认勾选了共享音频'
     : '连续 5 秒没有收到声音；请说一句话，检查系统麦克风权限，或结束录音后切换输入设备' };
-  if (signal.rms >= 0.0005) return { status: 'audible' as const, message: '已采到声音，正在转录' };
+  if (signal.rms >= 0.0005) return { status: 'audible' as const, message: '已采到声音' };
   return { status: signal.seconds > 0 ? 'quiet' as const : 'checking' as const, message: signal.seconds > 0 ? '等待声音' : '正在检查音频信号' };
 }

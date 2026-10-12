@@ -26,8 +26,11 @@ export class CaptureController {
   private writes: Promise<void>[] = []; private flushes: (() => void)[] = [];
   private signals: CaptureSignal[] = [];
   sources: Source[] = []; active = false;
-  constructor(private recordId: string, private onMeter: (value: number) => void, private onFailure: (error: Error) => void,
-    private onSaved: () => void, private onEnded: () => void, private onSignals: (signals: CaptureSignal[]) => void = () => {}) {}
+  constructor(private recordId: string | Promise<string>, private onMeter: (value: number) => void, private onFailure: (error: Error) => void,
+    private onSaved: () => void, private onEnded: () => void, private onSignals: (signals: CaptureSignal[]) => void = () => {}) {
+    // Permission denial can settle before record creation fails. Observe the deferred ID immediately.
+    if (typeof recordId !== 'string') void recordId.catch(() => {});
+  }
   async startMeeting(): Promise<CaptureIssue[]> {
     // Start both requests from the click. A cancelled sharing picker must not cancel the microphone.
     const kinds: CaptureKind[] = ['display', 'microphone'];
@@ -56,9 +59,10 @@ export class CaptureController {
     if (!stream.getAudioTracks().length) { stream.getTracks().forEach(t => t.stop()); throw new Error('共享来源没有音轨。请选择带音频的标签页并勾选共享音频，或改用麦克风/导入。'); }
     let context: AudioContext | undefined;
     try {
+      const recordId = await this.recordId;
       context = new AudioContext({ latencyHint: 'interactive' }); await context.resume();
       if (context.state !== 'running') throw new Error('浏览器未启动音频处理，请检查站点权限后重新开始。');
-      const source = await api<Source>(`/records/${this.recordId}/sources`, 'POST', { kind, label: stream.getAudioTracks()[0]?.label || (kind === 'display' ? '共享音轨' : '默认麦克风') });
+      const source = await api<Source>(`/records/${recordId}/sources`, 'POST', { kind, label: stream.getAudioTracks()[0]?.label || (kind === 'display' ? '共享音轨' : '默认麦克风') });
       await context.audioWorklet.addModule('/audio-worklet.js');
       const input = context.createMediaStreamSource(stream), node = new AudioWorkletNode(context, 'meeting-pcm');
       const mute = context.createGain(); mute.gain.value = 0; input.connect(node).connect(mute).connect(context.destination);
@@ -79,7 +83,7 @@ export class CaptureController {
         const { rms } = pcmSignal(event.data.buffer), seconds = event.data.buffer.byteLength / 32000;
         signal.rms = rms; signal.seconds += seconds; quietSeconds = rms >= 0.0005 ? 0 : quietSeconds + seconds; report();
         const current = sequence++, start = offset; offset += event.data.buffer.byteLength / 2;
-        const write = makeChunk(source.id, source.epoch, current, start, event.data.buffer, source.sessionId).then(chunk => enqueue(this.recordId, chunk)).then(this.onSaved)
+        const write = makeChunk(source.id, source.epoch, current, start, event.data.buffer, source.sessionId).then(chunk => enqueue(recordId, chunk)).then(this.onSaved)
           .catch(error => { this.onFailure(error); void this.stop(); });
         this.writes.push(write);
         if (this.writes.length > 100) this.writes.splice(0, this.writes.length - 100);

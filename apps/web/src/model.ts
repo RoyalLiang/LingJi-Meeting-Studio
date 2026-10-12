@@ -1,5 +1,5 @@
 export type SourceKind = 'microphone' | 'display' | 'import';
-export interface Source { asr?: {state:string;error?:string;identityWarning?:string;preview?:{text:string;startMs:number;updatedAt:number}|null;runtime?:{firstTextMs?:number;firstConfirmedMs?:number;firstUiReadyMs?:number;connectionMs?:number;totalMs?:number}}; id: string; sessionId: string; epoch: string; kind: SourceKind; label: string; lastSequence: number | null; watermark: number; stopped: boolean }
+export interface Source { asr?: {state:string;error?:string;identityWarning?:string;preview?:{text:string;startMs:number;updatedAt:number}|null;runtime?:{firstTextMs?:number;firstConfirmedMs?:number;firstUiReadyMs?:number;connectionMs?:number;totalMs?:number}}; id: string; sessionId: string; timelineOffsetMs?: number; epoch: string; kind: SourceKind; label: string; lastSequence: number | null; watermark: number; stopped: boolean }
 export interface Evidence { segmentId: string; revision: number }
 export interface Segment { speakerId?: string | null; speakerHash?: string | null; id: string; revision: number; sourceId: string; text: string; speaker: string; startMs: number; endMs: number; translation?: string; edited: boolean }
 export interface MinutesItem { text: string; evidence: Evidence[] }

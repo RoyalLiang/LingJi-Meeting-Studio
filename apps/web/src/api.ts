@@ -1,6 +1,9 @@
 let csrf = '';
 export const setCsrf = (token: string) => { csrf = token; };
 const messages: Record<string, string> = {
+  record_completed: '本场会议已结束，请开启新会议。',
+  pause_audio_pending: '上一段音频仍在补传，完成后即可继续本场会议。',
+  capture_not_recording: '当前没有可暂停的录音。',
   download_failed: '下载失败，请检查登录状态和网络后重试。',
   doubao_credentials_required: '请在设置中配置豆包语音密钥。',
   doubao_http_401: '豆包语音鉴权失败，请核对语音 API Key 或旧版双密钥。',
