@@ -1,3 +1,5 @@
+import { telemetry } from './telemetry.mjs';
+import { performance } from 'node:perf_hooks';
 import { setTranslationTarget } from '../../../packages/records/src/translation.mjs';
 import { workspaceRoutes, requireWorkspace } from './workspace-routes.mjs';
 import { belongsToScope, meetingSeconds } from '../../../packages/records/src/workspaces.mjs';
@@ -46,6 +48,10 @@ export async function createRecordServer(options = {}) {
     return mutate(r);
   });
   const server = http.createServer(async (req, res) => {
+    const started = performance.now();
+    const traceId = /^[A-Za-z0-9-]{16,80}$/.test(req.headers['x-record-trace'] || '') ? req.headers['x-record-trace'] : randomUUID();
+    res.setHeader('X-Record-Trace', traceId);
+    res.once('finish', () => telemetry.event('http.complete', { traceId, durationMs:performance.now()-started, outcome:res.statusCode<400?'ok':'error', bytes:Number(res.getHeader('Content-Length'))||0 }));
     try {
       const url = new URL(req.url, 'http://localhost'), path = url.pathname;
       if (path === '/api/health') { await repo.list('health-probe'); send(res, 200, { ok: true, service: 'records', storage: repo.backend, audioStorage: repo.audioBackend }); return; }
@@ -79,6 +85,7 @@ export async function createRecordServer(options = {}) {
       if (path === '/api/auth/logout' && req.method === 'POST') {
         await repo.change(user.id, u => { u.authVersion++; }); send(res, 200, { ok: true }, { 'Set-Cookie': auth.clear() }); return;
       }
+      if (path === '/api/diagnostics/traces' && req.method === 'GET') { requireThat(canConfigure(user), 'configuration_admin_required', 403); send(res,200,telemetry.snapshot()); return; }
       if (path === '/api/bootstrap' && req.method === 'GET') {
         send(res, 200, { email: user.email, csrf: auth.csrf(user), providers: providerStatus(await readConfig(repo.root)), limits: { maxMinutes: 120, maxRecords: 200, maxChunkSeconds: 15 }, storage: repo.backend, canConfigure: canConfigure(user) }); return;
       }
@@ -191,7 +198,8 @@ export async function createRecordServer(options = {}) {
         if (record.chunks.some(c => c.sourceId === body.sourceId && c.epoch === body.epoch && c.sequence === body.sequence)) { send(res, 200, preflight); return; }
         const object = await repo.putAudio(id, bytes);
         const ack = await changeOwned(id, user, r => { requireThat(r.owner === user.id, 'not_found', 404); return acknowledge(r, {
-          sessionId: body.sessionId, sourceId: body.sourceId, epoch: body.epoch, sequence: body.sequence, sampleOffset: body.sampleOffset, sampleCount: body.sampleCount, sampleRate: body.sampleRate, ...object }); });
+          sessionId: body.sessionId, sourceId: body.sourceId, epoch: body.epoch, sequence: body.sequence, sampleOffset: body.sampleOffset, sampleCount: body.sampleCount, sampleRate: body.sampleRate, traceId, ...object }); });
+        telemetry.event('audio.ack', {traceId, recordId:id, sourceId:body.sourceId, sequence:body.sequence, bytes:bytes.length, durationMs:performance.now()-started});
         send(res, 200, ack); return;
       }
       if (action === 'shares' && req.method === 'GET') { send(res, 200, { shares: record.shares.map(({ hash, ...s }) => s) }); return; }
