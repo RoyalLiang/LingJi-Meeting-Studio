@@ -1,5 +1,7 @@
 # 项目文档入口
 
+- [跨平台客户端、性能与最强大脑演进调研](research/client-brain-evolution-2026-10-12.md)：当前代码、合成基准、端云分工与分层更新路线；[架构提议](adr/0010-cross-platform-brain-evolution.md)尚未批准实施。
+
 本轮新增：[服务与分析边界 ADR](adr/0005-provider-and-analysis-boundaries.md)、[开发账户与配置运行手册](engineering/runbook.md)、[真实合成 ASR 与界面验收](engineering/acceptance.md)。
 
 更新日期：2026-10-12。产品目标：通用实时语音转录、会议 AI 总结与纪要；用户已确认**浏览器优先、尽量免安装**。全阶段工程首版已形成可运行闭环，环境退出门仍逐项保留。
