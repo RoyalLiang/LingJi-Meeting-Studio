@@ -16,11 +16,11 @@ export function useContentFollow(update: string, paused: boolean, selector = '[a
     const container=root.current?.closest<HTMLElement>(selector); if (!container) return;
     const scroll = () => { if (jumped.current || moving.current || !end.current) return; const bottom=end.current.getBoundingClientRect().bottom, bounds=container.getBoundingClientRect(); change(bottom <= bounds.bottom+96 && bottom >= bounds.top); };
     const intent = () => { jumped.current=false; moving.current=false; };
-    const jumpTop = () => { jumped.current=true; cancelAnimationFrame(frame.current); moving.current=false; change(false); };
+    const pauseReading = () => { jumped.current=true; cancelAnimationFrame(frame.current); moving.current=false; change(false); };
     const wheel = (event: WheelEvent) => { intent(); if (event.deltaY<0) change(false); };
-    container.addEventListener('scroll',scroll,{passive:true}); container.addEventListener('wheel',wheel,{passive:true}); container.addEventListener('touchmove',intent,{passive:true}); container.addEventListener('keydown',intent); container.addEventListener('meeting:jump-top',jumpTop);
+    container.addEventListener('scroll',scroll,{passive:true}); container.addEventListener('wheel',wheel,{passive:true}); container.addEventListener('touchmove',intent,{passive:true}); container.addEventListener('keydown',intent); container.addEventListener('meeting:jump-top',pauseReading); window.addEventListener('meeting:pause-follow',pauseReading);
     const resize=new ResizeObserver(()=>{if(enabled && follow.current && !paused)align();}); if(root.current)resize.observe(root.current);
-    return () => { resize.disconnect(); cancelAnimationFrame(frame.current); container.removeEventListener('scroll',scroll);container.removeEventListener('wheel',wheel);container.removeEventListener('touchmove',intent);container.removeEventListener('keydown',intent); container.removeEventListener('meeting:jump-top',jumpTop); };
+    return () => { resize.disconnect(); cancelAnimationFrame(frame.current); container.removeEventListener('scroll',scroll);container.removeEventListener('wheel',wheel);container.removeEventListener('touchmove',intent);container.removeEventListener('keydown',intent); container.removeEventListener('meeting:jump-top',pauseReading); window.removeEventListener('meeting:pause-follow',pauseReading); };
   }, [align,change,paused,selector,enabled]);
   useLayoutEffect(() => {
     if(paused)change(false); else if((enabled || wasEnabled.current) && follow.current)align();

@@ -17,9 +17,9 @@ export function Select({ value, defaultValue, onChange, options, name, label, di
   const place=()=>{
    const rect=button.current?.getBoundingClientRect();if(!rect)return;
    const height=window.visualViewport?.height || innerHeight, width=window.visualViewport?.width || innerWidth;
-   const below=height-rect.bottom-16, above=rect.top-16, flip=below<Math.min(240,options.length*44+12) && above>below;
+   const below=height-rect.bottom-12, above=rect.top-12, flip=below<Math.min(240,options.length*44+10) && above>below;
    const maxHeight=Math.max(44,Math.min(300,flip?above:below));
-   setPosition({position:'fixed',left:Math.max(8,Math.min(rect.left,width-Math.min(rect.width,width-16)-8)),width:Math.min(rect.width,width-16),maxHeight,...(flip?{bottom:height-rect.top+6}:{top:rect.bottom+6})});
+   setPosition({position:'fixed',left:Math.max(8,Math.min(rect.left,width-Math.min(rect.width,width-16)-8)),width:Math.min(rect.width,width-16),maxHeight,top:flip?'auto':rect.bottom+4,bottom:flip?height-rect.top+4:'auto'});
   };
   place();addEventListener('resize',place);addEventListener('scroll',place,true);visualViewport?.addEventListener('resize',place);
   return()=>{popup.current?.hidePopover();removeEventListener('resize',place);removeEventListener('scroll',place,true);visualViewport?.removeEventListener('resize',place);};
@@ -36,6 +36,6 @@ export function Select({ value, defaultValue, onChange, options, name, label, di
  }}>
   {name && <input type="hidden" name={name} value={selected}/>}
   <button type="button" ref={button} disabled={disabled||!options.length} aria-disabled={disabled||readOnly||!options.length} className="select-trigger" role="combobox" aria-label={label} aria-haspopup="listbox" aria-controls={id} aria-expanded={open} aria-activedescendant={open?`${id}-${index}`:undefined} onClick={()=>{if(readOnly)return;setOpen(!open);setIndex(Math.max(0,options.findIndex(o=>o.value===selected)));}}><span>{options.find(o=>o.value===selected)?.label || label}</span><CaretDown size={16}/></button>
-  {open && createPortal(<div ref={popup} popover="manual" className="select-options select-portal" style={position} role="listbox" id={id} aria-label={label}>{options.map((option,i)=><div key={option.value} id={`${id}-${i}`} data-option-index={i} role="option" aria-selected={selected===option.value} className={index===i?'focused':''} onPointerMove={()=>setIndex(i)} onPointerDown={e=>{e.preventDefault();choose(option.value);}}><span>{option.label}</span>{selected===option.value && <Check size={16}/>}</div>)}</div>,button.current?.closest('dialog') || document.body)}
+  {open && createPortal(<div ref={popup} popover="manual" className="select-options select-portal" style={position} role="listbox" id={id} aria-label={label}>{options.map((option,i)=><div key={option.value} id={`${id}-${i}`} data-option-index={i} title={option.label} role="option" aria-selected={selected===option.value} className={index===i?'focused':''} onPointerMove={()=>setIndex(i)} onPointerDown={e=>{e.preventDefault();choose(option.value);}}><span>{option.label}</span>{selected===option.value && <Check size={16}/>}</div>)}</div>,button.current?.closest('dialog') || document.body)}
  </div>;
 }
