@@ -11,6 +11,10 @@ function schedule(value) {
   if (value.deleted) { value.nextWorkAt = value.cleanup === 'completed' ? (value.cleanupAt || 0) + 600000 : now; return; }
   const times = [automaticMinutesAt(value, now), Date.parse(value.deleteAt), (value.gcAt || 0) + 3600000];
   if (!value.retainAudio && !value.audioPurged && value.capture === 'completed') times.push(now);
+  for (const source of value.sources) {
+    if (source.asr?.state === 'running') times.push(now+250);
+    if (source.asr?.state === 'failed' && source.asr.attempts<5) times.push(Math.max(source.asr.retryAt||0,now));
+  }
   for (const chunk of value.chunks) {
     if (chunk.expired) continue;
     if (!value.retainAudio) times.push((chunk.acceptedAt || Date.parse(value.createdAt)) + 86400000);

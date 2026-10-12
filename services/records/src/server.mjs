@@ -196,6 +196,7 @@ export async function createRecordServer(options = {}) {
       else if (action === 'retry' && req.method === 'POST') result = await changeOwned(id, user, r => {
         requireThat(!r.chunks.some(c => c.expired), 'temporary_audio_expired', 410);
         for (const c of r.chunks) if (c.state !== 'done') { c.attempts = 0; c.retryAt = 0; }
+        for (const source of r.sources) if (source.asr?.state==='failed') { source.asr.attempts=0;source.asr.retryAt=0; }
         r.transcription = 'queued'; emit(r, 'transcription.retry'); return publicRecord(r);
       });
       else if (action === 'import-text' && req.method === 'POST') result = await changeOwned(id, user, r => {

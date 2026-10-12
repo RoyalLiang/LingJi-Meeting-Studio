@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { ArrowDown, ArrowSquareOut, Check, CloudCheck, CloudSlash, FileAudio, FileText, GearSix, Headphones, Microphone, Moon,
   Plus, MagnifyingGlass, Record as RecordIcon, ShareNetwork, SignOut, Sparkle, Square, Sun, Trash, WarningCircle, X, CaretRight } from '@phosphor-icons/react';
 import { api, messageOf, setCsrf, ApiError } from './api';
+import { subscribeToRecord, type ConnectionState } from './record-subscription';
 import type { Bootstrap, RecordDetail, RecordListItem, Segment, Minutes, Evidence } from './model';
 import { timecode } from './model';
 import { Select } from './components/Select';
@@ -47,6 +48,7 @@ function Workspace() {
   const [boot, setBoot] = useState<Bootstrap | null>(null), [authReady, setAuthReady] = useState(false), [loading, setLoading] = useState(true);
   const [records, setRecords] = useState<RecordListItem[]>([]), [query, setQuery] = useState(''), [id, setId] = useState(new URLSearchParams(location.search).get('record') || ''), [record, setRecord] = useState<RecordDetail | null>(null);
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false), [minutesOpen, setMinutesOpen] = useState(false);
+  const [connectionState, setConnectionState] = useState<ConnectionState>('idle');
   const [modal, setModal] = useState<'new' | 'settings' | 'share' | 'delete' | 'import-text' | null>(null), [theme, setTheme] = useState(localStorage.getItem('meeting-theme') || 'light');
   const [recording, setRecording] = useState(false), [meter, setMeter] = useState(0), [pending, setPending] = useState(0), [online, setOnline] = useState(navigator.onLine);
   const [highlight, setHighlight] = useState(''), [evidence, setEvidence] = useState<Segment | null>(null), [importProgress, setImportProgress] = useState<number | null>(null);
@@ -69,20 +71,18 @@ function Workspace() {
     return () => { clearTimeout(timer); controller.abort(); };
   }, [query, authReady]);
   useEffect(() => {
-    activeId.current = id; history.replaceState(null, '', id ? `?record=${encodeURIComponent(id)}` : '/'); setRecord(null); setMinutesOpen(false); setHighlight(''); if (!id || !authReady) return;
-    let cancelled = false; let source: EventSource | undefined;
-    async function connect() {
-      try { const detail = await api<RecordDetail>(`/records/${id}`); if (cancelled) return; setRecord(detail);
-        source = new EventSource(`/api/records/${id}/events?after=${detail.cursor}`);
-        source.onmessage = () => { void refresh().catch(e => setError(messageOf(e))); };
-        source.addEventListener('reset', () => { void refresh().catch(e => setError(messageOf(e))); });
-        source.addEventListener('revoked', () => { source?.close(); setRecord(null); setError('记录已删除或登录已失效，请刷新。'); });
-        source.onerror = () => { if (!cancelled) setNotice('实时连接中断，正在自动重连；本地音频仍会保留。'); };
-        source.onopen = () => setNotice('');
-      } catch (e) { if (!cancelled) setError(messageOf(e)); }
-    }
-    void connect(); return () => { cancelled = true; source?.close(); };
-  }, [id, authReady, refresh]);
+    activeId.current = id; history.replaceState(null, '', id ? `?record=${encodeURIComponent(id)}` : '/'); setRecord(null); setMinutesOpen(false); setHighlight('');
+  }, [id, authReady]);
+  useEffect(() => {
+    if (!id || !authReady) { setConnectionState('idle'); return; }
+    return subscribeToRecord<RecordDetail>({
+      recordId: id,
+      loadRecord: signal => api<RecordDetail>(`/records/${id}`, 'GET', undefined, signal),
+      onRecord: detail => { if (mounted.current && activeId.current === id) setRecord(detail); },
+      onState: setConnectionState,
+      onFatal: error => { setRecord(null); setError(messageOf(error)); if (error instanceof ApiError && error.status === 401) setAuthReady(false); }
+    });
+  }, [id, authReady, online]);
   const upload = useCallback(async () => { try { await drainQueue(() => { void pendingCount(activeId.current).then(setPending); }); setPending(await pendingCount(activeId.current)); }
     catch (e) { if (navigator.onLine) setError(messageOf(e)); } }, []);
   useEffect(() => {
@@ -143,15 +143,16 @@ function Workspace() {
         {!records.length && <p className="rail-empty">{query ? '没有匹配记录' : '你的第一场对话，值得留住。'}</p>}</nav>
       <footer className="rail-footer"><div className="account"><span className="avatar">{boot.email[0].toUpperCase()}</span><span><b>{boot.email.split('@')[0]}</b><small>个人会议空间</small></span></div><div className="actions"><Button variant="ghost" aria-label="设置与诊断" onClick={() => { setModal('settings'); void api<{deletions: typeof deletions}>('/deletions').then(d => setDeletions(d.deletions)).catch(e => setError(messageOf(e))); }}><GearSix size={19}/></Button><Button variant="ghost" aria-label={theme === 'light' ? '切换深色' : '切换浅色'} onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>{theme === 'light' ? <Moon size={19}/> : <Sun size={19}/>}</Button><Button variant="ghost" aria-label="退出登录" disabled={recording} onClick={async () => { try { await api('/auth/logout', 'POST'); setQueueRecords([]); setAuthReady(false); setId(''); } catch (e) { setError(messageOf(e)); } }}><SignOut size={19}/></Button></div></footer>
     </aside>
-    <main id="workspace" className={`workspace ${minutesOpen ? 'with-minutes' : ''}`}><header className="topbar glass"><div><span className="breadcrumb">会议空间</span><CaretRight size={14}/><span>{record ? '记录详情' : '所有记录'}</span></div><div className="sync-state">{online ? <CloudCheck size={18}/> : <CloudSlash size={18}/>}<span>{!online ? '离线 · 本地保留' : pending ? `${pending} 段待上传` : '已连接'}</span></div></header>
+    <main id="workspace" className={`workspace ${minutesOpen ? 'with-minutes' : ''}`}><header className="topbar glass"><div><span className="breadcrumb">会议空间</span><CaretRight size={14}/><span>{record ? '记录详情' : '所有记录'}</span></div><div className="sync-state" data-connection-state={connectionState}>{online && (!id || connectionState==='connected') ? <CloudCheck size={18}/> : <CloudSlash size={18}/>}<span>{!online ? '离线 · 本地保留' : !id ? '网络可用' : connectionState!=='connected' ? ({idle:'未连接',connecting:'连接中',reconnecting:'正在重连',offline:'离线',unavailable:'连接不可用'}[connectionState]) : pending ? `${pending} 段待上传` : '已连接'}</span></div></header>
       <div className="workspace-scroll" tabIndex={0} aria-label="会议内容滚动区">
       {error && <div className="global-message error" role="alert"><WarningCircle size={19}/><span>{error}</span><button aria-label="关闭错误提示" onClick={() => setError('')}><X size={17}/></button></div>}
+      {id && connectionState==='reconnecting' && <div className="global-message" role="status"><span>实时连接中断，正在自动重连；本地音频仍会保留。</span></div>}
       {notice && <div className="global-message" role="status"><span>{notice}</span><button aria-label="关闭提示" onClick={() => setNotice('')}><X size={17}/></button></div>}
       {boot.providers.fixture && <div className="fixture-notice">开发测试模式 · 识别与纪要为测试数据</div>}
       {!id ? <div className="welcome"><p className="kicker">给对话多一点空间</p><h1>专注此刻，<br/><em>记住重要的事。</em></h1><p>实时记录每一段讨论，把共识与下一步清晰留下。</p><div className="actions"><Button variant="primary" onClick={() => setModal('new')}><Plus size={18}/>开始一段记录</Button><Button onClick={() => { setModal('settings'); void api<{deletions: typeof deletions}>('/deletions').then(d => setDeletions(d.deletions)).catch(e => setError(messageOf(e))); }}><GearSix size={18}/>检查录音环境</Button></div>
         <div className="welcome-features"><div><Microphone size={24}/><h3>声音成为文字</h3><p>麦克风、共享音轨或音频文件。</p></div><div><Sparkle size={24}/><h3>让共识更清楚</h3><p>纪要和行动候选，保留原文引用。</p></div><div><CloudCheck size={24}/><h3>从断点继续</h3><p>本地缓冲、补传与明确保存状态。</p></div></div>
         <p className="fine-print">关闭页面会停止采集。共享来源是否包含音频取决于浏览器、系统与所选来源。</p></div>
-        : !record ? <div className="empty" role="status">正在读取记录…</div> : <><div className="record-heading"><div><p className="kicker">{new Date(records.find(r => r.id === id)?.createdAt || Date.now()).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+        : !record ? <div className="empty" role="status">{connectionState==='unavailable' ? '当前记录无法访问，请重新登录或选择其他记录。' : '正在读取记录…'}</div> : <><div className="record-heading"><div><p className="kicker">{new Date(records.find(r => r.id === id)?.createdAt || Date.now()).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
           <h1>{record.title}</h1><div className="record-meta"><Status tone={recording ? 'live' : ''}>{recording ? '正在记录' : record.capture === 'completed' ? '已完成' : record.capture === 'sealed' ? '处理中' : '待开始'}</Status><span>{timecode(record.usage.samples / 16)} 音频 · 转录 v{record.transcriptRevision}</span><span>{record.retentionDays} 天留存</span></div></div>
           <div className="actions"><Button disabled={!record.minutes || recording} onClick={() => void openShare()}><ShareNetwork size={17}/><span>分享</span></Button><Button aria-expanded={minutesOpen} onClick={() => setMinutesOpen(!minutesOpen)}><Sparkle size={17}/>纪要</Button><Button variant="ghost" aria-label="删除本次记录" disabled={recording} onClick={() => setModal('delete')}><Trash size={18}/></Button></div></div>
         <div className="capture-panel glass"><div className="capture-status"><span className={`record-indicator ${recording ? 'on' : ''}`}><RecordIcon size={22} weight="fill"/></span><div><b>{recording ? '保持对话，我们正在聆听' : record.capture === 'sealed' ? '音频已封存，等待处理' : '准备好，就开始'}</b><small>{recording ? '关闭页面会停止录音；请保持页面打开。' : '音频将发送至已配置的转录服务，请先告知参会者。'}</small></div></div>

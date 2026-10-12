@@ -62,7 +62,9 @@ test('AudioWorklet resamples to PCM16 and flushes final short chunk', async () =
   const processor = new Processor();
   for (let frame = 0; frame < 1125; frame++) { const values = Float32Array.from({ length: 128 }, (_, i) => Math.sin((frame * 128 + i) * Math.PI * 2 * 440 / 48000) * .5); processor.process([[values]]); }
   processor.port.onmessage({ data: { type: 'flush' } }); const pcm = messages.filter(m => m.type === 'pcm');
-  assert.equal(pcm.length, 2); assert.equal(pcm[0].buffer.byteLength, 64000); assert.equal(pcm[1].buffer.byteLength, 32000);
+  assert.equal(pcm.length, 4); assert.equal(pcm[0].buffer.byteLength, 12800); assert.equal(pcm[1].buffer.byteLength, 32000);
+  assert.equal(pcm.at(-1).buffer.byteLength, 19200);
+  assert.equal(pcm.reduce((n,p)=>n+p.buffer.byteLength,0),96000);
   assert.ok(messages.some(m => m.type === 'meter' && m.value > .1)); assert.equal(messages.at(-1).type, 'flushed');
 });
 test('SSE delivers committed event IDs, expired cursor reset, and share revoke', async () => {

@@ -27,6 +27,8 @@
 - `.agent-runtime/`：gitignored 本地状态和检查证据，不进入正式产品文档。
 - [本轮计划](../task_plan.md)、[发现](../findings.md)、[进展](../progress.md)：本次整理的过程记录，不是长期架构事实来源。
 
+- [说话人连续性](engineering/speaker-continuity.md)：持续连接、匿名编号复用、重连与未知身份边界。
+
 ## 历史文档保留作背景
 
 | 文档 | 使用边界 |

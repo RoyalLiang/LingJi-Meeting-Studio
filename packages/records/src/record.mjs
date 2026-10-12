@@ -114,6 +114,13 @@ export function editSegment(record, id, input) {
   const { versions, ...previous } = segment;
   segment.versions = [...(versions || []), previous].slice(-20);
   segment.text = input.text.trim(); segment.speaker = String(input.speaker ?? segment.speaker).slice(0, 80);
+  if (input.speaker != null) {
+    // Keep the acoustic replay anchor separate from a human attribution correction.
+    if (segment.speakerId) segment.speakerAnchorId ||= segment.speakerId;
+    const known = record.speakers?.find(s => s.label === segment.speaker);
+    if (known) { segment.speakerId = known.id; segment.speakerHash = known.hash || digest(`meeting-speaker:v1:${record.id}:${known.id}`); }
+    else if (!segment.speaker) { segment.speakerId = null; segment.speakerHash = null; }
+  }
   for (const field of ['translation', 'translationLanguage', 'translationLease', 'translationAttempts', 'translationRetryAt', 'translationError']) delete segment[field];
   segment.revision++; segment.edited = true; record.transcriptRevision++;
   emit(record, 'transcript.edited', { segmentId: id, transcriptRevision: record.transcriptRevision });
@@ -177,7 +184,7 @@ export function commitMinutes(record, jobId, result, fence) {
 }
 export function publicRecord(record) {
   const { owner, events, chunks, shares, jobs, minutesHistory, ...rest } = record;
-  return { ...rest, audio: record.sources.map(s => receipt(record, s)),
+  return { ...rest, sources: record.sources.map(({asr,...source})=>({...source,...(asr ? {asr:{state:asr.state,error:asr.error,identityWarning:asr.identityWarning,preview:asr.preview,runtime:asr.runtime}} : {})})), audio: record.sources.map(s => receipt(record, s)),
     pendingChunks: chunks.filter(c => c.state !== 'done').length,
     minuteVersions: [...(minutesHistory || []), ...(record.minutes ? [record.minutes] : [])].map(m => ({ revision: m.revision, transcriptRevision: m.transcriptRevision, edited: m.edited })),
     jobs: jobs.map(({ snapshot, notes, fence, ...job }) => job) };

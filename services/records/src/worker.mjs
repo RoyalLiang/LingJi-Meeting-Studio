@@ -1,3 +1,4 @@
+import { processSpeakerSources, closeSpeakerStreams } from './speaker-streams.mjs';
 import { queueAutomaticMinutes, updateMinutesPreview } from '../../../packages/records/src/automation.mjs';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +15,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
     if (lane !== 'all' && lane !== 'audio' && (candidate.deleted || Date.parse(candidate.deleteAt) < Date.now())) return;
     if (candidate.deleted && candidate.cleanup === 'completed' && Date.now() - (candidate.cleanupAt || 0) < 600000) return;
     if (candidate.deleted || Date.parse(candidate.deleteAt) < Date.now()) {
+      closeSpeakerStreams(repo,candidate.id);
       await repo.change(candidate.id, r => {
         if (!r.deleted) { r.deleted = true; r.generation++; r.title = '已删除'; r.segments = []; r.notes = ''; r.minutes = null; r.liveMinutes = null;
           r.jobs = []; r.shares = []; r.minutesHistory = []; r.insights = null; emit(r, 'record.deleted'); }
@@ -27,7 +29,9 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
       await repo.change(candidate.id, r => { for (const c of r.chunks) if (expired.some(e => e.key === c.key)) { c.expired = true; if (c.state !== 'done') { c.attempts = 5; c.error = 'temporary_audio_expired'; r.transcription = 'failed'; delete c.lease; } } emit(r, 'audio.expired'); });
       await repo.cleanAudio(candidate.id, new Set(candidate.chunks.filter(c => !expired.some(e => e.key === c.key)).map(c => c.object)));
     }
+    const speakerMode=!providers.transcribe && providerStatus(config).asrProvider==='doubao' && providerStatus(config).asr && !providerStatus(config).fixture && ['zh','en','zhen'].includes(candidate.language);
     async function processAudio() {
+      if (speakerMode) return;
     let claimed;
     if (candidate.chunks.some(c => c.state !== 'done' && c.attempts < 5 && (!c.retryAt || c.retryAt <= Date.now()) && (!c.lease || c.lease < Date.now()))) await repo.change(candidate.id, r => {
       if (r.deleted || Date.parse(r.deleteAt) <= Date.now()) return;
@@ -57,6 +61,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
       }
     }
     }
+    if (speakerMode) await processSpeakerSources(repo,candidate,config);
     // Two independent sources can progress together; a source remains strictly ordered.
     await Promise.all([processAudio(), processAudio()]);
     }
@@ -150,7 +155,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
     while (next < records.length) await processCandidate(records[next++]);
   }));
 }
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+export async function startWorker() {
   const repo = await createRepository(); let stop = false;
   process.on('SIGTERM', () => { stop = true; }); process.on('SIGINT', () => { stop = true; });
   console.log(`[record-worker] ${repo.backend}; durable audio and minutes queue`);
@@ -160,5 +165,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
    await new Promise(resolve => setTimeout(resolve, lane === 'audio' ? 250 : 500));
   }
  }));
- await repo.close();
+  closeSpeakerStreams(repo);
+  await repo.close();
 }
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) await startWorker();
