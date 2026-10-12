@@ -1,6 +1,7 @@
 let csrf = '';
 export const setCsrf = (token: string) => { csrf = token; };
 const messages: Record<string, string> = {
+  download_failed: '下载失败，请检查登录状态和网络后重试。',
   doubao_credentials_required: '请在设置中配置豆包语音密钥。',
   doubao_http_401: '豆包语音鉴权失败，请核对语音 API Key 或旧版双密钥。',
   doubao_http_403: '豆包语音资源无权限，请核对开通状态与资源 ID。',

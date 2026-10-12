@@ -10,13 +10,13 @@ export const defaults = {
   DOUBAO_AST_BASE_URL: 'wss://openspeech.bytedance.com/api/v4/ast/v2/translate',
   DOUBAO_AST_ENDPOINT: 'v4/ast/v2/translate',
   DOUBAO_AST_RESOURCE_ID: 'volc.service_type.10053',
-  LLM_API_URL: 'https://ark.cn-beijing.volces.com/api/v3/chat/completions',
-  LLM_PROTOCOL: 'chat-completions',
+  LLM_API_URL: 'https://ark.cn-beijing.volces.com/api/v3/responses',
+  LLM_PROTOCOL: 'responses',
 };
 const fields = ['ASR_PROVIDER', 'DOUBAO_API_KEY', 'DOUBAO_ASR_URL', 'DOUBAO_ASR_RESOURCE_ID', 'DOUBAO_AST_BASE_URL', 'DOUBAO_AST_ENDPOINT', 'DOUBAO_AST_RESOURCE_ID', 'DOUBAO_AST_APP_ID', 'DOUBAO_AST_APP_KEY', 'DOUBAO_AST_ACCESS_KEY', 'ASR_API_URL', 'ASR_API_KEY', 'ASR_MODEL', 'DEEPGRAM_API_KEY', 'LLM_API_URL', 'LLM_API_KEY', 'LLM_MODEL', 'LLM_PROTOCOL'];
 const secretFields = new Set(['DOUBAO_API_KEY', 'DOUBAO_AST_APP_KEY', 'DOUBAO_AST_ACCESS_KEY', 'ASR_API_KEY', 'DEEPGRAM_API_KEY', 'LLM_API_KEY']);
 export const configured = value => Boolean(value && !/^(your[-_]|replace|mock|<|xxx)/i.test(value));
-export function chatEndpoint(value, protocol = 'chat-completions') {
+export function chatEndpoint(value, protocol = 'responses') {
   if (!value) value = defaults.LLM_API_URL;
   try {
     const url = new URL(value), path = url.pathname.replace(/\/+$/, '');
@@ -28,7 +28,7 @@ export function chatEndpoint(value, protocol = 'chat-completions') {
   } catch { return value; }
 }
 export function normalizeConfig(env = process.env) {
-  const protocol = env.LLM_PROTOCOL || (/\/responses\/?(?:\?|$)/.test(env.LLM_API_URL || '') ? 'responses' : defaults.LLM_PROTOCOL);
+  const protocol = env.LLM_PROTOCOL || (/\/chat\/completions\/?(?:\?|$)/.test(env.LLM_API_URL || '') ? 'chat-completions' : defaults.LLM_PROTOCOL);
   return { ...defaults, ...env, LLM_PROTOCOL: protocol, LLM_API_URL: chatEndpoint(env.LLM_API_URL || defaults.LLM_API_URL, protocol),
     ASR_PROVIDER: env.ASR_PROVIDER || (env.DEEPGRAM_API_KEY ? 'deepgram' : env.ASR_API_URL ? 'openai-compatible' : env.DOUBAO_AST_APP_KEY || env.DOUBAO_AST_SECRET ? 'doubao-ast' : 'doubao'),
     DOUBAO_AST_APP_KEY: env.DOUBAO_AST_APP_KEY || env.DOUBAO_AST_SECRET || '',

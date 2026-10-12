@@ -48,3 +48,4 @@
 - [增量纪要 ADR](adr/0006-live-minutes-and-protocols.md)
 
 - [音源检测与智能纪要](engineering/capture-and-minutes.md)：双来源录音、静音提示、虚拟麦克风选择、主题树与发言人/决策视图。
+- [工作台交互反馈](engineering/workbench-feedback.md)：设置保存 toast、Responses 默认值、显式分享系统音频、转录跟随与备份错误反馈。

@@ -22,7 +22,7 @@ export class CaptureController {
   }
   async start(kind: Exclude<SourceKind, 'import'>, selectedDevice = preferredDevice()) {
     // The browser permission request must remain in the original user gesture.
-    const displayOptions = { video: true, audio: true, systemAudio: 'include', surfaceSwitching: 'include' };
+    const displayOptions = { video: true, audio: { echoCancellation:false, noiseSuppression:false, autoGainControl:false, suppressLocalAudioPlayback:false }, systemAudio: 'include', windowAudio:'system', selfBrowserSurface:'exclude', surfaceSwitching: 'include' };
     const permission = kind === 'display' ? navigator.mediaDevices.getDisplayMedia(displayOptions)
       : openMicrophone(selectedDevice);
     const stream = await permission;
