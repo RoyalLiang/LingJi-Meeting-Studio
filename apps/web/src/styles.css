@@ -283,7 +283,9 @@ html,body { overflow-x:clip; }
 .select.is-open { z-index:10; }
 .select-options { position:absolute; top:calc(100% + 6px); left:0; width:100%; min-width:180px; max-height:220px; overflow:auto; z-index:20; padding:5px; border:1px solid var(--border); border-radius:12px; background:var(--bg); box-shadow:var(--shadow-lg); font-weight:400; }
 .select-options [role=option] { display:flex; align-items:center; justify-content:space-between; padding:9px 10px; border-radius:8px; cursor:pointer; color:var(--ink-2); gap:8px; }
-.select-options [aria-selected=true],.select-options .focused { background:var(--accent-soft); color:var(--accent); }
+.select-options [role=option] { background:transparent; }
+.select-options [aria-selected=true] { background:var(--accent-soft); color:var(--accent); font-weight:600; }
+.select-options [role=option].focused:not([aria-selected=true]) { background:var(--panel-2); color:var(--ink-1); outline:1px solid var(--border); outline-offset:-1px; }
 .minutes-toolbar .select { flex:1; }
 .device-compact { width:100%; max-width:100%; }
 .capture-controls:has(.device-compact) { width:100%; }
@@ -635,3 +637,74 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 .meeting-table .checkbox-label,.meeting-table .checkbox-label:has(input:checked){padding:0;min-height:28px;border:0;border-radius:0;background:transparent;}
 .meeting-table .checkbox-label input[type=checkbox]{width:16px;height:16px;min-width:16px;border-radius:4px;}
 .meeting-table .checkbox-label input[type=checkbox]:checked:after{content:none;}
+
+/* Intelligent minutes owns the main reading surface; translation is secondary. */
+.minutes-panel.is-inline { position:relative; display:block; inset:auto; width:100%; height:auto; max-height:none; overflow:visible; border:0; border-radius:0; background:transparent; backdrop-filter:none; -webkit-backdrop-filter:none; box-shadow:none; z-index:auto; margin:22px 0 32px; }
+.minutes-panel.is-inline>header { padding:16px 0; border-bottom:1px solid var(--border); background:transparent; }
+.minutes-panel.is-inline .minutes-content { padding:20px 0 0; overflow:visible; }
+.minutes-panel.is-inline .minutes-title { margin:24px 0 10px; }
+.minutes-panel.is-inline .minutes-tree { --branch-indent:36px; margin-top:24px; }
+.minutes-panel.is-inline .branch-node { font-size:14px; line-height:1.85; }
+.minutes-panel.is-inline .minutes-control-bar { margin-bottom:14px; }
+.minutes-empty-actions { margin:16px 0 28px; }
+.minutes-follow { position:sticky; bottom:16px; display:flex; margin:16px auto 0; border-color:var(--accent); background:var(--bg); color:var(--accent); box-shadow:var(--shadow); z-index:5; }
+.content-follow-anchor { height:1px; flex:none; }
+.current-discussion { padding:24px; margin:30px 0 0; border:1px solid var(--border); border-radius:16px; background:var(--panel-2); }
+.current-discussion>header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
+.current-discussion>header>div { display:flex; align-items:center; gap:10px; }
+.current-discussion h3 { font-size:16px; }
+.discussion-status { color:var(--ink-2); font-size:11px; }
+.current-discussion ol { margin:0 0 0 8px; padding:0 0 0 22px; list-style:none; border-left:1px dashed var(--border); }
+.current-discussion li { position:relative; padding:0 0 20px 6px; font-size:14px; line-height:1.9; overflow-wrap:anywhere; }
+.current-discussion li:last-child { padding-bottom:0; }
+.current-discussion li::before { content:''; position:absolute; left:-27px; top:10px; width:7px; height:7px; border-radius:50%; background:var(--ink-3); }
+.current-discussion li:last-child::before { background:var(--accent); }
+.discussion-draft { display:flex; align-items:baseline; flex-wrap:wrap; gap:8px; margin-top:18px; font-size:14px; line-height:1.9; overflow-wrap:anywhere; }
+.discussion-draft small { color:var(--ink-2); font-size:11px; }
+.summary-tables { display:grid; gap:24px; margin-top:26px; min-width:0; }
+.summary-table { margin:0; min-width:0; }
+.summary-table figcaption { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:0 0 12px; }
+.summary-table h4 { font-size:15px; }
+.summary-table-scroll { max-width:100%; overflow-x:auto; border:1px solid var(--border); border-radius:12px; overscroll-behavior-inline:contain; scrollbar-width:thin; scrollbar-color:var(--border) transparent; }
+.summary-table table { width:100%; min-width:480px; border-collapse:collapse; text-align:left; table-layout:fixed; font-size:13px; line-height:1.8; }
+.summary-table th { background:var(--panel-2); font-weight:600; color:var(--ink-1); }
+.summary-table :is(th,td) { padding:14px 16px; border-right:1px solid var(--border); border-bottom:1px solid var(--border); vertical-align:top; overflow-wrap:anywhere; }
+.summary-table tr>:last-child { border-right:0; }
+.summary-table tbody tr:last-child td { border-bottom:0; }
+.summary-table tbody tr:hover { background:color-mix(in srgb,var(--panel-2) 55%,transparent); }
+.summary-table .citations { margin:0; }
+.summary-charts { margin-top:32px; }
+.summary-charts>h4 { font-size:15px; margin:24px 0 10px; }
+.summary-charts dl { display:grid; gap:18px; margin:22px 0 32px; }
+.summary-charts dl>div { display:grid; grid-template-columns:92px 1fr; gap:14px; align-items:center; font-size:13px; }
+.summary-charts dd { display:flex; align-items:center; gap:14px; margin:0; }
+.summary-charts dd b { width:24px; text-align:right; font-variant-numeric:tabular-nums; }
+.summary-count-track { flex:1; height:10px; border-radius:4px; background:var(--panel-2); overflow:hidden; }
+.summary-count-track>span { display:block; height:100%; background:var(--accent); border-radius:4px; }
+.workspace.with-translation .workspace-scroll { margin-right:390px; }
+.translation-panel { position:absolute; inset:64px 0 0 auto; width:380px; display:flex; flex-direction:column; min-height:0; border-left:1px solid var(--border); background:var(--glass-strong); z-index:8; }
+.translation-panel>header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:20px; border-bottom:1px solid var(--border); }
+.translation-panel h2 { font-size:17px; }
+.translation-toolbar { display:flex; align-items:flex-end; gap:10px; padding:20px 20px 0; }
+.translation-toolbar label { flex:1; min-width:0; font-size:11px; gap:8px; }
+.translation-explainer { padding:12px 20px 18px; font-size:11px; color:var(--ink-2); line-height:1.8; }
+.translation-content { flex:1; min-height:120px; overflow-y:auto; padding:0 20px 16px; overscroll-behavior:contain; scrollbar-width:thin; scrollbar-color:var(--border) transparent; }
+.translation-segment { padding:16px 0; border-bottom:1px solid var(--border); }
+.translation-segment>header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px; color:var(--ink-2); font-size:11px; }
+.translation-segment .button { min-height:30px; padding:3px 8px; font-size:11px; }
+.translation-segment>p { font-size:14px; line-height:1.85; overflow-wrap:anywhere; }
+.translation-empty { margin:36px 0; font-size:13px; line-height:1.85; color:var(--ink-2); }
+.translation-footer { padding:14px 20px; border-top:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.translation-error { padding:12px 20px; color:var(--down); font-size:12px; line-height:1.8; }
+.translation-error .button { margin-top:8px; }
+.translation-panel>.inline-error,.translation-panel>.notice { margin:0 20px 14px; }
+.translation-mobile { display:flex; flex-direction:column; height:min(620px,calc(100dvh - 180px)); min-height:240px; }
+.translation-mobile .translation-toolbar { padding:4px 0 0; }
+.translation-mobile .translation-content { padding:0 0 12px; }
+.translation-mobile .translation-explainer { padding:12px 0; }
+.translation-mobile .translation-footer { padding:12px 0 0; }
+@media(max-width:1100px) { .workspace.with-translation .workspace-scroll { margin-right:0; } }
+@media(max-width:700px) { .minutes-panel.is-inline { margin-top:12px; } .minutes-panel.is-inline .minutes-content { padding:16px 0 0; } .minutes-panel.is-inline .minutes-tree { --branch-indent:22px; } .current-discussion { padding:18px 16px; } .current-discussion>header { margin-bottom:16px; } .summary-table :is(th,td) { padding:12px; } .minutes-follow { bottom:8px; } .translation-mobile .translation-toolbar { align-items:flex-end; } }
+
+.summary-table-hint { display:none; }
+@media(max-width:700px) { .summary-table-hint { display:block; margin:0 0 10px; color:var(--ink-2); font-size:11px; } .minutes-follow { margin-left:0; margin-right:auto; bottom:14px; } }

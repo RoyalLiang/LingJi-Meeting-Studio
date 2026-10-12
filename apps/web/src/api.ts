@@ -1,6 +1,11 @@
 let csrf = '';
 export const setCsrf = (token: string) => { csrf = token; };
 const messages: Record<string, string> = {
+  translation_not_configured: '请在设置中配置豆包翻译模型与服务连接。',
+  translation_connection_failed: '翻译连接失败，请检查翻译服务地址后重试。',
+  translation_credentials_rejected: '翻译密钥被拒绝，请核对对应服务。',
+  translation_incomplete: '翻译未完整返回，原文已保留，可重试。',
+  invalid_translation: '翻译结果不可用，原文已保留，可重试。',
   invalid_workspace: '目录名称需为 1 至 80 个字，说明最多 240 个字。',
   workspace_not_found: '工作目录不存在或当前账户无权访问。',
   workspace_limit: '最多创建 50 个工作目录，请使用已有目录。',
