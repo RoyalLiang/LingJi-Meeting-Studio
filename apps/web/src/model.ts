@@ -4,8 +4,9 @@ export interface Evidence { segmentId: string; revision: number }
 export interface Segment { speakerId?: string | null; speakerHash?: string | null; id: string; revision: number; sourceId: string; text: string; speaker: string; startMs: number; endMs: number; translation?: string; edited: boolean }
 export interface MinutesItem { text: string; evidence: Evidence[] }
 export interface Topic { title: string; summary: string; evidence: Evidence[] }
+export interface SpeakerSummary { speakerId: string | null; speaker: string; summary: string; evidence: Evidence[] }
 export interface ModelRuntime { protocol?: string; streamed?: boolean; firstTokenMs?: number | null; durationMs?: number; elapsedMs?: number }
-export interface Minutes { topics?: Topic[]; runtime?: ModelRuntime; method?: string; title: string; sections: { heading: string; items: MinutesItem[] }[]; actions: (MinutesItem & { owner?: string; due?: string })[];
+export interface Minutes { speakerSummaries?: SpeakerSummary[]; decisions?: MinutesItem[]; topics?: Topic[]; runtime?: ModelRuntime; method?: string; title: string; sections: { heading: string; items: MinutesItem[] }[]; actions: (MinutesItem & { owner?: string; due?: string })[];
   revision: number; transcriptRevision: number; edited: boolean; evidenceSnapshot: Segment[] }
 export interface Job { scope?: string; automatic?: boolean; preview?: {kind:string;text:string}[]; runtime?: ModelRuntime; id: string; status: string; error?: string; transcriptRevision: number }
 export interface RecordDetail { speakers?: {id:string;hash?:string;label:string}[]; autoMinutes?: {enabled:boolean;intervalSeconds:number}; liveMinutes?: Minutes | null;

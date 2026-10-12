@@ -133,7 +133,7 @@ export function requestMinutes(record, input = {}) {
   const template = input.template || 'meeting'; requireThat(templates.includes(template), 'unknown_template', 400);
   const snapshot = (scope === 'live' ? record.segments.slice(-120) : record.segments).map(({versions, ...s}) => ({ ...s }));
   const manifestHash = digest(JSON.stringify(snapshot));
-  const key = `${record.id}:${record.transcriptRevision}:${manifestHash}:${template}:v1:${record.notesRevision}:${input.modelVersion || 'default'}:${input.mode || 'model'}:${scope}`;
+  const key = `${record.id}:${record.transcriptRevision}:${manifestHash}:${template}:v2:${record.notesRevision}:${input.modelVersion || 'default'}:${input.mode || 'model'}:${scope}`;
   const existing = record.jobs.find(j => j.key === key && !['failed', 'stale'].includes(j.status));
   if (existing) return existing;
   requireThat(record.jobs.filter(j => ['queued', 'running'].includes(j.status)).length < 3, 'job_limit', 429);
@@ -158,6 +158,20 @@ export function validateMinutes(result, snapshot) {
   }
   requireThat(!result.actions || (Array.isArray(result.actions) && result.actions.length <= 100 && result.actions.every(a => typeof a.text === 'string' && a.text.trim() && a.text.length <= 8000 && (a.owner == null || (typeof a.owner === 'string' && a.owner.length <= 100)) && (a.due == null || (typeof a.due === 'string' && a.due.length <= 100))
     && Array.isArray(a.evidence) && a.evidence.length && a.evidence.every(ref => snapshot.some(s => s.id === ref.segmentId && s.revision === ref.revision)))), 'invalid_actions', 422);
+
+  const validEvidence = evidence => Array.isArray(evidence) && evidence.length > 0 && evidence.length <= 500 && evidence.every(ref => ref && snapshot.some(segment => segment.id === ref.segmentId && segment.revision === ref.revision));
+  if (result.decisions !== undefined) requireThat(Array.isArray(result.decisions) && result.decisions.length <= 100 && result.decisions.every(item => item && typeof item.text === 'string' && item.text.trim() && item.text.length <= 8000 && validEvidence(item.evidence)), 'invalid_minutes_decisions', 422);
+  if (result.speakerSummaries !== undefined) {
+    requireThat(Array.isArray(result.speakerSummaries) && result.speakerSummaries.length <= 20, 'invalid_speaker_summaries', 422);
+    const identities = new Set();
+    for (const summary of result.speakerSummaries) {
+      requireThat(summary && typeof summary === 'object', 'invalid_speaker_summaries', 422);
+      const key = summary.speakerId || `label:${summary.speaker}`;
+      requireThat((summary.speakerId == null || typeof summary.speakerId === 'string') && typeof summary.speaker === 'string' && summary.speaker.trim() && summary.speaker.length <= 80 && typeof summary.summary === 'string' && summary.summary.trim() && summary.summary.length <= 8000 && !identities.has(key) && validEvidence(summary.evidence), 'invalid_speaker_summaries', 422);
+      requireThat(summary.evidence.every(ref => snapshot.some(segment => segment.id === ref.segmentId && segment.revision === ref.revision && segment.speaker === summary.speaker && (summary.speakerId ? segment.speakerId === summary.speakerId : !segment.speakerId))), 'speaker_evidence_mismatch', 422);
+      identities.add(key);
+    }
+  }
   return result;
 }
 export function commitMinutes(record, jobId, result, fence) {
