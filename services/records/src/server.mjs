@@ -1,3 +1,5 @@
+import { workspaceRoutes, requireWorkspace } from './workspace-routes.mjs';
+import { belongsToScope, meetingSeconds } from '../../../packages/records/src/workspaces.mjs';
 import { setAutomation } from '../../../packages/records/src/automation.mjs';
 import http from 'node:http';
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -95,19 +97,22 @@ export async function createRecordServer(options = {}) {
       if (path === '/api/deletions' && req.method === 'GET') {
         send(res, 200, { deletions: (await repo.list()).filter(r => r.owner === user.id && r.deleted).map(r => ({ id: r.id, cleanup: r.cleanup || 'pending' })) }); return;
       }
+      if (await workspaceRoutes({ req, res, path, repo, user, readBody, send })) return;
       if (path === '/api/records' && req.method === 'POST') {
         const all = (await repo.list()).filter(r => r.owner === user.id && !r.deleted);
         requireThat(all.length < 200, 'record_limit', 429); const input = await readBody(req, 4000);
+        if (input.workspaceId) { requireThat(!['all', 'inbox'].includes(input.workspaceId), 'invalid_workspace', 400); await requireWorkspace(repo, user.id, input.workspaceId); }
         requireThat(!input.autoMinutes || providerStatus(await readConfig(repo.root)).minutes, 'minutes_not_configured', 503);
         const r = await repo.insert(createRecord(user.id, input));
         send(res, 201, publicRecord(r)); return;
       }
       if (path === '/api/records' && req.method === 'GET') {
         const query = (url.searchParams.get('q') || '').toLowerCase().slice(0, 200);
+        const scope = url.searchParams.get('workspace') || 'all'; await requireWorkspace(repo, user.id, scope);
         const all = (await repo.list()).filter(r => r.owner === user.id && !r.deleted && Date.parse(r.deleteAt) > Date.now());
-        const records = all.filter(r => !query || `${r.title} ${r.segments.map(s => s.text).join(' ')} ${JSON.stringify(r.minutes || '')}`.toLowerCase().includes(query))
-          .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(r => ({ id: r.id, title: r.title, createdAt: r.createdAt, updatedAt: r.updatedAt,
-            capture: r.capture, transcription: r.transcription, segments: r.segments.length, hasMinutes: Boolean(r.minutes), seconds: Math.round(r.usage.samples / 16000) }));
+        const records = all.filter(r => belongsToScope(r, scope)).filter(r => !query || `${r.title} ${r.segments.map(s => s.text).join(' ')} ${JSON.stringify(r.minutes || '')}`.toLowerCase().includes(query))
+          .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(r => ({ id: r.id, title: r.title, workspaceId: r.workspaceId || null, createdAt: r.createdAt, updatedAt: r.updatedAt,
+            capture: r.capture, transcription: r.transcription, segments: r.segments.length, hasMinutes: Boolean(r.minutes), seconds: meetingSeconds(r) }));
         send(res, 200, { records }); return;
       }
       const route = path.match(/^\/api\/records\/([a-f0-9-]{36})(?:\/(.*))?$/);

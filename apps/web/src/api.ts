@@ -1,6 +1,13 @@
 let csrf = '';
 export const setCsrf = (token: string) => { csrf = token; };
 const messages: Record<string, string> = {
+  invalid_workspace: '目录名称需为 1 至 80 个字，说明最多 240 个字。',
+  workspace_not_found: '工作目录不存在或当前账户无权访问。',
+  workspace_limit: '最多创建 50 个工作目录，请使用已有目录。',
+  invalid_record_selection: '请选择 1 至 200 场可归档会议。',
+  archive_recording: '请先暂停或结束录音，再归档这场会议。',
+  workspace_no_completed_transcript: '当前范围尚无已结束且有转录内容的会议。',
+  analysis_run_conflict: '分析任务已变化，请刷新后重试。',
   record_completed: '本场会议已结束，请开启新会议。',
   pause_audio_pending: '上一段音频仍在补传，完成后即可继续本场会议。',
   capture_not_recording: '当前没有可暂停的录音。',

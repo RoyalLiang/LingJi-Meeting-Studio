@@ -68,6 +68,29 @@ export async function createRepository(options = {}) {
       } catch (error) { if (error.code === '23505' || error.code?.startsWith('ERR_SQLITE')) throw new DomainError('already_exists'); throw error; }
       return value;
     },
+    async changeMany(ids, mutate) {
+      const client = pool ? await pool.connect() : null;
+      try {
+        if (client) await client.query('BEGIN'); else db.exec('BEGIN IMMEDIATE');
+        const values = [];
+        for (const id of [...new Set(ids)].sort()) {
+          const value = decode(client ? (await client.query('SELECT data FROM record_aggregates WHERE id=$1 FOR UPDATE', [id])).rows[0] : db.prepare('SELECT data FROM aggregates WHERE id=?').get(id));
+          requireThat(value, 'not_found', 404); values.push(value);
+        }
+        const result = mutate(values);
+        requireThat(!(result instanceof Promise), 'transaction_must_be_synchronous', 500);
+        for (const value of values) {
+          schedule(value);
+          if (client) await client.query('UPDATE record_aggregates SET data=$2 WHERE id=$1', [value.id, JSON.stringify(value)]);
+          else db.prepare('UPDATE aggregates SET data=? WHERE id=?').run(JSON.stringify(value), value.id);
+        }
+        if (client) await client.query('COMMIT'); else db.exec('COMMIT');
+        return structuredClone(result ?? values);
+      } catch (error) {
+        if (client) await client.query('ROLLBACK'); else db.exec('ROLLBACK');
+        throw error;
+      } finally { client?.release(); }
+    },
     async change(id, mutate) {
       const client = pool ? await pool.connect() : null;
       try {

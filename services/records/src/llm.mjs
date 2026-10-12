@@ -5,7 +5,7 @@ const outputText = response => response.output_text || (response.output || []).f
 
 // One interface hides Chat Completions / Responses and buffered / SSE transports.
 // Deltas are provisional; only the returned JSON may enter domain validation.
-export async function completeModelJson(messages, input = process.env, { onDelta } = {}) {
+export async function completeModelJson(messages, input = process.env, { onDelta, signal } = {}) {
   const env = normalizeConfig(input), responses = env.LLM_PROTOCOL === 'responses';
   requireThat(configured(env.LLM_API_KEY) && env.LLM_MODEL, 'minutes_not_configured', 503);
   const streaming = typeof onDelta === 'function', started = Date.now();
@@ -13,7 +13,7 @@ export async function completeModelJson(messages, input = process.env, { onDelta
     ? { model: env.LLM_MODEL, input: messages, store: false, text: { format: { type: 'json_object' } }, stream: streaming }
     : { model: env.LLM_MODEL, messages, response_format: { type: 'json_object' }, stream: streaming, ...(streaming ? { stream_options: { include_usage: true } } : {}) };
   let response;
-  try { response = await fetch(env.LLM_API_URL, { method: 'POST', signal: AbortSignal.timeout(120000), headers: { Authorization: `Bearer ${env.LLM_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); }
+  try { response = await fetch(env.LLM_API_URL, { method: 'POST', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(120000)]) : AbortSignal.timeout(120000), headers: { Authorization: `Bearer ${env.LLM_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); }
   catch { throw new DomainError('llm_connection_failed', 502); }
   if (!response.ok) {
     let code; try { code = (await response.json()).error?.code; } catch { /* Upstream bodies may contain sensitive details. */ }
