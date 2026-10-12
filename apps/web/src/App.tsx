@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { ArrowDown, ArrowSquareOut, Check, CloudCheck, CloudSlash, FileText, GearSix, Microphone, Moon,
+import { ArrowDown, ArrowSquareOut, Folder, FolderPlus, House, Check, CloudCheck, CloudSlash, FileText, GearSix, Microphone, Moon,
   Plus, MagnifyingGlass, ShareNetwork, SignOut, Sparkle, Sun, Trash, WarningCircle, X, CaretRight } from '@phosphor-icons/react';
 import { api, messageOf, setCsrf, ApiError } from './api';
 import { subscribeToRecord, type ConnectionState } from './record-subscription';
 import type { Bootstrap, RecordDetail, RecordListItem, Segment, Minutes, Evidence } from './model';
 import { timecode } from './model';
+import type { WorkspaceDirectory } from './workspace-model';
+import { WorkspaceHome } from './components/WorkspaceHome';
+import { WorkspaceEditor, ArchiveRecords } from './components/WorkspaceDialogs';
+import { Toast } from './components/Toast';
 import { Brand } from './components/Brand';
 import { ScrollToTop } from './components/ScrollToTop';
 import { Select } from './components/Select';
@@ -56,8 +60,12 @@ function Workspace() {
   const [boot, setBoot] = useState<Bootstrap | null>(null), [authReady, setAuthReady] = useState(false), [loading, setLoading] = useState(true);
   const [records, setRecords] = useState<RecordListItem[]>([]), [query, setQuery] = useState(''), [id, setId] = useState(new URLSearchParams(location.search).get('record') || ''), [record, setRecord] = useState<RecordDetail | null>(null);
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false), [minutesOpen, setMinutesOpen] = useState(false);
+  const [workspaceToast,setWorkspaceToast] = useState('');
+  const dismissWorkspaceToast=useCallback(()=>setWorkspaceToast(''),[]);
+  const [directories,setDirectories] = useState<WorkspaceDirectory[]>([]), [scope,setScope] = useState(() => { const value=new URLSearchParams(location.search).get('workspace') || 'all'; return /^(all|inbox|[a-f0-9-]{36})$/.test(value) ? value : 'all'; });
+  const [archiveIds,setArchiveIds] = useState<string[]>([]), [archiveInitial,setArchiveInitial] = useState<string|null>(null), [editingDirectory,setEditingDirectory] = useState<WorkspaceDirectory|undefined>(), [homeVersion,setHomeVersion] = useState(0);
   const [connectionState, setConnectionState] = useState<ConnectionState>('idle');
-  const [modal, setModal] = useState<'new' | 'settings' | 'share' | 'delete' | 'import-text' | 'capture' | 'finish' | null>(null), [theme, setTheme] = useState(localStorage.getItem('meeting-theme') || 'light');
+  const [modal, setModal] = useState<'new' | 'settings' | 'share' | 'delete' | 'import-text' | 'capture' | 'finish' | 'directory' | 'archive' | null>(null), [theme, setTheme] = useState(localStorage.getItem('meeting-theme') || 'light');
   const [signals, setSignals] = useState<CaptureSignal[]>([]);
   const [captureIssues, setCaptureIssues] = useState<CaptureIssue[]>([]);
   const [recording, setRecording] = useState(false), [pending, setPending] = useState(0), [online, setOnline] = useState(navigator.onLine);
@@ -68,25 +76,26 @@ function Workspace() {
   const [shares, setShares] = useState<{ id: string; scope: string; expires: number; revoked: boolean }[]>([]), [shareUrl, setShareUrl] = useState('');
   useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem('meeting-theme', theme); }, [theme]);
   const loadBoot = useCallback(async () => {
-    setLoading(true); setError(''); try { const b = await api<Bootstrap>('/bootstrap'); setCsrf(b.csrf); const list = await api<{records: RecordListItem[]}>('/records'); setQueueRecords(list.records.map(r => r.id)); setBoot(b); setAuthReady(true); }
+    setLoading(true); setError(''); try { const b = await api<Bootstrap>('/bootstrap'); setCsrf(b.csrf); const list = await api<{records: RecordListItem[]}>('/records'); setQueueRecords(list.records.map(r => r.id)); const folders=await api<{workspaces:WorkspaceDirectory[]}>('/workspaces');setDirectories(folders.workspaces); setBoot(b); setAuthReady(true); }
     catch (e) { if (!(e instanceof ApiError && e.status === 401)) setError(messageOf(e)); setAuthReady(false); } finally { setLoading(false); }
   }, []);
   const refreshProviders = useCallback(async () => {
     const next = await api<Bootstrap>('/bootstrap'); setCsrf(next.csrf); setBoot(next);
   }, []);
   useEffect(() => { void loadBoot(); mounted.current = true; return () => { mounted.current = false; void capture.current?.stop(); }; }, [loadBoot]);
-  const loadList = useCallback(async () => { const result = await api<{ records: RecordListItem[] }>(`/records?q=${encodeURIComponent(query)}`); setRecords(result.records); }, [query]);
+  const loadList = useCallback(async () => { const result = await api<{ records: RecordListItem[] }>(`/records?q=${encodeURIComponent(query)}&workspace=${encodeURIComponent(scope)}`); setRecords(result.records); }, [query,scope]);
   const refresh = useCallback(async () => {
     const current = activeId.current; if (!current) return;
     const detail = await api<RecordDetail>(`/records/${current}`); if (mounted.current && activeId.current === current) setRecord(detail);
   }, []);
   useEffect(() => {
-    if (!authReady) return; const controller = new AbortController(); const timer = setTimeout(() => { api<{ records: RecordListItem[] }>(`/records?q=${encodeURIComponent(query)}`, 'GET', undefined, controller.signal).then(d => setRecords(d.records)).catch(e => { if (e.name !== 'AbortError') setError(messageOf(e)); }); }, 180);
+    if (!authReady) return; const controller = new AbortController(); const timer = setTimeout(() => { api<{ records: RecordListItem[] }>(`/records?q=${encodeURIComponent(query)}&workspace=${encodeURIComponent(scope)}`, 'GET', undefined, controller.signal).then(d => setRecords(d.records)).catch(e => { if (e.name !== 'AbortError') setError(messageOf(e)); }); }, 180);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [query, authReady]);
+  }, [query, scope, authReady]);
   useEffect(() => {
-    activeId.current = id; history.replaceState(null, '', id ? `?record=${encodeURIComponent(id)}` : '/'); setRecord(null); setMinutesOpen(false); setHighlight('');
+    activeId.current = id; setRecord(null); setMinutesOpen(false); setHighlight('');
   }, [id, authReady]);
+  useEffect(() => { const params=new URLSearchParams({workspace:scope});if(id)params.set('record',id); history.replaceState(null,'',`?${params}`); }, [id,scope]);
   useEffect(() => {
     if (!id || !authReady) { setConnectionState('idle'); return; }
     return subscribeToRecord<RecordDetail>({
@@ -115,8 +124,8 @@ function Workspace() {
   }
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = new FormData(event.currentTarget); setBusy(true); setError('');
-    try { const r = await api<RecordDetail>('/records', 'POST', { title: form.get('title'), language: form.get('language'), retentionDays: Number(form.get('retentionDays')), retainAudio: form.has('retainAudio'), autoMinutes: form.has('autoMinutes') });
-      const list = await api<{records: RecordListItem[]}>('/records'); setQueueRecords(list.records.map(r => r.id)); setId(r.id); setModal(null); await loadList(); } catch (e) { setError(messageOf(e)); } finally { setBusy(false); }
+    try { const r = await api<RecordDetail>('/records', 'POST', { workspaceId: ['all','inbox'].includes(scope)?null:scope, title: form.get('title'), language: form.get('language'), retentionDays: Number(form.get('retentionDays')), retainAudio: form.has('retainAudio'), autoMinutes: form.has('autoMinutes') });
+      const list = await api<{records: RecordListItem[]}>('/records'); setQueueRecords(list.records.map(r => r.id)); await loadList(); setId(r.id); setModal(null); await loadList(); } catch (e) { setError(messageOf(e)); } finally { setBusy(false); }
   }
   async function stopCapture(mode: 'pause' | 'seal' = 'seal', title = '') {
     if (stopping.current) return false;
@@ -147,7 +156,7 @@ function Workspace() {
   async function quickRecord() {
     if (recording || busy || !captureAllowed()) return;
     setError(''); setCaptureIssues([]); setBusy(true);
-    const created = api<RecordDetail>('/records', 'POST', { autoMinutes: Boolean(boot?.providers.minutes) });
+    const created = api<RecordDetail>('/records', 'POST', { workspaceId: ['all','inbox'].includes(scope)?null:scope, autoMinutes: Boolean(boot?.providers.minutes) });
     const controller = capture.current = controllerFor(created.then(next => next.id));
     // Request permissions in this click, before waiting for the new record ID.
     const started = controller.startMeeting();
@@ -155,7 +164,7 @@ function Workspace() {
       const next = await created;
       activeId.current = next.id; setId(next.id); setRecord(next); setModal(null);
       const list = await api<{records: RecordListItem[]}>('/records');
-      setQueueRecords(list.records.map(item => item.id)); setRecords(list.records);
+      setQueueRecords(list.records.map(item => item.id)); await loadList();
       const issues = await started; setCaptureIssues(issues); setRecording(controller.active);
       if (issues.length) setModal('capture');
       await refresh();
@@ -190,6 +199,20 @@ function Workspace() {
     setEvidence(snapshot || null); setHighlight(ref.segmentId); document.getElementById(`segment-${ref.segmentId}`)?.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   }
   async function openShare() { if (!record) return; setShareUrl(''); setModal('share'); try { setShares((await api<{ shares: typeof shares }>(`/records/${record.id}/shares`)).shares); } catch (e) { setError(messageOf(e)); } }
+  const directoryName = scope==='all'?'所有会议':scope==='inbox'?'未归档':directories.find(w=>w.id===scope)?.name || '工作目录';
+  const chooseScope = (next:string) => { setScope(next);setId('');setQuery('');scrollRoot.current?.scrollTo({top:0,behavior:'instant'}); };
+  const newDirectory = () => {setEditingDirectory(undefined);setModal('directory');};
+  const openArchive = (ids:string[]) => {setArchiveIds(ids);setArchiveInitial(record?.workspaceId || (scope==='all'||scope==='inbox'?null:scope));setModal('archive');};
+  async function saveDirectory(name:string,description:string) {
+    try {
+      const directory=await api<WorkspaceDirectory>(editingDirectory?`/workspaces/${editingDirectory.id}`:'/workspaces',editingDirectory?'PATCH':'POST',{name,description});
+      const list=await api<{workspaces:WorkspaceDirectory[]}>('/workspaces');setDirectories(list.workspaces);setHomeVersion(v=>v+1);setWorkspaceToast(editingDirectory?'目录已保存。':'工作目录已创建。');
+      if(archiveIds.length){setArchiveInitial(directory.id);setModal('archive');}else{setModal(null);chooseScope(directory.id);}
+    }catch(e){throw new Error(messageOf(e));}
+  }
+  async function saveArchive(workspaceId:string|null) {
+    try {await api('/workspaces/archive','POST',{recordIds:archiveIds,workspaceId});await Promise.all([loadList(),refresh()]);setHomeVersion(v=>v+1);setWorkspaceToast(`已归档 ${archiveIds.length} 场会议。`);setArchiveIds([]);setModal(null);}catch(e){throw new Error(messageOf(e));}
+  }
   if (loading) return <main className="loading-page" role="status"><Brand markOnly/><p>正在打开会议空间…</p></main>;
   if (!authReady || !boot) return <Auth ready={() => void loadBoot()}/>;
   const sourceReady = boot.providers.asr || boot.providers.fixture;
@@ -197,24 +220,22 @@ function Workspace() {
     <aside className="sidebar glass"><Brand/>
       <Button variant="primary" className="new-record" onClick={() => void quickRecord()} disabled={recording || busy || !sourceReady}><Plus size={18}/>快速记录</Button>
       <Button className="prepare-record" variant="ghost" onClick={() => setModal('new')} disabled={recording || busy}>提前准备会议</Button>
-      <div className="search-box"><MagnifyingGlass size={17}/><input aria-label="搜索所有会议内容" placeholder="搜索会议与内容" value={query} onChange={e => setQuery(e.target.value)}/></div>
+      <div className="workspace-switch"><div><span>工作目录</span><Button variant="ghost" aria-label="新建工作目录" onClick={newDirectory} disabled={recording||busy}><FolderPlus size={17}/></Button></div><Select label="选择工作目录" value={scope} onChange={chooseScope} disabled={recording||busy} options={[{value:'all',label:'所有会议'},{value:'inbox',label:'未归档'},...directories.map(w=>({value:w.id,label:w.name}))]}/><Button className={`directory-home-link ${!id?'selected':''}`} variant="ghost" disabled={recording||busy} onClick={()=>chooseScope(scope)}><House size={16}/>目录概览</Button></div>
+    <div className="search-box"><MagnifyingGlass size={17}/><input aria-label="搜索当前目录会议内容" placeholder="搜索会议与内容" value={query} onChange={e => setQuery(e.target.value)}/></div>
       <div className="rail-heading">我的记录 <span>{records.length}</span></div><nav className="record-list" aria-label="会议记录">{records.map(r => <button key={r.id} className={`record-row ${r.id === id ? 'selected' : ''}`} disabled={(recording || busy) && r.id !== id} onClick={() => setId(r.id)}>
         <span className="record-icon">{r.hasMinutes ? <FileText size={18}/> : <Microphone size={18}/>}</span><span><b>{r.title}</b><small>{new Date(r.createdAt).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })} · {r.capture === 'recording' ? '记录中' : `${Math.ceil(r.seconds / 60)} 分钟`}</small></span><CaretRight size={14}/></button>)}
         {!records.length && <p className="rail-empty">{query ? '没有匹配记录' : '你的第一场对话，值得留住。'}</p>}</nav>
       <footer className="rail-footer"><div className="account"><span className="avatar">{boot.email[0].toUpperCase()}</span><span><b>{boot.email.split('@')[0]}</b><small>个人会议空间</small></span></div><div className="actions"><Button variant="ghost" aria-label="设置与诊断" onClick={() => { setModal('settings'); void api<{deletions: typeof deletions}>('/deletions').then(d => setDeletions(d.deletions)).catch(e => setError(messageOf(e))); }}><GearSix size={19}/></Button><Button variant="ghost" aria-label={theme === 'light' ? '切换深色' : '切换浅色'} onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>{theme === 'light' ? <Moon size={19}/> : <Sun size={19}/>}</Button><Button variant="ghost" aria-label="退出登录" disabled={recording} onClick={async () => { try { await api('/auth/logout', 'POST'); setQueueRecords([]); setAuthReady(false); setId(''); } catch (e) { setError(messageOf(e)); } }}><SignOut size={19}/></Button></div></footer>
     </aside>
-    <main id="workspace" className={`workspace ${minutesOpen ? 'with-minutes' : ''}`}><header className="topbar glass"><div><span className="breadcrumb">会议空间</span><CaretRight size={14}/><span>{record ? '记录详情' : '所有记录'}</span></div><div className="sync-state" data-connection-state={connectionState}>{online && (!id || connectionState==='connected') ? <CloudCheck size={18}/> : <CloudSlash size={18}/>}<span>{!online ? '离线 · 本地保留' : !id ? '网络可用' : connectionState!=='connected' ? ({idle:'未连接',connecting:'连接中',reconnecting:'正在重连',offline:'离线',unavailable:'连接不可用'}[connectionState]) : pending ? `${pending} 段待上传` : '已连接'}</span></div></header>
+    <main id="workspace" className={`workspace ${minutesOpen ? 'with-minutes' : ''}`}><header className="topbar glass"><div><button className="breadcrumb" disabled={recording||busy} onClick={()=>chooseScope(scope)}>{directoryName}</button><CaretRight size={14}/><span>{record ? '记录详情' : '目录概览'}</span></div><div className="sync-state" data-connection-state={connectionState}>{online && (!id || connectionState==='connected') ? <CloudCheck size={18}/> : <CloudSlash size={18}/>}<span>{!online ? '离线 · 本地保留' : !id ? '网络可用' : connectionState!=='connected' ? ({idle:'未连接',connecting:'连接中',reconnecting:'正在重连',offline:'离线',unavailable:'连接不可用'}[connectionState]) : pending ? `${pending} 段待上传` : '已连接'}</span></div></header>
       <div ref={scrollRoot} className="workspace-scroll" tabIndex={0} aria-label="会议内容滚动区">
       {error && <div className="global-message error" role="alert"><WarningCircle size={19}/><span>{error}</span><button aria-label="关闭错误提示" onClick={() => setError('')}><X size={17}/></button></div>}
       {id && connectionState==='reconnecting' && <div className="global-message" role="status"><span>实时连接中断，正在自动重连；本地音频仍会保留。</span></div>}
       {notice && <div className="global-message" role="status"><span>{notice}</span><button aria-label="关闭提示" onClick={() => setNotice('')}><X size={17}/></button></div>}
       {boot.providers.fixture && <div className="fixture-notice">开发测试模式 · 识别与纪要为测试数据</div>}
-      {!id ? <div className="welcome"><p className="kicker">给对话多一点空间</p><h1>专注此刻，<br/><em>记住重要的事。</em></h1><p>不用先起标题，即刻记录对话，把共识与下一步清晰留下。</p><div className="actions"><Button variant="primary" disabled={busy || !sourceReady} onClick={() => void quickRecord()}><Plus size={18}/>即刻聆记</Button><Button onClick={() => { setModal('settings'); void api<{deletions: typeof deletions}>('/deletions').then(d => setDeletions(d.deletions)).catch(e => setError(messageOf(e))); }}><GearSix size={18}/>检查录音环境</Button></div>
-        <div className="welcome-features"><div><Microphone size={24}/><h3>声音成为文字</h3><p>麦克风、共享音轨或音频文件。</p></div><div><Sparkle size={24}/><h3>让共识更清楚</h3><p>纪要和行动候选，保留原文引用。</p></div><div><CloudCheck size={24}/><h3>从断点继续</h3><p>本地缓冲、补传与明确保存状态。</p></div></div>
-        <p className="fine-print">关闭页面会停止采集。共享来源是否包含音频取决于浏览器、系统与所选来源。</p></div>
-        : !record ? <div className="empty" role="status">{connectionState==='unavailable' ? '当前记录无法访问，请重新登录或选择其他记录。' : '正在读取记录…'}</div> : <><div className="record-heading"><div><p className="kicker">{new Date(records.find(r => r.id === id)?.createdAt || Date.now()).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
-          <RecordTitle key={record.id} title={record.title} save={async title => { const saved = await mutate(`/records/${id}`, 'PATCH', {title}); if (saved) { await loadList(); setNotice('会议标题已保存。'); } return saved; }}/><div className="record-meta"><Status tone={recording ? 'live' : ''}>{recording ? '正在记录' : record.capture === 'completed' ? '已完成' : record.capture === 'sealed' ? '整理中' : record.capture === 'paused' ? '已暂停' : '待开始'}</Status><span>{timecode(record.usage.samples / 16)} 音频 · 转录 v{record.transcriptRevision}</span><span>{record.retentionDays} 天留存</span></div></div>
-          <div className="actions"><Button disabled={!record.minutes || recording} onClick={() => void openShare()}><ShareNetwork size={17}/><span>分享</span></Button><Button aria-expanded={minutesOpen} onClick={() => setMinutesOpen(!minutesOpen)}><Sparkle size={17}/>纪要</Button><Button variant="ghost" aria-label="删除本次记录" disabled={recording} onClick={() => setModal('delete')}><Trash size={18}/></Button></div></div>
+      {!id ? <WorkspaceHome key={`${scope}:${homeVersion}`} scope={scope} records={records} query={query} modelReady={boot.providers.minutes} disabled={recording||busy} open={setId} archive={openArchive} create={newDirectory} edit={()=>{setEditingDirectory(directories.find(w=>w.id===scope));setModal('directory');}} quick={()=>void quickRecord()}/> : !record ? <div className="empty" role="status">{connectionState==='unavailable' ? '当前记录无法访问，请重新登录或选择其他记录。' : '正在读取记录…'}</div> : <><div className="record-heading"><div><p className="kicker">{new Date(records.find(r => r.id === id)?.createdAt || Date.now()).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+          <RecordTitle key={record.id} title={record.title} save={async title => { const saved = await mutate(`/records/${id}`, 'PATCH', {title}); if (saved) { await loadList(); setNotice('会议标题已保存。'); } return saved; }}/><div className="record-meta"><Status tone={recording ? 'live' : ''}>{recording ? '正在记录' : record.capture === 'completed' ? '已完成' : record.capture === 'sealed' ? '整理中' : record.capture === 'paused' ? '已暂停' : '待开始'}</Status><span>{timecode(record.usage.samples / 16)} 音频 · 转录 v{record.transcriptRevision}</span><span>{record.retentionDays} 天留存</span><span>{directories.find(w=>w.id===record.workspaceId)?.name || '未归档'}</span></div></div>
+          <div className="actions"><Button disabled={!record.minutes || recording} onClick={() => void openShare()}><ShareNetwork size={17}/><span>分享</span></Button><Button aria-expanded={minutesOpen} onClick={() => setMinutesOpen(!minutesOpen)}><Sparkle size={17}/>纪要</Button><Button disabled={recording||busy} onClick={()=>openArchive([id])}><Folder size={17}/>归档</Button><Button variant="ghost" aria-label="删除本次记录" disabled={recording} onClick={() => setModal('delete')}><Trash size={18}/></Button></div></div>
         <MeetingControls record={record} recording={recording} busy={busy} ready={sourceReady} signals={signals}
         start={kind => void startCapture(kind)} quick={() => void quickRecord()} sources={() => setModal('capture')}
         finish={() => { setError(''); setModal('finish'); }} importAudio={() => fileInput.current?.click()}/>
@@ -231,7 +252,10 @@ function Workspace() {
       </div>
       {record && minutesOpen && <MinutesPanel automate={async (enabled, intervalSeconds) => { await mutate(`/records/${id}/automation`, 'PATCH', {enabled,intervalSeconds}); }} record={record} busy={busy} onClose={() => setMinutesOpen(false)} cite={cite} generate={async (template,mode) => { await mutate(`/records/${id}/minutes`, 'POST', { template,mode }); }} edit={async minutes => { return mutate(`/records/${id}/minutes`, 'PATCH', { revision: minutes.revision, minutes }); }}/>}
     <ScrollToTop root={scrollRoot}/></main><input ref={fileInput} className="sr-only" type="file" accept="audio/*" aria-label="导入音频文件" onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void onImport(file); }}/>
-  {modal === 'capture' && <CaptureSetup connected={signals.map(source => source.kind)} signals={signals} issues={captureIssues} busy={busy} onRetry={() => void startCapture('meeting')} onClose={() => setModal(null)}/>}
+      <Toast message={workspaceToast} dismiss={dismissWorkspaceToast}/>
+    {modal === 'directory' && <WorkspaceEditor directory={editingDirectory} save={saveDirectory} close={()=>{setModal(archiveIds.length?'archive':null);}}/>}
+    {modal === 'archive' && <ArchiveRecords key={archiveInitial||'inbox'} directories={directories} count={archiveIds.length} initial={archiveInitial} save={saveArchive} close={()=>{setModal(null);setArchiveIds([]);}} create={newDirectory}/>}
+{modal === 'capture' && <CaptureSetup connected={signals.map(source => source.kind)} signals={signals} issues={captureIssues} busy={busy} onRetry={() => void startCapture('meeting')} onClose={() => setModal(null)}/>}
     {modal === 'finish' && record && <MeetingFinish title={record.title} paused={record.capture === 'paused'} busy={busy} error={error} pause={title => void stopCapture('pause',title)} finish={title => void stopCapture('seal',title)} close={() => setModal(null)}/>}
     {modal === 'new' && <Modal title="新建一段记录" onClose={() => setModal(null)}><form onSubmit={create}><label>记录标题 <span className="muted">可稍后填写</span><input autoFocus name="title" maxLength={160} placeholder="例如：产品周会"/></label><div className="form-grid"><label>主要语言<Select label="主要语言" name="language" options={[{"value": "zh", "label": "中文"}, {"value": "en", "label": "English"}, {"value": "ja", "label": "日本語"}]}/></label><label>记录留存<Select label="记录留存" name="retentionDays" defaultValue="30" options={[{"value": "1", "label": "1 天"}, {"value": "7", "label": "7 天"}, {"value": "30", "label": "30 天"}, {"value": "90", "label": "90 天"}]}/></label></div><label className="checkbox-label"><input type="checkbox" name="autoMinutes" defaultChecked={boot.providers.minutes} disabled={!boot.providers.minutes}/><span>自动生成 AI 纪要<small>会中持续归纳主题，停止后整理终稿；转录和笔记将发送到已配置模型。</small></span></label><label className="checkbox-label"><input type="checkbox" name="retainAudio"/>保留原始音频至记录到期</label><p className="fine-print">默认只保留处理所需的临时音频，完成转录后清理；失败片段最长保留 24 小时。以上设置不替代参会者知情与录音许可。</p><Button disabled={busy} variant="primary" type="submit"><Plus size={18}/>创建记录</Button></form></Modal>}
     {modal === 'settings' && <Modal explicitCloseOnly title="设置与录音环境" onClose={() => setModal(null)}>{boot.canConfigure && <ProviderSettings saved={refreshProviders}/>}<DeviceSettings disabled={recording}/><div className="settings-section"><h3>浏览器能力检测</h3><dl className="capability-list">{Object.entries(capabilities()).filter(([k]) => k !== 'browser').map(([key, value]) => <div key={key}><dt>{{ secure: '安全环境', microphone: '麦克风 API', display: '共享来源 API', worklet: '音频处理', indexedDB: '本地补传存储', online: '网络连接' }[key]}</dt><dd>{value ? <Check size={17}/> : <X size={17}/>}</dd></div>)}</dl><p className="fine-print">API 可用不代表所选来源有声音。请在真实会议前试录并核对转录。浏览器无法保证关页或休眠后持续录音。</p></div>

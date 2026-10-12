@@ -44,3 +44,18 @@ Record capture 与 transcription 分离。创建时可不提供标题，会后�
 - GET 记录新增 `autoMinutes`、`liveMinutes`；jobs 可有 `preview:[{kind,text}]` 和 `runtime`。预览不是可导出的正式纪要。
 - SSE 新增 `minutes.delta`、`minutes.live`、`minutes.automation`、`transcript.translated`，仍用持久 cursor 补历史。
 - 模型设置新增 `LLM_PROTOCOL:chat-completions|responses`，地址按填写的完整接口原值保存和请求；密钥仍只返回是否配置。豆包术语字段为 `DOUBAO_ASR_HOTWORDS`，用逗号分隔，总长最多 100 字，每词最多 50 字，空值清除。
+
+## 工作目录
+
+| 路由 | 用途 |
+| --- | --- |
+| GET/POST /workspaces | 当前账户目录列表 / 创建；最多 50 个 |
+| PATCH /workspaces/:id | 修改名称和说明，不增加共享权限 |
+| POST /workspaces/archive | `{recordIds:[id],workspaceId:id|null}`；最多 200 条，同事务验证归属与非录音状态；null 移回未归档 |
+| GET /workspaces/:scope/overview | 统计、主题、历史摘要、决策/行动和最新分析；scope 为 all、inbox 或自有目录 ID |
+| POST /workspaces/:scope/analysis | 按需分析当前范围已结束且有转录的会议，返回运行状态；复用正在运行的相同输入 |
+| POST /workspaces/:scope/analysis/cancel | `{runId}`；匹配运行后取消，旧运行不能取消新任务 |
+
+创建 Record 可传 `workspaceId`，默认 null，服务端验证目录所有权。GET /records 新增 `workspace=all|inbox|id` 筛选，响应含 workspaceId；seconds 使用合并并行音轨的会议时长。所有音频身份与持久 ACK 保持原协议。归档新增 record.archived 事件，不增加转录版本。
+
+分析输入和结果绑定会议/转录/纪要版本与范围哈希，内容、归档或保留期变化后隐藏旧结果。供应商 SSE 累计草稿经概览读取，未经校验的草稿不作为正式结论。详见 [工作目录说明](workspaces.md)。

@@ -10,10 +10,10 @@ export interface Minutes { speakerSummaries?: SpeakerSummary[]; decisions?: Minu
   revision: number; transcriptRevision: number; edited: boolean; evidenceSnapshot: Segment[] }
 export interface Job { scope?: string; automatic?: boolean; preview?: {kind:string;text:string}[]; runtime?: ModelRuntime; id: string; status: string; error?: string; transcriptRevision: number }
 export interface RecordDetail { speakers?: {id:string;hash?:string;label:string}[]; autoMinutes?: {enabled:boolean;intervalSeconds:number}; liveMinutes?: Minutes | null;
-  insights?: {transcriptRevision: number; method: string; items: {kind: string; text: string; evidence: Evidence[]}[]; evidenceSnapshot: Segment[]}; intentError?: string; id: string; title: string; language: string; capture: string; transcription: string; sources: Source[]; segments: Segment[];
+  insights?: {transcriptRevision: number; method: string; items: {kind: string; text: string; evidence: Evidence[]}[]; evidenceSnapshot: Segment[]}; intentError?: string; id: string; title: string; workspaceId?: string|null; language: string; capture: string; transcription: string; sources: Source[]; segments: Segment[];
   notes: string; notesRevision: number; minutes: Minutes | null; minutesRevision: number; minuteVersions: { revision: number; transcriptRevision: number; edited: boolean }[]; transcriptRevision: number; cursor: string; jobs: Job[]; pendingChunks: number;
   retainAudio: boolean; audioPurged?: boolean; retentionDays: number; deleteAt: string; translationTarget?: string; usage: { samples: number; llmTokens: number } }
-export interface RecordListItem { id: string; title: string; createdAt: string; updatedAt: string; capture: string; transcription: string; segments: number; seconds: number; hasMinutes: boolean }
+export interface RecordListItem { id: string; title: string; workspaceId?:string|null; createdAt: string; updatedAt: string; capture: string; transcription: string; segments: number; seconds: number; hasMinutes: boolean }
 export interface Bootstrap { canConfigure?: boolean; email: string; csrf: string; storage: string; providers: { asr: boolean; minutes: boolean; fixture: boolean }; limits: { maxMinutes: number; maxRecords: number } }
 export interface AudioChunk { sessionId: string; sourceId: string; epoch: string; sequence: number; sampleOffset: number; sampleCount: number; sampleRate: number; digest: string; pcm: string }
 export const timecode = (ms: number) => `${Math.floor(ms / 60000).toString().padStart(2, '0')}:${Math.floor(ms / 1000 % 60).toString().padStart(2, '0')}`;

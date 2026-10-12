@@ -17,7 +17,7 @@ export function createRecord(owner, input = {}) {
   const days = Number(input.retentionDays ?? 30);
   requireThat([1, 7, 30, 90].includes(days), 'invalid_retention', 400);
   const now = new Date().toISOString();
-  const record = { id: randomUUID(), owner, kind: 'record', title: String(input.title || '未命名会议').slice(0, 160),
+  const record = { id: randomUUID(), owner, kind: 'record', workspaceId: input.workspaceId || null, title: String(input.title || '未命名会议').slice(0, 160),
     language: input.language || 'zh', createdAt: now, updatedAt: now, cursor: '0', events: [], generation: 1,
     capture: 'idle', transcription: 'idle', sessions: [], sources: [], chunks: [], segments: [], transcriptRevision: 0,
     notes: '', notesRevision: 0, minutes: null, liveMinutes: null, autoMinutes: { enabled: input.autoMinutes === true, intervalSeconds: 30 }, minutesRevision: 0, minutesHistory: [], jobs: [], shares: [],

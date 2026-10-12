@@ -1,3 +1,4 @@
+import { processWorkspaceAnalysis } from './workspace-worker.mjs';
 import { processSpeakerSources, closeSpeakerStreams } from './speaker-streams.mjs';
 import { queueAutomaticMinutes, updateMinutesPreview } from '../../../packages/records/src/automation.mjs';
 import { randomUUID } from 'node:crypto';
@@ -9,8 +10,9 @@ import { commitIntents, ruleIntents } from '../../../packages/records/src/intent
 import { providerStatus, analyzeIntents, generateMinutes, transcribe, translateText } from './providers.mjs';
 
 export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
-  const records = await repo.listWork();
   const config = await readConfig(repo.root);
+  if (lane === 'workspace') { await processWorkspaceAnalysis(repo, config, providers); return; }
+  const records = await repo.listWork();
   async function processCandidate(candidate) {
     if (lane !== 'all' && lane !== 'audio' && (candidate.deleted || Date.parse(candidate.deleteAt) < Date.now())) return;
     if (candidate.deleted && candidate.cleanup === 'completed' && Date.now() - (candidate.cleanupAt || 0) < 600000) return;
@@ -149,6 +151,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
       }
     }
   }
+  if (lane === 'all') await processWorkspaceAnalysis(repo, config, providers);
   let next = 0;
   const concurrency = Math.max(1, Math.min(8, Number(process.env.RECORD_WORKER_CONCURRENCY || 3)));
   await Promise.all(Array.from({ length: concurrency }, async () => {
@@ -159,7 +162,7 @@ export async function startWorker() {
   const repo = await createRepository(); let stop = false;
   process.on('SIGTERM', () => { stop = true; }); process.on('SIGINT', () => { stop = true; });
   console.log(`[record-worker] ${repo.backend}; durable audio and minutes queue`);
-  await Promise.all(['audio', 'minutes', 'intents', 'translation'].map(async lane => {
+  await Promise.all(['audio', 'minutes', 'intents', 'translation', 'workspace'].map(async lane => {
   while (!stop) {
    try { await runCycle(repo, {}, { lane }); } catch (e) { console.error('[record-worker]', lane, e.code || e.name); }
    await new Promise(resolve => setTimeout(resolve, lane === 'audio' ? 250 : 500));
