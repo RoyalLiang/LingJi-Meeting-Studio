@@ -1,3 +1,4 @@
+import { telemetry } from './telemetry.mjs';
 import { randomUUID } from 'node:crypto';
 import { commitSpeakerTurns, finishSpeakerSource, updateTranscriptPreview } from '../../../packages/records/src/speakers.mjs';
 import { emit } from '../../../packages/records/src/record.mjs';
@@ -37,6 +38,7 @@ export async function processSpeakerSources(repo,candidate,config,createStream=c
       const onUpdate=state=>{
         if(!entry || Date.now()-(entry.lastPreviewAt||0)<150)return;
         entry.lastPreviewAt=Date.now();
+        if(!entry.firstPreview){entry.firstPreview=true;telemetry.event('asr.first-text',{recordId:candidate.id,sourceId:source.id});}
         entry.previewPending=structuredClone({preview:state.preview,runtime:state.runtime||{}});
         if(entry.previewWork)return;
         entry.previewWork=(async()=>{
@@ -71,7 +73,7 @@ export async function processSpeakerSources(repo,candidate,config,createStream=c
       await entry.previewWork;
       await repo.change(candidate.id,r=>updateTranscriptPreview(r,source.id,entry.fence,entry.client.state.preview,entry.client.state.runtime||{},entry.generation));
       const turns=entry.client.state.latest;entry.client.state.latest=null;
-      if(turns?.length)await repo.change(candidate.id,r=>commitSpeakerTurns(r,source.id,entry.fence,turns,entry.generation));
+      if(turns?.length){await repo.change(candidate.id,r=>commitSpeakerTurns(r,source.id,entry.fence,turns,entry.generation));telemetry.event('asr.confirmed',{recordId:candidate.id,sourceId:source.id});}
       if(entry.client.state.error)throw entry.client.state.error;
       if(entry.client.state.complete){
         let finished=false;await repo.change(candidate.id,r=>{finished=finishSpeakerSource(r,source.id,entry.fence,entry.generation);});

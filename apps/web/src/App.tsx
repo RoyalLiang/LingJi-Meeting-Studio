@@ -1,3 +1,4 @@
+import { trace } from './telemetry';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { ArrowDown, ArrowSquareOut, Folder, FolderPlus, House, Check, CloudCheck, CloudSlash, FileText, GearSix, Microphone, Moon,
   Plus, Translate, MagnifyingGlass, ShareNetwork, SignOut, Sparkle, Sun, Trash, WarningCircle, X, CaretRight } from '@phosphor-icons/react';
@@ -115,6 +116,7 @@ function Workspace() {
   }, [authReady, upload]);
   useEffect(() => { const warn = (event: BeforeUnloadEvent) => { if (recording || pending) { event.preventDefault(); event.returnValue = ''; } }; addEventListener('beforeunload', warn); return () => removeEventListener('beforeunload', warn); }, [recording, pending]);
   useEffect(() => { const escape = (e: KeyboardEvent) => { if (e.key === 'Escape' && !document.querySelector('dialog[open]')) setTranslationOpen(false); }; addEventListener('keydown', escape); return () => removeEventListener('keydown', escape); }, []);
+  useEffect(() => { if(record) trace('view.committed', {recordId:record.id}); }, [record?.cursor]);
   useEffect(() => {
     if (record?.capture === 'completed' && notice === '录音已结束，正在补传和处理剩余片段。可以稍后回来查看。') setNotice('');
   }, [record?.capture, notice]);

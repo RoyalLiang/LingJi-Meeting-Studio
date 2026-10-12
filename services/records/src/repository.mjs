@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { DomainError, requireThat } from '../../../packages/records/src/record.mjs';
 import { createS3Objects } from './s3.mjs';
+import { telemetry } from './telemetry.mjs';
 
 function schedule(value) {
   if (value.kind !== 'record') return;
@@ -46,7 +47,7 @@ export async function createRepository(options = {}) {
     db.exec("CREATE INDEX IF NOT EXISTS work_due ON aggregates(json_extract(data, '$.nextWorkAt'))");
   }
   const decode = row => row ? typeof row.data === 'string' ? JSON.parse(row.data) : row.data : null;
-  return {
+  const repository = {
     root, backend: pool ? 'postgres' : 'sqlite', audioBackend: objects ? 's3' : 'filesystem',
     async get(id) { return decode(pool ? (await pool.query('SELECT data FROM record_aggregates WHERE id=$1', [id])).rows[0]
       : db.prepare('SELECT data FROM aggregates WHERE id=?').get(id)); },
@@ -136,4 +137,9 @@ export async function createRepository(options = {}) {
     },
     async close() { objects?.close(); if (pool) await pool.end(); else db.close(); }
   };
+  for (const name of ['get', 'list', 'listWork', 'change', 'changeMany', 'putAudio']) {
+    const operation = repository[name];
+    repository[name] = (...args) => telemetry.measure(`db.${name}`, { backend: repository.backend, ...(typeof args[0] === 'string' && name !== 'list' ? {recordId:args[0]} : {}) }, () => operation(...args));
+  }
+  return repository;
 }

@@ -1,3 +1,4 @@
+import { telemetry } from './telemetry.mjs';
 import { processWorkspaceAnalysis } from './workspace-worker.mjs';
 import { processSpeakerSources, closeSpeakerStreams } from './speaker-streams.mjs';
 import { queueAutomaticMinutes, updateMinutesPreview } from '../../../packages/records/src/automation.mjs';
@@ -47,7 +48,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
     if (claimed) {
       const { record, chunk } = claimed;
       try {
-        const text = await (providers.transcribe || transcribe)(await repo.readAudio(chunk.object), record, chunk, config);
+        const text = await telemetry.measure('asr.confirmed', {recordId:record.id, sourceId:chunk.sourceId, sequence:chunk.sequence, traceId:chunk.traceId, queueMs:Date.now()-chunk.acceptedAt}, async () => (providers.transcribe || transcribe)(await repo.readAudio(chunk.object), record, chunk, config));
         await repo.change(record.id, r => {
           if (r.chunks.find(c => c.key === chunk.key)?.fence !== chunk.fence) return;
           commitTranscript(r, chunk.key, text, record.generation);
@@ -121,12 +122,13 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
     if (jobClaim) {
       try {
         let json = '', lastPublished = 0;
-        const result = await (providers.minutes || generateMinutes)(jobClaim, config, { onDelta: async (delta, runtime) => {
+        const result = await telemetry.measure('minutes.complete', {recordId:candidate.id, jobId:jobClaim.id, revision:jobClaim.transcriptRevision, queueMs:Date.now()-Date.parse(jobClaim.createdAt)}, () => (providers.minutes || generateMinutes)(jobClaim, config, { onDelta: async (delta, runtime) => {
           json += delta;
           if (Date.now() - lastPublished < 200) return;
           lastPublished = Date.now();
           await repo.change(candidate.id, r => updateMinutesPreview(r, jobClaim.id, jobClaim.fence, json, runtime));
-        } });
+        } }));
+        telemetry.event('minutes.usage', {recordId:candidate.id, jobId:jobClaim.id, tokens:result.usageTokens, firstTextMs:result.runtime?.firstTokenMs});
         await repo.change(candidate.id, r => commitMinutes(r, jobClaim.id, result, jobClaim.fence));
       } catch (error) {
         await repo.change(candidate.id, r => {

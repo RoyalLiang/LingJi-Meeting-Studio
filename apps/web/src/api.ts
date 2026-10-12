@@ -1,3 +1,4 @@
+import { trace } from './telemetry';
 let csrf = '';
 export const setCsrf = (token: string) => { csrf = token; };
 const messages: Record<string, string> = {
@@ -43,9 +44,11 @@ const messages: Record<string, string> = {
 };
 export class ApiError extends Error { constructor(public code: string, public status: number) { super(messages[code] || `操作未完成（${code}）`); } }
 export async function api<T>(path: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {
+  const started = performance.now(), traceId = crypto.randomUUID();
   const response = await fetch(`/api${path}`, { method, credentials: 'same-origin', signal,
-    headers: { 'Content-Type': 'application/json', ...(method === 'GET' ? {} : { 'X-CSRF-Token': csrf }) },
+    headers: { 'Content-Type': 'application/json', 'X-Record-Trace': traceId, ...(method === 'GET' ? {} : { 'X-CSRF-Token': csrf }) },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  trace('http.received', {traceId, durationMs:performance.now()-started});
   const data = await response.json(); if (!response.ok) throw new ApiError(data.error || 'request_failed', response.status); return data;
 }
 export const messageOf = (error: unknown) => error instanceof Error ? error.message : '操作失败，请重试。';
