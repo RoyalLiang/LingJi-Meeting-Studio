@@ -17,7 +17,7 @@ export function Select({ value, defaultValue, onChange, options, name, label, di
   const place=()=>{
    const rect=button.current?.getBoundingClientRect();if(!rect)return;
    const height=window.visualViewport?.height || innerHeight, width=window.visualViewport?.width || innerWidth;
-   const below=height-rect.bottom-12, above=rect.top-12, flip=below<Math.min(240,options.length*44+10) && above>below;
+   const below=height-rect.bottom-12, above=rect.top-12, flip=below<Math.min(240,options.length*44+Math.max(0,options.length-1)*8+10) && above>below;
    const maxHeight=Math.max(44,Math.min(300,flip?above:below));
    setPosition({position:'fixed',left:Math.max(8,Math.min(rect.left,width-Math.min(rect.width,width-16)-8)),width:Math.min(rect.width,width-16),maxHeight,top:flip?'auto':rect.bottom+4,bottom:flip?height-rect.top+4:'auto'});
   };
