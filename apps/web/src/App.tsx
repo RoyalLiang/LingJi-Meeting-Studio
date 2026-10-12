@@ -15,6 +15,8 @@ import { Transcript } from './components/Transcript';
 import { MinutesPanel } from './components/Minutes';
 import { Notes } from './components/Notes';
 import { CaptureController, capabilities, importAudio } from './audio/capture';
+import type { CaptureSignal } from './audio/signal';
+import { CaptureSignals } from './components/CaptureSignals';
 import { clearRecordAudio, drainQueue, localManifests, pendingCount, setQueueRecords, downloadPendingAudio } from './audio/queue';
 
 function Auth({ ready }: { ready: () => void }) {
@@ -50,7 +52,8 @@ function Workspace() {
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false), [minutesOpen, setMinutesOpen] = useState(false);
   const [connectionState, setConnectionState] = useState<ConnectionState>('idle');
   const [modal, setModal] = useState<'new' | 'settings' | 'share' | 'delete' | 'import-text' | null>(null), [theme, setTheme] = useState(localStorage.getItem('meeting-theme') || 'light');
-  const [recording, setRecording] = useState(false), [meter, setMeter] = useState(0), [pending, setPending] = useState(0), [online, setOnline] = useState(navigator.onLine);
+  const [signals, setSignals] = useState<CaptureSignal[]>([]);
+  const [recording, setRecording] = useState(false), [pending, setPending] = useState(0), [online, setOnline] = useState(navigator.onLine);
   const [highlight, setHighlight] = useState(''), [evidence, setEvidence] = useState<Segment | null>(null), [importProgress, setImportProgress] = useState<number | null>(null);
   const capture = useRef<CaptureController | null>(null), activeId = useRef(''), mounted = useRef(true), fileInput = useRef<HTMLInputElement>(null);
   const [deletions, setDeletions] = useState<{ id: string; cleanup: string }[]>([]);
@@ -112,14 +115,14 @@ function Workspace() {
       await upload(); await refresh(); await loadList(); setNotice('录音已结束，正在补传和处理剩余片段。可以稍后回来查看。');
     } catch (e) { setError(messageOf(e)); } finally { setRecording(false); setBusy(false); capture.current = null; }
   }
-  async function startCapture(kind: 'microphone' | 'display') {
+  async function startCapture(kind: 'microphone' | 'display' | 'meeting') {
     if (!record) return;
     if (!capabilities().secure || !capabilities().worklet) { setError('当前环境不支持安全音频采集，请使用 HTTPS 的现代浏览器或导入文件。'); return; }
     setError('');
-    const controller = capture.current ||= new CaptureController(record.id, setMeter, e => { setError(messageOf(e)); setRecording(false); }, () => { void upload(); }, () => { void stopCapture(); });
-    const started = controller.start(kind); setBusy(true);
+    const controller = capture.current ||= new CaptureController(record.id, () => {}, e => { setError(messageOf(e)); setRecording(false); }, () => { void upload(); }, () => { void stopCapture(); }, setSignals);
+    const started = kind === 'meeting' ? controller.startMeeting() : controller.start(kind); setBusy(true);
     try { await started; setRecording(true); await refresh(); }
-    catch (e) { setError(messageOf(e)); if (!controller.active) capture.current = null; } finally { setBusy(false); }
+    catch (e) { setError(messageOf(e)); setRecording(controller.active); await refresh(); if (!controller.active) capture.current = null; } finally { setBusy(false); }
   }
   async function onImport(file: File) {
     if (!record) return; setBusy(true); setImportProgress(0); setError('');
@@ -156,17 +159,19 @@ function Workspace() {
           <h1>{record.title}</h1><div className="record-meta"><Status tone={recording ? 'live' : ''}>{recording ? '正在记录' : record.capture === 'completed' ? '已完成' : record.capture === 'sealed' ? '处理中' : '待开始'}</Status><span>{timecode(record.usage.samples / 16)} 音频 · 转录 v{record.transcriptRevision}</span><span>{record.retentionDays} 天留存</span></div></div>
           <div className="actions"><Button disabled={!record.minutes || recording} onClick={() => void openShare()}><ShareNetwork size={17}/><span>分享</span></Button><Button aria-expanded={minutesOpen} onClick={() => setMinutesOpen(!minutesOpen)}><Sparkle size={17}/>纪要</Button><Button variant="ghost" aria-label="删除本次记录" disabled={recording} onClick={() => setModal('delete')}><Trash size={18}/></Button></div></div>
         <div className="capture-panel glass"><div className="capture-status"><span className={`record-indicator ${recording ? 'on' : ''}`}><RecordIcon size={22} weight="fill"/></span><div><b>{recording ? '保持对话，我们正在聆听' : record.capture === 'sealed' ? '音频已封存，等待处理' : '准备好，就开始'}</b><small>{recording ? '关闭页面会停止录音；请保持页面打开。' : '音频将发送至已配置的转录服务，请先告知参会者。'}</small></div></div>
-          <div className="capture-controls">{!recording && <DeviceSettings compact disabled={busy}/>}{recording && <div className="meter" role="meter" aria-label="输入音量" aria-valuenow={Math.round(Math.min(1, meter * 6) * 100)} aria-valuemin={0} aria-valuemax={100}><i style={{ transform: `scaleX(${Math.min(1, meter * 6)})` }}/></div>}
-            {recording ? <><Button disabled={busy || record.sources.length > 2} onClick={() => void startCapture('display')}><Plus size={16}/>加共享音轨</Button><Button variant="danger" disabled={busy} onClick={() => void stopCapture()}><Square size={16} weight="fill"/>结束录音</Button></>
-              : <><Button variant="primary" disabled={busy || !sourceReady || record.capture === 'sealed'} onClick={() => void startCapture('microphone')}><Microphone size={17}/>{record.capture === 'completed' ? '继续记录' : '麦克风'}</Button><Button disabled={busy || !sourceReady || !capabilities().display || record.capture === 'sealed'} onClick={() => void startCapture('display')}><Headphones size={17}/>共享音轨</Button><Button disabled={busy || !sourceReady || record.capture === 'sealed'} onClick={() => fileInput.current?.click()}><FileAudio size={17}/>导入音频</Button></>}
+          <div className="capture-controls">{!recording && <DeviceSettings compact disabled={busy}/>}
+            {recording ? <>{!signals.some(source=>source.kind==='microphone') && <Button disabled={busy} onClick={() => void startCapture('microphone')}><Microphone size={16}/>加麦克风</Button>}{!signals.some(source=>source.kind==='display') && <Button disabled={busy} onClick={() => void startCapture('display')}><Plus size={16}/>加共享音频</Button>}<Button variant="danger" disabled={busy} onClick={() => void stopCapture()}><Square size={16} weight="fill"/>结束录音</Button></>
+              : <><Button variant="primary" disabled={busy || !sourceReady || !capabilities().display || record.capture === 'sealed'} onClick={() => void startCapture('meeting')}><Headphones size={17}/>会议录音</Button><Button disabled={busy || !sourceReady || record.capture === 'sealed'} onClick={() => void startCapture('microphone')}><Microphone size={17}/>仅麦克风</Button><Button disabled={busy || !sourceReady || !capabilities().display || record.capture === 'sealed'} onClick={() => void startCapture('display')}><Headphones size={17}/>仅共享音频</Button><Button disabled={busy || !sourceReady || record.capture === 'sealed'} onClick={() => fileInput.current?.click()}><FileAudio size={17}/>导入音频</Button></>}
           </div></div>
+          <CaptureSignals signals={signals}/>
+          {!recording && <p className="capture-guide">会议录音同时采集麦克风与共享音频。请选择正在播放声音的浏览器标签页，并勾选“共享音频”；系统或窗口音频取决于浏览器与操作系统支持。</p>}
         {!sourceReady && <div className="notice">语音服务尚未配置。维护者配置服务后即可录音；现在可以<Button variant="ghost" onClick={() => setModal('import-text')}>导入已有转录</Button>体验整理流程。</div>}
         {sourceReady && !recording && record.capture !== 'sealed' && <div className="sub-actions"><Button variant="ghost" onClick={() => setModal('import-text')}><FileText size={16}/>导入文字</Button><Download href={`/api/records/${id}/export?format=json`}><ArrowDown size={15}/>备份记录</Download></div>}
         {importProgress !== null && <div className="notice" role="status">正在解码与保存音频：{Math.round(importProgress * 100)}%</div>}
         {record.capture === 'recording' && !recording && <div className="notice">检测到上次未结束的采集。可继续录音，或封存本机已保存的片段。<Button disabled={busy} onClick={() => void stopCapture()}>结束未完成记录</Button></div>}
         {['blocked', 'failed'].includes(record.transcription) && <div className="notice error">语音处理受阻，音频仍在保存期内。检查服务配置后<Button disabled={busy} onClick={() => void mutate(`/records/${id}/retry`, 'POST')}>重新处理</Button></div>}
-        {record.pendingChunks > 0 && <div className="processing-line" role="status">还有 {record.pendingChunks} 段音频等待识别。<span>云端已接收 ≠ 已完成转录</span></div>}
-        <Insights record={record} cite={cite} modelReady={boot.providers.minutes} analyze={() => void mutate(`/records/${id}/insights`, 'POST', {})}/><Transcript key={`transcript:${record.id}`} record={record} highlighted={highlight} save={async (s, text, speaker) => { return mutate(`/records/${id}/segments/${s.id}`, 'PATCH', { revision: s.revision, text, speaker }); }}/>
+        {record.pendingChunks > 0 && <div className="processing-line" role="status">正在处理音频 · {record.pendingChunks} 个音频包<span>音频包会合并识别为发言，不代表待识别的语音段落</span></div>}
+        <Insights record={record} cite={cite} modelReady={boot.providers.minutes} analyze={() => void mutate(`/records/${id}/insights`, 'POST', {})}/>{record.capture === 'completed' && record.usage.samples > 0 && record.pendingChunks === 0 && record.segments.length === 0 && <div className="notice audio-empty-result" role="status">音频已处理完成，但未识别出可用语音。请检查麦克风输入、系统权限或共享音轨，再开始一段试录。</div>}<Transcript key={`transcript:${record.id}`} record={record} highlighted={highlight} save={async (s, text, speaker) => { return mutate(`/records/${id}/segments/${s.id}`, 'PATCH', { revision: s.revision, text, speaker }); }}/>
         <Notes key={`notes:${record.id}`} record={record} save={async (notes, notesRevision) => { return mutate(`/records/${id}`, 'PATCH', { notes, notesRevision }); }}/>
         {record.retainAudio && record.capture === 'completed' && !record.audioPurged && <section className="audio-replay"><h2>原音回放</h2>{record.sources.map(source => <div key={source.id}><p className="audio-source-label">{source.label}</p><AudioPlayer src={`/api/records/${id}/audio/${source.id}`} label={`${source.label}原音回放`}/></div>)}</section>}<footer className="record-footer"><span>{record.audioPurged ? '临时原音已清理' : record.retainAudio ? '原音随记录留存' : '转录完成后清理临时原音'} · {new Date(record.deleteAt).toLocaleDateString('zh-CN')} 到期</span><Download href={`/api/records/${id}/export?format=markdown`}>导出 Markdown<ArrowSquareOut size={15}/></Download></footer>
       </>}
