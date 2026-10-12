@@ -40,7 +40,7 @@
 
 ```bash
 ssh wgs 'mkdir -p /home/westwell/ai-labs/neohorse-jev-4b'
-scp tools/neohorse/*.py tools/neohorse/*.sh \
+scp tools/neohorse/*.py tools/neohorse/*.sh tools/neohorse/intent_policy.json \
   wgs:/home/westwell/ai-labs/neohorse-jev-4b/
 ssh wgs
 cd /home/westwell/ai-labs/neohorse-jev-4b
@@ -157,6 +157,10 @@ ssh -N -L 18081:127.0.0.1:18081 wgs
 ```
 
 退出服务会释放模型占用的显存。CUDA 不可用或显存不足时工具报错，不静默转 CPU 或模拟输出。
+
+## 从项目生成训练数据
+
+已提供离线预标、逐条审核文件导入、分组隔离与 JSONL 导出工具。它复用会议 JSON 备份和五类讨论语义，输出可追溯来源；默认不把规则结果当作真值。使用步骤、离线教师格式与真实验证边界见[项目意图数据集说明](intent-dataset.md)。
 
 ## 来源和边界
 

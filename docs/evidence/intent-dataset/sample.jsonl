@@ -1,0 +1,1 @@
+{"sample_id":"e0db81a1e457b5555164019ee2ba613b96c2ca8d442b46aba0882a91ec153afa","request":{"state":"[前文][S1]建议先试用方案A。\n[前文][S1]决定采用方案A。\n[当前发言][S1]我来跟进接口文档，周五提交。","questions":{"proposal":{"type":"choice","instructions":"当前发言是否提出供讨论的方案或建议？","criteria":{"present":"存在该类讨论意图","absent":"不存在该类讨论意图"}}}},"target":"absent"}

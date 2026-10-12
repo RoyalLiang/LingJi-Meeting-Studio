@@ -1,0 +1,12 @@
+{
+  "synthetic-train": {
+    "train-0": ["proposal"],
+    "train-1": ["decision"],
+    "train-2": ["action"],
+    "train-3": ["question"],
+    "train-4": ["withdrawal"],
+    "train-5": []
+  },
+  "synthetic-dev": { "dev-0": ["decision"], "dev-1": ["withdrawal"] },
+  "synthetic-test": { "test-0": ["proposal"], "test-1": [] }
+}

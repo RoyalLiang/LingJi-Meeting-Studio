@@ -1,0 +1,79 @@
+{
+  "verified_utc": "2026-10-12T11:42:05.782147+00:00",
+  "host": "wgs (westwell)",
+  "install_root": "/home/westwell/ai-labs/neohorse-jev-4b",
+  "synthetic_only": true,
+  "actual_teacher_called": false,
+  "real_meetings_read": false,
+  "production_integrated": false,
+  "code_sha256": {
+    "build_dataset.py": "3c74687cb14473e7c023ead14681d9c3f725957bd9f3a22708da296f48f9309a",
+    "dataset_fixture_reviews.py": "7be0fb8b6edf4a91f8acb5699d8e74980028e992c9b4e59b97f5db5bfbf73a77",
+    "evaluate_dataset.py": "b542fbcda174bd37f53963fb92b66dda0aaf800e73697149c06a8bbc70afbfc0",
+    "intent_policy.json": "6e8e34524df1eab9f46d99593761da44a0db9b2f588a366dd7d93dbab906a532"
+  },
+  "fixture_sha256": {
+    "intent-allowed.json": "31f38563e9f503514117996e46d22d7e95a42f2f0925e7d997bb864afa5a005d",
+    "intent-labels.json": "cee4bd67e29dc0705f51710e72c0bd6de7d6834ba0d3d85366b1aa43c1829358",
+    "intent-records.json": "4e22361de16298f61f84afba8c9ba79301c54eba6c03f9b675e08299ace1f210",
+    "intent-splits.json": "719f086eaf13191c0781d76e8630f09982257136b028204cd6659438fe407361"
+  },
+  "guide_sha256": "edafa32ee161288703ce26cd72778b0bbec157a6ca962cd9f9f285ca68c0dc91",
+  "readme_sha256": "6c9e07e94ad51f4bdeee337a303805e801c0bc3fbe3ada2c182e60c2b5ed1a25",
+  "versions": {
+    "torch": "2.8.0+cu126",
+    "transformers": "5.17.0",
+    "bitsandbytes": "0.50.2",
+    "peft": "0.21.2",
+    "neohorse-decision": "1.0.0"
+  },
+  "dataset_sha256": {
+    "train": "fb54124f57d80e246fb05d44e89a6ca61e2e6b1126a9c6118ea0d0c74319234e",
+    "dev": "bde4f8c342230c05119945a86402da4aaf087a1e873e091b4248680469dc8eea",
+    "test": "dd969682d31f7284d1c4c26550ab2ccc2853be3c9dd326966a27e6882ed6ac8e"
+  },
+  "dataset_matches_trained_version": true,
+  "train_matches_training_report": true,
+  "test_matches_evaluation_reports": true,
+  "split_record_ids": {
+    "train": ["synthetic-train"],
+    "dev": ["synthetic-dev"],
+    "test": ["synthetic-test"]
+  },
+  "split_sample_counts": {
+    "train": 30,
+    "dev": 10,
+    "test": 10
+  },
+  "group_and_sample_isolation_verified": true,
+  "local_unit_tests_passed": 19,
+  "base_accuracy": 0.7,
+  "lora_accuracy": 0.7,
+  "prelabel_counts": {
+    "candidates": 50,
+    "review": 50,
+    "rejected": 0,
+    "train": 0,
+    "dev": 0,
+    "test": 0
+  },
+  "gold_counts": {
+    "candidates": 50,
+    "review": 0,
+    "rejected": 0,
+    "train": 30,
+    "dev": 10,
+    "test": 10
+  },
+  "silver_counts": {
+    "candidates": 50,
+    "review": 46,
+    "rejected": 0,
+    "train": 4,
+    "dev": 0,
+    "test": 0
+  },
+  "gpu_idle": "NVIDIA GeForce RTX 4060 Ti, 561 MiB, 7375 MiB",
+  "review_authentication": false,
+  "teacher_identity_authenticated": false
+}

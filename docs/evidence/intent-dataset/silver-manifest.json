@@ -1,0 +1,62 @@
+{
+  "schema": "neohorse-intent-dataset-v1",
+  "created_at": "2026-10-12T11:31:33.716144+00:00",
+  "policy_sha256": "6129126e8dab58b625502dd6733afb514ae4e8004fdb8c869c4a3a1b142ce2a7",
+  "policy_version": "records-intents-20261012-v1",
+  "training_selection_sha256": "d03ea1a9e74db6de5877d590605cb8367d9f86f10747306af38ac153d7628168",
+  "seed": "intent-v1",
+  "context_turns": 2,
+  "state_limit": 128,
+  "full_row_limit": 256,
+  "record_splits": {
+    "synthetic-dev": "dev",
+    "synthetic-test": "test",
+    "synthetic-train": "train"
+  },
+  "accept_silver": true,
+  "train_limit": 64,
+  "synthetic_inputs_only": true,
+  "counts": {
+    "candidates": 50,
+    "review": 46,
+    "rejected": 0,
+    "train": 4,
+    "dev": 0,
+    "test": 0
+  },
+  "skipped_records": {},
+  "statuses": {
+    "needs_review": 45,
+    "silver": 4,
+    "conflict": 1
+  },
+  "label_counts": {
+    "train": {
+      "withdrawal:present": 1,
+      "proposal:present": 1,
+      "decision:present": 1,
+      "action:present": 1
+    },
+    "dev": {},
+    "test": {}
+  },
+  "warnings": [
+    "Weak agreement is not ground truth; teacher identity is declared, not authenticated.",
+    "No automatic negative labels. Review negatives and rare classes.",
+    "Basic redaction is incomplete; inspect outputs before further use.",
+    "Historical snapshots do not reconstruct original online ASR inputs.",
+    "Current LoRA verifier accepts at most 64 rows and is not a full trainer.",
+    "Human-labelled dev/test coverage is missing; no evaluation readiness claimed."
+  ],
+  "source_files": [
+    {
+      "file": "intent-records.json",
+      "sha256": "4e22361de16298f61f84afba8c9ba79301c54eba6c03f9b675e08299ace1f210"
+    }
+  ],
+  "tokenizer_files_sha256": {
+    "tokenizer.json": "06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523",
+    "tokenizer_config.json": "bee8eba30f0eb4af73c0fe2cd06d0f89b657d7819941c438157ec42f7c80ea87"
+  },
+  "native_runtime_version": "1.0.0"
+}

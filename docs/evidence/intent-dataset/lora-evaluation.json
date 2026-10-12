@@ -1,0 +1,182 @@
+{
+  "scope": "Scores against supplied labels; label correctness is not verified by this script",
+  "dataset_sha256": "dd969682d31f7284d1c4c26550ab2ccc2853be3c9dd326966a27e6882ed6ac8e",
+  "samples": 10,
+  "accuracy": 0.7,
+  "per_task": {
+    "proposal": {
+      "samples": 2,
+      "correct": 2,
+      "tn": 1,
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "accuracy": 1.0
+    },
+    "question": {
+      "samples": 2,
+      "correct": 2,
+      "tn": 2,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "precision": null,
+      "recall": null,
+      "f1": null,
+      "accuracy": 1.0
+    },
+    "withdrawal": {
+      "samples": 2,
+      "correct": 1,
+      "fp": 1,
+      "tn": 1,
+      "tp": 0,
+      "fn": 0,
+      "precision": 0.0,
+      "recall": null,
+      "f1": 0.0,
+      "accuracy": 0.5
+    },
+    "decision": {
+      "samples": 2,
+      "correct": 1,
+      "tn": 1,
+      "fp": 1,
+      "tp": 0,
+      "fn": 0,
+      "precision": 0.0,
+      "recall": null,
+      "f1": 0.0,
+      "accuracy": 0.5
+    },
+    "action": {
+      "samples": 2,
+      "correct": 1,
+      "tn": 1,
+      "fp": 1,
+      "tp": 0,
+      "fn": 0,
+      "precision": 0.0,
+      "recall": null,
+      "f1": 0.0,
+      "accuracy": 0.5
+    }
+  },
+  "results": [
+    {
+      "sample_id": "5c0a23f4dc0f6536d0d2db3850ce7f24c295f89ed294e38eb2c7da037b269faf",
+      "task": "proposal",
+      "target": "absent",
+      "prediction": "absent",
+      "probabilities": {
+        "present": 0.018971778452396393,
+        "absent": 0.981028139591217
+      }
+    },
+    {
+      "sample_id": "e248435c225f79d46d5b20f9984e021e60ab7f04192eabd296ea421596afa712",
+      "task": "question",
+      "target": "absent",
+      "prediction": "absent",
+      "probabilities": {
+        "present": 0.025434529408812523,
+        "absent": 0.9745654463768005
+      }
+    },
+    {
+      "sample_id": "b56df73c4e57537cc4546fd623bc1c965eb9e2dabeaa7c8b8b9610f80008ef1b",
+      "task": "question",
+      "target": "absent",
+      "prediction": "absent",
+      "probabilities": {
+        "present": 0.1637844443321228,
+        "absent": 0.8362154960632324
+      }
+    },
+    {
+      "sample_id": "37dddf9a55d1e42b7e763f738bc444a0385a0ab29f1864de2949932fb30e2572",
+      "task": "proposal",
+      "target": "present",
+      "prediction": "present",
+      "probabilities": {
+        "present": 0.9119051098823547,
+        "absent": 0.08809492737054825
+      }
+    },
+    {
+      "sample_id": "71359346cb3f735deebe9ece1628dc3c86213e836c8d719a8a8fb39757666e3d",
+      "task": "withdrawal",
+      "target": "absent",
+      "prediction": "present",
+      "probabilities": {
+        "present": 0.6836511492729187,
+        "absent": 0.3163488507270813
+      }
+    },
+    {
+      "sample_id": "52c09c2970d4a6aa386002039599e1cb366e3947f7feeb9872cf93d78b745957",
+      "task": "decision",
+      "target": "absent",
+      "prediction": "absent",
+      "probabilities": {
+        "present": 0.126910001039505,
+        "absent": 0.8730899691581726
+      }
+    },
+    {
+      "sample_id": "2d576748645f4dfbfd6d087d796b7c2cce3c33a573a07b6d2a2030998d7f806a",
+      "task": "action",
+      "target": "absent",
+      "prediction": "absent",
+      "probabilities": {
+        "present": 0.03333859145641327,
+        "absent": 0.9666613340377808
+      }
+    },
+    {
+      "sample_id": "491d6ac392c5d5b7696cf5b431eeef92f67ee7d229b7ad44184ca6fb19369e39",
+      "task": "action",
+      "target": "absent",
+      "prediction": "present",
+      "probabilities": {
+        "present": 0.8196758031845093,
+        "absent": 0.1803242266178131
+      }
+    },
+    {
+      "sample_id": "ba73275b0aea5c3d0e869b0af2c1e3f190190f8096012a0e8f6dd987e9707fd3",
+      "task": "withdrawal",
+      "target": "absent",
+      "prediction": "absent",
+      "probabilities": {
+        "present": 0.08975645899772644,
+        "absent": 0.910243570804596
+      }
+    },
+    {
+      "sample_id": "1093cdbbe6ccdc2f47ede42289c0385f345395843bba33e69689efeed75ac533",
+      "task": "decision",
+      "target": "absent",
+      "prediction": "present",
+      "probabilities": {
+        "present": 0.9298625588417053,
+        "absent": 0.07013745605945587
+      }
+    }
+  ],
+  "runtime": {
+    "model": "TokenRhythm/NeoHorse-Jev-4B",
+    "official_typesafe_jev": false,
+    "lora_adapter": "/home/westwell/ai-labs/neohorse-jev-4b/checkpoints/dataset-smoke/adapter",
+    "quantization": "bitsandbytes NF4, double quantization, BF16 compute",
+    "quantized_linear_count": 346,
+    "gpu": "NVIDIA GeForce RTX 4060 Ti",
+    "allocated_mib": 4387.5,
+    "peak_allocated_mib": 5583.3,
+    "torch": "2.8.0+cu126",
+    "cuda_runtime": "12.6"
+  }
+}
