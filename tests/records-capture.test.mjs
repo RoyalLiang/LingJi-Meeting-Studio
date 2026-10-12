@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
 import { stripTypeScriptTypes } from 'node:module';
 
-async function captureHarness({ noDisplayAudio = false, micFailure = false } = {}) {
+async function captureHarness({ noDisplayAudio = false, micFailure = false, displayDenied = false, displayUnsupported = false } = {}) {
   let source = await readFile(new URL('../apps/web/src/audio/capture.ts', import.meta.url), 'utf8');
   source = stripTypeScriptTypes(source, { mode: 'transform' }).replace(/^import .*$/gm, '').replace(/export /g, '');
   const signalSource = stripTypeScriptTypes(await readFile(new URL('../apps/web/src/audio/signal.ts', import.meta.url), 'utf8')).replace(/^import .*$/gm, '').replace(/export /g, '');
@@ -21,10 +21,10 @@ async function captureHarness({ noDisplayAudio = false, micFailure = false } = {
     createGain() { return { gain: { value: 1 } }; }
   }
   class AudioWorkletNode { constructor() { this.port = { postMessage() {} }; nodes.push(this); } }
-  const sandbox = { exports: {}, AudioContext, AudioWorkletNode, window: { setTimeout, clearTimeout, isSecureContext: true }, setTimeout, clearTimeout,
+  const sandbox = { exports: {}, AudioContext, AudioWorkletNode, DOMException, Error, window: { setTimeout, clearTimeout, isSecureContext: true }, setTimeout, clearTimeout,
     navigator: { mediaDevices: {
       getUserMedia: async () => { calls.push('microphone'); if (micFailure) throw new Error('麦克风权限被拒绝'); return mic; },
-      getDisplayMedia: async options => { calls.push({ display: options }); return display; },
+      getDisplayMedia: displayUnsupported ? undefined : async options => { calls.push({ display: options }); if (displayDenied) throw new DOMException('Permission denied', 'NotAllowedError'); return display; },
     } },
     preferredDevice: () => 'default', inputDevices: async () => [], microphoneConstraints: () => ({}),
     api: async (_url, _method, input) => ({ id: `source-${input.kind}`, sessionId: 'session', epoch: 'epoch', ...input }),
@@ -80,9 +80,54 @@ test('failed remote audio sharing preserves an already recording microphone', as
 
 test('microphone denial after shared capture preserves the working source and explains partial capture', async () => {
   const h = await captureHarness({ micFailure: true });
-  await assert.rejects(h.controller.startMeeting(), /共享.*麦克风/);
+  const issues = await h.controller.startMeeting();
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].kind, 'microphone');
+  assert.match(issues[0].message, /麦克风|denied/i);
   assert.equal(h.controller.active, true);
   assert.equal(h.controller.sources.length, 1);
+});
+
+test('missing shared audio still connects microphone and can retry without duplicating it', async () => {
+  const h = await captureHarness({ noDisplayAudio: true });
+  const issues = await h.controller.startMeeting();
+  assert.deepEqual(Array.from(issues, issue => issue.kind), ['display']);
+  assert.equal(h.controller.active, true);
+  assert.deepEqual(Array.from(h.controller.sources, source => source.kind), ['microphone']);
+  await h.controller.startMeeting();
+  assert.equal(h.calls.filter(call => call === 'microphone').length, 1);
+  assert.equal(h.controller.sources.length, 1);
+  assert.equal(h.mic.audioTrack.readyState, 'live');
+});
+
+test('denied sharing still captures the microphone; unavailable sharing reports a recoverable issue', async () => {
+  for (const options of [{displayDenied:true}, {displayUnsupported:true}]) {
+    const h = await captureHarness(options);
+    const issues = await h.controller.startMeeting();
+    assert.deepEqual(Array.from(issues, issue => issue.kind), ['display']);
+    assert.equal(h.controller.active, true);
+    assert.equal(h.controller.sources[0].kind, 'microphone');
+    assert.match(issues[0].message, /会议音频/);
+  }
+});
+
+test('when both inputs fail the meeting reports both issues without recording', async () => {
+  const h = await captureHarness({ noDisplayAudio:true, micFailure:true });
+  const issues = await h.controller.startMeeting();
+  assert.deepEqual(Array.from(issues, issue => issue.kind), ['display', 'microphone']);
+  assert.equal(h.controller.active, false);
+  assert.equal(h.controller.sources.length, 0);
+});
+
+test('concurrent starts share one acquisition per source', async () => {
+  const h = await captureHarness();
+  const first = h.controller.startMeeting(), second = h.controller.startMeeting();
+  assert.equal((await first).length, 0);
+  assert.equal((await second).length, 0);
+  assert.equal(h.calls.length, 2);
+  assert.equal(h.controller.sources.length, 2);
+  await h.controller.startMeeting();
+  assert.equal(h.calls.length, 2);
 });
 
 async function deviceHarness({ explicit = false, denied = false } = {}) {

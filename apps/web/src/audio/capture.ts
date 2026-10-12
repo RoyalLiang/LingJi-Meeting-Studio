@@ -8,19 +8,46 @@ import type { CaptureSignal } from './signal';
 export const capabilities = () => ({ secure: window.isSecureContext, microphone: Boolean(navigator.mediaDevices?.getUserMedia),
   display: Boolean(navigator.mediaDevices?.getDisplayMedia), worklet: Boolean(window.AudioWorkletNode), indexedDB: Boolean(window.indexedDB),
   browser: navigator.userAgent, online: navigator.onLine });
+export type CaptureKind = Exclude<SourceKind, 'import'>;
+export type CaptureIssue = { kind: CaptureKind; message: string };
+function captureFailure(kind: CaptureKind, error: unknown) {
+  const name = error instanceof Error ? error.name : '';
+  const label = kind === 'display' ? '会议音频' : '麦克风';
+  if (name === 'NotAllowedError') return kind === 'display'
+    ? '会议音频尚未授权。重新接入后，选择会议所在标签页或系统音频，并允许共享声音。'
+    : '麦克风尚未授权。请在浏览器的网站权限中允许使用麦克风，再重新接入。';
+  if (name === 'NotFoundError') return `没有找到可用的${label}。请检查设备连接及浏览器支持。`;
+  if (name === 'NotReadableError') return `${label}暂时无法使用，请检查系统权限或其他应用是否占用设备。`;
+  return error instanceof Error ? error.message : `${label}未能接入，请重试。`;
+}
 export class CaptureController {
+  private connecting = new Map<CaptureKind, Promise<Source>>();
   private streams: MediaStream[] = []; private contexts: AudioContext[] = []; private nodes: AudioWorkletNode[] = [];
   private writes: Promise<void>[] = []; private flushes: (() => void)[] = [];
   private signals: CaptureSignal[] = [];
   sources: Source[] = []; active = false;
   constructor(private recordId: string, private onMeter: (value: number) => void, private onFailure: (error: Error) => void,
     private onSaved: () => void, private onEnded: () => void, private onSignals: (signals: CaptureSignal[]) => void = () => {}) {}
-  async startMeeting() {
-    await this.start('display');
-    try { await this.start('microphone'); }
-    catch { throw new Error('共享音频已开始，但麦克风未启用。当前只记录共享声音；可点击“加麦克风”重试或结束录音。'); }
+  async startMeeting(): Promise<CaptureIssue[]> {
+    // Start both requests from the click. A cancelled sharing picker must not cancel the microphone.
+    const kinds: CaptureKind[] = ['display', 'microphone'];
+    const requests = kinds.map(kind => this.start(kind));
+    const results = await Promise.allSettled(requests);
+    return results.flatMap((result, index) => result.status === 'rejected'
+      ? [{ kind: kinds[index], message: captureFailure(kinds[index], result.reason) }] : []);
   }
-  async start(kind: Exclude<SourceKind, 'import'>, selectedDevice = preferredDevice()) {
+  async start(kind: CaptureKind, selectedDevice = preferredDevice()) {
+    const existing = this.active && this.sources.find(source => source.kind === kind);
+    if (existing) return existing;
+    const pending = this.connecting.get(kind);
+    if (pending) return pending;
+    const request = this.connectSource(kind, selectedDevice);
+    this.connecting.set(kind, request);
+    try { return await request; } finally { this.connecting.delete(kind); }
+  }
+  private async connectSource(kind: CaptureKind, selectedDevice: string) {
+    if (kind === 'display' && !navigator.mediaDevices?.getDisplayMedia) throw new Error('当前浏览器无法接入会议音频。可先使用麦克风；在线会议建议使用支持标签页音频共享的浏览器。');
+    if (kind === 'microphone' && !navigator.mediaDevices?.getUserMedia) throw new Error('当前浏览器无法接入麦克风，请使用安全连接下的现代浏览器。');
     // The browser permission request must remain in the original user gesture.
     const displayOptions = { video: true, audio: { echoCancellation:false, noiseSuppression:false, autoGainControl:false, suppressLocalAudioPlayback:false }, systemAudio: 'include', windowAudio:'system', selfBrowserSurface:'exclude', surfaceSwitching: 'include' };
     const permission = kind === 'display' ? navigator.mediaDevices.getDisplayMedia(displayOptions)
