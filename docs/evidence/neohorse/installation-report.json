@@ -1,0 +1,38 @@
+{
+  "verified_at_utc": "2026-10-12T09:41:59.930269+00:00",
+  "host": "westwell",
+  "ssh_alias": "wgs",
+  "install_root": "/home/westwell/ai-labs/neohorse-jev-4b",
+  "python": "3.12.3",
+  "gpu_after_validation": "NVIDIA GeForce RTX 4060 Ti, 535.261.03, 8188 MiB, 561 MiB, 7375 MiB",
+  "packages": {
+    "torch": "2.8.0+cu126",
+    "transformers": "5.17.0",
+    "accelerate": "1.15.0",
+    "bitsandbytes": "0.50.2",
+    "pydantic": "2.13.5",
+    "safetensors": "0.8.0",
+    "neohorse-decision": "1.0.0"
+  },
+  "model_files": 70,
+  "model_bytes": 9104254961,
+  "model_snapshot_sha256": "ab31a328817b24b2b54e94c9b2ea07c734b285205d1efe897e738237e1b8ae71",
+  "scripts_sha256": {
+    "quantized_runtime.py": "2f8425af336a49b310a6710cc18f6cebf59b03f79931c1475f1c654ef4b857f7",
+    "serve.py": "36832691ea4b7b636e0163e33f9297b641269bd07798e3ac54c85869083ee92f",
+    "download_model.py": "c63863ea143a1c9d2169a2b0bd4abcc767e8fd6f4369457e02a110c05924e576",
+    "train_head.py": "aa06b32cce92a63ae46435d04fd5c3c004876b89ef481c5ca3ad925653144212",
+    "smoke.py": "406b33a01c5383039878962ae2dc3438eb67e40c72c46df6a41c1cdda4e1de6e",
+    "setup_env.sh": "3f342bffaa0a7d65f0adfc73ed6228302007ed66c368e2774b66de6ac4acfa4e"
+  },
+  "trained_head": {
+    "path": "checkpoints/synthetic-head/synthetic-pointer-head.safetensors",
+    "size": 5245232,
+    "sha256": "680ff10865cae50c6f1f9f4072d0c46d9015e99a52862dccd8af724ac7429563"
+  },
+  "installation_bytes": 18960735086,
+  "disk_free_bytes": 120721207296,
+  "temporary_server_stopped": true,
+  "no_production_integration": true,
+  "synthetic_validation_only": true
+}

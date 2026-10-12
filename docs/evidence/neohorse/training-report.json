@@ -1,0 +1,33 @@
+{
+  "training_scope": "pointer head only; frozen quantized backbone; cached features",
+  "data_source": "built-in synthetic samples",
+  "production_ready": false,
+  "steps": 20,
+  "samples": 6,
+  "trainable_parameters": 1311232,
+  "loss_before": 0.041371703147888184,
+  "loss_after": 6.953866318326618e-7,
+  "losses": [
+    0.041371703147888184, 0.021575262770056725, 0.010378475300967693,
+    0.004705625586211681, 0.0020850850269198418, 0.0009326505241915584,
+    0.000430231069913134, 0.00020709626551251858, 0.00010452945571159944,
+    5.5407785112038255e-5, 3.0794319172855467e-5, 1.792065449990332e-5,
+    1.0907474461419042e-5, 6.914067853358574e-6, 4.549789991870057e-6,
+    3.0994267490314087e-6, 2.1656280750903534e-6, 1.5695850379415788e-6,
+    1.1523542298164102e-6, 8.940683073888067e-7
+  ],
+  "weights_changed": true,
+  "checkpoint_reload_equal": true,
+  "checkpoint": "checkpoints/synthetic-head/synthetic-pointer-head.safetensors",
+  "runtime": {
+    "model": "TokenRhythm/NeoHorse-Jev-4B",
+    "official_typesafe_jev": false,
+    "quantization": "bitsandbytes NF4, double quantization, BF16 compute",
+    "quantized_linear_count": 346,
+    "gpu": "NVIDIA GeForce RTX 4060 Ti",
+    "allocated_mib": 3191.0,
+    "peak_allocated_mib": 3196.0,
+    "torch": "2.8.0+cu126",
+    "cuda_runtime": "12.6"
+  }
+}

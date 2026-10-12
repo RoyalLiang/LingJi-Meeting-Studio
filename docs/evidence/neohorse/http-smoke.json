@@ -1,0 +1,61 @@
+{
+  "health": {
+    "ready": true,
+    "runtime": {
+      "model": "TokenRhythm/NeoHorse-Jev-4B",
+      "official_typesafe_jev": false,
+      "quantization": "bitsandbytes NF4, double quantization, BF16 compute",
+      "quantized_linear_count": 346,
+      "gpu": "NVIDIA GeForce RTX 4060 Ti",
+      "allocated_mib": 3154.1,
+      "peak_allocated_mib": 3170.5,
+      "torch": "2.8.0+cu126",
+      "cuda_runtime": "12.6"
+    }
+  },
+  "native": {
+    "status": 200,
+    "body": {
+      "model": "NeoHorse-Jev-4B",
+      "answers": {
+        "intent": {
+          "type": "choice",
+          "choice": "summarize",
+          "probabilities": {
+            "summarize": 0.9899925589561462,
+            "none": 0.010007413104176521
+          },
+          "confidence": 0.9799851179122925
+        }
+      },
+      "input_tokens": 29
+    }
+  },
+  "systemone": {
+    "status": 200,
+    "body": {
+      "model": "NeoHorse-Jev-4B",
+      "answers": {
+        "intent": {
+          "type": "choice",
+          "choice": "summarize",
+          "probabilities": {
+            "summarize": 0.9899925589561462,
+            "none": 0.010007413104176521
+          },
+          "confidence": 0.9799851179122925
+        }
+      },
+      "input_tokens": 29
+    }
+  },
+  "unknown_model_rejected": {
+    "status": 400,
+    "body": {
+      "error": "invalid_request",
+      "detail": "model is required; use NeoHorse-Jev-4B (not a Jev model alias)"
+    }
+  },
+  "listener": "State  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess\nLISTEN 0      5          127.0.0.1:18081      0.0.0.0:*    users:((\"python\",pid=2457503,fd=34))\n",
+  "synthetic_inputs_only": true
+}
