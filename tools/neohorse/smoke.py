@@ -23,10 +23,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model-dir", default=str(pathlib.Path(__file__).parent / "model"))
     parser.add_argument("--head-checkpoint", type=pathlib.Path, help="Optional trained pointer-head checkpoint")
+    parser.add_argument("--lora-adapter", type=pathlib.Path, help="Optional local PEFT adapter directory")
     parser.add_argument("--output", type=pathlib.Path, required=True)
     args = parser.parse_args()
     started = time.monotonic()
-    engine = QuantizedDecisionEngine(args.model_dir, head_checkpoint=args.head_checkpoint)
+    engine = QuantizedDecisionEngine(args.model_dir, head_checkpoint=args.head_checkpoint, lora_adapter=args.lora_adapter)
     loaded = time.monotonic() - started
     results = []
     for state, expected in CASES:

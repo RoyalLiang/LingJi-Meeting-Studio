@@ -1,0 +1,36 @@
+{
+  "verified_at_utc": "2026-10-12T10:34:35.312462+00:00",
+  "host": "westwell",
+  "ssh_alias": "wgs",
+  "install_root": "/home/westwell/ai-labs/neohorse-jev-4b",
+  "model": "TokenRhythm/NeoHorse-Jev-4B",
+  "official_typesafe_jev": false,
+  "packages": {
+    "torch": "2.8.0+cu126",
+    "transformers": "5.17.0",
+    "bitsandbytes": "0.50.2",
+    "peft": "0.21.2",
+    "pydantic": "2.13.5",
+    "accelerate": "1.15.0"
+  },
+  "only_added_dependency": ["peft==0.21.2"],
+  "core_dependencies_unchanged": true,
+  "original_pointer_head_sha256": "467ae48977b5c4bf87dd1db29021199e0c3401c52c5b57a1eccde679c0bade26",
+  "original_pointer_head_file_unchanged": true,
+  "base_regression_outputs_identical": true,
+  "scripts_sha256": {
+    "train_lora.py": "2b2d2bc44b7a1a9233bfec767001019717abe1006e62f9e680f7a797a1922af1",
+    "quantized_runtime.py": "6e295c89fbabc9345e38c306bcb8dc90975ab3f3875496d4c2049fe50583331f",
+    "serve.py": "5cfc97cdef95660b441fdeef32f4a18240995e812d428c1fa7960bc3abb83abc",
+    "download_model.py": "c63863ea143a1c9d2169a2b0bd4abcc767e8fd6f4369457e02a110c05924e576",
+    "train_head.py": "aa06b32cce92a63ae46435d04fd5c3c004876b89ef481c5ca3ad925653144212",
+    "smoke.py": "2f214fa2a1f82987eaa8b1f116a39e8ad236204f6e244f99df141b372910fe36",
+    "setup_env.sh": "3f342bffaa0a7d65f0adfc73ed6228302007ed66c368e2774b66de6ac4acfa4e",
+    "setup_lora.sh": "fe08782ba8df73896db54dd8911d2eac1e635389629b3ede2dfffd3d739fd189"
+  },
+  "readme_sha256": "5799d2a4fe66b22e9de5f282a140ad728dacf4200564df9a2d47df1e7f0772fa",
+  "gpu_after_validation": "NVIDIA GeForce RTX 4060 Ti, 561 MiB, 7375 MiB",
+  "temporary_server_stopped": true,
+  "synthetic_validation_only": true,
+  "adapter_not_enabled_by_default": true
+}

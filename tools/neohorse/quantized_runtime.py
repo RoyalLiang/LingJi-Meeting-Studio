@@ -12,10 +12,18 @@ from safetensors.torch import load_file
 from transformers import AutoModel, AutoTokenizer, BitsAndBytesConfig
 
 
+class Float32PointerHead(PointerHead):
+    """Keep native probabilities in float32 inside LoRA backbone autocast."""
+
+    def forward(self, h_decide, h_opts):
+        with torch.autocast(device_type="cuda", enabled=False):
+            return super().forward(h_decide.float(), h_opts.float())
+
+
 class QuantizedDecisionEngine(DecisionEngine):
     """Retain upstream request validation and inference; replace only loading."""
 
-    def __init__(self, model_dir, head_checkpoint=None):
+    def __init__(self, model_dir, head_checkpoint=None, lora_adapter=None):
         if not torch.cuda.is_available():
             raise RuntimeError("CUDA is unavailable; this adapter does not silently fall back to CPU")
         torch.set_num_threads(4)
@@ -39,11 +47,16 @@ class QuantizedDecisionEngine(DecisionEngine):
                 raise RuntimeError(f"Checkpoint loading error ({key}): {info[key]}")
         if type(backbone).__name__ != "Qwen3_5Model":
             raise RuntimeError(f"Unexpected backbone: {type(backbone).__name__}")
+        self.lora_adapter = str(pathlib.Path(lora_adapter).resolve()) if lora_adapter else None
+        if self.lora_adapter:
+            from peft import PeftModel, prepare_model_for_kbit_training
+            backbone = prepare_model_for_kbit_training(backbone, use_gradient_checkpointing=False)
+            backbone = PeftModel.from_pretrained(backbone, self.lora_adapter, is_trainable=False, local_files_only=True)
         model = DecisionModel.__new__(DecisionModel)
         torch.nn.Module.__init__(model)
         model.multimodal = backbone
         model.lm = backbone.language_model
-        model.head = PointerHead(model.lm.config.hidden_size, dp=manifest["head_dim"])
+        model.head = Float32PointerHead(model.lm.config.hidden_size, dp=manifest["head_dim"])
         head_path = pathlib.Path(head_checkpoint) if head_checkpoint else self.model_dir / "pointer_head.safetensors"
         model.head.load_state_dict(load_file(str(head_path)))
         model.head.to(device=self.device, dtype=torch.float32)
@@ -62,10 +75,17 @@ class QuantizedDecisionEngine(DecisionEngine):
         if not self.quantized_linear_count:
             raise RuntimeError("No 4-bit layers were loaded")
 
+    def predict(self, request):
+        if self.lora_adapter:
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                return super().predict(request)
+        return super().predict(request)
+
     def runtime_info(self):
         return {
             "model": "TokenRhythm/NeoHorse-Jev-4B",
             "official_typesafe_jev": False,
+            "lora_adapter": self.lora_adapter,
             "quantization": "bitsandbytes NF4, double quantization, BF16 compute",
             "quantized_linear_count": self.quantized_linear_count,
             "gpu": torch.cuda.get_device_name(0),

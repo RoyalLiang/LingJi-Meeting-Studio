@@ -1,0 +1,128 @@
+{
+  "training_scope": "NF4 frozen backbone + text attention q_proj/v_proj LoRA; pointer head frozen",
+  "rank": 4,
+  "target_modules": [
+    "language_model.layers.3.self_attn.q_proj",
+    "language_model.layers.3.self_attn.v_proj",
+    "language_model.layers.7.self_attn.q_proj",
+    "language_model.layers.7.self_attn.v_proj",
+    "language_model.layers.11.self_attn.q_proj",
+    "language_model.layers.11.self_attn.v_proj",
+    "language_model.layers.15.self_attn.q_proj",
+    "language_model.layers.15.self_attn.v_proj",
+    "language_model.layers.19.self_attn.q_proj",
+    "language_model.layers.19.self_attn.v_proj",
+    "language_model.layers.23.self_attn.q_proj",
+    "language_model.layers.23.self_attn.v_proj",
+    "language_model.layers.27.self_attn.q_proj",
+    "language_model.layers.27.self_attn.v_proj",
+    "language_model.layers.31.self_attn.q_proj",
+    "language_model.layers.31.self_attn.v_proj"
+  ],
+  "target_module_count": 16,
+  "trainable_parameters": 458752,
+  "base_parameters_frozen": true,
+  "pointer_head_unchanged": true,
+  "gradient_checkpointing": true,
+  "batch_size": 1,
+  "samples": 6,
+  "steps": 6,
+  "maximum_sequence_tokens": 45,
+  "dataset_sha256": "86dfd1ac1e48e9af721e7e5883af3d9345c74c49a6066364c3d00311394977b7",
+  "data_source": "built-in synthetic samples",
+  "learning_rate": 0.0001,
+  "loss_before": 0.041492559015750885,
+  "loss_after": 0.031201936304569244,
+  "steps_seconds": 1.564,
+  "step_results": [
+    {
+      "step": 1,
+      "loss": 0.011421767994761467,
+      "gradient_norm_before_clip": 0.063529834151268
+    },
+    {
+      "step": 2,
+      "loss": 0.013041086494922638,
+      "gradient_norm_before_clip": 0.1089852973818779
+    },
+    {
+      "step": 3,
+      "loss": 0.04230869561433792,
+      "gradient_norm_before_clip": 0.3655479848384857
+    },
+    {
+      "step": 4,
+      "loss": 0.0003216941258870065,
+      "gradient_norm_before_clip": 0.001752190524712205
+    },
+    {
+      "step": 5,
+      "loss": 0.17320336401462555,
+      "gradient_norm_before_clip": 1.3782871961593628
+    },
+    {
+      "step": 6,
+      "loss": 0.0011249411618337035,
+      "gradient_norm_before_clip": 0.009364665485918522
+    }
+  ],
+  "changed_tensors": [
+    "base_model.model.language_model.layers.3.self_attn.q_proj.lora_A.default.weight",
+    "base_model.model.language_model.layers.3.self_attn.q_proj.lora_B.default.weight",
+    "base_model.model.language_model.layers.3.self_attn.v_proj.lora_A.default.weight",
+    "base_model.model.language_model.layers.3.self_attn.v_proj.lora_B.default.weight",
+    "base_model.model.language_model.layers.7.self_attn.q_proj.lora_A.default.weight",
+    "base_model.model.language_model.layers.7.self_attn.q_proj.lora_B.default.weight",
+    "base_model.model.language_model.layers.7.self_attn.v_proj.lora_A.default.weight",
+    "base_model.model.language_model.layers.7.self_attn.v_proj.lora_B.default.weight",
+    "base_model.model.language_model.layers.11.self_attn.q_proj.lora_A.default.weight",
+    "base_model.model.language_model.layers.11.self_attn.q_proj.lora_B.default.weight",
+    "base_model.model.language_model.layers.11.self_attn.v_proj.lora_A.default.weight",
+    "base_model.model.language_model.layers.11.self_attn.v_proj.lora_B.default.weight",
+    "base_model.model.language_model.layers.15.self_attn.q_proj.lora_A.default.weight",
+    "base_model.model.language_model.layers.15.self_attn.q_proj.lora_B.default.weight",
+    "base_model.model.language_model.layers.15.self_attn.v_proj.lora_A.default.weight",
+    "base_model.model.language_model.layers.15.self_attn.v_proj.lora_B.default.weight",
+    "base_model.model.language_model.layers.19.self_attn.q_proj.lora_A.default.weight",
+    "base_model.model.language_model.layers.19.self_attn.q_proj.lora_B.default.weight",
+    "base_model.model.language_model.layers.19.self_attn.v_proj.lora_A.default.weight",
+    "base_model.model.language_model.layers.19.self_attn.v_proj.lora_B.default.weight",
+    "base_model.model.language_model.layers.23.self_attn.q_proj.lora_A.default.weight",
+    "base_model.model.language_model.layers.23.self_attn.q_proj.lora_B.default.weight",
+    "base_model.model.language_model.layers.23.self_attn.v_proj.lora_A.default.weight",
+    "base_model.model.language_model.layers.23.self_attn.v_proj.lora_B.default.weight",
+    "base_model.model.language_model.layers.27.self_attn.q_proj.lora_A.default.weight",
+    "base_model.model.language_model.layers.27.self_attn.q_proj.lora_B.default.weight",
+    "base_model.model.language_model.layers.27.self_attn.v_proj.lora_A.default.weight",
+    "base_model.model.language_model.layers.27.self_attn.v_proj.lora_B.default.weight",
+    "base_model.model.language_model.layers.31.self_attn.q_proj.lora_A.default.weight",
+    "base_model.model.language_model.layers.31.self_attn.q_proj.lora_B.default.weight",
+    "base_model.model.language_model.layers.31.self_attn.v_proj.lora_A.default.weight",
+    "base_model.model.language_model.layers.31.self_attn.v_proj.lora_B.default.weight"
+  ],
+  "expected_logits": [
+    [5.096219062805176, 0.16296923160552979],
+    [5.035877704620361, 0.2508469521999359],
+    [4.173055648803711, 0.6024173498153687],
+    [-4.017458915710449, 4.093378067016602],
+    [-0.25045785307884216, 1.625351905822754],
+    [-3.688664197921753, 3.124880790710449]
+  ],
+  "adapter_bytes": 1839512,
+  "adapter_sha256": "a2babc731282685b6109e9b3b7d48af7af4e8a68dbb72e94f778fb23db57b5ae",
+  "runtime": {
+    "model": "TokenRhythm/NeoHorse-Jev-4B",
+    "official_typesafe_jev": false,
+    "lora_adapter": "/home/westwell/ai-labs/neohorse-jev-4b/checkpoints/lora-smoke/adapter",
+    "quantization": "bitsandbytes NF4, double quantization, BF16 compute",
+    "quantized_linear_count": 346,
+    "gpu": "NVIDIA GeForce RTX 4060 Ti",
+    "allocated_mib": 4401.7,
+    "peak_allocated_mib": 5588.3,
+    "torch": "2.8.0+cu126",
+    "cuda_runtime": "12.6",
+    "peak_reserved_mib": 5670.0
+  },
+  "quality_benchmark": false,
+  "production_ready": false
+}

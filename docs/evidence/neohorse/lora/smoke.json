@@ -1,0 +1,283 @@
+{
+  "scope": "synthetic functional check; not a quality or calibration benchmark",
+  "load_seconds": 3.23,
+  "runtime": {
+    "model": "TokenRhythm/NeoHorse-Jev-4B",
+    "official_typesafe_jev": false,
+    "lora_adapter": "/home/westwell/ai-labs/neohorse-jev-4b/checkpoints/lora-smoke/adapter",
+    "quantization": "bitsandbytes NF4, double quantization, BF16 compute",
+    "quantized_linear_count": 346,
+    "gpu": "NVIDIA GeForce RTX 4060 Ti",
+    "allocated_mib": 4387.5,
+    "peak_allocated_mib": 5583.3,
+    "torch": "2.8.0+cu126",
+    "cuda_runtime": "12.6"
+  },
+  "expected_matches": 6,
+  "cases": [
+    {
+      "state": "Please summarize this meeting.",
+      "expected": "summarize",
+      "seconds": 0.489,
+      "matches_expected": true,
+      "response": {
+        "model": "NeoHorse-Jev-4B",
+        "answers": {
+          "intent": {
+            "type": "choice",
+            "choice": "summarize",
+            "probabilities": {
+              "summarize": 0.9852843880653381,
+              "actions": 0.00036101139266975224,
+              "decisions": 0.0010514419991523027,
+              "none": 0.013303134590387344
+            }
+          },
+          "request_is_negated": {
+            "type": "noul",
+            "noul": 0.18214289844036102,
+            "probabilities": {
+              "false": 0.8178570866584778,
+              "true": 0.18214289844036102
+            }
+          },
+          "urgency": {
+            "type": "score",
+            "score": 0.9591107666492462,
+            "legend": {
+              "0": "没有明确时间要求",
+              "1": "近期处理",
+              "2": "立即处理"
+            },
+            "probabilities": {
+              "0": 0.3851868510246277,
+              "1": 0.27051547169685364,
+              "2": 0.3442976474761963
+            }
+          }
+        },
+        "input_tokens": 116
+      }
+    },
+    {
+      "state": "请把刚才讨论的内容整理成会议纪要。",
+      "expected": "summarize",
+      "seconds": 0.129,
+      "matches_expected": true,
+      "response": {
+        "model": "NeoHorse-Jev-4B",
+        "answers": {
+          "intent": {
+            "type": "choice",
+            "choice": "summarize",
+            "probabilities": {
+              "summarize": 0.9928473830223083,
+              "actions": 0.00035749742528423667,
+              "decisions": 0.0006459037540480494,
+              "none": 0.0061492216773331165
+            }
+          },
+          "request_is_negated": {
+            "type": "noul",
+            "noul": 0.13959525525569916,
+            "probabilities": {
+              "false": 0.8604047298431396,
+              "true": 0.13959525525569916
+            }
+          },
+          "urgency": {
+            "type": "score",
+            "score": 1.014586091041565,
+            "legend": {
+              "0": "没有明确时间要求",
+              "1": "近期处理",
+              "2": "立即处理"
+            },
+            "probabilities": {
+              "0": 0.38261622190475464,
+              "1": 0.22018146514892578,
+              "2": 0.3972023129463196
+            }
+          }
+        },
+        "input_tokens": 119
+      }
+    },
+    {
+      "state": "请列出会议里已经明确的待办事项。",
+      "expected": "actions",
+      "seconds": 0.13,
+      "matches_expected": true,
+      "response": {
+        "model": "NeoHorse-Jev-4B",
+        "answers": {
+          "intent": {
+            "type": "choice",
+            "choice": "actions",
+            "probabilities": {
+              "summarize": 0.0018413746729493141,
+              "actions": 0.9820150136947632,
+              "decisions": 0.0021703296806663275,
+              "none": 0.013973255641758442
+            }
+          },
+          "request_is_negated": {
+            "type": "noul",
+            "noul": 0.2107480764389038,
+            "probabilities": {
+              "false": 0.7892519235610962,
+              "true": 0.2107480764389038
+            }
+          },
+          "urgency": {
+            "type": "score",
+            "score": 0.9001466333866119,
+            "legend": {
+              "0": "没有明确时间要求",
+              "1": "近期处理",
+              "2": "立即处理"
+            },
+            "probabilities": {
+              "0": 0.3689863681793213,
+              "1": 0.36188051104545593,
+              "2": 0.269133061170578
+            }
+          }
+        },
+        "input_tokens": 121
+      }
+    },
+    {
+      "state": "先别发给客户，等我确认后再说。",
+      "expected": "none",
+      "seconds": 0.13,
+      "matches_expected": true,
+      "response": {
+        "model": "NeoHorse-Jev-4B",
+        "answers": {
+          "intent": {
+            "type": "choice",
+            "choice": "none",
+            "probabilities": {
+              "summarize": 0.0005993552040308714,
+              "actions": 0.48488152027130127,
+              "decisions": 0.0009627257823012769,
+              "none": 0.5135563611984253
+            }
+          },
+          "request_is_negated": {
+            "type": "noul",
+            "noul": 0.9970194697380066,
+            "probabilities": {
+              "false": 0.0029804969672113657,
+              "true": 0.9970194697380066
+            }
+          },
+          "urgency": {
+            "type": "score",
+            "score": 0.13227061554789543,
+            "legend": {
+              "0": "没有明确时间要求",
+              "1": "近期处理",
+              "2": "立即处理"
+            },
+            "probabilities": {
+              "0": 0.8884926438331604,
+              "1": 0.09074424207210541,
+              "2": 0.020763186737895012
+            }
+          }
+        },
+        "input_tokens": 121
+      }
+    },
+    {
+      "state": "他说如果预算通过就发邮件，这还没有决定。",
+      "expected": "none",
+      "seconds": 0.131,
+      "matches_expected": true,
+      "response": {
+        "model": "NeoHorse-Jev-4B",
+        "answers": {
+          "intent": {
+            "type": "choice",
+            "choice": "none",
+            "probabilities": {
+              "summarize": 0.021659784018993378,
+              "actions": 0.14102855324745178,
+              "decisions": 0.009407002478837967,
+              "none": 0.8279046416282654
+            }
+          },
+          "request_is_negated": {
+            "type": "noul",
+            "noul": 0.5517478585243225,
+            "probabilities": {
+              "false": 0.4482521712779999,
+              "true": 0.5517478585243225
+            }
+          },
+          "urgency": {
+            "type": "score",
+            "score": 0.21483192592859268,
+            "legend": {
+              "0": "没有明确时间要求",
+              "1": "近期处理",
+              "2": "立即处理"
+            },
+            "probabilities": {
+              "0": 0.8123071789741516,
+              "1": 0.16055366396903992,
+              "2": 0.027139130979776382
+            }
+          }
+        },
+        "input_tokens": 122
+      }
+    },
+    {
+      "state": "请找出这次会议已经做出的决定。",
+      "expected": "decisions",
+      "seconds": 0.129,
+      "matches_expected": true,
+      "response": {
+        "model": "NeoHorse-Jev-4B",
+        "answers": {
+          "intent": {
+            "type": "choice",
+            "choice": "decisions",
+            "probabilities": {
+              "summarize": 0.00201184069737792,
+              "actions": 0.0004130596062168479,
+              "decisions": 0.9941797256469727,
+              "none": 0.0033954151440411806
+            }
+          },
+          "request_is_negated": {
+            "type": "noul",
+            "noul": 0.07674384117126465,
+            "probabilities": {
+              "false": 0.9232562184333801,
+              "true": 0.07674384117126465
+            }
+          },
+          "urgency": {
+            "type": "score",
+            "score": 0.8108054995536804,
+            "legend": {
+              "0": "没有明确时间要求",
+              "1": "近期处理",
+              "2": "立即处理"
+            },
+            "probabilities": {
+              "0": 0.450275719165802,
+              "1": 0.28864312171936035,
+              "2": 0.26108118891716003
+            }
+          }
+        },
+        "input_tokens": 119
+      }
+    }
+  ]
+}

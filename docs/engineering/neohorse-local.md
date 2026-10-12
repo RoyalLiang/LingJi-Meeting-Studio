@@ -40,7 +40,7 @@
 
 ```bash
 ssh wgs 'mkdir -p /home/westwell/ai-labs/neohorse-jev-4b'
-scp tools/neohorse/*.py tools/neohorse/setup_env.sh \
+scp tools/neohorse/*.py tools/neohorse/*.sh \
   wgs:/home/westwell/ai-labs/neohorse-jev-4b/
 ssh wgs
 cd /home/westwell/ai-labs/neohorse-jev-4b
@@ -52,7 +52,7 @@ bash setup_env.sh "$PWD"
 
 ## 运行合成推理检查
 
-当前适配器严格限制 `state` 为 1024 tokens、单问题分支为 2048 tokens、最多 8 个问题、展开后合计 8192 tokens。超限会报错，不静默截断。训练示例使用更短的 256-token state/branch 限制。长会议应先选择相关转录窗口；本轮未实现产品中的分窗和路由。
+当前适配器严格限制 `state` 为 1024 tokens、每个问题连同重复 state 的完整执行行为 2048 tokens、最多 8 个问题、展开后合计 8192 tokens。作者的 `max_branch` 是完整行预算，包含 state。超限会报错，不静默截断。决策头训练示例的 state 和完整行均限 256 tokens。长会议应先选择相关转录窗口；本轮未实现产品中的分窗和路由。
 
 ```bash
 ssh wgs
@@ -93,6 +93,46 @@ cd /home/westwell/ai-labs/neohorse-jev-4b
 
 训练样例保留在本机。应另划分独立评测集；不能用训练损失代替效果验收。当前工具限制为最多 1000 条、100 步，超出时明确拒绝。
 
+## 验证 LoRA 训练
+
+已在同一台 RTX 4060 Ti 8GB 上验证 NF4 骨干加 LoRA：只训练文本注意力的 `q_proj`、`v_proj`，原骨干和原决策头冻结。使用 PEFT 0.21.2、rank 4、batch size 1、非重入梯度检查点；当前工具限制 state 为 128 tokens、完整执行行为 256 tokens。它使用原模型的决策 logits 计算分类损失，不是文本生成 SFT。
+
+| 检查         | 实测结果                                                                                          |
+| ------------ | ------------------------------------------------------------------------------------------------- |
+| LoRA 范围    | 16 个投影，458,752 个可训练参数；32 个 LoRA 张量发生变化，梯度非零，原决策头未变化                |
+| 短样例       | 六条合成样例，最长 45 tokens，6 步；损失 0.0414926 → 0.0312019                                    |
+| 长度边界样例 | 两条合成样例，完整行 252 tokens，2 步；损失 0.0266024 → 0.0208352                                 |
+| 显存         | 两组峰值分配均为 5588.3MiB，约 5.46GiB；最大 PyTorch 预留显存 5670MiB；不含其他进程和部分驱动开销 |
+| 保存及重载   | 适配器约 1.84MB；两组均在新进程重载，适配器权重相同，logits 与概率差为 0                          |
+| 回归         | 原始模型六条结果与安装时完全相同；原有决策头训练仍通过                                            |
+| HTTP         | 显式加载 LoRA 后，健康检查、两种决策接口、非法模型拒绝和回环监听检查均通过；临时服务已停止        |
+
+在 wgs 安装目录执行，安装可选训练依赖并运行短样例验证：
+
+```bash
+cd /home/westwell/ai-labs/neohorse-jev-4b
+bash setup_lora.sh "$PWD"
+.venv/bin/python train_lora.py --model-dir model \
+  --output-dir checkpoints/lora-smoke --steps 6 --rank 4
+.venv/bin/python train_lora.py --model-dir model \
+  --output-dir checkpoints/lora-smoke --verify-only
+.venv/bin/python smoke.py --model-dir model \
+  --lora-adapter checkpoints/lora-smoke/adapter --output evidence/lora-smoke.json
+```
+
+自己的 JSONL 数据格式与决策头训练相同，当前支持每条一个 Choice 问题，最多 64 条；训练和 `--verify-only` 都需要传入相同的 `--dataset dataset.jsonl`。校验器核对数据哈希、适配器权重和输出数值，配置容差为 logits 0.05、概率 0.002；本轮两组实测差值为 0。脚本允许 rank 1–8、1–50 步，但只验收了表中 rank 4 和步数组合。
+
+启动使用 LoRA 的本机服务时显式指定目录：
+
+```bash
+.venv/bin/python serve.py --model-dir model \
+  --lora-adapter checkpoints/lora-smoke/adapter --port 18081
+```
+
+省略 `--lora-adapter` 会使用原模型。LoRA 推理沿用训练时的 k-bit 准备和 BF16 autocast，决策头保持 FP32 运算，因此显存高于普通 NF4 推理。PEFT 作为可选依赖，原来的核心版本未变。实现依据见 [PEFT 量化训练文档](https://huggingface.co/docs/peft/developer_guides/quantization)；本轮证据保存在 `docs/evidence/neohorse/lora/`。
+
+这些检查只证明所测配置可以训练、保存和加载。LoRA 的四分类 smoke 仍为 6/6，但否定外发样例的 `none` 概率约 0.514、`actions` 约 0.485，间距比原模型更小。训练损失下降不能证明真实会议效果改善；合成适配器不作为默认权重。长上下文、更大 batch、全部线性层 LoRA 和全参数训练尚未验证。
+
 ## 启动本机调试服务
 
 ```bash
@@ -125,4 +165,4 @@ ssh -N -L 18081:127.0.0.1:18081 wgs
 - [作者 ModelScope 发布](https://www.modelscope.cn/models/TokenRhythm/NeoHorse-Jev-4B)。
 - [TypeSafe 企业 FAQ](https://typesafe.ai/enterprise)：官方 Jev 当前仅提供托管 API。
 
-当前实验不上传真实会议、不修改现有 ASR/LLM 配置，不执行会议中的外发指令。真实中文质量、量化校准、长上下文、骨干微调和产品集成都需要单独验证。
+当前实验不上传真实会议、不修改现有 ASR/LLM 配置，不执行会议中的外发指令。真实中文质量、量化校准、长上下文、全参数骨干训练和产品集成都需要单独验证。

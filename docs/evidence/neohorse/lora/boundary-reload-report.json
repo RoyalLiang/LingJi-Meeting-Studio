@@ -1,0 +1,35 @@
+{
+  "fresh_process_reload": true,
+  "adapter_weights_equal": true,
+  "maximum_logit_difference": 0.0,
+  "maximum_probability_difference": 0.0,
+  "probability_tolerance": 0.002,
+  "loss": 0.020835228264331818,
+  "native_inference": {
+    "model": "NeoHorse-Jev-4B",
+    "answers": {
+      "intent": {
+        "type": "choice",
+        "choice": "summarize",
+        "probabilities": {
+          "summarize": 0.962148904800415,
+          "none": 0.03785102814435959
+        }
+      }
+    },
+    "input_tokens": 252
+  },
+  "runtime": {
+    "model": "TokenRhythm/NeoHorse-Jev-4B",
+    "official_typesafe_jev": false,
+    "lora_adapter": "/home/westwell/ai-labs/neohorse-jev-4b/checkpoints/lora-boundary/adapter",
+    "quantization": "bitsandbytes NF4, double quantization, BF16 compute",
+    "quantized_linear_count": 346,
+    "gpu": "NVIDIA GeForce RTX 4060 Ti",
+    "allocated_mib": 4387.5,
+    "peak_allocated_mib": 5583.3,
+    "torch": "2.8.0+cu126",
+    "cuda_runtime": "12.6"
+  },
+  "quality_benchmark": false
+}
