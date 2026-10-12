@@ -4,7 +4,7 @@
 
 更新日期：2026-10-12。产品目标：通用实时语音转录、会议 AI 总结与纪要；用户已确认**浏览器优先、尽量免安装**。全阶段工程首版已形成可运行闭环，环境退出门仍逐项保留。
 
-先看 [运行手册](engineering/runbook.md)、[实际 API](engineering/api.md)、[全阶段验收表](engineering/acceptance.md) 和 [本轮实现决策](adr/0004-record-workbench-implementation.md)。视觉依据见 [已确认方向](design/visual-direction.md)。
+先看 [当前智能纪要与实时翻译](engineering/intelligent-minutes.md)、[运行手册](engineering/runbook.md)、[实际 API](engineering/api.md)、[全阶段验收表](engineering/acceptance.md) 和 [本轮实现决策](adr/0004-record-workbench-implementation.md)。视觉依据见 [已确认方向](design/visual-direction.md)。
 
 ## 按这个顺序阅读
 
@@ -48,10 +48,12 @@
 - [增量纪要 ADR](adr/0006-live-minutes-and-protocols.md)
 
 - [音源检测与智能纪要](engineering/capture-and-minutes.md)：双来源录音、静音提示、虚拟麦克风选择、主题树与发言人/决策视图。
-- [工作台交互反馈](engineering/workbench-feedback.md)：设置保存 toast、Responses 默认值、显式分享系统音频、转录跟随与备份错误反馈。
-- [快速记录、暂停与结束会议](engineering/meeting-lifecycle.md)：可选标题、连续时间轴、紧凑音源摘要与全宽转录。
+- [工作台交互反馈](engineering/workbench-feedback.md)：设置保存 toast、Responses 默认值、显式分享系统音频、阅读跟随与备份错误反馈。
+- [快速记录、暂停与结束会议](engineering/meeting-lifecycle.md)：可选标题、连续时间轴与紧凑音源摘要；主阅读区以当前智能纪要说明为准。
 - [会议启动、连续主题树与标识候选](engineering/meeting-entry-and-brand.md)：双路自动接入、缺失来源引导与本机验收证据。
 
 - [设置稳定性与转录术语验收](engineering/settings-quality.md)：地址原值、单层输入边框、显式关闭、无布局变化保存及本机登录恢复。
 
 - [工作目录与历史会议分析](engineering/workspaces.md)：目录归档、统计口径、有来源的按需洞察、阅读控件与本地验收。
+
+- [智能纪要主阅读区与实时翻译](engineering/intelligent-minutes.md)：当前讨论、可查来源的总结表格与图表、自动跟随，以及专用豆包翻译配置和验证边界。

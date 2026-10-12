@@ -6,7 +6,7 @@ Node 22.14+、npm，执行 `npm ci`、`npm run dev`。访问 [工作台](http://
 
 `.env.example` 复制为 `.env` 后配置，密钥不进入 `VITE_*`，不提交 `.env`。没有模型时只开放文字导入；显式 `RECORD_PROVIDER=fixture` 提供标注的测试内容，在生产环境禁用。
 
-ASR 二选一：`DEEPGRAM_API_KEY`（模型可调），或完整的 multipart `ASR_API_URL`、`ASR_API_KEY`、`ASR_MODEL`。纪要与翻译使用完整 JSON chat endpoint `LLM_API_URL`、`LLM_API_KEY`、`LLM_MODEL`，需要服务支持 `response_format=json_object`。接口兼容不等于模型质量达标。
+ASR 默认使用豆包，兼容 `DEEPGRAM_API_KEY`（模型可调），或完整的 multipart `ASR_API_URL`、`ASR_API_KEY`、`ASR_MODEL`。纪要使用完整接口 `LLM_API_URL`、`LLM_API_KEY`、`LLM_MODEL`，协议由 `LLM_PROTOCOL` 选择 Chat Completions 或 Responses。翻译使用独立的豆包 Responses 请求，配置见下方[实时翻译](#实时翻译)。接口兼容不等于模型质量达标。
 
 实时采集首个 PCM 包约 400 毫秒，后续约 1 秒；文件导入按 2 秒分片，最后短片在停止时 flush。服务器持久接收不表示识别完成。供应商有显式超时和有限重试；修正配置后在页面点击重新处理。摘要超过当前输入预算会报错，不能静默截断正文。
 
@@ -59,6 +59,21 @@ node scripts/recover-audio.mjs pending-audio-RECORD.json ./recovered-audio
 
 讨论脉络默认使用本地规则，旧记录不因保存模型密钥自动上传正文。用户逐条点击“使用模型分析”后，该记录的新转录版本可异步分析。纪要明确区分“本地提取”（规则引用原文）与“AI 整理”（发送转录及笔记至已配置模型），均保留引用版本；本地提取不是 AI 总结。
 
+## 实时翻译
+
+在设置中填写专用翻译完整接口、密钥和模型，或在后端环境中配置：
+
+| 配置 | 用法 |
+| --- | --- |
+| `DOUBAO_TRANSLATION_MODEL` | 默认 `doubao-seed-translation-250915`，与纪要模型独立 |
+| `DOUBAO_TRANSLATION_API_URL` | 完整 Responses 请求地址；保存和请求均不自动补全路径；留空时复用 `LLM_API_URL` |
+| `DOUBAO_TRANSLATION_API_KEY` | 专用密钥优先；为空且实际请求地址等于 `LLM_API_URL` 时复用 `LLM_API_KEY` |
+
+专用地址与纪要地址不同时必须提供专用密钥，服务不会把纪要密钥发送到另一个地址。复用地址仍需支持豆包翻译模型的 Responses 请求；纪要协议设为 Chat 不会把翻译转换为 Chat 请求。“已设置”或 `providers.translation` 仅说明配置存在，不表示模型已开通。
+
+点击会议工具栏的“实时翻译”后，默认开始英文翻译，可切换中文、日文、西班牙文、法文或德文。已有和后续确认原文会逐段处理；关闭面板继续翻译，点击“暂停翻译”才停止。翻译失败显示错误，不替换成模拟译文。改变目标或暂停后，旧任务的迟到结果会被隔离。
+
+主区默认显示智能纪要；向上阅读、编辑或查看引用时暂停跟随，点击“回到最新纪要”恢复。既有未启用 AI 的记录可主动开启自动纪要。引用可查看完整对应修订；原音回放仍取决于留存选择。使用和验证边界见[智能纪要说明](intelligent-minutes.md)。
 
 ## 地址、设备与失败恢复
 

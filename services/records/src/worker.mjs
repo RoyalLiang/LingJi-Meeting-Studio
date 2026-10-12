@@ -70,23 +70,23 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
     if (lane === 'all' || lane === 'translation') {
       let claim;
       await repo.change(candidate.id, r => {
-        if (r.deleted || !r.translationTarget) return;
+        if (r.deleted || !r.translationTarget || (!providers.translate && !providerStatus(config).translation)) return;
         const segment = r.segments.find(s => s.translationLanguage !== r.translationTarget && (s.translationAttempts || 0) < 3 && (s.translationLease || 0) <= Date.now() && (s.translationRetryAt || 0) <= Date.now());
         if (!segment) return;
-        segment.translationLease = Date.now() + 150000;
-        claim = { id: segment.id, revision: segment.revision, text: segment.text, target: r.translationTarget, generation: r.generation };
+        segment.translationLease = Date.now() + 150000; segment.translationFence = randomUUID();
+        claim = { id: segment.id, revision: segment.revision, text: segment.text, target: r.translationTarget, generation: r.generation, settingsRevision: r.translationRevision || 0, fence: segment.translationFence };
       });
       if (claim) try {
         const text = await (providers.translate || translateText)(claim.text, claim.target, config);
         await repo.change(candidate.id, r => {
           const s = r.segments.find(s => s.id === claim.id);
-          if (!s || r.deleted || r.generation !== claim.generation || s.revision !== claim.revision || r.translationTarget !== claim.target) return;
-          s.translation = text; s.translationLanguage = claim.target; delete s.translationLease; delete s.translationError;
+          if (!s || r.deleted || r.generation !== claim.generation || s.revision !== claim.revision || r.translationTarget !== claim.target || (r.translationRevision || 0) !== claim.settingsRevision || s.translationFence !== claim.fence) return;
+          s.translation = text; s.translationLanguage = claim.target; delete s.translationLease; delete s.translationFence; delete s.translationError; delete s.translationAttempts; delete s.translationRetryAt;
           emit(r, 'transcript.translated', {segmentId: s.id});
         });
       } catch (error) { await repo.change(candidate.id, r => {
-        const s = r.segments.find(s => s.id === claim.id); if (!s || r.deleted || s.revision !== claim.revision) return;
-        s.translationAttempts = (s.translationAttempts || 0) + 1; s.translationError = error.code || 'translation_failed'; s.translationRetryAt = Date.now() + 60000; delete s.translationLease;
+        const s = r.segments.find(s => s.id === claim.id); if (!s || r.deleted || r.generation !== claim.generation || s.revision !== claim.revision || r.translationTarget !== claim.target || (r.translationRevision || 0) !== claim.settingsRevision || s.translationFence !== claim.fence) return;
+        s.translationAttempts = (s.translationAttempts || 0) + 1; s.translationError = error.code || 'translation_failed'; s.translationRetryAt = Date.now() + 60000; delete s.translationLease; delete s.translationFence; emit(r, 'transcript.translation_failed', {segmentId:s.id});
       }); }
     }
     const updated = await repo.get(candidate.id);

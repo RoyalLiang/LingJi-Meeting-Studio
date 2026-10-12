@@ -45,6 +45,16 @@ Record capture 与 transcription 分离。创建时可不提供标题，会后�
 - SSE 新增 `minutes.delta`、`minutes.live`、`minutes.automation`、`transcript.translated`，仍用持久 cursor 补历史。
 - 模型设置新增 `LLM_PROTOCOL:chat-completions|responses`，地址按填写的完整接口原值保存和请求；密钥仍只返回是否配置。豆包术语字段为 `DOUBAO_ASR_HOTWORDS`，用逗号分隔，总长最多 100 字，每词最多 50 字，空值清除。
 
+## 智能纪要结构与实时翻译
+
+纪要结果可包含 `currentDiscussion:[{text,evidence}]` 和 `tables:[{title,columns,rows:[{cells,evidence}]}]`。每行 `cells` 数量必须与 `columns` 相同；讨论项和表格行的 `evidence:[{segmentId,revision}]` 必须匹配本次冻结输入快照。非法结构被拒绝，不能用现行片段替代旧版引用。既有纪要正文、行动候选和人工修订保护保持原协议。
+
+`PATCH /api/records/:id` 的 `translationTarget` 接受 `en|zh|ja|es|fr|de`，空字符串暂停。开启后处理本场已有及后续确认片段；译文通过 `transcript.translated` 事件刷新。改变目标或暂停会增加 `translationRevision`；提交结果同时核对记录 generation、原文 revision、目标修订和任务 fence，旧请求不能覆盖新状态。关闭前端面板不修改此配置。
+
+服务配置新增 `DOUBAO_TRANSLATION_API_URL`、`DOUBAO_TRANSLATION_API_KEY`、`DOUBAO_TRANSLATION_MODEL`，默认模型为 `doubao-seed-translation-250915`。翻译固定使用 Responses 的 `input_text` 与 `translation_options.target_language`，逐段请求已确认原文，非供应商流式翻译。URL 原值使用；未设专用 URL 时复用 `LLM_API_URL`，专用密钥为空且实际 URL 与纪要 URL 相同时才复用 `LLM_API_KEY`。bootstrap 的 `providers.translation` 表示配置可用性，不能代替真实连接或质量验证。
+
+主阅读层级与引用行为见[智能纪要说明](intelligent-minutes.md)，配置步骤见[运行手册](runbook.md)。
+
 ## 工作目录
 
 | 路由 | 用途 |

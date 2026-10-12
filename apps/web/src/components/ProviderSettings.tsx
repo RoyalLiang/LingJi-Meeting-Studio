@@ -6,7 +6,7 @@ import { Select } from './Select';
 import { Toast } from './Toast';
 import { protocolForAddress } from '../provider-settings';
 type Values = Record<string, string | boolean>;
-const secretKeys = new Set(['DOUBAO_API_KEY', 'DOUBAO_AST_APP_KEY', 'DOUBAO_AST_ACCESS_KEY', 'ASR_API_KEY', 'DEEPGRAM_API_KEY', 'LLM_API_KEY']);
+const secretKeys = new Set(['DOUBAO_API_KEY', 'DOUBAO_AST_APP_KEY', 'DOUBAO_AST_ACCESS_KEY', 'ASR_API_KEY', 'DEEPGRAM_API_KEY', 'LLM_API_KEY', 'DOUBAO_TRANSLATION_API_KEY']);
 export function ProviderSettings({ saved }: { saved: () => Promise<void> }) {
   const [values, setValues] = useState<Values | null>(null), [provider, setProvider] = useState('doubao');
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false);
@@ -63,6 +63,7 @@ export function ProviderSettings({ saved }: { saved: () => Promise<void> }) {
       {provider === 'openai-compatible' && <>{field('ASR_API_URL','转录请求地址')}{field('ASR_MODEL','语音模型')}{field('ASR_API_KEY','转录 API Key',true)}</>}
       <div className="settings-subheading"><CloudCheck size={18}/><h4>纪要、意图识别与翻译</h4></div>
       <label>模型协议<Select label="模型协议" name="LLM_PROTOCOL" value={draft.LLM_PROTOCOL || 'responses'} onChange={value => { protocolTouched.current = true; setDraft(current => ({...current,LLM_PROTOCOL:value})); }} options={[{value:'responses',label:'Responses'},{value:'chat-completions',label:'Chat Completions'}]}/></label>{field('LLM_API_URL','模型服务地址（完整接口）')}<p className="fine-print">按填写的完整地址发起请求，不自动补全或替换路径。切换协议不会修改地址。</p>{field('LLM_MODEL','模型 / 接入点 ID',false,'填写已开通的 model ID 或 ep-…')}{field('LLM_API_KEY','方舟 / 兼容模型 API Key',true)}
+      <div className="settings-subheading"><CloudCheck size={18}/><h4>豆包实时翻译</h4></div>{field('DOUBAO_TRANSLATION_MODEL','翻译模型 / 接入点 ID',false,'doubao-seed-translation-250915')}{field('DOUBAO_TRANSLATION_API_URL','翻译服务地址（可选）',false,'留空沿用上方完整模型服务地址')}{field('DOUBAO_TRANSLATION_API_KEY','翻译 API Key（可选）',true)}<p className="fine-print">使用豆包 Seed Translation 专用接口参数。留空沿用纪要服务连接；单独填写地址时，请同时填写翻译密钥。仅开启本场翻译后发送原文，不改变纪要模型。</p>
       <div className="actions"><Button aria-disabled={busy} type="submit" variant="primary">保存服务配置</Button><Button type="button" aria-disabled={busy} onClick={() => void test('asr')}><Plug size={16}/>测试转录</Button><Button type="button" aria-disabled={busy} onClick={() => void test('minutes')}>测试纪要</Button></div>
     </form>}
   </div>;

@@ -1,3 +1,4 @@
+import { setTranslationTarget } from '../../../packages/records/src/translation.mjs';
 import { workspaceRoutes, requireWorkspace } from './workspace-routes.mjs';
 import { belongsToScope, meetingSeconds } from '../../../packages/records/src/workspaces.mjs';
 import { setAutomation } from '../../../packages/records/src/automation.mjs';
@@ -228,7 +229,7 @@ export async function createRecordServer(options = {}) {
       else if (action === '' && req.method === 'PATCH') result = await changeOwned(id, user, r => {
         if (body.title !== undefined) { requireThat(typeof body.title === 'string' && body.title.trim(), 'invalid_title', 400); r.title = body.title.trim().slice(0, 160); }
         if (body.notes !== undefined) { requireThat(body.notesRevision === r.notesRevision, 'notes_revision_conflict'); requireThat(typeof body.notes === 'string' && body.notes.length < 20000, 'invalid_notes', 400); r.notes = body.notes; r.notesRevision++; }
-        if (body.translationTarget !== undefined) { requireThat(['', 'zh', 'en', 'ja', 'es', 'fr', 'de'].includes(body.translationTarget), 'invalid_translation_target', 400); r.translationTarget = body.translationTarget; }
+        if (body.translationTarget !== undefined) setTranslationTarget(r, body.translationTarget, requireThat);
         emit(r, 'record.updated'); return publicRecord(r);
       });
       else if (action === '' && req.method === 'DELETE') result = await changeOwned(id, user, r => {

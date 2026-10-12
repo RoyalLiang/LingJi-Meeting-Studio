@@ -1,3 +1,4 @@
+import { validateMinutesStructure } from './minutes-structure.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 
 export class DomainError extends Error {
@@ -142,7 +143,7 @@ export function editSegment(record, id, input) {
     if (known) { segment.speakerId = known.id; segment.speakerHash = known.hash || digest(`meeting-speaker:v1:${record.id}:${known.id}`); }
     else if (!segment.speaker) { segment.speakerId = null; segment.speakerHash = null; }
   }
-  for (const field of ['translation', 'translationLanguage', 'translationLease', 'translationAttempts', 'translationRetryAt', 'translationError']) delete segment[field];
+  for (const field of ['translation', 'translationLanguage', 'translationLease', 'translationFence', 'translationAttempts', 'translationRetryAt', 'translationError']) delete segment[field];
   segment.revision++; segment.edited = true; record.transcriptRevision++;
   emit(record, 'transcript.edited', { segmentId: id, transcriptRevision: record.transcriptRevision });
 }
@@ -164,6 +165,7 @@ export function requestMinutes(record, input = {}) {
   record.jobs.push(job); emit(record, 'minutes.queued', { jobId: job.id }); return job;
 }
 export function validateMinutes(result, snapshot) {
+  validateMinutesStructure(result || {}, snapshot, requireThat);
   requireThat(result && typeof result.title === 'string' && result.title.trim() && result.title.length <= 300 && Array.isArray(result.sections) && result.sections.length <= 20, 'invalid_minutes_schema', 422);
   requireThat(result.sections.length > 0, 'empty_minutes', 422);
   for (const section of result.sections) {
@@ -219,7 +221,7 @@ export function commitMinutes(record, jobId, result, fence) {
 }
 export function publicRecord(record) {
   const { owner, events, chunks, shares, jobs, minutesHistory, ...rest } = record;
-  return { ...rest, sources: record.sources.map(({asr,...source})=>({...source,...(asr ? {asr:{state:asr.state,error:asr.error,identityWarning:asr.identityWarning,preview:asr.preview,runtime:asr.runtime}} : {})})), audio: record.sources.map(s => receipt(record, s)),
+  return { ...rest, segments: record.segments.map(({translationFence,translationLease,...segment})=>segment), sources: record.sources.map(({asr,...source})=>({...source,...(asr ? {asr:{state:asr.state,error:asr.error,identityWarning:asr.identityWarning,preview:asr.preview,runtime:asr.runtime}} : {})})), audio: record.sources.map(s => receipt(record, s)),
     pendingChunks: chunks.filter(c => c.state !== 'done').length,
     minuteVersions: [...(minutesHistory || []), ...(record.minutes ? [record.minutes] : [])].map(m => ({ revision: m.revision, transcriptRevision: m.transcriptRevision, edited: m.edited })),
     jobs: jobs.map(({ snapshot, notes, fence, ...job }) => job) };
