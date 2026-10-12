@@ -7,6 +7,7 @@ import { DomainError, requireThat } from '../../../packages/records/src/record.m
 import { createS3Objects } from './s3.mjs';
 import { telemetry } from './telemetry.mjs';
 
+function traceWrite(value){if(telemetry.enabled)telemetry.event('db.write',{recordId:value.id,bytes:Buffer.byteLength(JSON.stringify(value))});}
 function schedule(value) {
   if (value.kind !== 'record') return;
   const now = Date.now();
@@ -56,6 +57,7 @@ export async function createRepository(options = {}) {
     const projection=deriveProjection(value,before); if(!projection)return;
     db.prepare('INSERT INTO record_list_projection(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(value.id,JSON.stringify(projection.list));
     db.prepare('INSERT INTO record_feed_meta(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(value.id,JSON.stringify(projection.meta));
+    if(value.deleted)db.prepare('DELETE FROM record_feed_events WHERE record_id=?').run(value.id);
     for(const event of projection.events) db.prepare('INSERT INTO record_feed_events(record_id,cursor,data) VALUES(?,?,?) ON CONFLICT(record_id,cursor) DO UPDATE SET data=excluded.data').run(value.id,cursorKey(event.cursor),JSON.stringify(event));
     db.prepare('DELETE FROM record_feed_events WHERE record_id=? AND cursor<?').run(value.id,cursorKey(projection.meta.first));
   }
@@ -63,6 +65,7 @@ export async function createRepository(options = {}) {
     const projection=deriveProjection(value,before); if(!projection)return;
     await client.query('INSERT INTO record_list_projection(id,data) VALUES($1,$2) ON CONFLICT(id) DO UPDATE SET data=excluded.data',[value.id,JSON.stringify(projection.list)]);
     await client.query('INSERT INTO record_feed_meta(id,data) VALUES($1,$2) ON CONFLICT(id) DO UPDATE SET data=excluded.data',[value.id,JSON.stringify(projection.meta)]);
+    if(value.deleted)await client.query('DELETE FROM record_feed_events WHERE record_id=$1',[value.id]);
     for(const event of projection.events) await client.query('INSERT INTO record_feed_events(record_id,cursor,data) VALUES($1,$2,$3) ON CONFLICT(record_id,cursor) DO UPDATE SET data=excluded.data',[value.id,cursorKey(event.cursor),JSON.stringify(event)]);
     await client.query('DELETE FROM record_feed_events WHERE record_id=$1 AND cursor<$2',[value.id,cursorKey(projection.meta.first)]);
   }
@@ -93,6 +96,7 @@ export async function createRepository(options = {}) {
     },
     async insert(value) {
       schedule(value);
+      traceWrite(value);
       const client=pool ? await pool.connect() : null;
       try {
         if(client) await client.query('BEGIN'); else db.exec('BEGIN IMMEDIATE');
@@ -115,6 +119,7 @@ export async function createRepository(options = {}) {
         requireThat(!(result instanceof Promise), 'transaction_must_be_synchronous', 500);
         for (const value of values) {
           schedule(value);
+          traceWrite(value);
           if (client) await client.query('UPDATE record_aggregates SET data=$2 WHERE id=$1', [value.id, JSON.stringify(value)]);
           else db.prepare('UPDATE aggregates SET data=? WHERE id=?').run(JSON.stringify(value), value.id);
           if(client)await writePgProjection(client,value,snapshots.get(value.id));else writeSqliteProjection(value,snapshots.get(value.id));
@@ -137,6 +142,7 @@ export async function createRepository(options = {}) {
       const result = mutate(value);
         requireThat(!(result instanceof Promise), 'transaction_must_be_synchronous', 500);
         schedule(value);
+        traceWrite(value);
         if (client) await client.query('UPDATE record_aggregates SET data=$2 WHERE id=$1', [id, JSON.stringify(value)]);
         else db.prepare('UPDATE aggregates SET data=? WHERE id=?').run(JSON.stringify(value), id);
         if(client)await writePgProjection(client,value,before);else writeSqliteProjection(value,before);

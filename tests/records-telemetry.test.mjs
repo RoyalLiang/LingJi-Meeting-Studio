@@ -10,7 +10,7 @@ test('bounded stage traces preserve result and errors without recording content'
     t.event('queue',{bytes:4}); t.event('queue',{bytes:8});
     const s=t.snapshot(); assert.equal(s.events.length,3); assert.equal(s.timings.ack.count,1);
     assert.equal(s.events[0].outcome,'error'); assert.ok(!JSON.stringify(s).includes('SECRET'));
-    assert.ok(s.timings.provider.p95Ms>=0); assert.ok(s.memory.rss>0);
+    assert.ok(s.timings.provider.p95Ms>=0); assert.ok(s.memory.rss>0);assert.equal(s.versions.protocol,'record/v1');assert.equal(s.events[0].errorClass,'operation_failed');
   } finally { t.close(); }
 });
 test('disabled traces do not invoke sink or change operations',async()=>{

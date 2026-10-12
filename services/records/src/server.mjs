@@ -38,9 +38,10 @@ export function exportRecord(record, format = 'markdown') {
 }
 export async function createRecordServer(options = {}) {
   const repo = options.repo || await createRepository(options); const auth = await createAuth(repo, { seedDevelopment: !options.repo, ...options });
+  const deltaEnabled=options.deltaEnabled ?? (process.env.RECORD_DELTA_ENABLED!=='false');
   const streams = new Set(); const attempts = new Map();
-  const send = (res, status, data, headers = {}) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8',
-    'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...headers }); res.end(JSON.stringify(data)); };
+  const send = (res, status, data, headers = {}) => { const payload=JSON.stringify(data); res.writeHead(status, { 'Content-Length':Buffer.byteLength(payload), 'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...headers }); res.end(payload); };
   async function owned(id, user) { const r = await repo.get(id); requireThat(r && r.kind === 'record' && r.owner === user.id, 'not_found', 404); requireThat(!r.deleted && Date.parse(r.deleteAt) > Date.now(), 'record_deleted', 410); return r; }
   const changeOwned = (id, user, mutate) => repo.change(id, r => {
     requireThat(r.owner === user.id && !r.deleted && Date.parse(r.deleteAt) > Date.now(), 'record_deleted', 410);
@@ -50,7 +51,7 @@ export async function createRecordServer(options = {}) {
     const started = performance.now();
     const traceId = /^[A-Za-z0-9-]{16,80}$/.test(req.headers['x-record-trace'] || '') ? req.headers['x-record-trace'] : randomUUID();
     res.setHeader('X-Record-Trace', traceId);
-    res.once('finish', () => telemetry.event('http.complete', { traceId, durationMs:performance.now()-started, outcome:res.statusCode<400?'ok':'error', bytes:Number(res.getHeader('Content-Length'))||0 }));
+    res.once('finish', () => telemetry.event('http.complete', { traceId, durationMs:performance.now()-started, outcome:res.statusCode<400?'ok':'error', bytes:Number(res.getHeader('Content-Length')) }));
     try {
       const url = new URL(req.url, 'http://localhost'), path = url.pathname;
       if (path === '/api/health') { await repo.list('health-probe'); send(res, 200, { ok: true, service: 'records', storage: repo.backend, audioStorage: repo.audioBackend }); return; }
@@ -168,7 +169,8 @@ export async function createRecordServer(options = {}) {
         const timer = setInterval(async () => {
           if (busy) return; busy = true;
           try {
-            await auth.user(req); const r = await owned(id, user); const first = BigInt(r.events[0]?.cursor || r.cursor);
+            await auth.user(req); const r = deltaEnabled ? await repo.eventsAfter(id,cursor) : await owned(id,user);
+              requireThat(r && r.owner===user.id && !r.deleted && Date.parse(r.deleteAt)>Date.now(),'record_deleted',410); const first = BigInt(r.first || r.events[0]?.cursor || r.cursor);
             if (BigInt(cursor) < first - 1n || BigInt(cursor) > BigInt(r.cursor)) {
               res.write(`event: reset\ndata: ${JSON.stringify({ cursor: r.cursor })}\n\n`); cursor = r.cursor;
             }

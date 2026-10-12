@@ -1,0 +1,215 @@
+{
+  "schema": "tts-synthetic-aggregate-benchmark/v1",
+  "at": "2026-10-13T00:55:05.324Z",
+  "environment": {
+    "node": "v22.14.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M4 Pro"
+  },
+  "backend": "sqlite",
+  "audioBackend": "filesystem",
+  "samples": 20,
+  "warmup": 3,
+  "method": "Sequential warm local operations, synthetic metadata only, no ASR/LLM/HTTP/browser/concurrent clients. SQLite WAL synchronous=FULL. No minutes history. Not a capacity or latency SLO test.",
+  "cases": [
+    {
+      "wallMinutes": 5,
+      "sources": 1,
+      "withinCaptureCapacity": true,
+      "chunks": 300,
+      "segments": 60,
+      "aggregateBytes": 282409,
+      "publicBytes": 24830,
+      "snapshotCharacters": 18714,
+      "exceedsFinalSnapshotGuard": false,
+      "get": {
+        "medianMs": 0.506,
+        "p95Ms": 0.539
+      },
+      "changeScalar": {
+        "medianMs": 1.892,
+        "p95Ms": 2.628
+      },
+      "publicSerialize": {
+        "medianMs": 0.043,
+        "p95Ms": 0.06
+      }
+    },
+    {
+      "wallMinutes": 5,
+      "sources": 2,
+      "withinCaptureCapacity": true,
+      "chunks": 600,
+      "segments": 120,
+      "aggregateBytes": 473146,
+      "publicBytes": 48920,
+      "snapshotCharacters": 37427,
+      "exceedsFinalSnapshotGuard": false,
+      "get": {
+        "medianMs": 0.809,
+        "p95Ms": 1.111
+      },
+      "changeScalar": {
+        "medianMs": 2.85,
+        "p95Ms": 3.568
+      },
+      "publicSerialize": {
+        "medianMs": 0.076,
+        "p95Ms": 0.083
+      }
+    },
+    {
+      "wallMinutes": 30,
+      "sources": 1,
+      "withinCaptureCapacity": true,
+      "chunks": 1800,
+      "segments": 360,
+      "aggregateBytes": 1240268,
+      "publicBytes": 144415,
+      "snapshotCharacters": 113095,
+      "exceedsFinalSnapshotGuard": false,
+      "get": {
+        "medianMs": 2.083,
+        "p95Ms": 2.78
+      },
+      "changeScalar": {
+        "medianMs": 8.502,
+        "p95Ms": 10.715
+      },
+      "publicSerialize": {
+        "medianMs": 0.215,
+        "p95Ms": 0.387
+      }
+    },
+    {
+      "wallMinutes": 30,
+      "sources": 2,
+      "withinCaptureCapacity": true,
+      "chunks": 3600,
+      "segments": 720,
+      "aggregateBytes": 2388861,
+      "publicBytes": 288087,
+      "snapshotCharacters": 226189,
+      "exceedsFinalSnapshotGuard": true,
+      "get": {
+        "medianMs": 4.134,
+        "p95Ms": 4.526
+      },
+      "changeScalar": {
+        "medianMs": 17.792,
+        "p95Ms": 18.813
+      },
+      "publicSerialize": {
+        "medianMs": 0.531,
+        "p95Ms": 0.585
+      }
+    },
+    {
+      "wallMinutes": 60,
+      "sources": 1,
+      "withinCaptureCapacity": true,
+      "chunks": 3600,
+      "segments": 720,
+      "aggregateBytes": 2392268,
+      "publicBytes": 288415,
+      "snapshotCharacters": 226855,
+      "exceedsFinalSnapshotGuard": true,
+      "get": {
+        "medianMs": 4.385,
+        "p95Ms": 4.933
+      },
+      "changeScalar": {
+        "medianMs": 17.726,
+        "p95Ms": 19.486
+      },
+      "publicSerialize": {
+        "medianMs": 0.477,
+        "p95Ms": 0.647
+      }
+    },
+    {
+      "wallMinutes": 60,
+      "sources": 2,
+      "withinCaptureCapacity": true,
+      "chunks": 7200,
+      "segments": 1440,
+      "aggregateBytes": 4692863,
+      "publicBytes": 576089,
+      "snapshotCharacters": 453709,
+      "exceedsFinalSnapshotGuard": true,
+      "get": {
+        "medianMs": 8.83,
+        "p95Ms": 8.962
+      },
+      "changeScalar": {
+        "medianMs": 34.445,
+        "p95Ms": 35.205
+      },
+      "publicSerialize": {
+        "medianMs": 1.136,
+        "p95Ms": 1.513
+      }
+    },
+    {
+      "wallMinutes": 120,
+      "sources": 1,
+      "withinCaptureCapacity": true,
+      "chunks": 7200,
+      "segments": 1440,
+      "aggregateBytes": 4697220,
+      "publicBytes": 576417,
+      "snapshotCharacters": 454375,
+      "exceedsFinalSnapshotGuard": true,
+      "get": {
+        "medianMs": 8.914,
+        "p95Ms": 9.575
+      },
+      "changeScalar": {
+        "medianMs": 34.223,
+        "p95Ms": 34.762
+      },
+      "publicSerialize": {
+        "medianMs": 1.047,
+        "p95Ms": 1.558
+      }
+    },
+    {
+      "wallMinutes": 120,
+      "sources": 2,
+      "withinCaptureCapacity": false,
+      "chunks": 14400,
+      "segments": 2880,
+      "aggregateBytes": 9302763,
+      "publicBytes": 1152089,
+      "snapshotCharacters": 908749,
+      "exceedsFinalSnapshotGuard": true,
+      "get": {
+        "medianMs": 19.73,
+        "p95Ms": 25.253
+      },
+      "changeScalar": {
+        "medianMs": 68.679,
+        "p95Ms": 73.125
+      },
+      "publicSerialize": {
+        "medianMs": 2.223,
+        "p95Ms": 2.629
+      }
+    }
+  ],
+  "library20Records": {
+    "listWork": {
+      "medianMs": 134.463,
+      "p95Ms": 152.255
+    },
+    "list": {
+      "medianMs": 136.224,
+      "p95Ms": 154.71
+    }
+  },
+  "oneSecondAudioPut": {
+    "medianMs": 4.982,
+    "p95Ms": 5.058
+  }
+}
