@@ -19,9 +19,9 @@ export function deriveProjection(record, before) {
   if (record.kind !== 'record') return null;
   const events = record.events || [], last = events.at(-1);
   const delta = before && before.cursor !== record.cursor ? projectionDelta(before, publicRecord(record)) : null;
-  return { list: {owner:record.owner,deleted:!!record.deleted,deleteAt:record.deleteAt,search:`${record.title} ${record.segments.map(s=>s.text).join(' ')} ${JSON.stringify(record.minutes||'')}`.toLowerCase(),summary:{id:record.id,title:record.title,workspaceId:record.workspaceId||null,createdAt:record.createdAt,updatedAt:record.updatedAt,capture:record.capture,transcription:record.transcription,segments:record.segments.length,hasMinutes:!!record.minutes,seconds:meetingSeconds(record)}}, meta: { id: record.id, owner: record.owner, deleted: !!record.deleted, deleteAt: record.deleteAt,
-    cursor: record.cursor, first: events[0]?.cursor || record.cursor },
-    events: events.filter(event => !before || BigInt(event.cursor) > BigInt(before.cursor)).map(event =>
+  return { list: {owner:record.owner,deleted:!!record.deleted,deleteAt:record.deleteAt,search:record.deleted ? '' : `${record.title} ${record.segments.map(s=>s.text).join(' ')} ${JSON.stringify(record.minutes||'')}`.toLowerCase(),summary:{id:record.id,title:record.title,workspaceId:record.workspaceId||null,createdAt:record.createdAt,updatedAt:record.updatedAt,capture:record.capture,transcription:record.transcription,segments:record.segments.length,hasMinutes:!!record.minutes,seconds:meetingSeconds(record)}}, meta: { id: record.id, owner: record.owner, deleted: !!record.deleted, deleteAt: record.deleteAt,
+    cursor: record.cursor, first: record.deleted ? record.cursor : events[0]?.cursor || record.cursor },
+    events: record.deleted ? [] : events.filter(event => !before || BigInt(event.cursor) > BigInt(before.cursor)).map(event =>
       ({ ...event, projection: !!delta, ...(delta && event === last ? { delta } : {}) })) };
 }
 export function visibleSnapshot(value) { return value.kind === 'record' ? structuredClone(publicRecord(value)) : null; }

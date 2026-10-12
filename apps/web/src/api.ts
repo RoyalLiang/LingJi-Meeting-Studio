@@ -44,7 +44,7 @@ const messages: Record<string, string> = {
 };
 export class ApiError extends Error { constructor(public code: string, public status: number) { super(messages[code] || `操作未完成（${code}）`); } }
 export async function api<T>(path: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {
-  const started = performance.now(), traceId = crypto.randomUUID();
+  const started = performance.now(), traceId = globalThis.crypto?.randomUUID?.() || `${Date.now().toString(16)}-${Math.random().toString(16).slice(2).padEnd(16,'0')}`;
   const response = await fetch(`/api${path}`, { method, credentials: 'same-origin', signal,
     headers: { 'Content-Type': 'application/json', 'X-Record-Trace': traceId, ...(method === 'GET' ? {} : { 'X-CSRF-Token': csrf }) },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }) });

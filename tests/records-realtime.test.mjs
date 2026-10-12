@@ -16,7 +16,7 @@ function harness(loadRecord=async()=>({cursor:'1'}),applyDelta){
   }
   const exports={};vm.runInNewContext(javascript,{exports,EventSource,navigator,AbortController,setTimeout(fn,delay){const id=++next;timers.set(id,{fn,delay});return id;},clearTimeout(id){timers.delete(id);}});
   const stop=exports.subscribeToRecord({recordId:'test-record',loadRecord,applyDelta,onRecord:r=>records.push(r),onState:s=>states.push(s),onFatal:e=>errors.push(e)});
-  return{streams,timers,states,records,errors,navigator,stop,async tick(){const [id,timer]=timers.entries().next().value;timers.delete(id);timer.fn();await settle();return timer.delay;}};
+  return{streams,timers,states,records,errors,navigator,stop,apply:exports.applyRecordDelta,async tick(){const [id,timer]=timers.entries().next().value;timers.delete(id);timer.fn();await settle();return timer.delay;}};
 }
 
 test('SSE HTTP failure recreates the stream with a freshly validated snapshot cursor',async()=>{
@@ -46,4 +46,14 @@ test('revocation revalidates access, coalesces event refreshes, and ignores stal
   const stream=h.streams[0];stream.onmessage();stream.listeners.reset();stream.onmessage();assert.equal(calls,2);release({cursor:'2'});await settle();assert.equal(calls,3);assert.equal(h.records.at(-1).cursor,'3');
   stream.listeners.revoked();await h.tick();assert.equal(h.states.at(-1),'unavailable');assert.equal(h.errors[0].status,401);assert.equal(h.timers.size,0);assert.equal(h.streams.length,1);
   const offline=harness();await settle();offline.navigator.onLine=false;offline.streams[0].onerror();assert.equal(offline.states.at(-1),'offline');assert.equal(offline.timers.size,0);offline.stop();
+});
+
+
+test('projection notifications apply without GET; gaps refresh a snapshot',async()=>{
+  let calls=0,apply;const h=harness(async()=>({cursor:String(++calls===1?1:7),segments:[],title:'initial'}),(record,delta)=>apply(record,delta));apply=h.apply;await settle();
+  const stream=h.streams[0];stream.onmessage({data:JSON.stringify({projection:true,cursor:'2'})});await settle();assert.equal(calls,1);
+  const delta={baseCursor:'1',cursor:'3',set:{title:'changed'},remove:[],segments:{upsert:[{id:'s',text:'delta'}],remove:[],order:['s']}};
+  stream.onmessage({data:JSON.stringify({projection:true,delta})});await settle();assert.equal(calls,1);assert.equal(h.records.at(-1).segments[0].text,'delta');
+  stream.onmessage({data:JSON.stringify({projection:true,delta})});await settle();assert.equal(calls,1);
+  stream.onmessage({data:JSON.stringify({projection:true,delta:{...delta,baseCursor:'5',cursor:'6'}})});await settle();assert.equal(calls,2);assert.equal(h.records.at(-1).cursor,'7');h.stop();
 });

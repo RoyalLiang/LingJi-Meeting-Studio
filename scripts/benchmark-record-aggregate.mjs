@@ -44,11 +44,11 @@ async function measure(fn) {
   return { medianMs: +times[Math.floor(times.length / 2)].toFixed(3), p95Ms: +times[Math.ceil(times.length * .95) - 1].toFixed(3) };
 }
 try {
-  for (const [minutes, sources] of [[5, 2], [30, 2], [60, 2], [120, 1]]) {
+  for (const [minutes, sources] of (process.argv.includes('--matrix') ? [5,30,60,120].flatMap(minutes=>[1,2].map(sources=>[minutes,sources])) : [[5, 2], [30, 2], [60, 2], [120, 1]])) {
     const record = syntheticRecord(minutes, sources);
     await repo.insert(record);
     const snapshotCharacters = JSON.stringify(record.segments).length;
-    results.push({ wallMinutes: minutes, sources, chunks: record.chunks.length, segments: record.segments.length,
+    results.push({ wallMinutes: minutes, sources, withinCaptureCapacity:record.chunks.length<=10000 && record.usage.samples<=16000*60*120, chunks: record.chunks.length, segments: record.segments.length,
       aggregateBytes: Buffer.byteLength(JSON.stringify(record)), publicBytes: Buffer.byteLength(JSON.stringify(publicRecord(record))),
       snapshotCharacters, exceedsFinalSnapshotGuard: snapshotCharacters > 180000,
       get: await measure(() => repo.get(record.id)),
@@ -56,7 +56,7 @@ try {
       publicSerialize: await measure(() => JSON.stringify(publicRecord(record))) });
   }
   const due = syntheticRecord(30, 2);
-  for (let i = 0; i < 16; i++) await repo.insert({ ...structuredClone(due), id: randomUUID() });
+  for (let i = 0; i < 20-results.length; i++) await repo.insert({ ...structuredClone(due), id: randomUUID() });
   const listWork20 = await measure(() => repo.listWork());
   const list20 = await measure(() => repo.list());
   let n = 0;
