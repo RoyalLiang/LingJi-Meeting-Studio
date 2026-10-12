@@ -1,0 +1,225 @@
+{
+  "synthetic": true,
+  "records": [
+    {
+      "id": "synthetic-train",
+      "kind": "record",
+      "workspaceId": null,
+      "title": "合成数据集验收",
+      "language": "zh",
+      "createdAt": "2026-10-12T11:12:55.656Z",
+      "updatedAt": "2026-10-12T11:12:55.656Z",
+      "cursor": "1",
+      "generation": 1,
+      "capture": "completed",
+      "transcription": "completed",
+      "sessions": [],
+      "sources": [],
+      "segments": [
+        {
+          "id": "train-0",
+          "revision": 1,
+          "text": "建议先试用方案A。",
+          "speaker": "合成发言人",
+          "speakerId": "synthetic-speaker",
+          "sourceId": "synthetic-source",
+          "startMs": 0,
+          "endMs": 1000
+        },
+        {
+          "id": "train-1",
+          "revision": 1,
+          "text": "决定采用方案A。",
+          "speaker": "合成发言人",
+          "speakerId": "synthetic-speaker",
+          "sourceId": "synthetic-source",
+          "startMs": 2000,
+          "endMs": 3000
+        },
+        {
+          "id": "train-2",
+          "revision": 1,
+          "text": "我来跟进接口文档，周五提交。",
+          "speaker": "合成发言人",
+          "speakerId": "synthetic-speaker",
+          "sourceId": "synthetic-source",
+          "startMs": 4000,
+          "endMs": 5000
+        },
+        {
+          "id": "train-3",
+          "revision": 1,
+          "text": "这个接口为什么报错？",
+          "speaker": "合成发言人",
+          "speakerId": "synthetic-speaker",
+          "sourceId": "synthetic-source",
+          "startMs": 6000,
+          "endMs": 7000
+        },
+        {
+          "id": "train-4",
+          "revision": 1,
+          "text": "之前的邮件计划取消，先别发。",
+          "speaker": "合成发言人",
+          "speakerId": "synthetic-speaker",
+          "sourceId": "synthetic-source",
+          "startMs": 8000,
+          "endMs": 9000
+        },
+        {
+          "id": "train-5",
+          "revision": 1,
+          "text": "今天会议开始。",
+          "speaker": "合成发言人",
+          "speakerId": "synthetic-speaker",
+          "sourceId": "synthetic-source",
+          "startMs": 10000,
+          "endMs": 11000
+        }
+      ],
+      "transcriptRevision": 6,
+      "notes": "",
+      "notesRevision": 0,
+      "minutes": null,
+      "liveMinutes": null,
+      "autoMinutes": {
+        "enabled": false,
+        "intervalSeconds": 30
+      },
+      "minutesRevision": 0,
+      "retentionDays": 30,
+      "retainAudio": false,
+      "usage": {
+        "samples": 0,
+        "sampleRate": 16000,
+        "llmTokens": 0
+      },
+      "deleted": false,
+      "synthetic": true,
+      "audio": [],
+      "pendingChunks": 0,
+      "minuteVersions": [],
+      "jobs": []
+    },
+    {
+      "id": "synthetic-dev",
+      "kind": "record",
+      "workspaceId": null,
+      "title": "合成数据集验收",
+      "language": "zh",
+      "createdAt": "2026-10-12T11:12:55.657Z",
+      "updatedAt": "2026-10-12T11:12:55.657Z",
+      "cursor": "1",
+      "generation": 1,
+      "capture": "completed",
+      "transcription": "completed",
+      "sessions": [],
+      "sources": [],
+      "segments": [
+        {
+          "id": "dev-0",
+          "revision": 1,
+          "text": "确定下周安排一次联调。",
+          "speaker": "合成发言人",
+          "speakerId": "synthetic-speaker",
+          "sourceId": "synthetic-source",
+          "startMs": 0,
+          "endMs": 1000
+        },
+        {
+          "id": "dev-1",
+          "revision": 1,
+          "text": "先不要发送之前的邮件。",
+          "speaker": "合成发言人",
+          "speakerId": "synthetic-speaker",
+          "sourceId": "synthetic-source",
+          "startMs": 2000,
+          "endMs": 3000
+        }
+      ],
+      "transcriptRevision": 2,
+      "notes": "",
+      "notesRevision": 0,
+      "minutes": null,
+      "liveMinutes": null,
+      "autoMinutes": {
+        "enabled": false,
+        "intervalSeconds": 30
+      },
+      "minutesRevision": 0,
+      "retentionDays": 30,
+      "retainAudio": false,
+      "usage": {
+        "samples": 0,
+        "sampleRate": 16000,
+        "llmTokens": 0
+      },
+      "deleted": false,
+      "synthetic": true,
+      "audio": [],
+      "pendingChunks": 0,
+      "minuteVersions": [],
+      "jobs": []
+    },
+    {
+      "id": "synthetic-test",
+      "kind": "record",
+      "workspaceId": null,
+      "title": "合成数据集验收",
+      "language": "zh",
+      "createdAt": "2026-10-12T11:12:55.657Z",
+      "updatedAt": "2026-10-12T11:12:55.657Z",
+      "cursor": "1",
+      "generation": 1,
+      "capture": "completed",
+      "transcription": "completed",
+      "sessions": [],
+      "sources": [],
+      "segments": [
+        {
+          "id": "test-0",
+          "revision": 1,
+          "text": "建议先收集测试数据。",
+          "speaker": "合成发言人",
+          "speakerId": "synthetic-speaker",
+          "sourceId": "synthetic-source",
+          "startMs": 0,
+          "endMs": 1000
+        },
+        {
+          "id": "test-1",
+          "revision": 1,
+          "text": "当前没有新增事项。",
+          "speaker": "合成发言人",
+          "speakerId": "synthetic-speaker",
+          "sourceId": "synthetic-source",
+          "startMs": 2000,
+          "endMs": 3000
+        }
+      ],
+      "transcriptRevision": 2,
+      "notes": "",
+      "notesRevision": 0,
+      "minutes": null,
+      "liveMinutes": null,
+      "autoMinutes": {
+        "enabled": false,
+        "intervalSeconds": 30
+      },
+      "minutesRevision": 0,
+      "retentionDays": 30,
+      "retainAudio": false,
+      "usage": {
+        "samples": 0,
+        "sampleRate": 16000,
+        "llmTokens": 0
+      },
+      "deleted": false,
+      "synthetic": true,
+      "audio": [],
+      "pendingChunks": 0,
+      "minuteVersions": [],
+      "jobs": []
+    }
+  ]
+}

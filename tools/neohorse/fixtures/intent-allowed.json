@@ -1,0 +1,4 @@
+{
+  "purpose": "intent-training",
+  "recordIds": ["synthetic-train", "synthetic-dev", "synthetic-test"]
+}
