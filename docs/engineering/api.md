@@ -43,4 +43,4 @@ Record capture 与 transcription 分离。创建时可不提供标题，会后�
 - `POST /api/records/:id/minutes` 新增 `scope:live|final`；默认 final，live 不要求会话结束。mode、scope、模型和版本参与幂等键。
 - GET 记录新增 `autoMinutes`、`liveMinutes`；jobs 可有 `preview:[{kind,text}]` 和 `runtime`。预览不是可导出的正式纪要。
 - SSE 新增 `minutes.delta`、`minutes.live`、`minutes.automation`、`transcript.translated`，仍用持久 cursor 补历史。
-- 模型设置新增 `LLM_PROTOCOL:chat-completions|responses`，基础地址按协议补全；密钥仍只返回是否配置。
+- 模型设置新增 `LLM_PROTOCOL:chat-completions|responses`，地址按填写的完整接口原值保存和请求；密钥仍只返回是否配置。豆包术语字段为 `DOUBAO_ASR_HOTWORDS`，用逗号分隔，总长最多 100 字，每词最多 50 字，空值清除。

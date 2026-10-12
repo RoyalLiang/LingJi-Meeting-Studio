@@ -15,6 +15,7 @@ const messages: Record<string, string> = {
   provider_rate_limited: '模型服务限流或配额不足，请稍后重试。',
   configuration_admin_required: '当前账户无权修改服务配置，请联系维护者。',
   invalid_provider_url: '地址格式不正确。语音使用 wss://，纪要使用 https://。',
+  invalid_asr_hotwords: '术语总长最多 100 字，每词最多 50 字，请精简后重试。',
 
   login_required: '请先登录。', invalid_credentials: '邮箱或密码不正确。', password_length_10_128: '密码需要 10 至 128 个字符。',
   already_exists: '该邮箱已注册，请登录。', invite_required: '请输入有效的邀请码。', invalid_email: '请输入有效的邮箱。',

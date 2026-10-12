@@ -20,7 +20,7 @@ async function temporary(fn) {
 test('new model base addresses default to Responses and explicit Chat endpoints remain compatible', () => {
   const config=normalizeConfig({LLM_API_URL:'https://models.example/v1'});
   assert.equal(config.LLM_PROTOCOL,'responses');
-  assert.equal(config.LLM_API_URL,'https://models.example/v1/responses');
+  assert.equal(config.LLM_API_URL,'https://models.example/v1');
   const legacy=normalizeConfig({LLM_API_URL:'https://models.example/v1/chat/completions'});
   assert.equal(legacy.LLM_PROTOCOL,'chat-completions');
   assert.equal(normalizeConfig({LLM_API_URL:'https://models.example/v1',LLM_PROTOCOL:'chat-completions'}).LLM_PROTOCOL,'chat-completions');
@@ -140,10 +140,10 @@ test('worker progresses two sources concurrently while preserving durable sequen
   finally {await repo.close();}
 }));
 
-test('chat base URL resolves to a real completions route and accounts model usage', async()=> {
+test('chat request preserves its configured route and accounts model usage', async()=> {
   const {createServer}=await import('node:http'),{completeJson}=await import('../services/records/src/providers.mjs');
   const server=createServer((req,res)=>{assert.equal(req.url,'/v1/chat/completions');assert.equal(req.headers.authorization,'Bearer fixture-key');req.resume();res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({choices:[{message:{content:'{"ok":true}'}}],usage:{total_tokens:17}}));});
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
-  try {const result=await completeJson([{role:'user',content:'fixture'}],{LLM_API_URL:`http://127.0.0.1:${server.address().port}`,LLM_PROTOCOL:'chat-completions',LLM_MODEL:'fixture-model',LLM_API_KEY:'fixture-key'});assert.equal(result.ok,true);assert.equal(result.usageTokens,17);}
+  try {const result=await completeJson([{role:'user',content:'fixture'}],{LLM_API_URL:`http://127.0.0.1:${server.address().port}/v1/chat/completions`,LLM_PROTOCOL:'chat-completions',LLM_MODEL:'fixture-model',LLM_API_KEY:'fixture-key'});assert.equal(result.ok,true);assert.equal(result.usageTokens,17);}
   finally {server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
 });

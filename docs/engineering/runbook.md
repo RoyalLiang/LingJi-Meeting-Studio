@@ -62,7 +62,7 @@ node scripts/recover-audio.mjs pending-audio-RECORD.json ./recovered-audio
 
 ## 地址、设备与失败恢复
 
-模型服务地址可填完整 `/chat/completions` 接口，也可填基础地址：根路径自动补 `/v1/chat/completions`，以 `/v1` 或 `/api/v3` 结尾则补 `/chat/completions`。模型 ID 与 API Key 是不同配置；语音 Key 与方舟模型 Key 也不能互换。设置中的“已设置”只说明服务端有值，连通性需单独测试。
+模型服务地址须填写完整请求接口，例如 `/v1/responses` 或 `/v1/chat/completions`。保存和请求均使用填写值，不自动补全或替换路径；切换协议不修改地址。模型 ID 与 API Key 是不同配置；语音 Key 与方舟模型 Key 也不能互换。设置中的“已设置”只说明服务端有值，连通性需单独测试。
 
 开发模式允许保存 HTTP/WS 地址；生产保存时要求 HTTPS/WSS。当前本地 HTTP 模型配置按用户要求保留；代理的真实调用验收被自动审批拒绝，原因是密钥会向未验证外部 IP 明文传输。不要将配置存在视为模型调用成功。测试转录仅发送短静音；测试纪要仅发送虚构连通性文本。
 

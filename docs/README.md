@@ -51,3 +51,5 @@
 - [工作台交互反馈](engineering/workbench-feedback.md)：设置保存 toast、Responses 默认值、显式分享系统音频、转录跟随与备份错误反馈。
 - [快速记录、暂停与结束会议](engineering/meeting-lifecycle.md)：可选标题、连续时间轴、紧凑音源摘要与全宽转录。
 - [会议启动、连续主题树与标识候选](engineering/meeting-entry-and-brand.md)：双路自动接入、缺失来源引导与本机验收证据。
+
+- [设置稳定性与转录术语验收](engineering/settings-quality.md)：地址原值、单层输入边框、显式关闭、无布局变化保存及本机登录恢复。

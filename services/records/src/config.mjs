@@ -2,6 +2,7 @@ import { readFile, writeFile, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { requireThat } from '../../../packages/records/src/record.mjs';
+import { parseAsrHotwords } from './asr-terms.mjs';
 
 export const defaults = {
   ASR_PROVIDER: 'doubao',
@@ -13,23 +14,12 @@ export const defaults = {
   LLM_API_URL: 'https://ark.cn-beijing.volces.com/api/v3/responses',
   LLM_PROTOCOL: 'responses',
 };
-const fields = ['ASR_PROVIDER', 'DOUBAO_API_KEY', 'DOUBAO_ASR_URL', 'DOUBAO_ASR_RESOURCE_ID', 'DOUBAO_AST_BASE_URL', 'DOUBAO_AST_ENDPOINT', 'DOUBAO_AST_RESOURCE_ID', 'DOUBAO_AST_APP_ID', 'DOUBAO_AST_APP_KEY', 'DOUBAO_AST_ACCESS_KEY', 'ASR_API_URL', 'ASR_API_KEY', 'ASR_MODEL', 'DEEPGRAM_API_KEY', 'LLM_API_URL', 'LLM_API_KEY', 'LLM_MODEL', 'LLM_PROTOCOL'];
+const fields = ['DOUBAO_ASR_HOTWORDS', 'ASR_PROVIDER', 'DOUBAO_API_KEY', 'DOUBAO_ASR_URL', 'DOUBAO_ASR_RESOURCE_ID', 'DOUBAO_AST_BASE_URL', 'DOUBAO_AST_ENDPOINT', 'DOUBAO_AST_RESOURCE_ID', 'DOUBAO_AST_APP_ID', 'DOUBAO_AST_APP_KEY', 'DOUBAO_AST_ACCESS_KEY', 'ASR_API_URL', 'ASR_API_KEY', 'ASR_MODEL', 'DEEPGRAM_API_KEY', 'LLM_API_URL', 'LLM_API_KEY', 'LLM_MODEL', 'LLM_PROTOCOL'];
 const secretFields = new Set(['DOUBAO_API_KEY', 'DOUBAO_AST_APP_KEY', 'DOUBAO_AST_ACCESS_KEY', 'ASR_API_KEY', 'DEEPGRAM_API_KEY', 'LLM_API_KEY']);
 export const configured = value => Boolean(value && !/^(your[-_]|replace|mock|<|xxx)/i.test(value));
-export function chatEndpoint(value, protocol = 'responses') {
-  if (!value) value = defaults.LLM_API_URL;
-  try {
-    const url = new URL(value), path = url.pathname.replace(/\/+$/, '');
-    const suffix = protocol === 'responses' ? 'responses' : 'chat/completions';
-    if (!path) url.pathname = `/v1/${suffix}`;
-    else if (/\/v[0-9]+$/.test(path)) url.pathname = `${path}/${suffix}`;
-    else if (/\/(chat\/completions|responses)$/.test(path)) url.pathname = path.replace(/\/(chat\/completions|responses)$/, `/${suffix}`);
-    return url.href;
-  } catch { return value; }
-}
 export function normalizeConfig(env = process.env) {
   const protocol = env.LLM_PROTOCOL || (/\/chat\/completions\/?(?:\?|$)/.test(env.LLM_API_URL || '') ? 'chat-completions' : defaults.LLM_PROTOCOL);
-  return { ...defaults, ...env, LLM_PROTOCOL: protocol, LLM_API_URL: chatEndpoint(env.LLM_API_URL || defaults.LLM_API_URL, protocol),
+  return { ...defaults, ...env, LLM_PROTOCOL: protocol, LLM_API_URL: env.LLM_API_URL ?? defaults.LLM_API_URL,
     ASR_PROVIDER: env.ASR_PROVIDER || (env.DEEPGRAM_API_KEY ? 'deepgram' : env.ASR_API_URL ? 'openai-compatible' : env.DOUBAO_AST_APP_KEY || env.DOUBAO_AST_SECRET ? 'doubao-ast' : 'doubao'),
     DOUBAO_AST_APP_KEY: env.DOUBAO_AST_APP_KEY || env.DOUBAO_AST_SECRET || '',
     DOUBAO_AST_ACCESS_KEY: env.DOUBAO_AST_ACCESS_KEY || env.DOUBAO_AST_ACCESS_TOKEN || '',
@@ -59,6 +49,7 @@ export async function saveConfig(root, input, env = process.env) {
   const next = { ...current, ...values };
   requireThat(['doubao', 'doubao-ast', 'deepgram', 'openai-compatible'].includes(next.ASR_PROVIDER), 'invalid_asr_provider', 400);
   requireThat(['chat-completions', 'responses'].includes(next.LLM_PROTOCOL), 'invalid_llm_protocol', 400);
+  parseAsrHotwords(next.DOUBAO_ASR_HOTWORDS);
   for (const key of ['DOUBAO_ASR_URL', 'DOUBAO_AST_BASE_URL', 'ASR_API_URL', 'LLM_API_URL']) {
     if (!next[key]) continue;
     let url; try { url = new URL(next[key]); } catch { requireThat(false, 'invalid_provider_url', 400); }

@@ -1,10 +1,16 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { CheckCircle, WarningCircle, X } from '@phosphor-icons/react';
+let visibleToast: HTMLDivElement | null = null;
 export function Toast({ message, error = false, dismiss }: { message: string; error?: boolean; dismiss: () => void }) {
   const ref=useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const element=ref.current; if (!message || !element?.showPopover) return;
-    element.showPopover(); return () => { if(element.isConnected && element.matches(':popover-open'))element.hidePopover(); };
+    if (visibleToast?.matches(':popover-open')) visibleToast.hidePopover();
+    visibleToast = element; element.showPopover();
+    return () => {
+      if(element.isConnected && element.matches(':popover-open'))element.hidePopover();
+      if (visibleToast === element) visibleToast = null;
+    };
   }, [message]);
   useEffect(() => { if (!message) return; const timer = setTimeout(dismiss, 8000); return () => clearTimeout(timer); }, [message, dismiss]);
   if (!message) return null;
