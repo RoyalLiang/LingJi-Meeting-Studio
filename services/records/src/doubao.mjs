@@ -3,6 +3,7 @@ import { gzipSync, gunzipSync } from 'node:zlib';
 import { randomUUID } from 'node:crypto';
 import { createDoubaoAstCodec } from '../../session-gateway/src/providers/doubao-ast-codec.mjs';
 import { DomainError, requireThat } from '../../../packages/records/src/record.mjs';
+import { doubaoRecognitionRequest } from './asr-terms.mjs';
 
 let codecPromise;
 // Durable chunks are independent bounded AST sessions. Only SessionFinished commits text.
@@ -67,6 +68,8 @@ export function decodeAsrFrame(frame) {
   return { final: Boolean(flags & 2) || sequence < 0, result };
 }
 export async function transcribeDoubaoAsr(bytes, language, config, options = {}) {
+  const secondPass = ['zh', 'en', 'zhen'].includes(language) && new URL(config.DOUBAO_ASR_URL).pathname.endsWith('/bigmodel_async');
+  const recognition = doubaoRecognitionRequest(config, { secondPass });
   const socket = new WebSocket(config.DOUBAO_ASR_URL, { headers: { 'X-Api-Key': config.DOUBAO_API_KEY, 'X-Api-Resource-Id': config.DOUBAO_ASR_RESOURCE_ID, 'X-Api-Connect-Id': randomUUID() }, handshakeTimeout: 10000, maxPayload: 2000000 });
   return new Promise((resolve, reject) => {
     let settled = false, sendTimer;
@@ -81,7 +84,7 @@ export async function transcribeDoubaoAsr(bytes, language, config, options = {})
     socket.once('unexpected-response', (_req, response) => { response.resume(); done(new DomainError(`doubao_http_${response.statusCode}`, 502)); });
     socket.once('close', () => done(new DomainError('doubao_incomplete_session', 502)));
     socket.once('open', () => {
-      socket.send(encodeAsrFrame(1, 0, { user: { uid: 'meeting-studio' }, audio: { format: 'pcm', codec: 'raw', rate: 16000, bits: 16, channel: 1, language: { zh: 'zh-CN', en: 'en-US', ja: 'ja-JP' }[language] || language }, request: { model_name: 'bigmodel', enable_itn: true, enable_punc: true, show_utterances: true } }, true));
+      socket.send(encodeAsrFrame(1, 0, { user: { uid: 'meeting-studio' }, audio: { format: 'pcm', codec: 'raw', rate: 16000, bits: 16, channel: 1, language: { zh: 'zh-CN', en: 'en-US', ja: 'ja-JP' }[language] || language }, request: recognition }, true));
       let offset = 0;
       const send = () => {
         if (settled || socket.readyState !== WebSocket.OPEN) return;
@@ -104,6 +107,7 @@ export async function transcribeDoubaoAsr(bytes, language, config, options = {})
 
 // One source owns one connection; definite utterances can arrive before the negative tail packet.
 export function createDoubaoSpeakerStream(language, config, options={}) {
+  const recognition = doubaoRecognitionRequest(config);
   const socket=new WebSocket(config.DOUBAO_ASR_URL,{headers:{'X-Api-Key':config.DOUBAO_API_KEY,'X-Api-Resource-Id':config.DOUBAO_ASR_RESOURCE_ID,'X-Api-Request-Id':randomUUID(),'X-Api-Connect-Id':randomUUID()},handshakeTimeout:10000,maxPayload:2000000});
   const state={latest:null,preview:null,error:null,complete:false,runtime:{}};
   const createdAt=Date.now();let audioStartedAt;
@@ -113,7 +117,7 @@ export function createDoubaoSpeakerStream(language, config, options={}) {
   const ready=new Promise((resolve,reject)=>{rejectReady=reject;
     socket.once('open',()=>{
       state.runtime.connectionMs=Date.now()-createdAt;
-      socket.send(encodeAsrFrame(1,0,{user:{uid:'meeting-studio'},audio:{format:'pcm',codec:'raw',rate:16000,bits:16,channel:1,language:['en','zhen'].includes(language) ? 'zh-CN' : ({zh:'zh-CN',ja:'ja-JP'}[language]||language)},request:{model_name:'bigmodel',enable_itn:true,enable_punc:true,show_utterances:true,enable_nonstream:true,enable_speaker_info:true,ssd_version:'200'}},true)); resolve();
+      socket.send(encodeAsrFrame(1,0,{user:{uid:'meeting-studio'},audio:{format:'pcm',codec:'raw',rate:16000,bits:16,channel:1,language:['en','zhen'].includes(language) ? 'zh-CN' : ({zh:'zh-CN',ja:'ja-JP'}[language]||language)},request:{...recognition,enable_speaker_info:true,ssd_version:'200'}},true)); resolve();
     });
     socket.once('error',error=>{fail(error);reject(state.error);});
     socket.once('unexpected-response',(_request,response)=>{response.resume();fail(new DomainError(`doubao_http_${response.statusCode}`,502));reject(state.error);socket.terminate();});

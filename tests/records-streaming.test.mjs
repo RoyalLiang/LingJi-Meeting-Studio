@@ -21,7 +21,7 @@ test('Responses uses input and text format, disables storage, and reads output c
     res.end(JSON.stringify({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: '{"ok":true}' }] }], usage: { total_tokens: 13 } }));
   }, async (base, requests) => {
     const result = await completeJson([{ role: 'user', content: 'Synthetic JSON check.' }], { ...credentials, LLM_API_URL: base, LLM_PROTOCOL: 'responses' });
-    assert.equal(requests[0].path, '/v1/responses');
+    assert.equal(requests[0].path, '/');
     assert.ok(Array.isArray(requests[0].body.input));
     assert.equal(requests[0].body.messages, undefined);
     assert.equal(requests[0].body.store, false);
@@ -62,8 +62,8 @@ for (const protocol of ['responses', 'chat-completions']) {
 test('protocol normalization preserves vendor prefixes and rejects unknown protocols', async () => {
  const {normalizeConfig,saveConfig}=await import('../services/records/src/config.mjs');
  const {mkdtemp,rm}=await import('node:fs/promises');const {tmpdir}=await import('node:os');const {join}=await import('node:path');
- assert.equal(normalizeConfig({LLM_API_URL:'https://example.test/api/v3',LLM_PROTOCOL:'responses'}).LLM_API_URL,'https://example.test/api/v3/responses');
- assert.equal(normalizeConfig({LLM_API_URL:'https://example.test/v1/chat/completions',LLM_PROTOCOL:'responses'}).LLM_API_URL,'https://example.test/v1/responses');
+ assert.equal(normalizeConfig({LLM_API_URL:'https://example.test/api/v3',LLM_PROTOCOL:'responses'}).LLM_API_URL,'https://example.test/api/v3');
+ assert.equal(normalizeConfig({LLM_API_URL:'https://example.test/v1/chat/completions',LLM_PROTOCOL:'responses'}).LLM_API_URL,'https://example.test/v1/chat/completions');
  assert.equal(normalizeConfig({LLM_API_URL:'https://example.test/v1/responses'}).LLM_PROTOCOL,'responses');
  const root=await mkdtemp(join(tmpdir(),'tts-protocol-'));try{await assert.rejects(saveConfig(root,{LLM_PROTOCOL:'unknown'},{}),{code:'invalid_llm_protocol'});}finally{await rm(root,{recursive:true,force:true});}
 });

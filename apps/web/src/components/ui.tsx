@@ -6,10 +6,10 @@ import { Toast } from './Toast';
 export function Button({ children, variant = 'secondary', className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'ghost' | 'danger' }) {
   return <button className={`button ${variant} ${className}`} {...props}>{children}</button>;
 }
-export function Modal({ title, children, onClose, wide = false }: { title: string; children: ReactNode; onClose: () => void; wide?: boolean }) {
+export function Modal({ title, children, onClose, wide = false, explicitCloseOnly = false }: { title: string; children: ReactNode; onClose: () => void; wide?: boolean; explicitCloseOnly?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => { ref.current?.showModal(); return () => ref.current?.close(); }, []);
-  return <dialog className={`modal glass ${wide ? 'wide' : ''}`} ref={ref} onCancel={event => { event.preventDefault(); onClose(); }} onClick={event => { if (event.target === event.currentTarget) onClose(); }} aria-label={title}>
+  return <dialog className={`modal glass ${wide ? 'wide' : ''}`} ref={ref} onCancel={event => { event.preventDefault(); if (!explicitCloseOnly) onClose(); }} onClick={event => { if (!explicitCloseOnly && event.target === event.currentTarget) onClose(); }} aria-label={title}>
     <header><h2>{title}</h2><Button variant="ghost" aria-label="关闭" onClick={onClose}><X size={20}/></Button></header>{children}
   </dialog>;
 }
