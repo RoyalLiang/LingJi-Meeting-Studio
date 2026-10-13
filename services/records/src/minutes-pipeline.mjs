@@ -21,7 +21,9 @@ export function buildMinutesManifest(job,config={},budget=inputBudget(config)){
     }
     if(current.length && size({transcript:[...current,segment],notes:job.notes})>budget)flush();current.push(segment);
   }
-  job.snapshot.forEach((segment,index)=>{if(index%24===0)flush();const {id,revision,text,sourceId,speakerId,speaker,speakerName,startMs,endMs}=segment;add({id,revision,text,sourceId,speakerId,speaker,speakerName,startMs,endMs});});flush();
+  const snapshot=job.snapshot.map(({id,revision,text,sourceId,speakerId,speaker,speakerName,startMs,endMs})=>({id,revision,text,sourceId,speakerId,speaker,speakerName,startMs,endMs}));
+  const single=size({transcript:snapshot,notes:job.notes})<=budget;
+  snapshot.forEach((segment,index)=>{if(!single && index%24===0)flush();add(segment);});flush();
   requireThat(windows.length>0 && windows.length<=512,'minutes_window_limit',422);
   return {version:1,budget,policy,generation:job.generation,transcriptRevision:job.transcriptRevision,notesRevision:job.notesRevision,hash:job.manifestHash,windows};
 }
@@ -40,13 +42,13 @@ export async function runMinutesPipeline(repo,recordId,claim,config,generate,opt
     job.manifest={...manifest,windows:manifest.windows.map(({key,snapshot})=>({key,refs:snapshot.map(({id,revision})=>({segmentId:id,revision})),chars:JSON.stringify(snapshot).length}))};
     job.progress={completed:0,total:manifest.windows.length,stage:'windows'};
   });
-  async function execute(key,input,stage){
+  async function execute(key,input,stage,preview=false){
     await repo.change(recordId,record=>{const job=currentJob(record,claim);job.lease=Date.now()+(claim.scope==='live'?180000:300000);});
     let result=cache.get(key);const cached=!!result;
     if(result){validateMinutes(result,claim.snapshot);reused++;}
     else{
       let first=false;
-      result=await telemetry.measure('minutes.window',{recordId,jobId:claim.id},()=>generate({...claim,...input},config,stage==='single'?options:{onDelta:(delta,runtime)=>{if(!first){first=true;telemetry.event('minutes.first-text',{recordId,jobId:claim.id,durationMs:runtime?.firstTokenMs});}}}));
+      result=await telemetry.measure('minutes.window',{recordId,jobId:claim.id},()=>generate({...claim,...input},config,stage==='single'||preview?options:{onDelta:(delta,runtime)=>{if(!first){first=true;telemetry.event('minutes.first-text',{recordId,jobId:claim.id,durationMs:runtime?.firstTokenMs});}}}));
       telemetry.event('minutes.window-usage',{recordId,jobId:claim.id,tokens:result.usageTokens,firstTextMs:result.runtime?.firstTokenMs});
       validateMinutes(result,input.snapshot);validateMinutes(result,claim.snapshot);
       tokens+=Number.isSafeInteger(result.usageTokens)&&result.usageTokens>=0?result.usageTokens:0;calls++;
@@ -77,7 +79,7 @@ export async function runMinutesPipeline(repo,recordId,claim,config,generate,opt
     for(const children of groups){
       if(children.length===1){next.push(children[0]);continue;}
       const input=inputFor(children);requireThat(JSON.stringify({...input,notes:claim.notes}).length<=180000 && size({...input,notes:claim.notes})<=manifest.budget,'minutes_intermediate_too_large',422);
-      next.push(await execute(hash({policy:manifest.policy,children:children.map(node=>node.key)}),input,'synthesis'));
+      next.push(await execute(hash({policy:manifest.policy,children:children.map(node=>node.key)}),input,'synthesis',groups.length===1));
     }nodes=next;
   }
   return {...nodes[0].result,usageTokens:tokens,usageRecorded:true,coverage:{manifestHash:manifest.hash,windows:manifest.windows.length,completed:manifest.windows.length,segments:new Set(claim.snapshot.map(s=>s.id)).size,calls,reused,levels:level},runtime:{...nodes[0].result.runtime,pipelineCalls:calls}};

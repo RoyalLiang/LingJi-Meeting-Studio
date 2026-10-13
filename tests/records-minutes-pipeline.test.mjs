@@ -86,3 +86,31 @@ test('minutes rollback runs original provider path and cache policy changes with
     await runCycle(f.repo,{minutes:async job=>{calls++;assert.equal(job.manifest,undefined);return summarize(job);}},{lane:'minutes'});assert.equal(calls,1);assert.equal((await f.repo.get(f.record.id)).jobs[0].status,'completed');
   }finally{if(previous===undefined)delete process.env.RECORD_MINUTES_PIPELINE_ENABLED;else process.env.RECORD_MINUTES_PIPELINE_ENABLED=previous;await f.close();}
 });
+
+
+test('a complete transcript within the byte budget needs only one streamed model call', async () => {
+  const f=await fixture(80);
+  try {
+    await f.repo.change(f.record.id,r=>{r.segments.forEach(s=>{s.text='短发言。';});});
+    const claim=await f.claim(); let calls=0,preview='';
+    const result=await runMinutesPipeline(f.repo,f.record.id,claim,config,async(job,env,options)=>{
+      calls++; await options.onDelta?.('即时要点',{}); return summarize(job);
+    },{onDelta:delta=>{preview+=delta;}});
+    assert.equal(calls,1);
+    assert.equal(result.coverage.segments,80);
+    assert.equal(preview,'即时要点');
+  } finally {await f.close();}
+});
+
+
+test('hierarchical minutes stream only the final synthesis into the visible preview', async () => {
+  const f=await fixture(20);
+  try {
+    const claim=await f.claim();let preview='';
+    const result=await runMinutesPipeline(f.repo,f.record.id,claim,config,async(job,env,options)=>{
+      await options.onDelta?.(job.stage==='synthesis'?'汇总':'中间窗口',{});return summarize(job);
+    },{onDelta:delta=>{preview+=delta;}});
+    assert.ok(result.coverage.calls>1);
+    assert.equal(preview,'汇总');
+  } finally {await f.close();}
+});

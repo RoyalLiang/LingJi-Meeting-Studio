@@ -94,6 +94,7 @@ function Workspace() {
     return () => { clearTimeout(timer); controller.abort(); };
   }, [query, scope, authReady]);
   useEffect(() => {
+    if (activeId.current !== id || !authReady) { void capture.current?.stop(); capture.current = null; setSignals([]); }
     activeId.current = id; setRecord(null); setTranslationOpen(false); setHighlight('');
   }, [id, authReady]);
   useEffect(() => { const params=new URLSearchParams({workspace:scope});if(id)params.set('record',id); history.replaceState(null,'',`?${params}`); }, [id,scope]);
@@ -134,7 +135,10 @@ function Workspace() {
     if (stopping.current) return false;
     stopping.current = true; setBusy(true); setError('');
     try {
-      await capture.current?.stop(); setRecording(false);
+      const controller = capture.current;
+      if (mode === 'pause' && controller && 'pause' in controller) await controller.pause();
+      else await controller?.stop();
+      setRecording(false);
       if (!activeId.current) return false;
       const current = await api<RecordDetail>(`/records/${activeId.current}`), manifests = await localManifests(current.id);
       if (title.trim() && title.trim() !== current.title) await api(`/records/${current.id}`, 'PATCH', {title:title.trim()});
@@ -145,7 +149,7 @@ function Workspace() {
       setNotice(mode === 'pause' ? '已暂停。回来后可继续本场会议。' : '本场会议已结束，剩余音频会继续处理。下一段对话可开启新会议。');
       return true;
     } catch (e) { setError(messageOf(e)); return false; }
-    finally { stopping.current = false; setRecording(false); setBusy(false); capture.current = null; }
+    finally { stopping.current = false; setRecording(false); setBusy(false); if (mode === 'seal') capture.current = null; }
   }
   function captureAllowed() {
     if (!boot?.providers.asr && !boot?.providers.fixture) { setError('请先在设置中连接转录服务。'); return false; }
@@ -159,6 +163,7 @@ function Workspace() {
   async function quickRecord() {
     if (recording || busy || !captureAllowed()) return;
     setError(''); setCaptureIssues([]); setBusy(true);
+    void capture.current?.stop(); capture.current = null;
     const created = api<RecordDetail>('/records', 'POST', { workspaceId: scope==='all'?null:scope, autoMinutes: Boolean(boot?.providers.minutes) });
     const controller = capture.current = controllerFor(created.then(next => next.id));
     // Request permissions in this click, before waiting for the new record ID.
