@@ -50,6 +50,56 @@ test('quick recording with both sources available starts immediately without a s
   assert.equal(h.state.error, '');
 });
 
+async function microphoneActionHarness({ failure = null, meetingIssues = [], initialModal = null, existingMicrophone = false } = {}) {
+  const app = await readFile(new URL('../apps/web/src/App.tsx', import.meta.url), 'utf8');
+  const start = app.indexOf('  async function startCapture('), end = app.indexOf('  async function onImport(', start);
+  assert.ok(start >= 0 && end > start);
+  const compiled = (await transform(app.slice(start, end) + '\nexports.actions = {startCapture,toggleMicrophone};', { loader: 'ts' })).code;
+  const state = { modal: initialModal, recording: true, issues: [], error: '', starts: [], meetingStarts: 0, disconnects: [], refreshes: 0 };
+  const controller = { active: true, sources: [{ kind: 'display' }, ...(existingMicrophone ? [{kind:'microphone'}] : [])],
+    async start(kind) { state.starts.push(kind); if (failure) throw failure; const source={kind}; this.sources.push(source); return source; },
+    async startMeeting() { state.meetingStarts++; return meetingIssues; },
+    async disconnect(kind) { state.disconnects.push(kind); this.sources=this.sources.filter(source=>source.kind!==kind); },
+  };
+  const sandbox = { exports: {}, record: {id:'fixture',capture:'recording'}, busy: false, modal: initialModal,
+    captureAllowed:()=>true, capture:{current:controller}, controllerFor:()=>controller,
+    setError:value=>{state.error=value;}, dismissToast(){}, setBusy(){},
+    setCaptureIssues:value=>{state.issues=value;}, setRecording:value=>{state.recording=value;},
+    setModal:value=>{state.modal=value;}, refresh:async()=>{state.refreshes++;}, messageOf:error=>error.message,
+    quickRecord:assert.fail, stopCapture:assert.fail, showToast(){},
+  };
+  vm.runInNewContext(compiled,sandbox);
+  return {state,controller,...sandbox.exports.actions};
+}
+
+test('enable microphone failure stays inline and never opens the audio-source chooser', async () => {
+  const h=await microphoneActionHarness({failure:new Error('麦克风权限被拒绝')});
+  await h.toggleMicrophone();
+  assert.equal(h.state.modal,null);
+  assert.equal(h.state.error,'麦克风权限被拒绝');
+  assert.equal(h.state.recording,true,'existing system audio must continue');
+  assert.deepEqual(h.state.starts,['microphone']);
+  assert.equal(h.state.issues[0].kind,'microphone');
+});
+
+test('starting an existing meeting keeps partial failures inline without forcing source selection', async () => {
+  const h=await microphoneActionHarness({meetingIssues:[{kind:'microphone',message:'麦克风暂时无法使用'}]});
+  await h.startCapture('meeting');
+  assert.equal(h.state.modal,null);
+  assert.equal(h.state.error,'麦克风暂时无法使用');
+  assert.equal(h.state.meetingStarts,1);
+  assert.equal(h.state.recording,true);
+});
+
+test('enable microphone starts directly and a successful explicit recovery closes its source chooser', async () => {
+  const h=await microphoneActionHarness(); await h.toggleMicrophone();
+  assert.deepEqual(h.state.starts,['microphone']);assert.equal(h.state.modal,null);
+  const recovery=await microphoneActionHarness({initialModal:'capture'});await recovery.startCapture('microphone');
+  assert.equal(recovery.state.modal,null);assert.equal(recovery.state.error,'');
+  const off=await microphoneActionHarness({existingMicrophone:true});await off.toggleMicrophone();
+  assert.deepEqual(off.state.disconnects,['microphone']);assert.equal(off.state.modal,null);
+});
+
 async function captureHarness({ noDisplayAudio = false, micFailure = false, displayDenied = false, displayUnsupported = false, recordId = 'record', chunkWait } = {}) {
   let source = await readFile(new URL('../apps/web/src/audio/capture.ts', import.meta.url), 'utf8');
   source = stripTypeScriptTypes(source, { mode: 'transform' }).replace(/^import .*$/gm, '').replace(/export /g, '');
