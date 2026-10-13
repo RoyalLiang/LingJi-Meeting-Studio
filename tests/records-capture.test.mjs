@@ -4,11 +4,11 @@ import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
 import { stripTypeScriptTypes } from 'node:module';
 
-async function captureHarness({ noDisplayAudio = false, micFailure = false, displayDenied = false, displayUnsupported = false, recordId = 'record' } = {}) {
+async function captureHarness({ noDisplayAudio = false, micFailure = false, displayDenied = false, displayUnsupported = false, recordId = 'record', chunkWait } = {}) {
   let source = await readFile(new URL('../apps/web/src/audio/capture.ts', import.meta.url), 'utf8');
   source = stripTypeScriptTypes(source, { mode: 'transform' }).replace(/^import .*$/gm, '').replace(/export /g, '');
   const signalSource = stripTypeScriptTypes(await readFile(new URL('../apps/web/src/audio/signal.ts', import.meta.url), 'utf8')).replace(/^import .*$/gm, '').replace(/export /g, '');
-  const health = [], nodes = [], calls = [], contexts = [], uploads = [];
+  const health = [], nodes = [], calls = [], contexts = [], uploads = []; let sourceNumber = 0;
   const track = label => ({ label, enabled: true, muted: false, readyState: 'live', handlers: {}, addEventListener(name, fn) { this.handlers[name] = fn; }, stop() { this.readyState = 'ended'; } });
   const stream = (label, audio = true) => { const audioTrack = track(label); return { audioTrack, getAudioTracks: () => audio ? [audioTrack] : [], getTracks: () => [audioTrack] }; };
   const mic = stream('测试麦克风'), display = stream('测试共享音频', !noDisplayAudio);
@@ -20,15 +20,15 @@ async function captureHarness({ noDisplayAudio = false, micFailure = false, disp
     createMediaStreamSource() { return { connect: () => ({ connect: () => ({ connect() {} }) }) }; }
     createGain() { return { gain: { value: 1 } }; }
   }
-  class AudioWorkletNode { constructor() { this.port = { postMessage() {} }; nodes.push(this); } }
+  class AudioWorkletNode { constructor() { this.port = { postMessage: message => { if (message.type === 'flush') queueMicrotask(() => this.port.onmessage?.({ data: { type: 'flushed' } })); } }; nodes.push(this); } }
   const sandbox = { exports: {}, AudioContext, AudioWorkletNode, DOMException, Error, window: { setTimeout, clearTimeout, isSecureContext: true }, setTimeout, clearTimeout,
     navigator: { mediaDevices: {
-      getUserMedia: async () => { calls.push('microphone'); if (micFailure) throw new Error('麦克风权限被拒绝'); return mic; },
+      getUserMedia: async () => { calls.push('microphone'); if (micFailure) throw new Error('麦克风权限被拒绝'); return calls.filter(call => call === 'microphone').length === 1 ? mic : stream('测试麦克风'); },
       getDisplayMedia: displayUnsupported ? undefined : async options => { calls.push({ display: options }); if (displayDenied) throw new DOMException('Permission denied', 'NotAllowedError'); return display; },
     } },
     preferredDevice: () => 'default', inputDevices: async () => [], microphoneConstraints: () => ({}),
-    api: async (_url, _method, input) => ({ id: `source-${input.kind}`, sessionId: 'session', epoch: 'epoch', ...input }),
-    makeChunk: async (...args) => ({ buffer: args[4] }), enqueue: async (_id, chunk) => uploads.push(chunk), drainQueue: async () => {},
+    api: async (_url, _method, input) => ({ id: `source-${input.kind}-${++sourceNumber}`, sessionId: 'session', epoch: 'epoch', ...input }),
+    makeChunk: async (...args) => { await chunkWait; return { sourceId: args[0], sequence: args[2], sampleOffset: args[3], buffer: args[4] }; }, enqueue: async (_id, chunk) => uploads.push(chunk), drainQueue: async () => {},
   };
   sandbox.openMicrophone = () => sandbox.navigator.mediaDevices.getUserMedia({ audio: true });
   vm.runInNewContext(signalSource + '\n' + source + '\nexports.CaptureController = CaptureController;', sandbox);
@@ -41,26 +41,43 @@ test('quick recording requests permissions before record creation completes', as
   const recordId = new Promise(resolve => { resolveRecord = resolve; });
   const h = await captureHarness({ recordId });
   const started = h.controller.startMeeting();
-  assert.equal(h.calls.filter(call => call === 'microphone').length, 1);
+  assert.equal(h.calls.filter(call => call === 'microphone').length, 0);
   assert.equal(h.calls.filter(call => typeof call === 'object').length, 1);
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(h.controller.sources.length, 0);
   resolveRecord('quick-record');
   assert.equal((await started).length, 0);
-  assert.equal(h.controller.sources.length, 2);
+  assert.equal(h.controller.sources.length, 1);
   await h.controller.stop();
 });
 
-test('failed quick record creation releases both permission streams', async () => {
+test('default meeting capture never independently opens the local microphone', async () => {
+  const h = await captureHarness();
+  assert.equal((await h.controller.startMeeting()).length, 0);
+  assert.equal(h.calls.filter(call => call === 'microphone').length, 0);
+  assert.deepEqual(Array.from(h.controller.sources, source => source.kind), ['display']);
+  assert.equal(h.calls[0].display.video.displaySurface, 'monitor');
+});
+
+test('browser-muted microphone PCM is not saved as speech', async () => {
+  const h = await captureHarness();
+  await h.controller.start('microphone');
+  h.mic.audioTrack.muted = true; h.mic.audioTrack.handlers.mute();
+  h.nodes[0].port.onmessage({ data: { type: 'pcm', buffer: new Int16Array(1600).fill(3000).buffer } });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.uploads.length, 0);
+});
+
+test('failed quick record creation releases the shared stream without opening a microphone', async () => {
   let rejectRecord;
   const recordId = new Promise((_, reject) => { rejectRecord = reject; });
   const h = await captureHarness({ recordId });
   const started = h.controller.startMeeting();
   await new Promise(resolve => setImmediate(resolve));
   rejectRecord(new Error('record creation failed'));
-  assert.equal((await started).length, 2);
+  assert.equal((await started).length, 1);
   assert.equal(h.controller.active, false);
-  assert.equal(h.mic.audioTrack.readyState, 'ended');
+  assert.equal(h.mic.audioTrack.readyState, 'live');
   assert.equal(h.display.audioTrack.readyState, 'ended');
 });
 
@@ -78,17 +95,17 @@ test('actual capture path reports zero PCM as silence instead of indefinitely ap
   assert.equal(h.health.at(-1)[0].status, 'muted');
 });
 
-test('meeting capture requests shared audio in the user gesture and keeps independent microphone input', async () => {
+test('meeting capture requests system audio in the user gesture without opening a microphone', async () => {
   const h = await captureHarness();
   const started = h.controller.startMeeting();
   assert.ok(h.calls[0]?.display, 'display permission must start before yielding the gesture');
   await started;
-  assert.deepEqual(Array.from(h.controller.sources, s => s.kind), ['display', 'microphone']);
+  assert.deepEqual(Array.from(h.controller.sources, s => s.kind), ['display']);
   assert.equal(h.calls[0].display.systemAudio, 'include');
   assert.equal(h.calls[0].display.windowAudio, 'system');
   assert.equal(h.calls[0].display.selfBrowserSurface, 'exclude');
   assert.equal(h.calls[0].display.audio.suppressLocalAudioPlayback, false);
-  assert.equal(h.health.at(-1).length, 2);
+  assert.equal(h.health.at(-1).length, 1);
 });
 
 test('missing shared audio never silently turns into successful meeting capture', async () => {
@@ -106,45 +123,110 @@ test('failed remote audio sharing preserves an already recording microphone', as
   assert.equal(h.mic.audioTrack.readyState,'live');
 });
 
-test('microphone denial after shared capture preserves the working source and explains partial capture', async () => {
+test('explicit microphone denial preserves the working system-audio source', async () => {
   const h = await captureHarness({ micFailure: true });
-  const issues = await h.controller.startMeeting();
-  assert.equal(issues.length, 1);
-  assert.equal(issues[0].kind, 'microphone');
-  assert.match(issues[0].message, /麦克风|denied/i);
+  assert.equal((await h.controller.startMeeting()).length, 0);
+  await assert.rejects(h.controller.start('microphone'), /麦克风权限/);
   assert.equal(h.controller.active, true);
-  assert.equal(h.controller.sources.length, 1);
+  assert.deepEqual(Array.from(h.controller.sources, source => source.kind), ['display']);
 });
 
-test('missing shared audio still connects microphone and can retry without duplicating it', async () => {
+test('missing shared audio reports failure without falling back to local microphone', async () => {
   const h = await captureHarness({ noDisplayAudio: true });
   const issues = await h.controller.startMeeting();
   assert.deepEqual(Array.from(issues, issue => issue.kind), ['display']);
-  assert.equal(h.controller.active, true);
-  assert.deepEqual(Array.from(h.controller.sources, source => source.kind), ['microphone']);
+  assert.equal(h.controller.active, false);
+  assert.equal(h.controller.sources.length, 0);
   await h.controller.startMeeting();
-  assert.equal(h.calls.filter(call => call === 'microphone').length, 1);
-  assert.equal(h.controller.sources.length, 1);
-  assert.equal(h.mic.audioTrack.readyState, 'live');
+  assert.equal(h.calls.filter(call => call === 'microphone').length, 0);
 });
 
-test('denied sharing still captures the microphone; unavailable sharing reports a recoverable issue', async () => {
-  for (const options of [{displayDenied:true}, {displayUnsupported:true}]) {
+test('denied or unsupported sharing never opens a microphone without an explicit choice', async () => {
+  for (const options of [{ displayDenied: true }, { displayUnsupported: true }]) {
     const h = await captureHarness(options);
     const issues = await h.controller.startMeeting();
     assert.deepEqual(Array.from(issues, issue => issue.kind), ['display']);
-    assert.equal(h.controller.active, true);
-    assert.equal(h.controller.sources[0].kind, 'microphone');
+    assert.equal(h.controller.active, false);
+    assert.equal(h.controller.sources.length, 0);
+    assert.equal(h.calls.filter(call => call === 'microphone').length, 0);
     assert.match(issues[0].message, /会议音频/);
   }
 });
 
-test('when both inputs fail the meeting reports both issues without recording', async () => {
-  const h = await captureHarness({ noDisplayAudio:true, micFailure:true });
-  const issues = await h.controller.startMeeting();
-  assert.deepEqual(Array.from(issues, issue => issue.kind), ['display', 'microphone']);
+test('meeting retries do not reopen an explicitly closed microphone', async () => {
+  const h = await captureHarness();
+  await h.controller.startMeeting();
+  await h.controller.start('microphone');
+  const oldNode = h.nodes[1], oldHandler = oldNode.port.onmessage;
+  await h.controller.disconnect('microphone');
+  assert.equal(h.mic.audioTrack.readyState, 'ended');
+  assert.equal(h.contexts[1].state, 'closed');
+  assert.equal(oldNode.port.onmessage, null);
+  assert.equal(h.display.audioTrack.readyState, 'live');
+  assert.equal(h.controller.active, true);
+  await h.controller.startMeeting();
+  assert.equal(h.calls.filter(call => call === 'microphone').length, 1);
+  oldHandler({ data: { type: 'pcm', buffer: new Int16Array(1600).fill(3000).buffer } });
+  const displayHandler = h.nodes[0].port.onmessage;
+  displayHandler({ data: { type: 'pcm', buffer: new Int16Array(1600).fill(2000).buffer } });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.uploads.length, 1);
+  assert.equal(h.uploads[0].sourceId, h.controller.sources[0].id);
+  assert.equal(h.uploads[0].sequence, 0);
+  assert.equal(h.uploads[0].sampleOffset, 0);
+  await h.controller.stop();
+  assert.equal(h.display.audioTrack.readyState, 'ended');
+});
+
+test('reopening the microphone uses a new source and never replays its discarded buffer', async () => {
+  const h = await captureHarness();
+  await h.controller.start('microphone');
+  const oldSource = h.controller.sources[0], oldHandler = h.nodes[0].port.onmessage;
+  // Stop before the asynchronous chunk hash/enqueue completes.
+  oldHandler({ data: { type: 'pcm', buffer: new Int16Array(1600).fill(3000).buffer } });
+  await h.controller.disconnect('microphone');
   assert.equal(h.controller.active, false);
+  await h.controller.start('microphone');
+  const next = h.controller.sources[0];
+  assert.notEqual(next.id, oldSource.id);
+  h.nodes[1].port.onmessage({ data: { type: 'pcm', buffer: new Int16Array(1600).fill(2000).buffer } });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.uploads.length, 1);
+  assert.equal(h.uploads[0].sourceId, next.id);
+  assert.equal(h.uploads[0].sequence, 0);
+  assert.equal(h.uploads[0].sampleOffset, 0);
+  await h.controller.stop();
+});
+
+test('disabled and muted tracks cannot enqueue PCM but unmuted input can resume', async () => {
+  const h = await captureHarness();
+  await h.controller.start('microphone');
+  const emit = () => h.nodes[0].port.onmessage({ data: { type: 'pcm', buffer: new Int16Array(1600).fill(3000).buffer } });
+  h.mic.audioTrack.enabled = false; emit();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.uploads.length, 0);
+  h.mic.audioTrack.enabled = true; h.mic.audioTrack.muted = true; emit();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.uploads.length, 0);
+  h.mic.audioTrack.muted = false; emit();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.uploads.length, 1);
+  assert.equal(h.uploads[0].sequence, 0);
+  assert.equal(h.uploads[0].sampleOffset, 0);
+});
+
+test('ending recording drains an in-flight chunk instead of discarding it like microphone-off', async () => {
+  let resolveChunk;
+  const chunkWait = new Promise(resolve => { resolveChunk = resolve; });
+  const h = await captureHarness({ chunkWait });
+  await h.controller.startMeeting();
+  h.nodes[0].port.onmessage({ data: { type: 'pcm', buffer: new Int16Array(1600).fill(3000).buffer } });
+  const stopped = h.controller.stop();
+  await new Promise(resolve => setImmediate(resolve));
+  resolveChunk(); await stopped;
+  assert.equal(h.uploads.length, 1);
   assert.equal(h.controller.sources.length, 0);
+  assert.equal(h.display.audioTrack.readyState, 'ended');
 });
 
 test('concurrent starts share one acquisition per source', async () => {
@@ -152,10 +234,10 @@ test('concurrent starts share one acquisition per source', async () => {
   const first = h.controller.startMeeting(), second = h.controller.startMeeting();
   assert.equal((await first).length, 0);
   assert.equal((await second).length, 0);
-  assert.equal(h.calls.length, 2);
-  assert.equal(h.controller.sources.length, 2);
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.controller.sources.length, 1);
   await h.controller.startMeeting();
-  assert.equal(h.calls.length, 2);
+  assert.equal(h.calls.length, 1);
 });
 
 async function deviceHarness({ explicit = false, denied = false } = {}) {

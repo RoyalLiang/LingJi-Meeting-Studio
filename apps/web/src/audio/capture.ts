@@ -22,6 +22,7 @@ function captureFailure(kind: CaptureKind, error: unknown) {
 }
 export class CaptureController {
   private connecting = new Map<CaptureKind, Promise<Source>>();
+  private disconnected = new WeakSet<AudioWorkletNode>();
   private streams: MediaStream[] = []; private contexts: AudioContext[] = []; private nodes: AudioWorkletNode[] = [];
   private writes: Promise<void>[] = []; private flushes: (() => void)[] = [];
   private signals: CaptureSignal[] = [];
@@ -32,8 +33,9 @@ export class CaptureController {
     if (typeof recordId !== 'string') void recordId.catch(() => {});
   }
   async startMeeting(): Promise<CaptureIssue[]> {
-    // Start both requests from the click. A cancelled sharing picker must not cancel the microphone.
-    const kinds: CaptureKind[] = ['display', 'microphone'];
+    // Meeting-app mute does not affect a separately opened browser microphone.
+    // Only capture meeting output by default; microphone capture is an explicit choice.
+    const kinds: CaptureKind[] = ['display'];
     const requests = kinds.map(kind => this.start(kind));
     const results = await Promise.allSettled(requests);
     return results.flatMap((result, index) => result.status === 'rejected'
@@ -52,7 +54,7 @@ export class CaptureController {
     if (kind === 'display' && !navigator.mediaDevices?.getDisplayMedia) throw new Error('当前浏览器无法接入会议音频。可先使用麦克风；在线会议建议使用支持标签页音频共享的浏览器。');
     if (kind === 'microphone' && !navigator.mediaDevices?.getUserMedia) throw new Error('当前浏览器无法接入麦克风，请使用安全连接下的现代浏览器。');
     // The browser permission request must remain in the original user gesture.
-    const displayOptions = { video: true, audio: { echoCancellation:false, noiseSuppression:false, autoGainControl:false, suppressLocalAudioPlayback:false }, systemAudio: 'include', windowAudio:'system', selfBrowserSurface:'exclude', surfaceSwitching: 'include' };
+    const displayOptions = { video: { displaySurface: 'monitor' }, audio: { echoCancellation:false, noiseSuppression:false, autoGainControl:false, suppressLocalAudioPlayback:false }, systemAudio: 'include', windowAudio:'system', selfBrowserSurface:'exclude', surfaceSwitching: 'include' };
     const permission = kind === 'display' ? navigator.mediaDevices.getDisplayMedia(displayOptions)
       : openMicrophone(selectedDevice);
     const stream = await permission;
@@ -71,19 +73,22 @@ export class CaptureController {
       const signal: CaptureSignal = { sourceId: source.id, kind, label: source.label, rms: 0, seconds: 0, status: 'checking', message: '' };
       this.signals.push(signal);
       const report = () => {
-        Object.assign(signal, signalMessage(signal, quietSeconds, track.muted, context!.state));
+        if (!track.enabled || track.muted) signal.rms = 0;
+        Object.assign(signal, signalMessage(signal, quietSeconds, !track.enabled || track.muted, context!.state));
         this.onSignals(this.signals.map(item => ({ ...item })));
       };
       track.addEventListener('mute', report); track.addEventListener('unmute', report);
       context.addEventListener('statechange', report); report();
       node.port.onmessage = event => {
+        if (this.disconnected.has(node)) return;
         if (event.data.type === 'meter') { this.onMeter(event.data.value); return; }
         if (event.data.type === 'flushed') { this.flushes.shift()?.(); return; }
         if (event.data.type !== 'pcm') return;
+        if (!track.enabled || track.muted || track.readyState === 'ended') { signal.rms = 0; report(); return; }
         const { rms } = pcmSignal(event.data.buffer), seconds = event.data.buffer.byteLength / 32000;
         signal.rms = rms; signal.seconds += seconds; quietSeconds = rms >= 0.0005 ? 0 : quietSeconds + seconds; report();
         const current = sequence++, start = offset; offset += event.data.buffer.byteLength / 2;
-        const write = makeChunk(source.id, source.epoch, current, start, event.data.buffer, source.sessionId).then(chunk => enqueue(recordId, chunk)).then(this.onSaved)
+        const write = makeChunk(source.id, source.epoch, current, start, event.data.buffer, source.sessionId).then(chunk => this.disconnected.has(node) ? undefined : enqueue(recordId, chunk)).then(this.onSaved)
           .catch(error => { this.onFailure(error); void this.stop(); });
         this.writes.push(write);
         if (this.writes.length > 100) this.writes.splice(0, this.writes.length - 100);
@@ -93,13 +98,27 @@ export class CaptureController {
       return source;
     } catch (error) { stream.getTracks().forEach(t => t.stop()); await context?.close(); throw error; }
   }
+  async disconnect(kind: CaptureKind) {
+    const index = this.sources.findIndex(source => source.kind === kind);
+    if (index < 0) return;
+    const [node] = this.nodes.splice(index, 1), [stream] = this.streams.splice(index, 1), [context] = this.contexts.splice(index, 1);
+    const [source] = this.sources.splice(index, 1);
+    // Discard this input's unfinished packet; reopening creates a new Source/epoch.
+    this.disconnected.add(node); node.port.onmessage = null;
+    stream.getTracks().forEach(track => track.stop());
+    this.signals = this.signals.filter(signal => signal.sourceId !== source.id);
+    this.active = this.streams.length > 0; this.onMeter(0); this.onSignals(this.signals.map(signal => ({ ...signal })));
+    await context.close();
+  }
   async stop() {
     if (!this.active) return; this.active = false;
     await Promise.all(this.nodes.map(node => new Promise<void>(resolve => {
       const timer = window.setTimeout(resolve, 2000); this.flushes.push(() => { clearTimeout(timer); resolve(); }); node.port.postMessage({ type: 'flush' });
     })));
     this.streams.forEach(s => s.getTracks().forEach(t => t.stop())); await Promise.all(this.contexts.map(c => c.close()));
-    await Promise.all(this.writes); this.streams = []; this.nodes = []; this.contexts = []; this.onMeter(0); this.signals = []; this.onSignals([]);
+    await Promise.all(this.writes);
+    this.nodes.forEach(node => { this.disconnected.add(node); node.port.onmessage = null; });
+    this.streams = []; this.nodes = []; this.contexts = []; this.sources = []; this.onMeter(0); this.signals = []; this.onSignals([]);
   }
 }
 export async function importAudio(file: File, record: RecordDetail, progress: (value: number) => void) {

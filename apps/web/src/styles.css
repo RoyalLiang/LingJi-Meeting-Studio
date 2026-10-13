@@ -502,6 +502,8 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 .capture-source h3 { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:0 0 7px; font-size:14px; font-weight:600; }
 .capture-source h3 span { color:var(--ink-3); font-size:11px; font-weight:400; }
 .capture-source p { margin:0; color:var(--ink-3); font-size:12px; line-height:1.8; }
+.capture-source .button { margin-top:12px; max-width:100%; white-space:normal; }
+.capture-microphone-device { margin-top:12px; }
 .capture-source > svg { flex:none; color:var(--ink-3); margin-top:9px; }
 .capture-source[data-ready="true"] > svg,.capture-source[data-ready="true"] h3 span { color:var(--accent); }
 .capture-permission-note { margin:22px 0 0; color:var(--ink-3); font-size:12px; line-height:1.8; }
