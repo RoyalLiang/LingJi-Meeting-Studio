@@ -4,6 +4,26 @@
 
 Node 22.14+、npm，执行 `npm ci`、`npm run dev`。访问 [工作台](http://127.0.0.1:3000)。Web 3000、Record API 3030、后台处理器同时运行。`Ctrl+C` 关闭本次启动的子进程。
 
+也可以在项目根目录使用 Makefile：首次运行 `make install`，之后执行 `make` 或 `make dev` 即可启动三个服务。`make help` 查看全部命令。
+
+| 命令 | 用途 |
+| --- | --- |
+| `make web` | 单独启动前端，显式传入 `--host 0.0.0.0` |
+| `make api` | 单独启动 Record API |
+| `make worker` | 单独启动后台处理器 |
+| `make build` | 构建 Web |
+| `make start` | 启动已构建的生产版本，仍需完成下方生产配置 |
+
+不使用 Make 时，执行 `./scripts/start.sh`，或从任意目录执行该脚本的绝对路径。脚本自动切换到项目根目录，复用现有启动器；开发前端同样带 `--host 0.0.0.0`。直接用 npm 单独启动前端时，执行 `npm run dev -w apps/web -- --host 0.0.0.0`。
+
+启动器会先检查 API 与 Web 端口。端口被占用时会停止本次启动并提示，不创建重复 worker，也不终止已有进程。可先在原启动终端按 `Ctrl+C`，或指定两个空闲端口：
+
+```bash
+RECORD_API_PORT=3031 WEB_PORT=3001 make
+```
+
+`RECORD_API_PORT` 和 `WEB_PORT` 也可以写入 `.env`；命令行环境变量优先。前端代理默认跟随所选 API 端口，显式配置的 `RECORD_API_URL` 保持原值。单独启动前端时使用 `make web WEB_PORT=3001`；若 API 端口也改动，须同时传入对应的 `RECORD_API_URL`。
+
 `.env.example` 复制为 `.env` 后配置，密钥不进入 `VITE_*`，不提交 `.env`。没有模型时只开放文字导入；显式 `RECORD_PROVIDER=fixture` 提供标注的测试内容，在生产环境禁用。
 
 ASR 默认使用豆包，兼容 `DEEPGRAM_API_KEY`（模型可调），或完整的 multipart `ASR_API_URL`、`ASR_API_KEY`、`ASR_MODEL`。纪要使用完整接口 `LLM_API_URL`、`LLM_API_KEY`、`LLM_MODEL`，协议由 `LLM_PROTOCOL` 选择 Chat Completions 或 Responses。翻译使用独立的豆包 Responses 请求，配置见下方[实时翻译](#实时翻译)。接口兼容不等于模型质量达标。
