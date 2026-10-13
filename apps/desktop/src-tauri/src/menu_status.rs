@@ -82,9 +82,77 @@ pub fn present(report: &Report, native_active: bool, fresh: bool) -> Presentatio
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UpdatePresentation {
+    pub status: String,
+    pub check: bool,
+    pub background: bool,
+    pub auto_download: bool,
+    pub install: bool,
+}
+
+pub fn present_update(
+    phase: &str,
+    configured: bool,
+    operating: bool,
+    fresh: bool,
+    auto_download: bool,
+    install_reason: Option<&str>,
+) -> UpdatePresentation {
+    let busy = operating || ["checking", "downloading", "preparing", "installing"].contains(&phase);
+    let enabled = configured && phase != "disabled" && !busy && fresh;
+    let reason = if !configured || phase == "disabled" {
+        "未配置可信更新源，请手动安装新版"
+    } else if !fresh {
+        "页面状态待确认，请打开聆记"
+    } else {
+        match phase {
+            "checking" => "正在检查更新…",
+            "downloading" => "正在后台下载并验证签名…",
+            "preparing" | "installing" => "正在准备或安装更新…",
+            "ready" => install_reason.unwrap_or("更新已验签，可重启更新"),
+            "available" => "发现新版本，可在设置中下载",
+            "current" => "当前已是最新版本",
+            "error" => "检查更新未完成，可重试",
+            _ => "可检查新版本",
+        }
+    };
+    UpdatePresentation {
+        status: format!("更新：{reason}"),
+        check: enabled,
+        background: enabled,
+        auto_download,
+        install: enabled && phase == "ready" && install_reason.is_none(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn update_menu_requires_trust_verified_download_fresh_state_and_safe_recording() {
+        let ready = present_update("ready", true, false, true, true, None);
+        assert!(ready.check && ready.background && ready.auto_download && ready.install);
+        for reason in [
+            "正在录音",
+            "本场处于暂停状态",
+            "本机仍有待传音频",
+            "正在保存音频",
+        ] {
+            let blocked = present_update("ready", true, false, true, false, Some(reason));
+            assert!(!blocked.install);
+            assert!(blocked.background && blocked.check && blocked.status.contains(reason));
+        }
+        for view in [
+            present_update("disabled", false, false, true, false, None),
+            present_update("ready", true, false, false, false, None),
+            present_update("ready", true, true, true, false, None),
+            present_update("downloading", true, false, true, true, None),
+        ] {
+            assert!(!view.check && !view.background && !view.install);
+        }
+        assert!(!present_update("available", true, false, true, false, None).install);
+    }
     #[test]
     fn recording_pause_queue_and_stale_states_are_distinct() {
         let mut r = Report {

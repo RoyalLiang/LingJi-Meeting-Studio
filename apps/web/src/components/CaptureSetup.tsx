@@ -5,8 +5,8 @@ import type { CaptureSignal } from '../audio/signal';
 import { DeviceSettings } from './DeviceSettings';
 import { Button, Modal } from './ui';
 
-export function CaptureSetup({ connected, signals, issues, busy, onConnect, onMicrophoneOff, onClose }: {
-  connected: SourceKind[]; signals: CaptureSignal[]; issues: CaptureIssue[]; busy: boolean; onConnect: (kind: CaptureKind) => void; onMicrophoneOff: () => void; onClose: () => void;
+export function CaptureSetup({ connected, signals, issues, retainAudio, busy, onConnect, onMicrophoneOff, onClose }: {
+  connected: SourceKind[]; signals: CaptureSignal[]; issues: CaptureIssue[]; retainAudio: boolean; busy: boolean; onConnect: (kind: CaptureKind) => void; onMicrophoneOff: () => void; onClose: () => void;
 }) {
   return <Modal title="音频来源" onClose={onClose}>
     <p className="capture-setup-intro">默认接入麦克风和系统／会议音频。麦克风可单独关闭；会议软件中的静音开关不会关闭聆记独立接入的麦克风。</p>
@@ -24,6 +24,7 @@ export function CaptureSetup({ connected, signals, issues, busy, onConnect, onMi
       })}
     </div>
     {!connected.includes('microphone') && <div className="capture-microphone-device"><DeviceSettings compact disabled={busy}/></div>}
+    <p className="capture-retention-note">{retainAudio ? '本场已开启原音回放，原音随记录保存至到期。' : '本场未开启原音留存，原音会在转录后清理，届时无法回放。下次录音前可开启“保留原音供回放”。'}</p>
     <p className="capture-permission-note">共享声音需要你在浏览器中确认来源，网站无法代选。若使用桌面会议软件，系统音频是否可用取决于浏览器与操作系统。</p>
     <footer className="capture-setup-actions">
       <Button disabled={busy} onClick={onClose}>{connected.length ? '继续记录' : '暂不开始'}</Button></footer>

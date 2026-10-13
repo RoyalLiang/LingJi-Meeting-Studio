@@ -1,8 +1,8 @@
-use crate::menu_status::{present, Presentation, Report};
+use crate::menu_status::{present, Presentation, Report, UpdatePresentation};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{
-    menu::{Menu, MenuItem, PredefinedMenuItem},
+    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, Wry,
 };
@@ -19,6 +19,11 @@ pub struct StatusBar {
     resume: MenuItem<Wry>,
     finish: MenuItem<Wry>,
     settings: MenuItem<Wry>,
+    update_status: MenuItem<Wry>,
+    update_check: MenuItem<Wry>,
+    update_background: CheckMenuItem<Wry>,
+    update_install: MenuItem<Wry>,
+    last_update: Mutex<Option<UpdatePresentation>>,
 }
 
 fn show(app: &AppHandle) {
@@ -49,11 +54,23 @@ impl StatusBar {
         let resume = item("status-resume", "继续本场", false)?;
         let finish = item("status-finish", "结束本场…", false)?;
         let settings = item("status-settings", "设置与诊断…", false)?;
+        let update_status = item("status-update-state", "更新状态待确认…", false)?;
+        let update_check = item("status-update-check", "检查更新…", false)?;
+        let update_background = CheckMenuItem::with_id(
+            app,
+            "status-update-background",
+            "自动后台下载更新",
+            false,
+            false,
+            None::<&str>,
+        )?;
+        let update_install = item("status-update-install", "重启更新", false)?;
         let hide = item("status-hide", "隐藏窗口", true)?;
         let quit = item("status-quit", "退出聆记…", true)?;
         let first = PredefinedMenuItem::separator(app)?;
         let second = PredefinedMenuItem::separator(app)?;
         let third = PredefinedMenuItem::separator(app)?;
+        let updates_separator = PredefinedMenuItem::separator(app)?;
         let menu = Menu::with_items(
             app,
             &[
@@ -70,6 +87,11 @@ impl StatusBar {
                 &finish,
                 &second,
                 &settings,
+                &updates_separator,
+                &update_status,
+                &update_check,
+                &update_background,
+                &update_install,
                 &hide,
                 &third,
                 &quit,
@@ -103,7 +125,13 @@ impl StatusBar {
                         let _ = w.close();
                     }
                 }
-                "status-pause" | "status-resume" | "status-finish" | "status-settings" => {
+                "status-pause"
+                | "status-resume"
+                | "status-finish"
+                | "status-settings"
+                | "status-update-check"
+                | "status-update-background"
+                | "status-update-install" => {
                     show(app);
                     if let Some(w) = app.get_webview_window("main") {
                         let _ = w.emit("client-menu-action", event.id.as_ref());
@@ -124,6 +152,11 @@ impl StatusBar {
             resume,
             finish,
             settings,
+            update_status,
+            update_check,
+            update_background,
+            update_install,
+            last_update: Mutex::new(None),
         })
     }
     pub fn report(&self, report: Report) {
@@ -136,7 +169,18 @@ impl StatusBar {
             .as_ref()
             .is_some_and(|(r, _)| r.pending_count > 0)
     }
-    pub fn refresh(&self, native_active: bool) {
+    pub fn refresh(&self, native_active: bool, updates: UpdatePresentation) {
+        {
+            let mut last = self.last_update.lock().unwrap();
+            if last.as_ref() != Some(&updates) {
+                let _ = self.update_status.set_text(&updates.status);
+                let _ = self.update_check.set_enabled(updates.check);
+                let _ = self.update_background.set_enabled(updates.background);
+                let _ = self.update_background.set_checked(updates.auto_download);
+                let _ = self.update_install.set_enabled(updates.install);
+                *last = Some(updates);
+            }
+        }
         let guard = self.report.lock().unwrap();
         let empty = Report::default();
         let (report, fresh) = guard

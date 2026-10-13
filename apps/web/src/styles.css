@@ -354,7 +354,6 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 .checkbox-label:has(input:checked){border-color:color-mix(in srgb,var(--accent) 35%,transparent);background:var(--accent-soft)}
 .checkbox-label input[type=checkbox]{appearance:none;-webkit-appearance:none;width:20px;height:20px;min-width:20px;margin:0;border:1.5px solid var(--ink-3);border-radius:6px;background:var(--bg);display:grid;place-content:center;cursor:pointer}
 .checkbox-label input[type=checkbox]:checked{border-color:var(--accent);background:var(--accent)}
-.checkbox-label input[type=checkbox]:checked:after{content:'';width:9px;height:5px;border-left:2px solid var(--on-accent);border-bottom:2px solid var(--on-accent);transform:translateY(-1px) rotate(-45deg)}
 .checkbox-label input[type=checkbox]:focus-visible{outline:3px solid var(--glow);outline-offset:3px}
 .checkbox-label input:disabled{opacity:.45;cursor:default}
 .checkbox-label small{display:block;color:var(--ink-3);font-size:11px;font-weight:400;margin-top:3px}
@@ -839,3 +838,11 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 }
 
 .modal-body .field-label{display:flex;align-items:baseline;flex-wrap:wrap;gap:8px;}
+
+/* Recording retention is chosen before capture and never rewrites a past record. */
+.audio-retention-setting { display:flex;align-items:flex-start; }
+.audio-retention-setting.is-compact { margin:0 0 8px;padding:10px 11px;font-size:11px;gap:9px; }
+.audio-retention-setting.is-compact small { font-size:10px;line-height:1.6; }
+.capture-retention-note { margin:20px 0 0;color:var(--ink-2);font-size:12px;line-height:1.8; }
+.recording-playback-trigger { display:inline-flex; }
+@media(max-width:700px) { .sidebar .audio-retention-setting { grid-column:1 / -1; margin:0 0 8px; } }

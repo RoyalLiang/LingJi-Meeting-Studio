@@ -55,7 +55,7 @@ test('release tag grammar rejects shell/path/version ambiguity and remote publis
 });
 
 const engineSource = stripTypeScriptTypes(await readFile(new URL('../apps/web/src/client-updates.ts', import.meta.url), 'utf8'));
-const { ClientUpdates, defaultUpdatePreferences } = await import(`data:text/javascript;base64,${Buffer.from(engineSource).toString('base64')}`);
+const { ClientUpdates, defaultUpdatePreferences, normalizeUpdatePreferences, preferencesForPolicy, updatePolicy } = await import(`data:text/javascript;base64,${Buffer.from(engineSource).toString('base64')}`);
 const idle = { authenticated: true, recording: false, paused: false, busy: false };
 function engineFixture() {
   let activity = { ...idle }, queue = { pendingBytes: 0, pendingCount: 0, queueBusy: false }, preferences = { ...defaultUpdatePreferences };
@@ -67,7 +67,7 @@ function engineFixture() {
     if (command === 'update_download') status = { ...status, phase: 'ready' };
     return status;
   }, queue: async () => { order.push('queue'); return queue; }, activity: () => activity,
-  preferences: () => preferences, changed() {}, freeze: value => { freezes.push(value); order.push(`freeze:${value}`); } });
+  preferences: () => preferences, preferencesChanged: value => { preferences = value; }, changed() {}, freeze: value => { freezes.push(value); order.push(`freeze:${value}`); } });
   engine.apply(status);
   return { engine, calls, freezes, order, activity: value => { activity = value; }, queue: value => { queue = value; }, preferences: value => { preferences = value; } };
 }
@@ -84,13 +84,57 @@ test('updater freezes input before fresh queue check and never installs while re
   assert.deepEqual(h.order, ['freeze:true', 'queue', 'update_activity', 'update_install', 'freeze:false']);
 });
 
+test('update dropdown policies normalize legacy profiles and never retain automatic installation', () => {
+  for (const policy of ['manual', 'check', 'background']) {
+    const settings = preferencesForPolicy(policy);
+    assert.equal(updatePolicy(settings), policy);
+    assert.equal(settings.autoCheck, policy !== 'manual');
+    assert.equal(settings.autoDownload, policy === 'background');
+    assert.equal(settings.autoInstall, false);
+  }
+  assert.deepEqual(normalizeUpdatePreferences({ autoCheck: false, autoDownload: true, autoInstall: true }), preferencesForPolicy('manual'));
+  assert.deepEqual(normalizeUpdatePreferences({ autoCheck: true, autoDownload: true, autoInstall: true }), preferencesForPolicy('background'));
+  assert.deepEqual(normalizeUpdatePreferences(null), defaultUpdatePreferences);
+});
+
 test('automatic check does not imply automatic download/install and backoff avoids repeated network work', async () => {
   const h = engineFixture(); await h.engine.tick(0); await h.engine.tick(1000);
   assert.deepEqual(h.calls.map(([name]) => name), ['update_check']);
   h.preferences({ autoCheck: true, autoDownload: true, autoInstall: true }); h.activity({ ...idle, recording: true });
   await h.engine.tick(2000); assert.equal(h.calls.filter(([name]) => name === 'update_download').length, 1);
   assert.equal(h.calls.some(([name]) => name === 'update_install'), false);
-  h.activity(idle); await h.engine.tick(63_000); assert.equal(h.calls.filter(([name]) => name === 'update_install').length, 1);
+  h.activity(idle); await h.engine.tick(63_000); assert.equal(h.calls.filter(([name]) => name === 'update_install').length, 0);
+});
+
+test('native update menu shares check, background preference and explicit safe installation actions', async () => {
+  const h = engineFixture();
+  h.preferences(preferencesForPolicy('manual'));
+  await h.engine.tick(0); assert.equal(h.calls.length, 0);
+  h.engine.apply({ ...h.engine.status, phase: 'available' });
+  h.activity({ ...idle, recording: true });
+  await h.engine.menuAction('status-update-background');
+  assert.equal(h.calls.filter(([name]) => name === 'update_download').length, 1);
+  assert.equal(h.calls.find(([name]) => name === 'update_activity')[1].autoDownload, true);
+  assert.equal(h.calls.some(([name]) => name === 'update_install'), false);
+  await h.engine.menuAction('status-update-background');
+  assert.equal(h.calls.filter(([name]) => name === 'update_activity').at(-1)[1].autoDownload, false);
+  await h.engine.menuAction('status-update-check');
+  assert.equal(h.calls.filter(([name]) => name === 'update_check').length, 1);
+  assert.equal(h.calls.filter(([name]) => name === 'update_download').length, 1);
+  const installer = engineFixture();
+  for (const unsafe of [{ ...idle, recording: true }, { ...idle, paused: true }]) {
+    installer.activity(unsafe); await installer.engine.menuAction('status-update-install');
+    assert.equal(installer.calls.some(([name]) => name === 'update_install'), false);
+  }
+  installer.activity(idle); installer.queue({ pendingCount: 1, pendingBytes: 1, queueBusy: false });
+  await installer.engine.menuAction('status-update-install');
+  assert.equal(installer.calls.some(([name]) => name === 'update_install'), false);
+  installer.queue({ pendingCount: 0, pendingBytes: 0, queueBusy: false });
+  await installer.engine.menuAction('status-update-install');
+  assert.equal(installer.calls.filter(([name]) => name === 'update_install').length, 1);
+  const disabled = engineFixture(); disabled.engine.apply({ ...disabled.engine.status, phase: 'disabled' });
+  for (const action of ['status-update-check', 'status-update-background', 'status-update-install']) await disabled.engine.menuAction(action);
+  assert.equal(disabled.calls.length, 0);
 });
 
 test('queue safety includes another account record and in-flight ACK, so filtered lists cannot hide saved audio', async () => {

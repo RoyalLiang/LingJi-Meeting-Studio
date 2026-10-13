@@ -1,7 +1,19 @@
 export type UpdateStatus = { phase: string; currentVersion: string; version?: string | null; notes?: string | null; downloaded: number; total?: number | null; error?: string | null };
-export type UpdatePreferences = { autoCheck: boolean; autoDownload: boolean; autoInstall: boolean };
+export type UpdatePreferences = { autoCheck: boolean; autoDownload: boolean; autoInstall: false };
+export type UpdatePolicy = 'manual' | 'check' | 'background';
 export type UpdateActivity = { authenticated: boolean; recording: boolean; paused: boolean; busy: boolean; queueBusy: boolean; pendingBytes: number; pendingCount: number };
 export const defaultUpdatePreferences: UpdatePreferences = { autoCheck: true, autoDownload: false, autoInstall: false };
+export function normalizeUpdatePreferences(value: unknown): UpdatePreferences {
+  const saved = value && typeof value === 'object' ? value as Partial<UpdatePreferences> : {};
+  const autoCheck = saved.autoCheck !== false;
+  return { autoCheck, autoDownload: autoCheck && saved.autoDownload === true, autoInstall: false };
+}
+export function updatePolicy(preferences: UpdatePreferences): UpdatePolicy {
+  return !preferences.autoCheck ? 'manual' : preferences.autoDownload ? 'background' : 'check';
+}
+export function preferencesForPolicy(policy: string): UpdatePreferences {
+  return { autoCheck: policy !== 'manual', autoDownload: policy === 'background', autoInstall: false };
+}
 export function updateBlockReason(activity: UpdateActivity) {
   if (!activity.authenticated) return '请先登录，核对录音与补传状态后安装更新';
   if (activity.recording) return '正在录音，结束会议后才能安装更新';
@@ -15,13 +27,14 @@ type Dependencies = {
   activity: () => Omit<UpdateActivity, 'queueBusy' | 'pendingBytes' | 'pendingCount'>;
   queue: () => Promise<{ queueBusy: boolean; pendingBytes: number; pendingCount: number }>;
   preferences: () => UpdatePreferences;
+  preferencesChanged: (preferences: UpdatePreferences) => void;
   changed: (status: UpdateStatus) => void;
   freeze: (value: boolean) => void;
 };
 export class ClientUpdates {
   status: UpdateStatus = { phase: 'idle', currentVersion: '', downloaded: 0 };
   private dependencies: Dependencies;
-  private operating = false; private nextCheck = 0; private nextInstall = 0;
+  private operating = false; private nextCheck = 0;
   constructor(dependencies: Dependencies) { this.dependencies = dependencies; }
   apply(status: UpdateStatus) { this.status = status; this.dependencies.changed(status); }
   async initialize() { this.apply(await this.dependencies.invoke('update_status') as UpdateStatus); }
@@ -34,8 +47,19 @@ export class ClientUpdates {
       this.apply({ ...status, error: error instanceof Error ? error.message : String(error) });
     } finally { this.operating = false; }
   }
-  async check() { await this.request('update_check'); }
-  async download() { await this.request('update_download'); }
+  async check() { if (this.status.phase !== 'disabled') await this.request('update_check'); }
+  async download() { if (this.status.phase === 'available') await this.request('update_download'); }
+  async menuAction(action: string) {
+    if (this.operating || this.status.phase === 'disabled' || ['checking', 'downloading', 'preparing', 'installing'].includes(this.status.phase)) return;
+    if (action === 'status-update-check') {
+      await this.check();
+      if (this.dependencies.preferences().autoDownload && !this.status.error) await this.download();
+    } else if (action === 'status-update-background') {
+      this.dependencies.preferencesChanged(preferencesForPolicy(this.dependencies.preferences().autoDownload ? 'check' : 'background'));
+      await this.activityChanged();
+      if (this.dependencies.preferences().autoDownload && !this.status.error) await this.download();
+    } else if (action === 'status-update-install') await this.install();
+  }
   async install() {
     if (this.operating || this.status.phase !== 'ready') return;
     this.operating = true; this.dependencies.freeze(true);
@@ -53,9 +77,10 @@ export class ClientUpdates {
     } finally { this.operating = false; this.dependencies.freeze(false); }
   }
   async activityChanged() {
-    if (this.status.phase === 'disabled') return;
     const queue = await this.dependencies.queue();
-    await this.dependencies.invoke('update_activity', { activity: { ...this.dependencies.activity(), ...queue } });
+    const activity = { ...this.dependencies.activity(), ...queue };
+    await this.dependencies.invoke('update_activity', { activity, autoDownload: this.dependencies.preferences().autoDownload });
+    return updateBlockReason(activity);
   }
   async tick(now: number) {
     if (this.operating || this.status.phase === 'disabled') return;
@@ -65,8 +90,5 @@ export class ClientUpdates {
       if (this.status.error) this.nextCheck = now + 15 * 60 * 1000;
     }
     if (preferences.autoDownload && this.status.phase === 'available' && !this.status.error) await this.download();
-    if (preferences.autoInstall && this.status.phase === 'ready' && now >= this.nextInstall) {
-      this.nextInstall = now + 60 * 1000; await this.install();
-    }
   }
 }
