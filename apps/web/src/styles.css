@@ -548,8 +548,8 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 
 /* A search field has one focus boundary, owned by its enclosing control. */
 .search-box input:focus,.search-box input:focus-visible{outline:none;box-shadow:none;border:0;}
-.brand-mark.voice-page{background:var(--accent-soft);overflow:hidden;flex-shrink:0;}
-.brand-mark.voice-page img{width:100%;height:100%;object-fit:contain;transform:scale(1.75);}
+.brand-mark.app-icon{background:transparent;flex-shrink:0;border-radius:0;}
+.brand-mark.app-icon img{display:block;width:100%;height:100%;object-fit:contain;}
 .brand-symbol{justify-content:center;}
 .workspace{position:relative;}
 .scroll-top{position:absolute;z-index:5;right:20px;bottom:20px;gap:6px;box-shadow:0 4px 18px #183b2520;}
@@ -635,7 +635,6 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 @media(min-width:1401px){.workspace.with-minutes .scroll-top{right:490px;}}
 .workspace:has(.minutes-panel.is-expanded) .scroll-top{display:none;}
 
-:root[data-theme=dark] .brand-mark.voice-page{background:#d5e6da;}
 @media(max-width:700px){.workspace .scroll-top,.workspace.with-minutes .scroll-top{bottom:calc(80px + env(safe-area-inset-bottom));}}
 .activity-sparse{min-height:155px;display:flex;flex-direction:column;justify-content:center;gap:14px;padding:12px 0;}.activity-sparse>div{display:flex;gap:15px;align-items:baseline;border-bottom:1px solid var(--border);padding:9px 0;font-size:12px;}.activity-sparse time,.activity-sparse span{font-size:11px;color:var(--ink-3);}.activity-sparse b{font-weight:500;color:var(--accent);}
 .meeting-table .checkbox-label,.meeting-table .checkbox-label:has(input:checked){padding:0;min-height:28px;border:0;border-radius:0;background:transparent;}
