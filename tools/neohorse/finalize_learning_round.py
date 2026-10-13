@@ -24,7 +24,7 @@ def main():
         output.append({**case,'basePrediction':base.get(case['sample_id']),'adapterPrediction':adapted.get(case['sample_id']),
                        'teacherTarget':teacher.get(case['sample_id'],{}).get('target'),
                        'target':previous.get('target'),'reviewer':previous.get('reviewer',''),'audioVerified':previous.get('audioVerified',False),
-                       'blindReview':previous.get('blindReview',False),
+                       'blindReview':previous.get('blindReview',False),'reviewedAt':previous.get('reviewedAt',''),
                        'note':previous.get('note',''),'correctedText':previous.get('correctedText','')})
     path=root/'annotation-results.jsonl'
     path.write_text(''.join(json.dumps(row,ensure_ascii=False)+'\n' for row in output));path.chmod(0o600)

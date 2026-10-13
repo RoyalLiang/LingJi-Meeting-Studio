@@ -1,3 +1,4 @@
+import {learningRoutes} from './learning-routes.mjs';
 import { telemetry } from './telemetry.mjs';
 import { clientUpdateBarrier } from './client-update.mjs';
 import { performance } from 'node:perf_hooks';
@@ -57,6 +58,7 @@ export function exportRecord(record, format = 'markdown') {
 }
 export async function createRecordServer(options = {}) {
   const repo = options.repo || await createRepository(options); const auth = await createAuth(repo, { seedDevelopment: !options.repo, ...options });
+  const learningEnabled=async()=>{const config=await readConfig(repo.root);return config.RECORD_LEARNING_ENABLED==='true'||(config.RECORD_LEARNING_ENABLED!=='false'&&Boolean(options.localAccount));};
   const deltaEnabled=options.deltaEnabled ?? (process.env.RECORD_DELTA_ENABLED!=='false');
   const streams = new Set(); const attempts = new Map();
   const send = (res, status, data, headers = {}) => { const payload=JSON.stringify(data); res.writeHead(status, { 'Content-Length':Buffer.byteLength(payload), 'Content-Type': 'application/json; charset=utf-8',
@@ -109,7 +111,7 @@ export async function createRecordServer(options = {}) {
       }
       if (path === '/api/diagnostics/traces' && req.method === 'GET') { requireThat(canConfigure(user), 'configuration_admin_required', 403); send(res,200,telemetry.snapshot()); return; }
       if (path === '/api/bootstrap' && req.method === 'GET') {
-        send(res, 200, { email: user.email, csrf: auth.csrf(user), audioTransport: 'pcm-v1', localAccount: Boolean(options.localAccount), providers: providerStatus(await readConfig(repo.root)), limits: { maxMinutes: 120, maxRecords: 200, maxChunkSeconds: 15 }, storage: repo.backend, canConfigure: canConfigure(user) }); return;
+        send(res, 200, { email: user.email, csrf: auth.csrf(user), audioTransport: 'pcm-v1', localAccount: Boolean(options.localAccount), learning:{enabled:await learningEnabled()}, providers: providerStatus(await readConfig(repo.root)), limits: { maxMinutes: 120, maxRecords: 200, maxChunkSeconds: 15 }, storage: repo.backend, canConfigure: canConfigure(user) }); return;
       }
       if (path === '/api/settings/providers/test' && req.method === 'POST') {
         requireThat(canConfigure(user), 'configuration_admin_required', 403);
@@ -133,7 +135,7 @@ export async function createRecordServer(options = {}) {
         requireThat(all.length < 200, 'record_limit', 429); const input = await readBody(req, 4000);
         if (input.workspaceId) { requireThat(!['all', 'inbox'].includes(input.workspaceId), 'invalid_workspace', 400); await requireWorkspace(repo, user.id, input.workspaceId); }
         requireThat(!input.autoMinutes || providerStatus(await readConfig(repo.root)).minutes, 'minutes_not_configured', 503);
-        const r = await repo.insert(createRecord(user.id, input));
+        const r = await repo.insert(createRecord(user.id, {...input,learningEnabled:await learningEnabled()}));
         send(res, 201, publicRecord(r)); return;
       }
       if (path === '/api/records' && req.method === 'GET') {
@@ -144,6 +146,7 @@ export async function createRecordServer(options = {}) {
       }
       const route = path.match(/^\/api\/records\/([a-f0-9-]{36})(?:\/(.*))?$/);
       requireThat(route, 'not_found', 404); const id = route[1], action = route[2] || ''; const record = await owned(id, user);
+      if(await learningRoutes({req,res,url,action,repo,user,record,readBody,send,csrf:auth.csrf(user)}))return;
       if (action === 'automation' && req.method === 'PATCH') {
         const body = await readBody(req, 4000);
         requireThat(!body.enabled || providerStatus(await readConfig(repo.root)).minutes, 'minutes_not_configured', 503);

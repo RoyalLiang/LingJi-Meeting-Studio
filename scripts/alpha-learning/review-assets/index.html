@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>聆记 · 学习评审</title>
-    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
     <header>
@@ -16,14 +16,20 @@
       </div>
       <div class="toolbar">
         <select id="round" aria-label="学习轮次"></select
+        ><button id="prepare" hidden>生成待标注</button
         ><button id="refresh">刷新轮次</button
         ><button id="export">导出标注</button
-        ><button id="next-round" class="primary">生成下一轮</button>
+        ><button id="next-round" class="primary">训练与回测</button>
       </div>
     </header>
     <main>
       <aside>
         <div class="filters">
+          <label id="meeting-label"
+            >会议<select id="meeting">
+              <option value="all">全部会议</option>
+            </select></label
+          >
           <label
             >筛选任务<select id="family">
               <option value="all">全部任务</option>
@@ -47,11 +53,27 @@
       </aside>
       <section class="workspace">
         <div class="summary">
-          <div><small>本轮样本</small><strong id="total">—</strong></div>
+          <div><small>发言片段</small><strong id="total">—</strong></div>
           <div><small>已标注</small><strong id="reviewed">—</strong></div>
           <div><small>人工测试</small><strong id="gold">待建立</strong></div>
           <p id="round-note">正在读取学习轮次…</p>
         </div>
+        <section id="train-plan" class="training-plan" hidden>
+          <h2>确认训练与回测</h2>
+          <p id="plan-note"></p>
+          <label class="inline"
+            ><input
+              type="checkbox"
+              id="confirm-training"
+            />我确认使用上述人工标签训练</label
+          >
+          <div class="actions">
+            <button id="cancel-training">暂不训练</button
+            ><button id="start-training" class="primary" disabled>
+              确认并开始
+            </button>
+          </div>
+        </section>
         <div id="empty" class="empty">选择左侧样本开始核对。</div>
         <article id="detail" hidden>
           <div class="case-heading">
@@ -65,6 +87,10 @@
           <section class="evidence">
             <h2>当前转录 <small>尚未核听确认</small></h2>
             <p id="original"></p>
+            <details id="raw-details" hidden>
+              <summary>识别原文</summary>
+              <p id="raw"></p>
+            </details>
             <audio id="audio" controls preload="none"></audio>
             <p id="audio-note" class="muted">原音按片段时间范围读取。</p>
             <details>
@@ -107,6 +133,6 @@
       </section>
     </main>
     <div id="notice" role="status" aria-live="polite"></div>
-    <script type="module" src="/app.mjs"></script>
+    <script type="module" src="./app.mjs"></script>
   </body>
 </html>

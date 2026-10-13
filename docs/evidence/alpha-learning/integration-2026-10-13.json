@@ -1,0 +1,79 @@
+{
+  "date": "2026-10-13",
+  "scope": "Alpha 13 learning review integration and conservative speech display",
+  "validationTier": [
+    "local fixtures",
+    "read-only real Alpha preparation",
+    "wgs synthetic training contract"
+  ],
+  "businessTranscriptWrites": 0,
+  "installedClientUpdated": false,
+  "groupingReproduction": {
+    "questionRowsBefore": 468,
+    "focusCardsAfter": 104,
+    "meetingSeparation": true,
+    "differentTimeUtterancesPreserved": true
+  },
+  "realAlphaPreparation": {
+    "cases": 1536,
+    "families": {
+      "intent": 1280,
+      "asr": 256
+    },
+    "trained": false,
+    "businessWrites": 0,
+    "goldTestReady": false
+  },
+  "syntheticNativeContract": {
+    "onlySynthetic": true,
+    "prepareOnlyTrained": false,
+    "rounds": [
+      {
+        "round": "r001",
+        "trained": true,
+        "updates": {
+          "asr": 1,
+          "intent": 1
+        },
+        "resumeWeightsVerified": false,
+        "reloadWeightsEqual": true,
+        "humanCorrections": 0,
+        "acceptSilver": false
+      },
+      {
+        "round": "r002",
+        "trained": true,
+        "updates": {
+          "asr": 1,
+          "intent": 1
+        },
+        "resumeWeightsVerified": true,
+        "reloadWeightsEqual": true,
+        "humanCorrections": 1,
+        "acceptSilver": false
+      }
+    ],
+    "realHumanGoldLabelsCreated": 0
+  },
+  "browser": {
+    "nativeReact": true,
+    "iframeCount": 0,
+    "lightAndDarkDesktop": true,
+    "batchSave": true,
+    "unsavedDraftBlocksTraining": true,
+    "audioUnverifiedBlocksAsrTraining": true,
+    "standaloneMeetingFilter": true,
+    "mobileViewportVerified": false
+  },
+  "retention": {
+    "integratedPreparationAddsWavCopies": false,
+    "expiredSourceBlockedForReuse": true,
+    "historicalDerivativeArtifactsIndependent": true
+  },
+  "limitations": [
+    "No real human gold accuracy result",
+    "No acoustic ASR training",
+    "Installed Alpha left running unchanged",
+    "Native recording-end with retained real audio still needs acceptance"
+  ]
+}

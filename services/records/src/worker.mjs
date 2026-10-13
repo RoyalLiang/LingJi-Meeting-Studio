@@ -1,3 +1,4 @@
+import {runLearningCycle} from './learning-worker.mjs';
 import { runMinutesPipeline } from './minutes-pipeline.mjs';
 import { meteredMinutesCall } from './minutes-usage.mjs';
 import { telemetry } from './telemetry.mjs';
@@ -14,6 +15,8 @@ import { providerStatus, analyzeIntents, generateMinutes, minutesTimeoutMs, tran
 
 export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
   const config = await readConfig(repo.root);
+  const learningEnabled=config.RECORD_LEARNING_ENABLED==='true' || (config.RECORD_LEARNING_ENABLED!=='false' && process.env.NODE_ENV==='desktop');
+  if(lane==='learning'){if(learningEnabled && (!providerStatus(config).fixture || providers.learningPreparation))await runLearningCycle(repo,providers);return;}
   if (lane === 'workspace') { await processWorkspaceAnalysis(repo, config, providers); return; }
   const records = await repo.listWork();
   async function processCandidate(candidate) {
@@ -171,7 +174,7 @@ export async function startWorker() {
   const repo = await createRepository(); let stop = false;
   process.on('SIGTERM', () => { stop = true; }); process.on('SIGINT', () => { stop = true; });
   console.log(`[record-worker] ${repo.backend}; durable audio and minutes queue`);
-  await Promise.all(['audio', 'minutes', 'intents', 'translation', 'workspace'].map(async lane => {
+  await Promise.all(['audio', 'minutes', 'intents', 'translation', 'workspace', 'learning'].map(async lane => {
   while (!stop) {
    try { await runCycle(repo, {}, { lane }); } catch (e) { console.error('[record-worker]', lane, e.code || e.name); }
    await new Promise(resolve => setTimeout(resolve, lane === 'audio' ? 250 : 500));

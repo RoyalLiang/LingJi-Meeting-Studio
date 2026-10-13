@@ -1,0 +1,2 @@
+export function cleanSpeechDisplay(text: string): string;
+export function groupReviewCases<T extends {sample_id:string;source:{recordId:string;transcriptRevision:number;focus:{segmentId:string;revision:number}};display:{original:string;meetingTitle?:string;startMs?:number;endMs?:number}}>(cases:T[]):{id:string;recordId:string;title:string;original:string;text:string;startMs?:number;endMs?:number;rows:T[]}[];

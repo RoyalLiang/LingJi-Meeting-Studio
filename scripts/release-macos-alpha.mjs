@@ -41,7 +41,7 @@ async function run(command, args, extraEnv = {}, cwd = root) {
 async function sourceSnapshot(destination) {
   const paths = capture('git', [...(sourceRef ? ['ls-tree', '-r', '--name-only', '-z', sourceRef] : ['ls-files', '--cached', '--others', '--exclude-standard', '-z']), '--',
     '.gitignore', 'package.json', 'package-lock.json', 'apps/web', 'apps/desktop/package.json',
-    'apps/desktop/src-tauri', 'apps/desktop/assets', 'scripts/release-macos-alpha.mjs', 'scripts/test-standalone-package.mjs', 'scripts/prepare-client-backend.mjs',
+    'apps/desktop/src-tauri', 'apps/desktop/assets', 'scripts/release-macos-alpha.mjs', 'scripts/test-standalone-package.mjs', 'scripts/prepare-client-backend.mjs', 'scripts/alpha-learning', 'tools/neohorse',
     'services/records/src', 'packages/records/src', 'services/session-gateway/src/providers/doubao-ast-codec.mjs', 'services/session-gateway/src/providers/doubao-ast/protos', 'docs/releases/macos-alpha.md',
   ]).split('\0').filter(Boolean).sort();
   const files = [];

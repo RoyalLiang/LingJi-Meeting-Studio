@@ -1,6 +1,6 @@
 # 项目文档入口
 
-[Alpha 双任务学习与标注](engineering/alpha-learning.md)：已完成当前数据接入、wgs 联合训练、旁路回测和本地核听评审；尚无人工金标准，主产品未启用自动改写。
+[Alpha 双任务学习与标注](engineering/alpha-learning.md)：Alpha 13 会后生成待标注结果，按会议和发言归组，人工确认后训练回测；尚无人工金标准，主转录未启用自动改写。
 
 - [跨系统客户端实现方式](research/cross-platform-client-implementation-2026-10-13.md)：已按长期轻量与原生采集优先选择 Tauri 2/Rust；[运行说明](engineering/native-client.md)、[proposed ADR](adr/0011-native-desktop-client.md)与[首轮验证](evidence/client-brain-research/native-client-validation-2026-10-13.md)。三系统实体采集和正式发行仍待验。
 - [GitHub 发版与客户端自动更新调研](research/git-release-and-client-updates-2026-10-13.md)：用户已选 GitHub Releases；已实现本地安全更新与四目标 draft/publish 工作流，见[客户端更新](engineering/client-updates.md)、[发版步骤](releases/github-client.md)和[本轮证据](evidence/client-brain-research/client-updater-validation-2026-10-13.md)；尚未远程发布或完成三系统正式安装验收。

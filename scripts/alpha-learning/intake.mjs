@@ -52,6 +52,8 @@ export function readSnapshot(root, now = Date.now()) {
       records.push({
         ...pick(record, [
           "id",
+          "title",
+          "createdAt",
           "transcriptRevision",
           "generation",
           "capture",
@@ -104,13 +106,14 @@ export function readSnapshot(root, now = Date.now()) {
   }
 }
 
-export async function exportSnapshots(roots, output) {
+export async function exportSnapshots(roots, output, { recordIds } = {}) {
   const records = [],
     registry = {},
     conflicts = [];
   for (const root of roots.map((value) => resolve(value))) {
     const sourceId = sha(root).slice(0, 16);
     for (const record of readSnapshot(root)) {
+      if (recordIds && !recordIds.includes(record.id)) continue;
       if (registry[record.id]) {
         conflicts.push({ recordId: record.id, reason: "duplicate_record_id" });
         continue;
