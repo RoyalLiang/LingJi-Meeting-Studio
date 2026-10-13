@@ -1,0 +1,49 @@
+.button.close-button {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--ink-2);
+  background: transparent;
+  transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+.button.close-button .close-gear {
+  grid-area: 1 / 1;
+  color: var(--ink-3);
+  opacity: .6;
+  transform-origin: center;
+  transition: transform 480ms cubic-bezier(.2, .7, .2, 1), color 160ms ease, opacity 160ms ease;
+}
+.button.close-button .close-symbol {
+  grid-area: 1 / 1;
+}
+.button.close-button:is(:hover, :focus-visible):not(:disabled) {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--border);
+}
+.button.close-button:is(:hover, :focus-visible):not(:disabled) .close-gear {
+  color: var(--accent);
+  opacity: 1;
+  transform: rotate(150deg);
+}
+.button.close-button:active:not(:disabled) {
+  transform: scale(.94);
+}
+.button.close-button:active:not(:disabled) .close-gear {
+  transform: rotate(180deg);
+}
+@media (pointer: coarse) {
+  .button.close-button, .modal-header .button.close-button { width: 44px; height: 44px; min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .button.close-button, .button.close-button .close-gear { transition: none; }
+  .button.close-button:is(:hover, :focus-visible, :active):not(:disabled),
+  .button.close-button:is(:hover, :focus-visible, :active):not(:disabled) .close-gear { transform: none; }
+}

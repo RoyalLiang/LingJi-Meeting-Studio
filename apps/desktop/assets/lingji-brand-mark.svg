@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="176 190 670 650">
+  <title>聆记</title>
+  <!-- Compact UI mark: the same page paths as lingji-app-icon.svg, without tile or blur filters. -->
+  <defs><linearGradient id="jade" x1="310" y1="240" x2="750" y2="810" gradientUnits="userSpaceOnUse"><stop stop-color="#48AD8C"/><stop offset=".42" stop-color="#218667"/><stop offset="1" stop-color="#0B5644"/></linearGradient></defs>
+  <g transform="translate(0 -10)" fill="url(#jade)">
+    <path d="M244 429C225 419 209 430 209 454V600C209 636 226 660 258 674L292 689C310 697 324 687 324 665V518C324 479 302 454 269 438Z"/>
+    <path d="M391 338C371 327 352 339 352 363V640C352 687 375 722 416 743L455 762C475 771 492 758 492 735V446C492 400 463 371 423 352Z"/>
+    <path d="M568 235C546 224 524 239 524 267V626C524 665 544 692 582 706L710 752C743 764 764 780 781 806C795 823 813 813 813 791V409C813 361 791 329 749 305L599 250Z"/>
+  </g>
+</svg>

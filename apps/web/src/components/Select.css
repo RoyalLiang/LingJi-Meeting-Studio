@@ -1,0 +1,107 @@
+.select.select-enhanced > .select-trigger {
+ transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+}
+
+.select.select-enhanced > .select-trigger:hover:not([aria-disabled=true]) {
+ border-color: color-mix(in srgb, var(--accent) 46%, var(--border));
+ background: color-mix(in srgb, var(--accent-soft) 28%, var(--bg));
+}
+
+.select.select-enhanced.is-open > .select-trigger,
+.select.select-enhanced > .select-trigger:focus-visible {
+ border-color: var(--accent);
+ box-shadow: 0 0 0 3px var(--glow);
+}
+
+.select.select-enhanced > .select-trigger > svg {
+ color: var(--ink-3);
+ transition: transform 150ms ease, color 150ms ease;
+}
+
+.select.select-enhanced.is-open > .select-trigger > svg {
+ color: var(--accent);
+}
+
+.select-options.select-portal.select-menu {
+ padding: 5px;
+ border-color: color-mix(in srgb, var(--accent) 18%, var(--border));
+ opacity: 0;
+ transform: translateY(-4px) scale(.985);
+ transform-origin: top center;
+ transition: opacity 120ms ease, transform 150ms cubic-bezier(.2, 0, 0, 1), display 150ms allow-discrete, overlay 150ms allow-discrete;
+}
+
+.select-options.select-portal.select-menu[data-placement=top] {
+ transform: translateY(4px) scale(.985);
+ transform-origin: bottom center;
+}
+
+.select-options.select-portal.select-menu:popover-open {
+ opacity: 1;
+ transform: translateY(0) scale(1);
+}
+
+.select-options.select-portal.select-menu[data-state=closed] {
+ pointer-events: none;
+}
+
+.select-options.select-portal.select-menu [role=option] {
+ gap: 12px;
+ padding: 10px;
+ outline: 1px solid transparent;
+ outline-offset: -1px;
+ transition: background-color 120ms ease, color 120ms ease, outline-color 120ms ease;
+}
+
+.select-options.select-portal.select-menu [role=option] + [role=option] {
+ margin-top: 3px;
+}
+
+.select-options.select-portal.select-menu [role=option].focused {
+ background: var(--panel-2);
+ color: var(--ink-1);
+ outline-color: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.select-options.select-portal.select-menu [role=option][aria-selected=true] {
+ background: var(--accent-soft);
+ color: var(--accent);
+ font-weight: 600;
+}
+
+.select-options.select-portal.select-menu [role=option][aria-selected=true].focused {
+ outline-color: color-mix(in srgb, var(--accent) 44%, transparent);
+}
+
+.select-options.select-portal.select-menu [role=option] > .select-option-indicator {
+ display: grid;
+ flex: none;
+ place-items: center;
+ width: 22px;
+ height: 22px;
+ border-radius: 7px;
+}
+
+.select-options.select-portal.select-menu [role=option][aria-selected=true] > .select-option-indicator {
+ background: var(--accent);
+ color: var(--on-accent);
+}
+
+@starting-style {
+ .select-options.select-portal.select-menu:popover-open {
+  opacity: 0;
+  transform: translateY(-4px) scale(.985);
+ }
+ .select-options.select-portal.select-menu[data-placement=top]:popover-open {
+  transform: translateY(4px) scale(.985);
+ }
+}
+
+@media (prefers-reduced-motion: reduce) {
+ .select.select-enhanced > .select-trigger,
+ .select.select-enhanced > .select-trigger > svg,
+ .select-options.select-portal.select-menu,
+ .select-options.select-portal.select-menu [role=option] {
+  transition: none;
+ }
+}

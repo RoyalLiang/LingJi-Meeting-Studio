@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { Translate, X } from '@phosphor-icons/react';
+import { Translate } from '@phosphor-icons/react';
 import type { RecordDetail, Segment } from '../model';
 import { ApiError, messageOf } from '../api';
-import { Button, Modal, Status } from './ui';
+import { Button, CloseButton, Modal, Status } from './ui';
 import { Select } from './Select';
 import { useContentFollow } from './useContentFollow';
 
@@ -29,5 +29,5 @@ export function TranslationPanel({ record, ready, close, configure, save, inspec
     {failed.length>0 && <div className="translation-error" role="alert"><p>{failed.length} 条翻译未完成：{messageOf(new ApiError(failed[0].translationError || 'invalid_translation',502))}</p><Button disabled={busy||!ready} onClick={()=>void choose(target)}>重试未完成翻译</Button></div>}
     <div className="translation-content" data-follow-scroll="translation" aria-label="实时译文滚动区" tabIndex={0}><section ref={follow.root} className="translation-segments" aria-label="实时译文">{translated.map(segment=><article key={segment.id} className="translation-segment"><header><span>{segment.speaker || '发言'}</span><Button variant="ghost" onClick={()=>inspect(segment)}>原文</Button></header><p lang={target}>{segment.translation}</p></article>)}{!translated.length && <p className="translation-empty">{record.translationTarget?'正在等待已确认发言的译文，完成后自动显示。':'开启后，已确认的发言会逐句显示译文。'}</p>}{record.translationTarget && segments.length>translated.length && <p className="fine-print">还有 {segments.length-translated.length} 条发言待翻译。</p>}<div ref={follow.end} className="content-follow-anchor" aria-hidden="true"/></section></div>
     <footer className="translation-footer"><Status>{record.translationTarget?'翻译已开启':'翻译已暂停'} · {translated.length}/{segments.length} 条</Status>{!follow.following && record.translationTarget && <Button variant="ghost" onClick={follow.resume}>最新译文</Button>}</footer></>;
-  return mobile ? <Modal title="实时翻译" onClose={close} wide><div className="translation-mobile">{content}</div></Modal> : <aside className="translation-panel glass" aria-label="实时翻译"><header><div className="heading-icon"><Translate size={20}/><h2>实时翻译</h2></div><Button variant="ghost" aria-label="关闭翻译" onClick={close}><X size={20}/></Button></header>{content}</aside>;
+  return mobile ? <Modal title="实时翻译" onClose={close} wide><div className="translation-mobile">{content}</div></Modal> : <aside className="translation-panel glass" aria-label="实时翻译"><header><div className="heading-icon"><Translate size={20}/><h2>实时翻译</h2></div><CloseButton label="关闭翻译" onClick={close}/></header>{content}</aside>;
 }
