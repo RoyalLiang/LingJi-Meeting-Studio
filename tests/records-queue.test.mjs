@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import {readFile} from 'node:fs/promises';
 import {stripTypeScriptTypes} from 'node:module';
 import {IDBFactory,IDBKeyRange,IDBObjectStore} from 'fake-indexeddb';
-const source=stripTypeScriptTypes(await readFile(new URL('../apps/web/src/audio/queue.ts',import.meta.url),'utf8')).replace(/^import .*;$/gm,'').replaceAll('export ','')+'\nObject.assign(exports,{enqueue,drainQueue,setQueueRecords,pendingCount,localManifests,clearRecordAudio,queueStats});';
+const source=stripTypeScriptTypes(await readFile(new URL('../apps/web/src/audio/queue.ts',import.meta.url),'utf8')).replace(/^import .*;$/gm,'').replaceAll('export ','')+'\nObject.assign(exports,{setLocalQueueBackend,enqueue,drainQueue,setQueueRecords,pendingCount,localManifests,clearRecordAudio,queueStats});';
 class ApiError extends Error{constructor(status){super('api');this.status=status;}}
 function harness(indexedDB=new IDBFactory(),api=async()=>{},sessionStorage){
   const exports={};const navigator={onLine:true};vm.runInNewContext(source,{exports,indexedDB,IDBKeyRange,ApiError,api,uploadAudio:(path,chunk)=>api(path,'POST',chunk),navigator,sessionStorage,performance,trace(){},traceEnabled:()=>false,setTimeout,Blob,URL,console});return{...exports,indexedDB,navigator};
@@ -41,4 +41,10 @@ test('offline, logout, 404 retention and 410 cleanup preserve account boundaries
 test('serial rollback uses the indexed format without losing pending audio',async()=>{
   let active=0,maximum=0;const h=harness(undefined,async()=>{active++;maximum=Math.max(maximum,active);await new Promise(resolve=>setTimeout(resolve,1));active--;},{getItem:()=> '1'});h.setQueueRecords(['r']);
   await h.enqueue('r',chunk('mic'));await h.enqueue('r',chunk('tab'));await h.drainQueue();assert.equal(maximum,1);assert.equal(await h.pendingCount(),0);
+});
+
+test('local backend drains durable queue without internet while Web queue stays offline',async()=>{
+  let uploads=0;const h=harness(new IDBFactory(),async()=>{uploads++;});h.setQueueRecords(['local']);
+  h.navigator.onLine=false;await h.enqueue('local',chunk());await h.drainQueue();assert.equal(uploads,0);assert.equal(await h.pendingCount('local'),1);
+  h.setLocalQueueBackend(true);await h.drainQueue();assert.equal(uploads,1);assert.equal(await h.pendingCount('local'),0);
 });

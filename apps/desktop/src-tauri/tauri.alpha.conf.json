@@ -1,10 +1,10 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "聆记 Alpha",
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0-alpha.5",
   "bundle": {
     "macOS": {
-      "bundleVersion": "0.1.3",
+      "bundleVersion": "0.1.5",
       "signingIdentity": "-",
       "dmg": {
         "background": "../assets/macos-installer-background.tiff",
@@ -21,6 +21,10 @@
           "y": 250
         }
       }
+    },
+    "resources": {
+      "resources/client-backend/": "client-backend/",
+      "resources/runtime/": "runtime/"
     }
   }
 }

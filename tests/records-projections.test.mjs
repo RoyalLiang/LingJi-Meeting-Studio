@@ -1,10 +1,13 @@
+import {encodeStorage,decodeStorage} from '../services/records/src/storage-codec.mjs';
+import {recoverTemporaryAudio,recoverLocalWork} from '../services/records/src/desktop-backend.mjs';
+import {createAuth} from '../services/records/src/auth.mjs';
 import { webcrypto } from 'node:crypto';
 import { createRecordServer } from '../services/records/src/server.mjs';
 import { digest } from '../packages/records/src/record.mjs';
 import { runCycle } from '../services/records/src/worker.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,rm,readFile} from 'node:fs/promises';
+import {mkdtemp,rm,readFile,mkdir,writeFile,stat} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import vm from 'node:vm';
@@ -14,6 +17,28 @@ import {createRecord,emit,publicRecord} from '../packages/records/src/record.mjs
 import {DatabaseSync} from 'node:sqlite';
 const js=stripTypeScriptTypes(await readFile(new URL('../apps/web/src/record-subscription.ts',import.meta.url),'utf8')).replaceAll('export function','function')+'\nexports.apply=applyRecordDelta;';
 const exported={};vm.runInNewContext(js,{exports:exported});
+test('owned client restart recovers stream and workspace leases; local session lasts only its backend generation',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'client-recover-'));const repo=await createRepository({root});
+  try {
+    const record=createRecord('owner',{});record.sources.push({id:'source',asr:{state:'running',lease:Date.now()+90000,fence:'old',attempts:2}});
+    record.capture='recording';record.jobs.push({id:'job',status:'running',lease:Date.now()+150000,fence:'old'});
+    await repo.insert(record);await repo.insert({id:'analysis-test',kind:'workspace-analysis',status:'running',lease:Date.now()+150000,fence:'old'});
+    const audio=join(root,'audio',record.id);await mkdir(audio,{recursive:true});
+    const temporary=join(audio,'.tmp-00000000-0000-0000-0000-000000000000');await writeFile(temporary,'uncommitted');
+    const protectedFile=join(audio,'unrelated');await writeFile(protectedFile,'keep');
+    const pending=join(root,'audio','.pending','.tmp-00000000-0000-0000-0000-000000000000');await writeFile(pending,'uncommitted');
+    await recoverTemporaryAudio(root);await assert.rejects(stat(pending),{code:'ENOENT'});await assert.rejects(stat(temporary),{code:'ENOENT'});assert.equal(await readFile(protectedFile,'utf8'),'keep');
+    await recoverLocalWork(repo);const restored=await repo.get(record.id);
+    assert.equal(restored.capture,'recording','do not seal before the durable WebView queue recovers');
+    assert.equal(restored.sources[0].asr.lease,undefined);assert.equal(restored.sources[0].asr.fence,undefined);assert.equal(restored.sources[0].asr.attempts,2);
+    assert.equal(restored.jobs[0].status,'queued');assert.equal((await repo.get('analysis-test')).status,'queued');
+    const auth=await createAuth(repo,{localAccount:true});const cookie=(await auth.localSession()).split(';')[0];
+    assert.ok(!(await auth.localSession()).includes('Max-Age='));
+    const token=JSON.parse(Buffer.from(cookie.split('=')[1].split('.')[0],'base64url').toString());assert.equal(token.expires,null);
+    assert.equal((await auth.user({headers:{cookie}})).email,'local@device.invalid');
+    const restartedAuth=await createAuth(repo,{localAccount:true});await assert.rejects(restartedAuth.user({headers:{cookie}}),{code:'login_required'});
+  } finally {await repo.close();await rm(root,{recursive:true,force:true});}
+});
 test('transactional projection deltas, rollback, lightweight listing and derived feed rebuild',async()=>{
   const root=await mkdtemp(join(tmpdir(),'record-projection-'));let repo=await createRepository({root});
   try{
@@ -114,4 +139,37 @@ test('PCM and JSON share durable receipts, duplicate detection, pause and final 
     assert.equal(completed.capture, 'completed');
     assert.equal(completed.chunks.filter(chunk => chunk.state === 'done').length, 2);
   } finally { await app.stop(); await rm(root, { recursive: true, force: true }); }
+});
+
+
+test('lossless storage validates hashes, bounded expansion, noise fallback and legacy PCM',()=>{
+  const bytes=Buffer.from('无损存储与版本校验'.repeat(2000)),packed=encodeStorage(bytes);
+  assert.equal(packed.compressed,true);assert.ok(packed.bytes.length<bytes.length/5);assert.deepEqual(decodeStorage(packed.bytes),bytes);
+  const corrupt=Buffer.from(packed.bytes);corrupt[9]^=1;assert.throws(()=>decodeStorage(corrupt),e=>e.code==='storage_corrupt');
+  const bomb=Buffer.from(packed.bytes);bomb.writeUInt32BE(100*1024*1024,5);assert.throws(()=>decodeStorage(bomb),e=>e.code==='storage_corrupt');
+  const legacy=Buffer.from('LJZ1 legacy PCM');assert.deepEqual(decodeStorage(legacy,digest(legacy)),legacy);
+  let seed=1;const noise=Buffer.alloc(32000);for(let i=0;i<noise.length;i++){seed^=seed<<13;seed^=seed>>>17;seed^=seed<<5;noise[i]=seed&255;}
+  const random=encodeStorage(noise);assert.equal(random.compressed,false);assert.deepEqual(decodeStorage(random.bytes,digest(noise)),noise);
+});
+
+test('compressed SQLite payloads and PCM preserve atomic rollback, projections and restart',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'client-compressed-'));let repo=await createRepository({root,compressAggregates:true,compressAudio:true});
+  try{
+    const record=createRecord('owner',{title:'Local storage',retainAudio:true});record.notes='Synthetic local notes '.repeat(4000);record.gcAt=Date.now();
+    await repo.insert(record);const initial=await repo.get(record.id),audio=Buffer.alloc(32000,0);
+    const object=await repo.putAudio(record.id,audio);assert.deepEqual(await repo.readAudio(object.object),audio);
+    assert.deepEqual(await repo.putAudio(record.id,audio),object);
+    const plainPath=join(root,'audio',object.object);assert.ok((await readFile(plainPath)).length<audio.length/5);
+    await assert.rejects(repo.change(record.id,r=>{r.notes='should roll back';emit(r,'notes.changed');throw new Error('abort');}));
+    assert.deepEqual(await repo.get(record.id),initial);
+    await repo.change(record.id,r=>{r.notes+=' confirmed';emit(r,'notes.changed');});const latest=await repo.get(record.id);
+    assert.equal((await repo.eventsAfter(record.id,initial.cursor)).events.length,1);
+    assert.equal((await repo.listSummaries('owner')).length,1);
+    await repo.close();const db=new DatabaseSync(join(root,'records.sqlite'));
+    const metadata=JSON.parse(db.prepare('SELECT data FROM aggregates WHERE id=?').get(record.id).data);
+    assert.equal(metadata.$payload,'deflate-v1');assert.ok(db.prepare('SELECT length(payload) size FROM aggregate_payloads WHERE id=?').get(record.id).size<Buffer.byteLength(JSON.stringify(latest))/5);db.close();
+    repo=await createRepository({root});assert.deepEqual(await repo.get(record.id),latest);assert.deepEqual(await repo.readAudio(object.object),audio);
+    await repo.change(record.id,r=>{r.title='Plain-compatible write';emit(r,'record.changed');});assert.equal((await repo.get(record.id)).title,'Plain-compatible write');
+    await repo.close();repo=await createRepository({root,compressAggregates:true});assert.equal((await repo.get(record.id)).title,'Plain-compatible write');
+  }finally{await repo.close();await rm(root,{recursive:true,force:true});}
 });

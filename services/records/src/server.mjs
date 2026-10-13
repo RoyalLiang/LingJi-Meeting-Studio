@@ -74,6 +74,7 @@ export async function createRecordServer(options = {}) {
       const url = new URL(req.url, 'http://localhost'), path = url.pathname;
       if (path === '/api/health') { await repo.list('health-probe'); send(res, 200, { ok: true, service: 'records', storage: repo.backend, audioStorage: repo.audioBackend }); return; }
       requireThat(path.startsWith('/api/'), 'not_found', 404);
+      requireThat(!options.localAccount || !/^\/api\/auth\/(register|login|logout)$/.test(path), 'not_found', 404);
       if (!['GET', 'HEAD'].includes(req.method) && req.headers.origin) {
         const allowed = options.origin || process.env.RECORD_PUBLIC_ORIGIN;
         const host = req.headers.host;
@@ -106,7 +107,7 @@ export async function createRecordServer(options = {}) {
       }
       if (path === '/api/diagnostics/traces' && req.method === 'GET') { requireThat(canConfigure(user), 'configuration_admin_required', 403); send(res,200,telemetry.snapshot()); return; }
       if (path === '/api/bootstrap' && req.method === 'GET') {
-        send(res, 200, { email: user.email, csrf: auth.csrf(user), audioTransport: 'pcm-v1', providers: providerStatus(await readConfig(repo.root)), limits: { maxMinutes: 120, maxRecords: 200, maxChunkSeconds: 15 }, storage: repo.backend, canConfigure: canConfigure(user) }); return;
+        send(res, 200, { email: user.email, csrf: auth.csrf(user), audioTransport: 'pcm-v1', localAccount: Boolean(options.localAccount), providers: providerStatus(await readConfig(repo.root)), limits: { maxMinutes: 120, maxRecords: 200, maxChunkSeconds: 15 }, storage: repo.backend, canConfigure: canConfigure(user) }); return;
       }
       if (path === '/api/settings/providers/test' && req.method === 'POST') {
         requireThat(canConfigure(user), 'configuration_admin_required', 403);
@@ -278,7 +279,7 @@ export async function createRecordServer(options = {}) {
     }
   });
   server.requestTimeout = 30000; server.headersTimeout = 15000;
-  return { repo, server, start: () => new Promise(resolve => server.listen(options.port ?? Number(process.env.RECORD_API_PORT || 3030), options.host || '127.0.0.1', () => resolve(server.address()))),
+  return { repo, server, localSession: () => auth.localSession?.(), start: () => new Promise(resolve => server.listen(options.port ?? Number(process.env.RECORD_API_PORT || 3030), options.host || '127.0.0.1', () => resolve(server.address()))),
     stop: async () => { for (const stream of streams) stream.end(); await new Promise(resolve => server.close(resolve)); await repo.close(); } };
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

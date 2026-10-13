@@ -1,11 +1,12 @@
 import { cursorKey, deriveProjection, visibleSnapshot } from './projections.mjs';
 import { automaticMinutesAt } from '../../../packages/records/src/automation.mjs';
-import { mkdir, open, readFile, readdir, rm, stat } from 'node:fs/promises';
+import { mkdir, open, readFile, readdir, rm, stat, link } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { DomainError, requireThat } from '../../../packages/records/src/record.mjs';
 import { createS3Objects } from './s3.mjs';
 import { telemetry } from './telemetry.mjs';
+import { encodeStorage, decodeStorage } from './storage-codec.mjs';
 
 function traceWrite(value){if(telemetry.enabled)telemetry.event('db.write',{recordId:value.id,bytes:Buffer.byteLength(JSON.stringify(value))});}
 function schedule(value) {
@@ -38,6 +39,8 @@ export async function createRepository(options = {}) {
   await mkdir(root, { recursive: true, mode: 0o700 });
   let db, pool;
   const objects = await createS3Objects(options.s3);
+  const audioStaging = join(root, 'audio', '.pending');
+  if (!objects) await mkdir(audioStaging, { recursive: true, mode: 0o700 });
   const databaseUrl = options.databaseUrl ?? process.env.RECORD_DATABASE_URL;
   if (databaseUrl) {
     const { Pool } = await import('pg'); pool = new Pool({ connectionString: databaseUrl });
@@ -47,6 +50,8 @@ export async function createRepository(options = {}) {
     const { DatabaseSync } = await import('node:sqlite'); db = new DatabaseSync(join(root, 'records.sqlite'));
     db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS aggregates (id TEXT PRIMARY KEY, data TEXT NOT NULL)');
     db.exec("CREATE INDEX IF NOT EXISTS work_due ON aggregates(json_extract(data, '$.nextWorkAt'))");
+    db.exec('CREATE TABLE IF NOT EXISTS aggregate_payloads(id TEXT PRIMARY KEY, payload BLOB NOT NULL)');
+    if (options.compressAggregates) db.exec('PRAGMA wal_autocheckpoint=256; PRAGMA journal_size_limit=16777216');
   }
   if (pool) {
     await pool.query('CREATE TABLE IF NOT EXISTS record_list_projection(id text PRIMARY KEY,data jsonb NOT NULL)');
@@ -69,7 +74,25 @@ export async function createRepository(options = {}) {
     for(const event of projection.events) await client.query('INSERT INTO record_feed_events(record_id,cursor,data) VALUES($1,$2,$3) ON CONFLICT(record_id,cursor) DO UPDATE SET data=excluded.data',[value.id,cursorKey(event.cursor),JSON.stringify(event)]);
     await client.query('DELETE FROM record_feed_events WHERE record_id=$1 AND cursor<$2',[value.id,cursorKey(projection.meta.first)]);
   }
-  const decode = row => row ? typeof row.data === 'string' ? JSON.parse(row.data) : row.data : null;
+  const decode = row => {
+    const value = row ? (typeof row.data === 'string' ? JSON.parse(row.data) : row.data) : null;
+    if (!pool && value?.$payload === 'deflate-v1') {
+      const stored = db.prepare('SELECT payload FROM aggregate_payloads WHERE id=?').get(value.id);
+      requireThat(stored, 'storage_corrupt', 500);
+      return JSON.parse(decodeStorage(stored.payload).toString());
+    }
+    return value;
+  };
+  function writeSqliteValue(value, insert = false) {
+    const json = JSON.stringify(value);
+    const packed = options.compressAggregates && value.kind === 'record' ? encodeStorage(Buffer.from(json)) : { compressed: false };
+    const metadata = packed.compressed ? JSON.stringify({ id: value.id, kind: value.kind, owner: value.owner, deleted: value.deleted, deleteAt: value.deleteAt, nextWorkAt: value.nextWorkAt, $payload: 'deflate-v1' }) : json;
+    if (insert) db.prepare('INSERT INTO aggregates(id,data) VALUES(?,?)').run(value.id, metadata);
+    else db.prepare('UPDATE aggregates SET data=? WHERE id=?').run(metadata, value.id);
+    if (packed.compressed) db.prepare('INSERT INTO aggregate_payloads(id,payload) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload').run(value.id, packed.bytes);
+    else db.prepare('DELETE FROM aggregate_payloads WHERE id=?').run(value.id);
+  }
+
   const repository = {
     root, backend: pool ? 'postgres' : 'sqlite', audioBackend: objects ? 's3' : 'filesystem',
     async get(id) { return decode(pool ? (await pool.query('SELECT data FROM record_aggregates WHERE id=$1', [id])).rows[0]
@@ -101,7 +124,7 @@ export async function createRepository(options = {}) {
       try {
         if(client) await client.query('BEGIN'); else db.exec('BEGIN IMMEDIATE');
         if (client) await client.query('INSERT INTO record_aggregates(id,data) VALUES($1,$2)', [value.id, JSON.stringify(value)]);
-        else db.prepare('INSERT INTO aggregates(id,data) VALUES(?,?)').run(value.id, JSON.stringify(value));
+        else writeSqliteValue(value, true);
         if(client){await writePgProjection(client,value);await client.query('COMMIT');}else{writeSqliteProjection(value);db.exec('COMMIT');}
       } catch (error) { if(client)await client.query('ROLLBACK');else db.exec('ROLLBACK'); if (error.code === '23505' || error.code?.startsWith('ERR_SQLITE')) throw new DomainError('already_exists'); throw error; } finally {client?.release();}
       return value;
@@ -121,7 +144,7 @@ export async function createRepository(options = {}) {
           schedule(value);
           traceWrite(value);
           if (client) await client.query('UPDATE record_aggregates SET data=$2 WHERE id=$1', [value.id, JSON.stringify(value)]);
-          else db.prepare('UPDATE aggregates SET data=? WHERE id=?').run(JSON.stringify(value), value.id);
+          else writeSqliteValue(value);
           if(client)await writePgProjection(client,value,snapshots.get(value.id));else writeSqliteProjection(value,snapshots.get(value.id));
         }
         if (client) await client.query('COMMIT'); else db.exec('COMMIT');
@@ -138,13 +161,15 @@ export async function createRepository(options = {}) {
         const value = decode(client ? (await client.query('SELECT data FROM record_aggregates WHERE id=$1 FOR UPDATE', [id])).rows[0]
           : db.prepare('SELECT data FROM aggregates WHERE id=?').get(id));
         requireThat(value, 'not_found', 404);
+        const original = JSON.stringify(value);
         const before=rebuild ? null : visibleSnapshot(value);
       const result = mutate(value);
         requireThat(!(result instanceof Promise), 'transaction_must_be_synchronous', 500);
+        if (!rebuild && JSON.stringify(value) === original) { if (client) await client.query('COMMIT'); else db.exec('COMMIT'); return structuredClone(result ?? value); }
         schedule(value);
         traceWrite(value);
         if (client) await client.query('UPDATE record_aggregates SET data=$2 WHERE id=$1', [id, JSON.stringify(value)]);
-        else db.prepare('UPDATE aggregates SET data=? WHERE id=?').run(JSON.stringify(value), id);
+        else writeSqliteValue(value);
         if(client)await writePgProjection(client,value,before);else writeSqliteProjection(value,before);
         if (client) await client.query('COMMIT'); else db.exec('COMMIT');
         return structuredClone(result ?? value);
@@ -152,23 +177,32 @@ export async function createRepository(options = {}) {
       finally { client?.release(); }
     },
     async putAudio(recordId, bytes) {
+      bytes = Buffer.from(bytes);
       if (objects) return objects.put(recordId, bytes);
       requireThat(/^[a-f0-9-]{36}$/.test(recordId), 'invalid_record_id', 400);
       const hash = createHash('sha256').update(bytes).digest('hex');
       const directory = join(root, 'audio', recordId); await mkdir(directory, { recursive: true, mode: 0o700 });
       const file = join(directory, hash);
-      try { const handle = await open(file, 'wx', 0o600); try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
-        const dir = await open(directory, 'r'); try { await dir.sync(); } finally { await dir.close(); }
-      } catch (error) {
-        if (error.code !== 'EEXIST') throw error;
-        requireThat(createHash('sha256').update(await readFile(file)).digest('hex') === hash, 'audio_object_corrupt', 500);
-      }
+      const temporary = join(audioStaging, `.tmp-${randomUUID()}`);
+      try {
+        const stored = options.compressAudio ? encodeStorage(bytes).bytes : bytes;
+        const handle = await open(temporary, 'wx', 0o600);
+        try { await handle.writeFile(stored); await handle.sync(); } finally { await handle.close(); }
+        try { await link(temporary, file); }
+        catch (error) {
+          if (error.code !== 'EEXIST') throw error;
+          let original;
+          try { original = decodeStorage(await readFile(file), hash); } catch { throw new DomainError('audio_object_corrupt', 500); }
+          requireThat(original.equals(bytes), 'audio_object_corrupt', 500);
+        }
+      } finally { await rm(temporary, { force: true }); }
+      const dir = await open(directory, 'r'); try { await dir.sync(); } finally { await dir.close(); }
       return { digest: hash, object: `${recordId}/${hash}` };
     },
     async readAudio(object) {
       if (objects) return objects.read(object);
       requireThat(/^[a-f0-9-]{36}\/[a-f0-9]{64}$/.test(object), 'invalid_object', 400);
-      return readFile(join(root, 'audio', object));
+      return decodeStorage(await readFile(join(root, 'audio', object)), object.split('/')[1]);
     },
     async cleanAudio(recordId, liveObjects = new Set(), olderThan = Infinity) {
       if (objects) return objects.clean(recordId, liveObjects, olderThan);

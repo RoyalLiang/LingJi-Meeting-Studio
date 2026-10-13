@@ -24,6 +24,10 @@
       "minimumSystemVersion": "14.6",
       "infoPlist": "Info.plist",
       "entitlements": "Entitlements.plist"
+    },
+    "resources": {
+      "resources/client-backend/": "client-backend/",
+      "resources/runtime/": "runtime/"
     }
   },
   "plugins": {

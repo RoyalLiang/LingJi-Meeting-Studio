@@ -4,7 +4,9 @@
 
 ## 启动与构建
 
-先按[运行手册](runbook.md)安装依赖并启动 Record API 与 worker。默认 API 为 `http://127.0.0.1:3030`；模型配置仍只在服务端。原生客户端不启动或重启已有服务。
+Apple Silicon Alpha 5 内置 **Node 24.21.0、SQLite 3.53.4、Record API 和 worker**。打开应用时由原生进程启动独立后台，退出时关闭其子进程；无需启动 Web 开发服务或在本机安装 Node。版本、缓存校验和依赖复制由 `scripts/prepare-client-backend.mjs` 管理。目前随包运行时的构建路径只覆盖 macOS arm64；Windows/Linux 的独立后台发行包仍待适配验证。
+
+在项目根目录安装依赖，再启动或构建客户端：
 
 ```sh
 npm install
@@ -13,15 +15,19 @@ npm run build:client
 npm run test:client
 ```
 
-`dev:client` 先构建 Web，再启动原生窗口；本阶段没有 Vite 热更新。修改 Web 后重新运行。开发需要 Rust 1.90+ 和[各平台 Tauri 前置依赖](https://v2.tauri.app/start/prerequisites/)。Linux 另外需要 ALSA/PipeWire 开发库，例如 `libasound2-dev libpipewire-0.3-dev libclang-dev`；运行时需要 PipeWire 服务才能采集系统播放声音。
+`dev:client` 先构建 Web、准备后台资源，再启动原生窗口；本阶段没有 Vite 热更新。修改 Web 后重新运行。首次准备资源会从 Node 官方站点下载固定版本，核对 SHA-256 后复用项目本地缓存。开发需要 Rust 1.90+ 和[各平台 Tauri 前置依赖](https://v2.tauri.app/start/prerequisites/)。Linux 音频构建另外需要 ALSA/PipeWire 开发库，例如 `libasound2-dev libpipewire-0.3-dev libclang-dev`；运行时需要 PipeWire 服务才能采集系统播放声音。
 
-开发可用 `TTS_RECORD_API_URL` 指定服务根地址。安装包在应用配置目录读取 `client.json`：
+正式安装包始终使用内置后台。它不读取 Web 项目的 `.env`，不复用开发后台、数据库或供应商密钥，也不使用旧 `client.json` 中的 `apiUrl`。只有 debug 或显式 `smoke-test` 构建可以通过 `TTS_RECORD_API_URL` 连接外部开发/测试 API。该入口仍校验 HTTPS 根地址或本机 HTTP，并拒绝路径、账户、查询参数和片段。原生代理校验 WebView Origin 后转发 API；后台仅监听本机回环地址，由原生进程注入私有账户会话。
 
-```json
-{"apiUrl":"https://records.example.com"}
-```
+配置目录由 Tauri `app_config_dir` 确定，标识为 `com.tts.meeting`；macOS 通常为 `~/Library/Application Support/com.tts.meeting`。独立后台数据位于其 `backend/` 子目录，`TTS_CLIENT_DATA_DIR` 仅供隔离开发/测试。WebView 使用稳定的独立后台 profile，后台监听端口改变不会改变它；旧外部后台 profile 与未补传 IndexedDB 数据保留，不自动迁移到新账户或新后台。
 
-默认目录由 Tauri `app_config_dir` 确定，标识为 `com.tts.meeting`（macOS 通常为 `~/Library/Application Support/com.tts.meeting`，Windows 为 `%APPDATA%\com.tts.meeting`，Linux 为 `$XDG_CONFIG_HOME/com.tts.meeting`）。`TTS_CLIENT_DATA_DIR` 仅供隔离开发/测试。允许远程 HTTPS 根地址与本机 HTTP；拒绝路径、账户、查询参数、片段及非本机明文 HTTP。本地代理先校验 WebView 的 Origin，再使用已配置上游的 Host/Origin 和原 CSRF token 转发；服务端固定公开 Origin 应等于 `apiUrl`。真实远程 HTTPS 部署仍需单独集成验证。
+## 保存会议与供应商配置
+
+独立后台自动创建本机账户，无需用开发账户或密码登录。在客户端 **设置** 中单独填写 ASR、LLM 和翻译服务配置。首次安装没有可用的供应商密钥；本地保存与读取历史不依赖 Web 开发后台，云端转录和纪要仍需要网络及有效的供应商配置。该账户属于当前本机数据目录，不提供跨设备同步或团队账户管理。
+
+SQLite 使用 WAL、FULL 同步和同一后台连接保存 Record、会话、转录、纪要与任务状态。较大的 Record JSON 以无损 deflate 压缩保存，调度与列表所需字段保留为可查询元数据；聚合负载与投影在同一事务提交。没有变化的聚合跳过重写。音频仍按原始 PCM 的 SHA-256 存为不可变文件，压缩有收益时使用带长度与哈希校验的无损格式，没有收益时保留原始字节；读取兼容旧原始对象。音频文件先持久化，再提交领域状态与 ACK。压缩没有改变音频标识、重传幂等或停止排空协议。
+
+目录权限为 `0700`，后台配置与日志文件为 `0600`。供应商密钥保存在本机 `backend/providers.json` 的明文配置中；文件权限和压缩均不等于加密。本轮没有接入 Keychain、数据库加密或自动备份。保留 SQLite 的理由与替代方案边界见[本地存储调研](../research/client-local-storage-2026-10-13.md)，结构与生命周期见 [proposed ADR 0013](../adr/0013-standalone-client-storage.md)。
 
 ## 音源与生命周期
 
@@ -39,9 +45,11 @@ npm run test:client
 
 ## 登录、离线与分发边界
 
-上游登录 cookie 仅在 Rust 内存中，重启须重新登录；本机连接 cookie 与上游认证分开。每个服务使用稳定本地来源与隔离 WebView 存储；同服务重启保留 IndexedDB，不自动搬迁浏览器中的旧队列。端口被占用时启动失败，释放后重试。离线可以打开内置页面，登录和服务端历史仍需 API；已登录后产生的离线录音按既有队列策略补传。
+Apple Silicon Alpha 5 可在 Web 开发后台没有运行时打开页面、使用本机账户并读取本地历史。客户端采集仍先落入最多 48 MiB 的 WebView IndexedDB 队列，收到本地后台持久 ACK 后删除；本机回环传输不依赖操作系统的联网标记。云端供应商不可用时，后台保留待处理音频和任务，恢复网络及有效配置后继续处理。队列上限、失败提示与停止排空行为继续生效。
 
-本机 `.app` 属于开发验收包。[安全更新](client-updates.md)与[GitHub 发版工作流](../releases/github-client.md)已实现本地版本；只有编入可信公钥与更新源的新安装包才启用更新。对外发行的 Developer ID/公证、Windows 签名、Linux 安装依赖与真实应用升级尚未验收；自动回滚未实现。不要把源码支持、单元测试或 macOS 包启动描述为三系统实机交付或省电证明。
+后台重启会恢复中断的任务租约。不同后台或浏览器中的会议与待补传数据不会自动合并；升级前先结束旧会议并确认旧队列排空。旧数据保留在原服务或原 profile，可通过原环境访问。
+
+当前 `.app` 属于本机 Alpha 验收包，采用 ad-hoc 签名，尚未完成 Developer ID 签名与公证。[安全更新](client-updates.md)与[GitHub 发版工作流](../releases/github-client.md)已实现本地版本；只有编入可信公钥与更新源的新安装包才启用更新。Windows/Linux 发行包、全新 Mac 首次安装和真实实体音频仍须各自验收。
 
 ## 重复验证
 
@@ -54,6 +62,6 @@ npm run build:client
 node scripts/test-native-package.mjs
 ```
 
-合成场景脚本只用于显式 `smoke-test` 构建，创建隔离数据目录和 API，不访问现有会议、不打开真实设备或供应商。正式构建不启用该 feature，也不提供测试 IPC；`test-native-package.mjs` 验证正式包忽略模拟环境变量并运行内置 React。平台包可通过 `NATIVE_CLIENT_EXECUTABLE` 指向相应可执行文件。正式 `.app` 单独构建可用 `npm exec --workspace apps/desktop -- tauri build --bundles app`。
+合成场景脚本只用于显式 `smoke-test` 构建，创建隔离数据目录和 API，不访问现有会议、不打开真实设备或供应商。正式构建不启用该 feature，也不提供测试 IPC；正式包验证须覆盖独立后台启动、隔离账户、持久化重启与内置 React 页面，测试证据以本次 Alpha 发版记录为准。平台包可通过 `NATIVE_CLIENT_EXECUTABLE` 指向相应可执行文件。正式 `.app` 单独构建可用 `npm exec --workspace apps/desktop -- tauri build --bundles app`。
 
 Linux 发行构建采用 Ubuntu 24.04 基线，CPAL PipeWire 接口要求 0.3.53+；不保证旧 glibc 或 Ubuntu 22.04 可直接运行发行 AppImage。

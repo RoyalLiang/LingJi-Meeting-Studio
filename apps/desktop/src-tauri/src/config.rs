@@ -54,7 +54,7 @@ pub fn read_config(directory: &Path) -> Result<Config, String> {
     })
 }
 
-pub fn bind(directory: &Path, api_url: &str) -> Result<Binding, String> {
+pub fn acquire_lock(directory: &Path) -> Result<File, String> {
     fs::create_dir_all(directory).map_err(|e| e.to_string())?;
     let lock = OpenOptions::new()
         .read(true)
@@ -65,6 +65,15 @@ pub fn bind(directory: &Path, api_url: &str) -> Result<Binding, String> {
         .map_err(|e| e.to_string())?;
     lock.try_lock_exclusive()
         .map_err(|_| "此客户端已打开，请使用已有窗口".to_string())?;
+    Ok(lock)
+}
+
+#[cfg(test)]
+pub fn bind(directory: &Path, api_url: &str) -> Result<Binding, String> {
+    bind_with_lock(directory, api_url, acquire_lock(directory)?)
+}
+
+pub fn bind_with_lock(directory: &Path, api_url: &str, lock: File) -> Result<Binding, String> {
     let registry = directory.join("profiles.json");
     let mut profiles: BTreeMap<String, u16> = if registry.exists() {
         serde_json::from_slice(&fs::read(&registry).map_err(|e| e.to_string())?)

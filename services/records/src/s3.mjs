@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
-import { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, DeleteObjectsCommand, GetBucketVersioningCommand } from '@aws-sdk/client-s3';
 import { requireThat } from '../../../packages/records/src/record.mjs';
 
 // All object operations stay within this application's record-specific prefix.
 export async function createS3Objects(options = {}) {
   const bucket = options.bucket || process.env.RECORD_S3_BUCKET;
   if (!bucket) return null;
+  const { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, DeleteObjectsCommand, GetBucketVersioningCommand } = await import('@aws-sdk/client-s3');
   const client = options.client || new S3Client({ region: process.env.AWS_REGION || 'us-east-1', endpoint: process.env.RECORD_S3_ENDPOINT || undefined,
     forcePathStyle: process.env.RECORD_S3_PATH_STYLE === 'true', maxAttempts: 3 });
   const versioning = await client.send(new GetBucketVersioningCommand({ Bucket: bucket }));
