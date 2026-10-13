@@ -62,9 +62,26 @@ test('legacy summaries remain excerpts and unknown voices never become invented 
   assert.equal(topicBranches(minutes)[0].title,'讨论重点');
 });
 
+test('explicit table topic identity is unique and does not replace frozen row evidence', () => {
+  const value = { ...base(), topics: [{ id: 'release', title: '发布', summary: '发布准备', evidence: [ref(0)] }], tables: [{
+    title: '回归安排', topicId: 'release', columns: ['工作', '时间'], rows: [{ cells: ['测试', '周四'], evidence: [ref(1)] }],
+  }] };
+  assert.equal(validateMinutes(value, snapshot), value);
+  for (const id of ['', null, ' '.repeat(3), 'x'.repeat(81)]) {
+    const invalid = structuredClone(value); invalid.topics[0].id = id;
+    assert.throws(() => validateMinutes(invalid, snapshot), { code: 'invalid_minutes_topics' });
+  }
+  const duplicate = structuredClone(value); duplicate.topics.push(structuredClone(duplicate.topics[0]));
+  assert.throws(() => validateMinutes(duplicate, snapshot), { code: 'invalid_minutes_topics' });
+  const missing = structuredClone(value); missing.tables[0].topicId = 'unknown';
+  assert.throws(() => validateMinutes(missing, snapshot), { code: 'invalid_minutes_tables' });
+  const stale = structuredClone(value); stale.tables[0].rows[0].evidence[0].revision = 9;
+  assert.throws(() => validateMinutes(stale, snapshot), { code: 'invalid_minutes_tables' });
+});
+
 test('configured model request generates and commits new views with the frozen transcript identity', async t => {
   let instruction='';
-  const result={...base(),speakerSummaries:[{speakerId:'person-b',speaker:'说话人 2',summary:'承担回归测试。',evidence:[ref(1)]}],decisions:[{text:'周五发布。',evidence:[ref(0)]}]};
+  const result={...base(),topics:[{id:'release',title:'发布准备',summary:'发布前完成回归。',evidence:[ref(0)]}],tables:[{topicId:'release',title:'回归安排',columns:['工作','时间'],rows:[{cells:['回归测试','周四'],evidence:[ref(1)]}]}],speakerSummaries:[{speakerId:'person-b',speaker:'说话人 2',summary:'承担回归测试。',evidence:[ref(1)]}],decisions:[{text:'周五发布。',evidence:[ref(0)]}]};
   const server=http.createServer(async(req,res)=>{
     let body='';for await(const chunk of req)body+=chunk;
     instruction=JSON.parse(body).messages[0].content;
@@ -77,8 +94,11 @@ test('configured model request generates and commits new views with the frozen t
   const job=requestMinutes(record,{mode:'model'});job.fence='test-fence';
   const minutes=await generateMinutes(job,{LLM_API_URL:`http://127.0.0.1:${server.address().port}`,LLM_API_KEY:'fixture-key',LLM_MODEL:'fixture-model',LLM_PROTOCOL:'chat-completions'});
   assert.match(instruction,/speakerSummaries/);assert.match(instruction,/decisions/);assert.match(instruction,/speakerId/);
+  assert.match(instruction,/topicId/);
   commitMinutes(record,job.id,minutes,job.fence);
   assert.equal(record.minutes.speakerSummaries[0].speakerId,'person-b');
   assert.equal(record.minutes.decisions[0].evidence[0].revision,1);
   assert.equal(record.minutes.evidenceSnapshot[1].revision,2);
+  assert.equal(record.minutes.topics[0].id,'release');
+  assert.equal(record.minutes.tables[0].topicId,'release');
 });

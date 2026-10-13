@@ -153,15 +153,16 @@ export function requestMinutes(record, input = {}) {
   requireThat(scope === 'live' || record.capture === 'completed', 'record_not_finalized');
   requireThat(record.segments.length > 0, 'empty_transcript');
   const template = input.template || 'meeting'; requireThat(templates.includes(template), 'unknown_template', 400);
-  const snapshot = (scope === 'live' ? record.segments.slice(-120) : record.segments).map(({versions, ...s}) => ({ ...s }));
+  const snapshotOffset = scope === 'live' ? Math.max(0,record.segments.length-120) : 0;
+  const snapshot = record.segments.slice(snapshotOffset).map(({versions, ...s}) => ({ ...s }));
   const manifestHash = digest(JSON.stringify(snapshot));
-  const key = `${record.id}:${record.transcriptRevision}:${manifestHash}:${template}:v2:${record.notesRevision}:${input.modelVersion || 'default'}:${input.mode || 'model'}:${scope}`;
+  const key = `${record.id}:${record.transcriptRevision}:${manifestHash}:${template}:v3:${record.notesRevision}:${input.modelVersion || 'default'}:${input.mode || 'model'}:${scope}`;
   const existing = record.jobs.find(j => j.key === key && !['failed', 'stale', 'cancelled'].includes(j.status));
   if (existing) return existing;
   for(const job of record.jobs)if(['queued','running'].includes(job.status) && job.scope==='live' && (scope==='final' || job.status==='queued')){job.status='cancelled';job.fence=null;job.snapshot=[];delete job.preview;}
   requireThat(record.jobs.filter(j => ['queued', 'running'].includes(j.status)).length < 3, 'job_limit', 429);
   const job = { id: randomUUID(), key, status: 'queued', transcriptRevision: record.transcriptRevision, notesRevision: record.notesRevision,
-    baseMinutesRevision: record.minutesRevision, generation: record.generation, template, scope, automatic: input.automatic === true, mode: input.mode || 'model', modelVersion: input.modelVersion || 'default', snapshot, notes: record.notes, manifestHash,
+    baseMinutesRevision: record.minutesRevision, generation: record.generation, template, scope, automatic: input.automatic === true, mode: input.mode || 'model', modelVersion: input.modelVersion || 'default', snapshot, snapshotOffset, notes: record.notes, manifestHash,
     createdAt: new Date().toISOString(), attempts: 0 };
   record.jobs.push(job); emit(record, 'minutes.queued', { jobId: job.id }); return job;
 }

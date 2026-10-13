@@ -22,7 +22,7 @@ const { MinutesPanel } = module.exports;
 const helpers = {};
 const helperSource = (await readFile(new URL('../apps/web/src/minutes-views.ts', import.meta.url), 'utf8'))
   .replace(/^import .*$/gm, '').replace(/export /g, '');
-vm.runInNewContext(stripTypeScriptTypes(helperSource) + '\nObject.assign(exports,{topicTableLayout,summaryTables});', { exports: helpers });
+vm.runInNewContext(stripTypeScriptTypes(helperSource) + '\nObject.assign(exports,{topicTableLayout,summaryTables,topicDurations});', { exports: helpers });
 const ref = (segmentId, revision = 1) => ({ segmentId, revision });
 const minutes = () => ({
   title: '交付讨论', revision: 1, transcriptRevision: 3, edited: false,
@@ -112,4 +112,55 @@ test('shared topic citations never guess an owner and table-only minutes remain 
   assert.match(html, /补充表格/);
   assert.match(html, /发布候选版/);
   assert.match(html, /跨主题协调/);
+});
+
+test('explicit topic tables stay whole inside the declared topic despite shared citations', () => {
+  const value = minutes();
+  value.topics[0].id = 'release'; value.topics[1].id = 'quality';
+  value.tables = [{ title: '质量核对', topicId: 'quality', columns: ['事项', '结果'], rows: [
+    { cells: ['发布回归覆盖', '已核对'], evidence: [ref('release'), ref('quality')] },
+  ] }];
+  const before = JSON.stringify(value);
+  const layout = helpers.topicTableLayout(value);
+  assert.equal(layout.branches[0].tables.length, 0);
+  assert.equal(layout.branches[1].tables[0]?.rows.length, 1);
+  assert.equal(layout.unassigned.length, 0);
+  const html = render({ liveMinutes: value });
+  const branches = html.split('class="minutes-branch"').slice(1);
+  assert.doesNotMatch(branches[0], /发布回归覆盖/);
+  assert.match(branches[1], /发布回归覆盖/);
+  assert.doesNotMatch(html, /补充表格/);
+  assert.equal(JSON.stringify(value), before);
+});
+
+test('large topic layouts index source identities instead of repeatedly scanning references', () => {
+  let reads = 0;
+  const topics = Array.from({ length: 30 }, (_, i) => ({ title: `主题${i}`, summary: '', evidence: Array.from({ length: 100 }, (_, j) => ({
+    get segmentId() { reads++; return `s${i * 100 + j}`; }, revision: 1,
+  })) }));
+  const value = { title: '合成大纪要', topics, sections: [{ heading: '讨论', items: Array.from({ length: 2000 }, (_, i) => ({ text: `要点${i}`, evidence: [ref(`s${i}`)] })) }], actions: [], tables: [] };
+  const layout = helpers.topicTableLayout(value);
+  assert.equal(layout.branches.flatMap(branch => branch.items).length, 2000);
+  assert.ok(reads <= 9000, `source identities read ${reads} times for 3000 references`);
+});
+
+test('topic coverage preserves exact revisions and merges overlapping cited intervals', () => {
+  const value = minutes();
+  value.evidenceSnapshot = [
+    { id: 'release', revision: 1, startMs: 1000, endMs: 4000 },
+    { id: 'quality', revision: 1, startMs: 3000, endMs: 5000 },
+    { id: 'release', revision: 2, startMs: 9000, endMs: 12000 },
+  ];
+  value.topics[0].evidence = [ref('release'), ref('quality'), ref('release'), ref('missing')];
+  value.topics[1].evidence = [ref('release', 2)];
+  assert.deepEqual(Array.from(helpers.topicDurations(value)), [4000, 3000]);
+});
+
+test('large citation groups keep a compact initial view with an explicit disclosure', () => {
+  const value = minutes();
+  value.topics[0].evidence = Array.from({ length: 20 }, (_, i) => ref(`extra${i}`));
+  const html = render({ liveMinutes: value });
+  const first = html.split('class="minutes-branch"')[1];
+  assert.equal((first.match(/aria-label="查看引用原文/g) || []).length, 3);
+  assert.match(first, /aria-expanded="false">\+17 条来源/);
 });

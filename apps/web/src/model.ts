@@ -3,10 +3,10 @@ export interface Source { asr?: {state:string;error?:string;identityWarning?:str
 export interface Evidence { segmentId: string; revision: number }
 export interface Segment { speakerId?: string | null; speakerHash?: string | null; id: string; revision: number; sourceId: string; text: string; speaker: string; startMs: number; endMs: number; translation?: string; translationLanguage?: string; translationError?: string; translationAttempts?: number; edited: boolean }
 export interface MinutesItem { text: string; evidence: Evidence[] }
-export interface Topic { title: string; summary: string; evidence: Evidence[] }
+export interface Topic { id?: string; title: string; summary: string; evidence: Evidence[] }
 export interface SpeakerSummary { speakerId: string | null; speaker: string; summary: string; evidence: Evidence[] }
 export interface ModelRuntime { protocol?: string; streamed?: boolean; firstTokenMs?: number | null; durationMs?: number; elapsedMs?: number }
-export interface SummaryTable { title: string; columns: string[]; rows: { cells: string[]; evidence: Evidence[] }[] }
+export interface SummaryTable { topicId?: string; title: string; columns: string[]; rows: { cells: string[]; evidence: Evidence[] }[] }
 export interface Minutes { tables?: SummaryTable[]; currentDiscussion?: MinutesItem[]; speakerSummaries?: SpeakerSummary[]; decisions?: MinutesItem[]; topics?: Topic[]; runtime?: ModelRuntime; method?: string; title: string; sections: { heading: string; items: MinutesItem[] }[]; actions: (MinutesItem & { owner?: string; due?: string })[];
   revision: number; transcriptRevision: number; edited: boolean; evidenceSnapshot: Segment[] }
 export interface Job { progress?: {completed:number;total:number;stage:string}; scope?: string; automatic?: boolean; preview?: {kind:string;text:string}[]; runtime?: ModelRuntime; id: string; status: string; error?: string; transcriptRevision: number }

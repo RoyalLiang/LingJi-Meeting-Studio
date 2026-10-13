@@ -97,6 +97,13 @@
  }
 }
 
+/* Without overlay transitions a closing popover leaves the top layer too early. */
+@supports not (overlay: auto) {
+ .select-options.select-portal.select-menu {
+  transition: opacity 120ms ease, transform 150ms cubic-bezier(.2, 0, 0, 1);
+ }
+}
+
 @media (prefers-reduced-motion: reduce) {
  .select.select-enhanced > .select-trigger,
  .select.select-enhanced > .select-trigger > svg,

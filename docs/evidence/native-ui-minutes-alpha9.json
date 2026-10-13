@@ -1,0 +1,120 @@
+{
+  "version": "0.1.0-alpha.9",
+  "nodeTests": 212,
+  "lint": true,
+  "typecheck": true,
+  "webBuild": true,
+  "baselineCommit": "de64f89",
+  "fixture": {
+    "segments": 5000,
+    "topics": 30,
+    "referencesPerTopic": 500,
+    "items": 2000,
+    "tableRows": 180
+  },
+  "browser": {
+    "fixture": true,
+    "realAudioDevices": false,
+    "realProviders": false,
+    "checks": [
+      "Repeated login: one request, retained form, zero loading flashes",
+      "Compact same-path SVG logo at 1x, no blur filters",
+      "App save feedback uses an automatic toast and does not steal focus",
+      "Topic tree default; exact cited rows inside topics; ambiguous row retained",
+      "Back-to-top stays in toolbar without moving search or covering meeting actions",
+      "44px gear rotates automatically without hover; center X remains 20px",
+      "Close gear rotates on hover and keyboard focus, center X remains upright, no layout shift, reduced motion stops rotation",
+      "Retained original audio plays real synthetic WAV; dialog close unmounts playback",
+      "Explicit-close settings behavior preserved",
+      "No audio request for unretained, purged or pending recordings",
+      "Short viewport dialog scrolls body while title/close stay fixed",
+      "Coarse pointer close target remains 44px and closes on touch",
+      "Logo verified in light/dark at 1x and Retina 2x",
+      "390px mobile dialog/meeting viewport bounds; redundant source copy removed"
+    ],
+    "logo": {
+      "width": 32,
+      "height": 32,
+      "naturalWidth": 36,
+      "filter": "none"
+    },
+    "topicCardHeight": {
+      "before": 81.1953125,
+      "compact": 73.1953125,
+      "reduction": 0.09852785528721254
+    },
+    "pageErrors": []
+  },
+  "browserPerformance": {
+    "baseline": {
+      "tree": {
+        "helperComputeMs": 10.5,
+        "reactSyncCommitMs": 44.8,
+        "forcedLayoutMs": 135.6,
+        "nextFrameWaitMs": 22.2,
+        "commitLayoutToNextFrameMs": 209.7
+      },
+      "chart": {
+        "helperComputeMs": 75.2,
+        "reactSyncCommitMs": 74.7,
+        "forcedLayoutMs": 1.1,
+        "nextFrameWaitMs": 0.5,
+        "commitLayoutToNextFrameMs": 76.3
+      }
+    },
+    "current": {
+      "tree": {
+        "helperComputeMs": 1.9,
+        "reactSyncCommitMs": 11.7,
+        "forcedLayoutMs": 43.9,
+        "nextFrameWaitMs": 8.5,
+        "commitLayoutToNextFrameMs": 64.1
+      },
+      "chart": {
+        "helperComputeMs": 1.4,
+        "reactSyncCommitMs": 1.6,
+        "forcedLayoutMs": 1,
+        "nextFrameWaitMs": 12.7,
+        "commitLayoutToNextFrameMs": 15.2
+      }
+    }
+  },
+  "performanceChecks": [
+    "Explicit topic ids and table.topicId keep the whole two-row shared-source table inside topic B exactly once.",
+    "CitationSources shows three sources initially, expands to all six, collapses back, and passes exact segment id plus revision 9.",
+    "Table copy produces polite toast, preserves search focus, avoids toolbar, copies TSV, and disappears automatically after about five seconds.",
+    "Failed table copy stays visible as inline alert beyond the normal toast duration."
+  ],
+  "browserErrors": {
+    "page": [],
+    "console": []
+  },
+  "backendSyntheticBench": {
+    "injectedWaitPerGenerationMs": 40,
+    "baselineMs": [
+      481,
+      467,
+      471
+    ],
+    "currentMs": [
+      278,
+      267,
+      264
+    ],
+    "calls": 9,
+    "windows": 8,
+    "baselineMaxActive": 1,
+    "currentMaxActive": 2
+  },
+  "liveSyntheticCacheBench": {
+    "snapshotLimit": 120,
+    "baselineCalls": 18,
+    "currentCalls": 5,
+    "baselineGeneratedWindows": 15,
+    "currentGeneratedWindows": 2,
+    "currentReusedWindows": 13
+  },
+  "realProvidersInvoked": false,
+  "realAudioDevicesOpened": false,
+  "historicalMinutesAutomaticallyRegenerated": false
+}

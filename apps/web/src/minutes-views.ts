@@ -1,15 +1,22 @@
-import type { Evidence, Minutes, MinutesItem, SpeakerSummary, SummaryTable } from './model';
+import type { Evidence, Minutes, MinutesItem, SpeakerSummary, SummaryTable, Topic } from './model';
 
-export function topicBranches(minutes: Minutes) {
+export function topicBranches(minutes: Minutes): (Topic & { items: MinutesItem[] })[] {
   const items = minutes.sections.flatMap(section => section.items);
   if (!minutes.topics?.length) return minutes.sections.map(section => ({ title: section.heading, summary: '', evidence: section.items.flatMap(item => item.evidence), items: section.items }));
-  const assigned = new Set<MinutesItem>();
-  const branches = minutes.topics.map(topic => {
-    const matching = items.filter(item => !assigned.has(item) && item.evidence.some(ref => topic.evidence.some(source => source.segmentId === ref.segmentId && source.revision === ref.revision)));
-    matching.forEach(item => assigned.add(item));
-    return { ...topic, items: matching.filter(item => item.text !== topic.summary) };
+  const firstTopic = new Map<string, number>();
+  minutes.topics.forEach((topic, index) => topic.evidence.forEach(ref => {
+    const key = `${ref.segmentId}:${ref.revision}`;
+    if (!firstTopic.has(key)) firstTopic.set(key, index);
+  }));
+  const groups = minutes.topics.map(() => [] as MinutesItem[]), other: MinutesItem[] = [];
+  for (const item of items) {
+    let owner = Infinity;
+    for (const ref of item.evidence) owner = Math.min(owner, firstTopic.get(`${ref.segmentId}:${ref.revision}`) ?? Infinity);
+    if (owner === Infinity) other.push(item); else groups[owner].push(item);
+  }
+  const branches = minutes.topics.map((topic, index) => {
+    return { ...topic, items: groups[index].filter(item => item.text !== topic.summary) };
   });
-  const other = items.filter(item => !assigned.has(item));
   if (other.length) branches.push({ title: '其他讨论要点', summary: '', evidence: other.flatMap(item => item.evidence), items: other });
   return branches;
 }
@@ -24,21 +31,31 @@ export function summaryTables(minutes: Minutes): SummaryTable[] {
   }] : [];
 }
 
-/** Keep every row exactly once. Shared or unmatched source revisions stay unassigned. */
+/** Explicit model ownership keeps a whole table in its topic; legacy rows use exact source revisions. */
 export function topicTableLayout(minutes: Minutes) {
   const branches = topicBranches(minutes).map(branch => ({ ...branch, tables: [] as SummaryTable[] }));
   const key = (ref: Evidence) => `${ref.segmentId}:${ref.revision}`;
-  const sources = branches.map(branch => new Set([
-    ...branch.evidence, ...branch.items.flatMap(item => item.evidence),
-  ].map(key)));
+  const sources = new Map<string, number>();
+  const topicIds = new Map<string, number>();
+  branches.forEach((branch, index) => {
+    if (branch.id) topicIds.set(branch.id, topicIds.has(branch.id) ? -1 : index);
+    for (const ref of [...branch.evidence, ...branch.items.flatMap(item => item.evidence)]) {
+      const source = key(ref), previous = sources.get(source);
+      sources.set(source, previous === undefined || previous === index ? index : -1);
+    }
+  });
   const unassigned: SummaryTable[] = [];
   for (const table of summaryTables(minutes)) {
+    if (table.topicId !== undefined) {
+      const owner = topicIds.get(table.topicId) ?? -1;
+      if (owner >= 0) branches[owner].tables.push(table); else unassigned.push(table);
+      continue;
+    }
     const rows = branches.map(() => [] as SummaryTable['rows']);
     const remaining: SummaryTable['rows'] = [];
     for (const row of table.rows) {
-      const owners = row.evidence.map(ref => sources.flatMap((refs, index) => refs.has(key(ref)) ? [index] : []));
-      const owner = owners[0]?.length === 1 ? owners[0][0] : -1;
-      if (owner >= 0 && owners.every(matches => matches.length === 1 && matches[0] === owner)) rows[owner].push(row);
+      const owner = row.evidence.length ? sources.get(key(row.evidence[0])) ?? -1 : -1;
+      if (owner >= 0 && row.evidence.every(ref => sources.get(key(ref)) === owner)) rows[owner].push(row);
       else remaining.push(row);
     }
     rows.forEach((items, index) => {
@@ -47,6 +64,19 @@ export function topicTableLayout(minutes: Minutes) {
     if (remaining.length || !table.rows.length) unassigned.push({ ...table, rows: remaining });
   }
   return { branches, unassigned };
+}
+
+export function topicDurations(minutes: Minutes) {
+  const segments = new Map((minutes.evidenceSnapshot || []).map(segment => [`${segment.id}:${segment.revision}`, segment]));
+  return (minutes.topics || []).map(topic => {
+    const intervals = topic.evidence.flatMap(ref => {
+      const segment = segments.get(`${ref.segmentId}:${ref.revision}`);
+      return segment ? [[segment.startMs, segment.endMs]] : [];
+    }).sort((a, b) => a[0] - b[0]);
+    let total = 0, end = 0;
+    for (const [start, stop] of intervals) { total += Math.max(0, stop - Math.max(start, end)); end = Math.max(end, stop); }
+    return total;
+  });
 }
 
 export function speakerViews(minutes: Minutes): (SpeakerSummary & { method: 'summary' | 'extract' })[] {
