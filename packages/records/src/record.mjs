@@ -1,3 +1,4 @@
+import {queueLearningReview, publicLearning} from './learning.mjs';
 import { validateMinutesStructure } from './minutes-structure.mjs';
 import { automaticRecordTitle } from './record-title.mjs';
 import { createHash, randomUUID } from 'node:crypto';
@@ -20,7 +21,7 @@ export function createRecord(owner, input = {}) {
   requireThat([1, 7, 30, 90].includes(days), 'invalid_retention', 400);
   const now = new Date().toISOString();
   const title=String(input.title || '').trim();
-  const record = { id: randomUUID(), owner, kind: 'record', workspaceId: input.workspaceId || null, title: title.slice(0, 160) || '未命名会议', titleEdited:Boolean(title),
+  const record = { id: randomUUID(), owner, kind: 'record', workspaceId: input.workspaceId || null, title: title.slice(0, 160) || '未命名会议', titleEdited:Boolean(title), ...(input.learningEnabled ? {learning:{enabled:true,status:'waiting'}} : {}),
     language: input.language || 'zh', createdAt: now, updatedAt: now, cursor: '0', events: [], generation: 1,
     capture: 'idle', transcription: 'idle', sessions: [], sources: [], chunks: [], segments: [], transcriptRevision: 0,
     notes: '', notesRevision: 0, minutes: null, liveMinutes: null, autoMinutes: { enabled: input.autoMinutes === true, intervalSeconds: 30 }, minutesRevision: 0, minutesHistory: [], jobs: [], shares: [],
@@ -115,7 +116,7 @@ export function finalize(record) {
   if (record.capture !== 'sealed') return;
   const complete = record.sources.every(s => s.watermark === s.lastSequence)
     && record.chunks.every(c => c.state === 'done');
-  if (complete) { for (const session of record.sessions || []) { session.status = 'completed'; session.endedAt ||= new Date().toISOString(); } record.capture = 'completed'; record.transcription = 'ready'; autoNameRecord(record); emit(record, 'record.finalized', { transcriptRevision: record.transcriptRevision }); }
+  if (complete) { for (const session of record.sessions || []) { session.status = 'completed'; session.endedAt ||= new Date().toISOString(); } record.capture = 'completed'; record.transcription = 'ready'; autoNameRecord(record); emit(record, 'record.finalized', { transcriptRevision: record.transcriptRevision }); if(queueLearningReview(record))emit(record,'learning.queued'); }
 }
 export function autoNameRecord(record,preferredTitle) {
   const title=automaticRecordTitle(record,preferredTitle);
@@ -231,8 +232,8 @@ export function commitMinutes(record, jobId, result, fence) {
   emit(record, 'minutes.committed', { revision: record.minutesRevision });
 }
 export function publicRecord(record) {
-  const { owner, events, chunks, shares, jobs, minutesHistory, ...rest } = record;
-  return { ...rest, segments: record.segments.map(({translationFence,translationLease,...segment})=>segment), sources: record.sources.map(({asr,...source})=>({...source,...(asr ? {asr:{state:asr.state,error:asr.error,identityWarning:asr.identityWarning,preview:asr.preview,runtime:asr.runtime}} : {})})), audio: record.sources.map(s => receipt(record, s)),
+  const { owner, events, chunks, shares, jobs, minutesHistory, learning, ...rest } = record;
+  return { ...rest, ...(learning ? {learning:publicLearning(record)} : {}), segments: record.segments.map(({translationFence,translationLease,...segment})=>segment), sources: record.sources.map(({asr,...source})=>({...source,...(asr ? {asr:{state:asr.state,error:asr.error,identityWarning:asr.identityWarning,preview:asr.preview,runtime:asr.runtime}} : {})})), audio: record.sources.map(s => receipt(record, s)),
     pendingChunks: chunks.filter(c => c.state !== 'done').length,
     minuteVersions: [...(minutesHistory || []), ...(record.minutes ? [record.minutes] : [])].map(m => ({ revision: m.revision, transcriptRevision: m.transcriptRevision, edited: m.edited })),
     jobs: jobs.map(({ snapshot, notes, fence, windowCache, manifest, usageCalls, ...job }) => job) };

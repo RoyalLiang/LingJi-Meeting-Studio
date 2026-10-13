@@ -12,7 +12,7 @@ import { segmentPcm, wav, sha } from "./intake.mjs";
 export async function collectCandidates(
   intake,
   output,
-  { perRecord = 4, limit = 32 } = {},
+  { perRecord = 4, limit = 32, includeAll = false } = {},
 ) {
   await mkdir(output, { recursive: true, mode: 0o700 });
   const { records } = JSON.parse(
@@ -23,16 +23,13 @@ export async function collectCandidates(
   );
   const rows = [],
     errors = [];
-  let requested = 0;
+  let requested = 0,
+    reprocessed = 0;
   for (const record of records) {
     const root = registry[record.id].root,
       config = await readConfig(root, {}),
       status = providerStatus(config);
-    if (!status.asr || status.fixture) {
-      errors.push({ recordId: record.id, code: "real_asr_unavailable" });
-      continue;
-    }
-    const selected = record.segments
+    const short = record.segments
       .filter(
         (s) =>
           s.endMs > s.startMs &&
@@ -41,62 +38,74 @@ export async function collectCandidates(
       )
       .sort((a, b) => sha(a.id).localeCompare(sha(b.id)))
       .slice(0, perRecord);
-    for (const segment of selected) {
-      if (requested >= limit) break;
-      try {
-        const pcm = await segmentPcm(root, record, segment, { maxSeconds: 15 });
-        const audioHash = sha(pcm),
-          attempt = randomUUID();
-        requested++;
-        const text = await transcribe(pcm, record, {}, config);
-        const candidates = [
+    const selected = new Set(short.map((s) => s.id));
+    for (const segment of includeAll ? record.segments : short) {
+      const row = {
+        recordId: record.id,
+        segmentId: segment.id,
+        revision: segment.revision,
+        candidates: [
           {
             text: segment.text,
             source: "stored_asr",
             revision: segment.revision,
           },
-        ];
-        if (text.trim() && text.trim() !== segment.text.trim())
-          candidates.push({
-            text: text.trim(),
-            source: status.asrProvider,
-            attempt,
+        ],
+        generatedAt: new Date().toISOString(),
+      };
+      try {
+        if (includeAll && (!record.retainAudio || record.audioPurged))
+          throw Object.assign(Error("audio_unavailable"), {
+            code: "audio_unavailable",
           });
-        const audioFile = `${sha(record.id + ":" + segment.id)}.wav`;
-        await writeFile(join(output, audioFile), wav(pcm), {
-          mode: 0o600,
-          flag: "wx",
+        const pcm = await segmentPcm(root, record, segment, {
+          maxSeconds: includeAll ? 120 : 15,
         });
-        rows.push({
-          recordId: record.id,
-          segmentId: segment.id,
-          revision: segment.revision,
-          candidates,
-          audio: {
-            sha256: audioHash,
-            file: audioFile,
-            startMs: segment.startMs,
-            endMs: segment.endMs,
-          },
-          generatedAt: new Date().toISOString(),
-          provider: status.asrProvider,
-          attempt,
-        });
-        console.log(
-          JSON.stringify({
-            stage: "asr_candidates",
-            completed: rows.length,
-            requested,
-            alternatives: candidates.length,
-          }),
-        );
+        row.audio = {
+          sha256: sha(pcm),
+          startMs: segment.startMs,
+          endMs: segment.endMs,
+        };
+        if (
+          selected.has(segment.id) &&
+          requested < limit &&
+          status.asr &&
+          !status.fixture
+        ) {
+          requested++;
+          const attempt = randomUUID();
+          const text = await transcribe(pcm, record, {}, config);
+          reprocessed++;
+          if (text.trim() && text.trim() !== segment.text.trim())
+            row.candidates.push({
+              text: text.trim(),
+              source: status.asrProvider,
+              attempt,
+            });
+          row.provider = status.asrProvider;
+          row.attempt = attempt;
+          if (!includeAll) {
+            const file = sha(record.id + ":" + segment.id) + ".wav";
+            await writeFile(join(output, file), wav(pcm), {
+              mode: 0o600,
+              flag: "wx",
+            });
+            row.audio.file = file;
+          }
+        } else if (!includeAll)
+          throw Object.assign(Error("real_asr_unavailable"), {
+            code: "real_asr_unavailable",
+          });
       } catch (error) {
+        row.audioError = error.code || "asr_candidate_failed";
         errors.push({
           recordId: record.id,
           segmentId: segment.id,
-          code: error.code || "audio_or_asr_unavailable",
+          code: row.audioError,
         });
+        if (!includeAll) continue;
       }
+      rows.push(row);
     }
   }
   await writeFile(
@@ -104,27 +113,30 @@ export async function collectCandidates(
     rows.map((row) => JSON.stringify(row) + "\n").join(""),
     { mode: 0o600, flag: "wx" },
   );
-  await writeFile(
-    join(output, "report.json"),
-    JSON.stringify(
-      {
-        requested,
-        completed: rows.length,
-        distinctAlternatives: rows.filter((row) => row.candidates.length > 1)
-          .length,
-        errors,
-      },
-      null,
-      2,
-    ),
-    { mode: 0o600, flag: "wx" },
-  );
-  return {
-    requested,
-    completed: rows.length,
+  const report = {
+    source: "existing_configured_asr_only",
+    candidates: rows.length,
+    reprocessed,
     distinctAlternatives: rows.filter((row) => row.candidates.length > 1)
       .length,
+    requested,
+    includeAll,
+    errors,
   };
+  await writeFile(
+    join(output, "report.json"),
+    JSON.stringify(report, null, 2) + "\n",
+    { mode: 0o600, flag: "wx" },
+  );
+  console.log(
+    JSON.stringify({
+      stage: "asr_candidates",
+      candidates: rows.length,
+      reprocessed,
+      distinctAlternatives: report.distinctAlternatives,
+    }),
+  );
+  return report;
 }
 
 export async function teacherLabels(

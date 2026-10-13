@@ -1,3 +1,4 @@
+import {learningWorkAt} from '../../../packages/records/src/learning.mjs';
 import { cursorKey, deriveProjection, visibleSnapshot } from './projections.mjs';
 import { automaticMinutesAt } from '../../../packages/records/src/automation.mjs';
 import { mkdir, open, readFile, readdir, rm, stat, link } from 'node:fs/promises';
@@ -13,7 +14,7 @@ function schedule(value) {
   if (value.kind !== 'record') return;
   const now = Date.now();
   if (value.deleted) { value.nextWorkAt = value.cleanup === 'completed' ? (value.cleanupAt || 0) + 600000 : now; return; }
-  const times = [automaticMinutesAt(value, now), Date.parse(value.deleteAt), (value.gcAt || 0) + 3600000];
+  const times = [learningWorkAt(value, now), ...(value.learning?.enabled && value.capture==='completed' && value.learning.revision!==value.transcriptRevision ? [now] : []), automaticMinutesAt(value, now), Date.parse(value.deleteAt), (value.gcAt || 0) + 3600000];
   if (!value.retainAudio && !value.audioPurged && value.capture === 'completed') times.push(now);
   for (const source of value.sources) {
     if (source.asr?.state === 'running') times.push(now+250);

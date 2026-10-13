@@ -3,29 +3,19 @@ import {
   readFile,
   readdir,
   writeFile,
-  rename,
   appendFile,
   mkdir,
 } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
 import { readSnapshot, segmentPcm, wav, sha } from "./intake.mjs";
+import { loadReviewRound, saveReviews, trainingPlan } from "./review-store.mjs";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 const idPattern = /^r\d{3,6}$/;
 const readJson = (path) => readFile(path, "utf8").then(JSON.parse);
-const readLines = (path) =>
-  readFile(path, "utf8").then((text) =>
-    text.split("\n").filter(Boolean).map(JSON.parse),
-  );
-const exists = (path) =>
-  readFile(path).then(
-    () => true,
-    () => false,
-  );
-
 export async function createLearningReviewServer({
   workspace,
   port = 0,
@@ -34,7 +24,6 @@ export async function createLearningReviewServer({
   workspace = resolve(workspace || ".data/alpha-learning");
   const token = randomBytes(32).toString("hex");
   let origin,
-    queue = Promise.resolve(),
     active = false;
   const roundDir = (name) => {
     if (!idPattern.test(name || "")) throw Error("invalid_round");
@@ -59,23 +48,30 @@ export async function createLearningReviewServer({
     );
   }
   async function data(name) {
-    const dir = roundDir(name);
-    let cases;
-    if (await exists(join(dir, "annotation-results.jsonl")))
-      cases = await readLines(join(dir, "annotation-results.jsonl"));
-    else if (await exists(join(dir, "dataset/cases.jsonl")))
-      cases = await readLines(join(dir, "dataset/cases.jsonl"));
-    else cases = await readLines(join(dir, "prelabel/cases.jsonl"));
-    const reviews = await readLines(join(dir, "reviews.jsonl")).catch(() => []),
-      byId = new Map(reviews.map((row) => [row.sample_id, row]));
-    return {
-      cases: cases.map((row) => ({
+    const data = await loadReviewRound(workspace, name);
+    if (
+      data.cases.some((row) => !row.display.meetingTitle) &&
+      data.meta.intake
+    ) {
+      const registry = await readJson(
+        join(workspace, data.meta.intake, "registry.json"),
+      ).catch(() => ({}));
+      const titles = new Map();
+      for (const root of new Set(
+        Object.values(registry).map((value) => value.root),
+      ))
+        for (const record of readSnapshot(root))
+          titles.set(record.id, record.title);
+      data.cases = data.cases.map((row) => ({
         ...row,
-        target: row.target ?? null,
-        ...(byId.get(row.sample_id) || {}),
-      })),
-      report: await readJson(join(dir, "round-report.json")).catch(() => null),
-    };
+        display: {
+          ...row.display,
+          meetingTitle:
+            row.display.meetingTitle || titles.get(row.source.recordId),
+        },
+      }));
+    }
+    return data;
   }
   const send = (res, status, value) => {
     const body = JSON.stringify(value);
@@ -114,66 +110,23 @@ export async function createLearningReviewServer({
       if (url.pathname === "/api/round" && req.method === "GET")
         return send(res, 200, await data(url.searchParams.get("name")));
       if (url.pathname === "/api/reviews" && req.method === "POST") {
-        const input = await body(req),
-          round = roundDir(input.round),
-          review = input.review;
-        const found = (await data(input.round)).cases.find(
-          (row) => row.sample_id === review?.sample_id,
+        const input = await body(req);
+        return send(
+          res,
+          200,
+          await saveReviews(
+            workspace,
+            input.round,
+            input.reviews || [input.review],
+          ),
         );
-        if (!found || found.input_hash !== review.input_hash)
-          throw Error("stale_review");
-        const targets = Object.keys(
-          Object.values(found.request.questions)[0].criteria,
+      }
+      if (url.pathname === "/api/plan" && req.method === "GET") {
+        return send(
+          res,
+          200,
+          trainingPlan((await data(url.searchParams.get("round"))).cases),
         );
-        if (
-          ![...targets, "skip", "abstain"].includes(review.target) ||
-          typeof review.reviewer !== "string" ||
-          !review.reviewer.trim() ||
-          review.reviewer.length > 80
-        )
-          throw Error("invalid_review");
-        if (
-          typeof review.correctedText !== "string" ||
-          review.correctedText.length > 2000 ||
-          typeof review.note !== "string" ||
-          review.note.length > 2000
-        )
-          throw Error("invalid_review_text");
-        if (found.family !== "asr" && review.correctedText)
-          throw Error("correction_requires_asr_case");
-        const cleaned = {
-          sample_id: found.sample_id,
-          input_hash: found.input_hash,
-          target: review.target,
-          reviewer: review.reviewer.trim(),
-          note: review.note,
-          correctedText: review.correctedText,
-          audioVerified: review.audioVerified === true,
-          blindReview: review.blindReview === true,
-          updatedAt: new Date().toISOString(),
-        };
-        const save = async () => {
-          const path = join(round, "reviews.jsonl");
-          const previous = await readLines(path).catch(() => []);
-          const map = new Map(previous.map((row) => [row.sample_id, row]));
-          map.set(cleaned.sample_id, cleaned);
-          await appendFile(
-            join(round, "review-history.jsonl"),
-            JSON.stringify({ ...cleaned, eventId: randomUUID() }) + "\n",
-            { mode: 0o600 },
-          );
-          const temp = path + "." + randomUUID() + ".tmp";
-          await writeFile(
-            temp,
-            [...map.values()].map((row) => JSON.stringify(row) + "\n").join(""),
-            { mode: 0o600, flag: "wx" },
-          );
-          await rename(temp, path);
-        };
-        const pending = queue.then(save);
-        queue = pending.catch(() => {});
-        await pending;
-        return send(res, 200, { saved: true });
       }
       if (url.pathname === "/api/audio" && req.method === "GET") {
         const name = url.searchParams.get("round"),
@@ -229,6 +182,12 @@ export async function createLearningReviewServer({
       if (url.pathname === "/api/next" && req.method === "POST") {
         const input = await body(req);
         await readJson(join(roundDir(input.parent), "round.json"));
+        const plan = trainingPlan((await data(input.parent)).cases);
+        if (!input.confirmed || !plan.ready || input.planHash !== plan.planHash)
+          return send(res, 409, {
+            error: "human_review_required",
+            message: "请先完成人工标注并确认当前训练计划。",
+          });
         if (active) return send(res, 409, { error: "已有学习轮次正在运行" });
         const all = await rounds();
         const number =
@@ -248,7 +207,6 @@ export async function createLearningReviewServer({
                 parent,
                 "--round",
                 round,
-                "--accept-silver",
               ],
               {
                 cwd: resolve(here, "../.."),
@@ -284,10 +242,18 @@ export async function createLearningReviewServer({
         "/": ["index.html", "text/html; charset=utf-8"],
         "/style.css": ["style.css", "text/css; charset=utf-8"],
         "/app.mjs": ["app.mjs", "text/javascript; charset=utf-8"],
+        "/presentation.mjs": [
+          "presentation.mjs",
+          "text/javascript; charset=utf-8",
+        ],
       };
       if (req.method === "GET" && assets[url.pathname]) {
         const [name, type] = assets[url.pathname],
-          bytes = await readFile(join(here, "review-assets", name));
+          bytes = await readFile(
+            name === "presentation.mjs"
+              ? join(here, "../../packages/records/src/learning-display.mjs")
+              : join(here, "review-assets", name),
+          );
         res.writeHead(200, {
           "Content-Type": type,
           "Content-Length": bytes.length,

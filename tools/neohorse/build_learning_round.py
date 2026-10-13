@@ -23,7 +23,7 @@ def main():
     parser.add_argument('--train-limit', type=int, default=256)
     parser.add_argument('--per-record', type=int, default=12)
     args = parser.parse_args()
-    if not 1 <= args.train_limit <= 10000 or not 1 <= args.per_record <= 200:
+    if not 1 <= args.train_limit <= 10000 or not 1 <= args.per_record <= 1000:
         raise ValueError('Invalid bounded round limits')
     os.umask(0o077)
     records, sources = ds.load_records([args.records])

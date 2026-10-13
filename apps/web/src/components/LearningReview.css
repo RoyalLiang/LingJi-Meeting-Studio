@@ -1,0 +1,245 @@
+dialog.modal:has(.learning-review) {
+  width: min(1220px, 96vw) !important;
+  max-width: 1220px;
+}
+.learning-review {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.learning-toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.learning-toolbar > .select-root {
+  min-width: 180px;
+  flex: 1;
+}
+.learning-summary {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--muted);
+}
+.learning-summary b {
+  font-size: 20px;
+  color: var(--ink);
+  font-weight: 600;
+}
+.learning-layout {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+  gap: 24px;
+  min-width: 0;
+}
+.learning-sidebar {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-width: 0;
+  max-height: 58vh;
+  overflow: auto;
+  padding-right: 6px;
+}
+.learning-sidebar > input {
+  width: 100%;
+  min-width: 0;
+}
+.learning-sidebar nav {
+  display: grid;
+  gap: 8px;
+}
+.learning-case {
+  display: grid;
+  gap: 7px;
+  text-align: left;
+  border: 1px solid var(--line, #d6dfd9);
+  border-radius: 12px;
+  padding: 12px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.learning-case small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.learning-case span {
+  font-size: 13px;
+  line-height: 1.7;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.learning-case:hover,
+.learning-case.selected {
+  background: var(--accent-soft, rgba(80, 140, 105, 0.1));
+  border-color: var(--accent, #568267);
+}
+.learning-case:focus-visible {
+  outline: 2px solid var(--accent, #568267);
+  outline-offset: 2px;
+}
+.learning-detail {
+  min-width: 0;
+  max-height: 58vh;
+  overflow: auto;
+  padding: 0 10px 12px 0;
+}
+.learning-focus-heading {
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  align-items: center;
+}
+.learning-focus-heading h3 {
+  margin: 0;
+  font-size: 18px;
+}
+.learning-focus-heading span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.learning-speech {
+  font-size: 18px;
+  line-height: 1.9;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 18px 0 12px;
+}
+.learning-original,
+.learning-predictions {
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--muted);
+  margin: 14px 0;
+  overflow-wrap: anywhere;
+}
+.learning-original summary,
+.learning-predictions summary {
+  cursor: pointer;
+}
+.learning-detail audio {
+  width: 100%;
+  max-width: 100%;
+  height: 38px;
+  margin-top: 12px;
+}
+.learning-task {
+  min-width: 0;
+  border: 0;
+  border-bottom: 1px solid var(--line, #d6dfd9);
+  padding: 16px 0;
+  margin: 0;
+}
+.learning-task legend {
+  font-size: 13px;
+  font-weight: 600;
+  padding-top: 12px;
+}
+.learning-intent-options {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.learning-asr-options {
+  display: grid;
+  gap: 8px;
+}
+.learning-choice {
+  display: flex !important;
+  align-items: flex-start;
+  gap: 8px;
+  border: 1px solid var(--line, #d6dfd9);
+  border-radius: 9px;
+  padding: 9px 12px;
+  font-size: 13px;
+  line-height: 1.7;
+  cursor: pointer;
+}
+.learning-choice:has(input:checked) {
+  background: var(--accent-soft, rgba(80, 140, 105, 0.1));
+  border-color: var(--accent, #568267);
+}
+.learning-choice input[type="radio"] {
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  flex: none;
+  margin-top: 3px;
+}
+.learning-choice span {
+  overflow-wrap: anywhere;
+}
+.learning-detail form {
+  display: grid;
+  gap: 12px;
+}
+.learning-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.learning-fields input {
+  width: 100%;
+  min-width: 0;
+}
+.learning-plan {
+  padding: 16px;
+  border: 1px solid var(--line, #d6dfd9);
+  border-radius: 12px;
+}
+.learning-plan h3 {
+  margin: 0 0 8px;
+}
+.transcript-original {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 8px 0 12px;
+}
+.transcript-original summary {
+  cursor: pointer;
+}
+.transcript-original p {
+  white-space: pre-wrap;
+}
+@media (max-width: 850px) {
+  .learning-layout {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .learning-sidebar {
+    max-height: 200px;
+    padding-right: 0;
+  }
+  .learning-detail {
+    max-height: none;
+    padding-right: 0;
+  }
+  .learning-fields {
+    grid-template-columns: 1fr;
+  }
+  .learning-toolbar > .select-root {
+    width: 100%;
+  }
+  .learning-focus-heading {
+    align-items: flex-start;
+  }
+}
+
+.learning-round {
+  min-width: 180px;
+  max-width: 420px;
+  flex: 1;
+}
+@media (max-width: 850px) {
+  .learning-round {
+    width: 100%;
+    max-width: none;
+    flex-basis: 100%;
+  }
+}

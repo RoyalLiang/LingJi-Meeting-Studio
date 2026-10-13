@@ -21,7 +21,10 @@ import {
   sha,
 } from "../scripts/alpha-learning/intake.mjs";
 import { createLearningReviewServer } from "../scripts/alpha-learning/review-server.mjs";
-import { shellQuote } from "../scripts/alpha-learning/run.mjs";
+import {
+  shellQuote,
+  learningRemoteGroup,
+} from "../scripts/alpha-learning/run.mjs";
 
 test("Alpha intake reads compressed/plain records without changing the source and excludes account/provider data", async () => {
   const dir = await mkdtemp(join(tmpdir(), "alpha-intake-"));
@@ -325,4 +328,12 @@ test("cached review audio validates source generation and PCM hash", async () =>
     if (db) db.close();
     await rm(workspace, { recursive: true, force: true });
   }
+});
+
+test("independent meeting workspaces have isolated remote round namespaces", () => {
+  const first = learningRemoteGroup("/tmp/learning-meeting-a"),
+    second = learningRemoteGroup("/tmp/learning-meeting-b");
+  assert.notEqual(first, second);
+  assert.equal(first, learningRemoteGroup("/tmp/learning-meeting-a"));
+  assert.match(first, /^alpha-\d{8}-[a-f0-9]{16}$/);
 });

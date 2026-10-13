@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { openSync, closeSync } from "node:fs";
-import { readFile, writeFile, mkdir, stat } from "node:fs/promises";
+import { readFile, writeFile, mkdir, stat, copyFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
@@ -10,6 +10,11 @@ import { collectCandidates, teacherLabels } from "./providers.mjs";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 const repo = resolve(here, "../..");
+export const learningRemoteGroup = (workspace) =>
+  "alpha-" +
+  new Date().toISOString().slice(0, 10).replaceAll("-", "") +
+  "-" +
+  createHash("sha256").update(resolve(workspace)).digest("hex").slice(0, 16);
 export const shellQuote = (value) =>
   "'" + String(value).replace(/'/g, "'\\''") + "'";
 const json = (path) => readFile(path, "utf8").then(JSON.parse);
@@ -56,6 +61,12 @@ export async function runLearningRound({
   refresh = false,
   steps = 100,
   acceptSilver = false,
+  prepareOnly = false,
+  sourceRoots,
+  recordIds,
+  inputBundle,
+  splitsFile,
+  perRecord = 12,
   host = "wgs",
   remoteBase = "/home/westwell/ai-labs/neohorse-jev-4b",
 } = {}) {
@@ -66,6 +77,12 @@ export async function runLearningRound({
     !Number.isInteger(steps) ||
     steps < 2 ||
     steps > 2000 ||
+    !Number.isInteger(perRecord) ||
+    perRecord < 1 ||
+    perRecord > 1000 ||
+    (recordIds &&
+      (!Array.isArray(recordIds) ||
+        recordIds.some((id) => !/^[a-f0-9-]{36}$/.test(id)))) ||
     !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(host) ||
     !/^\/[a-zA-Z0-9/_.-]+$/.test(remoteBase)
   )
@@ -89,13 +106,13 @@ export async function runLearningRound({
     const previous = parent
       ? await json(join(workspace, "rounds", parent, "round.json"))
       : null;
-    const group =
-      previous?.remoteGroup ||
-      "alpha-" + new Date().toISOString().slice(0, 10).replaceAll("-", "");
+    const group = previous?.remoteGroup || learningRemoteGroup(workspace);
     if (!/^[a-zA-Z0-9_-]+$/.test(group)) throw Error("invalid_remote_group");
     const remoteRoot = remoteBase + "/learning/" + group + "-" + round;
-    const intake = refresh || !previous ? "intake-" + round : previous.intake;
-    const asr = refresh || !previous ? "asr-" + round : previous.asr;
+    const intake =
+      inputBundle || refresh || !previous ? "intake-" + round : previous.intake;
+    const asr =
+      inputBundle || refresh || !previous ? "asr-" + round : previous.asr;
     if (!/^[a-zA-Z0-9_-]+$/.test(intake) || !/^[a-zA-Z0-9_-]+$/.test(asr))
       throw Error("invalid_source_names");
     meta = {
@@ -110,24 +127,48 @@ export async function runLearningRound({
       status: "运行中",
       steps,
       acceptSilver,
+      prepareOnly,
+      perRecord,
       startedAt: new Date().toISOString(),
     };
     await store(join(dir, "round.json"), meta);
-    if (refresh || !previous) {
-      await exportSnapshots(
-        [
-          join(
-            homedir(),
-            "Library/Application Support/com.tts.meeting/backend",
-          ),
-          join(repo, ".data/records"),
-        ],
-        join(workspace, intake),
-      );
-      await collectCandidates(join(workspace, intake), join(workspace, asr), {
-        limit: 24,
-        perRecord: 4,
-      });
+    await remote(
+      "test -x " +
+        shellQuote(remoteBase + "/.venv/bin/python") +
+        " && test -d " +
+        shellQuote(remoteBase + "/model/tokenizer"),
+    );
+    if (inputBundle || refresh || !previous) {
+      if (inputBundle) {
+        await mkdir(join(workspace, intake), { mode: 0o700 });
+        await mkdir(join(workspace, asr), { mode: 0o700 });
+        for (const file of ["records.json", "registry.json", "manifest.json"])
+          await copyFile(
+            join(inputBundle, file),
+            join(workspace, intake, file),
+          );
+        await copyFile(
+          join(inputBundle, "asr-candidates.jsonl"),
+          join(workspace, asr, "candidates.jsonl"),
+        );
+      } else {
+        await exportSnapshots(
+          sourceRoots || [
+            join(
+              homedir(),
+              "Library/Application Support/com.tts.meeting/backend",
+            ),
+            join(repo, ".data/records"),
+          ],
+          join(workspace, intake),
+          { recordIds },
+        );
+        await collectCandidates(join(workspace, intake), join(workspace, asr), {
+          limit: 24,
+          perRecord: prepareOnly ? 24 : 4,
+          includeAll: prepareOnly,
+        });
+      }
     }
     const original = (await json(join(workspace, intake, "records.json")))
       .records;
@@ -143,9 +184,10 @@ export async function runLearningRound({
     const valid = new Set(records.map((value) => value.id));
     await store(join(dir, "records.json"), { records });
     const parentDir = parent ? join(workspace, "rounds", parent) : null;
-    const asrSource =
-      parentDir &&
-      (await exists(join(parentDir, "dataset/asr-candidates.jsonl")))
+    const asrSource = inputBundle
+      ? join(workspace, asr, "candidates.jsonl")
+      : parentDir &&
+          (await exists(join(parentDir, "dataset/asr-candidates.jsonl")))
         ? join(parentDir, "dataset/asr-candidates.jsonl")
         : join(workspace, asr, "candidates.jsonl");
     await writeLines(
@@ -193,10 +235,13 @@ export async function runLearningRound({
     for (const name of ["records.json", "asr-candidates.jsonl"])
       await upload(join(dir, name), remoteRoot + "/" + name);
     let splits = "";
-    if (parentDir) {
-      const path = (await exists(join(parentDir, "dataset/split-map.json")))
-        ? join(parentDir, "dataset/split-map.json")
-        : join(parentDir, "prelabel/split-map.json");
+    if (parentDir || splitsFile || inputBundle) {
+      const path = inputBundle
+        ? join(inputBundle, "split-map.json")
+        : splitsFile ||
+          ((await exists(join(parentDir, "dataset/split-map.json")))
+            ? join(parentDir, "dataset/split-map.json")
+            : join(parentDir, "prelabel/split-map.json"));
       await upload(path, remoteRoot + "/splits.json");
       splits = " --splits " + shellQuote(remoteRoot + "/splits.json");
     }
@@ -207,7 +252,9 @@ export async function runLearningRound({
       shellQuote(remoteRoot + "/records.json") +
       " --asr-candidates " +
       shellQuote(remoteRoot + "/asr-candidates.jsonl") +
-      splits;
+      splits +
+      " --per-record " +
+      perRecord;
     await remote(
       "set -e\ncd " +
         shellQuote(remoteBase) +
@@ -224,7 +271,9 @@ export async function runLearningRound({
       lookup = new Map(cases.map((value) => [value.sample_id, value]));
     let teachers = [],
       reviews = [];
-    if (parentDir && !refresh) {
+    if (inputBundle) {
+      reviews = await lines(join(inputBundle, "reviews.jsonl"));
+    } else if (parentDir && !refresh) {
       teachers = await lines(join(parentDir, "teacher.jsonl")).catch(() => []);
       const effective = await lines(
         join(parentDir, "dataset/effective-reviews.jsonl"),
@@ -275,7 +324,8 @@ export async function runLearningRound({
     await mkdir(join(dir, "dataset"), { mode: 0o700 });
     await download(remoteRoot + "/dataset/*", join(dir, "dataset"));
     const train = await lines(join(dir, "dataset/train.jsonl"));
-    const both = new Set(train.map((row) => row.family)).size === 2;
+    const both =
+      !prepareOnly && new Set(train.map((row) => row.family)).size === 2;
     const parentCheckpoint =
       previous &&
       (await exists(join(parentDir, "checkpoint/lora-training-report.json")))
@@ -414,14 +464,25 @@ export async function runLearningRound({
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2),
     options = {};
+  const values = {
+    "--workspace": "workspace",
+    "--round": "round",
+    "--parent": "parent",
+    "--host": "host",
+    "--remote-base": "remoteBase",
+    "--input-bundle": "inputBundle",
+    "--splits-file": "splitsFile",
+  };
   for (let i = 0; i < args.length; i++) {
     const key = args[i];
     if (key === "--accept-silver") options.acceptSilver = true;
+    else if (key === "--prepare-only") options.prepareOnly = true;
     else if (key === "--refresh") options.refresh = true;
-    else if (key === "--remote-base") options.remoteBase = args[++i];
+    else if (key === "--source-root") options.sourceRoots = [args[++i]];
+    else if (key === "--record-id") options.recordIds = [args[++i]];
     else if (key === "--steps") options.steps = Number(args[++i]);
-    else if (["--workspace", "--round", "--parent", "--host"].includes(key))
-      options[key.slice(2)] = args[++i];
+    else if (key === "--per-record") options.perRecord = Number(args[++i]);
+    else if (values[key]) options[values[key]] = args[++i];
     else throw Error("Unknown learning option");
   }
   await runLearningRound(options);
