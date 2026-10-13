@@ -224,7 +224,10 @@ function Workspace() {
       const list = await api<{records: RecordListItem[]}>('/records');
       setQueueRecords(list.records.map(item => item.id)); await loadList();
       const issues = await started; setCaptureIssues(issues); setRecording(controller.active);
-      if (issues.length) setModal('capture');
+      if (issues.length) {
+        if (controller.active) setError(issues.map(issue => issue.message).join('；'));
+        else setModal('capture');
+      }
       await refresh();
     } catch (e) {
       await started; await controller.stop(); capture.current = null; setRecording(false); setError(messageOf(e));

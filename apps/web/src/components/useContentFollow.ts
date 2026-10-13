@@ -15,7 +15,9 @@ export function useContentFollow(update: string, paused: boolean, selector = '[a
   }, [selector]);
   useEffect(() => {
     const container=root.current?.closest<HTMLElement>(selector); if (!container) return;
-    const scroll = () => { if (jumped.current || moving.current || !end.current) return; const bottom=end.current.getBoundingClientRect().bottom, bounds=container.getBoundingClientRect(); change(bottom <= bounds.bottom+96 && bottom >= bounds.top); };
+    // A scroll event can pause following, but cannot undo an explicit reading intent.
+    // Near the tail, the wheel and its scroll event may arrive in the same React batch.
+    const scroll = () => { if (!follow.current || jumped.current || moving.current || !end.current) return; const bottom=end.current.getBoundingClientRect().bottom, bounds=container.getBoundingClientRect(); if(bottom > bounds.bottom+96 || bottom < bounds.top)change(false); };
     const intent = () => { jumped.current=false; moving.current=false; };
     const readIntent = () => { intent(); change(false); };
     const pauseReading = () => { jumped.current=true; cancelAnimationFrame(frame.current); moving.current=false; change(false); };

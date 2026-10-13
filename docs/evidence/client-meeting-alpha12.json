@@ -1,0 +1,39 @@
+{
+  "version": "0.1.0-alpha.12",
+  "date": "2026-10-13",
+  "stage": "source-validated",
+  "validation": {
+    "isolatedSnapshot": true,
+    "node": {"passed": 263, "failed": 0},
+    "rust": {"passed": 19, "failed": 0},
+    "lint": true,
+    "typecheck": true,
+    "webBuild": true,
+    "docs": true,
+    "chromiumSyntheticSSE": {"passed": 9, "failed": 0},
+    "oldHookNewRegressions": {"passed": 0, "failed": 2},
+    "scrollBefore": {"userTop": 4516, "unexpectedTop": 4844.5},
+    "scrollAfter": {"userTop": 4516, "afterStreamedGrowth": 4516},
+    "independentSourceAudit": true,
+    "frozenBackendBuildHelper": true
+  },
+  "boundaries": {
+    "realAudioDevicesOpened": false,
+    "realProvidersCalled": false,
+    "userClientReplacedOrRestarted": false,
+    "realUpdateInstalled": false,
+    "alpha12NativeLiveScrollVerified": false,
+    "systemPermissionBlurResolved": false,
+    "crossVersionOSGrantReuseVerified": false,
+    "trustedUpdaterConfigured": false,
+    "otherChatUncommittedChangesIncluded": false
+  },
+  "evidence": [
+    ".agent-runtime/tasks/20261013-alpha12-meeting-controls/validation-inputs.json",
+    ".agent-runtime/tasks/20261013-alpha12-meeting-controls/node-test.log",
+    ".agent-runtime/tasks/20261013-alpha12-meeting-controls/rust-test.log",
+    ".agent-runtime/tasks/20261013-alpha12-scroll/validation-summary.json",
+    ".agent-runtime/tasks/20261013-alpha12-scroll/verification-before-trace.json",
+    ".agent-runtime/tasks/20261013-alpha12-scroll/verification-after.json"
+  ]
+}

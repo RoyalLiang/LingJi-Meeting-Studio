@@ -73,7 +73,6 @@ export function MinutesPanel({ record, busy, onClose, generate, edit, cite, auto
           {(view==='decisions' || view==='document') && formal && minutes.actions.length > 0 && <Download href={`/api/records/${record.id}/export?format=issues`}>下载工单候选 JSON</Download>}
           </div>{!inline && <Button variant="ghost" className="topic-chart-toggle" onClick={()=>{setView(view==='topics'?'ai':'topics');}}>{view==='topics'?'返回 AI 主题视图':'查看主题时长'}</Button>}
         </>}
-      {!minutes && !running && <div className="minutes-empty-actions">{record.capture !== 'completed' && !record.autoMinutes?.enabled && modelReady ? <Button variant="primary" disabled={busy} onClick={()=>void automate(true,record.autoMinutes?.intervalSeconds || 30)}>开启自动 AI 纪要</Button> : <Button onClick={()=>setSettingsOpen(true)}>整理会议纪要</Button>}</div>}
       {showPreview && <section className={`streaming-minutes${inline ? ' is-inline-stream' : ''}`} aria-busy="true"><div className="streaming-status" role="status"><span className="live-dot"/>{job?.scope === 'live' ? '正在归纳会中主题' : '正在整理会议终稿'}</div>{job?.preview?.length ? job.preview.map((block,i) => block.kind === 'title' || block.kind === 'heading' ? <h4 key={i}>{block.text}</h4> : <p key={i}>{block.text}</p>) : <p className="muted">等待模型输出…</p>}<small>实时草稿 · 引用将在完整结果校验后显示</small></section>}
       <MinutesUsage record={record} job={job}/>
       <div ref={follow.end} className="content-follow-anchor" aria-hidden="true"/>

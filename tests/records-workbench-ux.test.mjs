@@ -21,3 +21,48 @@ test('address editing prefers Responses while recognizing explicit legacy Chat p
   assert.equal(protocolForAddress('https://models.example/v1/responses'),'responses');
   assert.equal(protocolForAddress('https://models.example/v1/chat/completions?region=cn'),'chat-completions');
 });
+
+const followSource=stripTypeScriptTypes(await readFile(new URL('../apps/web/src/components/useContentFollow.ts',import.meta.url),'utf8'),{mode:'transform'}).replace(/^import .*$/gm,'').replace(/export /g,'');
+function followHarness(){
+  const slots=[],pending=[],frames=new Map(),listeners=new Map(),windowListeners=new Map();
+  let cursor=0,nextFrame=0,resize,api,props={update:'initial',paused:false,enabled:true};
+  const container={scrollTop:1000,scrollHeight:1500,clientHeight:500,getBoundingClientRect:()=>({top:0,bottom:500}),
+    scrollTo({top}){this.scrollTop=top;},addEventListener:(name,fn)=>listeners.set(name,fn),removeEventListener:name=>listeners.delete(name)};
+  const root={closest:()=>container},end={getBoundingClientRect:()=>({bottom:container.scrollHeight-container.scrollTop})};
+  const memo=(callback,deps)=>{const index=cursor++,old=slots[index];if(!old||deps.some((value,i)=>!Object.is(value,old.deps[i])))slots[index]={deps,callback};return slots[index].callback;};
+  const effect=(callback,deps)=>{const index=cursor++,old=slots[index];if(!old||deps.some((value,i)=>!Object.is(value,old.deps[i])))pending.push(()=>{old?.cleanup?.();slots[index]={deps,cleanup:callback()};});};
+  const sandbox={exports:{},useRef:value=>slots[cursor++]||=( {current:value} ),useCallback:memo,useEffect:effect,useLayoutEffect:effect,
+    useState:value=>{const index=cursor++;slots[index]||={value};return[slots[index].value,value=>{slots[index].value=value;}];},
+    requestAnimationFrame:fn=>{const id=++nextFrame;frames.set(id,fn);return id;},cancelAnimationFrame:id=>frames.delete(id),
+    ResizeObserver:class{constructor(fn){resize=fn;}observe(){}disconnect(){resize=undefined;}},
+    window:{addEventListener:(name,fn)=>windowListeners.set(name,fn),removeEventListener:name=>windowListeners.delete(name)}};
+  vm.runInNewContext(followSource+'\nexports.useContentFollow=useContentFollow;',sandbox);
+  function render(next={}){props={...props,...next};cursor=0;api=sandbox.exports.useContentFollow(props.update,props.paused,undefined,props.enabled);api.root.current=root;api.end.current=end;pending.splice(0).forEach(fn=>fn());return api;}
+  function settle(){for(let pass=0;frames.size&&pass<10;pass++){const batch=[...frames.values()];frames.clear();batch.forEach(fn=>fn());}}
+  render();settle();
+  return{container,render,settle,dispatch:(name,event={})=>listeners.get(name)?.(event),pauseReading:()=>windowListeners.get('meeting:pause-follow')?.(),resize:()=>resize?.(),get api(){return api;},
+    close(){slots.forEach(slot=>slot?.cleanup?.());assert.equal(listeners.size+windowListeners.size+frames.size,0);}};
+}
+
+test('upward wheel and near-tail scroll in the same batch keep following paused through streamed growth',()=>{
+  const h=followHarness();
+  try{
+    h.container.scrollTop-=24;
+    h.dispatch('wheel',{deltaY:-24});h.dispatch('scroll');
+    assert.equal(h.render().following,false);
+    for(let update=1;update<=8;update++){h.container.scrollHeight+=60;h.render({update:String(update)});h.resize();h.settle();assert.equal(h.container.scrollTop,976);assert.equal(h.api.following,false);}
+    h.api.resume();h.render();h.settle();assert.equal(h.api.following,true);assert.equal(h.container.scrollTop,h.container.scrollHeight-h.container.clientHeight);
+  }finally{h.close();}
+});
+
+test('touch, keyboard and source navigation preserve reading intent until explicit resume',()=>{
+  for(const action of ['touchmove','keydown','meeting:pause-follow']){
+    const h=followHarness();
+    try{
+      if(action==='meeting:pause-follow')h.pauseReading();else h.dispatch(action,{key:'PageUp'});
+      h.dispatch('scroll');assert.equal(h.render().following,false);
+      h.render({enabled:false});h.container.scrollHeight+=120;h.render({update:'next-job',enabled:true});h.resize();h.settle();assert.equal(h.api.following,false);assert.equal(h.container.scrollTop,1000);
+      h.api.enable();h.render();h.settle();assert.equal(h.api.following,true);assert.equal(h.container.scrollTop,1120);
+    }finally{h.close();}
+  }
+});

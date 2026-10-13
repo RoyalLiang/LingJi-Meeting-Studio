@@ -101,6 +101,16 @@ fn default_microphone_id(devices: &[Input]) -> Result<Option<&str>, String> {
         })
 }
 
+fn microphone_id<'a>(
+    selected: Option<&'a str>,
+    devices: &'a [Input],
+) -> Result<Option<&'a str>, String> {
+    match selected.filter(|id| *id != "default" && devices.iter().any(|device| device.id == *id)) {
+        Some(id) => Ok(Some(id)),
+        None => default_microphone_id(devices),
+    }
+}
+
 pub fn inputs() -> Result<Vec<Input>, String> {
     input_list(&audio_host(false)?)
 }
@@ -245,17 +255,12 @@ impl Captures {
         std::thread::spawn(move || {
             let result = (|| {
                 let host = audio_host(worker_kind == "display")?;
-                let devices = if worker_kind == "microphone"
-                    && selected.as_deref().unwrap_or("default") == "default"
-                {
+                let devices = if worker_kind == "microphone" {
                     input_list(&host)?
                 } else {
                     Vec::new()
                 };
-                let selected = selected
-                    .as_deref()
-                    .filter(|id| *id != "default")
-                    .or(default_microphone_id(&devices)?);
+                let selected = microphone_id(selected.as_deref(), &devices)?;
                 let device = if worker_kind == "display" {
                     host.default_output_device()
                 } else if let Some(id) = selected {
@@ -424,5 +429,61 @@ mod tests {
         assert_eq!(default_microphone_id(&devices).unwrap(), Some("physical"));
         devices[0].label = "USB Microphone".into();
         assert_eq!(default_microphone_id(&devices).unwrap(), None);
+    }
+
+    #[test]
+    fn missing_saved_microphone_uses_the_current_default_input() {
+        let devices = vec![Input {
+            id: "current".into(),
+            label: "USB Microphone".into(),
+            is_default: true,
+        }];
+        assert_eq!(microphone_id(Some("removed"), &devices).unwrap(), None);
+        assert_eq!(microphone_id(Some("default"), &devices).unwrap(), None);
+        assert_eq!(microphone_id(None, &devices).unwrap(), None);
+    }
+
+    #[test]
+    fn missing_saved_microphone_keeps_automatic_virtual_input_protection() {
+        let mut devices = vec![Input {
+            id: "virtual".into(),
+            label: "BlackHole 2ch".into(),
+            is_default: true,
+        }];
+        assert_eq!(
+            microphone_id(Some("removed"), &devices).unwrap_err(),
+            default_microphone_id(&devices).unwrap_err()
+        );
+        devices.push(Input {
+            id: "physical".into(),
+            label: "Built-in Microphone".into(),
+            is_default: false,
+        });
+        assert_eq!(
+            microphone_id(Some("removed"), &devices).unwrap(),
+            Some("physical")
+        );
+    }
+
+    #[test]
+    fn available_explicit_microphone_is_preserved_including_virtual_inputs() {
+        let mut devices = vec![Input {
+            id: "virtual".into(),
+            label: "BlackHole 2ch".into(),
+            is_default: true,
+        }];
+        assert_eq!(
+            microphone_id(Some("virtual"), &devices).unwrap(),
+            Some("virtual")
+        );
+        devices.push(Input {
+            id: "selected".into(),
+            label: "USB Microphone".into(),
+            is_default: false,
+        });
+        assert_eq!(
+            microphone_id(Some("selected"), &devices).unwrap(),
+            Some("selected")
+        );
     }
 }
