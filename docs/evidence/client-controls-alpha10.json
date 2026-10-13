@@ -98,6 +98,96 @@
       "apps/web/src/components/RecordingPlayback.tsx": "0f5f4abeb3e6a18152eb491e8097b31e9997f2422e237fc6b158935293febce8",
       "apps/web/src/audio/recording-playback.ts": "63c80bc57ef580f337238e57068fabf421b9779605e0e3b6703b925fbec090d0",
       "apps/web/src/App.tsx": "9d824ffdaefb5a76d755e41e157ad3f8d4626c59566e153b56e74d5d152d35ab"
+    },
+    "samples": {
+      "close-light": {
+        "initial": {
+          "background": "rgba(0, 0, 0, 0)",
+          "border": "rgba(0, 0, 0, 0)",
+          "focus": false,
+          "gear": "matrix(0.994712, 0.102706, -0.102706, 0.994712, 0, 0)",
+          "height": 44,
+          "hover": false,
+          "shadow": "none",
+          "width": 44,
+          "x": "none"
+        },
+        "focused": {
+          "background": "rgba(0, 0, 0, 0)",
+          "border": "rgba(0, 0, 0, 0)",
+          "focus": true,
+          "gear": "matrix(0.983159, 0.18275, -0.18275, 0.983159, 0, 0)",
+          "height": 44,
+          "hover": false,
+          "shadow": "none",
+          "width": 44,
+          "x": "none"
+        },
+        "focusSource": "native-option-tab"
+      },
+      "hover-light": {
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(0, 0, 0, 0)",
+        "focus": true,
+        "gear": "matrix(0.941147, 0.337999, -0.337999, 0.941147, 0, 0)",
+        "height": 44,
+        "hover": true,
+        "shadow": "none",
+        "width": 44,
+        "x": "none"
+      },
+      "close-dark": {
+        "initial": {
+          "background": "rgba(0, 0, 0, 0)",
+          "border": "rgba(0, 0, 0, 0)",
+          "focus": false,
+          "gear": "matrix(0.994631, 0.103487, -0.103487, 0.994631, 0, 0)",
+          "height": 44,
+          "hover": false,
+          "shadow": "none",
+          "width": 44,
+          "x": "none"
+        },
+        "focused": {
+          "background": "rgba(0, 0, 0, 0)",
+          "border": "rgba(0, 0, 0, 0)",
+          "focus": true,
+          "gear": "matrix(0.982871, 0.184294, -0.184294, 0.982871, 0, 0)",
+          "height": 44,
+          "hover": false,
+          "shadow": "none",
+          "width": 44,
+          "x": "none"
+        },
+        "focusSource": "native-option-tab"
+      },
+      "hover-dark": {
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(0, 0, 0, 0)",
+        "focus": true,
+        "gear": "matrix(0.939543, 0.34243, -0.34243, 0.939543, 0, 0)",
+        "height": 44,
+        "hover": true,
+        "shadow": "none",
+        "width": 44,
+        "x": "none"
+      },
+      "retentionCheckmark": {
+        "after": "none",
+        "before": "\"\"",
+        "checked": true
+      },
+      "actualAppCheckmark": {
+        "after": "none",
+        "before": "\"\"",
+        "checked": true
+      },
+      "nativeInputCounts": {
+        "pointerdown": 15,
+        "pointermove": 2,
+        "keydown": 15
+      },
+      "sourceDriftAfterRun": []
     }
   },
   "historicalAudio": {
@@ -112,5 +202,37 @@
     "trustedSourceConfigured": false,
     "remoteReleasePublished": false,
     "actualInstalledClientUpdated": false
+  },
+  "sourceRevision": "28166cbe02aab4ffe88ee463054219e84dff6f36",
+  "package": {
+    "artifact": "Lingji-0.1.0-alpha.10-macos-arm64.dmg",
+    "sha256": "5e7d9ecee9b6de719afc42d39cdb830947a79978d62b5ae9a94a100a7386fc97",
+    "frozenSourceBuild": true,
+    "signing": "ad-hoc",
+    "notarized": false,
+    "validation": {
+      "imageVerified": true,
+      "copiedAppSignatureVerified": true,
+      "productionSmoke": true,
+      "realAudioDevicesTested": false,
+      "realProvidersTested": false,
+      "freshMachineTested": false
+    },
+    "checksumVerified": true,
+    "productionSmoke": {
+      "timestamp": "2026-10-13T10:52:34.581Z",
+      "packagedApp": true,
+      "independentBackend": true,
+      "developerBackendRequests": 0,
+      "restartPersistence": true,
+      "stableWebviewProfile": true,
+      "parentOwnsBackend": true,
+      "localAccount": true,
+      "devAccountDisabled": true,
+      "node": "v24.21.0",
+      "sqlite": "3.53.4",
+      "realAudioDevicesOpened": false,
+      "realProvidersInvoked": false
+    }
   }
 }

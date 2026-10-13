@@ -34,6 +34,8 @@
 
 完整 `npm test` 220/220、ESLint、TypeScript 与 Web 构建通过；隔离 Chromium 整页15项检查通过，无页面错误。原生系统 WebKit 的7项检查通过：验证弹窗焦点、可信指针悬停、Enter提交、失败提示、更新下拉及真实 App 源码创建留存策略；复选框组件与实际 App 均确认仅绘制一个勾。可信原生按键与鼠标事件用于验证，未更改系统偏好；悬停使用 AppKit 指针事件，未做人手物理鼠标测试。
 
-冻结源发行正在进行；产物记录将在完成后补充。[结构化验收](client-controls-alpha10.json) 保留检查与哈希。
+Alpha 10 已从 `28166cbe02aab4ffe88ee463054219e84dff6f36` 冻结源构建，DMG 完整性与应用签名检查通过，SHA-256 为 `5e7d9ecee9b6de719afc42d39cdb830947a79978d62b5ae9a94a100a7386fc97`，校验文件复核通过。
+
+独立应用副本的后台启动、退出与重启持久化通过，开发后台请求为0；未打开真实音频设备或调用供应商。包为 ad-hoc 签名且未公证，全新 Mac 首次安装尚未实测。当前客户端未被替换，需手动安装重开后生效。既有 API PID753 与 worker PID756 的启动时间仍为10月12日20:45。[结构化验收](client-controls-alpha10.json) 保留检查与哈希。
 
 脚本与明细位于 gitignored `.agent-runtime/tasks/20261013-alpha10-ui/`、`20261013-audio-retention/`、`20261013-motion-minutes/`。历史 Alpha 9 的原生动效与性能证据见[前阶段验收](native-ui-minutes-2026-10-13.md)。真实模型上下文容量、限流和总延迟仍需独立验证，本地合成结果不代表真实长会议表现。
