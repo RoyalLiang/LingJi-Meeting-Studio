@@ -72,9 +72,11 @@ export default function App() {
 function Workspace() {
   const [boot, setBoot] = useState<Bootstrap | null>(null), [authReady, setAuthReady] = useState(false), [loading, setLoading] = useState(true);
   const [records, setRecords] = useState<RecordListItem[]>([]), [query, setQuery] = useState(''), [id, setId] = useState(new URLSearchParams(location.search).get('record') || ''), [record, setRecord] = useState<RecordDetail | null>(null);
-  const [error, setError] = useState(''), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false), [translationOpen, setTranslationOpen] = useState(false);
-  const [workspaceToast,setWorkspaceToast] = useState('');
-  const dismissWorkspaceToast=useCallback(()=>setWorkspaceToast(''),[]);
+  const [error, setError] = useState(''), [busy, setBusy] = useState(false), [translationOpen, setTranslationOpen] = useState(false);
+  const [toast, setToast] = useState({ message: '', key: 0 }), [shareError, setShareError] = useState('');
+  const dismissToast = useCallback(() => setToast(current => ({ ...current, message: '' })), []);
+  const showToast = useCallback((message: string) => setToast(current => ({ message, key: current.key + 1 })), []);
+  const selectRecord = useCallback((next: string) => { dismissToast(); setId(next); }, [dismissToast]);
   const [directories,setDirectories] = useState<WorkspaceDirectory[]>([]), [scope,setScope] = useState(() => { const value=new URLSearchParams(location.search).get('workspace') || 'all'; return /^(all|[a-f0-9-]{36})$/.test(value) ? value : 'all'; });
   const [archiveIds,setArchiveIds] = useState<string[]>([]), [archiveInitial,setArchiveInitial] = useState<string|null>(null), [editingDirectory,setEditingDirectory] = useState<WorkspaceDirectory|undefined>(), [homeVersion,setHomeVersion] = useState(0);
   const [connectionState, setConnectionState] = useState<ConnectionState>('idle');
@@ -147,9 +149,7 @@ function Workspace() {
   useEffect(() => { const warn = (event: BeforeUnloadEvent) => { if (recording || pending) { event.preventDefault(); event.returnValue = ''; } }; addEventListener('beforeunload', warn); return () => removeEventListener('beforeunload', warn); }, [recording, pending]);
   useEffect(() => { const escape = (e: KeyboardEvent) => { if (e.key === 'Escape' && !document.querySelector('dialog[open]')) setTranslationOpen(false); }; addEventListener('keydown', escape); return () => removeEventListener('keydown', escape); }, []);
   useEffect(() => { if(record) traceCommit(record.id,record.cursor); }, [record?.cursor]);
-  useEffect(() => {
-    if (record?.capture === 'completed' && notice === '录音已结束，正在补传和处理剩余片段。可以稍后回来查看。') setNotice('');
-  }, [record?.capture, notice]);
+  useEffect(() => { if (!authReady) dismissToast(); }, [authReady, dismissToast]);
   async function mutate(path: string, method: string, body?: unknown) {
     setBusy(true); setError(''); try { await api(path, method, body); await Promise.all([method === 'DELETE' && path === `/records/${activeId.current}` ? Promise.resolve() : refresh(), loadList()]); return true; }
     catch (e) { setError(messageOf(e)); return false; } finally { setBusy(false); }
@@ -157,7 +157,7 @@ function Workspace() {
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = new FormData(event.currentTarget); setBusy(true); setError('');
     try { const r = await api<RecordDetail>('/records', 'POST', { workspaceId: scope==='all'?null:scope, title: form.get('title'), language: form.get('language'), retentionDays: Number(form.get('retentionDays')), retainAudio: form.has('retainAudio'), autoMinutes: form.has('autoMinutes') });
-      const list = await api<{records: RecordListItem[]}>('/records'); setQueueRecords(list.records.map(r => r.id)); await loadList(); setId(r.id); setModal(null); await loadList(); } catch (e) { setError(messageOf(e)); } finally { setBusy(false); }
+      const list = await api<{records: RecordListItem[]}>('/records'); setQueueRecords(list.records.map(r => r.id)); await loadList(); selectRecord(r.id); setModal(null); await loadList(); } catch (e) { setError(messageOf(e)); } finally { setBusy(false); }
   }
   async function stopCapture(mode: 'pause' | 'seal' = 'seal', title = '') {
     if (stopping.current) return false;
@@ -174,7 +174,7 @@ function Workspace() {
         sources: current.sources.map(source => ({ sourceId: source.id, epoch: source.epoch, lastSequence: source.lastSequence ?? manifests.find(m => m.sourceId === source.id)?.lastSequence ?? source.watermark }))
       });
       setRecord(saved); setModal(null); await upload(); await refresh(); await loadList();
-      setNotice(mode === 'pause' ? '已暂停。回来后可继续本场会议。' : '本场会议已结束，剩余音频会继续处理。下一段对话可开启新会议。');
+      showToast(mode === 'pause' ? '已暂停。回来后可继续本场会议。' : '本场会议已结束，剩余音频会继续处理。下一段对话可开启新会议。');
       return true;
     } catch (e) { setError(messageOf(e)); return false; }
     finally { stopping.current = false; setRecording(false); setBusy(false); if (mode === 'seal') capture.current = null; }
@@ -198,7 +198,7 @@ function Workspace() {
     const started = controller.startMeeting();
     try {
       const next = await created;
-      activeId.current = next.id; setId(next.id); setRecord(next); setModal(null);
+      activeId.current = next.id; selectRecord(next.id); setRecord(next); setModal(null);
       const list = await api<{records: RecordListItem[]}>('/records');
       setQueueRecords(list.records.map(item => item.id)); await loadList();
       const issues = await started; setCaptureIssues(issues); setRecording(controller.active);
@@ -211,7 +211,7 @@ function Workspace() {
   async function startCapture(kind: 'microphone' | 'display' | 'meeting') {
     if (!record || busy || !captureAllowed()) return;
     if (record.capture === 'sealed' || record.capture === 'completed') { void quickRecord(); return; }
-    setError(''); setNotice('');
+    setError(''); dismissToast();
     const controller = capture.current ||= controllerFor(record.id);
     const started = kind === 'meeting' ? controller.startMeeting() : controller.start(kind);
     setBusy(true);
@@ -233,7 +233,7 @@ function Workspace() {
     try {
       await controller.disconnect('microphone');
       if (!controller.active) await stopCapture('pause');
-      else setNotice('麦克风已关闭，继续记录系统／会议音频。');
+      else showToast('麦克风已关闭，继续记录系统／会议音频。');
     } catch (e) { setError(messageOf(e)); } finally { setBusy(false); }
   }
   async function onImport(file: File) {
@@ -246,20 +246,21 @@ function Workspace() {
     const snapshot = (snapshotOverride || record?.minutes?.evidenceSnapshot)?.find(s => s.id === ref.segmentId && s.revision === ref.revision);
     setEvidence(snapshot || null); setHighlight(ref.segmentId); document.getElementById(`segment-${ref.segmentId}`)?.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   }
-  async function openShare() { if (!record) return; setShareUrl(''); setModal('share'); try { setShares((await api<{ shares: typeof shares }>(`/records/${record.id}/shares`)).shares); } catch (e) { setError(messageOf(e)); } }
+  async function openShare() { if (!record) return; setShareUrl(''); setShareError(''); setModal('share'); try { setShares((await api<{ shares: typeof shares }>(`/records/${record.id}/shares`)).shares); } catch (e) { setError(messageOf(e)); } }
   const directoryName = scope==='all'?'所有会议':directories.find(w=>w.id===scope)?.name || '工作目录';
-  const chooseScope = (next:string) => { setScope(next);setId('');setQuery('');scrollRoot.current?.scrollTo({top:0,behavior:'instant'}); };
+  const chooseScope = (next:string) => { setScope(next);selectRecord('');setQuery('');scrollRoot.current?.scrollTo({top:0,behavior:'instant'}); };
   const newDirectory = () => {setEditingDirectory(undefined);setModal('directory');};
   const openArchive = (ids:string[]) => {setArchiveIds(ids);setArchiveInitial(record?.workspaceId || (scope==='all'?null:scope));setModal('archive');};
   async function saveDirectory(name:string,description:string) {
     try {
       const directory=await api<WorkspaceDirectory>(editingDirectory?`/workspaces/${editingDirectory.id}`:'/workspaces',editingDirectory?'PATCH':'POST',{name,description});
-      const list=await api<{workspaces:WorkspaceDirectory[]}>('/workspaces');setDirectories(list.workspaces);setHomeVersion(v=>v+1);setWorkspaceToast(editingDirectory?'目录已保存。':'工作目录已创建。');
+      const list=await api<{workspaces:WorkspaceDirectory[]}>('/workspaces');setDirectories(list.workspaces);setHomeVersion(v=>v+1);
       if(archiveIds.length){setArchiveInitial(directory.id);setModal('archive');}else{setModal(null);chooseScope(directory.id);}
+      showToast(editingDirectory?'目录已保存。':'工作目录已创建。');
     }catch(e){throw new Error(messageOf(e));}
   }
   async function saveArchive(workspaceId:string|null) {
-    try {await api('/workspaces/archive','POST',{recordIds:archiveIds,workspaceId});await Promise.all([loadList(),refresh()]);setHomeVersion(v=>v+1);setWorkspaceToast(`已归档 ${archiveIds.length} 场会议。`);setArchiveIds([]);setModal(null);}catch(e){throw new Error(messageOf(e));}
+    try {await api('/workspaces/archive','POST',{recordIds:archiveIds,workspaceId});await Promise.all([loadList(),refresh()]);setHomeVersion(v=>v+1);showToast(`已归档 ${archiveIds.length} 场会议。`);setArchiveIds([]);setModal(null);}catch(e){throw new Error(messageOf(e));}
   }
   if (loading) return <main className="loading-page" role="status"><Brand markOnly/><p>正在打开会议空间…</p></main>;
   if (!authReady || !boot) return <Auth ready={loadBoot}/>;
@@ -269,19 +270,18 @@ function Workspace() {
       <Button variant="primary" className="new-record" onClick={() => void quickRecord()} disabled={recording || busy || !sourceReady}><Plus size={18}/>快速记录</Button>
       <Button className="prepare-record" variant="ghost" onClick={() => setModal('new')} disabled={recording || busy}>提前准备会议</Button>
       <div className="workspace-switch"><div><span>工作目录</span><Button variant="ghost" aria-label="新建工作目录" onClick={newDirectory} disabled={recording||busy}><FolderPlus size={17}/></Button></div><Select label="选择工作目录" value={scope} onChange={chooseScope} disabled={recording||busy} options={[{value:'all',label:'所有会议'},...directories.map(w=>({value:w.id,label:w.name}))]}/><Button className={`directory-home-link ${!id?'selected':''}`} variant="ghost" disabled={recording||busy} onClick={()=>chooseScope(scope)}><House size={16}/>目录概览</Button></div>
-      <div className="rail-heading">我的记录 <span>{records.length}</span></div><nav className="record-list" aria-label="会议记录">{records.map(r => <button key={r.id} className={`record-row ${r.id === id ? 'selected' : ''}`} disabled={(recording || busy) && r.id !== id} onClick={() => setId(r.id)}>
+      <div className="rail-heading">我的记录 <span>{records.length}</span></div><nav className="record-list" aria-label="会议记录">{records.map(r => <button key={r.id} className={`record-row ${r.id === id ? 'selected' : ''}`} disabled={(recording || busy) && r.id !== id} onClick={() => selectRecord(r.id)}>
         <span className="record-icon">{r.hasMinutes ? <FileText size={18}/> : <Microphone size={18}/>}</span><span><b>{r.title}</b><small>{new Date(r.createdAt).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })} · {r.capture === 'recording' ? '记录中' : `${Math.ceil(r.seconds / 60)} 分钟`}</small></span><CaretRight size={14}/></button>)}
         {!records.length && <p className="rail-empty">{query ? '没有匹配记录' : '你的第一场对话，值得留住。'}</p>}</nav>
-      <footer className="rail-footer"><div className="account"><span className="avatar">{localBackend ? '聆' : boot.email[0].toUpperCase()}</span><span><b>{localBackend ? '本机空间' : boot.email.split('@')[0]}</b><small>个人会议空间</small></span></div><div className="actions"><Button variant="ghost" aria-label="设置与诊断" onClick={() => { setModal('settings'); void api<{deletions: typeof deletions}>('/deletions').then(d => setDeletions(d.deletions)).catch(e => setError(messageOf(e))); }}><GearSix size={19}/></Button><Button variant="ghost" aria-label={theme === 'light' ? '切换深色' : '切换浅色'} onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>{theme === 'light' ? <Moon size={19}/> : <Sun size={19}/>}</Button>{!boot.localAccount && <Button variant="ghost" aria-label="退出登录" disabled={recording} onClick={async () => { try { await api('/auth/logout', 'POST'); setQueueRecords([]); setAuthReady(false); setId(''); } catch (e) { setError(messageOf(e)); } }}><SignOut size={19}/></Button>}</div></footer>
+      <footer className="rail-footer"><div className="account"><span className="avatar">{localBackend ? '聆' : boot.email[0].toUpperCase()}</span><span><b>{localBackend ? '本机空间' : boot.email.split('@')[0]}</b><small>个人会议空间</small></span></div><div className="actions"><Button variant="ghost" aria-label="设置与诊断" onClick={() => { setModal('settings'); void api<{deletions: typeof deletions}>('/deletions').then(d => setDeletions(d.deletions)).catch(e => setError(messageOf(e))); }}><GearSix size={19}/></Button><Button variant="ghost" aria-label={theme === 'light' ? '切换深色' : '切换浅色'} onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>{theme === 'light' ? <Moon size={19}/> : <Sun size={19}/>}</Button>{!boot.localAccount && <Button variant="ghost" aria-label="退出登录" disabled={recording} onClick={async () => { try { await api('/auth/logout', 'POST'); setQueueRecords([]); setAuthReady(false); selectRecord(''); } catch (e) { setError(messageOf(e)); } }}><SignOut size={19}/></Button>}</div></footer>
     </aside>
     <main id="workspace" className={`workspace ${translationOpen ? 'with-translation' : ''}`}><header className="topbar glass"><div className="workspace-breadcrumb"><button className="breadcrumb" disabled={recording||busy} onClick={()=>chooseScope(scope)}>{directoryName}</button><CaretRight size={14}/><span>{record ? '记录详情' : '目录概览'}</span></div><div className="search-box topbar-search"><MagnifyingGlass size={18}/><input type="search" aria-label="搜索当前目录会议内容" placeholder="搜索当前目录的会议、纪要与内容" value={query} onChange={e => setQuery(e.target.value)}/></div><div className="sync-state" data-connection-state={connectionState}>{(online || localBackend) && (!id || connectionState==='connected') ? <CloudCheck size={18}/> : <CloudSlash size={18}/>}<span>{localBackend && (!id || connectionState==='connected') ? (pending ? `${pending} 段待保存` : online ? '本机已连接' : '本机已连接 · 云端离线') : !online && !localBackend ? '离线 · 本地保留' : !id ? '网络可用' : connectionState!=='connected' ? ({idle:'未连接',connecting:'连接中',reconnecting:'正在重连',offline:'离线',unavailable:'连接不可用'}[connectionState]) : pending ? `${pending} 段待上传` : '已连接'}</span><ScrollToTop root={scrollRoot}/></div></header>
       <div className="workspace-body"><div ref={scrollRoot} className="workspace-scroll" tabIndex={0} aria-label="会议内容滚动区">
       {error && <div className="global-message error" role="alert"><WarningCircle size={19}/><span>{error}</span><button aria-label="关闭错误提示" onClick={() => setError('')}><X size={17}/></button></div>}
       {id && connectionState==='reconnecting' && <div className="global-message" role="status"><span>实时连接中断，正在自动重连；本地音频仍会保留。</span></div>}
-      {notice && <div className="global-message" role="status"><span>{notice}</span><button aria-label="关闭提示" onClick={() => setNotice('')}><X size={17}/></button></div>}
       {boot.providers.fixture && <div className="fixture-notice">开发测试模式 · 识别与纪要为测试数据</div>}
-      {!id ? <WorkspaceHome key={`${scope}:${homeVersion}`} scope={scope} records={records} query={query} modelReady={boot.providers.minutes} disabled={recording||busy} open={setId} archive={openArchive} create={newDirectory} edit={()=>{setEditingDirectory(directories.find(w=>w.id===scope));setModal('directory');}} quick={()=>void quickRecord()}/> : !record ? <div className="empty" role="status">{connectionState==='unavailable' ? '当前记录无法访问，请重新登录或选择其他记录。' : '正在读取记录…'}</div> : <><div className="record-heading"><div><p className="kicker">{new Date(records.find(r => r.id === id)?.createdAt || Date.now()).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
-          <RecordTitle key={record.id} title={record.title} save={async title => { const saved = await mutate(`/records/${id}`, 'PATCH', {title}); if (saved) { await loadList(); setNotice('会议标题已保存。'); } return saved; }}/><div className="record-meta"><Status tone={recording ? 'live' : ''}>{recording ? '正在记录' : record.capture === 'completed' ? '已完成' : record.capture === 'sealed' ? '整理中' : record.capture === 'paused' ? '已暂停' : '待开始'}</Status><span>{timecode(record.usage.samples / 16)} 音频 · 转录 v{record.transcriptRevision}</span><span>{record.retentionDays} 天留存</span><span>{directories.find(w=>w.id===record.workspaceId)?.name || '未归档'}</span></div></div>
+      {!id ? <WorkspaceHome key={`${scope}:${homeVersion}`} scope={scope} records={records} query={query} modelReady={boot.providers.minutes} disabled={recording||busy} open={selectRecord} archive={openArchive} create={newDirectory} edit={()=>{setEditingDirectory(directories.find(w=>w.id===scope));setModal('directory');}} quick={()=>void quickRecord()}/> : !record ? <div className="empty" role="status">{connectionState==='unavailable' ? '当前记录无法访问，请重新登录或选择其他记录。' : '正在读取记录…'}</div> : <><div className="record-heading"><div><p className="kicker">{new Date(records.find(r => r.id === id)?.createdAt || Date.now()).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+          <RecordTitle key={record.id} title={record.title} save={async title => { const saved = await mutate(`/records/${id}`, 'PATCH', {title}); if (saved) { await loadList(); showToast('会议标题已保存。'); } return saved; }}/><div className="record-meta"><Status tone={recording ? 'live' : ''}>{recording ? '正在记录' : record.capture === 'completed' ? '已完成' : record.capture === 'sealed' ? '整理中' : record.capture === 'paused' ? '已暂停' : '待开始'}</Status><span>{timecode(record.usage.samples / 16)} 音频 · 转录 v{record.transcriptRevision}</span><span>{record.retentionDays} 天留存</span><span>{directories.find(w=>w.id===record.workspaceId)?.name || '未归档'}</span></div></div>
           <div className="actions meeting-actions"><RecordingPlayback key={record.id} record={record}/><Button disabled={!record.minutes || recording} onClick={() => void openShare()}><ShareNetwork size={17}/><span>分享</span></Button><Button aria-expanded={translationOpen} onClick={() => setTranslationOpen(!translationOpen)}><Translate size={17}/>实时翻译{record.translationTarget && <span className="live-dot"/>}</Button><Button disabled={recording||busy} onClick={()=>openArchive([id])}><Folder size={17}/>归档</Button><Button variant="ghost" aria-label="删除本次记录" disabled={recording} onClick={() => setModal('delete')}><Trash size={18}/></Button></div></div>
         <MeetingControls record={record} recording={recording} busy={busy} ready={sourceReady} signals={signals}
         start={kind => void startCapture(kind)} quick={() => void quickRecord()} sources={() => setModal('capture')}
@@ -301,7 +301,7 @@ function Workspace() {
       {id && record && <CurrentDiscussion key={record.id} record={record} minutes={(record.capture === 'completed' ? record.minutes || record.liveMinutes : record.liveMinutes || record.minutes) || null} job={record.jobs.at(-1)} modelReady={boot.providers.minutes}/>}
       {record && translationOpen && <TranslationPanel key={record.id} record={record} ready={boot.providers.translation ?? boot.providers.minutes} close={()=>setTranslationOpen(false)} configure={()=>{setTranslationOpen(false);setModal('settings');}} save={async target=>{const recordId=record.id;await api(`/records/${recordId}`,'PATCH',{translationTarget:target});setRecord(current=>current?.id===recordId?{...current,translationTarget:target}:current);}} inspect={segment=>cite({segmentId:segment.id,revision:segment.revision},record.segments)}/>}
     </main><input ref={fileInput} className="sr-only" type="file" accept="audio/*" aria-label="导入音频文件" onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void onImport(file); }}/>
-      <Toast message={workspaceToast} dismiss={dismissWorkspaceToast}/>
+      <Toast message={toast.message} messageKey={toast.key} dismiss={dismissToast}/>
     {modal === 'directory' && <WorkspaceEditor directory={editingDirectory} save={saveDirectory} close={()=>{setModal(archiveIds.length?'archive':null);}}/>}
     {modal === 'archive' && <ArchiveRecords key={archiveInitial||'inbox'} directories={directories} count={archiveIds.length} initial={archiveInitial} save={saveArchive} close={()=>{setModal(null);setArchiveIds([]);}} create={newDirectory}/>}
 {modal === 'capture' && <CaptureSetup connected={signals.map(source => source.kind)} signals={signals} issues={captureIssues} busy={busy} onConnect={kind => void startCapture(kind)} onMicrophoneOff={() => void toggleMicrophone()} onClose={() => setModal(null)}/>}
@@ -310,10 +310,10 @@ function Workspace() {
     {modal === 'settings' && <Modal wide explicitCloseOnly title="设置与录音环境" onClose={() => setModal(null)}><ClientUpdatesPanel updates={updates}/>{boot.canConfigure && <ProviderSettings saved={refreshProviders}/>}<DeviceSettings disabled={recording}/><div className="settings-section"><h3>浏览器能力检测</h3><dl className="capability-list">{Object.entries(capabilities()).filter(([k]) => k !== 'browser').map(([key, value]) => <div key={key}><dt>{{ secure: '安全环境', microphone: '麦克风 API', display: '共享来源 API', worklet: '音频处理', indexedDB: '本地补传存储', online: '网络连接' }[key]}</dt><dd>{value ? <Check size={17}/> : <X size={17}/>}</dd></div>)}</dl><p className="fine-print">API 可用不代表所选来源有声音。请在真实会议前试录并核对转录。浏览器无法保证关页或休眠后持续录音。</p></div>
       {deletions.length > 0 && <div className="settings-section"><h3>删除清理</h3><p>已禁访 {deletions.length} 条记录 · 物理清理完成 {deletions.filter(d => d.cleanup === 'completed').length} 条 · 等待清理 {deletions.filter(d => d.cleanup !== 'completed').length} 条</p><p className="fine-print">清理需要后台处理器运行，不包含服务外的备份副本。</p></div>}{record && <TranslationSettings key={record.id} recordId={record.id} value={record.translationTarget || ''} saved={target => setRecord(current => current?.id === record.id ? {...current,translationTarget:target} : current)}/>}
       <div className="settings-section"><h3>使用与诊断</h3>{record && <Button onClick={() => void downloadPendingAudio(record.id).catch(e => setError(messageOf(e)))}>下载本机待传音频备份</Button>}<p>每条记录最多两小时音频，每账户最多 200 条记录。多音轨分别计量。</p>{record && <p>本次音频 {Math.ceil(record.usage.samples / 16000)} 秒 · 模型 {record.usage.llmTokens} tokens</p>}<p className="fine-print">以上为本地计量，并非供应商账单。诊断文件不含音频、正文、邮箱或密钥。</p><Button onClick={() => { const blob = new Blob([JSON.stringify({ capabilities: capabilities(), storage: boot.storage, providers: boot.providers, pending, capture: record?.capture, transcription: record?.transcription }, null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob), link = document.createElement('a'); link.href = url; link.download = 'meeting-diagnostics.json'; link.click(); URL.revokeObjectURL(url); }}>下载诊断信息</Button></div></Modal>}
-    {modal === 'delete' && record && <Modal title="删除这条记录？" onClose={() => setModal(null)}><p>“{record.title}”将立即停止访问，分享链接与旧处理任务失效；后台随后清理原音。</p><div className="actions"><Button variant="danger" disabled={busy} onClick={async () => { const deletedId = id; if (await mutate(`/records/${id}`, 'DELETE')) { setId(''); setModal(null); try { await clearRecordAudio(deletedId); } catch { setError('云端已禁访；本机音频缓冲清理失败，请在浏览器设置中清理此站点数据。'); } await loadList(); } }}>删除记录</Button><Button onClick={() => setModal(null)}>保留记录</Button></div></Modal>}
+    {modal === 'delete' && record && <Modal title="删除这条记录？" onClose={() => setModal(null)}><p>“{record.title}”将立即停止访问，分享链接与旧处理任务失效；后台随后清理原音。</p><div className="actions"><Button variant="danger" disabled={busy} onClick={async () => { const deletedId = id; if (await mutate(`/records/${id}`, 'DELETE')) { selectRecord(''); setModal(null); try { await clearRecordAudio(deletedId); } catch { setError('云端已禁访；本机音频缓冲清理失败，请在浏览器设置中清理此站点数据。'); } await loadList(); } }}>删除记录</Button><Button onClick={() => setModal(null)}>保留记录</Button></div></Modal>}
     {modal === 'import-text' && record && <Modal title="导入已有转录" onClose={() => setModal(null)} wide><form onSubmit={async e => { e.preventDefault(); const text = new FormData(e.currentTarget).get('text'); if (await mutate(`/records/${id}/import-text`, 'POST', { text })) setModal(null); }}><label>转录正文<textarea name="text" rows={12} required maxLength={100000} placeholder="按自然段粘贴已有转录。导入文本不会生成虚构的音频时间。"/></label><Button disabled={busy} variant="primary" type="submit">导入文字</Button></form></Modal>}
     {modal === 'share' && record && <Modal title="分享会议内容" onClose={() => setModal(null)}><p className="muted">任何持有链接的人都可阅读选定内容。24 小时后失效，可随时撤销。</p><form onSubmit={async e => { e.preventDefault(); const scope = new FormData(e.currentTarget).get('scope'); try { const share = await api<{ token: string }>(`/records/${id}/shares`, 'POST', { scope }); setShareUrl(`${location.origin}/share/${share.token}`); setShares((await api<{ shares: typeof shares }>(`/records/${id}/shares`)).shares); } catch (e) { setError(messageOf(e)); } }}><label>分享范围<Select label="分享范围" name="scope" options={[{"value": "minutes", "label": "仅纪要（含引用快照）"}, {"value": "full", "label": "纪要与全部转录"}]}/></label><Button type="submit" variant="primary">生成分享链接</Button></form>
-      {shareUrl && <div className="share-result"><label>分享链接<input readOnly value={shareUrl} onFocus={e => e.target.select()}/></label><Button onClick={async () => { try { await navigator.clipboard.writeText(shareUrl); setNotice('链接已复制。'); } catch { setNotice('自动复制未成功，请选中链接手动复制。'); } }}>复制链接</Button></div>}
+      {shareUrl && <div className="share-result"><label>分享链接<input readOnly value={shareUrl} onFocus={e => e.target.select()}/></label><Button onClick={async () => { setShareError(''); try { await navigator.clipboard.writeText(shareUrl); showToast('链接已复制。'); } catch { dismissToast(); setShareError('自动复制未成功，请选中链接手动复制。'); } }}>复制链接</Button>{shareError && <p className="notice error" role="alert">{shareError}</p>}</div>}
       <h3>已生成的链接</h3>{shares.filter(s => !s.revoked).map(s => <div key={s.id} className="share-row"><span>{s.scope === 'minutes' ? '仅纪要' : '完整转录'} · {new Date(s.expires).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} 到期</span><Button onClick={async () => { if (await mutate(`/records/${id}/shares/${s.id}`, 'DELETE')) setShares(shares.map(item => item.id === s.id ? { ...item, revoked: true } : item)); }}>撤销</Button></div>)}</Modal>}
     {evidence && <Modal title="纪要引用的原文" onClose={() => setEvidence(null)}><Status>片段 v{evidence.revision}</Status><p className="evidence-quote">{evidence.text}</p><p className="fine-print">这是生成纪要时的转录快照，可能与当前人工修订版本不同。</p></Modal>}
   </div>;

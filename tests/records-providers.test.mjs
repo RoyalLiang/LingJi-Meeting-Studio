@@ -147,3 +147,31 @@ test('chat request preserves its configured route and accounts model usage', asy
   try {const result=await completeJson([{role:'user',content:'fixture'}],{LLM_API_URL:`http://127.0.0.1:${server.address().port}/v1/chat/completions`,LLM_PROTOCOL:'chat-completions',LLM_MODEL:'fixture-model',LLM_API_KEY:'fixture-key'});assert.equal(result.ok,true);assert.equal(result.usageTokens,17);}
   finally {server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
 });
+
+test('new model tables require explicit valid topic associations while table-free output remains compatible', async()=> {
+  const {generateMinutes}=await import('../services/records/src/providers.mjs');
+  const original=globalThis.fetch,evidence=[{segmentId:'s1',revision:1}];
+  const job={template:'meeting',scope:'live',snapshot:[{id:'s1',revision:1,text:'合成会议内容'}]};
+  const valid={title:'合成纪要',sections:[{heading:'主题',items:[{text:'合成内容',evidence}]}],topics:[{id:'topic-1',title:'主题',summary:'合成内容',evidence}],tables:[{title:'统计',topicId:'topic-1',columns:['项目','状态'],rows:[{cells:['项目','待确认'],evidence}]}],actions:[]};
+  let output=valid;
+  try {
+    for(const protocol of ['chat-completions','responses']){
+      globalThis.fetch=async()=>new Response(JSON.stringify(protocol==='responses'?{output_text:JSON.stringify(output)}:{choices:[{message:{content:JSON.stringify(output)}}]}),{headers:{'Content-Type':'application/json'}});
+      const env={LLM_API_URL:'https://unused.invalid',LLM_API_KEY:'synthetic-local-key',LLM_MODEL:'synthetic',LLM_PROTOCOL:protocol};
+      output=valid;const result=await generateMinutes(job,env);assert.deepEqual(result.tables,valid.tables);assert.deepEqual(result.topics,valid.topics);
+      for(const [mutation,code] of [
+        [value=>{delete value.tables[0].topicId;},'invalid_minutes_tables'],
+        [value=>{value.tables[0].topicId='unknown';},'invalid_minutes_tables'],
+        [value=>{delete value.topics[0].id;},'invalid_minutes_topics'],
+        [value=>{value.topics.push({...value.topics[0]});},'invalid_minutes_topics'],
+        [value=>{value.topics[0].id=' topic-1 ';},'invalid_minutes_topics'],
+        [value=>{value.tables[0].rows[0].evidence=[{segmentId:'unknown',revision:1}];},'invalid_minutes_tables'],
+      ]){
+        output=structuredClone(valid);mutation(output);await assert.rejects(generateMinutes(job,env),error=>error.code===code);
+      }
+      output=structuredClone(valid);delete output.tables;delete output.topics[0].id;
+      assert.equal((await generateMinutes(job,env)).topics[0].id,undefined);
+      output.tables=[];assert.deepEqual((await generateMinutes(job,env)).tables,[]);
+    }
+  } finally {globalThis.fetch=original;}
+});

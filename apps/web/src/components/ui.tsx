@@ -9,8 +9,8 @@ export function Button({ children, variant = 'secondary', className = '', ...pro
 }
 export function CloseButton({ label = '关闭', className = '', ...props }: Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> & { label?: string }) {
   return <Button type="button" variant="ghost" className={`close-button ${className}`} aria-label={label} title={label} {...props}>
-    <svg className="close-gear" width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M24.66 11L25.61 13.24L28.72 13.3V18.7L25.61 18.76L24.66 21L23.19 22.95L24.7 25.66L20.02 28.36L18.42 25.7L16 26L13.58 25.7L11.98 28.36L7.3 25.66L8.81 22.95L7.34 21L6.39 18.76L3.28 18.7V13.3L6.39 13.24L7.34 11L8.81 9.05L7.3 6.34L11.98 3.64L13.58 6.3L16 6L18.42 6.3L20.02 3.64L24.7 6.34L23.19 9.05Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/></svg>
-    <X className="close-symbol" size={16} weight="bold" aria-hidden="true"/>
+    <svg className="close-gear" width="44" height="44" viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M24.66 11L25.61 13.24L28.72 13.3V18.7L25.61 18.76L24.66 21L23.19 22.95L24.7 25.66L20.02 28.36L18.42 25.7L16 26L13.58 25.7L11.98 28.36L7.3 25.66L8.81 22.95L7.34 21L6.39 18.76L3.28 18.7V13.3L6.39 13.24L7.34 11L8.81 9.05L7.3 6.34L11.98 3.64L13.58 6.3L16 6L18.42 6.3L20.02 3.64L24.7 6.34L23.19 9.05Z" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round"/></svg>
+    <X className="close-symbol" size={20} weight="bold" aria-hidden="true"/>
   </Button>;
 }
 export function Modal({ title, children, onClose, wide = false, explicitCloseOnly = false }: { title: string; children: ReactNode; onClose: () => void; wide?: boolean; explicitCloseOnly?: boolean }) {

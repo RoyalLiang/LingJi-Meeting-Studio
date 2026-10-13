@@ -32,7 +32,7 @@ test('over-budget transcript is fully windowed, hierarchically synthesized and g
 test('failed window never publishes final; retry reuses persisted windows, revision invalidates affected windows only',async()=>{
   const f=await fixture();try{
     const first=await f.claim();let calls=0;await assert.rejects(runMinutesPipeline(f.repo,f.record.id,first,config,async job=>{if(++calls===3)throw new Error('provider disconnected');return summarize(job);}),/disconnected/);
-    let record=await f.repo.get(f.record.id);assert.equal(record.minutes,null);assert.equal(record.jobs[0].progress.completed,2);assert.equal(record.jobs[0].windowCache.length,2);
+    let record=await f.repo.get(f.record.id);assert.equal(record.minutes,null);assert.equal(record.jobs[0].progress.completed,calls-1);assert.equal(record.jobs[0].windowCache.length,calls-1);assert.equal(record.usage.llmTokens,(calls-1)*10);
     await f.repo.change(f.record.id,r=>{r.jobs[0].status='failed';r.jobs[0].snapshot=[];r.segments[0].text+=' 修订';r.segments[0].revision++;r.transcriptRevision++;emit(r,'transcript.edited',{});});
     const next=await f.claim();const oldKeys=buildMinutesManifest(first,config).windows.map(w=>w.key),newKeys=buildMinutesManifest(next,config).windows.map(w=>w.key);assert.equal(oldKeys.filter(key=>!newKeys.includes(key)).length,1);
     const result=await runMinutesPipeline(f.repo,f.record.id,next,config,async job=>summarize(job));assert.ok(result.coverage.reused>=1);await f.repo.change(f.record.id,r=>commitMinutes(r,next.id,result,next.fence));record=await f.repo.get(f.record.id);assert.equal(record.minutes.transcriptRevision,2);
@@ -112,5 +112,228 @@ test('hierarchical minutes stream only the final synthesis into the visible prev
     },{onDelta:delta=>{preview+=delta;}});
     assert.ok(result.coverage.calls>1);
     assert.equal(preview,'汇总');
+  } finally {await f.close();}
+});
+
+test('independent windows overlap within a bounded limit and retain transcript order for synthesis', async () => {
+  const f=await fixture(32);
+  let release,started,run;
+  const held=new Promise(resolve=>{release=resolve;});
+  const firstStarted=new Promise(resolve=>{started=resolve;});
+  let active=0,maxActive=0,startedWindows=0;
+  const completionOrder=[];
+  try {
+    const claim=await f.claim();
+    const manifest=buildMinutesManifest(claim,config);
+    assert.ok(manifest.windows.length>2);
+    run=runMinutesPipeline(f.repo,f.record.id,claim,{...config,RECORD_MINUTES_WINDOW_CONCURRENCY:'2'},async job=>{
+      active++;maxActive=Math.max(maxActive,active);
+      try {
+        if(job.stage!=='synthesis') {
+          startedWindows++;started();await held;
+          if(job.snapshot[0].id===manifest.windows[0].snapshot[0].id) await new Promise(resolve=>setImmediate(resolve));
+          completionOrder.push(job.snapshot[0].id);
+          return {title:'window',sections:[{heading:'window',items:[{text:job.snapshot[0].id,evidence:[{segmentId:job.snapshot[0].id,revision:1}]}]}],actions:[],usageTokens:10};
+        }
+        assert.deepEqual(job.summaries.map(summary=>summary.sections[0].items[0].text),manifest.windows.map(window=>window.snapshot[0].id));
+        return summarize(job);
+      } finally {active--;}
+    });
+    await firstStarted;
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(startedWindows,2,'a second independent window should start while the first is waiting');
+    assert.equal(maxActive,2);
+    release();const result=await run;
+    assert.notEqual(completionOrder[0],manifest.windows[0].snapshot[0].id);
+    assert.equal(result.coverage.completed,manifest.windows.length);
+    assert.equal(result.coverage.calls,manifest.windows.length+1);
+    assert.equal((await f.repo.get(f.record.id)).usage.llmTokens,result.coverage.calls*10);
+  } finally {release();await run?.catch(()=>{});await f.close();}
+});
+
+test('window failure stops new work and drains successful in-flight usage before rejecting', async () => {
+  const f=await fixture(32);
+  let fail,release,started,run;
+  const failure=new Promise(resolve=>{fail=resolve;});
+  const held=new Promise(resolve=>{release=resolve;});
+  const initialStarted=new Promise(resolve=>{started=resolve;});
+  let calls=0,settled=false;
+  try {
+    const claim=await f.claim();
+    run=runMinutesPipeline(f.repo,f.record.id,claim,config,async job=>{
+      calls++;
+      if(calls===1){await failure;throw new Error('window-disconnected');}
+      if(calls===2){started();await held;return summarize(job);}
+      assert.fail('no new window should start after failure');
+    });
+    const verdict=assert.rejects(run,/window-disconnected/).then(()=>{settled=true;});
+    await initialStarted;fail();await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(settled,false,'the failed job must retain its fence until the other provider result is drained');
+    assert.equal(calls,2);
+    release();await verdict;
+    const record=await f.repo.get(f.record.id);
+    assert.equal(record.jobs[0].windowCache.length,1);
+    assert.equal(record.jobs[0].progress.completed,1);
+    assert.equal(record.usage.llmTokens,10);
+    assert.equal(record.minutes,null);
+  } finally {fail();release();await run?.catch(()=>{});await f.close();}
+});
+
+test('concurrent identical split windows share one provider request and account usage once', async () => {
+  const f=await fixture(1);
+  try {
+    await f.repo.change(f.record.id,r=>{r.segments[0].text='x'.repeat(12000);});
+    const claim=await f.claim(),env={...config,RECORD_MINUTES_INPUT_BYTES:'4096'};
+    const manifest=buildMinutesManifest(claim,env);
+    assert.equal(manifest.windows.length,4);
+    assert.equal(new Set(manifest.windows.map(window=>window.key)).size,1);
+    let calls=0;
+    const result=await runMinutesPipeline(f.repo,f.record.id,claim,env,async job=>{
+      calls++;await new Promise(resolve=>setImmediate(resolve));return summarize(job);
+    });
+    assert.equal(calls,2,'one shared leaf window plus final synthesis');
+    assert.equal(result.coverage.completed,4);
+    assert.equal(result.coverage.reused,3);
+    assert.equal(result.usageTokens,20);
+    assert.equal((await f.repo.get(f.record.id)).usage.llmTokens,20);
+  } finally {await f.close();}
+});
+
+test('rolling live snapshots reuse unchanged middle windows when one confirmed segment arrives', async t => {
+  const f=await fixture(160);
+  try {
+    await f.repo.change(f.record.id,r=>{r.capture='recording';});
+    const claimLive=async()=>{
+      let claim;
+      await f.repo.change(f.record.id,r=>{const job=requestMinutes(r,{scope:'live',modelVersion:'fixture-model'});job.status='running';job.fence=job.id;claim=structuredClone(job);});
+      return claim;
+    };
+    const first=await claimLive();
+    const previous=await runMinutesPipeline(f.repo,f.record.id,first,config,async job=>summarize(job));
+    await f.repo.change(f.record.id,r=>{
+      commitMinutes(r,first.id,previous,first.fence);
+      r.segments.push({...r.segments.at(-1),id:'s-160',startMs:160000,endMs:161000});r.transcriptRevision++;
+    });
+    const next=await claimLive();let generatedWindows=0;
+    const result=await runMinutesPipeline(f.repo,f.record.id,next,config,async job=>{if(job.stage!=='synthesis')generatedWindows++;return summarize(job);});
+    assert.equal(first.snapshot.length,120);assert.equal(next.snapshot.length,120);
+    assert.equal(next.snapshot[0].id,'s-41');
+    assert.ok(generatedWindows<=2,`only rolling boundary windows should regenerate, got ${generatedWindows}`);
+    assert.ok(result.coverage.reused>=previous.coverage.windows-2);
+    t.diagnostic(JSON.stringify({initialCalls:previous.coverage.calls,rollingCalls:result.coverage.calls,generatedWindows,reused:result.coverage.reused}));
+    validateMinutes(result,next.snapshot);
+    await f.repo.change(f.record.id,r=>commitMinutes(r,next.id,result,next.fence));
+    const record=await f.repo.get(f.record.id);
+    assert.equal(record.liveMinutes.transcriptRevision,2);
+    assert.equal(record.jobs.at(-1).status,'completed');
+  } finally {await f.close();}
+});
+
+test('legacy and malformed snapshot offsets retain zero-offset manifest compatibility', async () => {
+  const f=await fixture(32);
+  try {
+    const claim=await f.claim(),expected=buildMinutesManifest({...claim,snapshotOffset:0},config);
+    for(const snapshotOffset of [undefined,-1,1.5,NaN,Infinity,'24']){
+      const actual=buildMinutesManifest({...claim,snapshotOffset},config);
+      assert.equal(actual.snapshotOffset,0);
+      assert.deepEqual(actual.windows,expected.windows);
+    }
+  } finally {await f.close();}
+});
+
+test('reused live windows cannot publish after a transcript edit, manual minutes edit or lost fence', async () => {
+  for(const mutation of [r=>{r.segments[80].revision++;r.transcriptRevision++;},r=>{r.minutesRevision++;},r=>{r.jobs.at(-1).fence='replacement';}]){
+    const f=await fixture(160);
+    try {
+      let claim;
+      const claimLive=()=>f.repo.change(f.record.id,r=>{const job=requestMinutes(r,{scope:'live',modelVersion:'fixture-model'});job.status='running';job.fence=job.id;claim=structuredClone(job);});
+      await f.repo.change(f.record.id,r=>{r.capture='recording';});
+      await claimLive();
+      const first=await runMinutesPipeline(f.repo,f.record.id,claim,config,async job=>summarize(job));
+      await f.repo.change(f.record.id,r=>{commitMinutes(r,claim.id,first,claim.fence);r.segments.push({...r.segments.at(-1),id:'s-160'});r.transcriptRevision++;});
+      await claimLive();let changed=false;
+      await assert.rejects(runMinutesPipeline(f.repo,f.record.id,claim,config,async job=>{
+        if(!changed){changed=true;await f.repo.change(f.record.id,mutation);}return summarize(job);
+      }),error=>['stale_job','minutes_snapshot_changed'].includes(error.code));
+      const record=await f.repo.get(f.record.id);
+      assert.equal(record.liveMinutes.transcriptRevision,1);
+      assert.equal(record.jobs.at(-1).status,'running');
+    } finally {await f.close();}
+  }
+});
+
+test('independent synthesis groups overlap while the final synthesis waits for the whole layer', async () => {
+  const f=await fixture(100);let release,started,run,synthesisStarted=0;
+  const held=new Promise(resolve=>{release=resolve;}),ready=new Promise(resolve=>{started=resolve;});
+  try {
+    const claim=await f.claim();
+    run=runMinutesPipeline(f.repo,f.record.id,claim,config,async job=>{
+      if(job.stage==='synthesis'&&job.summaries.length>2){synthesisStarted++;started();await held;}
+      return summarize(job);
+    });
+    await ready;await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(synthesisStarted,2);release();
+    const result=await run;assert.equal(result.coverage.levels,2);validateMinutes(result,claim.snapshot);
+  } finally {release();await run?.catch(()=>{});await f.close();}
+});
+
+test('window concurrency can roll back to serial execution and remains bounded for oversized settings', async () => {
+  for(const [setting,limit] of [['1',1],['99',4],['invalid',2]]){
+    const f=await fixture(32);let release,started,run,count=0;
+    const held=new Promise(resolve=>{release=resolve;}),ready=new Promise(resolve=>{started=resolve;});
+    try {
+      const claim=await f.claim();
+      run=runMinutesPipeline(f.repo,f.record.id,claim,{...config,RECORD_MINUTES_WINDOW_CONCURRENCY:setting},async job=>{
+        count++;started();await held;return summarize(job);
+      });
+      await ready;await new Promise(resolve=>setImmediate(resolve));assert.equal(count,limit);release();await run;
+    } finally {release();await run?.catch(()=>{});await f.close();}
+  }
+});
+
+test('model prompts preserve table topic associations and rebuild IDs during synthesis', async () => {
+  const {generateMinutes}=await import('../services/records/src/providers.mjs');
+  const original=globalThis.fetch;
+  const snapshot=[{id:'s',revision:1,text:'合成内容'}],evidence=[{segmentId:'s',revision:1}];
+  const response={title:'synthetic',sections:[{heading:'讨论',items:[{text:'合成内容',evidence}]}],topics:[{id:'t1',title:'主题',summary:'合成内容',evidence}],tables:[{title:'表格',topicId:'t1',columns:['事项','状态'],rows:[{cells:['事项','待确认'],evidence}]}],actions:[]};
+  let request;
+  globalThis.fetch=async(_url,options)=>{request=JSON.parse(options.body);return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(response)}}]}),{headers:{'Content-Type':'application/json'}});};
+  try {
+    const env={LLM_API_URL:'https://unused.invalid',LLM_API_KEY:'synthetic-local-key',LLM_MODEL:'synthetic',LLM_PROTOCOL:'chat-completions'};
+    for(const stage of [undefined,'synthesis']){
+      const result=await generateMinutes({scope:'live',template:'meeting',snapshot,stage,summaries:stage?[response,response]:undefined},env);
+      assert.equal(result.topics[0].id,'t1');assert.equal(result.tables[0].topicId,'t1');validateMinutes(result,snapshot);
+      const prompt=request.messages.filter(message=>message.role==='system').map(message=>message.content).join('\n');
+      assert.ok(prompt.includes('topics:[{id:string'));
+      assert.ok(prompt.includes('topicId:string'));
+      assert.ok(prompt.includes('每张表必须完整归属一个主题'));
+      assert.ok(prompt.includes('每行仍须引用给定原始片段 ID 与 revision'));
+      if(stage)assert.ok(prompt.includes('重新分配唯一主题 id'));
+    }
+  } finally {globalThis.fetch=original;}
+});
+
+test('old completed v2 jobs do not block explicit v3 requests, while new requests remain idempotent', async () => {
+  const f=await fixture(2);
+  try {
+    let oldId,newId;
+    await f.repo.change(f.record.id,r=>{
+      const previous=requestMinutes(r,{modelVersion:'fixture-model'});oldId=previous.id;
+      previous.key=previous.key.replace(':v3:',':v2:');previous.status='completed';previous.snapshot=[];
+      r.minutes={...summarize({snapshot:r.segments}),revision:1,edited:true};r.minutesRevision=1;
+      r.autoMinutes={enabled:true,lastRevision:r.transcriptRevision,lastScope:'final',intervalSeconds:30};
+      assert.equal(queueAutomaticMinutes(r,'fixture-model'),undefined,'format upgrades must not auto-replace an edited minutes version');
+      const current=requestMinutes(r,{modelVersion:'fixture-model'});newId=current.id;
+      assert.notEqual(newId,oldId);assert.ok(current.key.includes(':v3:'));
+      assert.equal(requestMinutes(r,{modelVersion:'fixture-model'}).id,newId);
+      assert.equal(r.minutes.edited,true);
+      assert.equal(r.minutesRevision,1);
+      current.status='running';current.fence=current.id;
+    });
+    const record=await f.repo.get(f.record.id),claim=structuredClone(record.jobs.find(job=>job.id===newId));
+    await assert.rejects(runMinutesPipeline(f.repo,f.record.id,claim,config,async job=>{
+      await f.repo.change(f.record.id,r=>{r.minutesRevision++;r.minutes.title='新增人工修改';});return summarize(job);
+    }),error=>error.code==='minutes_snapshot_changed');
+    const latest=await f.repo.get(f.record.id);assert.equal(latest.minutes.title,'新增人工修改');assert.equal(latest.minutes.edited,true);
   } finally {await f.close();}
 });
