@@ -94,5 +94,40 @@
       "realAudioDevicesOpened": false,
       "realProvidersInvoked": false
     }
+  },
+  "sourceRevision": "9ed498a11b744440b97e39d6e4127ad0bd9bcbc9",
+  "sourceDirty": false,
+  "sha256": "479283e461924cc70de545e57ced9065fbc68ecf78cfedba9b29289f780e5aa5",
+  "backendBundled": true,
+  "signing": "ad-hoc",
+  "notarized": false,
+  "validation": {
+    "imageVerified": true,
+    "copiedAppSignatureVerified": true,
+    "productionSmoke": true,
+    "realAudioDevicesTested": false,
+    "realProvidersTested": false,
+    "freshMachineTested": false
+  },
+  "packageSmoke": {
+    "timestamp": "2026-10-13T08:33:31.593Z",
+    "packagedApp": true,
+    "independentBackend": true,
+    "developerBackendRequests": 0,
+    "restartPersistence": true,
+    "stableWebviewProfile": true,
+    "parentOwnsBackend": true,
+    "localAccount": true,
+    "devAccountDisabled": true,
+    "node": "v24.21.0",
+    "sqlite": "3.53.4",
+    "realAudioDevicesOpened": false,
+    "realProvidersInvoked": false
+  },
+  "existingProcessesNotRestarted": {
+    "api": 753,
+    "worker": 756,
+    "client": 62310,
+    "clientBackend": 62312
   }
 }
