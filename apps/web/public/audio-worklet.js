@@ -1,8 +1,11 @@
 /* PCM16 capture: never encodes or uploads screen video. */
 class MeetingPcm extends AudioWorkletProcessor {
   constructor() {
-    super(); this.samples = []; this.phase = 0; this.sum = 0; this.count = 0; this.meterFrames = 0; this.initialPacket = true;
-    this.port.onmessage = event => { if (event.data.type === 'flush') { this.flush(); this.port.postMessage({ type: 'flushed' }); } };
+    super(); this.capturing = true; this.samples = []; this.phase = 0; this.sum = 0; this.count = 0; this.meterFrames = 0; this.initialPacket = true;
+    this.port.onmessage = event => { if (event.data.type === 'flush' || event.data.type === 'pause') {
+        if (event.data.type === 'pause') this.capturing = false;
+        this.flush(); this.port.postMessage({ type: 'flushed' });
+      } };
   }
   flush() {
     if (!this.samples.length) return;
@@ -11,6 +14,7 @@ class MeetingPcm extends AudioWorkletProcessor {
     this.port.postMessage({ type: 'pcm', buffer }, [buffer]); this.samples = []; this.initialPacket = false;
   }
   process(inputs) {
+    if (!this.capturing) return true;
     const channels = inputs[0]; if (!channels?.length) return true;
     let energy = 0;
     for (let i = 0; i < channels[0].length; i++) {

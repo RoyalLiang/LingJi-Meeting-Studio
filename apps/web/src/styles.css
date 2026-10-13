@@ -716,15 +716,17 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 /* Navigation search and the agent dock frame the main reading area. */
 .workspace { --topbar-height:76px; }
 .workspace-body { position:relative; display:flex; flex:1; flex-direction:column; min-height:0; }
-.workspace .topbar { display:grid; grid-template-columns:minmax(0,auto) minmax(200px,1fr) auto; gap:24px; min-height:var(--topbar-height); flex-basis:var(--topbar-height); }
+.workspace .topbar { display:grid; grid-template-columns:minmax(0,160px) minmax(200px,1fr) minmax(0,160px); gap:24px; min-height:var(--topbar-height); flex-basis:var(--topbar-height); }
 .topbar .workspace-breadcrumb { min-width:0; white-space:nowrap; }
 .topbar .workspace-breadcrumb .breadcrumb { max-width:140px; }
 .topbar .topbar-search { width:100%; max-width:960px; min-width:0; justify-self:center; padding:0 14px; gap:10px; border-radius:12px; }
 .topbar-search input { height:42px; font-size:13px; }
-.topbar .sync-state { justify-self:end; white-space:nowrap; }
+.topbar .sync-state { width:100%; min-width:0; justify-self:end; justify-content:flex-end; white-space:nowrap; }
+.topbar .sync-state>svg { flex:none; }
+.topbar .sync-state>span { min-width:0; overflow:hidden; text-overflow:ellipsis; font-variant-numeric:tabular-nums; }
 .workspace-body .scroll-top { bottom:16px; }
 .workspace.with-translation .workspace-body .scroll-top { right:410px; }
-.discussion-dock { flex:none; display:flex; flex-direction:column; min-height:0; max-height:min(240px,30dvh); margin:0 28px 20px; padding:18px 20px; background:var(--panel-2); }
+.discussion-dock { flex:none; display:flex; flex-direction:column; min-height:0; height:148px;flex-shrink:0; margin:0 28px 20px; padding:18px 20px; background:var(--panel-2); }
 .discussion-dock>header { flex:none; margin-bottom:12px; }
 .discussion-dock h3 { font-size:14px; }
 .discussion-dock>header .button { min-height:28px; padding:3px 8px; font-size:11px; }
@@ -752,13 +754,18 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
   .workspace.with-translation .discussion-dock { margin-right:28px; }
   .workspace.with-translation .workspace-body .scroll-top { right:16px; }
 }
+@media(max-width:900px) {
+  .workspace { --topbar-height:106px; }
+  .workspace .topbar { grid-template-columns:minmax(0,1fr) 160px; grid-template-rows:auto auto; gap:10px 16px; padding:10px 24px 12px; align-content:center; }
+  .topbar .topbar-search { grid-column:1/-1; grid-row:2; }
+}
 @media(max-width:700px) {
   .workspace { --topbar-height:106px; }
-  .workspace .topbar { grid-template-columns:minmax(0,1fr) auto; grid-template-rows:auto auto; gap:10px 16px; padding:10px 20px 12px; align-content:center; }
+  .workspace .topbar { grid-template-columns:minmax(0,1fr) 160px; grid-template-rows:auto auto; gap:10px 16px; padding:10px 20px 12px; align-content:center; }
   .topbar .topbar-search { grid-column:1/-1; grid-row:2; }
   .topbar-search input { height:38px; font-size:12px; }
   .topbar .workspace-breadcrumb .breadcrumb { max-width:150px; }
-  .discussion-dock,.workspace.with-translation .discussion-dock { max-height:24dvh; margin:0 20px calc(68px + env(safe-area-inset-bottom)); padding:14px 16px; }
+  .discussion-dock,.workspace.with-translation .discussion-dock { height:138px; margin:0 20px calc(68px + env(safe-area-inset-bottom)); padding:14px 16px; }
   .discussion-dock>header { gap:8px; margin-bottom:10px; }
   .discussion-status,.discussion-context { font-size:10px; }
   .discussion-wait { font-size:12px; gap:8px; }
@@ -767,3 +774,14 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
   .archive-form .actions .button { min-width:0; padding-inline:12px; }
 }
 @media(prefers-reduced-motion:reduce) { .discussion-pulse.is-waiting i { animation:none; } }
+
+/* Keep the discussion dock at exactly three text lines as previews change. */
+.discussion-dock .discussion-content{height:72px;min-height:72px;max-height:72px;flex:none;overflow:hidden}
+.discussion-content ol{margin:0;padding:0;list-style:none}
+.discussion-content .discussion-line{display:flex;align-items:baseline;gap:12px;height:24px;min-height:24px;margin:0;padding:0}
+.discussion-content .discussion-line p{flex:1;min-width:0;margin:0;padding:0;font-size:13px;line-height:24px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.discussion-source{flex:none;border:0;background:none;padding:0;color:var(--accent);font-size:11px;line-height:24px;cursor:pointer}
+.discussion-source:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.discussion-content .discussion-wait{margin:0;height:72px;align-items:flex-start;padding-top:0}
+.discussion-content .discussion-wait p{margin:0;line-height:24px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.discussion-content .discussion-pulse{margin-top:8px;flex:none}

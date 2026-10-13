@@ -9,7 +9,7 @@ export function CaptureSetup({ connected, signals, issues, busy, onConnect, onMi
   connected: SourceKind[]; signals: CaptureSignal[]; issues: CaptureIssue[]; busy: boolean; onConnect: (kind: CaptureKind) => void; onMicrophoneOff: () => void; onClose: () => void;
 }) {
   return <Modal title="音频来源" onClose={onClose}>
-    <p className="capture-setup-intro">默认仅记录系统／会议音频。麦克风可按需开启；会议软件中的静音开关不会关闭聆记独立接入的麦克风。</p>
+    <p className="capture-setup-intro">默认接入麦克风和系统／会议音频。麦克风可单独关闭；会议软件中的静音开关不会关闭聆记独立接入的麦克风。</p>
     <div className="capture-source-list">
       {(['display', 'microphone'] as const).map(kind => {
         const ready = connected.includes(kind), issue = issues.find(item => item.kind === kind), signal = signals.find(item => item.kind === kind);
