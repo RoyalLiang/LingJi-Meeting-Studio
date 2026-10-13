@@ -1,3 +1,4 @@
+import { useNativeMenuBar } from './useNativeMenuBar';
 import { trace, traceCommit } from './telemetry';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { ArrowDown, ArrowSquareOut, Folder, FolderPlus, House, Check, CloudCheck, CloudSlash, FileText, GearSix, Microphone, Moon,
@@ -76,6 +77,13 @@ function Workspace() {
   const [deletions, setDeletions] = useState<{ id: string; cleanup: string }[]>([]);
   const [shares, setShares] = useState<{ id: string; scope: string; expires: number; revoked: boolean }[]>([]), [shareUrl, setShareUrl] = useState('');
   useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem('meeting-theme', theme); }, [theme]);
+  useNativeMenuBar({ authenticated: authReady, recordTitle: record?.title || '', capture: record?.capture || 'idle', recording, busy: busy || stopping.current,
+    connection: !online ? 'offline' : !id ? 'idle' : connectionState }, {
+    pause: () => { if (!stopping.current) void stopCapture('pause'); },
+    resume: () => { void startCapture('meeting'); },
+    finish: () => { setError(''); setModal('finish'); },
+    settings: () => { setModal('settings'); void api<{deletions: typeof deletions}>('/deletions').then(d => setDeletions(d.deletions)).catch(e => setError(messageOf(e))); }
+  });
   const loadBoot = useCallback(async () => {
     setLoading(true); setError(''); try { const b = await api<Bootstrap>('/bootstrap'); setCsrf(b.csrf); setAudioTransport(b.audioTransport); const list = await api<{records: RecordListItem[]}>('/records'); setQueueRecords(list.records.map(r => r.id)); const folders=await api<{workspaces:WorkspaceDirectory[]}>('/workspaces');setDirectories(folders.workspaces); setBoot(b); setAuthReady(true); }
     catch (e) { if (!(e instanceof ApiError && e.status === 401)) setError(messageOf(e)); setAuthReady(false); } finally { setLoading(false); }

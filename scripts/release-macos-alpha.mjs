@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFileSync, spawn } from 'node:child_process';
-import { access, copyFile, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { access, copyFile, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -41,7 +41,7 @@ async function run(command, args, extraEnv = {}, cwd = root) {
 async function sourceSnapshot(destination) {
   const paths = capture('git', [...(sourceRef ? ['ls-tree', '-r', '--name-only', '-z', sourceRef] : ['ls-files', '--cached', '--others', '--exclude-standard', '-z']), '--',
     '.gitignore', 'package.json', 'package-lock.json', 'apps/web', 'apps/desktop/package.json',
-    'apps/desktop/src-tauri', 'scripts/release-macos-alpha.mjs', 'scripts/test-native-package.mjs', 'docs/releases/macos-alpha.md',
+    'apps/desktop/src-tauri', 'apps/desktop/assets', 'scripts/release-macos-alpha.mjs', 'scripts/test-native-package.mjs', 'docs/releases/macos-alpha.md',
   ]).split('\0').filter(Boolean).sort();
   const files = [];
   for (const path of paths) {
@@ -83,27 +83,48 @@ try {
     }
     await symlink(modules, join(frozen, workspace, 'node_modules'));
   }
+  const generatedIcons = join(scratch, 'icons');
+  await run('npm', ['exec', '--workspace', 'apps/desktop', '--', 'tauri', 'icon', join(frozen, 'apps/desktop/assets/lingji-app-icon.svg'), '--output', generatedIcons], {}, frozen);
+  // ICNS encoders may emit identical image blocks in a different order.
+  const iconDigest = (bytes, name) => {
+    const hash = value => createHash('sha256').update(value).digest('hex');
+    if (name !== 'icon.icns') return hash(bytes);
+    assert.equal(bytes.subarray(0, 4).toString(), 'icns');
+    assert.equal(bytes.readUInt32BE(4), bytes.length);
+    const blocks = [];
+    for (let offset = 8; offset < bytes.length;) {
+      assert.ok(offset + 8 <= bytes.length);
+      const size = bytes.readUInt32BE(offset + 4);
+      assert.ok(size >= 8 && offset + size <= bytes.length);
+      blocks.push(hash(bytes.subarray(offset, offset + size)));
+      offset += size;
+    }
+    return hash(blocks.sort().join('\n'));
+  };
+  for (const name of ['icon.png', 'icon.icns', 'icon.ico']) {
+    const generated = iconDigest(await readFile(join(generatedIcons, name)), name);
+    const packaged = iconDigest(await readFile(join(frozen, 'apps/desktop/src-tauri/icons', name)), name);
+    assert.equal(generated, packaged, `Regenerate ${name} from the selected SVG before release.`);
+  }
   await run('npm', ['run', 'build:web'], {}, frozen);
   const cargoTarget = join(root, '.agent-runtime/releases/macos-alpha/target');
-  await run('npm', ['exec', '--workspace', 'apps/desktop', '--', 'tauri', 'build', '--ci', '--bundles', 'app', '--no-sign',
+  await run('npm', ['exec', '--workspace', 'apps/desktop', '--', 'tauri', 'build', '--ci', '--bundles', 'app,dmg',
     '--config', join(frozen, 'apps/desktop/src-tauri/tauri.alpha.conf.json')], { CARGO_TARGET_DIR: cargoTarget }, frozen);
   const builtApp = join(cargoTarget, 'release/bundle/macos', appName);
-  const stage = join(scratch, 'image');
-  await mkdir(stage);
-  const stagedApp = join(stage, appName);
-  await run('ditto', [builtApp, stagedApp]);
-  await run('codesign', ['--force', '--deep', '--sign', '-', '--timestamp=none', stagedApp]);
-  await run('codesign', ['--verify', '--deep', '--strict', stagedApp]);
-  await symlink('/Applications', join(stage, 'Applications'));
-  await copyFile(join(frozen, 'docs/releases/macos-alpha.md'), join(stage, '安装说明.md'));
+  await run('codesign', ['--verify', '--deep', '--strict', builtApp]);
   await copyFile(join(frozen, 'docs/releases/macos-alpha.md'), join(release, '安装说明.md'));
   const dmgName = `Lingji-${config.version}-macos-arm64.dmg`;
   const dmg = join(release, dmgName);
-  await run('hdiutil', ['create', '-volname', config.productName, '-srcfolder', stage, '-format', 'UDZO', '-fs', 'HFS+', dmg]);
+  const bundleDmg = join(cargoTarget, 'release/bundle/dmg', `${config.productName}_${config.version}_aarch64.dmg`);
+  await copyFile(bundleDmg, dmg);
   await run('hdiutil', ['verify', dmg]);
   await mkdir(mount);
   await run('hdiutil', ['attach', '-readonly', '-nobrowse', '-mountpoint', mount, dmg]);
   mounted = true;
+  assert.ok((await readFile(join(mount, '.DS_Store'))).length > 100, 'DMG Finder layout missing');
+  const backgrounds = (await readdir(join(mount, '.background'))).filter(name => /\.(tiff?|png)$/i.test(name));
+  assert.equal(backgrounds.length, 1, 'DMG installation background missing');
+  assert.deepEqual(await readFile(join(mount, '.background', backgrounds[0])), await readFile(join(frozen, 'apps/desktop/assets/macos-installer-background.tiff')));
   const installedApp = join(scratch, 'installed', appName);
   await run('ditto', [join(mount, appName), installedApp]);
   await run('codesign', ['--verify', '--deep', '--strict', installedApp]);
@@ -123,6 +144,7 @@ try {
   await writeFile(join(release, 'SHA256SUMS.txt'), `${checksum}  ${dmgName}\n`);
   await writeFile(join(release, 'release.json'), JSON.stringify({
     version: config.version, productName: config.productName, platform: 'macos', architecture: 'arm64',
+    installer: config.bundle.macOS.dmg, iconSource: 'apps/desktop/assets/lingji-app-icon.svg',
     minimumSystemVersion: readPlist('LSMinimumSystemVersion'),
     bundleVersion: readPlist('CFBundleVersion'), bundleShortVersion: readPlist('CFBundleShortVersionString'),
     createdAt: new Date().toISOString(), artifact: dmgName, sha256: checksum,

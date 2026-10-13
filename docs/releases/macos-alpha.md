@@ -1,12 +1,12 @@
 # 安装聆记 macOS Alpha
 
-此版本为 **0.1.0-alpha.2**，适用于 **Apple Silicon（M 系列）Mac，macOS 14.6 或更新版本**。安装包包含界面和原生音频采集，转录、纪要、账户及历史记录沿用已有 Record API 与 worker。
+此版本为 **0.1.0-alpha.3**，适用于 **Apple Silicon（M 系列）Mac，macOS 14.6 或更新版本**。安装包包含界面和原生音频采集，转录、纪要、账户及历史记录沿用已有 Record API 与 worker。
 
 本版收起“当前正在聊”的具体内容，把生成中的 AI 纪要显示在主阅读区。配套 API 支持 PCM 二进制上传并缩短事件检查间隔；连接旧 API 时继续使用 JSON 上传。升级前请先结束录音并等补传完成，再替换应用、重启本地 Record API；运行中的旧进程不会自动加载这些后端改动。
 
 ## 安装并连接现有服务
 
-1. 打开 `Lingji-0.1.0-alpha.2-macos-arm64.dmg`。
+1. 打开 `Lingji-0.1.0-alpha.3-macos-arm64.dmg`。
 2. 把 **聆记 Alpha.app** 拖到 **Applications**。
 3. 确认已有 Record API 与 worker 正在运行，再打开应用。默认连接 `http://127.0.0.1:3030`，使用已有账户登录。
 
@@ -50,6 +50,14 @@ node scripts/release-macos-alpha.mjs
 
 需要只打包指定已提交版本时，使用 `TTS_RELEASE_SOURCE_REF=<提交号> node scripts/release-macos-alpha.mjs`。此模式直接冻结 Git 中的构建输入，排除其他会话尚未提交的改动。
 
-产物位于 `dist/releases/0.1.0-alpha.2/`。构建验证覆盖 DMG 完整性、arm64 架构、签名、权限描述和正式应用启动；真实会议软件采音、长会话、远程 HTTPS、全新 Mac 安装及 Gatekeeper 首次授权仍需实测。
+产物位于 `dist/releases/0.1.0-alpha.3/`。构建验证覆盖 DMG 完整性、arm64 架构、签名、权限描述和正式应用启动；真实会议软件采音、长会话、远程 HTTPS、全新 Mac 安装及 Gatekeeper 首次授权仍需实测。
 
 退出应用后，可把 **聆记 Alpha.app** 移到废纸篓。配置和待补传数据保留在应用支持目录，卸载时不要顺手删除。
+
+## 菜单栏与安装界面
+
+安装磁盘使用固定窗口、翡翠色背景和左右拖拽布局。将聆记拖到 Applications 后，从应用程序目录打开；安装说明与校验文件随下载提供。安装包图标由 `apps/desktop/assets/lingji-app-icon.svg` 生成；PNG/ICO 按文件哈希核对，ICNS 按内部图片块哈希核对。
+
+macOS 顶部菜单栏使用随系统明暗变化的单色图标。左键打开聆记，右键查看会议、录音、后台连接与待上传音频数量，并使用暂停、继续本场、结束本场、设置、隐藏和退出操作。退出复用录音与补传保护；页面状态超过 5 秒未更新时，菜单标记待确认并停用会议操作。隐藏窗口会保留记录。
+
+布局采用 [Tauri DMG 配置](https://v2.tauri.app/distribute/dmg/)，菜单使用 [Tauri 原生系统托盘](https://v2.tauri.app/learn/system-tray/) 和 [Apple 菜单设计规范](https://developer.apple.com/design/human-interface-guidelines/menus)。
