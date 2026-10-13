@@ -1,0 +1,53 @@
+{
+  "version": "0.1.0-alpha.7",
+  "sourceRevision": "48c96a2de1d9bc63f7af38554815c9276da2e0a4",
+  "sha256": "ce50903742367dc12370a37a822e103dcfb288e622ec090c82b6b02e5021fc93",
+  "backendBundled": true,
+  "nodeTests": 185,
+  "browser": {
+    "fixture": true,
+    "realAudioDevices": false,
+    "realProviders": false,
+    "checks": [
+      "Repeated login: one request, retained form, zero loading flashes",
+      "Topic tree default; exact cited rows inside topics; ambiguous row retained",
+      "Back-to-top stays in toolbar without moving search or covering meeting actions",
+      "Retained original audio plays real synthetic WAV; dialog close unmounts playback",
+      "Explicit-close settings behavior preserved",
+      "No audio request for unretained, purged or pending recordings",
+      "Short viewport dialog scrolls body while title/close stay fixed",
+      "390px mobile dialog/meeting viewport bounds; redundant source copy removed"
+    ],
+    "topicCardHeight": {
+      "before": 81.1953125,
+      "compact": 73.1953125,
+      "reduction": 0.09852785528721254
+    },
+    "pageErrors": []
+  },
+  "packageSmoke": {
+    "timestamp": "2026-10-13T07:50:37.439Z",
+    "packagedApp": true,
+    "independentBackend": true,
+    "developerBackendRequests": 0,
+    "restartPersistence": true,
+    "stableWebviewProfile": true,
+    "parentOwnsBackend": true,
+    "localAccount": true,
+    "devAccountDisabled": true,
+    "node": "v24.21.0",
+    "sqlite": "3.53.4",
+    "realAudioDevicesOpened": false,
+    "realProvidersInvoked": false
+  },
+  "signing": "ad-hoc",
+  "notarized": false,
+  "validation": {
+    "imageVerified": true,
+    "copiedAppSignatureVerified": true,
+    "productionSmoke": true,
+    "realAudioDevicesTested": false,
+    "realProvidersTested": false,
+    "freshMachineTested": false
+  }
+}

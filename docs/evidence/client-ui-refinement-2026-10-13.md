@@ -36,3 +36,11 @@
 ![移动端弹窗](client-ui-refinement/modal-mobile.png)
 
 ![原音回放](client-ui-refinement/raw-playback.png)
+
+## Alpha 7 安装包验证
+
+本地安装包位于 `dist/releases/0.1.0-alpha.7/Lingji-0.1.0-alpha.7-macos-arm64.dmg`，构建源为 `48c96a2de1d9bc63f7af38554815c9276da2e0a4`，源快照无未提交文件。SHA-256 已复核：
+
+`ce50903742367dc12370a37a822e103dcfb288e622ec090c82b6b02e5021fc93`
+
+DMG、复制后的应用签名、内置独立后台启动和重启持久化检查通过；验收对开发后台的请求为 0。仍为临时签名、未 Apple 公证的本地 Alpha。真实设备、外部供应商和新 Mac 首次安装未测试。详细机器记录见 [Alpha 7 验证 JSON](client-ui-refinement-alpha7.json)。
