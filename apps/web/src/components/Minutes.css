@@ -3,3 +3,20 @@
   user-select: none;
   cursor: default;
 }
+.minutes-usage {
+ display:flex;
+ flex-wrap:wrap;
+ align-items:baseline;
+ gap:8px 18px;
+ margin-top:24px;
+ padding:16px 0 4px;
+ border-top:1px solid var(--border);
+ color:var(--ink-3);
+ font-size:11px;
+ line-height:1.6;
+}
+.minutes-usage-item { display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 7px;min-width:0; }
+.minutes-usage-item strong { color:var(--ink-1);font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;overflow-wrap:anywhere; }
+.minutes-usage-item small { font-size:10px; }
+.minutes-usage-status { margin-left:auto;font-size:10px; }
+@media(max-width:700px) { .minutes-usage{gap:8px 14px;margin-top:20px;padding-top:14px;}.minutes-usage-status{flex-basis:100%;margin-left:0;} }

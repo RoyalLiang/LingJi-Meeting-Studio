@@ -49,7 +49,7 @@ test('minutes worker preserves concurrent human revisions', () => fixture(async 
   const current = await repo.get(r.id); assert.equal(current.minutes.title, 'human edit'); assert.equal(current.jobs[0].status, 'stale');
 }));
 test('unprocessed temporary audio expires even when capture never sealed', () => fixture(async repo => {
-  const r = await withAudio(repo); await repo.change(r.id, value => { value.capture = 'recording'; value.chunks[0].acceptedAt = Date.now() - 86400001; });
+  const r = await withAudio(repo); await repo.change(r.id, value => { value.capture = 'recording'; value.retainAudio=false; value.chunks[0].acceptedAt = Date.now() - 86400001; });
   let called = false; await runCycle(repo, { transcribe: async () => { called = true; return 'unexpected'; } });
   assert.equal(called, false); assert.equal((await repo.get(r.id)).chunks[0].expired, true);
   await assert.rejects(repo.readAudio(r.chunks[0].object), /ENOENT/);

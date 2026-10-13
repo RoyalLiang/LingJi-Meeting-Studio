@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { createRecordServer } from '../services/records/src/server.mjs';
 
 const root = await mkdtemp(join(tmpdir(), 'tts-native-fixture-'));
@@ -48,8 +49,26 @@ try {
   assert.equal(restarted.origin, initialOrigin); assert.equal(restarted.indexedDbRetained, true); assert.equal(restarted.reloginRequired, true);
   assert.equal(restarted.priorUiQueueReplayed, true);
   const replayed = await api.repo.get(result.uiRecordId);
-  assert.equal(replayed.sources[0].watermark, replayed.sources[0].lastSequence);
-  assert.ok(replayed.chunks.length >= 2);
+  assert.equal(replayed.capture, 'paused');
+  assert.deepEqual(replayed.sources.map(source => source.kind).sort(), ['display', 'microphone']);
+  assert.equal(result.uiLanes.length, 2);
+  for (const source of replayed.sources) {
+    const expected = result.uiLanes.find(lane => lane.sourceId === source.id);
+    assert.ok(expected); assert.equal(expected.kind, source.kind); assert.equal(expected.epoch, source.epoch); assert.equal(expected.sessionId, source.sessionId);
+    assert.equal(source.stopped, true); assert.equal(source.watermark, source.lastSequence);
+    const chunks = replayed.chunks.filter(chunk => chunk.sourceId === source.id).sort((a, b) => a.sequence - b.sequence);
+    assert.equal(chunks.length, expected.packets); assert.equal(source.lastSequence, chunks.length - 1); assert.ok(chunks.length >= 2);
+    let offset = 0;
+    for (const [sequence, chunk] of chunks.entries()) {
+      assert.equal(chunk.sequence, sequence); assert.equal(chunk.sampleOffset, offset); assert.equal(chunk.sessionId, source.sessionId); assert.equal(chunk.epoch, source.epoch); assert.equal(chunk.sampleRate, 16000);
+      const bytes = await api.repo.readAudio(chunk.object);
+      assert.equal(bytes.length, chunk.sampleCount * 2); assert.equal(createHash('sha256').update(bytes).digest('hex'), chunk.digest);
+      assert.ok(Array.from({ length: chunk.sampleCount }, (_, index) => bytes.readInt16LE(index * 2)).some(sample => sample !== 0));
+      offset += chunk.sampleCount;
+    }
+    assert.equal(offset, expected.samples);
+  }
+  assert.equal(replayed.chunks.length, result.pendingUiPackets);
   const replayedUiReceipts = replayed.chunks.length; delete result.uiRecordId;
   result = { ...result, stableOriginAfterRestart: true, indexedDbRetainedAfterRestart: true, reloginRequiredAfterRestart: true };
   const evidence = { realQueueReplayedAfterRestart: true, replayedUiReceipts, timestamp: new Date().toISOString(), platform: process.platform, architecture: process.arch,

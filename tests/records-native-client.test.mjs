@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { stripTypeScriptTypes } from 'node:module';
+import vm from 'node:vm';
+import { webcrypto } from 'node:crypto';
 
 const source = stripTypeScriptTypes(await readFile(new URL('../apps/web/src/audio/native-stream.ts', import.meta.url), 'utf8'));
 const { decodeNativePacket, openNativeStream } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
@@ -67,11 +69,11 @@ test('native permission/device failures do not create a simulated stream', async
   assert.deepEqual(commands, ['capture_start']);
 });
 
-async function controllerHarness() {
+async function controllerHarness({ beforeStart } = {}) {
   const starts = [], uploads = [], sessions = new Map(); let sourceId = 0;
   const invoke = async (command, args) => {
     if (command === 'capture_start') {
-      const id = `native-${starts.length}`; starts.push(args); sessions.set(id, { reads: 0, stopped: false }); return { id, label: 'synthetic' };
+      const id = `native-${starts.length}`; starts.push(args); await beforeStart?.(args); sessions.set(id, { reads: 0, stopped: false }); return { id, label: 'synthetic' };
     }
     const session = sessions.get(args.id);
     if (command === 'capture_read') {
@@ -101,12 +103,13 @@ async function controllerHarness() {
   return { controller, starts, uploads, errors };
 }
 
-test('native controller deduplicates starts and defaults to system output only', async () => {
+test('native controller deduplicates starts and defaults to system output plus microphone', async () => {
   const h = await controllerHarness();
   assert.deepEqual(await Promise.all([h.controller.startMeeting(), h.controller.startMeeting()]), [[], []]);
-  await tick(); assert.deepEqual(h.starts.map(x => x.kind), ['display']);
+  await tick(); assert.deepEqual(h.starts.map(x => x.kind), ['display', 'microphone']);
   await h.controller.stop(); assert.equal(h.controller.active, false);
-  assert.deepEqual(h.uploads.map(x => [x.chunk.sequence, x.chunk.sampleOffset, x.chunk.sampleCount]), [[0, 0, 320], [1, 320, 80]]);
+  assert.equal(new Set(h.uploads.map(upload => upload.chunk.sourceId)).size, 2);
+  for (const sourceId of new Set(h.uploads.map(upload => upload.chunk.sourceId))) assert.deepEqual(h.uploads.filter(upload => upload.chunk.sourceId === sourceId).map(x => [x.chunk.sequence, x.chunk.sampleOffset, x.chunk.sampleCount]), [[0, 0, 320], [1, 320, 80]]);
 });
 
 test('native microphone disconnect preserves the other lane and reopens with a fresh Source', async () => {
@@ -131,4 +134,68 @@ test('native pause drains and releases audio, resume creates new sources for exp
   assert.deepEqual(h.starts.map(start => start.kind), ['display', 'microphone', 'display', 'microphone']);
   assert.ok(h.controller.sources.every(source => !before.includes(source.id)));
   await h.controller.stop();
+});
+
+test('native reconnect preserves explicit microphone-off and surfaces revoked OS access without creating another source', async () => {
+  let allowed = true;
+  const h = await controllerHarness({ beforeStart: () => { if (!allowed) throw new Error('fixture OS audio access revoked'); } });
+  await h.controller.startMeeting(); await tick(); await h.controller.disconnect('microphone'); await h.controller.pause();
+  await h.controller.startMeeting(); await tick();
+  assert.deepEqual(h.starts.map(start => start.kind), ['display', 'microphone', 'display']);
+  assert.deepEqual(h.controller.sources.map(source => source.kind), ['display']);
+  await h.controller.pause(); const saved = h.uploads.length;
+  allowed = false;
+  assert.deepEqual(await h.controller.startMeeting(), [{ kind: 'display', message: 'fixture OS audio access revoked' }]);
+  assert.equal(h.controller.active, false); assert.equal(h.controller.sources.length, 0); assert.equal(h.uploads.length, saved);
+  assert.deepEqual(h.starts.map(start => start.kind), ['display', 'microphone', 'display', 'display']);
+  await h.controller.stop();
+});
+
+test('native resume restores only successful prior lanes even under repeated concurrent resume clicks', async () => {
+  const h = await controllerHarness({ beforeStart: ({ kind }) => { if (kind === 'microphone') throw new Error('fixture microphone denied'); } });
+  assert.deepEqual(await h.controller.startMeeting(), [{ kind: 'microphone', message: 'fixture microphone denied' }]);
+  assert.equal(h.controller.active, true); assert.deepEqual(h.controller.sources.map(source => source.kind), ['display']);
+  await h.controller.pause();
+  assert.deepEqual(await Promise.all([h.controller.startMeeting(), h.controller.startMeeting()]), [[], []]);
+  assert.deepEqual(h.starts.map(start => start.kind), ['display', 'microphone', 'display']);
+  await h.controller.stop();
+});
+
+test('native microphone-off persists across repeated starts and an empty paused selection never falls back to other lanes', async () => {
+  const h = await controllerHarness();
+  await h.controller.startMeeting(); await h.controller.disconnect('microphone');
+  await h.controller.startMeeting(); await h.controller.pause(); await h.controller.startMeeting();
+  assert.deepEqual(h.starts.map(start => start.kind), ['display', 'microphone', 'display']);
+  await h.controller.stop();
+  const onlyMicrophone = await controllerHarness({ beforeStart: ({ kind }) => { if (kind === 'display') throw new Error('fixture system audio denied'); } });
+  assert.deepEqual(await onlyMicrophone.controller.startMeeting(), [{ kind: 'display', message: 'fixture system audio denied' }]);
+  await onlyMicrophone.controller.pause(); await onlyMicrophone.controller.disconnect('microphone');
+  assert.deepEqual(await onlyMicrophone.controller.startMeeting(), []); assert.deepEqual(await onlyMicrophone.controller.startMeeting(), []);
+  assert.deepEqual(onlyMicrophone.starts.map(start => start.kind), ['display', 'microphone']); assert.equal(onlyMicrophone.controller.active, false);
+  await onlyMicrophone.controller.stop();
+});
+
+test('native smoke probe validates both queued source identities, contiguous samples, audio hashes and manifests independently', async () => {
+  const source = await readFile(new URL('../apps/desktop/src-tauri/src/probe.js', import.meta.url), 'utf8');
+  const context = { crypto: webcrypto, atob, Uint8Array, Int16Array };
+  vm.runInNewContext(source.slice(0, source.indexOf('(async () =>')), context);
+  const record = { sources: ['display', 'microphone'].map(kind => ({ id: kind, kind, sessionId: `session-${kind}`, epoch: `epoch-${kind}`, lastSequence: 1, stopped: true })) }, queued = [];
+  for (const lane of record.sources) for (let sequence = 0; sequence < 2; sequence++) {
+    const bytes = Buffer.alloc(640, 1), digest = Buffer.from(await webcrypto.subtle.digest('SHA-256', bytes)).toString('hex');
+    queued.push({ chunk: { sourceId: lane.id, sessionId: lane.sessionId, epoch: lane.epoch, sequence, sampleOffset: sequence * 320, sampleCount: 320, sampleRate: 16000, pcm: bytes.toString('base64'), digest } });
+  }
+  const report = await context.verifyNativeUiLanes(record, queued);
+  assert.deepEqual(Array.from(report, lane => [lane.kind, lane.packets, lane.samples]), [['display', 2, 640], ['microphone', 2, 640]]);
+  for (const mutate of [
+    (r) => { r.sources[1].lastSequence = 2; },
+    (_r, q) => { q[2].chunk.sampleOffset = 9; },
+    (_r, q) => { q[2].chunk.sequence = 9; },
+    (_r, q) => { q[2].chunk.epoch = 'other-epoch'; },
+    (_r, q) => { q[2].chunk.digest = 'wrong-digest'; },
+    (_r, q) => { q[2].chunk.sampleCount = 1; },
+    (r) => { r.sources.pop(); },
+  ]) {
+    const badRecord = structuredClone(record), badQueue = structuredClone(queued); mutate(badRecord, badQueue);
+    await assert.rejects(context.verifyNativeUiLanes(badRecord, badQueue));
+  }
 });

@@ -1,6 +1,9 @@
 import { SummaryTables } from './SummaryTables';
 import { SummaryCharts } from './SummaryCharts';
 import { useContentFollow } from './useContentFollow';
+import { ContentFollowAction } from './ContentFollowAction';
+import { currentMinutesJob } from '../minutes-views';
+import { MinutesUsage } from './MinutesUsage';
 import { TopicMap } from './TopicMap';
 import { MinutesTree, SpeakerMinutes, DecisionMinutes } from './MinutesViews';
 import { useEffect, useRef, useState } from 'react';
@@ -12,7 +15,7 @@ import { Button, CloseButton, Download, Empty, Status } from './ui';
 import './Minutes.css';
 export function MinutesPanel({ record, busy, onClose, generate, edit, cite, automate, inline = false, modelReady = false }: { record: RecordDetail; busy: boolean; inline?: boolean; modelReady?: boolean; onClose: () => void;
   automate: (enabled: boolean, intervalSeconds: number) => Promise<void>;
-  generate: (template: string, mode: string) => Promise<void>; edit: (minutes: MinutesModel) => Promise<boolean>; cite: (evidence: Evidence, snapshot?: Segment[]) => void }) {
+  generate: (template: string, mode: string) => Promise<void>; edit: (minutes: MinutesModel) => Promise<boolean>; cite: (evidence: Evidence, snapshot?: Segment[], transcriptRevision?: number) => void }) {
   const panel = useRef<HTMLElement>(null);
   const [mobile,setMobile] = useState(() => matchMedia('(max-width: 1100px)').matches);
   useEffect(() => { const media=matchMedia('(max-width: 1100px)'); const change=()=>setMobile(media.matches); media.addEventListener('change',change); return()=>media.removeEventListener('change',change); }, []);
@@ -31,13 +34,13 @@ export function MinutesPanel({ record, busy, onClose, generate, edit, cite, auto
     document.addEventListener('keydown', trap);
     return () => { children.forEach(element => { element.inert = false; }); document.removeEventListener('keydown', trap); document.querySelector<HTMLButtonElement>('[aria-expanded]')?.focus(); };
   }, [mobile,inline]);
-  const [mode,setMode] = useState(record.autoMinutes?.enabled ? 'model' : 'extractive');
+  const [mode,setMode] = useState(record.autoMinutes?.enabled || modelReady ? 'model' : 'extractive');
   const [template, setTemplate] = useState('meeting'), [draft, setDraft] = useState<MinutesModel | null>(null);
   const [historical, setHistorical] = useState<MinutesModel | null>(null), [historyError, setHistoryError] = useState('');
   const [view,setView] = useState('ai');
   const [settingsOpen,setSettingsOpen] = useState(false), [expanded,setExpanded] = useState(false);
   const [previewOpen,setPreviewOpen] = useState(false);
-  const job = record.jobs.at(-1), running = ['queued', 'running'].includes(job?.status || ''); const minutes = historical || (record.capture === 'completed' ? record.minutes || record.liveMinutes : record.liveMinutes || record.minutes);
+  const job = currentMinutesJob(record), running = ['queued', 'running'].includes(job?.status || ''); const minutes = historical || (record.capture === 'completed' ? record.minutes || record.liveMinutes : record.liveMinutes || record.minutes);
   const showPreview = previewOpen && running && !historical && !draft && !record.minutes?.edited && view === 'ai';
   const formal = minutes === record.minutes && Boolean(minutes); const runtime = running ? job?.runtime : minutes?.runtime;
   const active = inline && (record.capture === 'recording' || running);
@@ -55,24 +58,25 @@ export function MinutesPanel({ record, busy, onClose, generate, edit, cite, auto
           <p className="minutes-stage-note">{formal ? '当前为完整会议纪要，可点击来源核对原文。' : 'AI 会中速记随讨论更新，结束并完成转录后将整理完整纪要。'}</p>
           <div className="minutes-tabs" role="tablist" aria-label="纪要视图">{[{id:'ai',label:'AI 视图'},{id:'tables',label:'表格与图表'},{id:'speakers',label:'发言人总结'},{id:'decisions',label:'关键决策'},{id:'document',label:'正文'}].map(tab=><button key={tab.id} id={`minutes-tab-${tab.id}`} role="tab" aria-selected={view===tab.id || (view==='topics' && tab.id==='ai')} aria-controls="minutes-view" tabIndex={view===tab.id || (view==='topics' && tab.id==='ai') ? 0 : -1} onClick={()=>setView(tab.id)} onKeyDown={event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const ids=['ai','tables','speakers','decisions','document'];const index=ids.indexOf(tab.id),next=event.key==='Home'?0:event.key==='End'?4:(index+(event.key==='ArrowRight'?1:4))%5;setView(ids[next]);document.getElementById(`minutes-tab-${ids[next]}`)?.focus();}}>{tab.label}</button>)}</div>
           <div id="minutes-view" className="minutes-view" role="tabpanel" aria-labelledby={`minutes-tab-${view==='topics'?'ai':view}`}>
-          {view==='ai' && <MinutesTree minutes={minutes} cite={ref=>cite(ref,minutes.evidenceSnapshot)}/>}
-          {view==='tables' && <><SummaryTables minutes={minutes} cite={ref=>cite(ref,minutes.evidenceSnapshot)}/><SummaryCharts minutes={minutes}/></>}
-          {view==='speakers' && <SpeakerMinutes minutes={minutes} cite={ref=>cite(ref,minutes.evidenceSnapshot)}/>}
-          {view==='decisions' && <DecisionMinutes minutes={minutes} cite={ref=>cite(ref,minutes.evidenceSnapshot)}/>}
+          {view==='ai' && <MinutesTree minutes={minutes} cite={ref=>cite(ref,minutes.evidenceSnapshot,minutes.transcriptRevision)}/>}
+          {view==='tables' && <><SummaryTables minutes={minutes} cite={ref=>cite(ref,minutes.evidenceSnapshot,minutes.transcriptRevision)}/><SummaryCharts minutes={minutes}/></>}
+          {view==='speakers' && <SpeakerMinutes minutes={minutes} cite={ref=>cite(ref,minutes.evidenceSnapshot,minutes.transcriptRevision)}/>}
+          {view==='decisions' && <DecisionMinutes minutes={minutes} cite={ref=>cite(ref,minutes.evidenceSnapshot,minutes.transcriptRevision)}/>}
           {view==='topics' && <TopicMap minutes={minutes}/>}
           {view==='document' && (draft || minutes).sections.map((section, sectionIndex) => <section className="minutes-section" key={sectionIndex}><h4>{section.heading}</h4>{section.items.map((item, itemIndex) => <div className="minute-item" key={itemIndex}>
             {draft ? <textarea aria-label={`${section.heading}第 ${itemIndex + 1} 项`} value={item.text} onChange={e => { const next = structuredClone(draft); next.sections[sectionIndex].items[itemIndex].text = e.target.value; setDraft(next); }}/>
               : <p>{item.text}</p>}
-            <div className="citations">{item.evidence.map((ref, i) => <button key={i} onClick={() => cite(ref, minutes.evidenceSnapshot)} aria-label={`查看来源 ${i + 1}`}>来源 {i + 1}</button>)}</div>
+            <div className="citations">{item.evidence.map((ref, i) => <button key={i} onClick={() => cite(ref, minutes.evidenceSnapshot, minutes.transcriptRevision)} aria-label={`查看来源 ${i + 1}`}>来源 {i + 1}</button>)}</div>
           </div>)}</section>)}
           {draft && <div className="actions"><Button variant="primary" disabled={busy} onClick={async () => { if (await edit(draft)) setDraft(null); }}><Check size={16}/>保存修订</Button><Button disabled={Boolean(historical)} onClick={() => setDraft(null)}>取消</Button></div>}
-          {(view==='decisions' || view==='document') && minutes.actions.length > 0 && <section className="minutes-section"><h4>行动候选</h4><p className="muted">请人工确认负责人和日期。下载不会发送给他人。</p>{minutes.actions.map((action, i) => <div className="action-candidate" key={i}><span className="checkbox-mark"/><div><p>{action.text}</p><small>{action.owner || '负责人待定'} · {action.due || '日期待定'}</small><div className="citations">{action.evidence.map((ref, j) => <button key={j} onClick={() => cite(ref, minutes.evidenceSnapshot)}>来源 {j + 1}</button>)}</div></div></div>)}{formal && <Download href={`/api/records/${record.id}/export?format=ics`}>下载待办日历文件</Download>}</section>}
+          {(view==='decisions' || view==='document') && minutes.actions.length > 0 && <section className="minutes-section"><h4>行动候选</h4><p className="muted">请人工确认负责人和日期。下载不会发送给他人。</p>{minutes.actions.map((action, i) => <div className="action-candidate" key={i}><span className="checkbox-mark"/><div><p>{action.text}</p><small>{action.owner || '负责人待定'} · {action.due || '日期待定'}</small><div className="citations">{action.evidence.map((ref, j) => <button key={j} onClick={() => cite(ref, minutes.evidenceSnapshot, minutes.transcriptRevision)}>来源 {j + 1}</button>)}</div></div></div>)}{formal && <Download href={`/api/records/${record.id}/export?format=ics`}>下载待办日历文件</Download>}</section>}
           {(view==='decisions' || view==='document') && formal && minutes.actions.length > 0 && <Download href={`/api/records/${record.id}/export?format=issues`}>下载工单候选 JSON</Download>}
           </div>{!inline && <Button variant="ghost" className="topic-chart-toggle" onClick={()=>{setView(view==='topics'?'ai':'topics');}}>{view==='topics'?'返回 AI 主题视图':'查看主题时长'}</Button>}
         </>}
       {!minutes && !running && <div className="minutes-empty-actions">{record.capture !== 'completed' && !record.autoMinutes?.enabled && modelReady ? <Button variant="primary" disabled={busy} onClick={()=>void automate(true,record.autoMinutes?.intervalSeconds || 30)}>开启自动 AI 纪要</Button> : <Button onClick={()=>setSettingsOpen(true)}>整理会议纪要</Button>}</div>}
       {showPreview && <section className={`streaming-minutes${inline ? ' is-inline-stream' : ''}`} aria-busy="true"><div className="streaming-status" role="status"><span className="live-dot"/>{job?.scope === 'live' ? '正在归纳会中主题' : '正在整理会议终稿'}</div>{job?.preview?.length ? job.preview.map((block,i) => block.kind === 'title' || block.kind === 'heading' ? <h4 key={i}>{block.text}</h4> : <p key={i}>{block.text}</p>) : <p className="muted">等待模型输出…</p>}<small>实时草稿 · 引用将在完整结果校验后显示</small></section>}
+      <MinutesUsage record={record} job={job}/>
       <div ref={follow.end} className="content-follow-anchor" aria-hidden="true"/>
-      {active && view === 'ai' && !follow.following && <Button className="minutes-follow" onClick={follow.resume}>回到最新纪要</Button>}
+      <ContentFollowAction anchor={follow.root} visible={active && view === 'ai' && !follow.following && Boolean(minutes?.sections.some(section=>section.items.length) || minutes?.topics?.length || minutes?.tables?.length || (showPreview && job?.preview?.length))} resume={follow.resume}/>
     </div></Container>;
 }

@@ -1,4 +1,10 @@
-import type { Evidence, Minutes, MinutesItem, SpeakerSummary, SummaryTable, Topic } from './model';
+import type { Evidence, Minutes, MinutesItem, RecordDetail, SpeakerSummary, SummaryTable, Topic } from './model';
+
+export function currentMinutesJob(record: Pick<RecordDetail,'capture'|'jobs'|'transcriptRevision'>) {
+  const ended=record.capture==='completed' || record.capture==='sealed';
+  return record.jobs.filter(job=>job.status!=='cancelled' && (!ended || job.scope!=='live'))
+    .filter(job=>!['failed','stale'].includes(job.status) || job.transcriptRevision===record.transcriptRevision).at(-1);
+}
 
 export function topicBranches(minutes: Minutes): (Topic & { items: MinutesItem[] })[] {
   const items = minutes.sections.flatMap(section => section.items);
