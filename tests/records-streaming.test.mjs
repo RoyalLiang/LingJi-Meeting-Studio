@@ -15,6 +15,38 @@ async function endpoint(handler, run) {
   finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 }
 const credentials = { LLM_MODEL: 'fixture-model', LLM_API_KEY: 'fixture-key' };
+test('provider token counters remain unknown when absent and preserve an explicitly reported zero', async () => {
+ for(const usage of [undefined,{total_tokens:0,input_tokens:0,output_tokens:0},{total_tokens:-1,input_tokens:'12',output_tokens:1.5}]) {
+  const reports=[];
+  await endpoint((_req,res)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify({status:'completed',output_text:'{"ok":true,"usageTokens":999}',...(usage?{usage}:{})}));},async base=>{
+   const result=await completeJson([],{...credentials,LLM_API_URL:base,LLM_PROTOCOL:'responses'},{onUsage:value=>reports.push(value)});
+   assert.equal(result.usageTokens,0);assert.equal(result.usageReported,usage?.total_tokens===0);
+   assert.equal(reports.length,usage?.total_tokens===0?1:0);
+   assert.deepEqual(result.tokenUsage,usage?.total_tokens===0?{inputTokens:0,outputTokens:0,totalTokens:0}:{});
+  });
+ }
+});
+test('streamed usage is delivered before completion, duplicate cumulative frames do not count twice, and invalid output retains reported use', async () => {
+ let release;const ready=new Promise(resolve=>{release=resolve;});let beforeComplete=false,finished=false;
+ await endpoint(async(_req,res)=>{
+  res.setHeader('Content-Type','text/event-stream');res.flushHeaders();
+  const frame={usage:{prompt_tokens:12,completion_tokens:3,total_tokens:15}};
+  res.write(`data: ${JSON.stringify(frame)}\n\ndata: ${JSON.stringify(frame)}\n\n`);await ready;
+  res.end('data: {"choices":[{"delta":{"content":"{broken JSON"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
+ },async base=>{
+  const reports=[];
+  await assert.rejects(completeJson([],{...credentials,LLM_API_URL:base,LLM_PROTOCOL:'chat-completions'},{onDelta:()=>{},onUsage:usage=>{assert.equal(finished,false);beforeComplete=true;reports.push(usage);release();}}),{code:'invalid_llm_response'});finished=true;
+  assert.equal(beforeComplete,true);assert.deepEqual(reports,[{inputTokens:12,outputTokens:3,totalTokens:15}]);
+ });
+});
+test('buffered incomplete or failed Responses still report consumed usage while rejecting their content',async()=>{
+ for(const status of ['incomplete','failed'])await endpoint((_req,res)=>{
+  res.setHeader('Content-Type','application/json');res.end(JSON.stringify({status,usage:{input_tokens:11,output_tokens:2,total_tokens:13},output:[]}));
+ },async base=>{
+  const reports=[];await assert.rejects(completeJson([],{...credentials,LLM_API_URL:base,LLM_PROTOCOL:'responses'},{onUsage:usage=>reports.push(usage)}),{code:'llm_stream_incomplete'});
+  assert.deepEqual(reports,[{inputTokens:11,outputTokens:2,totalTokens:13}]);
+ });
+});
 test('Responses uses input and text format, disables storage, and reads output content', async () => {
   await endpoint((_req, res) => {
     res.setHeader('Content-Type', 'application/json');

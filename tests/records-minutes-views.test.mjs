@@ -17,8 +17,38 @@ const ref = index => ({ segmentId:snapshot[index].id, revision:snapshot[index].r
 const base = () => ({ title:'发布准备', sections:[{heading:'讨论重点',items:[{text:'周五发布第一版。',evidence:[ref(0)]},{text:'回归测试由说话人 2 负责。',evidence:[ref(1)]}]}], actions:[], evidenceSnapshot:structuredClone(snapshot) });
 const source = stripTypeScriptTypes(await readFile(new URL('../apps/web/src/minutes-views.ts', import.meta.url),'utf8')).replace(/^import .*$/gm,'').replace(/export /g,'');
 const sandbox = {exports:{}};
-vm.runInNewContext(source + '\nObject.assign(exports,{topicBranches,speakerViews,decisionItems});', sandbox);
-const {topicBranches,speakerViews,decisionItems} = sandbox.exports;
+vm.runInNewContext(source + '\nObject.assign(exports,{topicBranches,speakerViews,decisionItems,currentMinutesJob});', sandbox);
+const {topicBranches,speakerViews,decisionItems,currentMinutesJob} = sandbox.exports;
+const usageSource=stripTypeScriptTypes(await readFile(new URL('../apps/web/src/minutes-usage.ts',import.meta.url),'utf8')).replace(/^import .*$/gm,'').replace(/export /g,'');
+vm.runInNewContext(usageSource+'\nObject.assign(exports,{minutesUsageView});',sandbox);
+const {minutesUsageView}=sandbox.exports;
+
+test('minutes usage distinguishes unknown tokens from a provider zero and labels parallel audio as accumulated tracks',()=>{
+ const record={usage:{samples:16000*123,llmTokens:0}};
+ let usage=minutesUsageView(record,{status:'running'});assert.equal(usage.audio,'02:03');assert.equal(usage.tokens,'待回传');assert.equal(usage.showBreakdown,false);
+ usage=minutesUsageView(record);assert.equal(usage.tokens,'未提供');
+ record.usage.minutesMeter={requests:1,reportedRequests:1,totalTokens:0,totalTokensRequests:1,inputTokens:0,inputTokensRequests:1,outputTokens:0,outputTokensRequests:1};
+ usage=minutesUsageView(record);assert.equal(usage.tokens,'0 token');assert.equal(usage.input,'0');assert.equal(usage.output,'0');
+ record.usage.llmTokens=99999;record.usage.minutesMeter.totalTokens=1234;record.usage.minutesMeter.requests=2;usage=minutesUsageView(record);assert.equal(usage.tokens,'1,234 token');assert.match(usage.status,/部分/);
+ const legacy=minutesUsageView({usage:{samples:0,llmTokens:50}});assert.equal(legacy.tokens,'未提供');assert.equal(legacy.showBreakdown,false);
+});
+test('incomplete historical usage snapshots stay unknown without crashing or manufacturing audio zero',()=>{
+ for(const usage of [undefined,null,'old-format',[],{}, {samples:-1}, {samples:'16000'}, {samples:Infinity}, {samples:NaN}, {minutesMeter:42}, {minutesMeter:{requests:1,reportedRequests:1,totalTokensRequests:1,totalTokens:'0',inputTokensRequests:1,inputTokens:-1}}]) {
+  const view=minutesUsageView({usage});assert.equal(view.audio,'—');assert.equal(view.tokens,'未提供');assert.equal(view.showBreakdown,false);
+ }
+ const current=minutesUsageView({usage:{samples:0,llmTokens:0,minutesMeter:{requests:1,reportedRequests:1,totalTokens:0,totalTokensRequests:1}}});
+ assert.equal(current.audio,'00:00');assert.equal(current.tokens,'0 token');
+});
+
+test('ended meeting status ignores old live failures and old transcript failures while preserving current final errors', () => {
+  const record={capture:'completed',transcriptRevision:4,jobs:[{id:'live',scope:'live',status:'failed',transcriptRevision:4}]};
+  assert.equal(currentMinutesJob(record),undefined);
+  record.jobs.push({id:'old-final',scope:'final',status:'failed',transcriptRevision:3});assert.equal(currentMinutesJob(record),undefined);
+  record.jobs.push({id:'final',scope:'final',status:'running',transcriptRevision:4});assert.equal(currentMinutesJob(record).id,'final');
+  record.jobs.push({id:'cancelled',scope:'final',status:'cancelled',transcriptRevision:4});assert.equal(currentMinutesJob(record).id,'final');
+  record.jobs[2].status='failed';assert.equal(currentMinutesJob(record).status,'failed');
+  record.jobs.push({id:'success',scope:'final',status:'completed',transcriptRevision:4});assert.equal(currentMinutesJob(record).id,'success');
+});
 
 test('speaker summaries and decisions validate evidence revisions and persist stable speaker attribution', () => {
   const minutes = {...base(), speakerSummaries:[{speakerId:'person-a',speaker:'说话人 1',summary:'确认第一版发布时间。',evidence:[ref(0)]}],decisions:[{text:'第一版周五发布。',evidence:[ref(0)]}]};

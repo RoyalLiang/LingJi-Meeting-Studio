@@ -9,5 +9,5 @@ export function CitationSources({ evidence, cite, label }: { evidence: Evidence[
     return [...refs.values()];
   }, [evidence]);
   const visible = expanded ? unique : unique.slice(0, 3);
-  return <div className="citations">{visible.map((ref, index) => <button key={`${ref.segmentId}:${ref.revision}`} onClick={() => cite(ref)} aria-label={label?.(index) || `查看引用原文 ${index + 1}`}>来源 {index + 1}</button>)}{unique.length > 3 && <button className="citation-more" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? '收起来源' : `+${unique.length - 3} 条来源`}</button>}</div>;
+  return <div className="citations">{visible.map((ref, index) => <button key={`${ref.segmentId}:${ref.revision}`} onClick={event => { event.currentTarget.focus({ preventScroll: true }); cite(ref); }} aria-label={label?.(index) || `查看引用原文 ${index + 1}`}>来源 {index + 1}</button>)}{unique.length > 3 && <button className="citation-more" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? '收起来源' : `+${unique.length - 3} 条来源`}</button>}</div>;
 }

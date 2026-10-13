@@ -15,14 +15,25 @@ export function automaticMinutesAt(record, now = Date.now()) {
  if (!auto?.enabled || record.deleted || !record.segments.length || record.minutes?.edited) return Infinity;
  const scope = record.capture === 'completed' ? 'final' : 'live';
  if(record.jobs.some(j=>['queued','running'].includes(j.status) && (scope==='live' || j.scope!=='live')))return Infinity;
+ if (scope === 'final') {
+  const latest=record.jobs.filter(job=>job.scope!=='live' && job.transcriptRevision===record.transcriptRevision && job.notesRevision===record.notesRevision).at(-1);
+  if(!latest)return now;
+  const transient=/^(?:llm_timeout|llm_connection_failed|llm_stream_incomplete|llm_stream_failed|provider_rate_limited|provider_http_5\d\d)$/.test(latest.error || '');
+  const attempt=latest.retryAttempt || 1;
+  if(latest.status!=='failed' || latest.mode!=='model' || !transient || attempt>=3 || latest.baseMinutesRevision!==record.minutesRevision)return Infinity;
+  const failedAt=latest.failedAt ?? (latest.automatic ? auto.lastRequestedAt : undefined) ?? Date.parse(latest.createdAt);
+  return failedAt+15000*2**(attempt-1);
+ }
  if (auto.lastRevision === record.transcriptRevision && auto.lastScope === scope) return Infinity;
- if (scope === 'final') return now;
  return Math.max(auto.enabledAt || Date.parse(record.createdAt), auto.lastRequestedAt || 0) + auto.intervalSeconds * 1000;
 }
 export function queueAutomaticMinutes(record, modelVersion, now = Date.now()) {
  if (automaticMinutesAt(record, now) > now) return;
  const scope = record.capture === 'completed' ? 'final' : 'live';
- const job = requestMinutes(record, { mode: 'model', scope, automatic: true, modelVersion });
+ const previous=scope==='final' ? record.jobs.filter(job=>job.scope!=='live' && job.transcriptRevision===record.transcriptRevision && job.notesRevision===record.notesRevision).at(-1) : undefined;
+ const job = requestMinutes(record, { mode: 'model', scope, automatic: true, modelVersion, ...(previous?.status==='failed' ? {template:previous.template} : {}) });
+ if(previous?.status==='failed' && previous.modelVersion===job.modelVersion) {job.retryAttempt=(previous.retryAttempt || 1)+1;job.retryOf=previous.retryOf || previous.id;}
+ else job.retryAttempt=1;
  record.autoMinutes = { ...record.autoMinutes, lastRevision: record.transcriptRevision, lastScope: scope, lastRequestedAt: now };
  return job;
 }

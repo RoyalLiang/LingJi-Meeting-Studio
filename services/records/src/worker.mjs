@@ -1,4 +1,5 @@
 import { runMinutesPipeline } from './minutes-pipeline.mjs';
+import { meteredMinutesCall } from './minutes-usage.mjs';
 import { telemetry } from './telemetry.mjs';
 import { processWorkspaceAnalysis } from './workspace-worker.mjs';
 import { processSpeakerSources, closeSpeakerStreams } from './speaker-streams.mjs';
@@ -125,7 +126,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
       try {
         let json = '', lastPublished = 0;
         const generate=providers.minutes||generateMinutes;
-        const processMinutes=config.RECORD_MINUTES_PIPELINE_ENABLED==='false' ? generate : (job,env,opts)=>runMinutesPipeline(repo,candidate.id,job,env,generate,opts);
+        const processMinutes=config.RECORD_MINUTES_PIPELINE_ENABLED==='false' ? async(job,env,opts)=>({...await meteredMinutesCall(repo,candidate.id,job,generate,job,env,opts),usageRecorded:true}) : (job,env,opts)=>runMinutesPipeline(repo,candidate.id,job,env,generate,opts);
         const result = await telemetry.measure('minutes.complete', {recordId:candidate.id, jobId:jobClaim.id, revision:jobClaim.transcriptRevision, queueMs:Date.now()-Date.parse(jobClaim.createdAt)}, () => processMinutes(jobClaim, config,{ onDelta: async (delta, runtime) => {
           if(!json)telemetry.event('minutes.first-text',{recordId:candidate.id,jobId:jobClaim.id,durationMs:runtime?.firstTokenMs});
           json += delta;
@@ -140,7 +141,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
         await repo.change(candidate.id, r => {
           const job = r.jobs.find(j => j.id === jobClaim.id);
           if (!job || job.fence !== jobClaim.fence || r.deleted) return;
-          job.status = error.code==='minutes_snapshot_changed' ? 'stale' : 'failed'; delete job.preview; job.snapshot = []; job.error = error.code || 'minutes_request_failed'; emit(r, 'minutes.failed', { jobId: job.id, error: job.error });
+          job.status = error.code==='minutes_snapshot_changed' ? 'stale' : 'failed'; delete job.preview; job.snapshot = []; job.error = error.code || 'minutes_request_failed'; job.failedAt=Date.now(); emit(r, 'minutes.failed', { jobId: job.id, error: job.error });
         });
       }
     }

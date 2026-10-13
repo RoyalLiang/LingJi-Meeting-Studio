@@ -65,3 +65,11 @@ node scripts/test-native-package.mjs
 合成场景脚本只用于显式 `smoke-test` 构建，创建隔离数据目录和 API，不访问现有会议、不打开真实设备或供应商。正式构建不启用该 feature，也不提供测试 IPC；正式包验证须覆盖独立后台启动、隔离账户、持久化重启与内置 React 页面，测试证据以本次 Alpha 发版记录为准。平台包可通过 `NATIVE_CLIENT_EXECUTABLE` 指向相应可执行文件。正式 `.app` 单独构建可用 `npm exec --workspace apps/desktop -- tauri build --bundles app`。
 
 Linux 发行构建采用 Ubuntu 24.04 基线，CPAL PipeWire 接口要求 0.3.53+；不保证旧 glibc 或 Ubuntu 22.04 可直接运行发行 AppImage。
+
+## 音源权限（2026-10-13 修订）
+
+客户端使用原生CPAL/CoreAudio接入麦克风与系统声音；点击录音或接入音源直接进入系统权限检查，移除每次采集前重复的自有确认框。没有把本地提示确认缓存冒充系统授权，也不绕过撤销；拒绝或撤销会返回真实错误，不静默切换浏览器或模拟来源。
+
+新会议默认接入系统声音与麦克风，与浏览器入口一致。暂停继续仅恢复之前成功接入的音源，显式关闭的麦克风保持关闭；并发重复继续不会重新添加此前失败或关闭的音源，空音源集合不会回退为默认选择。
+
+系统首次授权及撤销由macOS管理。当前本地Alpha为ad-hoc签名，跨构建身份变化可能导致系统再次询问；稳定正式签名与跨版本TCC复用尚未验收。既有固定WebView profile/origin继续保留，未重置系统权限或修改TCC数据库。

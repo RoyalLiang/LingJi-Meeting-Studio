@@ -6,6 +6,7 @@ export interface MinutesItem { text: string; evidence: Evidence[] }
 export interface Topic { id?: string; title: string; summary: string; evidence: Evidence[] }
 export interface SpeakerSummary { speakerId: string | null; speaker: string; summary: string; evidence: Evidence[] }
 export interface ModelRuntime { protocol?: string; streamed?: boolean; firstTokenMs?: number | null; durationMs?: number; elapsedMs?: number }
+export interface MinutesMeter { requests: number; reportedRequests: number; inputTokens?: number; outputTokens?: number; totalTokens?: number; inputTokensRequests?: number; outputTokensRequests?: number; totalTokensRequests?: number }
 export interface SummaryTable { topicId?: string; title: string; columns: string[]; rows: { cells: string[]; evidence: Evidence[] }[] }
 export interface Minutes { tables?: SummaryTable[]; currentDiscussion?: MinutesItem[]; speakerSummaries?: SpeakerSummary[]; decisions?: MinutesItem[]; topics?: Topic[]; runtime?: ModelRuntime; method?: string; title: string; sections: { heading: string; items: MinutesItem[] }[]; actions: (MinutesItem & { owner?: string; due?: string })[];
   revision: number; transcriptRevision: number; edited: boolean; evidenceSnapshot: Segment[] }
@@ -13,7 +14,7 @@ export interface Job { progress?: {completed:number;total:number;stage:string}; 
 export interface RecordDetail { speakers?: {id:string;hash?:string;label:string}[]; autoMinutes?: {enabled:boolean;intervalSeconds:number}; liveMinutes?: Minutes | null;
   insights?: {transcriptRevision: number; method: string; items: {kind: string; text: string; evidence: Evidence[]}[]; evidenceSnapshot: Segment[]}; intentError?: string; id: string; title: string; workspaceId?: string|null; language: string; capture: string; transcription: string; sources: Source[]; segments: Segment[];
   notes: string; notesRevision: number; minutes: Minutes | null; minutesRevision: number; minuteVersions: { revision: number; transcriptRevision: number; edited: boolean }[]; transcriptRevision: number; cursor: string; jobs: Job[]; pendingChunks: number;
-  retainAudio: boolean; audioPurged?: boolean; retentionDays: number; deleteAt: string; translationTarget?: string; usage: { samples: number; llmTokens: number } }
+  retainAudio: boolean; audioPurged?: boolean; retentionDays: number; deleteAt: string; translationTarget?: string; usage: { samples: number; llmTokens: number; minutesMeter?: MinutesMeter } }
 export interface RecordListItem { id: string; title: string; workspaceId?:string|null; createdAt: string; updatedAt: string; capture: string; transcription: string; segments: number; seconds: number; hasMinutes: boolean }
 export interface Bootstrap { localAccount?: boolean; audioTransport?: string; canConfigure?: boolean; email: string; csrf: string; storage: string; providers: { asr: boolean; minutes: boolean; translation?: boolean; fixture: boolean }; limits: { maxMinutes: number; maxRecords: number } }
 export interface AudioChunk { sessionId: string; sourceId: string; epoch: string; sequence: number; sampleOffset: number; sampleCount: number; sampleRate: number; digest: string; pcm: string }

@@ -8,11 +8,12 @@ import http from 'node:http';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { createRecord, addSource, acknowledge, seal, pause, publicRecord, editSegment, requestMinutes, validateMinutes,
-  digest, DomainError, requireThat, emit } from '../../../packages/records/src/record.mjs';
+  digest, DomainError, requireThat, emit, autoNameRecord } from '../../../packages/records/src/record.mjs';
 import { createRepository } from './repository.mjs';
 import { createAuth } from './auth.mjs';
 import { readConfig, saveConfig, publicConfig, canConfigure } from './config.mjs';
 import { providerStatus, transcribe, completeJson, waveHeader } from './providers.mjs';
+import { sharedMinutes, sharedSegments } from '../../../packages/records/src/shared-content.mjs';
 
 async function readBytes(request, max = 600000) {
   let size = 0; const chunks = [];
@@ -93,7 +94,8 @@ export async function createRecordServer(options = {}) {
       if (shared && req.method === 'GET') {
         const tokenHash = digest(shared[1]); const r = (await repo.list()).find(r => !r.deleted && Date.parse(r.deleteAt) > Date.now() && r.shares.some(s => s.hash === tokenHash && !s.revoked && s.expires > Date.now()));
         requireThat(r, 'share_expired_or_revoked', 404); const share = r.shares.find(s => s.hash === tokenHash);
-        send(res, 200, share.scope === 'full' ? { title: r.title, segments: r.segments, minutes: r.minutes } : { title: r.title, minutes: r.minutes ? { ...r.minutes, evidenceSnapshot: r.minutes.evidenceSnapshot.filter(s => [...r.minutes.sections.flatMap(section => section.items), ...(r.minutes.actions || [])].some(item => item.evidence.some(ref => ref.segmentId === s.id && ref.revision === s.revision))) } : null }); return;
+        const minutes = r.capture === 'completed' ? r.minutes || r.liveMinutes : r.liveMinutes || r.minutes;
+        send(res, 200, { title: r.title, minutes: sharedMinutes(minutes), draft: !r.minutes || r.capture !== 'completed', ...(share.scope === 'full' ? { segments: sharedSegments(r.segments) } : {}) }); return;
       }
       if (path === '/api/development-account' && req.method === 'GET') {
         requireThat(process.env.NODE_ENV !== 'production' && process.env.RECORD_DEV_ACCOUNT !== 'off', 'not_found', 404);
@@ -236,7 +238,7 @@ export async function createRecordServer(options = {}) {
         requireThat(typeof body.text === 'string' && body.text.trim() && body.text.length <= 100000, 'invalid_import', 400);
         const parts = body.text.split(/\n+/).filter(Boolean); requireThat(parts.length <= 1000, 'import_segment_limit', 400);
         for (const text of parts) r.segments.push({ id: randomUUID(), revision: 1, sourceId: 'text-import', startMs: 0, endMs: 0, text, speaker: '', edited: false });
-        r.transcriptRevision++; r.capture = 'completed'; r.transcription = 'ready'; emit(r, 'transcript.imported'); return publicRecord(r);
+        r.transcriptRevision++; r.capture = 'completed'; r.transcription = 'ready'; autoNameRecord(r); emit(r, 'transcript.imported'); return publicRecord(r);
       });
       else if (action.startsWith('segments/') && req.method === 'PATCH') result = await changeOwned(id, user, r => { editSegment(r, action.slice(9), body); return publicRecord(r); });
       else if (action === 'minutes' && req.method === 'POST') {
@@ -252,7 +254,7 @@ export async function createRecordServer(options = {}) {
         r.minutesRevision++; r.minutes = { ...r.minutes, title: body.minutes.title, sections: body.minutes.sections, actions: body.minutes.actions || [], revision: r.minutesRevision, edited: true }; emit(r, 'minutes.edited'); return publicRecord(r);
       });
       else if (action === '' && req.method === 'PATCH') result = await changeOwned(id, user, r => {
-        if (body.title !== undefined) { requireThat(typeof body.title === 'string' && body.title.trim(), 'invalid_title', 400); r.title = body.title.trim().slice(0, 160); }
+        if (body.title !== undefined) { requireThat(typeof body.title === 'string' && body.title.trim(), 'invalid_title', 400); r.title = body.title.trim().slice(0, 160); r.titleEdited = true; }
         if (body.notes !== undefined) { requireThat(body.notesRevision === r.notesRevision, 'notes_revision_conflict'); requireThat(typeof body.notes === 'string' && body.notes.length < 20000, 'invalid_notes', 400); r.notes = body.notes; r.notesRevision++; }
         if (body.translationTarget !== undefined) setTranslationTarget(r, body.translationTarget, requireThat);
         emit(r, 'record.updated'); return publicRecord(r);
@@ -262,10 +264,10 @@ export async function createRecordServer(options = {}) {
         emit(r, 'record.deleted'); return { deleted: true, cleanup: r.cleanup };
       });
       else if (action === 'shares' && req.method === 'POST') {
-        requireThat(record.minutes, 'minutes_required'); const token = randomBytes(32).toString('base64url');
+        const token = randomBytes(32).toString('base64url');
         const scope = body.scope || 'minutes'; requireThat(['minutes', 'full'].includes(scope), 'invalid_share_scope', 400);
         const share = { id: randomUUID(), hash: digest(token), scope, expires: Date.now() + 86400000, revoked: false };
-        await changeOwned(id, user, r => { r.shares.push(share); emit(r, 'share.created'); }); result = { token, id: share.id, scope, expires: share.expires };
+        await changeOwned(id, user, r => { requireThat(r.minutes || r.liveMinutes || (scope === 'full' && r.segments.length), 'minutes_required'); r.shares.push(share); emit(r, 'share.created'); }); result = { token, id: share.id, scope, expires: share.expires };
       }
       else if (action.startsWith('shares/') && req.method === 'DELETE') result = await changeOwned(id, user, r => {
         const share = r.shares.find(s => s.id === action.slice(7)); requireThat(share, 'not_found', 404); share.revoked = true; emit(r, 'share.revoked'); return { revoked: true };

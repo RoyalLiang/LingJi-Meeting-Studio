@@ -1,0 +1,18 @@
+.meeting-share { display: grid; gap: 20px; min-width: 0; }
+.meeting-share-intro { display: flex; gap: 14px; align-items: flex-start; min-width: 0; }
+.meeting-share-icon { width: 44px; height: 44px; flex: 0 0 44px; display: grid; place-items: center; border-radius: 14px; background: var(--accent-soft); color: var(--accent); }
+.meeting-share-intro h3 { margin: 0 0 5px; font-size: 16px; overflow-wrap: anywhere; }
+.meeting-share-intro p { margin: 0; color: var(--ink-3); font-size: 13px; line-height: 1.6; }
+.meeting-share-draft { justify-self: start; margin-top: -10px; color: var(--ink-3); background: var(--panel-2); padding: 4px 9px; border-radius: 6px; font-size: 12px; }
+.meeting-share-empty { margin: 0; color: var(--ink-3); font-size: 13px; }
+.meeting-share-actions { flex-wrap: wrap; margin: 0; }
+.meeting-share-retry { color: var(--accent); font-size: 13px; text-underline-offset: 3px; }
+.meeting-share-link { display: flex; gap: 10px; align-items: flex-end; min-width: 0; }
+.meeting-share-link label { flex: 1; min-width: 0; }
+.meeting-share-link input { font-size: 12px; }
+.meeting-share-existing { border-top: 1px solid var(--border); padding-top: 18px; }
+.meeting-share-existing h3 { margin: 0 0 8px; display: flex; align-items: center; gap: 7px; font-size: 13px; }
+.meeting-share-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; }
+.meeting-share-row > span { font-size: 13px; }
+.meeting-share-row small { display: block; margin-top: 3px; color: var(--ink-3); font-size: 12px; }
+@media (max-width: 560px) { .meeting-share-link { align-items: stretch; flex-direction: column; } }

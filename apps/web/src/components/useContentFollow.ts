@@ -27,7 +27,7 @@ export function useContentFollow(update: string, paused: boolean, selector = '[a
   useLayoutEffect(() => {
     if(paused)change(false); else if((enabled || wasEnabled.current) && follow.current)align();
     wasEnabled.current=enabled;
-  }, [update,paused,align,change,enabled]);
+  }, [update,paused,align,change,enabled,following]);
   const pause = useCallback(() => change(false),[change]);
   const enable = useCallback(() => { jumped.current=false; change(true); },[change]);
   return {root,end,following,pause,enable,resume:()=>{jumped.current=false;change(true);align();}};

@@ -19,10 +19,16 @@ export function Modal({ title, children, onClose, wide = false, explicitCloseOnl
   const titleId = useId();
   useEffect(() => {
     const dialog = ref.current;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const fallback = document.querySelector<HTMLElement>('.workspace .record-title button:not(:disabled), .workspace .topbar button:not(:disabled)');
     dialog?.showModal();
     const field = initialFocus === 'field' ? dialog?.querySelector<HTMLElement>('input:not([type="hidden"]):not(:disabled), textarea:not(:disabled), select:not(:disabled)') : null;
     (field || heading.current)?.focus({ preventScroll: true });
-    return () => dialog?.close();
+    return () => {
+      dialog?.close();
+      const target = opener?.isConnected && opener !== document.body && !opener.closest('[inert]') ? opener : fallback;
+      if (target?.isConnected && !target.closest('[inert]')) target.focus({ preventScroll: true });
+    };
   }, [initialFocus]);
   return <dialog className={`modal glass ${wide ? 'wide' : ''}`} ref={ref} onCancel={event => { event.preventDefault(); if (!explicitCloseOnly) onClose(); }} onClick={event => { if (!explicitCloseOnly && event.target === event.currentTarget) onClose(); }} aria-labelledby={titleId}>
     <header className="modal-header"><h2 id={titleId} ref={heading} tabIndex={-1}>{title}</h2><CloseButton className="modal-close" onClick={onClose}/></header><div className="modal-body">{children}</div>

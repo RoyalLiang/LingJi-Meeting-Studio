@@ -44,11 +44,15 @@ const minutes = () => ({
 function render(overrides = {}) {
   const record = { id: 'fixture', capture: 'recording', jobs: [], minutes: null,
     liveMinutes: minutes(), minutesRevision: 1, transcriptRevision: 3,
+    usage: {samples:16000*4,llmTokens:0},
     autoMinutes: { enabled: true, intervalSeconds: 30 }, ...overrides };
   return renderToStaticMarkup(React.createElement(MinutesPanel, {
     record, busy: false, inline: true, onClose() {}, generate() {}, edit() {}, cite() {}, automate() {},
   }));
 }
+test('an old record without usage keeps the full minutes page readable with unknown counters',()=>{
+ const html=render({usage:undefined});assert.match(html,/按主题整理的纪要/);assert.match(html,/本场用量/);assert.match(html,/<strong>—<\/strong>/);assert.match(html,/<strong>未提供<\/strong>/);assert.doesNotMatch(html,/0 token/);
+});
 
 test('AI tree places each table row inside its uniquely cited topic and preserves ambiguous rows', () => {
   const html = render();

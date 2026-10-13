@@ -1,4 +1,24 @@
 // Compiled only with the explicit smoke-test feature. No real audio devices or providers.
+async function verifyNativeUiLanes(record, queued) {
+  if (record.sources.length !== 2 || [...record.sources.map(source => source.kind)].sort().join(',') !== 'display,microphone') throw new Error('native UI did not open both default audio lanes');
+  const reports = [];
+  for (const source of record.sources) {
+    const packets = queued.filter(entry => entry.chunk.sourceId === source.id).map(entry => entry.chunk).sort((a, b) => a.sequence - b.sequence);
+    if (!source.stopped || packets.length < 2 || source.lastSequence !== packets.length - 1) throw new Error('native UI final manifest differs from saved source queue');
+    let offset = 0;
+    for (const [sequence, packet] of packets.entries()) {
+      if (packet.sessionId !== source.sessionId || packet.epoch !== source.epoch || packet.sequence !== sequence || packet.sampleOffset !== offset || packet.sampleRate !== 16000 || !Number.isInteger(packet.sampleCount) || packet.sampleCount < 1) throw new Error('native UI queued source identity or sample timeline mismatch');
+      const bytes = Uint8Array.from(atob(packet.pcm), character => character.charCodeAt(0));
+      const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), byte => byte.toString(16).padStart(2, '0')).join('');
+      if (bytes.byteLength !== packet.sampleCount * 2 || digest !== packet.digest || !new Int16Array(bytes.buffer).some(sample => sample !== 0)) throw new Error('native UI queued source audio differs from its durable identity');
+      offset += packet.sampleCount;
+    }
+    reports.push({ sourceId: source.id, kind: source.kind, sessionId: source.sessionId, epoch: source.epoch, packets: packets.length, samples: offset });
+  }
+  if (reports.reduce((count, source) => count + source.packets, 0) !== queued.length) throw new Error('unexpected queued audio source');
+  return reports;
+}
+
 (async () => {
   const invoke = window.__TAURI_INTERNALS__.invoke;
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -23,7 +43,7 @@
     if (priorUiId) {
       await until(async () => {
         const prior = await json(`/records/${priorUiId}`);
-        return prior.sources.length && prior.sources.every(source => source.lastSequence >= 1 && source.watermark === source.lastSequence);
+        return prior.sources.length === 2 && prior.sources.map(source => source.kind).sort().join(',') === 'display,microphone' && prior.sources.every(source => source.lastSequence >= 1 && source.watermark === source.lastSequence && source.stopped);
       });
       priorUiQueueReplayed = true;
     }
@@ -58,16 +78,15 @@
       request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
     });
     const pendingUi = () => new Promise((resolve, reject) => {
-      const request = queueDatabase.transaction('chunks').objectStore('chunks').index('recordId').count(uiRecordId);
+      const request = queueDatabase.transaction('chunks').objectStore('chunks').index('recordId').getAll(uiRecordId);
       request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
     });
-    await until(async () => await pendingUi() >= 2);
+    await until(async () => { const queued = await pendingUi(), counts = new Map(); for (const entry of queued) counts.set(entry.chunk.sourceId, (counts.get(entry.chunk.sourceId) || 0) + 1); return counts.size === 2 && [...counts.values()].every(count => count >= 2); });
     const finish = await until(() => document.querySelector('button[aria-label="暂停或结束会议"]:not(:disabled)')); finish.click();
     const pause = await until(() => [...document.querySelectorAll('button')].find(button => !button.disabled && button.textContent.includes('暂停，稍后继续'))); pause.click();
     const uiPaused = await until(async () => { const current = await json(`/records/${uiRecordId}`); return current.capture === 'paused' && current; });
-    if (uiPaused.sources.length !== 1 || uiPaused.sources[0].kind !== 'display') throw new Error('native UI opened an implicit microphone');
-    const pendingUiPackets = await pendingUi(); queueDatabase.close();
-    if (pendingUiPackets < 2 || uiPaused.sources[0].lastSequence !== pendingUiPackets - 1) throw new Error('native UI final manifest differs from saved queue');
+    const queuedUi = await pendingUi(); queueDatabase.close();
+    const uiLanes = await verifyNativeUiLanes(uiPaused, queuedUi), pendingUiPackets = queuedUi.length;
     localStorage.setItem('native-probe-ui-record', uiRecordId);
     const database = await new Promise((resolve, reject) => { const r = indexedDB.open('native-probe', 1); r.onupgradeneeded = () => r.result.createObjectStore('proof'); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
     const retained = await new Promise((resolve, reject) => { const r = database.transaction('proof').objectStore('proof').get('retained'); r.onsuccess = () => resolve(Boolean(r.result?.native)); r.onerror = () => reject(r.error); });
@@ -76,6 +95,6 @@
     const frame = document.createElement('iframe'); frame.src = '/index.html'; document.body.append(frame); await sleep(150);
     const iframeBlocked = !frame.contentDocument?.querySelector('#root'); frame.remove();
     localStorage.setItem('native-probe-retained', 'yes');
-    await invoke('client_probe', { result: { ok: true, origin: location.origin, renderer: navigator.userAgent, reactMounted: true, uiRecordId, pendingUiPackets, priorUiQueueReplayed, actualQueueUsed: true, nativeIpc: true, authenticated: true, csrfRejected: true, recordId: record.id, pcm, sse, indexedDbWritten: true, indexedDbRetained: retained, reloginRequired: sessionStorage.getItem('native-probe-relogin') === 'yes', iframeBlocked, kind: 'synthetic-only' } });
+    await invoke('client_probe', { result: { ok: true, origin: location.origin, renderer: navigator.userAgent, reactMounted: true, uiRecordId, uiLanes, pendingUiPackets, priorUiQueueReplayed, actualQueueUsed: true, nativeIpc: true, authenticated: true, csrfRejected: true, recordId: record.id, pcm, sse, indexedDbWritten: true, indexedDbRetained: retained, reloginRequired: sessionStorage.getItem('native-probe-relogin') === 'yes', iframeBlocked, kind: 'synthetic-only' } });
   } catch (error) { await invoke('client_probe', { result: { ok: false, error: String(error), phase: sessionStorage.getItem('native-probe-phase') } }); }
 })();

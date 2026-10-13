@@ -10,18 +10,20 @@ import type { NativeStream } from './native-stream';
 export class NativeCaptureController {
   sources: Source[] = []; active = false;
   private connecting = new Map<CaptureKind, Promise<Source>>();
-  private pausedKinds: CaptureKind[] = [];
+  private pausedKinds: CaptureKind[] | null = null;
+  private microphoneEnabled = true;
   private streams = new Map<CaptureKind, { stream: NativeStream; source: Source; signal: CaptureSignal; dropped: boolean }>();
   private args: ConstructorParameters<typeof BrowserController>;
   constructor(...args: ConstructorParameters<typeof BrowserController>) { this.args = args; if (typeof args[0] !== 'string') void args[0].catch(() => {}); }
   private report() { this.args[5]?.([...this.streams.values()].map(item => ({ ...item.signal }))); }
   async startMeeting(): Promise<CaptureIssue[]> {
-    const kinds: CaptureKind[] = this.pausedKinds.length ? this.pausedKinds : ['display']; this.pausedKinds = [];
+    const kinds: CaptureKind[] = this.pausedKinds ?? ['display', ...(this.microphoneEnabled ? ['microphone' as const] : [])];
     const results = await Promise.allSettled(kinds.map(kind => this.start(kind)));
     return results.flatMap((result, index) => result.status === 'rejected'
       ? [{ kind: kinds[index], message: result.reason instanceof Error ? result.reason.message : String(result.reason) }] : []);
   }
   async start(kind: CaptureKind, selected = preferredDevice()): Promise<Source> {
+    if (kind === 'microphone') this.microphoneEnabled = true;
     const existing = this.streams.get(kind); if (existing) return existing.source;
     const pending = this.connecting.get(kind); if (pending) return pending;
     const promise = this.connect(kind, selected).finally(() => this.connecting.delete(kind));
@@ -57,14 +59,15 @@ export class NativeCaptureController {
     } catch (error) { dropped = true; rejectSource(error); await stream.stop(true).catch(() => {}); throw error; }
   }
   async disconnect(kind: CaptureKind) {
-    this.pausedKinds = this.pausedKinds.filter(value => value !== kind);
+    if (kind === 'microphone') this.microphoneEnabled = false;
+    if (this.pausedKinds) this.pausedKinds = this.pausedKinds.filter(value => value !== kind);
     const entry = this.streams.get(kind); if (!entry) return;
     entry.dropped = true;
     try { await entry.stream.stop(true); }
     finally { this.streams.delete(kind); this.sources = this.sources.filter(source => source.id !== entry.source.id); this.active = this.streams.size > 0; this.args[1](0); this.report(); }
   }
   async stop() {
-    this.pausedKinds = [];
+    this.pausedKinds = null;
     await Promise.allSettled([...this.connecting.values()]);
     const result = await Promise.allSettled([...this.streams.values()].map(entry => entry.stream.stop()));
     this.streams.clear(); this.sources = []; this.active = false; this.args[1](0); this.report();

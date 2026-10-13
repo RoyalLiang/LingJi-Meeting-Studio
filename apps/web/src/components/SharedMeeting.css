@@ -1,0 +1,14 @@
+.shared-meeting-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin: 24px 0 28px; border-bottom: 1px solid var(--border); padding-bottom: 20px; }
+.shared-meeting-heading h1 { margin: 0; overflow-wrap: anywhere; }
+.shared-meeting-heading > span { color: var(--ink-3); font-size: 12px; }
+.shared-meeting-section { margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--border); }
+.shared-meeting-section h2 { margin: 0 0 16px; font-size: 18px; }
+.shared-meeting-section ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.shared-meeting-section p { margin: 0 0 6px; overflow-wrap: anywhere; }
+.shared-meeting-section small { color: var(--ink-3); }
+.shared-meeting-transcript { margin-top: 28px; border-top: 1px solid var(--border); padding-top: 24px; }
+.shared-meeting-transcript summary { min-height: 44px; cursor: pointer; font-size: 16px; font-weight: 600; }
+.shared-meeting-transcript summary span { margin-inline-start: 12px; color: var(--ink-3); font-size: 12px; font-weight: 400; }
+.shared-meeting-transcript ol { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 18px; }
+.shared-meeting-transcript li > div { display: flex; flex-wrap: wrap; gap: 12px; color: var(--ink-3); font-size: 12px; }
+.shared-meeting-transcript p { margin: 6px 0 0; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }

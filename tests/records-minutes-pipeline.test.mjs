@@ -7,6 +7,8 @@ import {createRepository} from '../services/records/src/repository.mjs';
 import {createRecord,requestMinutes,commitMinutes,validateMinutes,publicRecord,emit} from '../packages/records/src/record.mjs';
 import {queueAutomaticMinutes} from '../packages/records/src/automation.mjs';
 import {buildMinutesManifest,runMinutesPipeline} from '../services/records/src/minutes-pipeline.mjs';
+import {beginMinutesUsage,updateMinutesUsage} from '../packages/records/src/usage.mjs';
+import {generateMinutes} from '../services/records/src/providers.mjs';
 const config={LLM_MODEL:'fixture-model',LLM_API_URL:'http://fixture.invalid'};
 async function fixture(count=100){
   const root=await mkdtemp(join(tmpdir(),'minutes-pipeline-')),repo=await createRepository({root});
@@ -20,6 +22,42 @@ function summarize(job){
   if(!items.length)items.push({text:'普通讨论',evidence:[{segmentId:job.snapshot[0].id,revision:job.snapshot[0].revision}]});
   return{title:'分层纪要',sections:[{heading:'讨论与决定',items}],actions:[],usageTokens:10};
 }
+test('actual-call usage is idempotent across duplicate concurrent frames and remains separate from stale content fences',async()=>{
+ const f=await fixture(1);
+ try {
+  const claim=await f.claim(),callId='synthetic-call';
+  await f.repo.change(f.record.id,r=>{assert.equal(beginMinutesUsage(r,claim,callId),true);assert.equal(beginMinutesUsage(r,claim,callId),false);});
+  await Promise.all([5,5,8,7].map(total=>f.repo.change(f.record.id,r=>updateMinutesUsage(r,claim,callId,{totalTokens:total,inputTokens:4,outputTokens:4}))));
+  let record=await f.repo.get(f.record.id);assert.equal(record.usage.llmTokens,8);assert.deepEqual(record.usage.minutesMeter,{requests:1,reportedRequests:1,inputTokens:4,inputTokensRequests:1,outputTokens:4,outputTokensRequests:1,totalTokens:8,totalTokensRequests:1});
+  assert.equal(publicRecord(record).jobs[0].usageCalls,undefined);
+  await f.repo.change(f.record.id,r=>{r.minutesRevision++;r.minutes={title:'人工保护',edited:true};r.jobs[0].fence='new-owner';updateMinutesUsage(r,claim,callId,{totalTokens:10});});
+  record=await f.repo.get(f.record.id);assert.equal(record.usage.llmTokens,10);assert.equal(record.minutes.title,'人工保护');
+  await f.repo.change(f.record.id,r=>{r.deleted=true;r.generation++;assert.equal(updateMinutesUsage(r,claim,callId,{totalTokens:99}),false);});
+  record=await f.repo.get(f.record.id);assert.equal(record.usage.llmTokens,10);assert.equal(record.deleted,true);
+ } finally {await f.close();}
+});
+test('reported provider use survives output validation failure while missing usage stays unknown and cached windows add nothing',async()=>{
+ const f=await fixture(1);
+ try {
+  const claim=await f.claim();
+  await assert.rejects(runMinutesPipeline(f.repo,f.record.id,claim,config,async(_job,_config,{onUsage})=>{await onUsage({inputTokens:10,outputTokens:2,totalTokens:12});return {title:'无有效引用',sections:[{heading:'无效',items:[{text:'无证据',evidence:[]}]}],actions:[],usageReported:true,usageTokens:12};}),{code:'missing_evidence'});
+  let record=await f.repo.get(f.record.id);assert.equal(record.minutes,null);assert.equal(record.usage.llmTokens,12);assert.equal(record.usage.minutesMeter.totalTokens,12);
+  await f.repo.change(f.record.id,r=>{r.jobs[0].status='failed';});const fresh=await f.claim();
+  await runMinutesPipeline(f.repo,f.record.id,fresh,config,async job=>({...summarize(job),usageTokens:0,usageReported:false,tokenUsage:{}}));
+  record=await f.repo.get(f.record.id);assert.equal(record.usage.llmTokens,12);assert.equal(record.usage.minutesMeter.requests,2);assert.equal(record.usage.minutesMeter.totalTokensRequests,1);
+  const requests=record.usage.minutesMeter.requests;
+  await runMinutesPipeline(f.repo,f.record.id,fresh,config,async()=>{assert.fail('cached leaf should not invoke the model');});
+  record=await f.repo.get(f.record.id);assert.equal(record.usage.minutesMeter.requests,requests);assert.equal(record.usage.llmTokens,12);
+ } finally {await f.close();}
+});
+test('local validation failure before a provider request does not manufacture a metered request or zero tokens',async()=>{
+ const f=await fixture(1);
+ try {
+  const claim=await f.claim();
+  await assert.rejects(runMinutesPipeline(f.repo,f.record.id,claim,{...config,LLM_API_KEY:''},generateMinutes),{code:'minutes_not_configured'});
+  const record=await f.repo.get(f.record.id);assert.equal(record.usage.llmTokens,0);assert.equal(record.usage.minutesMeter,undefined);assert.equal(record.jobs[0].usageCalls,undefined);
+ } finally {await f.close();}
+});
 test('over-budget transcript is fully windowed, hierarchically synthesized and grounded to early/middle/late leaf evidence',async()=>{
   const f=await fixture();try{
     const claim=await f.claim();assert.ok(JSON.stringify(claim.snapshot).length>180000);let calls=0;

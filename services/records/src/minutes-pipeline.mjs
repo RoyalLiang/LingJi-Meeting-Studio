@@ -1,6 +1,7 @@
 import { telemetry } from './telemetry.mjs';
 import { createHash } from 'node:crypto';
 import { requireThat, validateMinutes, emit } from '../../../packages/records/src/record.mjs';
+import { meteredMinutesCall } from './minutes-usage.mjs';
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const size = value => Buffer.byteLength(JSON.stringify(value));
 const inputBudget=config=>Math.max(4096,Math.min(96000,Number(config.RECORD_MINUTES_INPUT_BYTES)||24000));
@@ -12,7 +13,7 @@ const windowConcurrency=config=>{
   const value=Number(config.RECORD_MINUTES_WINDOW_CONCURRENCY);
   return Number.isFinite(value)&&value>=1?Math.min(4,Math.floor(value)):2;
 };
-const content = result => Object.fromEntries(Object.entries(result).filter(([key]) => !['runtime','usageTokens','coverage'].includes(key)));
+const content = result => Object.fromEntries(Object.entries(result).filter(([key]) => !['runtime','usageTokens','tokenUsage','usageReported','coverage'].includes(key)));
 const refs = result => {
   const found=new Map();
   function visit(value){if(!value||typeof value!=='object')return;if(typeof value.segmentId==='string'&&Number.isInteger(value.revision))found.set(`${value.segmentId}:${value.revision}`,value);for(const child of Object.values(value))visit(child);}
@@ -66,13 +67,13 @@ export async function runMinutesPipeline(repo,recordId,claim,config,generate,opt
   });
   async function execute(key,input,stage,preview=false){
     await repo.change(recordId,record=>{const job=currentJob(record,claim);job.lease=Date.now()+(claim.scope==='live'?180000:300000);});
-    let result=cache.get(key);const cached=!!result;
+    let result=cache.get(key);
     if(result){validateMinutes(result,claim.snapshot);reused++;}
     else if(inFlight.has(key)){result=await inFlight.get(key);reused++;}
     else{
       const pending=(async()=>{
       let first=false;
-      const result=await telemetry.measure('minutes.window',{recordId,jobId:claim.id},()=>generate({...claim,...input},config,stage==='single'||preview?options:{onDelta:(delta,runtime)=>{if(!first){first=true;telemetry.event('minutes.first-text',{recordId,jobId:claim.id,durationMs:runtime?.firstTokenMs});}}}));
+      const result=await telemetry.measure('minutes.window',{recordId,jobId:claim.id},()=>meteredMinutesCall(repo,recordId,claim,generate,{...claim,...input},config,stage==='single'||preview?options:{onDelta:(delta,runtime)=>{if(!first){first=true;telemetry.event('minutes.first-text',{recordId,jobId:claim.id,durationMs:runtime?.firstTokenMs});}}}));
       telemetry.event('minutes.window-usage',{recordId,jobId:claim.id,tokens:result.usageTokens,firstTextMs:result.runtime?.firstTokenMs});
       validateMinutes(result,input.snapshot);validateMinutes(result,claim.snapshot);
       tokens+=Number.isSafeInteger(result.usageTokens)&&result.usageTokens>=0?result.usageTokens:0;calls++;
@@ -82,7 +83,7 @@ export async function runMinutesPipeline(repo,recordId,claim,config,generate,opt
     }
     await repo.change(recordId,record=>{
       const job=currentJob(record,claim);job.windowCache ||= [];
-      if(!job.windowCache.some(entry=>entry.key===key)){job.windowCache.push({key,policy:manifest.policy,result});if(!cached){const used=Number.isSafeInteger(result.usageTokens)&&result.usageTokens>=0?result.usageTokens:0;record.usage.llmTokens+=used;job.pipelineUsageTokens=(job.pipelineUsageTokens||0)+used;}}
+      if(!job.windowCache.some(entry=>entry.key===key))job.windowCache.push({key,policy:manifest.policy,result});
       if(stage==='window'||stage==='single')job.progress.completed++;
       job.progress.stage=stage;job.lease=Date.now()+(claim.scope==='live'?180000:300000);emit(record,'minutes.progress',{jobId:job.id,completed:job.progress.completed,total:job.progress.total,stage});
     });

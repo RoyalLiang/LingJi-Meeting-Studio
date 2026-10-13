@@ -1,4 +1,5 @@
 import { validateMinutesStructure } from './minutes-structure.mjs';
+import { automaticRecordTitle } from './record-title.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 
 export class DomainError extends Error {
@@ -18,11 +19,12 @@ export function createRecord(owner, input = {}) {
   const days = Number(input.retentionDays ?? 30);
   requireThat([1, 7, 30, 90].includes(days), 'invalid_retention', 400);
   const now = new Date().toISOString();
-  const record = { id: randomUUID(), owner, kind: 'record', workspaceId: input.workspaceId || null, title: String(input.title || '未命名会议').slice(0, 160),
+  const title=String(input.title || '').trim();
+  const record = { id: randomUUID(), owner, kind: 'record', workspaceId: input.workspaceId || null, title: title.slice(0, 160) || '未命名会议', titleEdited:Boolean(title),
     language: input.language || 'zh', createdAt: now, updatedAt: now, cursor: '0', events: [], generation: 1,
     capture: 'idle', transcription: 'idle', sessions: [], sources: [], chunks: [], segments: [], transcriptRevision: 0,
     notes: '', notesRevision: 0, minutes: null, liveMinutes: null, autoMinutes: { enabled: input.autoMinutes === true, intervalSeconds: 30 }, minutesRevision: 0, minutesHistory: [], jobs: [], shares: [],
-    retentionDays: days, retainAudio: input.retainAudio === true, deleteAt: new Date(Date.now() + days * 86400000).toISOString(),
+    retentionDays: days, retainAudio: input.retainAudio !== false, deleteAt: new Date(Date.now() + days * 86400000).toISOString(),
     usage: { samples: 0, sampleRate: 16000, llmTokens: 0 }, deleted: false };
   emit(record, 'record.created'); return record;
 }
@@ -113,7 +115,12 @@ export function finalize(record) {
   if (record.capture !== 'sealed') return;
   const complete = record.sources.every(s => s.watermark === s.lastSequence)
     && record.chunks.every(c => c.state === 'done');
-  if (complete) { for (const session of record.sessions || []) { session.status = 'completed'; session.endedAt ||= new Date().toISOString(); } record.capture = 'completed'; record.transcription = 'ready'; emit(record, 'record.finalized', { transcriptRevision: record.transcriptRevision }); }
+  if (complete) { for (const session of record.sessions || []) { session.status = 'completed'; session.endedAt ||= new Date().toISOString(); } record.capture = 'completed'; record.transcription = 'ready'; autoNameRecord(record); emit(record, 'record.finalized', { transcriptRevision: record.transcriptRevision }); }
+}
+export function autoNameRecord(record,preferredTitle) {
+  const title=automaticRecordTitle(record,preferredTitle);
+  if(!title || title===record.title)return false;
+  record.title=title;record.autoTitle=title;emit(record,'record.named');return true;
 }
 export function commitTranscript(record, chunkKey, text, generation, translation = null) {
   requireThat(!record.deleted && record.generation === generation, 'stale_generation', 410);
@@ -219,6 +226,7 @@ export function commitMinutes(record, jobId, result, fence) {
   record.minutesRevision++;
   record.minutes = { ...result, actions: result.actions || [], revision: record.minutesRevision, transcriptRevision: job.transcriptRevision, manifestHash: job.manifestHash,
     evidenceSnapshot: job.snapshot, edited: false, generatedAt: new Date().toISOString() };
+  if(job.mode==='model')autoNameRecord(record,result.title);
   job.status = 'completed'; job.snapshot = []; delete job.preview; if(!usageRecorded)record.usage.llmTokens += Number.isSafeInteger(result.usageTokens) && result.usageTokens >= 0 ? result.usageTokens : 0;
   emit(record, 'minutes.committed', { revision: record.minutesRevision });
 }
@@ -227,5 +235,5 @@ export function publicRecord(record) {
   return { ...rest, segments: record.segments.map(({translationFence,translationLease,...segment})=>segment), sources: record.sources.map(({asr,...source})=>({...source,...(asr ? {asr:{state:asr.state,error:asr.error,identityWarning:asr.identityWarning,preview:asr.preview,runtime:asr.runtime}} : {})})), audio: record.sources.map(s => receipt(record, s)),
     pendingChunks: chunks.filter(c => c.state !== 'done').length,
     minuteVersions: [...(minutesHistory || []), ...(record.minutes ? [record.minutes] : [])].map(m => ({ revision: m.revision, transcriptRevision: m.transcriptRevision, edited: m.edited })),
-    jobs: jobs.map(({ snapshot, notes, fence, windowCache, manifest, ...job }) => job) };
+    jobs: jobs.map(({ snapshot, notes, fence, windowCache, manifest, usageCalls, ...job }) => job) };
 }

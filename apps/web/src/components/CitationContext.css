@@ -1,0 +1,19 @@
+.source-context { display: grid; gap: 16px; min-width: 0; }
+.source-context-meta { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; color: var(--ink-3); font-size: 12px; }
+.source-context-meta > span, .source-context-speaker > span { display: inline-flex; align-items: center; gap: 6px; }
+.source-context-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.source-context-list > li { border-inline-start: 3px solid transparent; padding: 14px 16px; border-radius: 0 12px 12px 0; min-width: 0; }
+.source-context-speaker { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: var(--ink-3); font-size: 12px; }
+.source-context-speaker b { font-weight: 600; }
+.source-context-speaker small { margin-inline-start: auto; color: var(--accent); font-size: 11px; }
+.source-context-list p { margin: 7px 0 0; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
+.source-context-list > .source-context-hit { border-inline-start-color: var(--accent); background: var(--accent-soft); }
+.source-context-hit .source-context-speaker b { color: var(--accent); }
+.source-context-more { justify-self: center; min-height: 44px; }
+.source-context-missing { margin: 0; color: var(--ink-3); }
+@media (max-width: 560px) {
+  .source-context { gap: 12px; }
+  .source-context-list > li { padding: 12px; }
+  .source-context-speaker { gap: 6px 10px; }
+  .source-context-speaker small { flex-basis: 100%; margin-inline-start: 0; }
+}

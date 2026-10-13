@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod audio;
 mod config;
+mod downloads;
 mod local_backend;
 mod menu_status;
 mod proxy;
@@ -61,26 +62,9 @@ async fn capture_start(
     if std::env::var("TTS_CLIENT_SYNTHETIC").as_deref() == Ok("1") {
         return state.captures.synthetic(&kind);
     }
-    let prompt = if kind == "display" {
-        "允许接入整台电脑的播放音频？\n可能包括其他应用声音。此授权不包含麦克风、原音留存、云端识别或分享许可。macOS 需要 14.6+ 和系统音频权限。"
-    } else {
-        "允许接入麦克风？\n麦克风与会议软件的静音开关独立。此授权不包含原音留存、云端识别或分享许可。"
-    };
-    let dialog = window
-        .dialog()
-        .message(prompt)
-        .title("接入会议音源")
-        .buttons(MessageDialogButtons::OkCancelCustom(
-            "允许".into(),
-            "取消".into(),
-        ));
-    let allowed = tauri::async_runtime::spawn_blocking(move || dialog.blocking_show())
-        .await
-        .map_err(|e| e.to_string())?;
-    if !allowed {
-        return Err("音源接入已取消".into());
-    }
-    authorize(&window, &state)?;
+    // The explicit source action reaches the OS permission check directly.
+    // CoreAudio retains its own grants; do not add a recurring app confirmation
+    // or treat a local acknowledgement as proof that OS access is still allowed.
     let captures = state.captures.clone();
     tauri::async_runtime::spawn_blocking(move || captures.start(&kind, device_id.as_deref()))
         .await
@@ -326,12 +310,38 @@ fn main() {
             let builder = tauri::WebviewWindowBuilder::new(app, "main", WebviewUrl::External(startup_url.parse()?))
                 .title("聆记 · Meeting Studio").inner_size(1280.0, 900.0).min_inner_size(760.0, 600.0)
                 .on_navigation(move |url| url.origin().ascii_serialization() == client_origin && !nav_handle.state::<Client>().captures.active() && !nav_handle.state::<Client>().updates.gate.installing())
-                .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny);
+                .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
+                .on_download(|window, event| {
+                    let state = window.state::<Client>();
+                    if window.label() != "main" || window.url().map(|url| url.origin().ascii_serialization() != state.origin).unwrap_or(true) { return false; }
+                    match event {
+                        tauri::webview::DownloadEvent::Requested { url, destination } => {
+                            if !downloads::allowed(&url, &state.origin) { return false; }
+                            #[cfg(feature = "smoke-test")]
+                            if let Ok(directory) = std::env::var("TTS_CLIENT_DOWNLOAD_TEST_DIR") {
+                                let Some(filename) = destination.file_name().map(|value| value.to_owned()) else { return false; };
+                                *destination = std::path::PathBuf::from(directory).join(filename);
+                            }
+                            #[cfg(not(feature = "smoke-test"))]
+                            let _ = destination;
+                            true
+                        }
+                        tauri::webview::DownloadEvent::Finished { url, success, .. } => {
+                            let _ = window.emit("client-download-finished", serde_json::json!({ "url": url.as_str(), "success": success }));
+                            true
+                        }
+                        _ => false,
+                    }
+                });
             #[cfg(feature = "smoke-test")]
             let builder = builder.on_page_load(|window, payload| {
                 if payload.event() == tauri::webview::PageLoadEvent::Finished && std::env::var_os("TTS_CLIENT_PROBE_OUTPUT").is_some() {
                     let case = std::env::var("TTS_UPDATE_TEST_CASE").unwrap_or_default();
-                    if !case.is_empty() {
+                    if std::env::var_os("TTS_CLIENT_DOWNLOAD_TEST_DIR").is_some() {
+                        let record_id = std::env::var("TTS_CLIENT_DOWNLOAD_TEST_RECORD").unwrap_or_default();
+                        let script = format!("window.__downloadRecordId={};{}", serde_json::to_string(&record_id).unwrap(), include_str!("download_probe.js"));
+                        let _ = window.eval(&script);
+                    } else if !case.is_empty() {
                         let script = format!("window.__updateCase={};{}", serde_json::to_string(&case).unwrap(), include_str!("update_probe.js"));
                         let _ = window.eval(&script);
                     } else { let _ = window.eval(include_str!("probe.js")); }

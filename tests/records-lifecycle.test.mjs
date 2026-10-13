@@ -11,6 +11,35 @@ const chunk = (s, sequence = 0) => ({ sessionId: s.sessionId, sourceId: s.id, ep
   sampleOffset: sequence * 16000, sampleCount: 16000, sampleRate: 16000, digest: `digest-${sequence}`, object: 'fixture' });
 const manifest = r => r.sources.map(s => ({ sourceId: s.id, epoch: s.epoch, lastSequence: s.lastSequence ?? s.watermark }));
 
+test('new recordings retain original audio by default while explicit opt-out stays compatible', () => {
+  assert.equal(records.createRecord('fixture').retainAudio,true);
+  assert.equal(records.createRecord('fixture',{retainAudio:false}).retainAudio,false);
+});
+
+test('completed unnamed meetings derive a keyword title and validated AI titles can refine it', () => {
+  const r=records.createRecord('fixture'),s=records.addSource(r,{kind:'microphone'});
+  records.acknowledge(r,chunk(s));records.seal(r,manifest(r));
+  assert.equal(r.title,'未命名会议','wait for the durable transcript drain');
+  records.commitTranscript(r,r.chunks[0].key,'今天讨论项目上线计划。项目上线需要完成回归测试。',r.generation);
+  assert.notEqual(r.title,'未命名会议');assert.match(r.title,/项目|上线|回归/);
+  const job=records.requestMinutes(r,{mode:'model'});job.fence='fixture';
+  records.commitMinutes(r,job.id,{title:'项目上线与回归计划',sections:[{heading:'计划',items:[{text:'讨论上线计划',evidence:[{segmentId:r.segments[0].id,revision:1}]}]}]},'fixture');
+  assert.equal(r.title,'项目上线与回归计划');
+});
+
+test('automatic titles protect user titles, manual minutes and empty recordings', () => {
+  for(const title of ['自定义评审','未命名会议']) {
+    const r=records.createRecord('fixture',{title}),s=records.addSource(r,{kind:'microphone'});records.acknowledge(r,chunk(s));
+    records.commitTranscript(r,r.chunks[0].key,'项目上线需要完成回归测试。',r.generation);records.seal(r,manifest(r));
+    assert.equal(r.title,title);
+  }
+  const empty=records.createRecord('fixture');records.seal(empty,[]);assert.equal(empty.title,'未命名会议');
+  const r=records.createRecord('fixture');r.capture='completed';r.segments=[{id:'s1',revision:1,text:'项目上线',speaker:'',startMs:0,endMs:1000}];r.transcriptRevision=1;
+  const job=records.requestMinutes(r,{mode:'model'});job.fence='fixture';r.title='用户在模型运行时补填';r.titleEdited=true;
+  records.commitMinutes(r,job.id,{title:'后台建议名',sections:[{heading:'安排',items:[{text:'项目上线',evidence:[{segmentId:'s1',revision:1}]}]}]},'fixture');
+  assert.equal(r.title,'用户在模型运行时补填');
+});
+
 test('an ended meeting cannot silently accept another recording', () => {
   const r = records.createRecord('fixture'), s = records.addSource(r, { kind: 'microphone' });
   records.seal(r, manifest(r));
