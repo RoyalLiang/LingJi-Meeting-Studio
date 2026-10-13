@@ -11,13 +11,12 @@ import re
 import shutil
 import tempfile
 
+from intent_inputs import (NativeBudget, PREPROCESSING_VERSION, digest, native_metadata, prepare_intent_windows,
+                           preprocessing_contract, validate_segments)
+
 ROOT = pathlib.Path(__file__).parent
 SPLITS = ("train", "dev", "test")
 LABELS = ("present", "absent")
-
-
-def digest(value):
-    return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
 
 
 def read_json(path):
@@ -56,83 +55,10 @@ def load_records(paths):
     return records, sources
 
 
-class NativeBudget:
-    def __init__(self, tokenizer_path):
-        from transformers import AutoTokenizer
-        from neohorse_decision._vendor.model import encode
-        from neohorse_decision._vendor.schema import SystemOneRequest, to_record
-        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, local_files_only=True)
-        self.encode, self.schema, self.record = encode, SystemOneRequest, to_record
-
-    def __call__(self, request):
-        rec, _ = self.record(self.schema(**request))
-        enc = self.encode(self.tokenizer, rec, strict=True, max_state=1000000, max_branch=1000000)
-        return {"state": enc["seg"].count(0), "row": len(enc["ids"])}
-
-
-class Redactor:
-    def __init__(self, segments, extra):
-        self.aliases, self.names, self.entities = {}, dict(extra), {}
-        for segment in segments:
-            identity = segment.get("speakerId") or (str(segment.get("sourceId", "")) + ":" + (segment.get("speaker") or ""))
-            if segment.get("speakerId") or segment.get("speaker"):
-                self.aliases.setdefault(identity, f"S{len(self.aliases) + 1}")
-                name = segment.get("speaker") or ""
-                if len(name) >= 2 and not re.match(r"说话人|发言人|Speaker", name, re.I):
-                    self.names.setdefault(name, "[" + self.aliases[identity] + "]")
-
-    def speaker(self, segment):
-        key = segment.get("speakerId") or (str(segment.get("sourceId", "")) + ":" + (segment.get("speaker") or ""))
-        return self.aliases.get(key, "S?")
-
-    def text(self, text):
-        for source in sorted(self.names, key=len, reverse=True):
-            text = text.replace(source, self.names[source])
-        patterns = [("EMAIL", r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}"),
-                    ("PHONE", r"(?<!\d)(?:\+?86[- ]?)?1[3-9]\d{9}(?!\d)"),
-                    ("URL", r"https?://[^\s，。；]+")]
-        for kind, pattern in patterns:
-            def replace(match):
-                key = (kind, match.group())
-                if key not in self.entities:
-                    self.entities[key] = f"[{kind}_{sum(k[0] == kind for k in self.entities) + 1}]"
-                return self.entities[key]
-            text = re.sub(pattern, replace, text)
-        return text
-
-
-def request_for(state, kind, policy):
-    return {"state": state, "questions": {kind: {"type": "choice", "instructions": policy["tasks"][kind],
-            "criteria": {"present": "存在该类讨论意图", "absent": "不存在该类讨论意图"}}}}
-
-
-def validate_segments(record):
-    segments = record.get("segments")
-    if not isinstance(record.get("id"), str) or not record["id"] or not isinstance(segments, list):
-        raise ValueError("Invalid Record export")
-    if type(record.get("transcriptRevision")) is not int or record["transcriptRevision"] < 0:
-        raise ValueError("Record requires transcriptRevision")
-    ids = set()
-    for segment in segments:
-        if not isinstance(segment, dict) or not isinstance(segment.get("id"), str) or not segment["id"] or segment["id"] in ids:
-            raise ValueError("Invalid or duplicate segment ID")
-        ids.add(segment["id"])
-        if any(segment.get(key) is not None and not isinstance(segment[key], str) for key in ("speaker", "speakerId", "sourceId")):
-            raise ValueError("Speaker and source identifiers must be strings or null")
-        if type(segment.get("revision")) is not int or segment["revision"] < 1:
-            raise ValueError("Segment requires a positive revision")
-        if not isinstance(segment.get("text"), str) or not segment["text"].strip() or len(segment["text"]) > 20000:
-            raise ValueError("Invalid segment text")
-        if any(type(segment.get(key)) not in (int, float) or not 0 <= segment[key] < 10 ** 12 for key in ("startMs", "endMs")):
-            raise ValueError("Invalid segment timing")
-        if segment["endMs"] < segment["startMs"]:
-            raise ValueError("Negative segment duration")
-    return sorted(segments, key=lambda segment: (segment["startMs"], segment["endMs"], segment["id"]))
-
-
 def make_candidates(records, allowed, policy, budget, context_turns, redactions):
     samples, rejected, skipped, record_fingerprints = [], [], collections.Counter(), {}
     policy_hash = digest(policy)
+    preprocessing = preprocessing_contract(context_turns, redactions)
     total = 0
     for record in sorted(records, key=lambda value: value.get("id", "")):
         if record.get("id") not in allowed:
@@ -155,31 +81,22 @@ def make_candidates(records, allowed, policy, budget, context_turns, redactions)
         total += len(segments)
         if total > 10000:
             raise ValueError("At most 10000 selected segments per build")
-        redactor = Redactor(segments, redactions)
-        clean = {segment["id"]: redactor.text(segment["text"].strip()) for segment in segments}
-        record_fingerprints[record["id"]] = digest([re.sub(r"\s+", "", clean[s["id"]]).casefold() for s in segments])
+        windows = prepare_intent_windows(record, policy, budget, context_turns=context_turns, redactions=redactions)
+        record_fingerprints[record["id"]] = digest([re.sub(r"\s+", "", window["focus_text"]).casefold() for window in windows])
         insights = record.get("insights") or {}
         stored = insights.get("items", []) if insights.get("method") == "model" and insights.get("transcriptRevision") == record["transcriptRevision"] else []
-        for index, focus in enumerate(segments):
-            prior = [segment for segment in segments[:index] if segment["endMs"] <= focus["startMs"]][-context_turns:] if context_turns else []
-            while True:
-                state = "\n".join([f"[前文][{redactor.speaker(s)}]{clean[s['id']]}" for s in prior] +
-                                  [f"[当前发言][{redactor.speaker(focus)}]{clean[focus['id']]}"])
-                requests = {kind: request_for(state, kind, policy) for kind in policy["tasks"]}
-                sizes = {kind: budget(request) for kind, request in requests.items()}
-                if all(size["state"] <= 128 and size["row"] <= 256 for size in sizes.values()) or not prior:
-                    break
-                prior = prior[1:]
-            evidence = [{"segmentId": s["id"], "revision": s["revision"]} for s in prior + [focus]]
+        for window in windows:
+            requests, sizes = window["requests"], window["tokens"]
             provenance = {"recordId": record["id"], "transcriptRevision": record["transcriptRevision"],
-                          "focus": {"segmentId": focus["id"], "revision": focus["revision"]}, "evidence": evidence}
-            rule = next((kind for kind, pattern in policy["positive_patterns"] if re.search(pattern, clean[focus["id"]])), None)
+                          "focus": window["focus"], "evidence": window["evidence"]}
+            rule = next((kind for kind, pattern in policy["positive_patterns"] if re.search(pattern, window["focus_text"])), None)
             for kind, request in requests.items():
-                sid = digest({"source": provenance, "task": kind, "policy": policy_hash})
-                sample = {"sample_id": sid, "input_hash": digest({"request": request, "source": provenance, "policy": policy_hash}),
+                sid = digest({"source": provenance, "task": kind, "policy": policy_hash, "preprocessing": preprocessing})
+                sample = {"sample_id": sid, "input_hash": digest({"request": request, "source": provenance, "policy": policy_hash, "preprocessing": preprocessing}),
+                          "model_input_hash": window["model_input_hashes"][kind], "preprocessing_version": PREPROCESSING_VERSION,
                           "task": kind, "request": request, "source": provenance, "tokens": sizes[kind], "signals": []}
-                if sizes[kind]["state"] > 128 or sizes[kind]["row"] > 256:
-                    rejected.append({**sample, "reason": "focus_exceeds_token_budget"})
+                if kind in window["rejected_tasks"]:
+                    rejected.append({**sample, "reason": window["rejected_tasks"][kind]})
                     continue
                 if rule == kind:
                     sample["signals"].append({"source": "rules", "label": "present", "version": policy["version"]})
@@ -339,16 +256,16 @@ def build(records, allowed_document, policy, budget, reviews=(), teachers=(), co
         raise ValueError("Explicit nonempty training record selection required")
     if allowed - {record.get("id") for record in records}:
         raise ValueError("Selected Record IDs are missing from input backups")
-    if redactions is not None and (not isinstance(redactions, dict) or not all(isinstance(k, str) and k and isinstance(v, str) and v for k, v in redactions.items())):
-        raise ValueError("Redaction map must contain nonempty string replacements")
+    preprocessing_contract(context_turns, redactions)
     samples, rejected, skipped, fingerprints = make_candidates(records, allowed, policy, budget, context_turns, redactions or {})
     mapping = assign_groups(samples, fingerprints, seed, split_map)
     attach_annotations(samples, teachers, human=False)
     attach_annotations(samples, reviews, human=True)
     accepted, audit, review = resolve(samples, accept_silver, train_limit, seed)
-    manifest = {"schema": "neohorse-intent-dataset-v1", "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    preprocessing = preprocessing_contract(context_turns, redactions)
+    manifest = {"schema": "neohorse-intent-dataset-v2", "preprocessing": preprocessing, "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 "policy_sha256": digest(policy), "policy_version": policy["version"], "training_selection_sha256": digest(allowed_document),
-                "seed": seed, "context_turns": context_turns, "state_limit": 128, "full_row_limit": 256,
+                "seed": seed, "context_turns": context_turns, "state_limit": preprocessing["state_limit"], "full_row_limit": preprocessing["full_row_limit"],
                 "record_splits": mapping, "accept_silver": accept_silver, "train_limit": train_limit,
                 "synthetic_inputs_only": bool(mapping) and all(record.get("synthetic") is True for record in records if record.get("id") in mapping),
                 "counts": {"candidates": len(samples), "review": len(review), "rejected": len(rejected),
@@ -395,11 +312,7 @@ def main():
                               args.seed, read_json(args.split_map) if args.split_map else None,
                               args.accept_silver, args.train_limit, read_json(args.redact_map) if args.redact_map else None)
     manifest["source_files"] = sources
-    manifest["tokenizer_files_sha256"] = {name: hashlib.sha256((args.tokenizer / name).read_bytes()).hexdigest()
-                                         for name in ("tokenizer.json", "tokenizer_config.json", "special_tokens_map.json")
-                                         if (args.tokenizer / name).is_file()}
-    from importlib.metadata import version
-    manifest["native_runtime_version"] = version("neohorse-decision")
+    manifest.update(native_metadata(args.tokenizer))
     write_output(args.output, payloads, manifest)
     print(json.dumps({"output": str(args.output), "counts": manifest["counts"], "statuses": manifest["statuses"]}, ensure_ascii=False))
 
