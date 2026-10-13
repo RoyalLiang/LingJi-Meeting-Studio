@@ -6,6 +6,7 @@ fn main() {
         "capture_inputs",
         "client_close",
         "client_ready",
+        "client_status",
     ];
     const PROBE_COMMANDS: &[&str] = &[
         "capture_start",
@@ -14,6 +15,7 @@ fn main() {
         "capture_inputs",
         "client_close",
         "client_ready",
+        "client_status",
         "client_probe",
     ];
     let commands = if std::env::var_os("CARGO_FEATURE_SMOKE_TEST").is_some() {

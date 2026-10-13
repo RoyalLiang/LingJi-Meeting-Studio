@@ -1,7 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod audio;
 mod config;
+mod menu_status;
 mod proxy;
+#[cfg(target_os = "macos")]
+mod status_bar;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
     Arc,
@@ -13,6 +16,8 @@ use tauri::{
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
 struct Client {
+    #[cfg(target_os = "macos")]
+    menu_bar: status_bar::StatusBar,
     origin: String,
     captures: Arc<audio::Captures>,
     ready: AtomicBool,
@@ -111,6 +116,32 @@ async fn capture_inputs(
 }
 
 #[tauri::command]
+fn client_status(
+    window: WebviewWindow,
+    state: State<'_, Client>,
+    report: menu_status::Report,
+) -> Result<(), String> {
+    authorize(&window, &state)?;
+    #[cfg(target_os = "macos")]
+    state.menu_bar.report(report);
+    #[cfg(not(target_os = "macos"))]
+    let _ = report;
+    Ok(())
+}
+
+fn menu_has_pending(state: &Client) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        state.menu_bar.has_pending()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = state;
+        false
+    }
+}
+
+#[tauri::command]
 fn client_ready(window: WebviewWindow, state: State<'_, Client>) -> Result<(), String> {
     authorize(&window, &state)?;
     state.ready.store(true, Ordering::Release);
@@ -138,7 +169,7 @@ async fn client_close(
 ) -> Result<(), String> {
     authorize(&window, &state)?;
     state.close_serial.fetch_add(1, Ordering::AcqRel);
-    if force || state.captures.active() {
+    if force || state.captures.active() || menu_has_pending(&state) {
         let dialog = window.dialog().message("录音或补传尚未完成。请先在会议中暂停或结束，并等待补传完成。\n强制关闭会停止原生采集，尚未保存的末尾音频可能丢失。已持久化的片段会在重启并重新登录同一服务后保留。").title("录音尚未完成")
             .buttons(MessageDialogButtons::OkCancelCustom("强制关闭".into(), "留在会议".into()));
         if !tauri::async_runtime::spawn_blocking(move || dialog.blocking_show())
@@ -161,6 +192,7 @@ fn main() {
         capture_stop,
         capture_inputs,
         client_ready,
+        client_status,
         client_close,
         client_probe
     ]);
@@ -171,6 +203,7 @@ fn main() {
         capture_stop,
         capture_inputs,
         client_ready,
+        client_status,
         client_close
     ]);
     builder
@@ -182,6 +215,8 @@ fn main() {
             let handle = app.handle().clone();
             let assets = Arc::new(move |path: &str| handle.asset_resolver().get(if path == "/" { "/index.html" } else { path }.to_string())
                 .map(|asset| (asset.bytes, asset.mime_type)));
+            #[cfg(target_os = "macos")]
+            let menu_api_origin = config.api_url.clone();
             let proxy = proxy::Proxy::new(config.api_url, origin.clone(), assets)?;
             let startup_url = proxy.startup_url();
             let listener = binding.listener;
@@ -189,10 +224,14 @@ fn main() {
                 let listener = tokio::net::TcpListener::from_std(listener).expect("client loopback listener");
                 if let Err(e) = axum::serve(listener, proxy.router()).await { eprintln!("client proxy stopped: {e}"); }
             });
-            app.manage(Client { origin: origin.clone(), captures: Arc::new(audio::Captures::default()), ready: AtomicBool::new(false), close_serial: AtomicU64::new(0), _lock: binding._lock });
+            #[cfg(target_os = "macos")]
+            let menu_bar = status_bar::StatusBar::new(app.handle(), &menu_api_origin)?;
+            app.manage(Client {
+                #[cfg(target_os = "macos")]
+                menu_bar, origin: origin.clone(), captures: Arc::new(audio::Captures::default()), ready: AtomicBool::new(false), close_serial: AtomicU64::new(0), _lock: binding._lock });
             app.add_capability(CapabilityBuilder::new("local-capture").window("main").local(false).remote(format!("{origin}/*"))
                 .permission("allow-capture-start").permission("allow-capture-read").permission("allow-capture-stop").permission("allow-capture-inputs")
-                .permission("allow-client-close").permission("allow-client-ready")
+                .permission("allow-client-close").permission("allow-client-ready").permission("allow-client-status")
                 .permission("core:event:allow-listen").permission("core:event:allow-unlisten"))?;
             #[cfg(feature = "smoke-test")]
             app.add_capability(CapabilityBuilder::new("probe-only").window("main").local(false).remote(format!("{origin}/*")).permission("allow-client-probe"))?;
@@ -213,6 +252,17 @@ fn main() {
             let builder = builder.data_directory(profile.clone());
             let _ = (profile, store_id);
             builder.build()?;
+            #[cfg(target_os = "macos")]
+            {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    loop {
+                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                        let state = handle.state::<Client>();
+                        state.menu_bar.refresh(state.captures.active());
+                    }
+                });
+            }
             println!("[client] {origin}");
             Ok(())
         })
