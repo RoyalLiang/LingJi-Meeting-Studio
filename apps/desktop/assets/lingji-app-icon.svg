@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>聆记 · 声音成章</title>
+  <desc>Three ascending jade sound-to-page forms on a porcelain application tile.</desc>
+  <defs>
+    <linearGradient id="porcelain" x1="160" y1="100" x2="840" y2="940" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FEFFFB"/>
+      <stop offset=".55" stop-color="#F1F6EC"/>
+      <stop offset="1" stop-color="#DCE9DE"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="512" y1="82" x2="512" y2="942" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset=".5" stop-color="#F6FAF3"/>
+      <stop offset="1" stop-color="#C5D6C8"/>
+    </linearGradient>
+    <linearGradient id="jade" x1="310" y1="240" x2="750" y2="810" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#48AD8C"/>
+      <stop offset=".42" stop-color="#218667"/>
+      <stop offset="1" stop-color="#0B5644"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="270" y1="240" x2="740" y2="780" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D0F8DF" stop-opacity=".9"/>
+      <stop offset=".45" stop-color="#77C5A4" stop-opacity=".4"/>
+      <stop offset="1" stop-color="#073F36" stop-opacity=".45"/>
+    </linearGradient>
+    <linearGradient id="light" x1="512" y1="92" x2="512" y2="340" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity=".75"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="tile-shadow" x="-12%" y="-12%" width="124%" height="128%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="10" stdDeviation="7" flood-color="#183A2C" flood-opacity=".2"/>
+    </filter>
+    <filter id="jade-shadow" x="-20%" y="-20%" width="140%" height="150%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="12" stdDeviation="10" flood-color="#0A4937" flood-opacity=".2"/>
+    </filter>
+    <clipPath id="tile-clip"><rect x="82" y="82" width="860" height="860" rx="190"/></clipPath>
+  </defs>
+  <rect x="82" y="82" width="860" height="860" rx="190" fill="url(#porcelain)" filter="url(#tile-shadow)"/>
+  <rect x="84" y="84" width="856" height="856" rx="188" fill="none" stroke="url(#rim)" stroke-width="3"/>
+  <rect x="82" y="82" width="860" height="320" fill="url(#light)" clip-path="url(#tile-clip)"/>
+  <g transform="translate(0 -10)" fill="url(#jade)" stroke="url(#edge)" stroke-width="2" filter="url(#jade-shadow)">
+    <path d="M244 429C225 419 209 430 209 454V600C209 636 226 660 258 674L292 689C310 697 324 687 324 665V518C324 479 302 454 269 438Z"/>
+    <path d="M391 338C371 327 352 339 352 363V640C352 687 375 722 416 743L455 762C475 771 492 758 492 735V446C492 400 463 371 423 352Z"/>
+    <path d="M568 235C546 224 524 239 524 267V626C524 665 544 692 582 706L710 752C743 764 764 780 781 806C795 823 813 813 813 791V409C813 361 791 329 749 305L599 250Z"/>
+  </g>
+</svg>
