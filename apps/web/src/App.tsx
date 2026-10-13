@@ -178,7 +178,7 @@ function Workspace() {
   async function startCapture(kind: 'microphone' | 'display' | 'meeting') {
     if (!record || busy || !captureAllowed()) return;
     if (record.capture === 'sealed' || record.capture === 'completed') { void quickRecord(); return; }
-    setError('');
+    setError(''); setNotice('');
     const controller = capture.current ||= controllerFor(record.id);
     const started = kind === 'meeting' ? controller.startMeeting() : controller.start(kind);
     setBusy(true);
@@ -191,6 +191,17 @@ function Workspace() {
       setCaptureIssues([{ kind: kind === 'microphone' ? 'microphone' : 'display', message: messageOf(e) }]);
       setModal('capture'); setRecording(controller.active);
     } finally { setBusy(false); if (controller.active) await refresh().catch(e => setError(messageOf(e))); else capture.current = null; }
+  }
+  async function toggleMicrophone() {
+    if (busy) return;
+    const controller = capture.current;
+    if (!controller?.sources.some(source => source.kind === 'microphone')) { await startCapture('microphone'); return; }
+    setBusy(true); setError('');
+    try {
+      await controller.disconnect('microphone');
+      if (!controller.active) await stopCapture('pause');
+      else setNotice('麦克风已关闭，继续记录系统／会议音频。');
+    } catch (e) { setError(messageOf(e)); } finally { setBusy(false); }
   }
   async function onImport(file: File) {
     if (!record) return; setBusy(true); setImportProgress(0); setError('');
@@ -241,6 +252,7 @@ function Workspace() {
           <div className="actions"><Button disabled={!record.minutes || recording} onClick={() => void openShare()}><ShareNetwork size={17}/><span>分享</span></Button><Button aria-expanded={translationOpen} onClick={() => setTranslationOpen(!translationOpen)}><Translate size={17}/>实时翻译{record.translationTarget && <span className="live-dot"/>}</Button><Button disabled={recording||busy} onClick={()=>openArchive([id])}><Folder size={17}/>归档</Button><Button variant="ghost" aria-label="删除本次记录" disabled={recording} onClick={() => setModal('delete')}><Trash size={18}/></Button></div></div>
         <MeetingControls record={record} recording={recording} busy={busy} ready={sourceReady} signals={signals}
         start={kind => void startCapture(kind)} quick={() => void quickRecord()} sources={() => setModal('capture')}
+        microphone={() => void toggleMicrophone()}
         finish={() => { setError(''); setModal('finish'); }} importAudio={() => fileInput.current?.click()}/>
       {!sourceReady && <div className="notice">语音服务尚未配置。维护者配置服务后即可录音；现在可以<Button variant="ghost" onClick={() => setModal('import-text')}>导入已有转录</Button>体验整理流程。</div>}
         {!recording && <div className="sub-actions">{!['sealed','completed'].includes(record.capture) && <Button variant="ghost" onClick={() => setModal('import-text')}><FileText size={16}/>导入文字</Button>}<Download href={`/api/records/${id}/export?format=json`}><ArrowDown size={15}/>备份记录</Download></div>}
@@ -259,7 +271,7 @@ function Workspace() {
       <Toast message={workspaceToast} dismiss={dismissWorkspaceToast}/>
     {modal === 'directory' && <WorkspaceEditor directory={editingDirectory} save={saveDirectory} close={()=>{setModal(archiveIds.length?'archive':null);}}/>}
     {modal === 'archive' && <ArchiveRecords key={archiveInitial||'inbox'} directories={directories} count={archiveIds.length} initial={archiveInitial} save={saveArchive} close={()=>{setModal(null);setArchiveIds([]);}} create={newDirectory}/>}
-{modal === 'capture' && <CaptureSetup connected={signals.map(source => source.kind)} signals={signals} issues={captureIssues} busy={busy} onRetry={() => void startCapture('meeting')} onClose={() => setModal(null)}/>}
+{modal === 'capture' && <CaptureSetup connected={signals.map(source => source.kind)} signals={signals} issues={captureIssues} busy={busy} onConnect={kind => void startCapture(kind)} onMicrophoneOff={() => void toggleMicrophone()} onClose={() => setModal(null)}/>}
     {modal === 'finish' && record && <MeetingFinish title={record.title} paused={record.capture === 'paused'} busy={busy} error={error} pause={title => void stopCapture('pause',title)} finish={title => void stopCapture('seal',title)} close={() => setModal(null)}/>}
     {modal === 'new' && <Modal title="新建一段记录" onClose={() => setModal(null)}><form onSubmit={create}><label>记录标题 <span className="muted">可稍后填写</span><input autoFocus name="title" maxLength={160} placeholder="例如：产品周会"/></label><div className="form-grid"><label>主要语言<Select label="主要语言" name="language" options={[{"value": "zh", "label": "中文"}, {"value": "en", "label": "English"}, {"value": "ja", "label": "日本語"}]}/></label><label>记录留存<Select label="记录留存" name="retentionDays" defaultValue="30" options={[{"value": "1", "label": "1 天"}, {"value": "7", "label": "7 天"}, {"value": "30", "label": "30 天"}, {"value": "90", "label": "90 天"}]}/></label></div><label className="checkbox-label"><input type="checkbox" name="autoMinutes" defaultChecked={boot.providers.minutes} disabled={!boot.providers.minutes}/><span>自动生成 AI 纪要<small>会中持续归纳主题，停止后整理终稿；转录和笔记将发送到已配置模型。</small></span></label><label className="checkbox-label"><input type="checkbox" name="retainAudio"/>保留原始音频至记录到期</label><p className="fine-print">默认只保留处理所需的临时音频，完成转录后清理；失败片段最长保留 24 小时。以上设置不替代参会者知情与录音许可。</p><Button disabled={busy} variant="primary" type="submit"><Plus size={18}/>创建记录</Button></form></Modal>}
     {modal === 'settings' && <Modal explicitCloseOnly title="设置与录音环境" onClose={() => setModal(null)}>{boot.canConfigure && <ProviderSettings saved={refreshProviders}/>}<DeviceSettings disabled={recording}/><div className="settings-section"><h3>浏览器能力检测</h3><dl className="capability-list">{Object.entries(capabilities()).filter(([k]) => k !== 'browser').map(([key, value]) => <div key={key}><dt>{{ secure: '安全环境', microphone: '麦克风 API', display: '共享来源 API', worklet: '音频处理', indexedDB: '本地补传存储', online: '网络连接' }[key]}</dt><dd>{value ? <Check size={17}/> : <X size={17}/>}</dd></div>)}</dl><p className="fine-print">API 可用不代表所选来源有声音。请在真实会议前试录并核对转录。浏览器无法保证关页或休眠后持续录音。</p></div>
