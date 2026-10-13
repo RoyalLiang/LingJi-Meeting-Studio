@@ -244,10 +244,10 @@ function Workspace() {
       const result = await started;
       const issues = kind === 'meeting' ? result as CaptureIssue[] : [];
       setCaptureIssues(issues); setRecording(controller.active);
-      if (issues.length) setModal('capture'); else if (modal === 'capture') setModal(null);
+      if (issues.length) setError(issues.map(issue => issue.message).join('；')); else if (modal === 'capture') setModal(null);
     } catch (e) {
       setCaptureIssues([{ kind: kind === 'microphone' ? 'microphone' : 'display', message: messageOf(e) }]);
-      setModal('capture'); setRecording(controller.active);
+      setError(messageOf(e)); setRecording(controller.active);
     } finally { setBusy(false); if (controller.active) await refresh().catch(e => setError(messageOf(e))); else capture.current = null; }
   }
   async function toggleMicrophone() {
