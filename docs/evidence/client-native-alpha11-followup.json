@@ -1,0 +1,707 @@
+{
+  "verifiedAt": "2026-10-13T14:15:02.783Z",
+  "version": "0.1.0-alpha.11",
+  "scope": "Native foreground component and read-only permission/signature follow-up",
+  "sourceRevision": "67599ce97a147035736c3e3bbcf10c6252e17957",
+  "systemWKWebView": {
+    "schemaVersion": 1,
+    "verifiedAt": "2026-10-13T14:08:50.449Z",
+    "runtime": "Visible AppKit application and system nonpersistent WKWebView; actual pointer/keyboard interaction via CUA",
+    "source": {
+      "revision": "67599ce97a147035736c3e3bbcf10c6252e17957",
+      "frozen": true,
+      "verifiedFileCount": 91,
+      "mismatches": [],
+      "manifest": "manifest.json",
+      "releaseArtifact": "Lingji-0.1.0-alpha.11-macos-arm64.dmg",
+      "releaseSha256": "41cdf76ec42788cecec0c1360b52d9fb790f0edc37bd25b009394cca0a051c43",
+      "allFrozenHashesSha256": "42eeaec6ec18695401572829a4c6b58506f318ff29b003e4e5b478cb8242fc8f",
+      "componentHashes": {
+        "apps/web/src/components/ui.tsx": "ad17119c34ff0edfde21f13c545e612c9a1a5d6a6135f183735c79a61bc3dc9c",
+        "apps/web/src/components/CloseButton.css": "b7b82e0cf272f4c62f9b4a38e3177e3ced1d3008db47e0cc2139ff763c62b5e1",
+        "apps/web/src/components/Select.tsx": "69babe6a9bcc0d6b01b597c7ec894f9ff05f761c61db119f55bed20340fb54ad",
+        "apps/web/src/components/Select.css": "03935d52e3b607d4913603b49796b4a7f377a6c6263e71d2445ef62e6d7151ff",
+        "apps/web/src/styles.css": "e68558f95b17dd30ce82446977ae922559b136eba6bd60051edf74a13be0326c"
+      }
+    },
+    "telemetry": {
+      "file": "telemetry.jsonl",
+      "rows": 8036,
+      "bytes": 4600216,
+      "sha256": "9e21b36dab58d862f5df3acb293a924d41b0f02f284abef95c43b6b95c4a01f2",
+      "firstAt": "2026-10-13T13:49:56Z",
+      "lastAt": "2026-10-13T14:00:59Z",
+      "lastEvent": "native.terminated"
+    },
+    "checks": [
+      "91 frozen source files exactly match Alpha11 release and fixture manifest",
+      "launched application identifies the same frozen revision",
+      "fixture uses no input injection, automatic activation, or animation manipulation",
+      "lightSelection actual trusted pointer opens the candidate",
+      "lightSelection visible native/web focus and real rAF progression",
+      "lightSelection candidate opacity naturally progresses 0 through intermediate values to 1 and transform none",
+      "darkEscape actual trusted pointer opens the candidate",
+      "darkEscape visible native/web focus and real rAF progression",
+      "darkEscape candidate opacity naturally progresses 0 through intermediate values to 1 and transform none",
+      "gear rotates automatically while the central X stays upright",
+      "trusted End then Enter chooses and returns keyboard focus to the trigger",
+      "trusted Escape collapses the later candidate without dismissing its modal",
+      "a trusted close button dismisses the light modal while visible and focused",
+      "final dark modal dismissal and native application termination are recorded"
+    ],
+    "failures": [],
+    "samples": {
+      "lightSelection": {
+        "opening": {
+          "at": "2026-10-13T13:57:43.172Z",
+          "timeMs": 467075,
+          "rafTicks": 24667,
+          "nativeActive": true,
+          "nativeKey": true,
+          "occlusionVisible": true,
+          "visibility": "visible",
+          "focused": true,
+          "candidate": {
+            "animations": [
+              {
+                "currentTime": 0,
+                "duration": 120,
+                "playState": "running",
+                "type": "CSSTransition"
+              },
+              {
+                "currentTime": 0,
+                "duration": 150,
+                "playState": "running",
+                "type": "CSSTransition"
+              }
+            ],
+            "opacity": "0",
+            "placement": "bottom",
+            "transform": "matrix(0.985, 0, 0, 0.985, 0, -4)"
+          },
+          "gear": {
+            "animation": "close-gear-turn",
+            "animations": [
+              {
+                "currentTime": 181851,
+                "duration": 8000,
+                "playState": "running",
+                "type": "CSSAnimation"
+              }
+            ],
+            "opacity": "0.6",
+            "transform": "matrix(-0.116757, -0.99316, 0.99316, -0.116757, 0, 0)"
+          },
+          "symbol": {
+            "transform": "none"
+          }
+        },
+        "zero": {
+          "at": "2026-10-13T13:57:43.185Z",
+          "timeMs": 467088,
+          "rafTicks": 24668,
+          "nativeActive": true,
+          "nativeKey": true,
+          "occlusionVisible": true,
+          "visibility": "visible",
+          "focused": true,
+          "candidate": {
+            "animations": [
+              {
+                "currentTime": 0,
+                "duration": 120,
+                "playState": "running",
+                "type": "CSSTransition"
+              },
+              {
+                "currentTime": 0,
+                "duration": 150,
+                "playState": "running",
+                "type": "CSSTransition"
+              }
+            ],
+            "opacity": "0",
+            "placement": "bottom",
+            "transform": "matrix(0.985, 0, 0, 0.985, 0, -4)"
+          },
+          "gear": {
+            "animation": "close-gear-turn",
+            "animations": [
+              {
+                "currentTime": 181867,
+                "duration": 8000,
+                "playState": "running",
+                "type": "CSSAnimation"
+              }
+            ],
+            "opacity": "0.6",
+            "transform": "matrix(-0.104268, -0.994549, 0.994549, -0.104268, 0, 0)"
+          },
+          "symbol": {
+            "transform": "none"
+          }
+        },
+        "middle": {
+          "at": "2026-10-13T13:57:43.202Z",
+          "timeMs": 467105,
+          "rafTicks": 24669,
+          "nativeActive": true,
+          "nativeKey": true,
+          "occlusionVisible": true,
+          "visibility": "visible",
+          "focused": true,
+          "candidate": {
+            "animations": [
+              {
+                "currentTime": 17,
+                "duration": 120,
+                "playState": "running",
+                "type": "CSSTransition"
+              },
+              {
+                "currentTime": 17,
+                "duration": 150,
+                "playState": "running",
+                "type": "CSSTransition"
+              }
+            ],
+            "opacity": "0.168633",
+            "placement": "bottom",
+            "transform": "matrix(0.988127, 0, 0, 0.988127, 0, -3.166113)"
+          },
+          "gear": {
+            "animation": "close-gear-turn",
+            "animations": [
+              {
+                "currentTime": 181884,
+                "duration": 8000,
+                "playState": "running",
+                "type": "CSSAnimation"
+              }
+            ],
+            "opacity": "0.6",
+            "transform": "matrix(-0.09098, -0.995853, 0.995853, -0.09098, 0, 0)"
+          },
+          "symbol": {
+            "transform": "none"
+          }
+        },
+        "settled": {
+          "at": "2026-10-13T13:57:43.335Z",
+          "timeMs": 467238,
+          "rafTicks": 24677,
+          "nativeActive": true,
+          "nativeKey": true,
+          "occlusionVisible": true,
+          "visibility": "visible",
+          "focused": true,
+          "candidate": {
+            "animations": [],
+            "opacity": "1",
+            "placement": "bottom",
+            "transform": "none"
+          },
+          "gear": {
+            "animation": "close-gear-turn",
+            "animations": [
+              {
+                "currentTime": 182017,
+                "duration": 8000,
+                "playState": "running",
+                "type": "CSSAnimation"
+              }
+            ],
+            "opacity": "0.6",
+            "transform": "matrix(0.013351, -0.999911, 0.999911, 0.013351, 0, 0)"
+          },
+          "symbol": {
+            "transform": "none"
+          }
+        },
+        "observedFrames": 36,
+        "pointerUp": {
+          "at": "2026-10-13T13:57:43Z",
+          "timeMs": 467072,
+          "target": {
+            "id": "",
+            "label": "测试模型协议",
+            "role": "combobox",
+            "tag": "BUTTON"
+          },
+          "isTrusted": true
+        }
+      },
+      "darkEscape": {
+        "opening": {
+          "at": "2026-10-13T13:59:54.144Z",
+          "timeMs": 598039,
+          "rafTicks": 32524,
+          "nativeActive": true,
+          "nativeKey": true,
+          "occlusionVisible": true,
+          "visibility": "visible",
+          "focused": true,
+          "candidate": {
+            "animations": [
+              {
+                "currentTime": 0,
+                "duration": 120,
+                "playState": "running",
+                "type": "CSSTransition"
+              },
+              {
+                "currentTime": 0,
+                "duration": 150,
+                "playState": "running",
+                "type": "CSSTransition"
+              }
+            ],
+            "opacity": "0",
+            "placement": "bottom",
+            "transform": "matrix(0.985, 0, 0, 0.985, 0, 4)"
+          },
+          "gear": {
+            "animation": "close-gear-turn",
+            "animations": [
+              {
+                "currentTime": 20046,
+                "duration": 8000,
+                "playState": "running",
+                "type": "CSSAnimation"
+              }
+            ],
+            "opacity": "0.6",
+            "transform": "matrix(-0.999347, -0.03612, 0.03612, -0.999347, 0, 0)"
+          },
+          "symbol": {
+            "transform": "none"
+          }
+        },
+        "zero": {
+          "at": "2026-10-13T13:59:54.145Z",
+          "timeMs": 598039,
+          "rafTicks": 32525,
+          "nativeActive": true,
+          "nativeKey": true,
+          "occlusionVisible": true,
+          "visibility": "visible",
+          "focused": true,
+          "candidate": {
+            "animations": [
+              {
+                "currentTime": 0,
+                "duration": 120,
+                "playState": "running",
+                "type": "CSSTransition"
+              },
+              {
+                "currentTime": 0,
+                "duration": 150,
+                "playState": "running",
+                "type": "CSSTransition"
+              }
+            ],
+            "opacity": "0",
+            "placement": "bottom",
+            "transform": "matrix(0.985, 0, 0, 0.985, 0, 4)"
+          },
+          "gear": {
+            "animation": "close-gear-turn",
+            "animations": [
+              {
+                "currentTime": 20050,
+                "duration": 8000,
+                "playState": "running",
+                "type": "CSSAnimation"
+              }
+            ],
+            "opacity": "0.6",
+            "transform": "matrix(-0.999229, -0.03926, 0.03926, -0.999229, 0, 0)"
+          },
+          "symbol": {
+            "transform": "none"
+          }
+        },
+        "middle": {
+          "at": "2026-10-13T13:59:54.160Z",
+          "timeMs": 598055,
+          "rafTicks": 32526,
+          "nativeActive": true,
+          "nativeKey": true,
+          "occlusionVisible": true,
+          "visibility": "visible",
+          "focused": true,
+          "candidate": {
+            "animations": [
+              {
+                "currentTime": 16,
+                "duration": 120,
+                "playState": "running",
+                "type": "CSSTransition"
+              },
+              {
+                "currentTime": 16,
+                "duration": 150,
+                "playState": "running",
+                "type": "CSSTransition"
+              }
+            ],
+            "opacity": "0.152424",
+            "placement": "bottom",
+            "transform": "matrix(0.987728, 0, 0, 0.987728, 0, 3.272401)"
+          },
+          "gear": {
+            "animation": "close-gear-turn",
+            "animations": [
+              {
+                "currentTime": 20066,
+                "duration": 8000,
+                "playState": "running",
+                "type": "CSSAnimation"
+              }
+            ],
+            "opacity": "0.6",
+            "transform": "matrix(-0.998657, -0.051813, 0.051813, -0.998657, 0, 0)"
+          },
+          "symbol": {
+            "transform": "none"
+          }
+        },
+        "settled": {
+          "at": "2026-10-13T13:59:54.310Z",
+          "timeMs": 598204,
+          "rafTicks": 32535,
+          "nativeActive": true,
+          "nativeKey": true,
+          "occlusionVisible": true,
+          "visibility": "visible",
+          "focused": true,
+          "candidate": {
+            "animations": [],
+            "opacity": "1",
+            "placement": "bottom",
+            "transform": "none"
+          },
+          "gear": {
+            "animation": "close-gear-turn",
+            "animations": [
+              {
+                "currentTime": 20215,
+                "duration": 8000,
+                "playState": "running",
+                "type": "CSSAnimation"
+              }
+            ],
+            "opacity": "0.6",
+            "transform": "matrix(-0.985777, -0.168059, 0.168059, -0.985777, 0, 0)"
+          },
+          "symbol": {
+            "transform": "none"
+          }
+        },
+        "observedFrames": 644,
+        "pointerUp": {
+          "at": "2026-10-13T13:59:54Z",
+          "timeMs": 598036,
+          "target": {
+            "id": "",
+            "label": "测试模型协议",
+            "role": "combobox",
+            "tag": "BUTTON"
+          },
+          "isTrusted": true
+        }
+      },
+      "gear": {
+        "before": {
+          "at": "2026-10-13T13:57:43.185Z",
+          "timeMs": 467088,
+          "rafTicks": 24668,
+          "nativeActive": true,
+          "nativeKey": true,
+          "occlusionVisible": true,
+          "visibility": "visible",
+          "focused": true,
+          "candidate": {
+            "animations": [
+              {
+                "currentTime": 0,
+                "duration": 120,
+                "playState": "running",
+                "type": "CSSTransition"
+              },
+              {
+                "currentTime": 0,
+                "duration": 150,
+                "playState": "running",
+                "type": "CSSTransition"
+              }
+            ],
+            "opacity": "0",
+            "placement": "bottom",
+            "transform": "matrix(0.985, 0, 0, 0.985, 0, -4)"
+          },
+          "gear": {
+            "animation": "close-gear-turn",
+            "animations": [
+              {
+                "currentTime": 181867,
+                "duration": 8000,
+                "playState": "running",
+                "type": "CSSAnimation"
+              }
+            ],
+            "opacity": "0.6",
+            "transform": "matrix(-0.104268, -0.994549, 0.994549, -0.104268, 0, 0)"
+          },
+          "symbol": {
+            "transform": "none"
+          }
+        },
+        "after": {
+          "at": "2026-10-13T13:57:43.335Z",
+          "timeMs": 467238,
+          "rafTicks": 24677,
+          "nativeActive": true,
+          "nativeKey": true,
+          "occlusionVisible": true,
+          "visibility": "visible",
+          "focused": true,
+          "candidate": {
+            "animations": [],
+            "opacity": "1",
+            "placement": "bottom",
+            "transform": "none"
+          },
+          "gear": {
+            "animation": "close-gear-turn",
+            "animations": [
+              {
+                "currentTime": 182017,
+                "duration": 8000,
+                "playState": "running",
+                "type": "CSSAnimation"
+              }
+            ],
+            "opacity": "0.6",
+            "transform": "matrix(0.013351, -0.999911, 0.999911, 0.013351, 0, 0)"
+          },
+          "symbol": {
+            "transform": "none"
+          }
+        }
+      },
+      "selectionClosed": {
+        "end": {
+          "timeMs": 467687,
+          "isTrusted": true,
+          "target": {
+            "id": "",
+            "label": "测试模型协议",
+            "role": "combobox",
+            "tag": "BUTTON"
+          }
+        },
+        "enter": {
+          "downMs": 468406,
+          "upMs": 468410,
+          "isTrusted": true,
+          "keyupTarget": {
+            "id": "",
+            "label": "测试模型协议",
+            "role": "combobox",
+            "tag": "BUTTON"
+          }
+        },
+        "firstClosedFrame": {
+          "at": "2026-10-13T13:57:44.518Z",
+          "timeMs": 468421,
+          "rafTicks": 24748,
+          "nativeActive": true,
+          "nativeKey": true,
+          "occlusionVisible": true,
+          "visibility": "visible",
+          "focused": true,
+          "candidate": null,
+          "gear": {
+            "animation": "close-gear-turn",
+            "animations": [
+              {
+                "currentTime": 183200,
+                "duration": 8000,
+                "playState": "running",
+                "type": "CSSAnimation"
+              }
+            ],
+            "opacity": "0.6",
+            "transform": "matrix(0.809017, -0.587785, 0.587785, 0.809017, 0, 0)"
+          },
+          "symbol": {
+            "transform": "none"
+          }
+        },
+        "selectedValueEvidence": "Root CUA AX output confirmed the long final candidate; telemetry independently confirms trusted keys, trigger target, and candidate null."
+      },
+      "escapeClosed": {
+        "downMs": 661728.0000000001,
+        "upMs": 661730,
+        "isTrusted": true,
+        "keyupTarget": {
+          "id": "",
+          "label": "测试模型协议",
+          "role": "combobox",
+          "tag": "BUTTON"
+        },
+        "modalOpen": true,
+        "candidate": null
+      },
+      "lightModalClose": {
+        "pointerUp": {
+          "at": "2026-10-13T13:59:32Z",
+          "timeMs": 576623,
+          "isTrusted": true,
+          "target": {
+            "id": "close-modal",
+            "label": "",
+            "role": "",
+            "tag": "BUTTON"
+          }
+        },
+        "firstClosedFrame": {
+          "at": "2026-10-13T13:59:32.743Z",
+          "timeMs": 576638,
+          "rafTicks": 31241,
+          "nativeActive": true,
+          "nativeKey": true,
+          "occlusionVisible": true,
+          "visibility": "visible",
+          "focused": true,
+          "modalOpen": false,
+          "candidate": null
+        }
+      },
+      "finalDismissal": {
+        "firstClosedFrame": {
+          "at": "2026-10-13T14:00:58.628Z",
+          "timeMs": 662522,
+          "rafTicks": 36394,
+          "nativeActive": true,
+          "nativeKey": true,
+          "occlusionVisible": true,
+          "visibility": "visible",
+          "focused": true,
+          "modalOpen": false,
+          "candidate": null
+        },
+        "termination": {
+          "native": {
+            "active": true,
+            "backingScale": 2,
+            "contentHeight": 700,
+            "contentWidth": 1000,
+            "key": false,
+            "occlusionVisible": 1,
+            "processId": 35511,
+            "uptimeSeconds": 282231.90218075004
+          },
+          "recordedAt": "2026-10-13T14:00:59Z",
+          "type": "native.terminated"
+        },
+        "attribution": "Final modal false and native termination are observed. No corresponding final close DOM pointer/key event was recorded, so no trusted DOM click is attributed to that dismissal."
+      }
+    },
+    "coverage": {
+      "realClientData": false,
+      "realAudioDevices": false,
+      "realProviders": false,
+      "systemPermissionAndSourcePickerVisuals": false,
+      "systemPermissionReason": "UserNotificationCenter access was denied by the CUA safety mechanism; no bypass attempted.",
+      "shippedClientRuntime": false,
+      "componentFixtureOnly": true,
+      "nativeApplicationCleanupRecorded": true
+    },
+    "attemptAccounting": "Only observed trusted event sequences are counted. Rejected tool attempts are not counted as successful interaction.",
+    "passed": true,
+    "animationLiveVerified": true,
+    "completeForWebKitComponents": true,
+    "themeEvidence": "The dark sequence follows the trusted toggle-theme pointerup at 577307ms. Theme identity is also confirmed by root CUA screenshot; telemetry does not contain a theme field."
+  },
+  "permission": {
+    "verifiedAt": "2026-10-13T14:04:21.191Z",
+    "readOnly": true,
+    "systemVersion": "15.7.4",
+    "validSigningIdentityCount": 0,
+    "apps": [
+      {
+        "role": "installed-current-file",
+        "version": "0.1.0-alpha.11",
+        "bundleVersion": "0.1.11",
+        "identifier": "com.tts.meeting",
+        "highResolutionCapable": true,
+        "microphonePurposePresent": true,
+        "audioCapturePurposePresent": true,
+        "cdhash": "30fa0624f6033f6f8164c5529d684ec4cb2e7e03",
+        "signature": "adhoc",
+        "teamIdentifier": "not set",
+        "designatedRequirement": "# designated => cdhash H\"30fa0624f6033f6f8164c5529d684ec4cb2e7e03\"",
+        "location": "installed application"
+      },
+      {
+        "role": "frozen-alpha11",
+        "version": "0.1.0-alpha.11",
+        "bundleVersion": "0.1.11",
+        "identifier": "com.tts.meeting",
+        "highResolutionCapable": true,
+        "microphonePurposePresent": true,
+        "audioCapturePurposePresent": true,
+        "cdhash": "30fa0624f6033f6f8164c5529d684ec4cb2e7e03",
+        "signature": "adhoc",
+        "teamIdentifier": "not set",
+        "designatedRequirement": "# designated => cdhash H\"30fa0624f6033f6f8164c5529d684ec4cb2e7e03\"",
+        "location": "isolated Alpha11 build output"
+      }
+    ],
+    "designatedRequirementsDiffer": true,
+    "existingPermissionWindow": {
+      "owner": "UserNotificationCenter",
+      "layer": 8,
+      "boundsPoints": {
+        "width": 260,
+        "height": 246
+      },
+      "userConfirmedOpen": true,
+      "cuaAccessDenied": true,
+      "restriction": "Computer Use is not allowed to use com.apple.UserNotificationCenter for safety reasons",
+      "captured": false,
+      "permissionClicked": false
+    },
+    "realAudioDevicesOpenedByAgent": false,
+    "permissionsChangedByAgent": false,
+    "tccDatabaseRead": false,
+    "privateKeysRead": false,
+    "codeChanged": false,
+    "visualBlurVerifiedFixed": false,
+    "previousRelease": {
+      "role": "immutable-alpha10-dmg",
+      "version": "0.1.0-alpha.10",
+      "signature": "adhoc",
+      "cdhash": "0fde5fae424703636d6a7e53138fdf734763fa85",
+      "designatedRequirement": "# designated => cdhash H\"0fde5fae424703636d6a7e53138fdf734763fa85\"",
+      "sourceArtifact": "dist/releases/0.1.0-alpha.10/Lingji-0.1.0-alpha.10-macos-arm64.dmg",
+      "readOnlyMount": true
+    },
+    "installedFileMatchesAlpha11": true,
+    "installedFileChangedDuringVerification": "Initial installed file was Alpha10; later read found Alpha11. No application replacement was performed by this agent."
+  },
+  "productCodeChanged": false,
+  "distributionChanged": false,
+  "existingClientReplacedByAgent": false,
+  "existingServicesRestartedByAgent": false,
+  "systemPermissionVisualIssueResolved": false,
+  "limitations": [
+    "CUA explicitly denies access to UserNotificationCenter for safety; no protected screenshot or alternate capture was attempted.",
+    "No same-build or cross-build real audio grant persistence test was performed.",
+    "Foreground evidence covers frozen WebKit components, not all client runtime flows."
+  ]
+}

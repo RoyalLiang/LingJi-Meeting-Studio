@@ -48,7 +48,7 @@
 
 最终生产Web构建的隔离Chromium完整页面20项通过，含真实合成WAV播放、来源冻结上下文、HTML下载、会后树形纪要、SSE实时用量与标题同步；没有页面异常。布局专项Chromium14项通过，桌面和390px窗口均无候选/用量横向溢出，浅深主题截图已检查。
 
-系统AppKit WKWebView离屏11项DOM、几何与可信输入检查通过。当前桌面会话未将夹具窗口变为可见前台，active=false/key=false/visible=0，document.hidden使CSS动画时间停在0。候选端点截图显式结束有限Web Animations，只能证明最终样式；本轮原生前台动画尚未验证，不能由Chromium动效或历史Alpha9结果替代。
+第一轮系统AppKit WKWebView离屏11项DOM、几何与可信输入检查通过。当时夹具窗口未进入可见前台，active=false/key=false/visible=0，document.hidden使CSS动画时间停在0。候选端点截图显式结束有限Web Animations，只能证明最终样式；该轮不能算前台动效通过。随后追加的真实前台验证见下节。
 
 所有原生测试窗口与临时服务已退出。未打开真实音频设备、调用真实供应商或重启当前客户端/API/worker。
 
@@ -59,3 +59,13 @@
 DMG完整性、Finder布局/背景、SVG派生图标一致性、复制应用严格签名验证及arm64/macOS14.6最低版本检查通过。临时安装副本生产smoke通过：独立后台、开发后台请求0、重启持久化、稳定WebView profile、本机账户与关闭开发登录。安装副本和挂载已清理，旧版本DMG保留，当前已安装客户端未替换。
 
 仍为ad-hoc签名且未公证，未配置可信自动更新源，只提供本地手动安装。首次全新Mac、真实系统音源授权/撤销、跨版本授权复用和真实ASR/LLM未实测。详细机器可读证据见[Alpha11验证记录](client-meeting-alpha11.json)；构建信息和正式smoke随包保存。
+
+## 原生前台补验与系统授权边界
+
+2026-10-13 21:49至22:00（北京时间），正常AppKit应用通过CUA真实点击进入前台，active/key/occlusionVisible均确认，WK页面visible，DPR与backingScale均为2。夹具使用冻结67599ce源，91个文件哈希精确匹配Alpha11发行清单，没有自动激活、输入注入、WAAPI finish或跳过动画。
+
+14项原生检查通过：可见窗口内rAF持续推进；齿轮动画时间和矩阵自然变化，中央X保持直立；浅深主题候选从opacity0经中间帧自然到1、transform none；可信End/Enter完成选择并恢复触发器焦点，Escape收起候选且保留弹窗。浅深原生截图目视核对，测试应用与临时服务已退出。8036条合成界面遥测哈希9e21b36dab58d862f5df3acb293a924d41b0f02f284abef95c43b6b95c4a01f2。此证据只覆盖对应WebKit组件，不冒充整份发行客户端的所有运行流程。
+
+用户确认模糊发生在整个macOS授权弹窗。只读窗口元数据确认其属于UserNotificationCenter；CUA安全机制明确拒绝访问该应用，因此未读取弹窗像素、未绕过限制抓取、未点击授权，也未新开真实音源。系统窗口模糊尚未确认修复。
+
+只读核对Alpha10不可变DMG与Alpha11：两者均有高清标记和完整用途说明，但ad-hoc指定要求分别绑定0fde5fae424703636d6a7e53138fdf734763fa85与30fa0624f6033f6f8164c5529d684ec4cb2e7e03。两版代码身份不同，不能据此承诺跨升级保留授权；本机可用代码签名身份为0。稳定发布身份的原理见[Apple TN3127](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements)。补验期间用户更新了安装目录，后续磁盘Alpha11哈希与本轮构建一致；本轮工具没有替换或重启该客户端。完整记录见[原生补验JSON](client-native-alpha11-followup.json)。

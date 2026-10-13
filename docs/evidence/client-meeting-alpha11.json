@@ -118,6 +118,15 @@
       "privateTempDestination": true,
       "bytes": 2757,
       "phase": "Before final token/layout additions; share export and download handler unchanged"
+    },
+    "systemWKWebViewForeground": {
+      "passed": 14,
+      "completeForWebKitComponents": true,
+      "animationLiveVerified": true,
+      "sourceRevision": "67599ce97a147035736c3e3bbcf10c6252e17957",
+      "frozenFiles": 91,
+      "telemetrySha256": "9e21b36dab58d862f5df3acb293a924d41b0f02f284abef95c43b6b95c4a01f2",
+      "evidence": "client-native-alpha11-followup.json"
     }
   },
   "distribution": {
@@ -165,6 +174,9 @@
     "updaterTrustConfigured": false,
     "tokenScope": "Confirmed provider minutes usage only; ASR exposes no token counter, audio shows received track duration; no estimates or legacy total rewriting",
     "permissionScope": "Recurring app alert removed; OS retains/revokes grants. Ad-hoc cross-build grant continuity remains unverified.",
-    "historicalPurgedAudioRecovered": false
+    "historicalPurgedAudioRecovered": false,
+    "nativeForegroundAnimationVerified": true,
+    "systemPermissionVisualIssueResolved": false,
+    "validSigningIdentityCount": 0
   }
 }
