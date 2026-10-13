@@ -11,7 +11,8 @@
   border-radius: 10px;
   color: var(--ink-2);
   background: transparent;
-  transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
+  box-shadow: none;
+  transition: color 160ms ease, transform 160ms ease;
 }
 .button.close-button .close-gear {
   grid-area: 1 / 1;
@@ -26,9 +27,11 @@
 }
 .button.close-button:is(:hover, :focus-visible):not(:disabled) {
   color: var(--accent);
-  background: var(--accent-soft);
-  border-color: var(--border);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
 }
+.modal-header h2[tabindex="-1"]:focus { outline: none; }
 .button.close-button:is(:hover, :focus-visible):not(:disabled) .close-gear {
   color: var(--accent);
   opacity: 1;

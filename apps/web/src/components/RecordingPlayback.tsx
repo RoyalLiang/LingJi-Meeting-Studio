@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Play, Waveform } from '@phosphor-icons/react';
+import { Play } from '@phosphor-icons/react';
 import type { RecordDetail } from '../model';
 import { AudioPlayer } from './AudioPlayer';
 import { recordingAudioUrl, recordingPlaybackState } from '../audio/recording-playback';
@@ -9,9 +9,9 @@ export function RecordingPlayback({ record }: { record: RecordDetail }) {
   const [open, setOpen] = useState(false);
   const playback = recordingPlaybackState(record);
   return <>
-    <Button aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}><Play size={17}/>原音</Button>
-    {open && <Modal title="原音回放" onClose={() => setOpen(false)}>
-      {playback.available ? <div className="recording-playback-list">{playback.sources.map(source => <AudioPlayer key={source.id} src={recordingAudioUrl(record.id, source.id)} label={source.label}/>)}</div> : <div className="playback-empty" role="status"><Waveform size={28}/><p>{playback.message}</p></div>}
+    <span className="recording-playback-trigger" title={playback.available ? '播放本场留存的原音' : playback.message}><Button disabled={!playback.available} aria-label={playback.available ? '原音' : playback.message} aria-haspopup={playback.available ? 'dialog' : undefined} aria-expanded={playback.available ? open : undefined} onClick={() => setOpen(true)}><Play size={17}/>{playback.available ? '原音' : playback.label}</Button></span>
+    {open && playback.available && <Modal title="原音回放" onClose={() => setOpen(false)}>
+      <div className="recording-playback-list">{playback.sources.map(source => <AudioPlayer key={source.id} src={recordingAudioUrl(record.id, source.id)} label={source.label}/>)}</div>
     </Modal>}
   </>;
 }

@@ -31,6 +31,7 @@ struct State {
     update: Option<Update>,
     downloaded: Option<Downloaded>,
     operating: bool,
+    auto_download: bool,
 }
 #[derive(Clone)]
 pub struct Updates {
@@ -75,6 +76,7 @@ impl Updates {
                 update: None,
                 downloaded: None,
                 operating: false,
+                auto_download: false,
             })),
             gate: Gate::default(),
             endpoint,
@@ -84,6 +86,20 @@ impl Updates {
     }
     pub fn status(&self) -> Status {
         self.state.lock().unwrap().status.clone()
+    }
+    pub fn set_auto_download(&self, enabled: bool) {
+        self.state.lock().unwrap().auto_download = enabled;
+    }
+    pub fn menu(&self, native_active: bool) -> crate::menu_status::UpdatePresentation {
+        let state = self.state.lock().unwrap();
+        crate::menu_status::present_update(
+            &state.status.phase,
+            self.endpoint.is_some() && self.pubkey.is_some(),
+            state.operating,
+            self.gate.fresh(),
+            state.auto_download,
+            self.gate.reason(native_active),
+        )
     }
     fn emit(&self, app: &AppHandle) {
         let _ = app.emit("client-update-state", self.status());

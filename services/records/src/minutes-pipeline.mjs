@@ -4,6 +4,10 @@ import { requireThat, validateMinutes, emit } from '../../../packages/records/sr
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const size = value => Buffer.byteLength(JSON.stringify(value));
 const inputBudget=config=>Math.max(4096,Math.min(96000,Number(config.RECORD_MINUTES_INPUT_BYTES)||24000));
+const synthesisBudget=config=>{
+  const value=Number(config.RECORD_MINUTES_SYNTHESIS_INPUT_BYTES);
+  return Math.max(4096,Math.min(96000,Number.isFinite(value)&&value>0?Math.floor(value):96000));
+};
 const windowConcurrency=config=>{
   const value=Number(config.RECORD_MINUTES_WINDOW_CONCURRENCY);
   return Number.isFinite(value)&&value>=1?Math.min(4,Math.floor(value)):2;
@@ -30,7 +34,7 @@ export function buildMinutesManifest(job,config={},budget=inputBudget(config)){
   const single=size({transcript:snapshot,notes:job.notes})<=budget;
   snapshot.forEach((segment,index)=>{if(!single && (index+snapshotOffset)%24===0)flush();add(segment);});flush();
   requireThat(windows.length>0 && windows.length<=512,'minutes_window_limit',422);
-  return {version:1,budget,policy,generation:job.generation,transcriptRevision:job.transcriptRevision,notesRevision:job.notesRevision,snapshotOffset,hash:job.manifestHash,windows};
+  return {version:1,budget,synthesisBudget:synthesisBudget(config),policy,generation:job.generation,transcriptRevision:job.transcriptRevision,notesRevision:job.notesRevision,snapshotOffset,hash:job.manifestHash,windows};
 }
 function currentJob(record,claim){
   const job=record.jobs.find(j=>j.id===claim.id);
@@ -92,14 +96,15 @@ export async function runMinutesPipeline(repo,recordId,claim,config,generate,opt
       const wanted=new Set(items.flatMap(node=>refs(node.result).map(ref=>`${ref.segmentId}:${ref.revision}`)));
       return {snapshot:claim.snapshot.filter(s=>wanted.has(`${s.id}:${s.revision}`)).map(({id,revision,speakerId,speaker,speakerName,sourceId})=>({id,revision,speakerId,speaker,speakerName,sourceId})),summaries:items.map(node=>content(node.result)),stage:'synthesis'};
     };
+    const payloadFor=input=>JSON.stringify({transcript:input.snapshot,notes:claim.notes,summaries:input.summaries,stage:input.stage});
     for(const node of nodes){
-      if(group.length && (group.length>=8 || size({...inputFor([...group,node]),notes:claim.notes})>manifest.budget)){groups.push(group);group=[];}
+      if(group.length && (group.length>=8 || Buffer.byteLength(payloadFor(inputFor([...group,node])))>manifest.synthesisBudget)){groups.push(group);group=[];}
       group.push(node);
     }if(group.length)groups.push(group);
     requireThat(groups.length<nodes.length && ++level<=16,'minutes_intermediate_too_large',422);
     nodes=await mapWindows(groups,async children=>{
       if(children.length===1)return children[0];
-      const input=inputFor(children);requireThat(JSON.stringify({...input,notes:claim.notes}).length<=180000 && size({...input,notes:claim.notes})<=manifest.budget,'minutes_intermediate_too_large',422);
+      const input=inputFor(children),payload=payloadFor(input);requireThat(payload.length<180000 && Buffer.byteLength(payload)<=manifest.synthesisBudget,'minutes_intermediate_too_large',422);
       return execute(hash({policy:manifest.policy,children:children.map(node=>node.key)}),input,'synthesis',groups.length===1);
     });
   }

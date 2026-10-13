@@ -28,3 +28,7 @@ OS 签名、公证、密钥恢复和真实已安装应用升级尚未验收。�
 - [客户端更新实现](../engineering/client-updates.md)
 - [发版运行步骤](../releases/github-client.md)
 - [本轮验证证据](../evidence/client-brain-research/client-updater-validation-2026-10-13.md)
+
+## 2026-10-13 交互修订
+
+本地实现将更新策略收敛为三档下拉（手动检查、自动检查、自动检查并后台下载），安装必须显式点击重启更新；旧自动安装偏好强制关闭。macOS 菜单栏复用同一更新控制器，并保留可信源、状态新鲜度、录音/暂停/补传和后端停止水位门禁。远程治理与正式签名验收状态保持 proposed。

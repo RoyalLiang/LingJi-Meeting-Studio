@@ -213,6 +213,7 @@ fn update_activity(
     window: WebviewWindow,
     state: State<'_, Client>,
     activity: update_gate::Activity,
+    auto_download: Option<bool>,
 ) -> Result<(), String> {
     authorize(&window, &state)?;
     #[cfg(feature = "smoke-test")]
@@ -220,6 +221,9 @@ fn update_activity(
         return Ok(());
     }
     state.updates.gate.report(activity);
+    if let Some(enabled) = auto_download {
+        state.updates.set_auto_download(enabled);
+    }
     Ok(())
 }
 #[tauri::command]
@@ -346,7 +350,8 @@ fn main() {
                     loop {
                         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                         let state = handle.state::<Client>();
-                        state.menu_bar.refresh(state.captures.active());
+                        let active = state.captures.active();
+                        state.menu_bar.refresh(active, state.updates.menu(active));
                     }
                 });
             }

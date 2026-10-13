@@ -1,0 +1,116 @@
+{
+  "version": "0.1.0-alpha.10",
+  "baselineCommit": "b4192af",
+  "nodeTests": 220,
+  "lint": true,
+  "typecheck": true,
+  "webBuild": true,
+  "docsCheck": true,
+  "rustTests": 13,
+  "updaterTargetedNodeTests": 12,
+  "audioNodeTests": 5,
+  "pipelineProviderNodeTests": 32,
+  "realProvidersInvoked": false,
+  "realAudioDevicesOpened": false,
+  "browser": {
+    "fixture": true,
+    "realAudioDevices": false,
+    "realProviders": false,
+    "checks": [
+      "Repeated login: one request, retained form, zero loading flashes",
+      "Compact same-path SVG logo at 1x, no blur filters",
+      "App save feedback uses an automatic toast and does not steal focus",
+      "Topic tree default; exact cited rows inside topics; ambiguous row retained",
+      "Back-to-top stays in toolbar without moving search or covering meeting actions",
+      "44px gear rotates automatically without hover; center X remains 20px",
+      "Close gear rotates on hover and keyboard focus, center X remains upright, no layout shift, reduced motion stops rotation",
+      "Retained original audio plays real synthetic WAV; dialog close unmounts playback",
+      "Explicit-close settings behavior preserved",
+      "Failure alert stays visible, cannot be selected by mouse, and is not keyboard focusable",
+      "No audio request for unretained, purged or pending recordings",
+      "Short viewport dialog scrolls body while title/close stay fixed",
+      "Coarse pointer close target remains 44px and closes on touch",
+      "Logo verified in light/dark at 1x and Retina 2x",
+      "390px mobile dialog/meeting viewport bounds; redundant source copy removed"
+    ],
+    "logo": {
+      "width": 32,
+      "height": 32,
+      "naturalWidth": 36,
+      "filter": "none"
+    },
+    "topicCardHeight": {
+      "before": 81.1953125,
+      "compact": 73.1953125,
+      "reduction": 0.09852785528721254
+    },
+    "pageErrors": []
+  },
+  "audioBrowser": {
+    "fixture": true,
+    "realAudioDevices": false,
+    "realProviders": false,
+    "checks": [
+      "Default false; explicit choice reused across quick/prepared creation and reload; past record unchanged",
+      "Retained synthetic WAV plays in actual browser audio element",
+      "Unretained, purged and processing states disabled with visible reasons; 390px pre-capture choice visible, no horizontal overflow"
+    ],
+    "pageErrors": [],
+    "creationChoices": [
+      true,
+      false
+    ]
+  },
+  "nativeWebKit": {
+    "runtime": "system AppKit nonpersistent WKWebView",
+    "passed": true,
+    "checks": [
+      "plain Modal initially focuses its heading, not the close button",
+      "close button default and focus appearance stays transparent in light and dark themes; native hover is reported separately",
+      "RecordTitle autoFocus survives shared Modal focus handling and native Enter saves",
+      "minutes failure stays readable as an alert, unselectable and outside keyboard tab order",
+      "update policy Select changes through trusted native click and keys, automatic install stays false",
+      "unavailable original audio is disabled with irreversible cleanup wording; retention is explicitly opt-in",
+      "actual App quick recording posts retainAudio false by default and true only after explicit choice"
+    ],
+    "failures": [],
+    "limitations": [
+      "Native hover is produced by AppKit pointer events and temporary system cursor positioning; no human physical mouse device or DOM synthetic hover was tested."
+    ],
+    "environment": {
+      "dataStore": "nonPersistent",
+      "event": "ready",
+      "harnessLanguage": "Objective-C",
+      "id": 0,
+      "native": true,
+      "ok": true,
+      "os": "Version 15.7.4 (Build 24G517)"
+    },
+    "sourceHashes": {
+      "apps/web/src/styles.css": "26069c9648b1e32d42cc3dad9e215f36f44d58addc43b1734f75ed971d2707f4",
+      "apps/web/src/components/ui.tsx": "6f23f13d6c9dae5171151e62bfeb466e46efae73f5f4dd00f71ecbd990dbc60e",
+      "apps/web/src/components/CloseButton.css": "b7b82e0cf272f4c62f9b4a38e3177e3ced1d3008db47e0cc2139ff763c62b5e1",
+      "apps/web/src/components/RecordTitle.tsx": "043d4141152495ded157a4cbcfe25e46d1b63a0d6a8609877a7964e724286296",
+      "apps/web/src/components/Minutes.tsx": "aec8c0de6da31d5259e9b0a29bffd37e5860ebbe1136cd25c42eacec0e6a83a6",
+      "apps/web/src/components/Minutes.css": "da01aa10af1a1c4bb10e3c1b8792900501499e5b4441661b1ac2d12a79a37b52",
+      "apps/web/src/components/ClientUpdates.tsx": "24e9ecbb124ade43bb726e728e92cc0fc4fa9a1c09aefd0e70ee61e3b1294fc0",
+      "apps/web/src/components/AudioRetentionSetting.tsx": "67cc3dc2f929ad833f907db4394b80438abdc33d59ea1d727bffa974d528013c",
+      "apps/web/src/components/RecordingPlayback.tsx": "0f5f4abeb3e6a18152eb491e8097b31e9997f2422e237fc6b158935293febce8",
+      "apps/web/src/audio/recording-playback.ts": "63c80bc57ef580f337238e57068fabf421b9779605e0e3b6703b925fbec090d0",
+      "apps/web/src/App.tsx": "9d824ffdaefb5a76d755e41e157ad3f8d4626c59566e153b56e74d5d152d35ab"
+    }
+  },
+  "historicalAudio": {
+    "retainedAtCreation": false,
+    "purged": true,
+    "completedChunks": 1915,
+    "objectsPresent": 0,
+    "recoverable": false,
+    "metadataOnlyInspected": true
+  },
+  "updaterDistribution": {
+    "trustedSourceConfigured": false,
+    "remoteReleasePublished": false,
+    "actualInstalledClientUpdated": false
+  }
+}

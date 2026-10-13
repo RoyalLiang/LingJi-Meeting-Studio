@@ -6,7 +6,7 @@ export function MeetingFinish({ title, paused, busy, error, pause, finish, close
   title: string; paused: boolean; busy: boolean; error: string; pause: (title: string) => void; finish: (title: string) => void; close: () => void;
 }) {
   const [name, setName] = useState(title === '未命名会议' ? '' : title);
-  return <Modal title={paused ? '为本场会议收个尾' : '先暂停，还是就此收尾？'} onClose={() => { if (!busy) close(); }}>
+  return <Modal title={paused ? '为本场会议收个尾' : '先暂停，还是就此收尾？'} initialFocus="field" onClose={() => { if (!busy) close(); }}>
     <p className="finish-intro">{paused ? '结束后会继续处理已保存的音频，并整理本场纪要。' : '暂停后可以接着聊；结束后，新对话会拥有自己的记录。'}</p>
     <form onSubmit={event => { event.preventDefault(); finish(name.trim()); }}>
       <label><span className="field-label">给这场对话一个名字 <span className="muted">可稍后填写</span></span><input autoFocus aria-label="会议标题" value={name} onChange={event => setName(event.target.value)} maxLength={160} placeholder="例如：产品方向讨论" disabled={busy}/></label>

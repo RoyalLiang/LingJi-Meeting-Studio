@@ -1,0 +1,5 @@
+.minutes-failure {
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}

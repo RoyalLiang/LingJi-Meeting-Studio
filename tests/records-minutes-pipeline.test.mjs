@@ -337,3 +337,59 @@ test('old completed v2 jobs do not block explicit v3 requests, while new request
     const latest=await f.repo.get(f.record.id);assert.equal(latest.minutes.title,'新增人工修改');assert.equal(latest.minutes.edited,true);
   } finally {await f.close();}
 });
+
+test('legal rich summaries larger than the transcript window budget synthesize without dropping topics, tables or evidence', async () => {
+  const f=await fixture(2);
+  try {
+    await f.repo.change(f.record.id,r=>{r.segments.forEach(segment=>{segment.text='x'.repeat(16000);});});
+    const claim=await f.claim(),manifest=buildMinutesManifest(claim,config),leaves=[];let synthesis=0;
+    assert.equal(manifest.windows.length,2);
+    const result=await runMinutesPipeline(f.repo,f.record.id,claim,config,async job=>{
+      if(job.stage==='synthesis'){
+        synthesis++;
+        const bytes=Buffer.byteLength(JSON.stringify({transcript:job.snapshot,notes:job.notes,summaries:job.summaries,stage:job.stage}));
+        assert.ok(bytes>manifest.budget);assert.ok(bytes<=96000);
+        assert.deepEqual(job.summaries,leaves.map(({usageTokens:_usageTokens,...leaf})=>leaf));
+        return {title:'完整综合',sections:job.summaries.flatMap(summary=>summary.sections),topics:job.summaries.flatMap(summary=>summary.topics),tables:job.summaries.flatMap(summary=>summary.tables),actions:[],usageTokens:10};
+      }
+      const id=job.snapshot[0].id,evidence=[{segmentId:id,revision:1}];
+      const summary={title:`窗口 ${id}`,sections:[{heading:`主题 ${id}`,items:[{text:`FACT:${id}:明确决定 `+'x'.repeat(5000),evidence},{text:`FACT:${id}:保留风险 `+'y'.repeat(5000),evidence}]}],topics:[{id:`topic-${id}`,title:`主题 ${id}`,summary:'主题背景'.repeat(500),evidence}],tables:[{title:`统计 ${id}`,topicId:`topic-${id}`,columns:['事项','状态'],rows:[{cells:[`FACT:${id}:表格事实`,'z'.repeat(900)],evidence}]}],actions:[],usageTokens:10};
+      validateMinutes(summary,job.snapshot);leaves.push(summary);return summary;
+    });
+    validateMinutes(result,claim.snapshot);assert.equal(synthesis,1);assert.equal(result.coverage.calls,3);assert.equal(result.coverage.levels,1);
+    assert.deepEqual(result.topics,leaves.flatMap(summary=>summary.topics));assert.deepEqual(result.tables,leaves.flatMap(summary=>summary.tables));assert.deepEqual(result.sections,leaves.flatMap(summary=>summary.sections));
+    await f.repo.change(f.record.id,r=>commitMinutes(r,claim.id,result,claim.fence));
+    assert.equal((await f.repo.get(f.record.id)).jobs[0].status,'completed');
+  } finally {await f.close();}
+});
+
+test('synthesis budget is independently bounded without invalidating reusable transcript windows', async () => {
+  const f=await fixture(32);
+  try {
+    const claim=await f.claim(),baseline=buildMinutesManifest(claim,config);
+    assert.equal(baseline.budget,24000);assert.equal(baseline.synthesisBudget,96000);
+    for(const [setting,expected] of [['32000',32000],['1',4096],['1000000',96000],['invalid',96000],['Infinity',96000]]){
+      const manifest=buildMinutesManifest(claim,{...config,RECORD_MINUTES_SYNTHESIS_INPUT_BYTES:setting});
+      assert.equal(manifest.synthesisBudget,expected);
+      assert.equal(manifest.policy,baseline.policy);assert.deepEqual(manifest.windows,baseline.windows);
+    }
+  } finally {await f.close();}
+});
+
+test('summaries beyond the synthesis hard cap fail finitely without truncation or singleton resummarization', async () => {
+  const f=await fixture(2);let calls=0;
+  try {
+    await f.repo.change(f.record.id,r=>{r.segments.forEach(segment=>{segment.text='x'.repeat(16000);});});
+    const claim=await f.claim(),env={...config,RECORD_MINUTES_SYNTHESIS_INPUT_BYTES:'1000000'};
+    assert.equal(buildMinutesManifest(claim,env).synthesisBudget,96000);
+    await assert.rejects(runMinutesPipeline(f.repo,f.record.id,claim,env,async job=>{
+      calls++;assert.notEqual(job.stage,'synthesis','a pair that exceeds the hard cap must never be sent or endlessly compacted');
+      const evidence=[{segmentId:job.snapshot[0].id,revision:1}];
+      const summary={title:'合法大摘要',sections:[{heading:'所有重要事实',items:Array.from({length:7},(_,index)=>({text:`FACT:${index} `+'x'.repeat(7500),evidence}))}],actions:[],usageTokens:10};
+      validateMinutes(summary,job.snapshot);return summary;
+    }),error=>error.code==='minutes_intermediate_too_large');
+    assert.equal(calls,2);
+    const record=await f.repo.get(f.record.id);assert.equal(record.minutes,null);assert.equal(record.jobs[0].windowCache.length,2);
+    for(const window of record.jobs[0].windowCache){assert.equal(window.result.sections[0].items.length,7);assert.ok(window.result.sections[0].items.every(item=>item.text.length>7500));}
+  } finally {await f.close();}
+});

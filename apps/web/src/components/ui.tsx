@@ -13,12 +13,19 @@ export function CloseButton({ label = '关闭', className = '', ...props }: Omit
     <X className="close-symbol" size={20} weight="bold" aria-hidden="true"/>
   </Button>;
 }
-export function Modal({ title, children, onClose, wide = false, explicitCloseOnly = false }: { title: string; children: ReactNode; onClose: () => void; wide?: boolean; explicitCloseOnly?: boolean }) {
+export function Modal({ title, children, onClose, wide = false, explicitCloseOnly = false, initialFocus = 'heading' }: { title: string; children: ReactNode; onClose: () => void; wide?: boolean; explicitCloseOnly?: boolean; initialFocus?: 'heading' | 'field' }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
   const titleId = useId();
-  useEffect(() => { ref.current?.showModal(); return () => ref.current?.close(); }, []);
+  useEffect(() => {
+    const dialog = ref.current;
+    dialog?.showModal();
+    const field = initialFocus === 'field' ? dialog?.querySelector<HTMLElement>('input:not([type="hidden"]):not(:disabled), textarea:not(:disabled), select:not(:disabled)') : null;
+    (field || heading.current)?.focus({ preventScroll: true });
+    return () => dialog?.close();
+  }, [initialFocus]);
   return <dialog className={`modal glass ${wide ? 'wide' : ''}`} ref={ref} onCancel={event => { event.preventDefault(); if (!explicitCloseOnly) onClose(); }} onClick={event => { if (!explicitCloseOnly && event.target === event.currentTarget) onClose(); }} aria-labelledby={titleId}>
-    <header className="modal-header"><h2 id={titleId}>{title}</h2><CloseButton className="modal-close" onClick={onClose}/></header><div className="modal-body">{children}</div>
+    <header className="modal-header"><h2 id={titleId} ref={heading} tabIndex={-1}>{title}</h2><CloseButton className="modal-close" onClick={onClose}/></header><div className="modal-body">{children}</div>
   </dialog>;
 }
 export function Empty({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {

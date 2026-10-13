@@ -70,18 +70,31 @@ impl Gate {
     pub fn installing(&self) -> bool {
         self.0.lock().unwrap().installing
     }
-    pub fn install(&self, native_active: bool) -> Result<InstallPermit, String> {
-        let mut state = self.0.lock().unwrap();
+    pub fn fresh(&self) -> bool {
+        self.0
+            .lock()
+            .unwrap()
+            .reported
+            .is_some_and(|time| time.elapsed() <= Duration::from_secs(4))
+    }
+    fn state_reason(state: &State, native_active: bool) -> Option<&'static str> {
         if state.installing || state.starting != 0 || native_active {
-            return Err("原生音源尚未释放，不能安装更新".into());
-        }
-        if state
+            Some("原生音源尚未释放，不能安装更新")
+        } else if state
             .reported
             .is_none_or(|time| time.elapsed() > Duration::from_secs(4))
         {
-            return Err("会议页面状态已过期，请回到页面后重试".into());
+            Some("会议页面状态已过期，请回到页面后重试")
+        } else {
+            state.activity.reason()
         }
-        if let Some(reason) = state.activity.reason() {
+    }
+    pub fn reason(&self, native_active: bool) -> Option<&'static str> {
+        Self::state_reason(&self.0.lock().unwrap(), native_active)
+    }
+    pub fn install(&self, native_active: bool) -> Result<InstallPermit, String> {
+        let mut state = self.0.lock().unwrap();
+        if let Some(reason) = Self::state_reason(&state, native_active) {
             return Err(reason.into());
         }
         state.installing = true;
