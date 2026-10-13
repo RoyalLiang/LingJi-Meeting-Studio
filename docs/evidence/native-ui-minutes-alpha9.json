@@ -116,5 +116,100 @@
   },
   "realProvidersInvoked": false,
   "realAudioDevicesOpened": false,
-  "historicalMinutesAutomaticallyRegenerated": false
+  "historicalMinutesAutomaticallyRegenerated": false,
+  "sourceRevision": "5ff104beac8e8d9b72a41a83745f8bb179c2dca4",
+  "nativeWebKit": {
+    "createdAt": "2026-10-13T10:16:08.432079+00:00",
+    "componentsPassed": true,
+    "componentChecks": 13,
+    "distPassed": true,
+    "distChecks": 4,
+    "runtime": "system AppKit WKWebView",
+    "environment": {
+      "dataStore": "nonPersistent",
+      "event": "ready",
+      "harnessLanguage": "Objective-C",
+      "id": 0,
+      "native": true,
+      "ok": true,
+      "os": "Version 15.7.4 (Build 24G517)",
+      "browser": {
+        "allowDiscrete": true,
+        "overlay": false,
+        "popover": true,
+        "reducedMotion": false,
+        "startingStyle": true,
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)",
+        "viewport": {
+          "height": 900,
+          "width": 1280
+        },
+        "visibility": "visible"
+      }
+    },
+    "window": {
+      "active": true,
+      "id": 1,
+      "key": true,
+      "ok": true,
+      "visible": 1
+    },
+    "limitations": [
+      "Native AppKit pointer clicks and keys generated trusted DOM events. Mouse-move injection did not produce hover in this harness, including a temporary cursor warp with immediate restoration, so hover timer behavior was tested with synthetic DOM mouseover/mouseout events in system WK. Hardware hover was not verified.",
+      "System reduced-motion preference is off. Public WKWebView provides no per-view preference override, so reduced CSS branches were activated through CSSOM in this isolated fixture. System matchMedia remained unchanged; no macOS preference was changed."
+    ],
+    "isolation": {
+      "websiteDataStore": "nonPersistent",
+      "loopbackOnly": true,
+      "componentCSPConnectSrc": "none",
+      "fullAppAPI": "local synthetic fixture",
+      "realClientAPIWorkerRecordingProvidersTouched": false
+    },
+    "reproduce": [
+      "clang -fobjc-arc Runner.m -o runner -framework AppKit -framework WebKit -framework CoreGraphics",
+      "node verify.mjs",
+      "node full-app-check.mjs"
+    ],
+    "evidence": {
+      "verification-native.json": "ce93eaa4b4c835b7857d23b7c21c9bc0b737c454b97a2aec28efa44dbb631ac7",
+      "verification-native-dist.json": "b39ff1a667df46970e13b157e7e20f121a53ff8996ef53fc160eb02e45c066f9",
+      "native-dist-meeting.png": "4b3d8e832c55062cf72ad166d05bce6e7f5705d539440e4feea7a5c677118e56",
+      "native-dist-settings.png": "1580788acd25b6354e10840d3f02cb21d1069ad733deadb6ed88ece80403b1bc",
+      "native-modal-light.png": "3fde231dc381bf7e9a1ef31b1a2105d31ff2cab4a501eb386828ff489a713b48",
+      "native-select-mobile-light.png": "eded1e386d4628874f0166f229db5d24e9f22cb0a4e3e2b6839f716d72d1cac9",
+      "native-select-mobile-dark.png": "bea5997a919d96f3cfd86aad29732f06a20539a59538ef6ae1d61f34ae359c79",
+      "native-toast-light.png": "0595af4ca5365f68b10f460a0c2b92edc0778238600ae6bf846762fd5a13acd1",
+      "native-topic-tables-sources.png": "f666559fddfaeddaa19a66321f75c49501c39dba026d81d38fc59f71b28ac17f"
+    }
+  },
+  "package": {
+    "artifact": "Lingji-0.1.0-alpha.9-macos-arm64.dmg",
+    "sha256": "d9bf38f4273b9ededd49c225c16b27e5e93fac52ac2e91baddfdbb2e7a36df98",
+    "checksumVerified": true,
+    "signing": "ad-hoc",
+    "notarized": false,
+    "validation": {
+      "imageVerified": true,
+      "copiedAppSignatureVerified": true,
+      "productionSmoke": true,
+      "realAudioDevicesTested": false,
+      "realProvidersTested": false,
+      "freshMachineTested": false
+    },
+    "productionSmoke": {
+      "timestamp": "2026-10-13T10:16:34.620Z",
+      "packagedApp": true,
+      "independentBackend": true,
+      "developerBackendRequests": 0,
+      "restartPersistence": true,
+      "stableWebviewProfile": true,
+      "parentOwnsBackend": true,
+      "localAccount": true,
+      "devAccountDisabled": true,
+      "node": "v24.21.0",
+      "sqlite": "3.53.4",
+      "realAudioDevicesOpened": false,
+      "realProvidersInvoked": false
+    }
+  }
 }

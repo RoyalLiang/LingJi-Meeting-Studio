@@ -6,7 +6,7 @@
 
 关闭按钮尺寸为 44px，齿轮自动以 8 秒一圈旋转，中央 20px 关闭符号保持方向；减少动态效果时停止旋转。
 
-使用系统 AppKit/WKWebView 非持久数据仓验证生产组件，避开本机 Playwright 与旧 WebKit 协议不匹配的问题。原生验证找出并修复两处问题：鼠标打开 combobox 后显式保留焦点，让 Escape/Tab 能可靠关闭；不支持 overlay 动画的 WebKit 立即收起列表，避免淡出时退出顶层导致弹窗内闪影，仍保留展开动效。
+使用系统 AppKit/WKWebView 非持久数据仓验证生产组件，避开本机 Playwright 与旧 WebKit 协议不匹配的问题。组件 13 项及最终生产 Web 构建 4 项检查通过。原生验证找出并修复两处问题：鼠标打开 combobox 后显式保留焦点，让 Escape/Tab 能可靠关闭；不支持 overlay 动画的 WebKit 立即收起列表，避免淡出时退出顶层导致弹窗内闪影，仍保留展开动效。
 
 普通操作成功反馈使用 5–10 秒自动 toast，鼠标悬停、焦点、后台或被另一条提示覆盖时暂停；同文重发重新计时并升到顶层，不抢焦点。错误、录音恢复操作和确认保留；复制表格的错误留在原位置。
 
@@ -34,3 +34,7 @@
 可审阅摘要见 [Alpha 9 验收数据](native-ui-minutes-alpha9.json)。详细脚本、采样和截图位于 gitignored `.agent-runtime/tasks/20261013-motion-minutes/` 与 `.agent-runtime/tasks/20261013-native-webkit/`。
 
 发行包使用已提交源构建；完整性、签名和独立后台启动/退出/重启结果由产物记录确认。当前为 ad-hoc 签名、未公证；全新 Mac 和真实长会议验证仍未执行。现有客户端不会自动替换，新界面在安装重开后生效。
+
+Alpha 9 包冻结源为 `5ff104beac8e8d9b72a41a83745f8bb179c2dca4`；DMG SHA-256 为 `d9bf38f4273b9ededd49c225c16b27e5e93fac52ac2e91baddfdbb2e7a36df98`，校验通过。独立后台生产冒烟通过，开发后台请求为 0、重启持久化通过，未打开真实音频设备或调用供应商。
+
+原生点击与按键使用可信 AppKit 事件。此夹具未验证硬件悬停，暂停计时的悬停分支使用系统 WK 内 DOM 事件；系统减少动态偏好保持关闭，CSS 分支通过隔离 CSSOM 验证，未更改系统设置。
