@@ -1,0 +1,251 @@
+{
+  "verifiedOn": "2026-10-13",
+  "model": "TokenRhythm/NeoHorse-Jev-4B",
+  "scope": "Private Alpha snapshot and wgs shadow learning; no source business writes",
+  "sourceCounts": {
+    "eligibleRecords": 10,
+    "segments": 1140,
+    "recordingRecordsAtSnapshot": 3,
+    "nonemptySplitGroups": 9,
+    "trainRecordGroups": 5,
+    "devRecordGroups": 3,
+    "testRecordGroups": 1,
+    "asrClipsReprocessed": 23,
+    "distinctAlternativeClips": 12,
+    "teacherIntentLabels": 48,
+    "teacherAsrLabels": 12,
+    "humanReviews": 0
+  },
+  "rounds": [
+    {
+      "round": "r001",
+      "parent": null,
+      "cases": 468,
+      "families": {
+        "intent": 445,
+        "asr": 23
+      },
+      "datasetCounts": {
+        "train.jsonl": 30,
+        "dev.jsonl": 0,
+        "test.jsonl": 0,
+        "weak-test.jsonl": 30,
+        "cases.jsonl": 468,
+        "review.jsonl": 468,
+        "label-audit.jsonl": 60
+      },
+      "updatesByFamily": {
+        "asr": 50,
+        "intent": 50
+      },
+      "lossBefore": 0.7041985392570496,
+      "lossAfter": 0.0964999869465828,
+      "goldTestReady": false,
+      "annotationResultsSha256": "98d4d305c73591bd9956774469fb0b0b4fa8e26e5bfae8cec3421dff8e39f4a3",
+      "runtimeManifest": null,
+      "training": {
+        "steps": 100,
+        "rank": 4,
+        "trainable_parameters": 458752,
+        "maximum_sequence_tokens": 249,
+        "families": {
+          "asr": 6,
+          "intent": 24
+        },
+        "updates_by_family": {
+          "asr": 50,
+          "intent": 50
+        },
+        "balanced_families": true,
+        "seed": 42,
+        "resume_weights_verified": null,
+        "pointer_head_unchanged": true,
+        "dataset_sha256": "93bff5b9eb2b20d3dcd079866e0aa9fa3e704f0fea989bcda7b04742fd07e243",
+        "adapter_sha256": "38fdde81527d97ddf03229e58d2f95bffe63fe6288baba60b967e59bb950f7ac"
+      },
+      "reload": {
+        "fresh_process_reload": true,
+        "adapter_weights_equal": true,
+        "maximum_logit_difference": 0.0,
+        "maximum_probability_difference": 0.0
+      },
+      "weakHeldoutDiagnostic": {
+        "intent": {
+          "samples": 24,
+          "accuracy_against_supplied_labels": 0.9166666666666666
+        },
+        "asr": {
+          "samples": 6,
+          "accuracy_against_supplied_labels": 0.6666666666666666
+        }
+      }
+    },
+    {
+      "round": "r002",
+      "parent": "r001",
+      "cases": 468,
+      "families": {
+        "intent": 445,
+        "asr": 23
+      },
+      "datasetCounts": {
+        "train.jsonl": 30,
+        "dev.jsonl": 0,
+        "test.jsonl": 0,
+        "weak-test.jsonl": 30,
+        "cases.jsonl": 468,
+        "review.jsonl": 468,
+        "label-audit.jsonl": 60,
+        "asr-candidates.jsonl": 23,
+        "effective-reviews.jsonl": 0,
+        "asr-supervision.jsonl": 3
+      },
+      "updatesByFamily": {
+        "asr": 2,
+        "intent": 2
+      },
+      "lossBefore": 0.0964999869465828,
+      "lossAfter": 0.07823242247104645,
+      "goldTestReady": false,
+      "annotationResultsSha256": "15a3eff452185a86e63b76fdd68b6ceb51cf46580fa143801a75a34d3f5805ee",
+      "runtimeManifest": null,
+      "training": {
+        "steps": 4,
+        "rank": 4,
+        "trainable_parameters": 458752,
+        "maximum_sequence_tokens": 249,
+        "families": {
+          "asr": 6,
+          "intent": 24
+        },
+        "updates_by_family": {
+          "asr": 2,
+          "intent": 2
+        },
+        "balanced_families": true,
+        "seed": 42,
+        "resume_weights_verified": true,
+        "pointer_head_unchanged": true,
+        "dataset_sha256": "93bff5b9eb2b20d3dcd079866e0aa9fa3e704f0fea989bcda7b04742fd07e243",
+        "adapter_sha256": "bf1cf3c542ada73bfa38c4892c5181efb7d7caacb0271f2675b1e42e33fc8be6"
+      },
+      "reload": {
+        "fresh_process_reload": true,
+        "adapter_weights_equal": true,
+        "maximum_logit_difference": 0.0,
+        "maximum_probability_difference": 0.0
+      },
+      "weakHeldoutDiagnostic": {
+        "intent": {
+          "samples": 24,
+          "accuracy_against_supplied_labels": 0.9166666666666666
+        },
+        "asr": {
+          "samples": 6,
+          "accuracy_against_supplied_labels": 0.6666666666666666
+        }
+      }
+    },
+    {
+      "round": "r003",
+      "parent": "r002",
+      "cases": 468,
+      "families": {
+        "intent": 445,
+        "asr": 23
+      },
+      "datasetCounts": {
+        "train.jsonl": 30,
+        "dev.jsonl": 0,
+        "test.jsonl": 0,
+        "weak-test.jsonl": 30,
+        "cases.jsonl": 468,
+        "review.jsonl": 468,
+        "label-audit.jsonl": 60,
+        "asr-candidates.jsonl": 23,
+        "effective-reviews.jsonl": 0,
+        "asr-supervision.jsonl": 3
+      },
+      "updatesByFamily": {
+        "asr": 1,
+        "intent": 1
+      },
+      "lossBefore": 0.07823242247104645,
+      "lossAfter": 0.08015934377908707,
+      "goldTestReady": false,
+      "annotationResultsSha256": "7779ae5c7dcadac04d7128b20695f11526f5018d8bf731efacf38d8c08f93d1c",
+      "runtimeManifest": {
+        "version": 1,
+        "files": {
+          "learning_data.py": "24a6e6221dd2f034c30069ea7dc0814e8abb31d3473ec49f7090e5ba5b3bbbc7",
+          "build_learning_round.py": "e43bc514eb5bcd32edf2478ab2c14daf82dda8376b14240ac8803e07811043b8",
+          "predict_learning.py": "0bfc39f6f9b4d1ecd26108a965d53095c4281391d791e26a676924e51635a3d9",
+          "score_learning.py": "848b4d68cf3b3c85d5b0a4c309d49fe714892809810ef9772b3b63a11603c384",
+          "finalize_learning_round.py": "2bfe7ae7297c0fced08ae4690b4b5ecc0cdc7fc4b95b7aff55c000d9e4864d25",
+          "train_lora.py": "7622b7831533be2804e23616823aca3547f5d3a5367bc5e5ab4b1326939aebbc",
+          "intent_inputs.py": "6866b8de893e7d0c736e39432681bd24beebfe7c04251593178512875d6ad266",
+          "build_dataset.py": "1a3836f884ba309b68ff02236eda8688f3116e60735ae3652515ba7af1e5f62e",
+          "intent_policy.json": "6e8e34524df1eab9f46d99593761da44a0db9b2f588a366dd7d93dbab906a532",
+          "quantized_runtime.py": "6e295c89fbabc9345e38c306bcb8dc90975ab3f3875496d4c2049fe50583331f",
+          "train_head.py": "aa06b32cce92a63ae46435d04fd5c3c004876b89ef481c5ca3ad925653144212"
+        }
+      },
+      "training": {
+        "steps": 2,
+        "rank": 4,
+        "trainable_parameters": 458752,
+        "maximum_sequence_tokens": 249,
+        "families": {
+          "asr": 6,
+          "intent": 24
+        },
+        "updates_by_family": {
+          "asr": 1,
+          "intent": 1
+        },
+        "balanced_families": true,
+        "seed": 42,
+        "resume_weights_verified": true,
+        "pointer_head_unchanged": true,
+        "dataset_sha256": "93bff5b9eb2b20d3dcd079866e0aa9fa3e704f0fea989bcda7b04742fd07e243",
+        "adapter_sha256": "c818be5ab731f6f0cfc3d8c7793a84818ce8f81205a28c1f36b61bba9a0686ac"
+      },
+      "reload": {
+        "fresh_process_reload": true,
+        "adapter_weights_equal": true,
+        "maximum_logit_difference": 0.0,
+        "maximum_probability_difference": 0.0
+      },
+      "weakHeldoutDiagnostic": {
+        "intent": {
+          "samples": 24,
+          "accuracy_against_supplied_labels": 0.9166666666666666
+        },
+        "asr": {
+          "samples": 6,
+          "accuracy_against_supplied_labels": 0.6666666666666666
+        }
+      }
+    }
+  ],
+  "limitations": [
+    "Text candidate reranking, not acoustic-model training",
+    "No human gold test set; loss and weak-teacher agreement do not establish real accuracy",
+    "Historical purged audio cannot be recovered",
+    "r002 and r003 are bounded continuation validations, not human-reviewed optimization",
+    "r003 freezes runtime code per round; earlier rounds predate this facility"
+  ],
+  "validation": {
+    "pythonTests": 40,
+    "newNodeTests": 5,
+    "npmTest": {
+      "pass": 258,
+      "fail": 0
+    },
+    "lint": "pass",
+    "pyCompile": "pass",
+    "browser": "Synthetic intent save, ASR correction save, blind holdout, 390px layout, real r003 468 rows and audio HTTP200/WAV verified",
+    "typecheck": "pass",
+    "buildWeb": "pass with existing chunk/import warnings"
+  }
+}

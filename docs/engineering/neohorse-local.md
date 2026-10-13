@@ -120,7 +120,7 @@ bash setup_lora.sh "$PWD"
   --lora-adapter checkpoints/lora-smoke/adapter --output evidence/lora-smoke.json
 ```
 
-自己的 JSONL 数据格式与决策头训练相同，当前支持每条一个 Choice 问题，最多 64 条；训练和 `--verify-only` 都需要传入相同的 `--dataset dataset.jsonl`。校验器核对数据哈希、适配器权重和输出数值，配置容差为 logits 0.05、概率 0.002；本轮两组实测差值为 0。脚本允许 rank 1–8、1–50 步，但只验收了表中 rank 4 和步数组合。
+自己的 JSONL 数据格式与决策头训练相同，当前支持每条一个 Choice 问题，默认最多 64 条，可用 `--max-examples` 显式扩大到 2048 条；训练和 `--verify-only` 都需要传入相同的 `--dataset dataset.jsonl`。校验器核对数据哈希、适配器权重和输出数值，配置容差为 logits 0.05、概率 0.002；本轮两组实测差值为 0。脚本允许 rank 1–8、1–2000 步；本轮 Alpha 另验证了 rank 4、100 步及适配器继承。`--balance-families` 轮换任务更新，`--resume-adapter` 继承权重并核对一致性，不恢复优化器状态。实际双任务样本、标注与回测边界见 [Alpha 学习说明](alpha-learning.md)。
 
 启动使用 LoRA 的本机服务时显式指定目录：
 
