@@ -12,8 +12,9 @@ export function setAutomation(record, input, now = Date.now()) {
 }
 export function automaticMinutesAt(record, now = Date.now()) {
  const auto = record.autoMinutes;
- if (!auto?.enabled || record.deleted || !record.segments.length || record.minutes?.edited || record.jobs.some(j => ['queued', 'running'].includes(j.status))) return Infinity;
+ if (!auto?.enabled || record.deleted || !record.segments.length || record.minutes?.edited) return Infinity;
  const scope = record.capture === 'completed' ? 'final' : 'live';
+ if(record.jobs.some(j=>['queued','running'].includes(j.status) && (scope==='live' || j.scope!=='live')))return Infinity;
  if (auto.lastRevision === record.transcriptRevision && auto.lastScope === scope) return Infinity;
  if (scope === 'final') return now;
  return Math.max(auto.enabledAt || Date.parse(record.createdAt), auto.lastRequestedAt || 0) + auto.intervalSeconds * 1000;

@@ -13,10 +13,10 @@ export function CurrentDiscussion({ record, minutes, job, cite, modelReady }: { 
   const pending = record.segments.some(segment => !covered.has(`${segment.id}:${segment.revision}`));
   const waiting = !preview.length && job?.status !== 'failed' && !protectedMinutes && modelReady && (running || (live && record.autoMinutes?.enabled && (pending || !minutes)));
   const follow = useContentFollow(JSON.stringify([preview,structured]), false, '.discussion-content', running);
-  const message = job?.status === 'failed' ? '本轮总结未完成，请检查模型配置后重新整理。'
+  const message = job?.status === 'failed' ? `本轮总结未完成${job.progress ? `，已整理 ${job.progress.completed}/${job.progress.total} 部分` : ''}，可重试整理。`
     : protectedMinutes ? '人工修订已保护，自动总结已暂停。'
     : !modelReady ? '连接纪要模型后，这里会显示 agent 总结。'
-    : waiting ? running ? 'Agent 正在梳理讨论要点…' : pending ? '已收到新发言，等待 agent 总结…' : '等待对话开始，agent 将自动归纳要点…'
+    : waiting ? running ? job?.progress && job.progress.total>1 ? `已整理 ${job.progress.completed}/${job.progress.total} 部分，${job.progress.stage==='synthesis' ? '正在汇总讨论要点' : '继续整理中'}…` : 'Agent 正在梳理讨论要点…' : pending ? '已收到新发言，等待 agent 总结…' : '等待对话开始，agent 将自动归纳要点…'
     : live && !record.autoMinutes?.enabled ? '开启自动 AI 纪要后，这里会持续更新讨论要点。'
     : structured.length ? '' : '本场暂无 agent 总结。';
   return <section className="current-discussion discussion-dock" aria-label={live ? '当前正在聊' : '最后讨论'}>

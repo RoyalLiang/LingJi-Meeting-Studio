@@ -156,8 +156,9 @@ export function requestMinutes(record, input = {}) {
   const snapshot = (scope === 'live' ? record.segments.slice(-120) : record.segments).map(({versions, ...s}) => ({ ...s }));
   const manifestHash = digest(JSON.stringify(snapshot));
   const key = `${record.id}:${record.transcriptRevision}:${manifestHash}:${template}:v2:${record.notesRevision}:${input.modelVersion || 'default'}:${input.mode || 'model'}:${scope}`;
-  const existing = record.jobs.find(j => j.key === key && !['failed', 'stale'].includes(j.status));
+  const existing = record.jobs.find(j => j.key === key && !['failed', 'stale', 'cancelled'].includes(j.status));
   if (existing) return existing;
+  for(const job of record.jobs)if(['queued','running'].includes(job.status) && job.scope==='live' && (scope==='final' || job.status==='queued')){job.status='cancelled';job.fence=null;job.snapshot=[];delete job.preview;}
   requireThat(record.jobs.filter(j => ['queued', 'running'].includes(j.status)).length < 3, 'job_limit', 429);
   const job = { id: randomUUID(), key, status: 'queued', transcriptRevision: record.transcriptRevision, notesRevision: record.notesRevision,
     baseMinutesRevision: record.minutesRevision, generation: record.generation, template, scope, automatic: input.automatic === true, mode: input.mode || 'model', modelVersion: input.modelVersion || 'default', snapshot, notes: record.notes, manifestHash,
@@ -201,6 +202,7 @@ export function commitMinutes(record, jobId, result, fence) {
   const job = record.jobs.find(j => j.id === jobId);
   requireThat(job && !record.deleted && job.generation === record.generation && job.fence === fence, 'stale_job', 410);
   validateMinutes(result, job.snapshot);
+  const usageRecorded=result.usageRecorded;result={...result};delete result.usageRecorded;
   job.runtime = result.runtime || job.runtime;
   const transcriptChanged = job.scope === 'live' ? job.snapshot.some(s => !record.segments.some(current => current.id === s.id && current.revision === s.revision)) : job.transcriptRevision !== record.transcriptRevision;
   if (transcriptChanged || job.notesRevision !== record.notesRevision || job.baseMinutesRevision !== record.minutesRevision) {
@@ -209,14 +211,14 @@ export function commitMinutes(record, jobId, result, fence) {
   if (job.scope === 'live') {
     record.liveMinutes = { ...result, actions: result.actions || [], transcriptRevision: job.transcriptRevision, evidenceSnapshot: job.snapshot, generatedAt: new Date().toISOString() };
     job.status = 'completed'; job.snapshot = []; delete job.preview;
-    record.usage.llmTokens += Number.isSafeInteger(result.usageTokens) && result.usageTokens >= 0 ? result.usageTokens : 0;
+    if(!usageRecorded)record.usage.llmTokens += Number.isSafeInteger(result.usageTokens) && result.usageTokens >= 0 ? result.usageTokens : 0;
     emit(record, 'minutes.live', { transcriptRevision: job.transcriptRevision }); return;
   }
   if (record.minutes) record.minutesHistory = [...(record.minutesHistory || []), record.minutes].slice(-10);
   record.minutesRevision++;
   record.minutes = { ...result, actions: result.actions || [], revision: record.minutesRevision, transcriptRevision: job.transcriptRevision, manifestHash: job.manifestHash,
     evidenceSnapshot: job.snapshot, edited: false, generatedAt: new Date().toISOString() };
-  job.status = 'completed'; job.snapshot = []; delete job.preview; record.usage.llmTokens += Number.isSafeInteger(result.usageTokens) && result.usageTokens >= 0 ? result.usageTokens : 0;
+  job.status = 'completed'; job.snapshot = []; delete job.preview; if(!usageRecorded)record.usage.llmTokens += Number.isSafeInteger(result.usageTokens) && result.usageTokens >= 0 ? result.usageTokens : 0;
   emit(record, 'minutes.committed', { revision: record.minutesRevision });
 }
 export function publicRecord(record) {
@@ -224,5 +226,5 @@ export function publicRecord(record) {
   return { ...rest, segments: record.segments.map(({translationFence,translationLease,...segment})=>segment), sources: record.sources.map(({asr,...source})=>({...source,...(asr ? {asr:{state:asr.state,error:asr.error,identityWarning:asr.identityWarning,preview:asr.preview,runtime:asr.runtime}} : {})})), audio: record.sources.map(s => receipt(record, s)),
     pendingChunks: chunks.filter(c => c.state !== 'done').length,
     minuteVersions: [...(minutesHistory || []), ...(record.minutes ? [record.minutes] : [])].map(m => ({ revision: m.revision, transcriptRevision: m.transcriptRevision, edited: m.edited })),
-    jobs: jobs.map(({ snapshot, notes, fence, ...job }) => job) };
+    jobs: jobs.map(({ snapshot, notes, fence, windowCache, manifest, ...job }) => job) };
 }
