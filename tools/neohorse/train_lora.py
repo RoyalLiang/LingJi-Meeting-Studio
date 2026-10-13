@@ -6,19 +6,21 @@ import json
 import math
 import pathlib
 import time
+from collections import Counter
 
 import bitsandbytes as bnb
 import torch
 from neohorse_decision._vendor.model import rows_of
 from neohorse_decision._vendor.schema import SystemOneRequest, to_record
-from peft import LoraConfig, get_peft_model, get_peft_model_state_dict, prepare_model_for_kbit_training
+from peft import LoraConfig, get_peft_model, get_peft_model_state_dict, prepare_model_for_kbit_training, set_peft_model_state_dict
 from safetensors.torch import load_file
 
 from quantized_runtime import QuantizedDecisionEngine
 from train_head import SYNTHETIC
+from learning_data import training_order
 
 
-def examples(dataset):
+def examples(dataset, max_examples=64):
     if dataset:
         content = dataset.read_bytes()
         samples = [json.loads(line) for line in content.decode().splitlines() if line.strip()]
@@ -29,8 +31,8 @@ def examples(dataset):
             "criteria": {"summarize": "明确要求现在生成纪要", "none": "否定、转述、假设或没有请求"},
         }}}, "target": ("summarize", "none")[target]} for state, target in SYNTHETIC]
         digest = hashlib.sha256(json.dumps(samples, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
-    if not 1 <= len(samples) <= 64:
-        raise ValueError("This bounded verification permits 1–64 examples")
+    if not 1 <= len(samples) <= max_examples:
+        raise ValueError(f"This bounded run permits 1–{max_examples} examples")
     return samples, digest
 
 
@@ -96,7 +98,7 @@ def verify(args, samples, digest):
 
 
 def train(args, samples, digest):
-    torch.manual_seed(42)
+    torch.manual_seed(args.seed)
     engine = QuantizedDecisionEngine(args.model_dir)
     model = engine.model
     model.requires_grad_(False)
@@ -111,6 +113,14 @@ def train(args, samples, digest):
                                               gradient_checkpointing_kwargs={"use_reentrant": False})
     backbone = get_peft_model(backbone, LoraConfig(r=args.rank, lora_alpha=2 * args.rank,
                              target_modules=targets, lora_dropout=0, bias="none"))
+    if args.resume_adapter:
+        config = json.loads((args.resume_adapter / 'adapter_config.json').read_text())
+        if config['r'] != args.rank or set(config['target_modules']) != set(targets):
+            raise ValueError('Resume adapter rank/targets differ from this run')
+        saved = load_file(str(args.resume_adapter / 'adapter_model.safetensors'))
+        set_peft_model_state_dict(backbone, saved)
+        loaded = get_peft_model_state_dict(backbone)
+        assert set(loaded) == set(saved) and all(torch.equal(loaded[key].detach().cpu(), value) for key, value in saved.items()), 'Resume weights differ'
     model.multimodal, model.lm = backbone, backbone.language_model
     engine.lora_adapter = str((args.output_dir / "adapter").resolve())
     model.lm.config.use_cache = False
@@ -123,11 +133,12 @@ def train(args, samples, digest):
     before, _ = evaluate(engine, rows)
     optimizer = torch.optim.AdamW(trainable.values(), lr=args.learning_rate, weight_decay=0)
     steps = []
+    order = training_order(samples, args.steps, args.seed, args.balance_families)
     started = time.monotonic()
     for step in range(args.steps):
         model.train()
         optimizer.zero_grad(set_to_none=True)
-        sample = rows[step % len(rows)]
+        sample = rows[order[step]]
         logits = logits_for(engine, sample)
         loss = torch.nn.functional.cross_entropy(logits.unsqueeze(0), torch.tensor([sample["target"]], device=engine.device))
         if not torch.isfinite(loss):
@@ -158,6 +169,11 @@ def train(args, samples, digest):
               "maximum_sequence_tokens": max(row["ids"].shape[1] for row in rows),
               "dataset_sha256": digest, "data_source": str(args.dataset) if args.dataset else "built-in synthetic samples",
               "learning_rate": args.learning_rate, "loss_before": before, "loss_after": after,
+              "families": dict(Counter(sample.get('family', 'legacy') for sample in samples)),
+              "updates_by_family": dict(Counter(samples[index].get('family', 'legacy') for index in order)),
+              "balanced_families": args.balance_families, "seed": args.seed,
+              "resume_adapter": str(args.resume_adapter) if args.resume_adapter else None,
+              "resume_weights_verified": bool(args.resume_adapter),
               "steps_seconds": round(elapsed, 3), "step_results": steps, "changed_tensors": changed,
               "expected_logits": expected, "adapter_bytes": checkpoint.stat().st_size,
               "adapter_sha256": hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
@@ -176,11 +192,17 @@ def main():
     parser.add_argument("--rank", type=int, default=4)
     parser.add_argument("--learning-rate", type=float, default=1e-4)
     parser.add_argument("--verify-only", action="store_true", help="Reload a saved adapter in a separate process")
+    parser.add_argument("--max-examples", type=int, default=64, help="Explicit learning-round cap; legacy default remains 64")
+    parser.add_argument("--balance-families", action="store_true", help="Alternate task families with a deterministic shuffled schedule")
+    parser.add_argument("--resume-adapter", type=pathlib.Path)
+    parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
-    if not 1 <= args.steps <= 50 or not 1 <= args.rank <= 8 or not 0 < args.learning_rate <= 1e-3:
-        raise ValueError("Bounded exercise: steps 1–50, rank 1–8, learning rate (0, 0.001]")
+    if not 1 <= args.steps <= 2000 or not 1 <= args.rank <= 8 or not 0 < args.learning_rate <= 1e-3 or not 1 <= args.max_examples <= 2048:
+        raise ValueError("Bounded run: steps 1–2000, examples 1–2048, rank 1–8, learning rate (0, 0.001]")
+    if not args.verify_only and args.output_dir.exists() and any(args.output_dir.iterdir()):
+        raise ValueError('Training output is not empty; select a new round checkpoint directory')
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    samples, digest = examples(args.dataset)
+    samples, digest = examples(args.dataset, args.max_examples)
     if args.verify_only:
         verify(args, samples, digest)
     else:

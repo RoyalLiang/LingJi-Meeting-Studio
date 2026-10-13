@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>聆记 · 学习评审</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <span class="mark">聆</span>
+        <div>
+          <strong>学习评审</strong><small>意图判断 · 转录候选 · 版本回测</small>
+        </div>
+      </div>
+      <div class="toolbar">
+        <select id="round" aria-label="学习轮次"></select
+        ><button id="refresh">刷新轮次</button
+        ><button id="export">导出标注</button
+        ><button id="next-round" class="primary">生成下一轮</button>
+      </div>
+    </header>
+    <main>
+      <aside>
+        <div class="filters">
+          <label
+            >筛选任务<select id="family">
+              <option value="all">全部任务</option>
+              <option value="intent">意图识别</option>
+              <option value="asr">转录候选选择</option>
+            </select></label
+          ><input
+            id="search"
+            type="search"
+            placeholder="搜索转录文字"
+            aria-label="搜索转录文字"
+          /><label class="inline"
+            ><input id="pending" type="checkbox" checked />仅看待标注</label
+          >
+        </div>
+        <div id="list" class="case-list"></div>
+        <div class="paging">
+          <button id="prev-page">上一页</button><span id="page"></span
+          ><button id="next-page">下一页</button>
+        </div>
+      </aside>
+      <section class="workspace">
+        <div class="summary">
+          <div><small>本轮样本</small><strong id="total">—</strong></div>
+          <div><small>已标注</small><strong id="reviewed">—</strong></div>
+          <div><small>人工测试</small><strong id="gold">待建立</strong></div>
+          <p id="round-note">正在读取学习轮次…</p>
+        </div>
+        <div id="empty" class="empty">选择左侧样本开始核对。</div>
+        <article id="detail" hidden>
+          <div class="case-heading">
+            <div>
+              <span id="task" class="tag"></span>
+              <h1 id="question"></h1>
+            </div>
+            <span id="split" class="muted"></span>
+          </div>
+          <p id="source" class="muted"></p>
+          <section class="evidence">
+            <h2>当前转录 <small>尚未核听确认</small></h2>
+            <p id="original"></p>
+            <audio id="audio" controls preload="none"></audio>
+            <p id="audio-note" class="muted">原音按片段时间范围读取。</p>
+            <details>
+              <summary>查看模型输入窗口</summary>
+              <pre id="context"></pre>
+            </details>
+          </section>
+          <div id="predictions" class="predictions"></div>
+          <form id="form">
+            <fieldset>
+              <legend>你的标注</legend>
+              <div id="choices"></div>
+            </fieldset>
+            <label id="corrected-label" hidden
+              >核听后的正确文字<textarea
+                id="corrected"
+                rows="3"
+                placeholder="候选均不正确时填写；新文字将在下一轮成为新的候选"
+              ></textarea></label
+            ><label class="inline"
+              ><input id="verified" type="checkbox" />我已核听这段原音</label
+            >
+            <div class="form-row">
+              <label
+                >标注者<input
+                  id="reviewer"
+                  value="本机审核者"
+                  maxlength="80"
+                  required /></label
+              ><label
+                >备注<input id="note" maxlength="2000" placeholder="可选"
+              /></label>
+            </div>
+            <footer>
+              <span id="save-state" role="status"></span
+              ><button class="primary" type="submit">保存并继续</button>
+            </footer>
+          </form>
+        </article>
+      </section>
+    </main>
+    <div id="notice" role="status" aria-live="polite"></div>
+    <script type="module" src="/app.mjs"></script>
+  </body>
+</html>
