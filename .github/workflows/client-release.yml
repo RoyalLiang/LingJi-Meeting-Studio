@@ -1,0 +1,137 @@
+name: Signed client release
+on:
+  push:
+    tags: ['client-v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing signed client-vX.Y.Z tag
+        required: true
+        type: string
+      publish_existing:
+        description: Publish the already verified draft without rebuilding
+        default: false
+        type: boolean
+permissions:
+  contents: read
+concurrency:
+  group: client-release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+env:
+  RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+  CLIENT_RELEASE_REPOSITORY: ${{ vars.CLIENT_RELEASE_REPOSITORY || github.repository }}
+  TTS_UPDATER_PUBLIC_KEY: ${{ vars.TTS_UPDATER_PUBLIC_KEY }}
+jobs:
+  verify:
+    runs-on: ubuntu-22.04
+    outputs:
+      sha: ${{ steps.tag.outputs.sha }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with: {node-version: '24', cache: npm}
+      - run: npm ci
+      - id: tag
+        env:
+          CLIENT_RELEASE_SIGNER_KEYS: ${{ vars.CLIENT_RELEASE_SIGNER_KEYS }}
+          RELEASE_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          test -n "$CLIENT_RELEASE_SIGNER_KEYS"
+          export GNUPGHOME="$RUNNER_TEMP/release-gpg"
+          mkdir -m 700 "$GNUPGHOME"
+          printf '%s' "$CLIENT_RELEASE_SIGNER_KEYS" > "$RUNNER_TEMP/release-signers.asc"
+          gpg --batch --import "$RUNNER_TEMP/release-signers.asc"
+          node scripts/client-release.mjs verify-tag
+  build:
+    if: github.event_name != 'workflow_dispatch' || !inputs.publish_existing
+    needs: verify
+    environment: client-release-signing
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {key: darwin-aarch64, runner: macos-15, target: aarch64-apple-darwin}
+          - {key: darwin-x86_64, runner: macos-15-intel, target: x86_64-apple-darwin}
+          - {key: windows-x86_64, runner: windows-2022, target: x86_64-pc-windows-msvc}
+          - {key: linux-x86_64, runner: ubuntu-24.04, target: x86_64-unknown-linux-gnu}
+    runs-on: ${{ matrix.key == 'windows-x86_64' && vars.CLIENT_WINDOWS_SIGNING_RUNNER || matrix.runner }}
+    env:
+      RELEASE_SHA: ${{ needs.verify.outputs.sha }}
+      CLIENT_RELEASE_TARGET: ${{ matrix.key }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with: {ref: '${{ needs.verify.outputs.sha }}', persist-credentials: false}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with: {node-version: '24', cache: npm}
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev libasound2-dev libpipewire-0.3-dev libclang-dev
+      - run: rustup toolchain install 1.92.0 --profile minimal --component clippy,rustfmt --target ${{ matrix.target }}
+      - run: rustup default 1.92.0
+      - run: npm ci
+      - run: npm test
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run check:docs
+      - run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked
+      - run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --locked -- -D warnings
+      - run: npm run build:web
+      - if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: bash scripts/import-macos-release-certificate.sh
+      - name: Build signed client and verify OS trust
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          WINDOWS_SIGN_COMMAND: ${{ vars.WINDOWS_SIGN_COMMAND }}
+          WINDOWS_PUBLISHER_SUBJECT: ${{ vars.WINDOWS_PUBLISHER_SUBJECT }}
+        run: node scripts/client-release.mjs build
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: client-${{ matrix.key }}
+          path: |
+            dist/client-release/**/Lingji-*
+            dist/client-release/**/release.json
+          if-no-files-found: error
+  draft:
+    needs: [verify, build]
+    environment: client-release
+    runs-on: ubuntu-22.04
+    permissions: {contents: read, actions: read}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with: {ref: '${{ needs.verify.outputs.sha }}', persist-credentials: false}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with: {node-version: '24'}
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with: {pattern: client-*, path: release-artifacts}
+      - run: sudo apt-get update && sudo apt-get install -y minisign
+      - env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          RELEASE_SHA: ${{ needs.verify.outputs.sha }}
+        run: node scripts/publish-client-release.mjs draft
+  publish:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_existing
+    needs: verify
+    environment: client-release
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with: {ref: '${{ needs.verify.outputs.sha }}', persist-credentials: false}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with: {node-version: '24'}
+      - run: sudo apt-get update && sudo apt-get install -y minisign
+      - env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          RELEASE_SHA: ${{ needs.verify.outputs.sha }}
+        run: node scripts/publish-client-release.mjs publish

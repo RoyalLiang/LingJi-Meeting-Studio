@@ -1,4 +1,5 @@
 import { telemetry } from './telemetry.mjs';
+import { clientUpdateBarrier } from './client-update.mjs';
 import { performance } from 'node:perf_hooks';
 import { setTranslationTarget } from '../../../packages/records/src/translation.mjs';
 import { workspaceRoutes, requireWorkspace } from './workspace-routes.mjs';
@@ -98,6 +99,7 @@ export async function createRecordServer(options = {}) {
         send(res, 200, { email: process.env.RECORD_DEV_EMAIL || 'dev@local.test', password: process.env.RECORD_DEV_PASSWORD ? null : 'LocalMeeting2026!' }); return;
       }
       const user = await auth.user(req);
+      if (path === '/api/client/update-barrier' && req.method === 'GET') { send(res, 200, await clientUpdateBarrier(repo, user.id)); return; }
       if (!['GET', 'HEAD'].includes(req.method)) auth.checkCsrf(req, user);
       if (path === '/api/auth/logout' && req.method === 'POST') {
         await repo.change(user.id, u => { u.authVersion++; }); send(res, 200, { ok: true }, { 'Set-Cookie': auth.clear() }); return;

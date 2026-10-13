@@ -175,3 +175,13 @@ React 用于提示和交互；**Rust 的 install/relaunch 入口必须再次判�
 5. stable/beta/镜像域名、国内/企业网络要求、私有下载鉴权；自动下载与安全时自动安装默认策略。
 
 这些条件不妨碍先完成本地 adapter、守卫、manifest 校验和 CI 结构，但缺少真实宿主、签名与已安装旧版本时，不能将功能标为“已上线自动更新”。
+
+
+## 2026-10-13 实现进展
+
+后续用户已授权继续实现，并提供公开仓库 `RoyalLiang/lingji`（默认分支 main，已只读核实）。本报告前文中的未实现状态记录的是调研时点；当前本地实现见[客户端更新](../engineering/client-updates.md)、[发版步骤](../releases/github-client.md)、[ADR 0012](../adr/0012-signed-client-releases-and-safe-updates.md)与[验证证据](../evidence/client-brain-research/client-updater-validation-2026-10-13.md)。没有执行远程推送或发布。
+
+固定依赖 `tauri-plugin-updater 2.13.3` 的实际源码确认支持 `requireSignedVersion`；CLI 2.12.2 的 signer 使用 `--app-version` 绑定可信版本，打包时由 CLI 自动生成。发布端使用独立 `minisign` 校验解码后的签名，不调用不存在的 `tauri signer verify`。GitHub 不可变策略读取使用官方 immutable-releases REST 接口，发布 token 需 Contents write 与 Administration read。
+
+
+Linux 构建基线修正为 Ubuntu 24.04：固定 CPAL 0.18.2 的 Cargo 源码启用了 PipeWire `v0_3_53`；[Ubuntu 22.04 默认包](https://packages.ubuntu.com/en/jammy-updates/libpipewire-0.3-dev)仍为 0.3.48，而 [Ubuntu 24.04 包](https://packages.ubuntu.com/de/noble/libpipewire-0.3-dev)为 1.0.5 系列。由此选择较新的构建和运行基线，不将 AppImage 视为绕过 glibc/PipeWire 系统依赖的保证。四目标矩阵尚未远程执行。

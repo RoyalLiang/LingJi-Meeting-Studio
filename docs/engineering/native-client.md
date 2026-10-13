@@ -41,7 +41,7 @@ npm run test:client
 
 上游登录 cookie 仅在 Rust 内存中，重启须重新登录；本机连接 cookie 与上游认证分开。每个服务使用稳定本地来源与隔离 WebView 存储；同服务重启保留 IndexedDB，不自动搬迁浏览器中的旧队列。端口被占用时启动失败，释放后重试。离线可以打开内置页面，登录和服务端历史仍需 API；已登录后产生的离线录音按既有队列策略补传。
 
-本机 `.app` 属于开发验收包。对外发行的 Developer ID/公证、Windows 签名、Linux 安装依赖、升级签名与回滚尚未验收，自动更新未启用。不要把源码支持、单元测试或 macOS 包启动描述为三系统实机交付或省电证明。
+本机 `.app` 属于开发验收包。[安全更新](client-updates.md)与[GitHub 发版工作流](../releases/github-client.md)已实现本地版本；只有编入可信公钥与更新源的新安装包才启用更新。对外发行的 Developer ID/公证、Windows 签名、Linux 安装依赖与真实应用升级尚未验收；自动回滚未实现。不要把源码支持、单元测试或 macOS 包启动描述为三系统实机交付或省电证明。
 
 ## 重复验证
 
@@ -55,3 +55,5 @@ node scripts/test-native-package.mjs
 ```
 
 合成场景脚本只用于显式 `smoke-test` 构建，创建隔离数据目录和 API，不访问现有会议、不打开真实设备或供应商。正式构建不启用该 feature，也不提供测试 IPC；`test-native-package.mjs` 验证正式包忽略模拟环境变量并运行内置 React。平台包可通过 `NATIVE_CLIENT_EXECUTABLE` 指向相应可执行文件。正式 `.app` 单独构建可用 `npm exec --workspace apps/desktop -- tauri build --bundles app`。
+
+Linux 发行构建采用 Ubuntu 24.04 基线，CPAL PipeWire 接口要求 0.3.53+；不保证旧 glibc 或 Ubuntu 22.04 可直接运行发行 AppImage。

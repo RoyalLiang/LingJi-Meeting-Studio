@@ -5,6 +5,7 @@
 | 路由 | 用途 |
 | --- | --- |
 | POST /auth/register、/auth/login；POST /auth/logout | 本地账户与登录 |
+| GET /client/update-barrier | 已登录账户的采集停止与持久化 ACK 元数据，协议 v1；桌面安装前独立核实，见[更新说明](client-updates.md) |
 | GET /bootstrap | csrf、账户、模型配置可用性、配额 |
 | GET/POST /records | 自有记录列表/搜索（q）与创建 |
 | GET/PATCH/DELETE /records/:id | 一致快照、标题/笔记/翻译目标、墓碑删除 |

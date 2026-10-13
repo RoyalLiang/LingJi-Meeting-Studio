@@ -1,7 +1,7 @@
 # 项目文档入口
 
 - [跨系统客户端实现方式](research/cross-platform-client-implementation-2026-10-13.md)：已按长期轻量与原生采集优先选择 Tauri 2/Rust；[运行说明](engineering/native-client.md)、[proposed ADR](adr/0011-native-desktop-client.md)与[首轮验证](evidence/client-brain-research/native-client-validation-2026-10-13.md)。三系统实体采集和正式发行仍待验。
-- [GitHub 发版与客户端自动更新调研](research/git-release-and-client-updates-2026-10-13.md)：用户已选 GitHub Releases；当前是建议路线，尚未启用自动更新或远程发布。
+- [GitHub 发版与客户端自动更新调研](research/git-release-and-client-updates-2026-10-13.md)：用户已选 GitHub Releases；已实现本地安全更新与四目标 draft/publish 工作流，见[客户端更新](engineering/client-updates.md)、[发版步骤](releases/github-client.md)和[本轮证据](evidence/client-brain-research/client-updater-validation-2026-10-13.md)；尚未远程发布或完成三系统正式安装验收。
 
 - [跨平台客户端、性能与最强大脑演进调研](research/client-brain-evolution-2026-10-12.md)：当前代码、合成基准、端云分工与分层更新路线；[架构提议](adr/0010-cross-platform-brain-evolution.md)仍为 proposed，已按用户指令实施其中的 P0/P1；其他阶段未实施。
 - [分阶段演进方案](design/evolution-plan-2026-10-12.md)：P0～P5 依赖、15 项本地任务、验收目标与迁移回退；首包为观测、投影、离线队列和分层终稿。

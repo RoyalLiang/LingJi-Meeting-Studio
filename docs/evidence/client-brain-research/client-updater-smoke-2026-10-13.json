@@ -1,0 +1,38 @@
+{
+  "timestamp": "2026-10-13T05:49:53.056Z",
+  "platform": "darwin",
+  "architecture": "arm64",
+  "results": [
+    {
+      "invalidMetadataRejected": true,
+      "ok": true,
+      "testCase": "invalid"
+    },
+    {
+      "noUpdate": true,
+      "ok": true,
+      "testCase": "none"
+    },
+    {
+      "ok": true,
+      "signatureOrVersionRejected": true,
+      "testCase": "bad-signature"
+    },
+    {
+      "ok": true,
+      "signatureOrVersionRejected": true,
+      "testCase": "wrong-version"
+    },
+    {
+      "blockedInstalls": 8,
+      "ok": true,
+      "sandboxInstall": true,
+      "signedDownload": true,
+      "testCase": "valid"
+    }
+  ],
+  "productionApplicationModified": false,
+  "realAudioDevicesOpened": false,
+  "realProvidersInvoked": false,
+  "realApplicationRestartTested": false
+}

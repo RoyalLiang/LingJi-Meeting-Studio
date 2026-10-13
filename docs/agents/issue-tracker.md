@@ -1,6 +1,6 @@
 # 在 GitHub Issues 跟踪工作
 
-用户已于 2026-10-11 选择 GitHub Issues；具体仓库待提供，当前 Git 没有 remote。不要猜测 owner/repo，也不要创建远程标签或工单。
+用户已于 2026-10-11 选择 GitHub Issues；2026-10-13 用户提供发版仓库 `RoyalLiang/lingji`，已配置本地 origin；尚未执行远程工单操作。不要猜测 owner/repo，也不要创建远程标签或工单。
 
 绑定后使用 `gh`，显式核实仓库与请求范围。读取、创建、更新、关闭工单均遵循当前任务授权；多行正文写入临时文件并用 `--body-file`，避免 shell 插值。
 

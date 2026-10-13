@@ -1,0 +1,50 @@
+{
+  "realQueueReplayedAfterRestart": true,
+  "replayedUiReceipts": 3,
+  "timestamp": "2026-10-13T05:50:02.704Z",
+  "platform": "darwin",
+  "architecture": "arm64",
+  "actualQueueUsed": true,
+  "authenticated": true,
+  "csrfRejected": true,
+  "iframeBlocked": true,
+  "indexedDbRetained": false,
+  "indexedDbWritten": true,
+  "kind": "synthetic-only",
+  "nativeIpc": true,
+  "ok": true,
+  "origin": "http://127.0.0.1:60741",
+  "pcm": [
+    {
+      "nonzero": true,
+      "offset": 0,
+      "samples": 6400,
+      "sequence": 0
+    },
+    {
+      "nonzero": true,
+      "offset": 6400,
+      "samples": 16000,
+      "sequence": 1
+    },
+    {
+      "nonzero": true,
+      "offset": 22400,
+      "samples": 320,
+      "sequence": 2
+    }
+  ],
+  "pendingUiPackets": 3,
+  "priorUiQueueReplayed": false,
+  "reactMounted": true,
+  "reloginRequired": false,
+  "renderer": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)",
+  "sse": true,
+  "stableOriginAfterRestart": true,
+  "indexedDbRetainedAfterRestart": true,
+  "reloginRequiredAfterRestart": true,
+  "durableReceipts": 3,
+  "stoppedCapture": "paused",
+  "realAudioDevicesOpened": false,
+  "realProvidersInvoked": false
+}

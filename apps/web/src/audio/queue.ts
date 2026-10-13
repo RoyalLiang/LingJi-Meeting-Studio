@@ -3,6 +3,7 @@ import { trace, traceEnabled } from '../telemetry';
 import type { AudioChunk } from '../model';
 interface Pending { key: string; recordId: string; chunk: AudioChunk; bytes: number; createdAt: number }
 interface Manifest { key: string; recordId: string; sourceId: string; epoch: string; lastSequence: number }
+let saving = 0;
 const MAX_BYTES = 48 * 1024 * 1024;
 let database: Promise<IDBDatabase> | undefined;
 let permittedRecords = new Set<string>(), uploading = false;
@@ -39,6 +40,8 @@ export async function queueStats(){
   return {bytes:total?.bytes||0,count:await pendingCount()};
 }
 export async function enqueue(recordId:string,chunk:AudioChunk){
+  saving++; try {
+
   const connection=await db(), started=performance.now();
   await new Promise<void>((resolve,reject)=>{
     const tx=connection.transaction(['chunks','manifests','stats'],'readwrite'),chunks=tx.objectStore('chunks'),manifests=tx.objectStore('manifests'),stats=tx.objectStore('stats');
@@ -59,6 +62,8 @@ export async function enqueue(recordId:string,chunk:AudioChunk){
   });
   if(traceEnabled()){const depth=await queueStats();trace('audio.queue',{bytes:depth.bytes,count:depth.count});}
   trace('audio.local-save',{recordId,sourceId:chunk.sourceId,sequence:chunk.sequence,bytes:chunk.sampleCount*2,durationMs:performance.now()-started});
+
+  } finally { saving--; }
 }
 function parallelism(){try{return sessionStorage.getItem('meeting-queue-serial')==='1'?1:2;}catch{return 2;}}
 const lane=(entry:Pending)=>`${entry.recordId}:${entry.chunk.sourceId}:${entry.chunk.epoch}`;
@@ -133,4 +138,10 @@ export async function makeChunk(sourceId: string, epoch: string, sequence: numbe
   trace('audio.encoded',{sourceId,sequence,bytes:bytes.length,durationMs:performance.now()-started});
   return { sessionId, sourceId, epoch, sequence, sampleOffset, sampleCount: bytes.length / 2, sampleRate: 16000,
     digest: Array.from(hash, b => b.toString(16).padStart(2, '0')).join(''), pcm: btoa(binary) };
+}
+
+export async function updateQueueState() {
+  const connection = await db(), transaction = connection.transaction(['chunks','stats']);
+  const [count, total] = await Promise.all([result(transaction.objectStore('chunks').count()), result(transaction.objectStore('stats').get('total'))]);
+  return { pendingBytes: total?.bytes || 0, pendingCount: count, queueBusy: uploading || saving > 0 };
 }
