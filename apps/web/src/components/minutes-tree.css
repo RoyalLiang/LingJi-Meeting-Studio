@@ -1,0 +1,10 @@
+.minutes-tree.is-compact .minutes-branch { padding-bottom:25px; }
+.minutes-tree.is-compact .minutes-branch:last-child { padding-bottom:0; }
+.minutes-tree.is-compact .branch-toggle { padding-block:8px; }
+.minutes-tree.is-compact .branch-children { padding-top:12px; gap:11px; }
+.minutes-tree.is-compact .branch-node { padding:10px 17px; }
+.minutes-tree.is-compact .branch-node .citations { margin-top:6px; }
+.minutes-tree.is-compact .branch-table { width:100%; padding:0; background:transparent; }
+.minutes-tree.is-compact .branch-table .summary-tables { margin:0; min-width:0; }
+.minutes-tree.is-compact .branch-table .summary-table { margin:0; }
+.minutes-preview-option { margin-top:14px; }
