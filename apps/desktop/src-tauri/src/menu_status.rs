@@ -84,11 +84,13 @@ pub fn present(report: &Report, native_active: bool, fresh: bool) -> Presentatio
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UpdatePresentation {
-    pub status: String,
+    pub check_label: String,
     pub check: bool,
     pub background: bool,
+    pub background_visible: bool,
     pub auto_download: bool,
     pub install: bool,
+    pub install_visible: bool,
 }
 
 pub fn present_update(
@@ -97,32 +99,31 @@ pub fn present_update(
     operating: bool,
     fresh: bool,
     auto_download: bool,
+    verified_download: bool,
     install_reason: Option<&str>,
 ) -> UpdatePresentation {
     let busy = operating || ["checking", "downloading", "preparing", "installing"].contains(&phase);
     let enabled = configured && phase != "disabled" && !busy && fresh;
-    let reason = if !configured || phase == "disabled" {
-        "未配置可信更新源，请手动安装新版"
-    } else if !fresh {
-        "页面状态待确认，请打开聆记"
+    let check_label = if !configured || phase == "disabled" {
+        "检查更新（未配置）"
     } else {
         match phase {
             "checking" => "正在检查更新…",
-            "downloading" => "正在后台下载并验证签名…",
-            "preparing" | "installing" => "正在准备或安装更新…",
-            "ready" => install_reason.unwrap_or("更新已验签，可重启更新"),
-            "available" => "发现新版本，可在设置中下载",
-            "current" => "当前已是最新版本",
-            "error" => "检查更新未完成，可重试",
-            _ => "可检查新版本",
+            "downloading" => "正在下载更新…",
+            "preparing" | "installing" => "正在安装更新…",
+            "error" => "重新检查更新…",
+            _ => "检查更新…",
         }
     };
+    let install_visible = configured && phase == "ready" && verified_download;
     UpdatePresentation {
-        status: format!("更新：{reason}"),
+        check_label: check_label.into(),
         check: enabled,
         background: enabled,
+        background_visible: configured && phase != "disabled",
         auto_download,
-        install: enabled && phase == "ready" && install_reason.is_none(),
+        install: enabled && install_visible && install_reason.is_none(),
+        install_visible,
     }
 }
 
@@ -131,27 +132,51 @@ mod tests {
     use super::*;
     #[test]
     fn update_menu_requires_trust_verified_download_fresh_state_and_safe_recording() {
-        let ready = present_update("ready", true, false, true, true, None);
+        let ready = present_update("ready", true, false, true, true, true, None);
         assert!(ready.check && ready.background && ready.auto_download && ready.install);
+        assert!(ready.install_visible && ready.background_visible);
         for reason in [
             "正在录音",
             "本场处于暂停状态",
             "本机仍有待传音频",
             "正在保存音频",
         ] {
-            let blocked = present_update("ready", true, false, true, false, Some(reason));
+            let blocked = present_update("ready", true, false, true, false, true, Some(reason));
             assert!(!blocked.install);
-            assert!(blocked.background && blocked.check && blocked.status.contains(reason));
+            assert!(blocked.background && blocked.check && blocked.install_visible);
         }
         for view in [
-            present_update("disabled", false, false, true, false, None),
-            present_update("ready", true, false, false, false, None),
-            present_update("ready", true, true, true, false, None),
-            present_update("downloading", true, false, true, true, None),
+            present_update("disabled", false, false, true, false, false, None),
+            present_update("ready", true, false, false, false, true, None),
+            present_update("ready", true, true, true, false, true, None),
+            present_update("downloading", true, false, true, true, false, None),
         ] {
             assert!(!view.check && !view.background && !view.install);
         }
-        assert!(!present_update("available", true, false, true, false, None).install);
+        assert!(!present_update("available", true, false, true, false, false, None).install);
+        assert!(!present_update("ready", true, false, true, false, false, None).install_visible);
+    }
+    #[test]
+    fn update_actions_stay_compact_and_restart_is_hidden_until_a_verified_download_exists() {
+        let disabled = present_update("disabled", false, false, true, true, true, None);
+        assert_eq!(disabled.check_label, "检查更新（未配置）");
+        assert!(!disabled.background_visible && !disabled.install_visible);
+        assert!(disabled.auto_download);
+        for phase in [
+            "idle",
+            "current",
+            "available",
+            "checking",
+            "downloading",
+            "error",
+            "preparing",
+            "installing",
+        ] {
+            let view = present_update(phase, true, false, true, false, true, None);
+            assert!(!view.install_visible, "restart shown during {phase}");
+            assert!(view.check_label.chars().count() < 16);
+            assert!(view.background_visible && !view.auto_download);
+        }
     }
     #[test]
     fn recording_pause_queue_and_stale_states_are_distinct() {

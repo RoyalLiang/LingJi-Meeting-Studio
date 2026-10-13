@@ -2,7 +2,7 @@ use crate::{audio::Captures, proxy::Proxy, update_gate::Gate};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
@@ -25,6 +25,26 @@ struct Downloaded {
     path: PathBuf,
     digest: [u8; 32],
     bytes: u64,
+}
+fn prepared_download(
+    status: &Status,
+    version: Option<&str>,
+    downloaded: Option<(&Path, u64)>,
+) -> bool {
+    let Some(version) = version else {
+        return false;
+    };
+    let Some((path, bytes)) = downloaded else {
+        return false;
+    };
+    // Updater::check uses the updater's strict newer-version comparison. The
+    // downloaded entry is created only after download and signature validation.
+    version != status.current_version
+        && status.version.as_deref() == Some(version)
+        && bytes > 0
+        && status.downloaded == bytes
+        && status.total == Some(bytes)
+        && std::fs::metadata(path).is_ok_and(|file| file.is_file() && file.len() == bytes)
 }
 struct State {
     status: Status,
@@ -92,12 +112,21 @@ impl Updates {
     }
     pub fn menu(&self, native_active: bool) -> crate::menu_status::UpdatePresentation {
         let state = self.state.lock().unwrap();
+        let prepared = prepared_download(
+            &state.status,
+            state.update.as_ref().map(|update| update.version.as_str()),
+            state
+                .downloaded
+                .as_ref()
+                .map(|download| (download.path.as_path(), download.bytes)),
+        );
         crate::menu_status::present_update(
             &state.status.phase,
             self.endpoint.is_some() && self.pubkey.is_some(),
             state.operating,
             self.gate.fresh(),
             state.auto_download,
+            prepared,
             self.gate.reason(native_active),
         )
     }
@@ -338,5 +367,46 @@ impl Updates {
         app.restart();
         #[cfg(target_os = "windows")]
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn restart_requires_the_announced_new_version_and_a_complete_download_on_disk() {
+        let directory =
+            std::env::temp_dir().join(format!("lingji-menu-update-{}", getrandom::u64().unwrap()));
+        std::fs::create_dir(&directory).unwrap();
+        let path = directory.join("synthetic-verified-update.bin");
+        let mut status = Status {
+            phase: "ready".into(),
+            current_version: "1.0.0".into(),
+            version: Some("1.1.0".into()),
+            notes: None,
+            downloaded: 4,
+            total: Some(4),
+            error: None,
+        };
+        assert!(!prepared_download(&status, Some("1.1.0"), Some((&path, 4))));
+        std::fs::write(&path, b"test").unwrap();
+        assert!(prepared_download(&status, Some("1.1.0"), Some((&path, 4))));
+        assert!(!prepared_download(&status, None, Some((&path, 4))));
+        assert!(!prepared_download(&status, Some("1.1.0"), None));
+        assert!(!prepared_download(&status, Some("1.0.0"), Some((&path, 4))));
+        assert!(!prepared_download(&status, Some("1.2.0"), Some((&path, 4))));
+        assert!(!prepared_download(&status, Some("1.1.0"), Some((&path, 0))));
+        status.version = Some("1.0.0".into());
+        assert!(!prepared_download(&status, Some("1.0.0"), Some((&path, 4))));
+        status.version = Some("1.1.0".into());
+        status.downloaded = 3;
+        assert!(!prepared_download(&status, Some("1.1.0"), Some((&path, 4))));
+        status.downloaded = 4;
+        status.total = Some(5);
+        assert!(!prepared_download(&status, Some("1.1.0"), Some((&path, 4))));
+        status.total = Some(4);
+        std::fs::write(&path, b"cut").unwrap();
+        assert!(!prepared_download(&status, Some("1.1.0"), Some((&path, 4))));
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }

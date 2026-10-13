@@ -3,6 +3,52 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
 import { stripTypeScriptTypes } from 'node:module';
+import { transform } from 'esbuild';
+
+async function quickRecordHarness({ active, issues }) {
+  const app = await readFile(new URL('../apps/web/src/App.tsx', import.meta.url), 'utf8');
+  const start = app.indexOf('  async function quickRecord()');
+  const end = app.indexOf('  async function startCapture(', start);
+  assert.ok(start >= 0 && end > start);
+  const compiled = (await transform(app.slice(start, end) + '\nexports.quickRecord = quickRecord;', { loader: 'ts' })).code;
+  const state = { modal: undefined, error: '', recording: false, issues: [], created: null, starts: 0 };
+  const controller = { active, startMeeting: async () => { state.starts++; return issues; }, stop: async () => { controller.active = false; } };
+  const sandbox = { exports: {}, recording: false, busy: false, scope: 'all', boot: { providers: { minutes: true } }, captureAllowed: () => true,
+    capture: { current: null }, activeId: { current: '' }, controllerFor: () => controller,
+    api: async (_path, method, body) => method === 'POST' ? (state.created = body, { id: 'quick-fixture' }) : { records: [{ id: 'quick-fixture' }] },
+    setError: value => { state.error = value; }, setCaptureIssues: value => { state.issues = value; }, setBusy() {},
+    selectRecord() {}, setRecord() {}, setQueueRecords() {}, loadList: async () => {}, refresh: async () => {},
+    setModal: value => { state.modal = value; }, setRecording: value => { state.recording = value; }, messageOf: error => error.message,
+  };
+  vm.runInNewContext(compiled, sandbox);
+  await sandbox.exports.quickRecord();
+  return { state, capture: sandbox.capture };
+}
+
+test('quick recording keeps a working microphone active without opening source selection after another lane fails', async () => {
+  const h = await quickRecordHarness({ active: true, issues: [{ kind: 'display', message: '系统音频权限被拒绝' }] });
+  assert.equal(h.state.starts, 1);
+  assert.equal(h.state.recording, true);
+  assert.equal(h.state.modal, null);
+  assert.equal(h.state.error, '系统音频权限被拒绝', 'partial failure must remain visible without interrupting working capture');
+  assert.equal(h.state.issues.length, 1);
+  assert.equal(h.state.created.retainAudio, true);
+});
+
+test('quick recording opens explicit recovery only when no requested audio source could start', async () => {
+  const h = await quickRecordHarness({ active: false, issues: [{ kind: 'microphone', message: '麦克风权限被拒绝' }, { kind: 'display', message: '系统音频权限被拒绝' }] });
+  assert.equal(h.state.recording, false);
+  assert.equal(h.state.modal, 'capture');
+  assert.equal(h.state.issues.length, 2);
+  assert.equal(h.capture.current, null);
+});
+
+test('quick recording with both sources available starts immediately without a selection prompt', async () => {
+  const h = await quickRecordHarness({ active: true, issues: [] });
+  assert.equal(h.state.recording, true);
+  assert.equal(h.state.modal, null);
+  assert.equal(h.state.error, '');
+});
 
 async function captureHarness({ noDisplayAudio = false, micFailure = false, displayDenied = false, displayUnsupported = false, recordId = 'record', chunkWait } = {}) {
   let source = await readFile(new URL('../apps/web/src/audio/capture.ts', import.meta.url), 'utf8');

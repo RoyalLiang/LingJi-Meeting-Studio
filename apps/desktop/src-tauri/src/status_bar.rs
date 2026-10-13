@@ -2,13 +2,14 @@ use crate::menu_status::{present, Presentation, Report, UpdatePresentation};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{
-    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
+    menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, Wry,
 };
 
 pub struct StatusBar {
     tray: TrayIcon<Wry>,
+    menu: Menu<Wry>,
     report: Mutex<Option<(Report, Instant)>>,
     last: Mutex<Option<Presentation>>,
     record: MenuItem<Wry>,
@@ -19,7 +20,6 @@ pub struct StatusBar {
     resume: MenuItem<Wry>,
     finish: MenuItem<Wry>,
     settings: MenuItem<Wry>,
-    update_status: MenuItem<Wry>,
     update_check: MenuItem<Wry>,
     update_background: CheckMenuItem<Wry>,
     update_install: MenuItem<Wry>,
@@ -54,12 +54,11 @@ impl StatusBar {
         let resume = item("status-resume", "继续本场", false)?;
         let finish = item("status-finish", "结束本场…", false)?;
         let settings = item("status-settings", "设置与诊断…", false)?;
-        let update_status = item("status-update-state", "更新状态待确认…", false)?;
         let update_check = item("status-update-check", "检查更新…", false)?;
         let update_background = CheckMenuItem::with_id(
             app,
             "status-update-background",
-            "自动后台下载更新",
+            "自动下载更新",
             false,
             false,
             None::<&str>,
@@ -88,10 +87,7 @@ impl StatusBar {
                 &second,
                 &settings,
                 &updates_separator,
-                &update_status,
                 &update_check,
-                &update_background,
-                &update_install,
                 &hide,
                 &third,
                 &quit,
@@ -142,6 +138,7 @@ impl StatusBar {
             .build(app)?;
         Ok(Self {
             tray,
+            menu,
             report: Mutex::new(None),
             last: Mutex::new(None),
             record,
@@ -152,7 +149,6 @@ impl StatusBar {
             resume,
             finish,
             settings,
-            update_status,
             update_check,
             update_background,
             update_install,
@@ -169,16 +165,55 @@ impl StatusBar {
             .as_ref()
             .is_some_and(|(r, _)| r.pending_count > 0)
     }
+    fn update_item_visibility(
+        &self,
+        item: &dyn IsMenuItem<Wry>,
+        after: &str,
+        visible: bool,
+    ) -> tauri::Result<()> {
+        let items = self.menu.items()?;
+        let kind = item.kind();
+        let exists = items.iter().any(|existing| existing.id() == kind.id());
+        if visible && !exists {
+            let position = items
+                .iter()
+                .position(|existing| existing.id().as_ref() == after)
+                .map_or(items.len(), |index| index + 1);
+            self.menu.insert(item, position)?;
+        } else if !visible && exists {
+            self.menu.remove(item)?;
+        }
+        Ok(())
+    }
+    fn apply_update_presentation(&self, updates: &UpdatePresentation) -> tauri::Result<()> {
+        self.update_check.set_text(&updates.check_label)?;
+        self.update_check.set_enabled(updates.check)?;
+        self.update_background.set_enabled(updates.background)?;
+        self.update_background.set_checked(updates.auto_download)?;
+        self.update_install.set_enabled(updates.install)?;
+        self.update_item_visibility(
+            &self.update_background,
+            "status-update-check",
+            updates.background_visible,
+        )?;
+        self.update_item_visibility(
+            &self.update_install,
+            if updates.background_visible {
+                "status-update-background"
+            } else {
+                "status-update-check"
+            },
+            updates.install_visible,
+        )?;
+        Ok(())
+    }
     pub fn refresh(&self, native_active: bool, updates: UpdatePresentation) {
         {
             let mut last = self.last_update.lock().unwrap();
             if last.as_ref() != Some(&updates) {
-                let _ = self.update_status.set_text(&updates.status);
-                let _ = self.update_check.set_enabled(updates.check);
-                let _ = self.update_background.set_enabled(updates.background);
-                let _ = self.update_background.set_checked(updates.auto_download);
-                let _ = self.update_install.set_enabled(updates.install);
-                *last = Some(updates);
+                if self.apply_update_presentation(&updates).is_ok() {
+                    *last = Some(updates);
+                }
             }
         }
         let guard = self.report.lock().unwrap();

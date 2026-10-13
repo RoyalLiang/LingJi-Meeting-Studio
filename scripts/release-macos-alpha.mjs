@@ -1,11 +1,10 @@
 import assert from 'node:assert/strict';
-import { prepareClientBackend } from './prepare-client-backend.mjs';
 import { createHash } from 'node:crypto';
 import { execFileSync, spawn } from 'node:child_process';
 import { access, copyFile, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(root);
@@ -108,6 +107,7 @@ try {
     const packaged = iconDigest(await readFile(join(frozen, 'apps/desktop/src-tauri/icons', name)), name);
     assert.equal(generated, packaged, `Regenerate ${name} from the selected SVG before release.`);
   }
+  const { prepareClientBackend } = await import(pathToFileURL(join(frozen, 'scripts/prepare-client-backend.mjs')).href);
   const runtime = await prepareClientBackend({ root: frozen, cacheRoot: join(root, '.agent-runtime/runtimes') });
   await run('npm', ['run', 'build:web'], {}, frozen);
   const cargoTarget = join(root, '.agent-runtime/releases/macos-alpha/target');
