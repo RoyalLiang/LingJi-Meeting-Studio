@@ -1,0 +1,170 @@
+{
+  "version": "0.1.0-alpha.11",
+  "sourceRevision": "67599ce97a147035736c3e3bbcf10c6252e17957",
+  "verifiedAt": "2026-10-13T12:32:01.544Z",
+  "scope": "Local Alpha11 meeting completion, retained audio, citations/sharing, native permissions, popup layout and confirmed provider usage",
+  "sourceHashes": {
+    "apps/desktop/assets/lingji-app-icon.svg": "d110c866ac40a75a78ffde8ac703294c6b2366cd957cddd7b385e7347f4bceac",
+    "apps/desktop/src-tauri/src/downloads.rs": "0f11a138b4bced02c791e85f14abf483042df5cded127b242ce6752ee30cdcd9",
+    "apps/desktop/src-tauri/src/main.rs": "a19e046693e87243c7da78cddcd0052d4b33d385b19c05082d92bb47c19e856f",
+    "apps/web/src/App.tsx": "9ad85069e774e353da379c80112601e84964d25f429a1a492171efa4806616bb",
+    "apps/web/src/audio/native-controller.ts": "ca7ed88130e28e5b5538458fe93aaa4af60bcb5a9ec091e7abdcb9f0f1b02999",
+    "apps/web/src/components/Minutes.css": "7b912e318791652e289748296679fac385ea867bfa2e3b0c0fb2c7a84f836c22",
+    "apps/web/src/components/MinutesUsage.tsx": "07a9ceaf03a4bfa071d73487826d72a39b10d1b3ab437e723c205f9ee4e88825",
+    "apps/web/src/components/Select.css": "03935d52e3b607d4913603b49796b4a7f377a6c6263e71d2445ef62e6d7151ff",
+    "apps/web/src/minutes-usage.ts": "284319f2c70f01dca25a535c287cc79a3681bb24e3b51ea82b82389ac7b60288",
+    "apps/web/src/styles.css": "e68558f95b17dd30ce82446977ae922559b136eba6bd60051edf74a13be0326c",
+    "packages/records/src/usage.mjs": "1c86d74540f0a6f74710b2030515479827ab6128694bf30fc9cc68062b9ac90d",
+    "services/records/src/llm.mjs": "3fb37137ba9032128a26818a8eb1587004c179d0cd03871aecc8d2d800e5db60",
+    "services/records/src/minutes-usage.mjs": "09ed000f27ecadb7b59290cf32979e74bb7beebdfc9fcad9d6dcd80fcb7a062e"
+  },
+  "checks": {
+    "node": {
+      "passed": 253,
+      "failed": 0
+    },
+    "rust": {
+      "passed": 14,
+      "failed": 0
+    },
+    "eslint": true,
+    "typecheck": true,
+    "webBuild": true,
+    "markdownFiles": 81,
+    "nativeControllerAndProbe": {
+      "passed": 12,
+      "damagedSyntheticQueuesRejected": 7,
+      "completeNativeRestartChainRunAfterDualSourceChange": false
+    },
+    "fullPageChromium": {
+      "passed": 20,
+      "pageErrors": [],
+      "checks": [
+        "Repeated login: one request, retained form, zero loading flashes",
+        "Compact same-path SVG logo at 1x, no blur filters",
+        "App save feedback uses an automatic toast and does not steal focus",
+        "Topic tree default; exact cited rows inside topics; ambiguous row retained",
+        "Unknown supplier tokens never show false zero; SSE deltas update actual token footer and auto-title sidebar without reload, footer stays below minutes",
+        "Back-to-top stays in toolbar without moving search or covering meeting actions",
+        "44px gear rotates automatically without hover; center X remains 20px",
+        "Close gear rotates on hover and keyboard focus, center X remains upright, no layout shift, reduced motion stops rotation",
+        "Retained original audio plays real synthetic WAV; dialog close unmounts playback",
+        "Explicit-close settings behavior preserved",
+        "Completed meeting shows AI tree, hides live dock and ignores obsolete failed live job",
+        "No audio request for unretained, purged or pending recordings",
+        "Citation shows five exact snapshot context rows and version, returns focus after backdrop close without giant frame or scroll jump",
+        "Desktop local share exports readable HTML with topic tables and minimum cited snapshot, without uploading",
+        "Live draft share stays enabled and finish dialog removes redundant explanatory text",
+        "Short viewport dialog scrolls body while title/close stay fixed",
+        "Coarse pointer close target remains 44px and closes on touch",
+        "Logo verified in light/dark at 1x and Retina 2x",
+        "390px mobile dialog/meeting viewport bounds; redundant source copy removed",
+        "Public read-only sharing renders complete topic tables and exact citation context without edit controls"
+      ]
+    },
+    "layoutChromium": {
+      "passed": 14,
+      "checks": [
+        "connection aligns to the reading content right edge when the back-top action is hidden",
+        "connection and back-top changes keep the search rectangle fixed",
+        "backup has at least 12px breathing room above the preceding controls",
+        "settings heading icon and title align without inherited heading margin",
+        "provider secret label and status share a row with consistent field spacing",
+        "update field label and Select have consistent vertical spacing",
+        "Select uses a single focus boundary and unscaled opaque option surface",
+        "closed candidates immediately leave the top layer instead of ghosting over other fields",
+        "modal text ancestors have no blur filters or persistent transforms",
+        "modal controls remain within the body at 1440px",
+        "modal controls remain within the body at 390px",
+        "actual usage footer stays in normal flow and fits at 1440px",
+        "actual usage footer stays in normal flow and fits at 390px",
+        "no page exceptions"
+      ]
+    },
+    "systemWKWebView": {
+      "passedEndpointChecks": 11,
+      "checks": [
+        "native connection aligns with the reading content edge",
+        "native search stays fixed through connection and back-top changes",
+        "native backup has 16px space above",
+        "native settings heading, secret status and field gaps align",
+        "native Select final CSS state keeps one focus border and sharp untransformed candidates",
+        "trusted native keys choose candidates and the closed list leaves immediately",
+        "native modal controls fit at 1280px",
+        "native modal controls fit at 390px",
+        "native dialog content has no filtered or transformed ancestors",
+        "native actual usage footer fits in normal flow at 1280px",
+        "native actual usage footer fits in normal flow at 390px"
+      ],
+      "complete": false,
+      "animationLiveVerified": false,
+      "limitations": [
+        "The current desktop session rejected visible AppKit fixture windows: activate reports active=false/key=false/visible=0 and document.visibilityState stays hidden, freezing CSS transition time at zero. Native candidate screenshots and endpoint styles below explicitly finish finite CSS Web Animations; they do not verify foreground wall-clock animation. Chromium independently verifies live interactions and layout."
+      ]
+    },
+    "actualTauriDownload": {
+      "actualShareDialog": true,
+      "blobDownload": true,
+      "nativeCompletionFeedback": true,
+      "ok": true,
+      "realAudioDevicesOpened": false,
+      "realProvidersInvoked": false,
+      "renderer": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)",
+      "timestamp": "2026-10-13T11:30:19.601Z",
+      "platform": "darwin",
+      "architecture": "arm64",
+      "downloadedFileVerified": true,
+      "minimumDisclosureVerified": true,
+      "privateTempDestination": true,
+      "bytes": 2757,
+      "phase": "Before final token/layout additions; share export and download handler unchanged"
+    }
+  },
+  "distribution": {
+    "artifact": "Lingji-0.1.0-alpha.11-macos-arm64.dmg",
+    "sha256": "41cdf76ec42788cecec0c1360b52d9fb790f0edc37bd25b009394cca0a051c43",
+    "sha256Verified": true,
+    "architecture": "arm64",
+    "minimumSystemVersion": "14.6",
+    "bundleVersion": "0.1.11",
+    "signing": "ad-hoc",
+    "notarized": false,
+    "frozenSourceBuild": true,
+    "sourceDirty": false,
+    "validation": {
+      "imageVerified": true,
+      "copiedAppSignatureVerified": true,
+      "productionSmoke": true,
+      "realAudioDevicesTested": false,
+      "realProvidersTested": false,
+      "freshMachineTested": false
+    },
+    "productionSmoke": {
+      "timestamp": "2026-10-13T12:30:02.628Z",
+      "packagedApp": true,
+      "independentBackend": true,
+      "developerBackendRequests": 0,
+      "restartPersistence": true,
+      "stableWebviewProfile": true,
+      "parentOwnsBackend": true,
+      "localAccount": true,
+      "devAccountDisabled": true,
+      "node": "v24.21.0",
+      "sqlite": "3.53.4",
+      "realAudioDevicesOpened": false,
+      "realProvidersInvoked": false
+    }
+  },
+  "boundaries": {
+    "realAudioDevicesTested": false,
+    "realProvidersTested": false,
+    "freshMachineTested": false,
+    "existingClientReplaced": false,
+    "existingServicesRestarted": false,
+    "remotePublished": false,
+    "updaterTrustConfigured": false,
+    "tokenScope": "Confirmed provider minutes usage only; ASR exposes no token counter, audio shows received track duration; no estimates or legacy total rewriting",
+    "permissionScope": "Recurring app alert removed; OS retains/revokes grants. Ad-hoc cross-build grant continuity remains unverified.",
+    "historicalPurgedAudioRecovered": false
+  }
+}

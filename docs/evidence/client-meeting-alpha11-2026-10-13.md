@@ -50,4 +50,12 @@
 
 系统AppKit WKWebView离屏11项DOM、几何与可信输入检查通过。当前桌面会话未将夹具窗口变为可见前台，active=false/key=false/visible=0，document.hidden使CSS动画时间停在0。候选端点截图显式结束有限Web Animations，只能证明最终样式；本轮原生前台动画尚未验证，不能由Chromium动效或历史Alpha9结果替代。
 
-所有原生测试窗口与临时服务已退出。未打开真实音频设备、调用真实供应商或重启当前客户端/API/worker；安装包与最终检查将在发行记录补充。
+所有原生测试窗口与临时服务已退出。未打开真实音频设备、调用真实供应商或重启当前客户端/API/worker。
+
+## 本地发行产物
+
+从固定提交67599ce97a147035736c3e3bbcf10c6252e17957冻结构建，sourceDirty=false；版本0.1.0-alpha.11，构建号0.1.11。产物为dist/releases/0.1.0-alpha.11/Lingji-0.1.0-alpha.11-macos-arm64.dmg，SHA-256为41cdf76ec42788cecec0c1360b52d9fb790f0edc37bd25b009394cca0a051c43，独立复查通过。
+
+DMG完整性、Finder布局/背景、SVG派生图标一致性、复制应用严格签名验证及arm64/macOS14.6最低版本检查通过。临时安装副本生产smoke通过：独立后台、开发后台请求0、重启持久化、稳定WebView profile、本机账户与关闭开发登录。安装副本和挂载已清理，旧版本DMG保留，当前已安装客户端未替换。
+
+仍为ad-hoc签名且未公证，未配置可信自动更新源，只提供本地手动安装。首次全新Mac、真实系统音源授权/撤销、跨版本授权复用和真实ASR/LLM未实测。详细机器可读证据见[Alpha11验证记录](client-meeting-alpha11.json)；构建信息和正式smoke随包保存。
