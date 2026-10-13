@@ -1,0 +1,88 @@
+{
+  "schema": "neohorse-intent-dataset-v2",
+  "preprocessing": {
+    "version": "intent-window-local-v2",
+    "speaker_alias_scope": "window",
+    "context_turns": 2,
+    "redactions_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+    "state_limit": 128,
+    "full_row_limit": 256
+  },
+  "created_at": "2026-10-13T11:00:08.470553+00:00",
+  "policy_sha256": "6129126e8dab58b625502dd6733afb514ae4e8004fdb8c869c4a3a1b142ce2a7",
+  "policy_version": "records-intents-20261012-v1",
+  "training_selection_sha256": "d03ea1a9e74db6de5877d590605cb8367d9f86f10747306af38ac153d7628168",
+  "seed": "intent-v1",
+  "context_turns": 2,
+  "state_limit": 128,
+  "full_row_limit": 256,
+  "record_splits": {
+    "synthetic-dev": "dev",
+    "synthetic-test": "test",
+    "synthetic-train": "train"
+  },
+  "accept_silver": false,
+  "train_limit": 64,
+  "synthetic_inputs_only": true,
+  "counts": {
+    "candidates": 50,
+    "review": 0,
+    "rejected": 0,
+    "train": 30,
+    "dev": 10,
+    "test": 10
+  },
+  "skipped_records": {},
+  "statuses": {
+    "gold": 50
+  },
+  "label_counts": {
+    "train": {
+      "withdrawal:present": 1,
+      "withdrawal:absent": 5,
+      "decision:absent": 5,
+      "proposal:absent": 5,
+      "proposal:present": 1,
+      "decision:present": 1,
+      "action:absent": 5,
+      "action:present": 1,
+      "question:present": 1,
+      "question:absent": 5
+    },
+    "dev": {
+      "proposal:absent": 2,
+      "action:absent": 2,
+      "question:absent": 2,
+      "withdrawal:absent": 1,
+      "decision:absent": 1,
+      "withdrawal:present": 1,
+      "decision:present": 1
+    },
+    "test": {
+      "withdrawal:absent": 2,
+      "question:absent": 2,
+      "decision:absent": 2,
+      "action:absent": 2,
+      "proposal:present": 1,
+      "proposal:absent": 1
+    }
+  },
+  "warnings": [
+    "Weak agreement is not ground truth; teacher identity is declared, not authenticated.",
+    "No automatic negative labels. Review negatives and rare classes.",
+    "Basic redaction is incomplete; inspect outputs before further use.",
+    "Historical snapshots do not reconstruct original online ASR inputs.",
+    "Current LoRA verifier accepts at most 64 rows and is not a full trainer."
+  ],
+  "source_files": [
+    {
+      "file": "intent-records.json",
+      "sha256": "4e22361de16298f61f84afba8c9ba79301c54eba6c03f9b675e08299ace1f210"
+    }
+  ],
+  "tokenizer_files_sha256": {
+    "tokenizer.json": "06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523",
+    "tokenizer_config.json": "bee8eba30f0eb4af73c0fe2cd06d0f89b657d7819941c438157ec42f7c80ea87"
+  },
+  "native_runtime_version": "1.0.0"
+}

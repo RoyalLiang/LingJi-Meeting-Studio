@@ -4,6 +4,8 @@
 
 本轮实现的数据边界记录在 [proposed ADR 0009](../adr/0009-offline-intent-training-data.md)。这是训练数据工具，不包含产品内逐条审核界面、实际教师模型或大规模训练器。
 
+2026-10-13 起输出使用 `neohorse-intent-dataset-v2`，预处理版本为 `intent-window-local-v2`。旧数据版本和训练报告保留；已填写的旧审核／教师标签会被新生成器拒绝，需按新输入重新审核。已有 LoRA 检查点使用旧预处理验证，不能自动视为与 v2 兼容或质量达标。
+
 ## 先生成预标与审核文件
 
 从工作台导出 JSON 备份；现有接口是 `GET /api/records/:id/export?format=json`。支持单条 Record、Record 数组或 `{records: [...]}`，不支持旧 transcript-api 的 replay 格式。选择允许用于训练的记录，将文件放到自己的输入目录。
@@ -120,9 +122,29 @@ cd /home/westwell/ai-labs/neohorse-jev-4b
 
 评测器报告各任务的 TP/TN/FP/FN、准确率、精确率、召回率和 F1；没有对应分母时返回 null。它只对传入标签计分，不验证这些标签是否属于独立人工测试集。应使用 build_dataset 输出的分组和审计核实来源；不要用 test 选择提示或超参数。正式训练仍需独立补齐按轮次打乱、验证集选择、最佳检查点与恢复训练。
 
+## 训练与推理使用同一输入
+
+`intent_inputs.py` 同时为数据生成器和单焦点请求准备入口构造输入。先选择最多两个已结束前文和焦点，再在这个窗口内生成临时说话人别名和邮箱／电话／URL 占位符；上下文超限被移除后重新构造。后续姓名、尚未结束的重叠发言和不在窗口中的实体不会影响当前请求。固定的 `--redact-map` 在两个入口中必须一致。
+
+`S1` 只在当前窗口内表示同一个声音标签，跨窗口可能对应不同说话人；这不会修改 Record 内的说话人身份。姓名脱敏仍不完整：不在窗口说话人标签或固定替换表中的姓名不一定被识别，应审核后再使用。
+
+为未来推理适配器准备请求时，传入一份已确认的单条 Record 快照及焦点片段 ID：
+
+```bash
+.venv/bin/python prepare_intents.py --input inputs/confirmed-record.json \
+  --focus-id segment-id --tokenizer model/tokenizer \
+  --output evidence/prepared-focus-v2.json
+```
+
+输出 `window.requests` 中的五个请求与生成器同一焦点的 `request` 一致；`window.rejected_tasks` 列出超限任务，调用方应弃判。工具只准备请求，不调用模型、不写业务记录。正式 worker 尚未接入这一入口。
+
+manifest 保存上下文条数、脱敏配置哈希、预算、预处理版本、提示策略及 tokenizer 指纹。候选中的 `model_input_hash` 只绑定实际模型 request；审核用 `input_hash` 还绑定来源版本和预处理配置。在既有片段、顺序和时间范围不变时，追加后续片段或修改其正文／姓名不会改变早期模型输入；当前或前文修订则应重新准备。原始 ASR 的迟到、修订和实际可见快照必须另存，完整会后备份仍不能重建历史实时请求。
+
 ## 本轮验证记录
 
-2026-10-12：本机 19 项完整性测试通过；规则优先级用实际 Node `ruleIntents` 对照。合成备份由项目 `exportRecord` 真实函数生成。wgs 使用实际 NeoHorse tokenizer 输出 50 个预标问题，默认训练行数 0；导入合成测试标签后生成 train 30、dev 10、test 10。
+2026-10-13（v2）：本机 28 项完整性测试通过。wgs 使用实际 tokenizer 完成 230 组整场／逐段／回归／CLI 对照，请求、token 数、输入哈希及引用一致。新预标默认训练数为 0，合成标签重新生成后 train/dev/test 为 30/10/10；旧审核标签被拒绝。新产物为 `datasets/intent-window-v2-prelabel-20261013` 和 `datasets/intent-window-v2-reviewed-20261013`。本轮未训练、未调用推理引擎，也未接入产品 worker；证据为 `docs/evidence/intent-dataset/preprocessing-v2-*.json`。
+
+2026-10-12（v1 历史验证）：本机 19 项完整性测试通过；规则优先级用实际 Node `ruleIntents` 对照。合成备份由项目 `exportRecord` 真实函数生成。wgs 使用实际 NeoHorse tokenizer 输出 50 个预标问题，默认训练行数 0；导入合成测试标签后生成 train 30、dev 10、test 10。
 
 生成的训练文件完成真实 LoRA 6 步更新，训练损失 0.503908 → 0.469369；新进程重载权重一致，概率差为 0。最长训练执行行 92 tokens，峰值分配显存 5588.3MiB。独立合成测试集 10 条：原模型 70%，LoRA 后仍为 70%，没有观察到准确率提升。这些数据使用合成标签规范，不是真实会议的人工金标准，也不足以估计模型质量。
 

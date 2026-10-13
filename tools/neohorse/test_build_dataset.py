@@ -1,13 +1,17 @@
 """Dataset integrity tests; real native tokenization/LoRA are validated separately on wgs."""
 import copy
+import contextlib
+import io
 import json
 import pathlib
 import subprocess
 import tempfile
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import build_dataset as ds
+import intent_inputs as inputs
+import prepare_intents as inference
 
 POLICY = json.loads((pathlib.Path(__file__).parent / "intent_policy.json").read_text())
 
@@ -23,6 +27,131 @@ def budget(request):
 
 
 class DatasetTests(unittest.TestCase):
+    def test_full_record_and_every_inference_prefix_have_identical_inputs(self):
+        r = record(text="请王伟跟进接口文档。")
+        r["segments"][0].update(speakerId="host", speaker="主持人")
+        for i, text in enumerate(["联系 first@example.org。", "我来确认，网址 https://example.org。", "为什么要取消？", "决定保留原方案。"], 1):
+            r["segments"].append({"id": f"s{i+1}", "revision": 1, "speakerId": f"person-{i%2}",
+                                  "speaker": "王伟" if i % 2 else "李明", "text": text,
+                                  "startMs": i * 2000, "endMs": i * 2000 + 1000})
+        r["transcriptRevision"] = 9
+        for turns in (0, 1, 2, 4):
+            dataset, _ = self.prepare([r], context_turns=turns)
+            for index, segment in enumerate(r["segments"]):
+                prefix = copy.deepcopy(r)
+                prefix["segments"] = prefix["segments"][:index + 1]
+                prefix["transcriptRevision"] = index + 1
+                window = inputs.prepare_intent_windows(prefix, POLICY, budget, context_turns=turns, focus_id=segment["id"])[0]
+                rows = [row for row in dataset["candidates.jsonl"] if row["source"]["focus"]["segmentId"] == segment["id"]]
+                for row in rows:
+                    kind = row["task"]
+                    self.assertEqual(row["request"], window["requests"][kind])
+                    self.assertEqual(row["tokens"], window["tokens"][kind])
+                    self.assertEqual(row["model_input_hash"], window["model_input_hashes"][kind])
+                    self.assertEqual(row["source"]["evidence"], window["evidence"])
+
+    def test_trimming_rebuilds_aliases_and_entity_placeholders(self):
+        r = record(text="背景" * 60 + " first@example.org")
+        r["segments"][0].update(speakerId="old", speaker="张三")
+        focus = {"id": "s2", "revision": 1, "speakerId": "new", "speaker": "李明",
+                 "text": "联系 second@example.org。", "startMs": 2000, "endMs": 3000}
+        r["segments"].append(focus)
+        full = inputs.prepare_intent_windows(r, POLICY, budget, focus_id="s2")[0]
+        one = inputs.prepare_intent_windows({**r, "segments": [focus]}, POLICY, budget, focus_id="s2")[0]
+        self.assertEqual(full["requests"], one["requests"])
+        self.assertEqual(full["evidence"], [{"segmentId": "s2", "revision": 1}])
+        self.assertIn("[S1]", full["requests"]["action"]["state"])
+        self.assertIn("[EMAIL_1]", full["requests"]["action"]["state"])
+
+    def test_future_revision_does_not_change_prior_requests(self):
+        r = record(text="请王伟跟进。")
+        r["segments"].append({"id": "s2", "revision": 1, "speakerId": "later", "speaker": "王伟",
+                              "text": "今天讨论。", "startMs": 2000, "endMs": 3000})
+        before = inputs.prepare_intent_windows(r, POLICY, budget, focus_id="s1")[0]
+        r["transcriptRevision"] += 1
+        r["segments"][1].update(revision=2, speaker="李明", text="新的修订资料 first@example.org。")
+        after = inputs.prepare_intent_windows(r, POLICY, budget, focus_id="s1")[0]
+        self.assertEqual(before, after)
+
+    def test_v2_contract_invalidates_legacy_annotations(self):
+        data, info = self.prepare()
+        sample = data["candidates.jsonl"][0]
+        self.assertEqual(info["schema"], "neohorse-intent-dataset-v2")
+        self.assertEqual(info["preprocessing"]["version"], inputs.PREPROCESSING_VERSION)
+        legacy = self.review(sample)
+        legacy["sample_id"] = ds.digest({"source": sample["source"], "task": sample["task"], "policy": ds.digest(POLICY)})
+        with self.assertRaisesRegex(ValueError, "sample_id"):
+            self.prepare(reviews=[legacy])
+        _, changed = self.prepare(redactions={"未出现": "替换"})
+        self.assertNotEqual(info["preprocessing"], changed["preprocessing"])
+        with self.assertRaisesRegex(ValueError, "sample_id"):
+            self.prepare(reviews=[self.review(sample)], redactions={"未出现": "替换"})
+
+    def test_single_focus_cli_matches_dataset_and_preserves_output(self):
+        r = record(text="张三请联系 user@example.org。")
+        r["segments"][0].update(speakerId="person", speaker="张三")
+        data, info = self.prepare([r])
+        with tempfile.TemporaryDirectory() as directory:
+            directory = pathlib.Path(directory)
+            source, output = directory / "record.json", directory / "prepared.json"
+            source.write_text(json.dumps(r))
+            args = ["--input", str(source), "--focus-id", "s1", "--output", str(output)]
+            with patch.object(inference, "NativeBudget", return_value=budget), patch.object(inference, "native_metadata", return_value={}), contextlib.redirect_stdout(io.StringIO()):
+                inference.main(args)
+                saved = output.read_bytes()
+                with self.assertRaises(FileExistsError):
+                    inference.main(args)
+                self.assertEqual(output.read_bytes(), saved)
+            prepared = json.loads(saved)
+            self.assertEqual(prepared["preprocessing"], info["preprocessing"])
+            self.assertEqual(prepared["policy_sha256"], info["policy_sha256"])
+            self.assertEqual(output.stat().st_mode & 0o777, 0o600)
+            for sample in data["candidates.jsonl"]:
+                self.assertEqual(sample["request"], prepared["window"]["requests"][sample["task"]])
+
+    def test_inference_preparation_validates_focus_and_shared_limits(self):
+        with self.assertRaisesRegex(ValueError, "focus_id"):
+            inputs.prepare_intent_windows(record(), POLICY, budget, focus_id="missing")
+        with self.assertRaisesRegex(ValueError, "context_turns"):
+            inputs.prepare_intent_windows(record(), POLICY, budget, context_turns=5)
+        r = record(text="长" * 200)
+        window = inputs.prepare_intent_windows(r, POLICY, budget, focus_id="s1")[0]
+        rejected, _ = self.prepare([r])
+        self.assertEqual(set(window["rejected_tasks"]), {row["task"] for row in rejected["rejected.jsonl"]})
+
+    def test_future_speaker_name_cannot_change_earlier_model_input(self):
+        prefix = record(text="请王伟跟进接口文档。")
+        prefix["segments"][0].update(speakerId="host", speaker="主持人")
+        full = copy.deepcopy(prefix)
+        full["segments"].append({"id": "s2", "revision": 1, "speakerId": "guest", "speaker": "王伟",
+                                 "text": "我稍后处理。", "startMs": 2000, "endMs": 3000})
+        before, _ = self.prepare([prefix])
+        after, _ = self.prepare([full])
+        earlier = [row for row in after["candidates.jsonl"] if row["source"]["focus"]["segmentId"] == "s1"]
+        self.assertEqual([row["request"] for row in before["candidates.jsonl"]], [row["request"] for row in earlier])
+
+    def test_overlapping_later_speech_cannot_supply_names(self):
+        prefix = record(text="请王伟跟进。")
+        prefix["segments"][0].update(startMs=1000, endMs=2000)
+        full = copy.deepcopy(prefix)
+        full["segments"].insert(0, {"id": "long", "revision": 1, "speakerId": "guest", "speaker": "王伟",
+                                    "text": "稍后才结束的另一音源。", "startMs": 0, "endMs": 5000})
+        before, _ = self.prepare([prefix])
+        after, _ = self.prepare([full])
+        earlier = [row for row in after["candidates.jsonl"] if row["source"]["focus"]["segmentId"] == "s1"]
+        self.assertEqual([row["request"] for row in before["candidates.jsonl"]], [row["request"] for row in earlier])
+
+    def test_unused_history_cannot_renumber_current_window_entities(self):
+        r = record(text="联系 first@example.org。")
+        r["segments"] += [{"id": "s2", "revision": 1, "text": "继续联系 second@example.org。", "speaker": "",
+                           "startMs": 2000, "endMs": 3000}]
+        full, _ = self.prepare([r], context_turns=0)
+        focus_only = copy.deepcopy(r)
+        focus_only["segments"] = [focus_only["segments"][1]]
+        one, _ = self.prepare([focus_only], context_turns=0)
+        focus = [row for row in full["candidates.jsonl"] if row["source"]["focus"]["segmentId"] == "s2"]
+        self.assertEqual([row["request"] for row in one["candidates.jsonl"]], [row["request"] for row in focus])
+
     def test_empty_record_is_skipped_without_negative_examples(self):
         r = record()
         r["segments"] = []

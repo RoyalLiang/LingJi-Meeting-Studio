@@ -162,6 +162,8 @@ ssh -N -L 18081:127.0.0.1:18081 wgs
 
 已提供离线预标、逐条审核文件导入、分组隔离与 JSONL 导出工具。它复用会议 JSON 备份和五类讨论语义，输出可追溯来源；默认不把规则结果当作真值。使用步骤、离线教师格式与真实验证边界见[项目意图数据集说明](intent-dataset.md)。
 
+当前数据工具使用 v2 窗口预处理；`intent_inputs.py` 与 `prepare_intents.py` 已同步到实验目录，数据生成和单焦点请求准备共用同一逻辑。旧标签需重新审核；上文 LoRA 结果属于 v1 历史验证，不自动证明 v2 下的质量。本轮修复没有训练新适配器，也没有启动推理服务。
+
 ## 来源和边界
 
 - [作者模型与许可证](https://huggingface.co/TokenRhythm/NeoHorse-Jev-4B)：Apache-2.0；原运行时的 LICENSE/NOTICE 随模型保留。

@@ -1,0 +1,133 @@
+{
+  "format": "neohorse-intent-input-v2",
+  "recordId": "synthetic-train",
+  "transcriptRevision": 2,
+  "preprocessing": {
+    "version": "intent-window-local-v2",
+    "speaker_alias_scope": "window",
+    "context_turns": 2,
+    "redactions_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+    "state_limit": 128,
+    "full_row_limit": 256
+  },
+  "policy_sha256": "6129126e8dab58b625502dd6733afb514ae4e8004fdb8c869c4a3a1b142ce2a7",
+  "window": {
+    "focus": {
+      "segmentId": "train-1",
+      "revision": 1
+    },
+    "evidence": [
+      {
+        "segmentId": "train-0",
+        "revision": 1
+      },
+      {
+        "segmentId": "train-1",
+        "revision": 1
+      }
+    ],
+    "focus_text": "决定采用方案A。",
+    "requests": {
+      "decision": {
+        "state": "[前文][S1]建议先试用方案A。\n[当前发言][S1]决定采用方案A。",
+        "questions": {
+          "decision": {
+            "type": "choice",
+            "instructions": "当前发言是否表达已经明确作出的决定？提议和条件假设不算已作出的决定。",
+            "criteria": {
+              "present": "存在该类讨论意图",
+              "absent": "不存在该类讨论意图"
+            }
+          }
+        }
+      },
+      "action": {
+        "state": "[前文][S1]建议先试用方案A。\n[当前发言][S1]决定采用方案A。",
+        "questions": {
+          "action": {
+            "type": "choice",
+            "instructions": "当前发言是否包含明确的待办、责任分工或跟进事项？只识别行动候选，不代表承诺或执行授权。",
+            "criteria": {
+              "present": "存在该类讨论意图",
+              "absent": "不存在该类讨论意图"
+            }
+          }
+        }
+      },
+      "proposal": {
+        "state": "[前文][S1]建议先试用方案A。\n[当前发言][S1]决定采用方案A。",
+        "questions": {
+          "proposal": {
+            "type": "choice",
+            "instructions": "当前发言是否提出供讨论的方案或建议？",
+            "criteria": {
+              "present": "存在该类讨论意图",
+              "absent": "不存在该类讨论意图"
+            }
+          }
+        }
+      },
+      "question": {
+        "state": "[前文][S1]建议先试用方案A。\n[当前发言][S1]决定采用方案A。",
+        "questions": {
+          "question": {
+            "type": "choice",
+            "instructions": "当前发言是否提出需要回答或澄清的问题？",
+            "criteria": {
+              "present": "存在该类讨论意图",
+              "absent": "不存在该类讨论意图"
+            }
+          }
+        }
+      },
+      "withdrawal": {
+        "state": "[前文][S1]建议先试用方案A。\n[当前发言][S1]决定采用方案A。",
+        "questions": {
+          "withdrawal": {
+            "type": "choice",
+            "instructions": "当前发言是否明确否定、取消或撤回某个事项？",
+            "criteria": {
+              "present": "存在该类讨论意图",
+              "absent": "不存在该类讨论意图"
+            }
+          }
+        }
+      }
+    },
+    "tokens": {
+      "decision": {
+        "state": 27,
+        "row": 66
+      },
+      "action": {
+        "state": 27,
+        "row": 73
+      },
+      "proposal": {
+        "state": 27,
+        "row": 58
+      },
+      "question": {
+        "state": 27,
+        "row": 58
+      },
+      "withdrawal": {
+        "state": 27,
+        "row": 60
+      }
+    },
+    "model_input_hashes": {
+      "decision": "82b32247d26060e2e0025cc1bdc3eee5ae6a87feb1b76b1c8535a9655f22d65e",
+      "action": "7c00be806dee8a7361bff8b644e2ab2e29a606891cc3035f9bcb7afa7b117e3e",
+      "proposal": "5ad1388f5e2c0f32d670f656561fcbc943f4627396190aa5af5e5de71e5c7260",
+      "question": "7ca57a9abcc45c182711273c75496fb84d3276890bb8911aad6e4acc394eeb79",
+      "withdrawal": "b9c9425a0c0001411f42a7ba7d8ee10f266921727e79d0f2e26f9947858a0859"
+    },
+    "rejected_tasks": {}
+  },
+  "tokenizer_files_sha256": {
+    "tokenizer.json": "06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523",
+    "tokenizer_config.json": "bee8eba30f0eb4af73c0fe2cd06d0f89b657d7819941c438157ec42f7c80ea87"
+  },
+  "native_runtime_version": "1.0.0"
+}

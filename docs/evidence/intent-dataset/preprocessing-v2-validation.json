@@ -1,0 +1,64 @@
+{
+  "verified_utc": "2026-10-13T11:00:15.141197+00:00",
+  "host": "wgs",
+  "synthetic_only": true,
+  "preprocessing_version": "intent-window-local-v2",
+  "native_comparisons": 230,
+  "requests_equal": true,
+  "tokens_equal": true,
+  "model_hashes_equal": true,
+  "evidence_equal": true,
+  "legacy_reviews_rejected": true,
+  "reviewed_split_counts": {
+    "train": 30,
+    "dev": 10,
+    "test": 10
+  },
+  "prelabel_train_count": 0,
+  "local_unit_tests": 28,
+  "regressions": [
+    "future speaker name",
+    "future revision",
+    "overlapping later speech",
+    "unused prior PII",
+    "trimmed prior mapping"
+  ],
+  "native_metadata": {
+    "tokenizer_files_sha256": {
+      "tokenizer.json": "06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523",
+      "tokenizer_config.json": "bee8eba30f0eb4af73c0fe2cd06d0f89b657d7819941c438157ec42f7c80ea87"
+    },
+    "native_runtime_version": "1.0.0"
+  },
+  "source_files": [
+    {
+      "file": "intent-records.json",
+      "sha256": "4e22361de16298f61f84afba8c9ba79301c54eba6c03f9b675e08299ace1f210"
+    }
+  ],
+  "code_sha256": {
+    "build_dataset.py": "1a3836f884ba309b68ff02236eda8688f3116e60735ae3652515ba7af1e5f62e",
+    "intent_inputs.py": "6866b8de893e7d0c736e39432681bd24beebfe7c04251593178512875d6ad266",
+    "prepare_intents.py": "1ba076ec819879daeee0a42e46ed529eb42143bbd7994f6a6a5fc7f4ab293cc2",
+    "intent_policy.json": "6e8e34524df1eab9f46d99593761da44a0db9b2f588a366dd7d93dbab906a532"
+  },
+  "fixture_sha256": {
+    "intent-allowed.json": "31f38563e9f503514117996e46d22d7e95a42f2f0925e7d997bb864afa5a005d",
+    "intent-labels.json": "cee4bd67e29dc0705f51710e72c0bd6de7d6834ba0d3d85366b1aa43c1829358",
+    "intent-records.json": "4e22361de16298f61f84afba8c9ba79301c54eba6c03f9b675e08299ace1f210",
+    "intent-splits.json": "719f086eaf13191c0781d76e8630f09982257136b028204cd6659438fe407361"
+  },
+  "dataset_sha256": {
+    "train": "afd135af70e6a743c2808227e02f760cd6813873647694250d5a888535c630bf",
+    "dev": "52c5d7cb96e039d2796b227581257756917bb24d6725fdf41c473f0dd39413cf",
+    "test": "6011e5066f31166282a280d3a08deb95db8da9a6769fdca2243180198a8838e5"
+  },
+  "prelabel_directory": "/home/westwell/ai-labs/neohorse-jev-4b/datasets/intent-window-v2-prelabel-20261013",
+  "reviewed_directory": "/home/westwell/ai-labs/neohorse-jev-4b/datasets/intent-window-v2-reviewed-20261013",
+  "prepared_request_sha256": "91167ddf4f9efa9da5e4f6506187cabc734e29cb74dec608c554219d497c9d1d",
+  "private_permissions_verified": true,
+  "model_inference_called": false,
+  "training_run": false,
+  "production_integrated": false,
+  "gpu_idle": "NVIDIA GeForce RTX 4060 Ti, 559 MiB, 7377 MiB"
+}
