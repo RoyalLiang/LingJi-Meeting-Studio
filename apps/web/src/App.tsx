@@ -26,7 +26,7 @@ import { TranslationPanel } from './components/TranslationPanel';
 import { MinutesPanel } from './components/Minutes';
 import { CurrentDiscussion } from './components/CurrentDiscussion';
 import { Notes } from './components/Notes';
-import { CaptureController, capabilities, importAudio, type CaptureIssue } from './audio/capture';
+import { CaptureController, capabilities, importAudio, type CaptureIssue } from './audio/controller';
 import type { CaptureSignal } from './audio/signal';
 import { clearRecordAudio, drainQueue, localManifests, pendingCount, setQueueRecords, downloadPendingAudio } from './audio/queue';
 

@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "node ./src/shell-server.mjs",
     "dev:preview": "node ./src/shell-server.mjs",
-    "dev:mock": "node ./src/mock-client.mjs"
+    "dev:mock": "node ./src/mock-client.mjs",
+    "dev:native": "tauri dev",
+    "build:native": "tauri build"
   }
 }
