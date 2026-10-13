@@ -78,6 +78,50 @@ impl Proxy {
     pub fn router(self) -> Router {
         Router::new().fallback(handle).with_state(self)
     }
+    pub async fn update_barrier(&self) -> Result<(), String> {
+        let request = self
+            .client
+            .get(format!("{}/api/client/update-barrier", self.upstream))
+            .timeout(std::time::Duration::from_secs(10));
+        let response = request
+            .send()
+            .await
+            .map_err(|_| "无法核对服务端音频状态，暂不安装更新")?;
+        if response.status() == StatusCode::UNAUTHORIZED {
+            return Err("请重新登录后安装更新".into());
+        }
+        if !response.status().is_success() {
+            return Err("服务端安全更新接口不可用，请先更新后端并重试".into());
+        }
+        if response.content_length().is_some_and(|n| n > 524_288) {
+            return Err("服务端安全状态超过限制".into());
+        }
+        let mut response = response;
+        let mut data = Vec::new();
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|_| "服务端安全状态读取失败")?
+        {
+            if data.len() + chunk.len() > 524_288 {
+                return Err("服务端安全状态超过限制".into());
+            }
+            data.extend(chunk);
+        }
+        let value: serde_json::Value =
+            serde_json::from_slice(&data).map_err(|_| "服务端安全状态格式无效")?;
+        if value["protocol"] != 1 {
+            return Err("服务端安全更新协议不兼容".into());
+        }
+        let records = value["records"].as_array().ok_or("服务端安全状态不完整")?;
+        if records.len() > 200 {
+            return Err("服务端会议数量超过检查限制".into());
+        }
+        for record in records {
+            crate::update_gate::server_record_safe(record)?;
+        }
+        Ok(())
+    }
 }
 
 async fn handle(State(proxy): State<Proxy>, request: Request<Body>) -> Response<Body> {
@@ -300,6 +344,7 @@ mod tests {
         });
         let browser = reqwest::Client::builder()
             .cookie_store(true)
+            .no_proxy()
             .build()
             .unwrap();
         assert_eq!(

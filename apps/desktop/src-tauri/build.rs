@@ -1,4 +1,6 @@
 fn main() {
+    println!("cargo:rerun-if-env-changed=TTS_UPDATER_ENDPOINT");
+    println!("cargo:rerun-if-env-changed=TTS_UPDATER_PUBLIC_KEY");
     const COMMANDS: &[&str] = &[
         "capture_start",
         "capture_read",
@@ -7,6 +9,11 @@ fn main() {
         "client_close",
         "client_ready",
         "client_status",
+        "update_status",
+        "update_activity",
+        "update_check",
+        "update_download",
+        "update_install",
     ];
     const PROBE_COMMANDS: &[&str] = &[
         "capture_start",
@@ -16,6 +23,11 @@ fn main() {
         "client_close",
         "client_ready",
         "client_status",
+        "update_status",
+        "update_activity",
+        "update_check",
+        "update_download",
+        "update_install",
         "client_probe",
     ];
     let commands = if std::env::var_os("CARGO_FEATURE_SMOKE_TEST").is_some() {

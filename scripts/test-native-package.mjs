@@ -19,9 +19,10 @@ try {
   const bytes = await readFile(binary);
   assert.equal(bytes.includes(Buffer.from('合成音源 · 不采集真实设备')), false);
   assert.equal(bytes.includes(Buffer.from('native-fixture@local.test')), false);
+  for (const marker of ['TTS_UPDATE_TEST_URL', 'TTS_UPDATE_TEST_EXECUTABLE', 'sandboxInstall']) assert.equal(bytes.includes(Buffer.from(marker)), false, marker);
   child = spawn(binary, [], { env: { PATH: process.env.PATH, HOME: process.env.HOME, TMPDIR: process.env.TMPDIR,
     TTS_CLIENT_DATA_DIR: join(root, 'client'), TTS_RECORD_API_URL: `http://127.0.0.1:${server.address().port}`,
-    TTS_CLIENT_SYNTHETIC: '1', TTS_CLIENT_PROBE_OUTPUT: output }, stdio: ['ignore', 'pipe', 'pipe'] });
+    TTS_CLIENT_SYNTHETIC: '1', TTS_CLIENT_PROBE_OUTPUT: output, TTS_UPDATE_TEST_URL: 'http://127.0.0.1:1/manifest', TTS_UPDATE_TEST_EXECUTABLE: '/must-not-be-used' }, stdio: ['ignore', 'pipe', 'pipe'] });
   for (const stream of [child.stdout, child.stderr]) stream.on('data', bytes => { logs = (logs + bytes).slice(-6000); });
   for (let n = 0; n < 300 && !bootstrap; n++) {
     if (child.exitCode != null) throw new Error(`Packaged client exited ${child.exitCode}: ${logs}`);

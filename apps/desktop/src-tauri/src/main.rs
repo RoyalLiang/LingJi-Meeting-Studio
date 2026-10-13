@@ -5,6 +5,8 @@ mod menu_status;
 mod proxy;
 #[cfg(target_os = "macos")]
 mod status_bar;
+mod update_gate;
+mod updates;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
     Arc,
@@ -23,6 +25,8 @@ struct Client {
     ready: AtomicBool,
     close_serial: AtomicU64,
     _lock: std::fs::File,
+    updates: updates::Updates,
+    api: proxy::Proxy,
 }
 
 fn authorize(window: &WebviewWindow, state: &Client) -> Result<(), String> {
@@ -47,6 +51,7 @@ async fn capture_start(
     device_id: Option<String>,
 ) -> Result<audio::Started, String> {
     authorize(&window, &state)?;
+    let _permission = state.updates.gate.capture()?;
     if !["display", "microphone"].contains(&kind.as_str()) {
         return Err("未知音源".into());
     }
@@ -156,6 +161,13 @@ fn client_probe(
     result: serde_json::Value,
 ) -> Result<(), String> {
     authorize(&window, &state)?;
+    if let Some(activity) = result.get("updateActivity") {
+        state
+            .updates
+            .gate
+            .report(serde_json::from_value(activity.clone()).map_err(|e| e.to_string())?);
+        return Ok(());
+    }
     let path =
         std::env::var("TTS_CLIENT_PROBE_OUTPUT").map_err(|_| "probe output not configured")?;
     std::fs::write(path, serde_json::to_vec_pretty(&result).unwrap()).map_err(|e| e.to_string())
@@ -168,6 +180,9 @@ async fn client_close(
     force: bool,
 ) -> Result<(), String> {
     authorize(&window, &state)?;
+    if state.updates.gate.installing() {
+        return Err("更新正在安装，请稍候".into());
+    }
     state.close_serial.fetch_add(1, Ordering::AcqRel);
     if force || state.captures.active() || menu_has_pending(&state) {
         let dialog = window.dialog().message("录音或补传尚未完成。请先在会议中暂停或结束，并等待补传完成。\n强制关闭会停止原生采集，尚未保存的末尾音频可能丢失。已持久化的片段会在重启并重新登录同一服务后保留。").title("录音尚未完成")
@@ -183,8 +198,57 @@ async fn client_close(
     window.destroy().map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn update_status(
+    window: WebviewWindow,
+    state: State<'_, Client>,
+) -> Result<updates::Status, String> {
+    authorize(&window, &state)?;
+    Ok(state.updates.status())
+}
+#[tauri::command]
+fn update_activity(
+    window: WebviewWindow,
+    state: State<'_, Client>,
+    activity: update_gate::Activity,
+) -> Result<(), String> {
+    authorize(&window, &state)?;
+    #[cfg(feature = "smoke-test")]
+    if std::env::var_os("TTS_UPDATE_TEST_CASE").is_some() {
+        return Ok(());
+    }
+    state.updates.gate.report(activity);
+    Ok(())
+}
+#[tauri::command]
+async fn update_check(
+    window: WebviewWindow,
+    state: State<'_, Client>,
+) -> Result<updates::Status, String> {
+    authorize(&window, &state)?;
+    state.updates.check(window.app_handle()).await
+}
+#[tauri::command]
+async fn update_download(
+    window: WebviewWindow,
+    state: State<'_, Client>,
+) -> Result<updates::Status, String> {
+    authorize(&window, &state)?;
+    state.updates.download(window.app_handle()).await
+}
+#[tauri::command]
+async fn update_install(window: WebviewWindow, state: State<'_, Client>) -> Result<(), String> {
+    authorize(&window, &state)?;
+    state
+        .updates
+        .install(window.app_handle(), &state.captures, &state.api)
+        .await
+}
+
 fn main() {
-    let builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build());
     #[cfg(feature = "smoke-test")]
     let builder = builder.invoke_handler(tauri::generate_handler![
         capture_start,
@@ -193,6 +257,11 @@ fn main() {
         capture_inputs,
         client_ready,
         client_status,
+        update_status,
+        update_activity,
+        update_check,
+        update_download,
+        update_install,
         client_close,
         client_probe
     ]);
@@ -204,6 +273,11 @@ fn main() {
         capture_inputs,
         client_ready,
         client_status,
+        update_status,
+        update_activity,
+        update_check,
+        update_download,
+        update_install,
         client_close
     ]);
     builder
@@ -219,6 +293,9 @@ fn main() {
             let menu_api_origin = config.api_url.clone();
             let proxy = proxy::Proxy::new(config.api_url, origin.clone(), assets)?;
             let startup_url = proxy.startup_url();
+            let api = proxy.clone();
+            let cache = directory.join("updates"); std::fs::create_dir_all(&cache)?;
+            let updates = updates::Updates::new(app.package_info().version.to_string(), cache);
             let listener = binding.listener;
             tauri::async_runtime::spawn(async move {
                 let listener = tokio::net::TcpListener::from_std(listener).expect("client loopback listener");
@@ -228,22 +305,26 @@ fn main() {
             let menu_bar = status_bar::StatusBar::new(app.handle(), &menu_api_origin)?;
             app.manage(Client {
                 #[cfg(target_os = "macos")]
-                menu_bar, origin: origin.clone(), captures: Arc::new(audio::Captures::default()), ready: AtomicBool::new(false), close_serial: AtomicU64::new(0), _lock: binding._lock });
+                menu_bar, origin: origin.clone(), captures: Arc::new(audio::Captures::default()), ready: AtomicBool::new(false), close_serial: AtomicU64::new(0), _lock: binding._lock, updates, api });
             app.add_capability(CapabilityBuilder::new("local-capture").window("main").local(false).remote(format!("{origin}/*"))
                 .permission("allow-capture-start").permission("allow-capture-read").permission("allow-capture-stop").permission("allow-capture-inputs")
-                .permission("allow-client-close").permission("allow-client-ready").permission("allow-client-status")
+                .permission("allow-client-close").permission("allow-client-ready").permission("allow-client-status").permission("allow-update-status").permission("allow-update-activity").permission("allow-update-check").permission("allow-update-download").permission("allow-update-install")
                 .permission("core:event:allow-listen").permission("core:event:allow-unlisten"))?;
             #[cfg(feature = "smoke-test")]
             app.add_capability(CapabilityBuilder::new("probe-only").window("main").local(false).remote(format!("{origin}/*")).permission("allow-client-probe"))?;
             let client_origin = origin.clone(); let nav_handle = app.handle().clone();
             let builder = tauri::WebviewWindowBuilder::new(app, "main", WebviewUrl::External(startup_url.parse()?))
                 .title("聆记 · Meeting Studio").inner_size(1280.0, 900.0).min_inner_size(760.0, 600.0)
-                .on_navigation(move |url| url.origin().ascii_serialization() == client_origin && !nav_handle.state::<Client>().captures.active())
+                .on_navigation(move |url| url.origin().ascii_serialization() == client_origin && !nav_handle.state::<Client>().captures.active() && !nav_handle.state::<Client>().updates.gate.installing())
                 .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny);
             #[cfg(feature = "smoke-test")]
             let builder = builder.on_page_load(|window, payload| {
                 if payload.event() == tauri::webview::PageLoadEvent::Finished && std::env::var_os("TTS_CLIENT_PROBE_OUTPUT").is_some() {
-                    let _ = window.eval(include_str!("probe.js"));
+                    let case = std::env::var("TTS_UPDATE_TEST_CASE").unwrap_or_default();
+                    if !case.is_empty() {
+                        let script = format!("window.__updateCase={};{}", serde_json::to_string(&case).unwrap(), include_str!("update_probe.js"));
+                        let _ = window.eval(&script);
+                    } else { let _ = window.eval(include_str!("probe.js")); }
                 }
             });
             #[cfg(target_os = "macos")]
@@ -275,6 +356,7 @@ fn main() {
                     let window = window.clone();
                     tauri::async_runtime::spawn(async move {
                         tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                        if window.state::<Client>().updates.gate.installing() { return; }
                         if window.state::<Client>().close_serial.load(Ordering::Acquire) != serial { return; }
                         let dialog = window.dialog().message("会议页面未响应关闭请求。强制关闭可能丢失尚未保存的末尾音频；已保存的片段会保留。")
                             .buttons(MessageDialogButtons::OkCancelCustom("强制关闭".into(), "取消".into()));
@@ -285,5 +367,15 @@ fn main() {
                 }
             }
         })
-        .run(tauri::generate_context!()).expect("TTS desktop runtime");
+        .run(client_context()).expect("TTS desktop runtime");
+}
+
+fn client_context() -> tauri::Context<tauri::Wry> {
+    #[allow(unused_mut)]
+    let mut context = tauri::generate_context!();
+    #[cfg(feature = "smoke-test")]
+    if std::env::var("TTS_UPDATE_TEST_URL").is_ok_and(|url| url.starts_with("http://127.0.0.1:")) {
+        context.config_mut().plugins.0.insert("updater".into(), serde_json::json!({"dangerousInsecureTransportProtocol":true,"requireSignedVersion":true,"pubkey":""}));
+    }
+    context
 }
