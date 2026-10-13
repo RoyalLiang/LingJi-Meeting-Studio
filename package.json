@@ -19,7 +19,7 @@
     "dev:ai": "node ./services/ai-worker/src/worker.mjs",
     "db:migrate:transcript": "node ./services/transcript-api/src/migrate.mjs",
     "lint": "eslint services/records/src packages/records/src scripts tests/records*.mjs apps/web/src/production-server.mjs",
-    "test": "node --test --test-concurrency=1 ./tests/memory-smoke.test.mjs ./tests/provider-and-desktop-preview.test.mjs ./tests/domain-and-components.test.mjs ./tests/records.test.mjs ./tests/records-resilience.test.mjs ./tests/records-providers.test.mjs ./tests/records-streaming.test.mjs ./tests/records-automation.test.mjs ./tests/records-speakers.test.mjs ./tests/records-realtime.test.mjs ./tests/records-capture.test.mjs ./tests/records-minutes-views.test.mjs ./tests/records-workbench-ux.test.mjs ./tests/records-lifecycle.test.mjs ./tests/records-settings-quality.test.mjs ./tests/records-live-reading.test.mjs ./tests/records-workspaces.test.mjs ./tests/records-telemetry.test.mjs ./tests/records-projections.test.mjs ./tests/records-queue.test.mjs ./tests/records-minutes-pipeline.test.mjs",
+    "test": "node --test --test-concurrency=1 ./tests/memory-smoke.test.mjs ./tests/provider-and-desktop-preview.test.mjs ./tests/domain-and-components.test.mjs ./tests/records.test.mjs ./tests/records-resilience.test.mjs ./tests/records-providers.test.mjs ./tests/records-streaming.test.mjs ./tests/records-automation.test.mjs ./tests/records-speakers.test.mjs ./tests/records-realtime.test.mjs ./tests/records-capture.test.mjs ./tests/records-minutes-views.test.mjs ./tests/records-workbench-ux.test.mjs ./tests/records-lifecycle.test.mjs ./tests/records-settings-quality.test.mjs ./tests/records-live-reading.test.mjs ./tests/records-workspaces.test.mjs ./tests/records-telemetry.test.mjs ./tests/records-projections.test.mjs ./tests/records-queue.test.mjs ./tests/records-minutes-pipeline.test.mjs ./tests/records-native-client.test.mjs",
     "test:smoke": "node --test --test-concurrency=1 ./tests/memory-smoke.test.mjs ./tests/provider-and-desktop-preview.test.mjs ./tests/domain-and-components.test.mjs",
     "test:domain": "node --test ./tests/domain-and-components.test.mjs",
     "test:postgres": "node --test --test-concurrency=1 ./tests/postgres-smoke.test.mjs",
@@ -32,7 +32,10 @@
     "test:records": "node --test --test-concurrency=1 tests/records.test.mjs tests/records-resilience.test.mjs tests/records-providers.test.mjs",
     "start": "node scripts/dev.mjs --production",
     "test:records:postgres": "node --test tests/records-postgres.test.mjs",
-    "check:docs": "node scripts/check-docs.mjs"
+    "check:docs": "node scripts/check-docs.mjs",
+    "dev:client": "npm run build:web && npm run dev:native -w apps/desktop",
+    "build:client": "npm run build:web && npm run build:native -w apps/desktop",
+    "test:client": "node --test tests/records-native-client.test.mjs && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml"
   },
   "dependencies": {
     "protobufjs": "^8.0.0",
@@ -41,6 +44,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@tailwindcss/cli": "^4.2.2",
+    "@tauri-apps/cli": "2.12.2",
     "eslint": "^10.12.0",
     "fake-indexeddb": "^6.2.5",
     "globals": "^17.13.0",

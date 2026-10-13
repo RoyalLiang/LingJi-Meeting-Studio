@@ -1,0 +1,12 @@
+{
+  "timestamp": "2026-10-13T03:36:38.654Z",
+  "platform": "darwin",
+  "architecture": "arm64",
+  "productionBundleStarted": true,
+  "embeddedReactRequestedBootstrap": true,
+  "fixtureCodeAbsent": true,
+  "fixtureEnvironmentIgnored": true,
+  "binaryBytes": 11741056,
+  "realAudioDevicesOpened": false,
+  "realProvidersInvoked": false
+}

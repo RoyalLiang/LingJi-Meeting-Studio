@@ -1,3 +1,4 @@
+import { isTauri } from '@tauri-apps/api/core';
 import { Headphones, Microphone, MicrophoneSlash, Play, Plus, Record, Square, FileAudio } from '@phosphor-icons/react';
 import type { RecordDetail } from '../model';
 import type { CaptureSignal } from '../audio/signal';
@@ -26,6 +27,6 @@ export function MeetingControls({ record, recording, busy, ready, signals, start
       </div>
     </div>
     {recording && <div className="meeting-source-strip"><CaptureSignals signals={signals}/><span className="source-scope-note">{microphoneOn ? '麦克风独立录音；会议软件静音不会关闭此音源' : '仅系统／会议音频 · 麦克风未开启'}</span></div>}
-    {!recording && !ended && !paused && <p className="meeting-entry-note">默认接入麦克风和系统／会议音频。请在浏览器中选择共享来源并开启声音共享；麦克风可单独关闭。{record.autoMinutes?.enabled && '本场已开启 AI 纪要自动整理。'}</p>}
+    {!recording && !ended && !paused && <p className="meeting-entry-note">{isTauri() ? '默认接入整台电脑的播放声音；麦克风需要单独开启。首次使用请允许系统音频权限。' : '默认接入麦克风和系统／会议音频。请在浏览器中选择共享来源并开启声音共享；麦克风可单独关闭。'}{record.autoMinutes?.enabled && '本场已开启 AI 纪要自动整理。'}</p>}
   </section>;
 }

@@ -3,6 +3,7 @@ const preferenceKey = 'meeting-input-device';
 export const preferredDevice = () => localStorage.getItem(preferenceKey) || 'default';
 export const setPreferredDevice = (id: string) => localStorage.setItem(preferenceKey, id);
 export async function inputDevices(): Promise<InputDevice[]> {
+  if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) return (await import('@tauri-apps/api/core')).invoke<InputDevice[]>('capture_inputs');
   if (!navigator.mediaDevices?.enumerateDevices) return [];
   const devices = await navigator.mediaDevices.enumerateDevices();
   const defaultInput = devices.find(d => d.kind === 'audioinput' && d.deviceId === 'default');

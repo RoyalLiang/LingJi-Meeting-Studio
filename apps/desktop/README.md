@@ -40,3 +40,7 @@
 2. preload 与主进程通信
 3. 系统托盘、快捷键与悬浮窗开关
 4. 原生音频采集与系统音频能力
+
+## 原生桌面客户端
+
+正式新增入口为 Tauri 2 + Rust + 内置 React，旧预览命令保留。项目根目录运行 `npm run dev:client` 或 `npm run build:client`，API/worker 按现有方式独立启动。配置、平台依赖及验证边界见[原生客户端说明](../../docs/engineering/native-client.md)。
