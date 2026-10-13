@@ -41,6 +41,8 @@ node scripts/alpha-learning/review-server.mjs .data/alpha-learning
 
 训练和回测按会议隔离：train 用于训练，dev/test 人工 gold 用于评测，silver 的独立分组只统计弱教师一致率。人工 ASR gold 必须关联原音哈希且确认核听。训练与测试不能共享完全相同的请求。
 
+旧旁路实验与 Alpha 内置评审分别保存材料，本轮不跨目录自动迁移人工标签。原页面已有反馈保留，可继续在原页面确认训练；不能把旁路反馈计为新入口已标注。
+
 ## 已完成的实际运行
 
 | 项目         | 当前证据                                                     |
@@ -98,6 +100,6 @@ node scripts/alpha-learning/run.mjs \
 
 隔离的合成契约夹具通过真实 wgs 桥接：准备阶段禁止训练；确认后的纯人工标签格式连续两轮训练，每轮 ASR/意图各更新 1 步，第二轮含新文字候选、适配器继承及新进程重载，弱标签开关均关闭。夹具用于机制验证，不是人工核听或真实质量证据。
 
-279 项 Node 全量回归、40 项 Python 检查、ESLint、类型检查和 Web 构建通过。浏览器已验证原生组件入口、浅色/深色桌面显示、集中保存、未保存禁止训练和独立页面会议筛选。统计见[集成验证证据](../evidence/alpha-learning/integration-2026-10-13.json)。本轮窄屏尺寸控制未生效，未计作新界面的窄屏验证。安装包验证与发布状态见后续交付证据；不能由这些本地检查推断旧客户端已更新。
+279 项 Node 全量回归、40 项 Python 检查、ESLint、类型检查和 Web 构建通过。浏览器已验证原生组件入口、浅色/深色桌面显示、集中保存、未保存禁止训练和独立页面会议筛选。统计见[集成验证证据](../evidence/alpha-learning/integration-2026-10-13.json)。本轮窄屏尺寸控制未生效，未计作新界面的窄屏验证。Alpha 13 DMG、签名及独立后台/重启持久化验证通过，见[打包证据](../evidence/alpha-learning/alpha13-package-2026-10-13.md)；当前运行的旧客户端未替换。
 
 ![Alpha 原生学习评审（合成数据）](../evidence/alpha-learning/integrated-review-synthetic.jpg)

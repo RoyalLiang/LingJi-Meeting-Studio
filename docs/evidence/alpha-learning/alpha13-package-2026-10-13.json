@@ -1,0 +1,64 @@
+{
+  "version": "0.1.0-alpha.13",
+  "platform": "macos",
+  "architecture": "arm64",
+  "minimumSystemVersion": "14.6",
+  "artifact": "Lingji-0.1.0-alpha.13-macos-arm64.dmg",
+  "sha256": "8d75b181bdde76e7044a8849577747475db14082e428711a9e7d574b2380ab1f",
+  "signing": "ad-hoc",
+  "notarized": false,
+  "backendBundled": true,
+  "sourceRevision": "fd9525fa9cfb783df85665f1096e3ea60b628e7f",
+  "sourceDirty": false,
+  "frozenSourceBuild": true,
+  "validation": {
+    "imageVerified": true,
+    "copiedAppSignatureVerified": true,
+    "productionSmoke": true,
+    "realAudioDevicesTested": false,
+    "realProvidersTested": false,
+    "freshMachineTested": false
+  },
+  "sourceManifestSha256": "26de04b7216033237cb01e72a339c3db9e4fee031d2bbb7ed4d435cfd483e686",
+  "packageSmoke": {
+    "timestamp": "2026-10-13T15:34:58.623Z",
+    "packagedApp": true,
+    "independentBackend": true,
+    "developerBackendRequests": 0,
+    "restartPersistence": true,
+    "stableWebviewProfile": true,
+    "parentOwnsBackend": true,
+    "localAccount": true,
+    "devAccountDisabled": true,
+    "node": "v24.21.0",
+    "sqlite": "3.53.4",
+    "realAudioDevicesOpened": false,
+    "realProvidersInvoked": false
+  },
+  "learningResourceHashes": {
+    "services/records/src/learning-worker.mjs": "6a0dd09e914beb44879302d57a560fd03116d0cd658a746dde1a3bedb8ca02a8",
+    "services/records/src/learning-routes.mjs": "5b328dc74de2ae483d8505b7c7a6d849687e35b2b3c43e16ffb929bc09f7e9f7",
+    "packages/records/src/learning.mjs": "1fe8cc1183b678c7a031522267ca585b75b69758d3d025b10932efc40558a35a",
+    "packages/records/src/learning-display.mjs": "11b78620175d8e3455314669c9eb00a0d81b5444719602764e856b6cd22ce25f",
+    "scripts/alpha-learning/run.mjs": "5ad91c6599cbbe7fceb703f96e7321bd3149c2a89d114544fa022647ee9a4d45",
+    "scripts/alpha-learning/review-store.mjs": "63e4caff045d3600a9602e9032f9d692e4a269a76c349aa0bd87fb0f986b877c",
+    "tools/neohorse/learning_data.py": "3e589b3c5a1a7b0a06460bc398339083a0313758031c8af96af1efbb545b918b",
+    "tools/neohorse/finalize_learning_round.py": "e11ed509772f7b16f81b16686ae02f1fdc314c7f3fd80d4c2fb108081155d0b9"
+  },
+  "installedClientUpdated": false,
+  "localRegression": {
+    "nodePassed": 279,
+    "pythonPassed": 40,
+    "lint": true,
+    "typecheck": true,
+    "webBuild": true
+  },
+  "standaloneReview": {
+    "questions": 468,
+    "focusCards": 104,
+    "meetings": 9,
+    "existingFeedbackRowsObserved": 15,
+    "feedbackPreserved": true,
+    "trainingAutomaticallyTriggered": false
+  }
+}
