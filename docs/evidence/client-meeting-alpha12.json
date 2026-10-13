@@ -1,7 +1,24 @@
 {
   "version": "0.1.0-alpha.12",
   "date": "2026-10-13",
-  "stage": "source-validated",
+  "stage": "packaged",
+  "package": {
+    "sourceRevision": "e164d62a5cd76d2a69be49bb851d22b123f0aee3",
+    "sourceDirty": false,
+    "frozenSourceBuild": true,
+    "sourceFiles": 166,
+    "artifact": "dist/releases/0.1.0-alpha.12/Lingji-0.1.0-alpha.12-macos-arm64.dmg",
+    "sha256": "1f4fd774950fd831ba00edb7b095abe7bf4ca9603821015aa5cc118fb38cfd33",
+    "bytes": 47359997,
+    "signing": "ad-hoc",
+    "notarized": false,
+    "dmgVerified": true,
+    "copiedAppSignatureVerified": true,
+    "productionSmoke": true,
+    "developerBackendRequests": 0,
+    "restartPersistence": true,
+    "stableWebviewProfile": true
+  },
   "validation": {
     "isolatedSnapshot": true,
     "node": {"passed": 263, "failed": 0},

@@ -19,3 +19,9 @@
 Alpha11 冻结源码的原生前台 Modal/Select/自然动画补验为 14/14，详见 [原生补验](client-native-alpha11-followup.json)；这不替代 Alpha12 原生实时滚动实测。未打开真实音源、调用真实 ASR/LLM、执行真实更新或替换运行中的客户端。
 
 用户报告的整个 macOS 系统授权窗口模糊仍未确认修复。CUA 安全机制拒绝访问 UserNotificationCenter，未绕过限制捕获或点击。当前没有可用稳定签名身份，ad-hoc 跨版本身份会变化，不能承诺系统授权永久复用。可信自动更新源仍未配置，本地 Alpha 包使用手动安装。
+
+## 本地发行产物
+
+固定提交 `e164d62a5cd76d2a69be49bb851d22b123f0aee3` 冻结构建，sourceDirty=false，166 个输入文件；版本 0.1.0-alpha.12、数字构建号 0.1.12。DMG 为 `dist/releases/0.1.0-alpha.12/Lingji-0.1.0-alpha.12-macos-arm64.dmg`，47,359,997 字节，SHA-256 为 `1f4fd774950fd831ba00edb7b095abe7bf4ca9603821015aa5cc118fb38cfd33`，已独立复核校验文件与发行元数据。
+
+DMG 完整性、Finder 布局与背景、SVG 派生图标一致性、复制应用严格签名、arm64 与 macOS14.6 最低版本检查通过。隔离生产副本 smoke 确认独立后台、开发后台请求 0、重启持久化、稳定 WebView profile、本机账户及关闭开发登录。临时应用和挂载已清理，没有替换或重启用户客户端。旧 Alpha11 DMG 保留。仍为 ad-hoc、未公证；首次全新 Mac、真实音源和真实供应商不在本轮验证范围内。随包 `release.json`、`SHA256SUMS.txt` 与 `package-smoke.json` 保留完整记录。
