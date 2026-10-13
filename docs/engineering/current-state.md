@@ -138,3 +138,7 @@ Tauri 客户端新增签名更新检查、可选下载、会议结束并补传�
 Apple Silicon Alpha 5 的本地实现内置 Node 24.21.0、SQLite 3.53.4、Record API 与 worker，使用独立本机账户、供应商配置和数据目录，不依赖 Web 开发后台。SQLite 保留 WAL/FULL 与事务投影，大段 JSON 及音频按收益使用带校验的无损压缩；原始对象兼容读取，48 MiB IndexedDB 待传缓冲继续保留。旧 Web/Alpha 的会议和队列保留，不自动迁移。
 
 实现、运行与权限边界见[客户端说明](native-client.md)，安装步骤见[Alpha 5](../releases/macos-alpha.md)，取舍见 [proposed ADR 0013](../adr/0013-standalone-client-storage.md)。本地合成基准和包验证不能证明真实语音压缩率、云端转录/纪要总耗时或全新 Mac 首次授权；本轮具体测试结果以产物验证记录为准。
+
+## 客户端界面细节（2026-10-13）
+
+Alpha 8 改用小尺寸清晰 SVG 标识，共享弹窗与侧栏关闭按钮增加齿轮旋转反馈，选择框统一展开、收起及选中效果，尊重减少动态效果偏好。185 项回归及隔离 Chromium 交互检查通过；当前 WebKit 运行环境不匹配，原生动效尚未验证。见[验收记录](../evidence/client-ui-polish-2026-10-13.md)。

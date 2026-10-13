@@ -10,12 +10,25 @@ import { digest } from '../packages/records/src/record.mjs';
 
 const root = await mkdtemp(join(tmpdir(), 'lingji-standalone-'));
 const data = join(root, 'client');
+const profileKey = 'local://embedded-v1';
+let proxyPort;
 let child, logs = '', externalRequests = 0;
 const trap = createServer((_request, response) => { externalRequests++; response.writeHead(503); response.end(); });
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(fn, label, allowExited = false) {
-  for (let n = 0; n < 300; n++) { const value = await fn(); if (value) return value; if (!allowExited && (child?.exitCode != null || child?.signalCode != null)) throw new Error(`Client exited: ${logs}`); await delay(100); }
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) { const value = await fn(); if (value) return value; if (!allowExited && (child?.exitCode != null || child?.signalCode != null)) throw new Error(`Client exited while waiting for ${label}: ${logs}`); await delay(100); }
   throw new Error(`Timeout: ${label}: ${logs}`);
+}
+async function prepareNativeProfile() {
+  const reservation = createServer();
+  await new Promise((resolve, reject) => { reservation.once('error', reject); reservation.listen(0, '127.0.0.1', resolve); });
+  try {
+    proxyPort = reservation.address().port;
+    await mkdir(data, { recursive: true, mode: 0o700 });
+    // Only this temporary test registry differs from the production default origin.
+    await writeFile(join(data, 'profiles.json'), JSON.stringify({ [profileKey]: proxyPort }), { mode: 0o600 });
+  } finally { await new Promise(resolve => reservation.close(resolve)); }
 }
 async function launch() {
   await rm(join(data, 'backend/runtime-state.json'), { force: true });
@@ -23,6 +36,7 @@ async function launch() {
   const requestedExecutable = process.env.NATIVE_CLIENT_EXECUTABLE || process.env.CLIENT_NODE_EXECUTABLE;
   const executable = requestedExecutable ? await realpath(requestedExecutable) : null;
   assert.ok(executable, 'Set NATIVE_CLIENT_EXECUTABLE or CLIENT_NODE_EXECUTABLE');
+  logs = '';
   child = spawn(executable, args, { env: {
     PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: process.env.HOME, TMPDIR: process.env.TMPDIR,
     TTS_CLIENT_DATA_DIR: data, TTS_RECORD_API_URL: `http://127.0.0.1:${trap.address().port}`,
@@ -34,6 +48,15 @@ async function launch() {
   // The private handshake contains a session cookie. Do not retain or print stdout.
   child.stdout.resume(); child.stderr.on('data', bytes => { logs = (logs + bytes).slice(-3000); });
   const state = await until(async () => { try { return JSON.parse(await readFile(join(data, 'backend/runtime-state.json'), 'utf8')); } catch { return null; } }, 'backend handshake');
+  if (process.env.NATIVE_CLIENT_EXECUTABLE) await until(async () => {
+    try {
+      const profiles = JSON.parse(await readFile(join(data, 'profiles.json'), 'utf8'));
+      if (profiles[profileKey] !== proxyPort || !(await stat(join(data, 'profiles', digest(profileKey)))).isDirectory()) return false;
+      // Production HTML requires the WebView's private session. This checks only page proxy readiness.
+      const response = await fetch(`http://127.0.0.1:${proxyPort}/`, { signal: AbortSignal.timeout(1000), redirect: 'manual' });
+      return response.status === 403 && (await response.json()).error === 'client_session_required';
+    } catch { return false; }
+  }, 'native profile registration and page proxy readiness');
   assert.equal(state.node, 'v24.21.0'); assert.equal(state.sqlite, '3.53.4');
   assert.equal(new URL(state.url).hostname, '127.0.0.1'); assert.notEqual(new URL(state.url).port, String(trap.address().port));
   const auth = await createAuth({ root: join(data, 'backend') });
@@ -61,6 +84,7 @@ try {
     for (const marker of ['合成音源 · 验证', 'native-fixture@local.test', 'TTS_UPDATE_TEST_URL', 'TTS_UPDATE_TEST_EXECUTABLE', 'TTS_UPDATE_TEST_OUTPUT']) assert.equal(binary.includes(Buffer.from(marker)), false, `Fixture code leaked: ${marker}`);
   }
   await new Promise(resolve => trap.listen(0, '127.0.0.1', resolve));
+  if (process.env.NATIVE_CLIENT_EXECUTABLE) await prepareNativeProfile();
   let state = await launch();
   const headers = state.headers;
   const created = await fetch(state.url + '/api/records', { method: 'POST', headers, body: '{}' });

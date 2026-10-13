@@ -1,6 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { CaretDown, Check } from '@phosphor-icons/react';
+import './Select.css';
 type Option = { value: string; label: string };
 export function Select({ value, defaultValue, onChange, options, name, label, disabled = false, readOnly = false }: { value?: string; defaultValue?: string; onChange?: (value: string) => void; options: Option[]; name?: string; label: string; disabled?: boolean; readOnly?: boolean }) {
  const [local, setLocal] = useState(defaultValue ?? options[0]?.value ?? ''), [open, setOpen] = useState(false), [index, setIndex] = useState(0);
@@ -25,7 +26,7 @@ export function Select({ value, defaultValue, onChange, options, name, label, di
   return()=>{popup.current?.hidePopover();removeEventListener('resize',place);removeEventListener('scroll',place,true);visualViewport?.removeEventListener('resize',place);};
  },[open,options.length]);
  useEffect(()=>{if(open)popup.current?.querySelector<HTMLElement>(`[data-option-index="${index}"]`)?.scrollIntoView({block:'nearest'});},[index,open]);
- return <div ref={root} className={`select ${open?'is-open':''}`} onKeyDown={e=>{
+ return <div ref={root} className={`select select-enhanced ${open?'is-open':''}`} onKeyDown={e=>{
   if(disabled || readOnly || !options.length)return;
   if(e.key==='Escape'){e.preventDefault();e.stopPropagation();setOpen(false);button.current?.focus();}
   if(e.key==='Tab')setOpen(false);
@@ -36,6 +37,6 @@ export function Select({ value, defaultValue, onChange, options, name, label, di
  }}>
   {name && <input type="hidden" name={name} value={selected}/>}
   <button type="button" ref={button} disabled={disabled||!options.length} aria-disabled={disabled||readOnly||!options.length} className="select-trigger" role="combobox" aria-label={label} aria-haspopup="listbox" aria-controls={id} aria-expanded={open} aria-activedescendant={open?`${id}-${index}`:undefined} onClick={()=>{if(readOnly)return;setOpen(!open);setIndex(Math.max(0,options.findIndex(o=>o.value===selected)));}}><span>{options.find(o=>o.value===selected)?.label || label}</span><CaretDown size={16}/></button>
-  {open && createPortal(<div ref={popup} popover="manual" className="select-options select-portal" style={position} role="listbox" id={id} aria-label={label}>{options.map((option,i)=><div key={option.value} id={`${id}-${i}`} data-option-index={i} title={option.label} role="option" aria-selected={selected===option.value} className={index===i?'focused':''} onPointerMove={()=>setIndex(i)} onPointerDown={e=>{e.preventDefault();choose(option.value);}}><span>{option.label}</span>{selected===option.value && <Check size={16}/>}</div>)}</div>,button.current?.closest('dialog') || document.body)}
+  {createPortal(<div ref={popup} popover="manual" className="select-options select-portal select-menu" data-state={open?'open':'closed'} data-placement={position.bottom==='auto'?'bottom':'top'} style={position} role="listbox" id={id} aria-label={label}>{options.map((option,i)=><div key={option.value} id={`${id}-${i}`} data-option-index={i} title={option.label} role="option" aria-selected={selected===option.value} className={index===i?'focused':''} onPointerMove={()=>setIndex(i)} onPointerDown={e=>{e.preventDefault();choose(option.value);}}><span>{option.label}</span><span className="select-option-indicator" aria-hidden="true">{selected===option.value && <Check size={15} weight="bold"/>}</span></div>)}</div>,button.current?.closest('dialog') || document.body)}
  </div>;
 }
