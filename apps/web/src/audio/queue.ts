@@ -1,4 +1,4 @@
-import { api, ApiError } from '../api';
+import { uploadAudio, ApiError } from '../api';
 import { trace, traceEnabled } from '../telemetry';
 import type { AudioChunk } from '../model';
 interface Pending { key: string; recordId: string; chunk: AudioChunk; bytes: number; createdAt: number }
@@ -96,7 +96,7 @@ export async function drainQueue(onChange?:()=>void){
           const started=performance.now();
           trace('audio.queue-age',{recordId:entry.recordId,sourceId:entry.chunk.sourceId,queueMs:Date.now()-entry.createdAt,durationMs:Date.now()-entry.createdAt});
           try{
-            await api(`/records/${entry.recordId}/audio`,'POST',entry.chunk);
+            await uploadAudio(`/records/${entry.recordId}/audio`,entry.chunk);
             await remove(entry);trace('audio.ack',{recordId:entry.recordId,sourceId:entry.chunk.sourceId,sequence:entry.chunk.sequence,bytes:entry.bytes,durationMs:performance.now()-started});onChange?.();
           }catch(error){
             if(error instanceof ApiError && error.status===410){await remove(entry);onChange?.();}

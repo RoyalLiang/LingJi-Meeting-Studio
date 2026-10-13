@@ -1,27 +1,19 @@
 import { ChatCircleDots } from '@phosphor-icons/react';
-import type { Evidence, Job, Minutes, RecordDetail, Segment } from '../model';
+import type { Job, Minutes, RecordDetail } from '../model';
 
-export function CurrentDiscussion({ record, minutes, job, cite, modelReady }: { record: RecordDetail; minutes: Minutes | null; job?: Job; modelReady: boolean; cite: (ref: Evidence, snapshot?: Segment[]) => void }) {
+export function CurrentDiscussion({ record, minutes, job, modelReady }: { record: RecordDetail; minutes: Minutes | null; job?: Job; modelReady: boolean }) {
   const running = ['queued', 'running'].includes(job?.status || '');
   const live = record.capture !== 'completed' || running;
   const protectedMinutes = Boolean(record.minutes?.edited);
-  const preview = running && !protectedMinutes ? job?.preview?.filter(block => !['title', 'heading'].includes(block.kind)).slice(-3) || [] : [];
-  const structured = minutes?.method === 'extractive' ? [] : minutes?.currentDiscussion || [];
-  const covered = new Set((minutes?.evidenceSnapshot || []).map(segment => `${segment.id}:${segment.revision}`));
-  const pending = record.segments.some(segment => !covered.has(`${segment.id}:${segment.revision}`));
-  const waiting = !preview.length && job?.status !== 'failed' && !protectedMinutes && modelReady && (running || (live && record.autoMinutes?.enabled && (pending || !minutes)));
-  const message = job?.status === 'failed' ? `本轮总结未完成${job.progress ? `，已整理 ${job.progress.completed}/${job.progress.total} 部分` : ''}，可重试整理。`
-    : protectedMinutes ? '人工修订已保护，自动总结已暂停。'
-    : !modelReady ? '连接纪要模型后，这里会显示 agent 总结。'
-    : waiting ? running ? job?.progress && job.progress.total>1 ? `已整理 ${job.progress.completed}/${job.progress.total} 部分，${job.progress.stage==='synthesis' ? '正在汇总讨论要点' : '继续整理中'}…` : 'Agent 正在梳理讨论要点…' : pending ? '已收到新发言，等待 agent 总结…' : '等待对话开始，agent 将自动归纳要点…'
-    : live && !record.autoMinutes?.enabled ? '开启自动 AI 纪要后，这里会持续更新讨论要点。'
-    : structured.length ? '' : '本场暂无 agent 总结。';
-  return <section className="current-discussion discussion-dock" aria-label={live ? '当前正在聊' : '最后讨论'}>
-    <header><div><ChatCircleDots size={20}/><h3>{live ? '当前正在聊…' : '最后讨论'}</h3></div><span className="discussion-status">{preview.length ? 'Agent 总结 · 生成中' : waiting ? '等待 Agent' : structured.length ? '已归纳要点' : '待总结'}</span></header>
-    <div className="discussion-content" aria-busy={waiting || running}>
-      {message && !preview.length && !structured.length && <div className="discussion-wait" role="status"><span className={`discussion-pulse ${waiting ? 'is-waiting' : ''}`} aria-hidden="true"><i/><i/><i/></span><p>{message}</p></div>}
-      {preview.length ? <ol>{preview.map((block, i) => <li className="discussion-line" key={i}><p title={block.text}>{block.text}</p></li>)}</ol>
-        : structured.length > 0 && <ol>{structured.slice(-3).map((item, i) => <li className="discussion-line" key={i}><p title={item.text}>{item.text}</p>{item.evidence[0] && <button className="discussion-source" onClick={() => cite(item.evidence[0],minutes?.evidenceSnapshot)} aria-label={`查看第 ${i + 1} 条讨论要点来源`}>来源</button>}</li>)}</ol>}
-    </div>
+  const pending = record.transcriptRevision > (minutes?.transcriptRevision || 0);
+  const status = protectedMinutes ? '人工版本已保护'
+    : job?.status === 'failed' ? '本轮整理未完成，可重试'
+    : !modelReady ? '尚未连接纪要模型'
+    : running ? job?.progress && job.progress.total > 1 ? `正在整理 AI 纪要 · ${job.progress.completed}/${job.progress.total}` : '正在整理 AI 纪要…'
+    : live && !record.autoMinutes?.enabled ? '自动 AI 纪要未开启'
+    : pending ? '新发言已接收，等待整理'
+    : minutes ? 'AI 纪要已更新' : '等待对话开始';
+  return <section className="current-discussion discussion-dock" aria-label={live ? '当前正在聊' : '本场纪要'}>
+    <header><div><ChatCircleDots size={18}/><h3>{live ? '当前正在聊' : '本场纪要'}</h3></div><span className="discussion-status" role="status" aria-live="polite">{status}</span></header>
   </section>;
 }
