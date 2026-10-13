@@ -7,7 +7,7 @@ import {stripTypeScriptTypes} from 'node:module';
 const source=await readFile(new URL('../apps/web/src/record-subscription.ts',import.meta.url),'utf8');
 const javascript=stripTypeScriptTypes(source).replaceAll('export function','function')+'\nexports.subscribeToRecord=subscribeToRecord;exports.applyRecordDelta=applyRecordDelta;';
 const settle=async()=>{for(let i=0;i<12;i++)await Promise.resolve();};
-function harness(loadRecord=async()=>({cursor:'1'}),applyDelta){
+function harness(loadRecord=async()=>({cursor:'1'}),applyDelta,localBackend=false){
   const streams=[],timers=new Map(),states=[],records=[],errors=[],navigator={onLine:true};let next=0;
   class EventSource{
     constructor(url){this.url=url;this.listeners={};this.closed=false;streams.push(this);}
@@ -15,7 +15,7 @@ function harness(loadRecord=async()=>({cursor:'1'}),applyDelta){
     close(){this.closed=true;}
   }
   const exports={};vm.runInNewContext(javascript,{exports,EventSource,navigator,AbortController,setTimeout(fn,delay){const id=++next;timers.set(id,{fn,delay});return id;},clearTimeout(id){timers.delete(id);}});
-  const stop=exports.subscribeToRecord({recordId:'test-record',loadRecord,applyDelta,onRecord:r=>records.push(r),onState:s=>states.push(s),onFatal:e=>errors.push(e)});
+  const stop=exports.subscribeToRecord({recordId:'test-record',localBackend,loadRecord,applyDelta,onRecord:r=>records.push(r),onState:s=>states.push(s),onFatal:e=>errors.push(e)});
   return{streams,timers,states,records,errors,navigator,stop,apply:exports.applyRecordDelta,async tick(){const [id,timer]=timers.entries().next().value;timers.delete(id);timer.fn();await settle();return timer.delay;}};
 }
 
@@ -56,4 +56,10 @@ test('projection notifications apply without GET; gaps refresh a snapshot',async
   stream.onmessage({data:JSON.stringify({projection:true,delta})});await settle();assert.equal(calls,1);assert.equal(h.records.at(-1).segments[0].text,'delta');
   stream.onmessage({data:JSON.stringify({projection:true,delta})});await settle();assert.equal(calls,1);
   stream.onmessage({data:JSON.stringify({projection:true,delta:{...delta,baseCursor:'5',cursor:'6'}})});await settle();assert.equal(calls,2);assert.equal(h.records.at(-1).cursor,'7');h.stop();
+});
+
+test('local backend reconnects SSE without internet; Web stays offline',async()=>{
+  const local=harness(undefined,undefined,true);await settle();local.navigator.onLine=false;local.streams[0].onerror();
+  assert.equal(local.states.at(-1),'reconnecting');assert.equal(local.timers.size,1);await local.tick();assert.equal(local.streams.length,2);local.stop();
+  const web=harness();await settle();web.navigator.onLine=false;web.streams[0].onerror();assert.equal(web.states.at(-1),'offline');assert.equal(web.timers.size,0);web.stop();
 });

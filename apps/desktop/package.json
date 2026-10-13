@@ -7,7 +7,7 @@
     "dev": "node ./src/shell-server.mjs",
     "dev:preview": "node ./src/shell-server.mjs",
     "dev:mock": "node ./src/mock-client.mjs",
-    "dev:native": "tauri dev",
-    "build:native": "tauri build"
+    "dev:native": "node ../../scripts/prepare-client-backend.mjs && tauri dev",
+    "build:native": "node ../../scripts/prepare-client-backend.mjs && tauri build"
   }
 }

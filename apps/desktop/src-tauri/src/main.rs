@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod audio;
 mod config;
+mod local_backend;
 mod menu_status;
 mod proxy;
 #[cfg(target_os = "macos")]
@@ -25,6 +26,7 @@ struct Client {
     ready: AtomicBool,
     close_serial: AtomicU64,
     _lock: std::fs::File,
+    _backend: Option<local_backend::LocalBackend>,
     updates: updates::Updates,
     api: proxy::Proxy,
 }
@@ -282,16 +284,20 @@ fn main() {
     ]);
     builder
         .setup(|app| {
-            let directory = std::env::var("TTS_CLIENT_DATA_DIR").map(std::path::PathBuf::from).unwrap_or(app.path().app_config_dir()?);
-            let config = config::read_config(&directory).map_err(std::io::Error::other)?;
-            let binding = config::bind(&directory, &config.api_url).map_err(std::io::Error::other)?;
-            let origin = binding.origin.clone(); let profile = binding.profile.clone(); let store_id = binding.store_id;
+            let directory = match std::env::var("TTS_CLIENT_DATA_DIR") { Ok(path) => std::path::PathBuf::from(path), Err(_) => app.path().app_config_dir().map_err(|e| std::io::Error::other(format!("client data directory: {e}")))? };
+            let lock = config::acquire_lock(&directory).map_err(std::io::Error::other)?;
+        let external_fixture = (cfg!(debug_assertions) || cfg!(feature = "smoke-test")) && std::env::var_os("TTS_RECORD_API_URL").is_some();
+        let backend = if external_fixture { None } else { Some(local_backend::LocalBackend::start(app.handle(), &directory).map_err(std::io::Error::other)?) };
+        let api_url = if let Some(local) = &backend { local.url.clone() } else { config::read_config(&directory).map_err(std::io::Error::other)?.api_url };
+        let profile_key = if backend.is_some() { "local://embedded-v1" } else { &api_url };
+        let binding = config::bind_with_lock(&directory, profile_key, lock).map_err(std::io::Error::other)?;
+        let origin = binding.origin.clone(); let profile = binding.profile.clone(); let store_id = binding.store_id;
             let handle = app.handle().clone();
             let assets = Arc::new(move |path: &str| handle.asset_resolver().get(if path == "/" { "/index.html" } else { path }.to_string())
                 .map(|asset| (asset.bytes, asset.mime_type)));
             #[cfg(target_os = "macos")]
-            let menu_api_origin = config.api_url.clone();
-            let proxy = proxy::Proxy::new(config.api_url, origin.clone(), assets)?;
+            let menu_api_origin = api_url.clone();
+            let proxy = proxy::Proxy::new_with_session(api_url, origin.clone(), assets, backend.as_ref().map(|local| local.cookie.as_str()))?;
             let startup_url = proxy.startup_url();
             let api = proxy.clone();
             let cache = directory.join("updates"); std::fs::create_dir_all(&cache)?;
@@ -305,7 +311,7 @@ fn main() {
             let menu_bar = status_bar::StatusBar::new(app.handle(), &menu_api_origin)?;
             app.manage(Client {
                 #[cfg(target_os = "macos")]
-                menu_bar, origin: origin.clone(), captures: Arc::new(audio::Captures::default()), ready: AtomicBool::new(false), close_serial: AtomicU64::new(0), _lock: binding._lock, updates, api });
+                menu_bar, origin: origin.clone(), captures: Arc::new(audio::Captures::default()), ready: AtomicBool::new(false), close_serial: AtomicU64::new(0), _lock: binding._lock, _backend: backend, updates, api });
             app.add_capability(CapabilityBuilder::new("local-capture").window("main").local(false).remote(format!("{origin}/*"))
                 .permission("allow-capture-start").permission("allow-capture-read").permission("allow-capture-stop").permission("allow-capture-inputs")
                 .permission("allow-client-close").permission("allow-client-ready").permission("allow-client-status").permission("allow-update-status").permission("allow-update-activity").permission("allow-update-check").permission("allow-update-download").permission("allow-update-install")

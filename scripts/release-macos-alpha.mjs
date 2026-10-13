@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { prepareClientBackend } from './prepare-client-backend.mjs';
 import { createHash } from 'node:crypto';
 import { execFileSync, spawn } from 'node:child_process';
 import { access, copyFile, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
@@ -41,7 +42,8 @@ async function run(command, args, extraEnv = {}, cwd = root) {
 async function sourceSnapshot(destination) {
   const paths = capture('git', [...(sourceRef ? ['ls-tree', '-r', '--name-only', '-z', sourceRef] : ['ls-files', '--cached', '--others', '--exclude-standard', '-z']), '--',
     '.gitignore', 'package.json', 'package-lock.json', 'apps/web', 'apps/desktop/package.json',
-    'apps/desktop/src-tauri', 'apps/desktop/assets', 'scripts/release-macos-alpha.mjs', 'scripts/test-native-package.mjs', 'docs/releases/macos-alpha.md',
+    'apps/desktop/src-tauri', 'apps/desktop/assets', 'scripts/release-macos-alpha.mjs', 'scripts/test-standalone-package.mjs', 'scripts/prepare-client-backend.mjs',
+    'services/records/src', 'packages/records/src', 'services/session-gateway/src/providers/doubao-ast-codec.mjs', 'services/session-gateway/src/providers/doubao-ast/protos', 'docs/releases/macos-alpha.md',
   ]).split('\0').filter(Boolean).sort();
   const files = [];
   for (const path of paths) {
@@ -106,6 +108,7 @@ try {
     const packaged = iconDigest(await readFile(join(frozen, 'apps/desktop/src-tauri/icons', name)), name);
     assert.equal(generated, packaged, `Regenerate ${name} from the selected SVG before release.`);
   }
+  const runtime = await prepareClientBackend({ root: frozen, cacheRoot: join(root, '.agent-runtime/runtimes') });
   await run('npm', ['run', 'build:web'], {}, frozen);
   const cargoTarget = join(root, '.agent-runtime/releases/macos-alpha/target');
   await run('npm', ['exec', '--workspace', 'apps/desktop', '--', 'tauri', 'build', '--ci', '--bundles', 'app,dmg',
@@ -137,7 +140,7 @@ try {
   assert.equal(readPlist('LSMinimumSystemVersion'), baseConfig.bundle.macOS.minimumSystemVersion);
   assert.ok(readPlist('NSMicrophoneUsageDescription'));
   assert.ok(readPlist('NSAudioCaptureUsageDescription'));
-  await run(process.execPath, ['scripts/test-native-package.mjs', join(release, 'package-smoke.json')], {
+  await run(process.execPath, ['scripts/test-standalone-package.mjs', join(release, 'package-smoke.json')], {
     NATIVE_CLIENT_EXECUTABLE: binary,
   }, frozen);
   const checksum = createHash('sha256').update(await readFile(dmg)).digest('hex');
@@ -148,7 +151,7 @@ try {
     minimumSystemVersion: readPlist('LSMinimumSystemVersion'),
     bundleVersion: readPlist('CFBundleVersion'), bundleShortVersion: readPlist('CFBundleShortVersionString'),
     createdAt: new Date().toISOString(), artifact: dmgName, sha256: checksum,
-    signing: 'ad-hoc', notarized: false, backendBundled: false,
+    signing: 'ad-hoc', notarized: false, backendBundled: true, runtime,
     sourceRevision: revision, sourceDirty: Boolean(sourceStatus), sourceStatus, source, frozenSourceBuild: true,
     validation: { imageVerified: true, copiedAppSignatureVerified: true, productionSmoke: true,
       realAudioDevicesTested: false, realProvidersTested: false, freshMachineTested: false },

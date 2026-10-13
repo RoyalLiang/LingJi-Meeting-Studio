@@ -2,6 +2,7 @@ export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'reconnectin
 
 interface SubscriptionOptions<T extends { cursor: string }> {
   recordId: string;
+  localBackend?: boolean;
   loadRecord: (signal: AbortSignal) => Promise<T>;
   onRecord: (record: T) => void;
   onState: (state: ConnectionState) => void;
@@ -24,7 +25,7 @@ export function subscribeToRecord<T extends { cursor: string }>(options: Subscri
   function retry() {
     if (disposed || timer !== undefined) return;
     generation++; source?.close(); source = undefined; controller?.abort();
-    if (!navigator.onLine) { options.onState('offline'); return; }
+    if (!navigator.onLine && !options.localBackend) { options.onState('offline'); return; }
     options.onState('reconnecting');
     const delay = Math.min(15000, 1000 * 2 ** Math.min(retries++, 4));
     timer = setTimeout(() => { timer = undefined; void connect(); }, delay);
@@ -38,7 +39,7 @@ export function subscribeToRecord<T extends { cursor: string }>(options: Subscri
   }
   async function connect() {
     if (disposed) return;
-    if (!navigator.onLine) { options.onState('offline'); return; }
+    if (!navigator.onLine && !options.localBackend) { options.onState('offline'); return; }
     const version = ++generation;
     controller = new AbortController();
     const signal = controller.signal;

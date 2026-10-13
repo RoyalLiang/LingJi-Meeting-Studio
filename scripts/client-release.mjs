@@ -1,3 +1,4 @@
+import { prepareClientBackend } from './prepare-client-backend.mjs';
 import { readFile, writeFile, mkdir, readdir, appendFile } from 'node:fs/promises';
 import { join, resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,6 +40,8 @@ if (mode === 'verify-tag') {
   const commit = git('rev-parse', 'HEAD'); if (commit !== process.env.RELEASE_SHA) throw new Error('Checkout differs from verified tag commit');
   if (git('status', '--porcelain', '--untracked-files=no')) throw new Error('Release checkout must be clean');
   for (const name of ['TAURI_SIGNING_PRIVATE_KEY', 'TTS_UPDATER_PUBLIC_KEY']) if (!process.env[name]) throw new Error(`${name} is required`);
+  // The release must contain its own API/worker runtime on every target.
+  await prepareClientBackend({ root });
   const config = { bundle: { createUpdaterArtifacts: true } };
   if (selected.key.startsWith('darwin')) {
     for (const name of ['APPLE_SIGNING_IDENTITY', 'APPLE_ID', 'APPLE_PASSWORD', 'APPLE_TEAM_ID']) if (!process.env[name]) throw new Error(`${name} is required for notarized macOS builds`);

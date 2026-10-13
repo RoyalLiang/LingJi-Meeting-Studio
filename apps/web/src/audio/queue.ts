@@ -4,6 +4,9 @@ import type { AudioChunk } from '../model';
 interface Pending { key: string; recordId: string; chunk: AudioChunk; bytes: number; createdAt: number }
 interface Manifest { key: string; recordId: string; sourceId: string; epoch: string; lastSequence: number }
 let saving = 0;
+let localBackend = false;
+export function setLocalQueueBackend(local: boolean) { localBackend = local; }
+const canUpload = () => navigator.onLine || localBackend;
 const MAX_BYTES = 48 * 1024 * 1024;
 let database: Promise<IDBDatabase> | undefined;
 let permittedRecords = new Set<string>(), uploading = false;
@@ -89,10 +92,10 @@ async function remove(entry:Pending){
   });
 }
 export async function drainQueue(onChange?:()=>void){
-  if(uploading||!navigator.onLine)return;uploading=true;
+  if(uploading||!canUpload())return;uploading=true;
   const blocked=new Set<string>();let failure:unknown;
   try{
-    while(navigator.onLine){
+    while(canUpload()){
       const entries=await heads(blocked);if(!entries.length)break;
       let next=0;
       await Promise.all(Array.from({length:parallelism()}).map(async()=>{

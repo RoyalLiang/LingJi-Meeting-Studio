@@ -47,11 +47,27 @@ fn hop_header(name: &str) -> bool {
 }
 
 impl Proxy {
+    #[cfg(test)]
     pub fn new(
         upstream: String,
         origin: String,
         assets: AssetLoader,
     ) -> Result<Self, reqwest::Error> {
+        Self::new_with_session(upstream, origin, assets, None)
+    }
+    pub fn new_with_session(
+        upstream: String,
+        origin: String,
+        assets: AssetLoader,
+        session: Option<&str>,
+    ) -> Result<Self, reqwest::Error> {
+        let jar = Arc::new(reqwest::cookie::Jar::default());
+        if let Some(cookie) = session {
+            jar.add_cookie_str(
+                cookie,
+                &url::Url::parse(&upstream).expect("validated backend origin"),
+            );
+        }
         // Authentication cookies stay in this upstream's memory jar. They never become localhost cookies.
         let mut secret = [0u8; 32];
         getrandom::fill(&mut secret).expect("OS random source");
@@ -61,7 +77,7 @@ impl Proxy {
         );
         Ok(Self {
             client: reqwest::Client::builder()
-                .cookie_store(true)
+                .cookie_provider(jar)
                 .connect_timeout(std::time::Duration::from_secs(10))
                 .redirect(reqwest::redirect::Policy::none())
                 .build()?,

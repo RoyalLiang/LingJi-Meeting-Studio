@@ -5,7 +5,8 @@ import { DomainError, digest, requireThat } from '../../../packages/records/src/
 
 const same = (a, b) => typeof a === 'string' && typeof b === 'string' && a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 export async function createAuth(repo, options = {}) {
-  let secret = options.secret || process.env.RECORD_SESSION_SECRET;
+  let secret = options.localAccount ? randomBytes(48).toString('hex') : options.secret || process.env.RECORD_SESSION_SECRET;
+  if (options.localAccount) await writeFile(join(repo.root, 'session.key'), secret, { mode: 0o600 });
   requireThat(process.env.NODE_ENV !== 'production' || (secret && secret.length >= 32), 'production_secret_required', 500);
   if (!secret) {
     const file = join(repo.root, 'session.key');
@@ -17,7 +18,7 @@ export async function createAuth(repo, options = {}) {
   }
   const sign = value => createHmac('sha256', secret).update(value).digest('hex');
   const cookies = request => Object.fromEntries((request.headers.cookie || '').split(';').map(c => c.trim().split('=')));
-  const cookie = token => `record_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=604800${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`;
+  const cookie = token => `record_session=${token}; HttpOnly; SameSite=Strict; Path=/${options.localAccount ? '' : '; Max-Age=604800'}${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`;
   const auth = {
     csrf: user => sign(`csrf:${user.id}:${user.authVersion}`),
     async register(body) {
@@ -36,7 +37,7 @@ export async function createAuth(repo, options = {}) {
       requireThat(user && same(computed, user.password), 'invalid_credentials', 401); return user;
     },
     issue(user) {
-      const data = Buffer.from(JSON.stringify({ id: user.id, version: user.authVersion, expires: Date.now() + 604800000 })).toString('base64url');
+      const data = Buffer.from(JSON.stringify({ id: user.id, version: user.authVersion, expires: options.localAccount ? null : Date.now() + 604800000 })).toString('base64url');
       return cookie(`${data}.${sign(data)}`);
     },
     clear() { return cookie('') + '; Max-Age=0'; },
@@ -44,7 +45,7 @@ export async function createAuth(repo, options = {}) {
       const [data, signature] = (cookies(request).record_session || '').split('.');
       requireThat(data && same(sign(data), signature), 'login_required', 401);
       let token; try { token = JSON.parse(Buffer.from(data, 'base64url').toString()); } catch { throw new DomainError('invalid_session', 401); }
-      requireThat(token.expires > Date.now(), 'session_expired', 401);
+      requireThat((options.localAccount && token.expires === null) || token.expires > Date.now(), 'session_expired', 401);
       const user = await repo.get(token.id); requireThat(user && user.authVersion === token.version, 'session_expired', 401); return user;
     },
     checkCsrf(request, user) { requireThat(same(request.headers['x-csrf-token'], sign(`csrf:${user.id}:${user.authVersion}`)), 'csrf_required', 403); }
@@ -55,6 +56,12 @@ export async function createAuth(repo, options = {}) {
       const salt = randomBytes(16).toString('hex');
       await repo.insert({ id: `user:${digest(email.trim().toLowerCase())}`, kind: 'user', email: email.trim().toLowerCase(), salt, password: scryptSync(process.env.RECORD_DEV_PASSWORD || 'LocalMeeting2026!', salt, 64).toString('hex'), authVersion: 1 });
     }
+  }
+  if (options.localAccount) {
+    const email = 'local@device.invalid', id = `user:${digest(email)}`;
+    let user = await repo.get(id);
+    if (!user) user = await auth.register({ email, password: randomBytes(48).toString('hex') });
+    auth.localSession = async () => auth.issue(await repo.get(id));
   }
   return auth;
 }
