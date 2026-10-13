@@ -1,10 +1,12 @@
 # 安装聆记 macOS Alpha
 
-此版本为 **0.1.0-alpha.1**，适用于 **Apple Silicon（M 系列）Mac，macOS 14.6 或更新版本**。安装包包含界面和原生音频采集，转录、纪要、账户及历史记录沿用已有 Record API 与 worker。
+此版本为 **0.1.0-alpha.2**，适用于 **Apple Silicon（M 系列）Mac，macOS 14.6 或更新版本**。安装包包含界面和原生音频采集，转录、纪要、账户及历史记录沿用已有 Record API 与 worker。
+
+本版收起“当前正在聊”的具体内容，把生成中的 AI 纪要显示在主阅读区。配套 API 支持 PCM 二进制上传并缩短事件检查间隔；连接旧 API 时继续使用 JSON 上传。升级前请先结束录音并等补传完成，再替换应用、重启本地 Record API；运行中的旧进程不会自动加载这些后端改动。
 
 ## 安装并连接现有服务
 
-1. 打开 `Lingji-0.1.0-alpha.1-macos-arm64.dmg`。
+1. 打开 `Lingji-0.1.0-alpha.2-macos-arm64.dmg`。
 2. 把 **聆记 Alpha.app** 拖到 **Applications**。
 3. 确认已有 Record API 与 worker 正在运行，再打开应用。默认连接 `http://127.0.0.1:3030`，使用已有账户登录。
 
@@ -46,6 +48,8 @@ node scripts/release-macos-alpha.mjs
 
 命令先冻结当前构建源文件，再在隔离目录构建 Web 和正式 Tauri 应用，生成 DMG，挂载并复制应用到临时目录，再用隔离 API 验证内置页面启动。它不采集真实音频、不调用真实供应商、不改变已有会议或已有服务。同版本输出已存在时会停止，避免覆盖；下次发版需更新 `tauri.alpha.conf.json` 的 Alpha 版本、数字构建号和本说明。
 
-产物位于 `dist/releases/0.1.0-alpha.1/`。构建验证覆盖 DMG 完整性、arm64 架构、签名、权限描述和正式应用启动；真实会议软件采音、长会话、远程 HTTPS、全新 Mac 安装及 Gatekeeper 首次授权仍需实测。
+需要只打包指定已提交版本时，使用 `TTS_RELEASE_SOURCE_REF=<提交号> node scripts/release-macos-alpha.mjs`。此模式直接冻结 Git 中的构建输入，排除其他会话尚未提交的改动。
+
+产物位于 `dist/releases/0.1.0-alpha.2/`。构建验证覆盖 DMG 完整性、arm64 架构、签名、权限描述和正式应用启动；真实会议软件采音、长会话、远程 HTTPS、全新 Mac 安装及 Gatekeeper 首次授权仍需实测。
 
 退出应用后，可把 **聆记 Alpha.app** 移到废纸篓。配置和待补传数据保留在应用支持目录，卸载时不要顺手删除。

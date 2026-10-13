@@ -13,10 +13,27 @@ import { createAuth } from './auth.mjs';
 import { readConfig, saveConfig, publicConfig, canConfigure } from './config.mjs';
 import { providerStatus, transcribe, completeJson, waveHeader } from './providers.mjs';
 
-async function readBody(request, max = 600000) {
+async function readBytes(request, max = 600000) {
   let size = 0; const chunks = [];
   for await (const chunk of request) { size += chunk.length; requireThat(size <= max, 'body_too_large', 413); chunks.push(chunk); }
-  try { return JSON.parse(Buffer.concat(chunks).toString() || '{}'); } catch { throw new DomainError('invalid_json', 400); }
+  return Buffer.concat(chunks);
+}
+async function readBody(request, max = 600000) {
+  try { return JSON.parse((await readBytes(request, max)).toString() || '{}'); }
+  catch (error) { if (error instanceof DomainError) throw error; throw new DomainError('invalid_json', 400); }
+}
+async function readAudio(request) {
+  if (request.headers['content-type']?.split(';')[0] === 'application/octet-stream') {
+    const header = request.headers['x-record-audio'];
+    requireThat(typeof header === 'string' && header.length <= 2048, 'invalid_audio_metadata', 400);
+    let body;
+    try { body = JSON.parse(header); } catch { throw new DomainError('invalid_audio_metadata', 400); }
+    requireThat(body && typeof body === 'object' && !Array.isArray(body), 'invalid_audio_metadata', 400);
+    return { body, bytes: await readBytes(request, 480000) };
+  }
+  const body = await readBody(request);
+  requireThat(body && typeof body.pcm === 'string' && /^[A-Za-z0-9+/]*={0,2}$/.test(body.pcm), 'invalid_pcm', 400);
+  return { body, bytes: Buffer.from(body.pcm, 'base64') };
 }
 const escapeIcs = text => String(text).replace(/\\/g, '\\\\').replace(/\r?\n/g, '\\n').replace(/[,;]/g, '\\$&');
 export function exportRecord(record, format = 'markdown') {
@@ -87,7 +104,7 @@ export async function createRecordServer(options = {}) {
       }
       if (path === '/api/diagnostics/traces' && req.method === 'GET') { requireThat(canConfigure(user), 'configuration_admin_required', 403); send(res,200,telemetry.snapshot()); return; }
       if (path === '/api/bootstrap' && req.method === 'GET') {
-        send(res, 200, { email: user.email, csrf: auth.csrf(user), providers: providerStatus(await readConfig(repo.root)), limits: { maxMinutes: 120, maxRecords: 200, maxChunkSeconds: 15 }, storage: repo.backend, canConfigure: canConfigure(user) }); return;
+        send(res, 200, { email: user.email, csrf: auth.csrf(user), audioTransport: 'pcm-v1', providers: providerStatus(await readConfig(repo.root)), limits: { maxMinutes: 120, maxRecords: 200, maxChunkSeconds: 15 }, storage: repo.backend, canConfigure: canConfigure(user) }); return;
       }
       if (path === '/api/settings/providers/test' && req.method === 'POST') {
         requireThat(canConfigure(user), 'configuration_admin_required', 403);
@@ -180,7 +197,7 @@ export async function createRecordServer(options = {}) {
             }
             res.write(': heartbeat\n\n');
           } catch { res.write('event: revoked\ndata: {}\n\n'); res.end(); } finally { busy = false; }
-        }, 250);
+        }, 100);
         streams.add(res); req.on('close', () => { clearInterval(timer); streams.delete(res); }); return;
       }
       if (action === 'export' && req.method === 'GET') {
@@ -189,8 +206,7 @@ export async function createRecordServer(options = {}) {
           'Content-Disposition': `attachment; filename="meeting.${format === 'markdown' ? 'md' : format === 'issues' ? 'issues.json' : format}"`, 'Cache-Control': 'no-store' }); res.end(exportRecord(record, format)); return;
       }
       if (action === 'audio' && req.method === 'POST') {
-        const body = await readBody(req); requireThat(typeof body.pcm === 'string' && /^[A-Za-z0-9+/]*={0,2}$/.test(body.pcm), 'invalid_pcm', 400);
-        const bytes = Buffer.from(body.pcm, 'base64'); requireThat(bytes.length === body.sampleCount * 2 && bytes.length > 0 && bytes.length <= 480000, 'audio_size_mismatch', 400);
+        const { body, bytes } = await readAudio(req); requireThat(bytes.length === body.sampleCount * 2 && bytes.length > 0 && bytes.length <= 480000, 'audio_size_mismatch', 400);
         requireThat(digest(bytes) === body.digest, 'audio_digest_mismatch', 400);
         const preflight = acknowledge(structuredClone(record), { sessionId: body.sessionId, sourceId: body.sourceId, epoch: body.epoch, sequence: body.sequence, sampleOffset: body.sampleOffset, sampleCount: body.sampleCount, sampleRate: body.sampleRate, digest: body.digest, object: 'preflight' });
         if (record.chunks.some(c => c.sourceId === body.sourceId && c.epoch === body.epoch && c.sequence === body.sequence)) { send(res, 200, preflight); return; }

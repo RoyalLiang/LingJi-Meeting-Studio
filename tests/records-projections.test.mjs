@@ -1,3 +1,7 @@
+import { webcrypto } from 'node:crypto';
+import { createRecordServer } from '../services/records/src/server.mjs';
+import { digest } from '../packages/records/src/record.mjs';
+import { runCycle } from '../services/records/src/worker.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm,readFile} from 'node:fs/promises';
@@ -43,4 +47,71 @@ for(const deltaEnabled of [true,false])test(`SSE ${deltaEnabled?'delta':'rollbac
     await repo.change(record.id,r=>{r.title='Delta title';emit(r,'record.updated',{});});await until(deltaEnabled ? /"delta"/ : /"type":"record.updated"/);if(deltaEnabled)assert.equal(reads,initialReads,'SSE polling must not decode aggregate');else assert.ok(reads>initialReads);
     await fetch(base+'/api/auth/logout',{method:'POST',headers});await until(/event: revoked/);
   }finally{abort.abort();await reader?.cancel().catch(()=>{});await app.stop();await rm(root,{recursive:true,force:true});}
+});
+
+test('binary audio negotiates explicitly, preserves CSRF and identity, and falls back for older APIs', async () => {
+  const source = stripTypeScriptTypes(await readFile(new URL('../apps/web/src/api.ts', import.meta.url), 'utf8'), { mode: 'transform' }).replace(/^import .*$/gm, '').replace(/export /g, '');
+  const requests = [], exports = {};
+  vm.runInNewContext(source + '\nObject.assign(exports,{uploadAudio,setAudioTransport,setCsrf});', {
+    exports, crypto: webcrypto, performance, Uint8Array, atob, trace() {},
+    fetch: async (url, options) => { requests.push({ url, ...options }); return { ok: true, json: async () => ({ watermark: 0 }) }; },
+  });
+  const bytes = Buffer.alloc(32000, 21), chunk = { sourceId: 'source', epoch: 'epoch', sessionId: 'session', sequence: 0, sampleOffset: 0, sampleCount: 16000, sampleRate: 16000, digest: digest(bytes), pcm: bytes.toString('base64') };
+  exports.setCsrf('isolated-csrf');
+  await exports.uploadAudio('/records/test/audio', chunk);
+  assert.deepEqual(JSON.parse(requests[0].body), chunk);
+  exports.setAudioTransport('pcm-v1');
+  await exports.uploadAudio('/records/test/audio', chunk);
+  const binary = requests[1];
+  assert.deepEqual(Buffer.from(binary.body), bytes);
+  assert.equal(binary.headers['X-CSRF-Token'], 'isolated-csrf');
+  assert.equal(binary.credentials, 'same-origin');
+  assert.equal(binary.headers['Content-Type'], 'application/octet-stream');
+  const { pcm: _pcm, ...metadata } = chunk;
+  assert.deepEqual(JSON.parse(binary.headers['X-Record-Audio']), metadata);
+  assert.ok(binary.body.length + Buffer.byteLength(binary.headers['X-Record-Audio']) < Buffer.byteLength(requests[0].body) * 0.76);
+  exports.setAudioTransport();
+  await exports.uploadAudio('/records/test/audio', chunk);
+  assert.equal(requests[2].body, requests[0].body);
+});
+
+test('PCM and JSON share durable receipts, duplicate detection, pause and final draining', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'record-pcm-'));
+  const repo = await createRepository({ root, databaseUrl: '' });
+  const app = await createRecordServer({ repo, port: 0 });
+  try {
+    const address = await app.start(), base = `http://127.0.0.1:${address.port}`;
+    const registered = await fetch(`${base}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'pcm@example.test', password: 'isolated-pcm-password' }) });
+    const user = await registered.json();
+    const headers = { Cookie: registered.headers.get('set-cookie').split(';')[0], 'X-CSRF-Token': user.csrf };
+    const json = async (path, body) => {
+      const response = await fetch(base + path, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      assert.ok(response.ok, await response.clone().text()); return response.json();
+    };
+    const bootstrap = await fetch(`${base}/api/bootstrap`, { headers });
+    assert.equal((await bootstrap.json()).audioTransport, 'pcm-v1');
+    const record = await json('/api/records', {});
+    const source = await json(`/api/records/${record.id}/sources`, { kind: 'microphone' });
+    const bytes = Buffer.alloc(32000, 21);
+    const chunk = { sessionId: source.sessionId, sourceId: source.id, epoch: source.epoch, sequence: 0, sampleOffset: 0, sampleCount: 16000, sampleRate: 16000, digest: digest(bytes) };
+    const raw = metadata => fetch(`${base}/api/records/${record.id}/audio`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/octet-stream', 'X-Record-Audio': typeof metadata === 'string' ? metadata : JSON.stringify(metadata) }, body: bytes });
+    const first = await json(`/api/records/${record.id}/audio`, { ...chunk, pcm: bytes.toString('base64') });
+    const duplicate = await raw(chunk); assert.equal(duplicate.status, 200);
+    assert.deepEqual(await duplicate.json(), first);
+    const next = await raw({ ...chunk, sequence: 1, sampleOffset: 16000 }); assert.equal(next.status, 200);
+    assert.equal((await next.json()).watermark, 1);
+    assert.equal((await raw({ ...chunk, digest: 'a'.repeat(64) })).status, 400);
+    assert.equal((await raw({ ...chunk, sampleCount: 100 })).status, 400);
+    assert.equal((await raw({ ...chunk, sessionId: 'wrong-session' })).status, 400);
+    for (const metadata of ['null', '[]', 'broken-json']) assert.equal((await raw(metadata)).status, 400);
+    assert.equal((await repo.get(record.id)).chunks.length, 2);
+    const manifest = [{ sourceId: source.id, epoch: source.epoch, lastSequence: 1 }];
+    await json(`/api/records/${record.id}/pause`, { sources: manifest });
+    assert.equal((await repo.get(record.id)).capture, 'paused');
+    await json(`/api/records/${record.id}/seal`, { sources: manifest });
+    for (let i = 0; i < 3; i++) await runCycle(repo, { transcribe: async () => 'Synthetic recognized speech' });
+    const completed = await repo.get(record.id);
+    assert.equal(completed.capture, 'completed');
+    assert.equal(completed.chunks.filter(chunk => chunk.state === 'done').length, 2);
+  } finally { await app.stop(); await rm(root, { recursive: true, force: true }); }
 });

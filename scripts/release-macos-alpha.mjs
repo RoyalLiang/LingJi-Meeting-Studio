@@ -8,11 +8,12 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(root);
+const sourceRef = process.env.TTS_RELEASE_SOURCE_REF ? capture('git', ['rev-parse', '--verify', `${process.env.TTS_RELEASE_SOURCE_REF}^{commit}`]) : null;
+const readSource = path => sourceRef ? Promise.resolve(execFileSync('git', ['show', `${sourceRef}:${path}`], { maxBuffer: 8 * 1024 * 1024 })) : readFile(path);
 assert.equal(process.platform, 'darwin', 'This release command requires macOS.');
 assert.equal(process.arch, 'arm64', 'This Alpha is for Apple Silicon.');
-const configPath = join(root, 'apps/desktop/src-tauri/tauri.alpha.conf.json');
-const config = JSON.parse(await readFile(configPath, 'utf8'));
-const baseConfig = JSON.parse(await readFile('apps/desktop/src-tauri/tauri.conf.json', 'utf8'));
+const config = JSON.parse((await readSource('apps/desktop/src-tauri/tauri.alpha.conf.json')).toString());
+const baseConfig = JSON.parse((await readSource('apps/desktop/src-tauri/tauri.conf.json')).toString());
 assert.match(config.version, /^\d+\.\d+\.\d+-alpha\.\d+$/);
 assert.equal(baseConfig.build.frontendDist, '../../web/dist');
 const output = join(root, 'dist/releases', config.version);
@@ -38,14 +39,14 @@ async function run(command, args, extraEnv = {}, cwd = root) {
 // Identify the actual build inputs, including existing uncommitted native work.
 // Never copy .env, meeting data, credentials, or unrelated IDE state into the release.
 async function sourceSnapshot(destination) {
-  const paths = capture('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z', '--',
+  const paths = capture('git', [...(sourceRef ? ['ls-tree', '-r', '--name-only', '-z', sourceRef] : ['ls-files', '--cached', '--others', '--exclude-standard', '-z']), '--',
     '.gitignore', 'package.json', 'package-lock.json', 'apps/web', 'apps/desktop/package.json',
     'apps/desktop/src-tauri', 'scripts/release-macos-alpha.mjs', 'scripts/test-native-package.mjs', 'docs/releases/macos-alpha.md',
   ]).split('\0').filter(Boolean).sort();
   const files = [];
   for (const path of paths) {
     if (path.split('/').some(part => ['.DS_Store', 'target', 'gen', 'dist', 'node_modules'].includes(part)) || /(^|\/)\.env(?:\.|$)/.test(path)) continue;
-    const bytes = await readFile(path).catch(error => {
+    const bytes = await readSource(path).catch(error => {
       if (error.code === 'ENOENT') return null;
       throw error;
     });
@@ -68,10 +69,10 @@ const mount = join(scratch, 'mounted');
 let mounted = false;
 try {
   const frozen = join(scratch, 'source');
-  const revision = capture('git', ['rev-parse', 'HEAD']);
+  const revision = sourceRef || capture('git', ['rev-parse', 'HEAD']);
   const source = await sourceSnapshot(frozen);
   assert.equal((await sourceSnapshot()).sha256, source.sha256, 'Inputs changed while taking the source snapshot; retry.');
-  const sourceStatus = capture('git', ['status', '--porcelain=v1', '--', ...source.files.map(file => file.path)]);
+  const sourceStatus = sourceRef ? '' : capture('git', ['status', '--porcelain=v1', '--', ...source.files.map(file => file.path)]);
   // Reuse installed dependencies, but compile frozen application sources in an isolated Cargo target.
   await symlink(join(root, 'node_modules'), join(frozen, 'node_modules'));
   for (const workspace of ['apps/web', 'apps/desktop']) {

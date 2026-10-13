@@ -2,7 +2,7 @@ import { trace, traceCommit } from './telemetry';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { ArrowDown, ArrowSquareOut, Folder, FolderPlus, House, Check, CloudCheck, CloudSlash, FileText, GearSix, Microphone, Moon,
   Plus, Translate, MagnifyingGlass, ShareNetwork, SignOut, Sparkle, Sun, Trash, WarningCircle, X, CaretRight } from '@phosphor-icons/react';
-import { api, messageOf, setCsrf, ApiError } from './api';
+import { api, messageOf, setCsrf, setAudioTransport, ApiError } from './api';
 import { applyRecordDelta, subscribeToRecord, type ConnectionState } from './record-subscription';
 import type { Bootstrap, RecordDetail, RecordListItem, Segment, Minutes, Evidence } from './model';
 import { timecode } from './model';
@@ -77,11 +77,11 @@ function Workspace() {
   const [shares, setShares] = useState<{ id: string; scope: string; expires: number; revoked: boolean }[]>([]), [shareUrl, setShareUrl] = useState('');
   useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem('meeting-theme', theme); }, [theme]);
   const loadBoot = useCallback(async () => {
-    setLoading(true); setError(''); try { const b = await api<Bootstrap>('/bootstrap'); setCsrf(b.csrf); const list = await api<{records: RecordListItem[]}>('/records'); setQueueRecords(list.records.map(r => r.id)); const folders=await api<{workspaces:WorkspaceDirectory[]}>('/workspaces');setDirectories(folders.workspaces); setBoot(b); setAuthReady(true); }
+    setLoading(true); setError(''); try { const b = await api<Bootstrap>('/bootstrap'); setCsrf(b.csrf); setAudioTransport(b.audioTransport); const list = await api<{records: RecordListItem[]}>('/records'); setQueueRecords(list.records.map(r => r.id)); const folders=await api<{workspaces:WorkspaceDirectory[]}>('/workspaces');setDirectories(folders.workspaces); setBoot(b); setAuthReady(true); }
     catch (e) { if (!(e instanceof ApiError && e.status === 401)) setError(messageOf(e)); setAuthReady(false); } finally { setLoading(false); }
   }, []);
   const refreshProviders = useCallback(async () => {
-    const next = await api<Bootstrap>('/bootstrap'); setCsrf(next.csrf); setBoot(next);
+    const next = await api<Bootstrap>('/bootstrap'); setCsrf(next.csrf); setAudioTransport(next.audioTransport); setBoot(next);
   }, []);
   useEffect(() => { void loadBoot(); mounted.current = true; return () => { mounted.current = false; void capture.current?.stop(); }; }, [loadBoot]);
   const loadList = useCallback(async () => { const result = await api<{ records: RecordListItem[] }>(`/records?q=${encodeURIComponent(query)}&workspace=${encodeURIComponent(scope)}`); setRecords(result.records); }, [query,scope]);
@@ -270,7 +270,7 @@ function Workspace() {
         {record.retainAudio && record.capture === 'completed' && !record.audioPurged && <section className="audio-replay"><h2>原音回放</h2>{record.sources.map(source => <div key={source.id}><p className="audio-source-label">{source.label}</p><AudioPlayer src={`/api/records/${id}/audio/${source.id}`} label={`${source.label}原音回放`}/></div>)}</section>}<footer className="record-footer"><span>{record.audioPurged ? '临时原音已清理' : record.retainAudio ? '原音随记录留存' : '转录完成后清理临时原音'} · {new Date(record.deleteAt).toLocaleDateString('zh-CN')} 到期</span><Download href={`/api/records/${id}/export?format=markdown`}>导出 Markdown<ArrowSquareOut size={15}/></Download></footer>
       </>}
       </div><ScrollToTop root={scrollRoot}/></div>
-      {id && record && <CurrentDiscussion key={record.id} record={record} minutes={(record.capture === 'completed' ? record.minutes || record.liveMinutes : record.liveMinutes || record.minutes) || null} job={record.jobs.at(-1)} cite={cite} modelReady={boot.providers.minutes}/>}
+      {id && record && <CurrentDiscussion key={record.id} record={record} minutes={(record.capture === 'completed' ? record.minutes || record.liveMinutes : record.liveMinutes || record.minutes) || null} job={record.jobs.at(-1)} modelReady={boot.providers.minutes}/>}
       {record && translationOpen && <TranslationPanel key={record.id} record={record} ready={boot.providers.translation ?? boot.providers.minutes} close={()=>setTranslationOpen(false)} configure={()=>{setTranslationOpen(false);setModal('settings');}} save={async target=>{const recordId=record.id;await api(`/records/${recordId}`,'PATCH',{translationTarget:target});setRecord(current=>current?.id===recordId?{...current,translationTarget:target}:current);}} inspect={segment=>cite({segmentId:segment.id,revision:segment.revision},record.segments)}/>}
     </main><input ref={fileInput} className="sr-only" type="file" accept="audio/*" aria-label="导入音频文件" onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void onImport(file); }}/>
       <Toast message={workspaceToast} dismiss={dismissWorkspaceToast}/>

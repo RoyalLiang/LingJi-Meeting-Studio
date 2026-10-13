@@ -785,3 +785,12 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 .discussion-content .discussion-wait{margin:0;height:72px;align-items:flex-start;padding-top:0}
 .discussion-content .discussion-wait p{margin:0;line-height:24px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .discussion-content .discussion-pulse{margin-top:8px;flex:none}
+
+/* Keep live status compact so the AI minutes retain the reading space. */
+.discussion-dock,.workspace.with-translation .discussion-dock{height:auto;min-height:52px;padding:14px 20px}
+.discussion-dock>header{margin:0;gap:8px 20px;min-width:0}
+.discussion-dock>header>div{flex-shrink:0}
+.discussion-dock .discussion-status{font-size:12px;color:var(--ink-2);line-height:1.5}
+.is-inline-stream{margin:24px 0 0;padding:20px 0 0;border:0;border-top:1px solid var(--border);background:transparent}
+.is-inline-stream p{max-width:72ch;line-height:1.8;overflow-wrap:anywhere}
+@media(max-width:700px){.discussion-dock,.workspace.with-translation .discussion-dock{padding:12px 16px}.discussion-dock>header{gap:4px 12px}.discussion-dock h3{font-size:13px}.is-inline-stream{margin-top:20px}}
