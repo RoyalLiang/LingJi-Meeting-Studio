@@ -13,3 +13,9 @@ npm exec --workspace apps/desktop -- tauri icon "$PWD/apps/desktop/assets/lingji
 将其中的 `icon.png`、`icon.icns`、`icon.ico` 复制到 `apps/desktop/src-tauri/icons/`。现有 bundle 配置引用这三个文件。Web 页面仍使用独立的透明标识。
 
 更新资源后需重新打包应用，已安装版本不会自动变化。不要修改已签名应用包内的图标；那会改变包的完整性。
+
+## 液态玻璃材质变体
+
+`lingji-app-icon-liquid-glass-concept.png` 使用现有应用图标作为参考，由 imagegen 生成：保留瓷白底座和三片书页，加入翡翠透光、折射边缘、内部反光和绿色投影。完整提示保存在 `lingji-app-icon-liquid-glass.prompt.txt` 中。
+
+该 PNG 用于比较材质方向，尚未替换默认 SVG、PNG、ICNS 或 ICO，也未更新安装包。
