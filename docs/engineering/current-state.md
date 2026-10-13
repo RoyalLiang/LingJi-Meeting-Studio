@@ -2,6 +2,12 @@
 
 核查日期：2026-10-12。本页描述当前代码及本地验证；[改造前快照](prototype-baseline-2026-10-11.md)保留历史事实。真实供应商验证仅使用合成语音，未使用真实会议。
 
+## P0/P1 本地实现增量（2026-10-13）
+
+按用户指令已实施 EP-01～04：有界 opt-in 诊断、同事务事件/Record 列表投影与 Web 增量合并、IndexedDB v2 有界队列、按预算分窗和分层终稿。JSON 聚合仍为写入权威；新投影为可重建副本。原音频容量和 48 MiB 本地限额没有提高。
+
+标准回归 140/140；全部 Records 回归 118 通过、1 项 Postgres 环境测试跳过。真实 Chrome 仅验证合成元数据的队列恢复；长纪要仅通过本地 HTTP 模型夹具。阶段功能、回退、微基准及环境缺口见 [P0/P1 验证记录](../evidence/client-brain-research/p0-p1-validation-2026-10-12.md)。P2～P5、真实会议质量和两小时双来源录制仍待后续验证。
+
 ```mermaid
 flowchart LR
   WEB[React / TypeScript 工作台] --> CAP[来源采集与 IndexedDB 补传]

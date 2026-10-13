@@ -1,6 +1,6 @@
 # 项目文档入口
 
-- [跨平台客户端、性能与最强大脑演进调研](research/client-brain-evolution-2026-10-12.md)：当前代码、合成基准、端云分工与分层更新路线；[架构提议](adr/0010-cross-platform-brain-evolution.md)尚未批准实施。
+- [跨平台客户端、性能与最强大脑演进调研](research/client-brain-evolution-2026-10-12.md)：当前代码、合成基准、端云分工与分层更新路线；[架构提议](adr/0010-cross-platform-brain-evolution.md)仍为 proposed，已按用户指令实施其中的 P0/P1；其他阶段未实施。
 - [分阶段演进方案](design/evolution-plan-2026-10-12.md)：P0～P5 依赖、15 项本地任务、验收目标与迁移回退；首包为观测、投影、离线队列和分层终稿。
 
 本轮新增：[服务与分析边界 ADR](adr/0005-provider-and-analysis-boundaries.md)、[开发账户与配置运行手册](engineering/runbook.md)、[真实合成 ASR 与界面验收](engineering/acceptance.md)。
@@ -21,6 +21,8 @@
 8. [阶段路线图](design/roadmap.md)：以退出条件推进，不把时间表当成果。
 9. [ADR](adr/)：浏览器入口、可靠内容提交、版本化纪要，均标明提议状态。
 10. [目标协议切片](design/protocol.md)：目标接口与失败分类；本轮实际接口使用 `/api/records`，实现范围以 [当前状态](engineering/current-state.md) 为准。
+
+[P0/P1 本地实现与场景回归](evidence/client-brain-research/p0-p1-validation-2026-10-12.md)：EP-01～04、回退开关、合成基准与真实环境验证缺口。
 
 ## 规则与工程技能配置
 
