@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { X } from '@phosphor-icons/react';
 import { fetchDownload } from '../downloads';
 import { messageOf } from '../api';
@@ -8,9 +8,10 @@ export function Button({ children, variant = 'secondary', className = '', ...pro
 }
 export function Modal({ title, children, onClose, wide = false, explicitCloseOnly = false }: { title: string; children: ReactNode; onClose: () => void; wide?: boolean; explicitCloseOnly?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
   useEffect(() => { ref.current?.showModal(); return () => ref.current?.close(); }, []);
-  return <dialog className={`modal glass ${wide ? 'wide' : ''}`} ref={ref} onCancel={event => { event.preventDefault(); if (!explicitCloseOnly) onClose(); }} onClick={event => { if (!explicitCloseOnly && event.target === event.currentTarget) onClose(); }} aria-label={title}>
-    <header><h2>{title}</h2><Button variant="ghost" aria-label="关闭" onClick={onClose}><X size={20}/></Button></header>{children}
+  return <dialog className={`modal glass ${wide ? 'wide' : ''}`} ref={ref} onCancel={event => { event.preventDefault(); if (!explicitCloseOnly) onClose(); }} onClick={event => { if (!explicitCloseOnly && event.target === event.currentTarget) onClose(); }} aria-labelledby={titleId}>
+    <header className="modal-header"><h2 id={titleId}>{title}</h2><Button className="modal-close" variant="ghost" aria-label="关闭" onClick={onClose}><X size={20}/></Button></header><div className="modal-body">{children}</div>
   </dialog>;
 }
 export function Empty({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {

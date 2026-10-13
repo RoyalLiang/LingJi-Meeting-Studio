@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { CaretDown, CheckCircle, UsersThree, TreeStructure } from '@phosphor-icons/react';
 import type { Evidence, Minutes } from '../model';
-import { decisionItems, speakerViews, topicBranches } from '../minutes-views';
+import { decisionItems, speakerViews, topicTableLayout } from '../minutes-views';
+import { SummaryTables } from './SummaryTables';
+import './minutes-tree.css';
 import { Button, Empty } from './ui';
 
 type Props = { minutes: Minutes; cite: (evidence: Evidence) => void };
@@ -9,16 +11,17 @@ function Sources({ evidence, cite }: { evidence: Evidence[]; cite: Props['cite']
   const unique = evidence.filter((ref, index) => evidence.findIndex(item => item.segmentId === ref.segmentId && item.revision === ref.revision) === index);
   return <div className="citations">{unique.map((ref, index) => <button key={`${ref.segmentId}:${ref.revision}`} onClick={() => cite(ref)} aria-label={`查看引用原文 ${index + 1}`}>来源 {index + 1}</button>)}</div>;
 }
-function Branch({ branch, index, cite }: { branch: ReturnType<typeof topicBranches>[number]; index: number; cite: Props['cite'] }) {
+function Branch({ branch, index, minutes, cite }: { branch: ReturnType<typeof topicTableLayout>['branches'][number]; index: number; minutes: Minutes; cite: Props['cite'] }) {
   const [expanded, setExpanded] = useState(true);
   return <section className="minutes-branch" data-tone={index % 4}>
     <h4><Button variant="ghost" className="branch-toggle" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}><CaretDown size={15} className={expanded ? '' : 'collapsed'}/><span>{branch.title}</span><small>{String(index + 1).padStart(2, '0')}</small></Button></h4>
-    {expanded && <div className="branch-children">{branch.summary && <div className="branch-node"><p>{branch.summary}</p><Sources evidence={branch.evidence} cite={cite}/></div>}{branch.items.map((item, i) => <div className="branch-node" key={i}><p>{item.text}</p><Sources evidence={item.evidence} cite={cite}/></div>)}</div>}
+    {expanded && <div className="branch-children">{branch.summary && <div className="branch-node"><p>{branch.summary}</p><Sources evidence={branch.evidence} cite={cite}/></div>}{branch.items.map((item, i) => <div className="branch-node" key={i}><p>{item.text}</p><Sources evidence={item.evidence} cite={cite}/></div>)}{branch.tables.length > 0 && <div className="branch-node branch-table"><SummaryTables minutes={minutes} tables={branch.tables} cite={cite}/></div>}</div>}
   </section>;
 }
 export function MinutesTree({ minutes, cite }: Props) {
-  const branches = topicBranches(minutes);
-  return branches.length ? <div className="minutes-tree" aria-label="按主题整理的纪要">{branches.map((branch, index) => <Branch key={`${index}:${branch.title}`} branch={branch} index={index} cite={cite}/>)}</div>
+  const { branches, unassigned } = topicTableLayout(minutes);
+  if (unassigned.length) branches.push({ title: '补充表格', summary: '', evidence: [], items: [], tables: unassigned });
+  return branches.length ? <div className="minutes-tree is-compact" aria-label="按主题整理的纪要">{branches.map((branch, index) => <Branch key={`${index}:${branch.title}`} branch={branch} index={index} minutes={minutes} cite={cite}/>)}</div>
     : <Empty icon={<TreeStructure size={28}/>} title="主题正在形成">有可用转录后，讨论将按主题整理。</Empty>;
 }
 export function SpeakerMinutes({ minutes, cite }: Props) {

@@ -10,10 +10,9 @@ export function ScrollToTop({ root }: { root: RefObject<HTMLDivElement | null> }
     update(); container.addEventListener('scroll', update, { passive: true });
     return () => container.removeEventListener('scroll', update);
   }, [root]);
-  if (!visible) return null;
-  return <Button className="scroll-top glass" aria-label="回到页面顶部" onClick={() => {
+  return <Button className={`scroll-top ${visible ? 'is-visible' : ''}`} aria-label="回到页面顶部" title="回到顶部" disabled={!visible} aria-hidden={!visible} tabIndex={visible ? 0 : -1} onClick={() => {
     const container = root.current; if (!container) return;
     container.dispatchEvent(new Event('meeting:jump-top'));
     container.scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
-  }}><ArrowUp size={18}/><span>顶部</span></Button>;
+  }}><ArrowUp size={18}/></Button>;
 }

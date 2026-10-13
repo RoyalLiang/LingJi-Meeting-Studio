@@ -1,4 +1,4 @@
-import type { Minutes, MinutesItem, SpeakerSummary } from './model';
+import type { Evidence, Minutes, MinutesItem, SpeakerSummary, SummaryTable } from './model';
 
 export function topicBranches(minutes: Minutes) {
   const items = minutes.sections.flatMap(section => section.items);
@@ -12,6 +12,41 @@ export function topicBranches(minutes: Minutes) {
   const other = items.filter(item => !assigned.has(item));
   if (other.length) branches.push({ title: '其他讨论要点', summary: '', evidence: other.flatMap(item => item.evidence), items: other });
   return branches;
+}
+
+export function summaryTables(minutes: Minutes): SummaryTable[] {
+  if (minutes.tables?.length) return minutes.tables;
+  return minutes.actions.length ? [{
+    title: '行动候选汇总', columns: ['事项', '负责人', '时间'],
+    rows: minutes.actions.map(action => ({
+      cells: [action.text, action.owner || '待确认', action.due || '待确认'], evidence: action.evidence,
+    })),
+  }] : [];
+}
+
+/** Keep every row exactly once. Shared or unmatched source revisions stay unassigned. */
+export function topicTableLayout(minutes: Minutes) {
+  const branches = topicBranches(minutes).map(branch => ({ ...branch, tables: [] as SummaryTable[] }));
+  const key = (ref: Evidence) => `${ref.segmentId}:${ref.revision}`;
+  const sources = branches.map(branch => new Set([
+    ...branch.evidence, ...branch.items.flatMap(item => item.evidence),
+  ].map(key)));
+  const unassigned: SummaryTable[] = [];
+  for (const table of summaryTables(minutes)) {
+    const rows = branches.map(() => [] as SummaryTable['rows']);
+    const remaining: SummaryTable['rows'] = [];
+    for (const row of table.rows) {
+      const owners = row.evidence.map(ref => sources.flatMap((refs, index) => refs.has(key(ref)) ? [index] : []));
+      const owner = owners[0]?.length === 1 ? owners[0][0] : -1;
+      if (owner >= 0 && owners.every(matches => matches.length === 1 && matches[0] === owner)) rows[owner].push(row);
+      else remaining.push(row);
+    }
+    rows.forEach((items, index) => {
+      if (items.length) branches[index].tables.push({ ...table, rows: items });
+    });
+    if (remaining.length || !table.rows.length) unassigned.push({ ...table, rows: remaining });
+  }
+  return { branches, unassigned };
 }
 
 export function speakerViews(minutes: Minutes): (SpeakerSummary & { method: 'summary' | 'extract' })[] {
