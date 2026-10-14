@@ -88,3 +88,12 @@ test('seek waits for all source metadata and a failed source stops a late loadin
   assert.equal(meeting.paused, true);
   assert.equal(transport.playing, false);
 });
+
+test('switching meetings stops a pending track even after its element ref has detached', async () => {
+  const media = track(120);
+  let tracks = [media], release;
+  media.play = () => new Promise(resolve => { release = () => { media.paused = false; resolve(); }; });
+  const transport = new PlaybackTransport(() => tracks), pending = transport.play();
+  tracks = []; transport.pause(); release(); await pending;
+  assert.equal(media.paused, true);
+});
