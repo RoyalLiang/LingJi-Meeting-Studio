@@ -10,10 +10,58 @@ import { runCycle } from '../services/records/src/worker.mjs';
 import { createRecord, addSource, acknowledge, seal, requestMinutes, emit, digest } from '../packages/records/src/record.mjs';
 import { createS3Objects } from '../services/records/src/s3.mjs';
 
+test('SSE backpressure ends the stream without writing another heartbeat or killing the API', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tts-sse-backpressure-'));
+  const app = await createRecordServer({ root, databaseUrl: '', port: 0 });
+  const address = await app.start(), base = `http://127.0.0.1:${address.port}/api`;
+  let writesAfterEnd = 0;
+  app.server.on('request', (req, res) => {
+    if (!req.url.includes('/events')) return;
+    const write = res.write.bind(res);
+    res.write = (frame, ...args) => {
+      if (res.writableEnded) writesAfterEnd++;
+      const accepted = write(frame, ...args);
+      return String(frame).startsWith('id:') ? false : accepted;
+    };
+  });
+  try {
+    const registered = await fetch(base + '/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'pressure@example.test', password: 'sse-test-long-password' }) });
+    const headers = { Cookie: registered.headers.get('set-cookie').split(';')[0] };
+    const record = createRecord(`user:${digest('pressure@example.test')}`);
+    emit(record, 'test'); await app.repo.insert(record);
+    const response = await fetch(base + `/records/${record.id}/events?after=${BigInt(record.cursor) - 1n}`, { headers });
+    assert.match(await response.text(), /id:/);
+    await new Promise(resolve => setTimeout(resolve, 250));
+    assert.equal(writesAfterEnd, 0);
+    assert.equal((await fetch(base + '/health')).status, 200);
+  } finally { await app.stop(); await rm(root, { recursive: true }); }
+});
+
 async function fixture(fn) {
   const root = await mkdtemp(join(tmpdir(), 'tts-resilience-')), repo = await createRepository({ root, databaseUrl: '' });
   try { await fn(repo); } finally { await repo.close(); await rm(root, { recursive: true }); }
 }
+
+test('SSE disconnect during a pending repository poll cancels later writes', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tts-sse-close-'));
+  const app = await createRecordServer({ root, databaseUrl: '', port: 0 });
+  const address = await app.start(), base = `http://127.0.0.1:${address.port}/api`;
+  let release, entered;
+  const pending = new Promise(resolve => { entered = resolve; });
+  const gate = new Promise(resolve => { release = resolve; });
+  const eventsAfter = app.repo.eventsAfter.bind(app.repo);
+  app.repo.eventsAfter = async (...args) => { entered(); await gate; return eventsAfter(...args); };
+  try {
+    const registered = await fetch(base + '/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'close@example.test', password: 'sse-test-long-password' }) });
+    const headers = { Cookie: registered.headers.get('set-cookie').split(';')[0] };
+    const record = createRecord(`user:${digest('close@example.test')}`); await app.repo.insert(record);
+    const abort = new AbortController();
+    const response = await fetch(base + `/records/${record.id}/events`, { headers, signal: abort.signal });
+    await response.body.getReader().read(); await pending; abort.abort(); release();
+    await new Promise(resolve => setTimeout(resolve, 150));
+    assert.equal((await fetch(base + '/health')).status, 200);
+  } finally { release(); await app.stop(); await rm(root, { recursive: true }); }
+});
 async function withAudio(repo) {
   const r = createRecord('owner'), s = addSource(r, { kind: 'microphone' }), bytes = Buffer.alloc(3200);
   const object = await repo.putAudio(r.id, bytes);
