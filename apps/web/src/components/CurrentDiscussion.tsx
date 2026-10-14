@@ -1,5 +1,39 @@
+import { useCallback, useEffect, useRef } from 'react';
 import { ChatCircleDots } from '@phosphor-icons/react';
 import type { Job, Minutes, RecordDetail } from '../model';
+import './CurrentDiscussion.css';
+
+function DiscussionPulse({ activity, active }: { activity: string; active: boolean }) {
+  const element = useRef<HTMLSpanElement>(null);
+  const previous = useRef(activity);
+  const animations = useRef<Animation[]>([]);
+  const reduced = useRef<MediaQueryList | null>(null);
+  const stop = useCallback(() => {
+    animations.current.forEach(animation => animation.cancel());
+    animations.current = [];
+  }, []);
+  useEffect(() => {
+    const preference = reduced.current = matchMedia('(prefers-reduced-motion: reduce)');
+    const change = () => { if (preference.matches) stop(); };
+    preference.addEventListener('change', change);
+    return () => { preference.removeEventListener('change', change); stop(); };
+  }, [stop]);
+  useEffect(() => {
+    const changed = previous.current !== activity;
+    previous.current = activity;
+    if (!active) { stop(); return; }
+    if (!changed || reduced.current?.matches || animations.current.some(animation => animation.playState === 'running')) return;
+    stop();
+    animations.current = Array.from(element.current?.children || []).map((dot, index) => dot.animate([
+      { transform: 'translateY(0) scale(1)' },
+      { transform: 'translateY(-6px) scale(1.08)', offset: .35 },
+      { transform: 'translateY(1px) scale(.93)', offset: .65 },
+      { transform: 'translateY(-1px) scale(1.02)', offset: .82 },
+      { transform: 'translateY(0) scale(1)' },
+    ], { duration: 520, delay: index * 85, iterations: 2, easing: 'cubic-bezier(.22,.61,.36,1)' }));
+  }, [activity, active, stop]);
+  return <span ref={element} className={`discussion-activity${active ? ' is-active' : ''}`} aria-hidden="true"><span/><span/><span/></span>;
+}
 
 export function CurrentDiscussion({ record, minutes, job, modelReady }: { record: RecordDetail; minutes: Minutes | null; job?: Job; modelReady: boolean }) {
   const running = ['queued', 'running'].includes(job?.status || '');
@@ -13,7 +47,11 @@ export function CurrentDiscussion({ record, minutes, job, modelReady }: { record
     : live && !record.autoMinutes?.enabled ? '自动 AI 纪要未开启'
     : pending ? '新发言已接收，等待整理'
     : minutes ? 'AI 纪要已更新' : '等待对话开始';
+  const active = record.capture === 'recording' || running;
+  const activity = [record.capture, record.usage?.samples ?? 0, record.transcriptRevision, minutes?.revision ?? 0, job?.id || '', job?.progress?.completed ?? 0, status].join(':');
+  const captureState = record.capture === 'recording' ? '正在记录' : record.capture === 'paused' ? '已暂停' : record.capture === 'completed' ? '已完成' : record.capture === 'sealed' ? '整理中' : '待开始';
   return <section className="current-discussion discussion-dock" aria-label={live ? '当前正在聊' : '本场纪要'}>
-    <header><div><ChatCircleDots size={18}/><h3>{live ? '当前正在聊' : '本场纪要'}</h3></div><span className="discussion-status" role="status" aria-live="polite">{status}</span></header>
+    <header><div><ChatCircleDots size={18}/><h3>{live ? '当前正在聊' : '本场纪要'}</h3></div><span className="discussion-capture-state">{captureState}</span></header>
+    <div className="discussion-status-row"><DiscussionPulse activity={activity} active={active}/><span className="discussion-status" role="status" aria-live="polite" aria-atomic="true">{status}</span></div>
   </section>;
 }
