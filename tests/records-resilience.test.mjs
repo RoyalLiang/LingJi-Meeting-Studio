@@ -10,7 +10,7 @@ import { runCycle } from '../services/records/src/worker.mjs';
 import { createRecord, addSource, acknowledge, seal, requestMinutes, emit, digest } from '../packages/records/src/record.mjs';
 import { createS3Objects } from '../services/records/src/s3.mjs';
 
-test('SSE backpressure ends the stream without writing another heartbeat or killing the API', async () => {
+test('SSE backpressure pauses until drain and keeps the connection and API alive', async () => {
   const root = await mkdtemp(join(tmpdir(), 'tts-sse-backpressure-'));
   const app = await createRecordServer({ root, databaseUrl: '', port: 0 });
   const address = await app.start(), base = `http://127.0.0.1:${address.port}/api`;
@@ -21,7 +21,8 @@ test('SSE backpressure ends the stream without writing another heartbeat or kill
     res.write = (frame, ...args) => {
       if (res.writableEnded) writesAfterEnd++;
       const accepted = write(frame, ...args);
-      return String(frame).startsWith('id:') ? false : accepted;
+      if (String(frame).startsWith('id:')) { setTimeout(() => res.emit('drain'), 20); return false; }
+      return accepted;
     };
   });
   try {
@@ -29,11 +30,16 @@ test('SSE backpressure ends the stream without writing another heartbeat or kill
     const headers = { Cookie: registered.headers.get('set-cookie').split(';')[0] };
     const record = createRecord(`user:${digest('pressure@example.test')}`);
     emit(record, 'test'); await app.repo.insert(record);
-    const response = await fetch(base + `/records/${record.id}/events?after=${BigInt(record.cursor) - 1n}`, { headers });
-    assert.match(await response.text(), /id:/);
+    const abort = new AbortController();
+    const response = await fetch(base + `/records/${record.id}/events?after=${BigInt(record.cursor) - 1n}`, { headers, signal:abort.signal });
+    const reader = response.body.getReader(); let output = '';
+    while (!output.includes('id:')) { const chunk = await reader.read(); assert.equal(chunk.done, false); output += new TextDecoder().decode(chunk.value); }
+    const next = await reader.read(); assert.equal(next.done, false); assert.match(new TextDecoder().decode(next.value), /heartbeat/);
+    abort.abort();
     await new Promise(resolve => setTimeout(resolve, 250));
     assert.equal(writesAfterEnd, 0);
     assert.equal((await fetch(base + '/health')).status, 200);
+    assert.equal((await fetch(base + `/records/${record.id}`, { headers })).status, 200);
   } finally { await app.stop(); await rm(root, { recursive: true }); }
 });
 
@@ -60,6 +66,7 @@ test('SSE disconnect during a pending repository poll cancels later writes', asy
     await response.body.getReader().read(); await pending; abort.abort(); release();
     await new Promise(resolve => setTimeout(resolve, 150));
     assert.equal((await fetch(base + '/health')).status, 200);
+    assert.equal((await fetch(base + `/records/${record.id}`, { headers })).status, 200);
   } finally { release(); await app.stop(); await rm(root, { recursive: true }); }
 });
 async function withAudio(repo) {

@@ -190,22 +190,24 @@ export async function createRecordServer(options = {}) {
         let cursor = String(req.headers['last-event-id'] || url.searchParams.get('after') || record.cursor);
         requireThat(/^\d{1,20}$/.test(cursor), 'invalid_cursor', 400);
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
-        let busy = false, closed = false, timer;
-        const cleanup = () => { closed = true; clearInterval(timer); streams.delete(res); };
+        let busy = false, closed = false, draining = false, timer;
+        const drained = () => { draining = false; };
+        const cleanup = () => { closed = true; clearInterval(timer); res.off('drain', drained); streams.delete(res); };
         const ended = () => closed || res.destroyed || res.writableEnded;
         const finish = () => { cleanup(); if (!res.destroyed && !res.writableEnded) res.end(); };
         const write = frame => {
           if (ended()) return false;
-          try { if (res.write(frame)) return true; } catch { /* The response can close during an asynchronous poll. */ }
+          try { draining = !res.write(frame); return true; } catch { /* The response can close during an asynchronous poll. */ }
           finish(); return false;
         };
+        res.on('drain', drained);
         res.once('close', cleanup);
         res.once('error', () => { cleanup(); res.destroy(); });
         req.once('close', cleanup);
         streams.add(res);
         if (!write(': connected\n\n')) return;
         timer = setInterval(async () => {
-          if (busy || ended()) return; busy = true;
+          if (busy || draining || ended()) return; busy = true;
           try {
             await auth.user(req); if (ended()) return;
             const r = deltaEnabled ? await repo.eventsAfter(id, cursor) : await owned(id, user);
@@ -218,9 +220,9 @@ export async function createRecordServer(options = {}) {
             }
             for (const event of r.events.filter(e => BigInt(e.cursor) > BigInt(cursor))) {
               if (!write(`id: ${event.cursor}\ndata: ${JSON.stringify(event)}\n\n`)) return;
-              cursor = event.cursor;
+              cursor = event.cursor; if (draining) break;
             }
-            write(': heartbeat\n\n');
+            if (!draining) write(': heartbeat\n\n');
           } catch {
             if (!ended()) { write('event: revoked\ndata: {}\n\n'); finish(); }
           } finally { busy = false; }
