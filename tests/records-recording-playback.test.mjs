@@ -13,15 +13,24 @@ const code = stripTypeScriptTypes(await readFile(new URL('../apps/web/src/audio/
 const sandbox = { exports: {}, encodeURIComponent };
 vm.runInNewContext(code + '\nObject.assign(exports,{recordingPlaybackState,recordingAudioUrl});', sandbox);
 const { recordingPlaybackState, recordingAudioUrl } = sandbox.exports;
-const record = { retainAudio: true, audioPurged: false, capture: 'completed', sources: [{ id: 'received', watermark: 0 }, { id: 'empty', watermark: -1 }] };
+const record = { retainAudio: true, audioPurged: false, capture: 'completed', sources: [{ id: 'received', watermark: 0, lastSequence: 0, stopped: true }, { id: 'empty', watermark: -1, lastSequence: -1, stopped: true }] };
 
 test('original playback requires retained, unpurged and completed audio', () => {
-  for (const fields of [{ retainAudio: false }, { audioPurged: true }, { capture: 'recording' }, { capture: 'paused' }, { capture: 'sealed' }]) {
+  for (const fields of [{ retainAudio: false }, { audioPurged: true }, { capture: 'recording' }, { capture: 'paused' }]) {
     const state = recordingPlaybackState({ ...record, ...fields });
     assert.equal(state.available, false);
     assert.ok(state.message);
     assert.equal('sources' in state, false);
   }
+});
+
+test('sealed audio is playable before transcription completes only when source receipts are complete', () => {
+  assert.equal(recordingPlaybackState({...record,capture:'sealed'}).available,true);
+  for (const source of [{...record.sources[0],watermark:-1},{...record.sources[0],lastSequence:1},{...record.sources[0],stopped:false}]) {
+    assert.equal(recordingPlaybackState({...record,capture:'sealed',sources:[source]}).available,false);
+  }
+  const mixed=recordingPlaybackState({...record,capture:'sealed',sources:[record.sources[0],{...record.sources[0],id:'missing',lastSequence:2}]});
+  assert.deepEqual(Array.from(mixed.sources,s=>s.id),['received']);
 });
 
 test('playback exposes only sources with durable audio receipts and preserves the record', () => {
@@ -71,7 +80,33 @@ test('retained recordings serve complete WAV and byte ranges while temporary or 
       return { id: saved.id, sourceId: source.id };
     }
     const retained = await recording(true), url = base + recordingAudioUrl(retained.id, retained.sourceId).slice(4);
-    assert.equal((await fetch(url, { headers })).status, 404, 'sealed audio is not exposed before completion');
+    const early=await fetch(url,{headers}),earlyWav=Buffer.from(await early.arrayBuffer());
+    assert.equal(early.status,200,'complete retained audio is playable while ASR is pending');
+    assert.deepEqual(earlyWav.subarray(44),audioBytes);
+    assert.equal((await app.repo.get(retained.id)).capture,'sealed');
+    assert.ok((await app.repo.get(retained.id)).chunks.every(chunk=>chunk.state!=='done'));
+    await app.repo.change(retained.id,value=>{value.sources[0].watermark=0;});
+    assert.equal((await fetch(url,{headers})).status,404,'a missing durable receipt blocks playback');
+    await app.repo.change(retained.id,value=>{value.sources[0].watermark=1;});
+    const earlyPart=await fetch(url,{headers:{...headers,Range:'bytes=0-43'}});
+    assert.equal(earlyPart.status,206);assert.deepEqual(Buffer.from(await earlyPart.arrayBuffer()),earlyWav.subarray(0,44));
+    let release,entered,closed,returned;
+    const gate=new Promise(resolve=>{release=resolve;}),reading=new Promise(resolve=>{entered=resolve;}),disconnected=new Promise(resolve=>{closed=resolve;}),readDone=new Promise(resolve=>{returned=resolve;});
+    const readAudio=app.repo.readAudio.bind(app.repo);let writesAfterClose=0;
+    const monitor=(req,res)=>{
+      if(!req.url.includes('/audio/'))return;
+      res.once('close',closed);const write=res.write.bind(res);
+      res.write=(...args)=>{if(res.destroyed||res.writableEnded)writesAfterClose++;return write(...args);};
+    };
+    app.repo.readAudio=async object=>{entered();await gate;const bytes=await readAudio(object);returned();return bytes;};
+    app.server.on('request',monitor);
+    try {
+      const abort=new AbortController();const active=await fetch(url,{headers,signal:abort.signal});
+      await active.body.getReader().read();await reading;abort.abort();await disconnected;release();await readDone;
+      await new Promise(resolve=>setImmediate(resolve));
+      assert.equal(writesAfterClose,0,'seeking/cancelling must not write audio after the response closes');
+      assert.equal((await fetch(base+'/health')).status,200);
+    } finally {release();app.repo.readAudio=readAudio;app.server.off('request',monitor);}
     for (let i = 0; i < pcm.length; i++) await runCycle(app.repo, { transcribe: async () => '' }, { lane: 'audio' });
     const completed = await app.repo.get(retained.id);
     assert.equal(completed.capture, 'completed');

@@ -165,26 +165,38 @@ export async function createRecordServer(options = {}) {
         requireThat(minutes, 'version_not_found', 404); send(res, 200, minutes); return;
       }
       if (action.startsWith('audio/') && req.method === 'GET') {
-        requireThat(record.retainAudio && !record.audioPurged && record.capture === 'completed', 'audio_unavailable', 404);
-        const chunks = record.chunks.filter(c => c.sourceId === action.slice(6)).sort((a, b) => a.sequence - b.sequence);
-        requireThat(chunks.length, 'audio_unavailable', 404);
+        const source = record.sources.find(source => source.id === action.slice(6));
+        requireThat(record.retainAudio && !record.audioPurged && ['sealed', 'completed'].includes(record.capture) &&
+          source?.stopped && Number.isSafeInteger(source.lastSequence) && source.lastSequence >= 0 && source.watermark === source.lastSequence, 'audio_unavailable', 404);
+        const chunks = record.chunks.filter(chunk => chunk.sourceId === source.id).sort((a, b) => a.sequence - b.sequence);
+        let sampleOffset = 0;
+        requireThat(chunks.length === source.lastSequence + 1 && chunks.every((chunk, index) => {
+          const contiguous = chunk.sequence === index && chunk.sampleOffset === sampleOffset;
+          sampleOffset += chunk.sampleCount; return contiguous;
+        }), 'audio_unavailable', 404);
         const length = chunks.reduce((n, c) => n + c.sampleCount * 2, 0), total = length + 44;
         const range = req.headers.range?.match(/^bytes=(\d+)-(\d*)$/);
         const start = range ? Number(range[1]) : 0, end = range && range[2] ? Math.min(Number(range[2]), total - 1) : total - 1;
         requireThat(start <= end && start < total, 'range_not_satisfiable', 416);
         res.writeHead(range ? 206 : 200, { 'Content-Type': 'audio/wav', 'Accept-Ranges': 'bytes', 'Cache-Control': 'no-store',
           'Content-Length': end - start + 1, ...(range ? { 'Content-Range': `bytes ${start}-${end}/${total}` } : {}) });
+        res.once('error', () => res.destroy());
         let offset = 0;
         for (let i = -1; i < chunks.length; i++) {
-          if (res.destroyed) break;
+          if (res.destroyed || res.writableEnded) break;
           const bytes = i < 0 ? waveHeader(length) : await repo.readAudio(chunks[i].object);
+          if (res.destroyed || res.writableEnded) break;
           if (offset <= end && offset + bytes.length > start) {
             const slice = bytes.subarray(Math.max(0, start - offset), Math.min(bytes.length, end - offset + 1));
-            if (!res.write(slice)) await new Promise(resolve => { res.once('drain', resolve); res.once('close', resolve); });
+            if (!res.write(slice)) await new Promise(resolve => {
+              const done = () => { res.off('drain', done); res.off('close', done); resolve(); };
+              res.once('drain', done); res.once('close', done);
+              if (res.destroyed || res.writableEnded) done();
+            });
           }
           offset += bytes.length; if (offset > end) break;
         }
-        res.end(); return;
+        if (!res.destroyed && !res.writableEnded) res.end(); return;
       }
       if (action === 'events' && req.method === 'GET') {
         let cursor = String(req.headers['last-event-id'] || url.searchParams.get('after') || record.cursor);
