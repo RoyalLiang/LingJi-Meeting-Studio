@@ -1,11 +1,12 @@
-import { ApiError } from './api';
+import { ApiError, serviceFetch } from './api';
 export async function fetchDownload(href: string, signal?: AbortSignal) {
-  const response = await fetch(href, { credentials: 'same-origin', cache: 'no-store', signal });
+  const response = await serviceFetch(href, { credentials: 'same-origin', cache: 'no-store', signal });
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
     throw new ApiError(data.error || 'download_failed', response.status);
   }
-  const blob = await response.blob();
+  let blob: Blob;
+  try { blob = await response.blob(); } catch { throw new ApiError('invalid_response', response.status); }
   if (!blob.size) throw new Error('下载文件为空，请重试。');
   const format = new URL(href, location.origin).searchParams.get('format') || 'json';
   const fallback = `meeting.${format === 'markdown' ? 'md' : format === 'issues' ? 'issues.json' : format}`;

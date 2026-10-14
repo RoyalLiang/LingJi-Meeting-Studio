@@ -840,3 +840,9 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 .modal-body form>.actions{justify-content:flex-end;gap:10px;}
 
 .recording-playback-trigger { display:inline-flex; }
+
+.record-processing { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:6px 16px; margin:8px 0 18px; }
+.record-processing:empty { display:none; }
+.record-processing .sub-actions { margin:0 0 0 auto; flex:none; }
+.record-processing .processing-line { display:flex; flex-wrap:wrap; gap:4px 18px; margin:0; flex:1; }
+.record-processing .processing-line > span { color:var(--ink-3); }

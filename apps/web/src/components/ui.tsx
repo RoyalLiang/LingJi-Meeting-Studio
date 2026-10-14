@@ -17,6 +17,7 @@ export function Modal({ title, children, onClose, wide = false, explicitCloseOnl
   const ref = useRef<HTMLDialogElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const titleId = useId();
+  const backdropDown = useRef(false);
   useEffect(() => {
     const dialog = ref.current;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -30,7 +31,10 @@ export function Modal({ title, children, onClose, wide = false, explicitCloseOnl
       if (target?.isConnected && !target.closest('[inert]')) target.focus({ preventScroll: true });
     };
   }, [initialFocus]);
-  return <dialog className={`modal glass ${wide ? 'wide' : ''}`} ref={ref} onCancel={event => { event.preventDefault(); if (!explicitCloseOnly) onClose(); }} onClick={event => { if (!explicitCloseOnly && event.target === event.currentTarget) onClose(); }} aria-labelledby={titleId}>
+  return <dialog className={`modal glass ${wide ? 'wide' : ''}`} ref={ref} onCancel={event => { event.preventDefault(); if (!explicitCloseOnly) onClose(); }} onPointerDown={event => { backdropDown.current = event.target === event.currentTarget; }} onClick={event => {
+      const startedOnBackdrop = backdropDown.current; backdropDown.current = false;
+      if (!explicitCloseOnly && startedOnBackdrop && event.target === event.currentTarget) onClose();
+    }} aria-labelledby={titleId}>
     <header className="modal-header"><h2 id={titleId} ref={heading} tabIndex={-1}>{title}</h2><CloseButton className="modal-close" onClick={onClose}/></header><div className="modal-body">{children}</div>
   </dialog>;
 }
@@ -41,7 +45,7 @@ export function Status({ children, tone = '' }: { children: ReactNode; tone?: st
 export function Download({ href, children }: { href: string; children: ReactNode }) {
   const [busy,setBusy] = useState(false), [error,setError] = useState(''), [notice,setNotice] = useState('');
   const [prepared,setPrepared] = useState<{url:string;filename:string}|null>(null), request = useRef<AbortController|null>(null);
-  const dismiss = useCallback(() => setNotice(''), []);
+  const dismiss = useCallback(() => { setNotice(''); setError(''); }, []);
   useEffect(() => { setPrepared(null); setError(''); setNotice(''); setBusy(false); return () => { request.current?.abort(); }; }, [href]);
   useEffect(() => () => { if (prepared) URL.revokeObjectURL(prepared.url); }, [prepared]);
   async function download() {
@@ -56,6 +60,6 @@ export function Download({ href, children }: { href: string; children: ReactNode
   }
   return <span className="download-control"><Button disabled={busy} onClick={() => void download()}>{busy ? '正在准备…' : children}</Button>
     {prepared && <a className="download-retry" href={prepared.url} download={prepared.filename}>重新下载</a>}
-    {error && <span className="download-error" role="alert">{error}</span>}<Toast message={notice} dismiss={dismiss}/>
+    <Toast message={error || notice} error={Boolean(error)} dismiss={dismiss}/>
   </span>;
 }

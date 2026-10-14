@@ -90,12 +90,20 @@ function Workspace() {
   const [records, setRecords] = useState<RecordListItem[]>([]), [query, setQuery] = useState(''), [id, setId] = useState(new URLSearchParams(location.search).get('record') || ''), [record, setRecord] = useState<RecordDetail | null>(null);
   const [error, setError] = useState(''), [busy, setBusy] = useState(false), [translationOpen, setTranslationOpen] = useState(false);
   const [toast, setToast] = useState({ message: '', key: 0 });
-  const dismissToast = useCallback(() => setToast(current => ({ ...current, message: '' })), []);
-  const showToast = useCallback((message: string) => setToast(current => ({ message, key: current.key + 1 })), []);
+  const dismissToast = useCallback(() => { setToast(current => ({ ...current, message: '' })); setError(''); }, []);
+  const showToast = useCallback((message: string) => { setError(''); setToast(current => ({ message, key: current.key + 1 })); }, []);
   const selectRecord = useCallback((next: string) => { dismissToast(); setId(next); }, [dismissToast]);
   const [directories,setDirectories] = useState<WorkspaceDirectory[]>([]), [scope,setScope] = useState(() => { const value=new URLSearchParams(location.search).get('workspace') || 'all'; return /^(all|[a-f0-9-]{36})$/.test(value) ? value : 'all'; });
   const [archiveIds,setArchiveIds] = useState<string[]>([]), [archiveInitial,setArchiveInitial] = useState<string|null>(null), [editingDirectory,setEditingDirectory] = useState<WorkspaceDirectory|undefined>(), [homeVersion,setHomeVersion] = useState(0);
   const [connectionState, setConnectionState] = useState<ConnectionState>('idle');
+  const recordCache = useRef(new Map<string, RecordDetail>());
+  const cacheEpoch = useRef(0);
+  const [retryVersion, setRetryVersion] = useState(0);
+  const rememberRecord = useCallback((detail: RecordDetail) => {
+    const cache = recordCache.current; cache.delete(detail.id); cache.set(detail.id, detail);
+    if (cache.size > 8) cache.delete(cache.keys().next().value!);
+    if (mounted.current && activeId.current === detail.id) setRecord(detail);
+  }, []);
   const [modal, setModal] = useState<'new' | 'settings' | 'share' | 'delete' | 'import-text' | 'capture' | 'finish' | 'directory' | 'archive' | 'learning' | null>(null), [theme, setTheme] = useState(localStorage.getItem('meeting-theme') || 'light');
   const [signals, setSignals] = useState<CaptureSignal[]>([]);
   const [captureIssues, setCaptureIssues] = useState<CaptureIssue[]>([]);
@@ -118,7 +126,7 @@ function Workspace() {
   const loadBoot = useCallback(() => {
     if (bootRequest.current) return bootRequest.current;
     const request = (async () => {
-    setError(''); try { const b = await api<Bootstrap>('/bootstrap'); setCsrf(b.csrf); setAudioTransport(b.audioTransport); setLocalQueueBackend(Boolean(b.localAccount)); const list = await api<{records: RecordListItem[]}>('/records'); setQueueRecords(list.records.map(r => r.id)); const folders=await api<{workspaces:WorkspaceDirectory[]}>('/workspaces');setDirectories(folders.workspaces); setBoot(b); setAuthReady(true); return true; }
+    cacheEpoch.current++; recordCache.current.clear(); setError(''); try { const b = await api<Bootstrap>('/bootstrap'); setCsrf(b.csrf); setAudioTransport(b.audioTransport); setLocalQueueBackend(Boolean(b.localAccount)); const list = await api<{records: RecordListItem[]}>('/records'); setQueueRecords(list.records.map(r => r.id)); const folders=await api<{workspaces:WorkspaceDirectory[]}>('/workspaces');setDirectories(folders.workspaces); setBoot(b); setAuthReady(true); return true; }
     catch (e) { if (!(e instanceof ApiError && e.status === 401)) setError(messageOf(e)); setAuthReady(false); return false; } finally { setLoading(false); }
     })();
     bootRequest.current = request;
@@ -132,28 +140,39 @@ function Workspace() {
   const loadList = useCallback(async () => { const result = await api<{ records: RecordListItem[] }>(`/records?q=${encodeURIComponent(query)}&workspace=${encodeURIComponent(scope)}`); setRecords(result.records); }, [query,scope]);
   const refresh = useCallback(async () => {
     const current = activeId.current; if (!current) return;
-    const detail = await api<RecordDetail>(`/records/${current}`); if (mounted.current && activeId.current === current) setRecord(detail);
-  }, []);
+    const epoch = cacheEpoch.current; const detail = await api<RecordDetail>(`/records/${current}`); if (epoch === cacheEpoch.current) rememberRecord(detail);
+  }, [rememberRecord]);
   useEffect(() => {
     if (!authReady) return; const controller = new AbortController(); const timer = setTimeout(() => { api<{ records: RecordListItem[] }>(`/records?q=${encodeURIComponent(query)}&workspace=${encodeURIComponent(scope)}`, 'GET', undefined, controller.signal).then(d => setRecords(d.records)).catch(e => { if (e.name !== 'AbortError') setError(messageOf(e)); }); }, 180);
     return () => { clearTimeout(timer); controller.abort(); };
   }, [query, scope, authReady]);
   useEffect(() => {
     if (activeId.current !== id || !authReady) { void capture.current?.stop(); capture.current = null; setSignals([]); }
-    activeId.current = id; setRecord(null); setTranslationOpen(false); setEvidence(null);
+    activeId.current = id; if (!authReady) { cacheEpoch.current++; recordCache.current.clear(); } setRecord(recordCache.current.get(id) || null); setTranslationOpen(false); setEvidence(null);
   }, [id, authReady]);
   useEffect(() => { const params=new URLSearchParams({workspace:scope});if(id)params.set('record',id); history.replaceState(null,'',`?${params}`); }, [id,scope]);
   useEffect(() => {
     if (!id || !authReady) { setConnectionState('idle'); return; }
+    const epoch = cacheEpoch.current;
     return subscribeToRecord<RecordDetail>({
       recordId: id, localBackend,
       applyDelta: applyRecordDelta,
       loadRecord: signal => api<RecordDetail>(`/records/${id}`, 'GET', undefined, signal),
-      onRecord: detail => { if (mounted.current && activeId.current === id){trace('view.received',{recordId:detail.id,cursor:detail.cursor});setRecord(detail);} },
+      onRecord: detail => { if (epoch === cacheEpoch.current && mounted.current && activeId.current === id){trace('view.received',{recordId:detail.id,cursor:detail.cursor});rememberRecord(detail);} },
       onState: setConnectionState,
-      onFatal: error => { setRecord(null); setError(messageOf(error)); if (error instanceof ApiError && error.status === 401) setAuthReady(false); }
+      onFatal: error => { recordCache.current.delete(id); setRecord(null); setError(messageOf(error)); if (error instanceof ApiError && error.status === 401) setAuthReady(false); }
     });
-  }, [id, authReady, online, localBackend]);
+  }, [id, authReady, online, localBackend, retryVersion, rememberRecord]);
+  useEffect(() => {
+    if (!authReady || id) return;
+    const controller = new AbortController();
+    const probe = async () => {
+      try { await api('/health', 'GET', undefined, controller.signal); if (!controller.signal.aborted) setConnectionState('connected'); }
+      catch { if (!controller.signal.aborted) setConnectionState('unavailable'); }
+    };
+    void probe(); const timer = setInterval(() => void probe(), 15000);
+    return () => { controller.abort(); clearInterval(timer); };
+  }, [authReady, id, online, retryVersion]);
   const upload = useCallback(async () => { try { await drainQueue(() => { void pendingCount(activeId.current).then(setPending); }); setPending(await pendingCount(activeId.current)); }
     catch (e) { if (navigator.onLine || localBackend) setError(messageOf(e)); } }, []);
   useEffect(() => {
@@ -174,7 +193,7 @@ function Workspace() {
   }, [record?.id, record?.title, record?.capture, record?.minutesRevision, record?.liveMinutes]);
   useEffect(() => { if (!authReady) dismissToast(); }, [authReady, dismissToast]);
   async function mutate(path: string, method: string, body?: unknown) {
-    setBusy(true); setError(''); try { await api(path, method, body); await Promise.all([method === 'DELETE' && path === `/records/${activeId.current}` ? Promise.resolve() : refresh(), loadList()]); return true; }
+    setBusy(true); setError(''); try { await api(path, method, body); try { await Promise.all([method === 'DELETE' && path === `/records/${activeId.current}` ? Promise.resolve() : refresh(), loadList()]); } catch { showToast('修改已保存，页面更新暂时失败；连接恢复后将自动刷新。'); } return true; }
     catch (e) { setError(messageOf(e)); return false; } finally { setBusy(false); }
   }
   async function create(event: FormEvent<HTMLFormElement>) {
@@ -285,7 +304,12 @@ function Workspace() {
     }catch(e){throw new Error(messageOf(e));}
   }
   async function saveArchive(workspaceId:string|null) {
-    try {await api('/workspaces/archive','POST',{recordIds:archiveIds,workspaceId});await Promise.all([loadList(),refresh()]);setHomeVersion(v=>v+1);showToast(`已归档 ${archiveIds.length} 场会议。`);setArchiveIds([]);setModal(null);}catch(e){throw new Error(messageOf(e));}
+    try {
+      await api('/workspaces/archive','POST',{recordIds:archiveIds,workspaceId});
+      for (const recordId of archiveIds) { const cached = recordCache.current.get(recordId); if (cached) rememberRecord({...cached, workspaceId}); }
+      let refreshed = true; try { await Promise.all([loadList(),refresh()]); } catch { refreshed = false; }
+      setHomeVersion(v=>v+1);showToast(refreshed ? `已归档 ${archiveIds.length} 场会议。` : '归档已保存，列表将在连接恢复后更新。');setArchiveIds([]);setModal(null);
+    }catch(e){throw new Error(messageOf(e));}
   }
   if (loading) return <main className="loading-page" role="status"><Brand markOnly/><p>正在打开会议空间…</p></main>;
   if (!authReady || !boot) return <Auth ready={loadBoot}/>;
@@ -300,12 +324,12 @@ function Workspace() {
         {!records.length && <p className="rail-empty">{query ? '没有匹配记录' : '你的第一场对话，值得留住。'}</p>}</nav>
       <footer className="rail-footer"><div className="account"><span className="avatar">{localBackend ? '聆' : boot.email[0].toUpperCase()}</span><span><b>{localBackend ? '本机空间' : boot.email.split('@')[0]}</b><small>个人会议空间</small></span></div><div className="actions"><Button variant="ghost" aria-label="设置与诊断" onClick={() => { setModal('settings'); void api<{deletions: typeof deletions}>('/deletions').then(d => setDeletions(d.deletions)).catch(e => setError(messageOf(e))); }}><GearSix size={19}/></Button><Button variant="ghost" aria-label={theme === 'light' ? '切换深色' : '切换浅色'} onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>{theme === 'light' ? <Moon size={19}/> : <Sun size={19}/>}</Button>{!boot.localAccount && <Button variant="ghost" aria-label="退出登录" disabled={recording} onClick={async () => { try { await api('/auth/logout', 'POST'); setQueueRecords([]); setAuthReady(false); selectRecord(''); } catch (e) { setError(messageOf(e)); } }}><SignOut size={19}/></Button>}</div></footer>
     </aside>
-    <main id="workspace" className={`workspace ${translationOpen ? 'with-translation' : ''}`}><header className="topbar glass"><div className="workspace-breadcrumb"><button className="breadcrumb" disabled={recording||busy} onClick={()=>chooseScope(scope)}>{directoryName}</button><CaretRight size={14}/><span>{record ? '记录详情' : '目录概览'}</span></div><div className="search-box topbar-search"><MagnifyingGlass size={18}/><input type="search" aria-label="搜索当前目录会议内容" placeholder="搜索当前目录的会议、纪要与内容" value={query} onChange={e => setQuery(e.target.value)}/></div><div className="sync-state" data-connection-state={connectionState}>{(online || localBackend) && (!id || connectionState==='connected') ? <CloudCheck size={18}/> : <CloudSlash size={18}/>}<span>{localBackend && (!id || connectionState==='connected') ? (pending ? `${pending} 段待保存` : online ? '本机已连接' : '本机已连接 · 云端离线') : !online && !localBackend ? '离线 · 本地保留' : !id ? '网络可用' : connectionState!=='connected' ? ({idle:'未连接',connecting:'连接中',reconnecting:'正在重连',offline:'离线',unavailable:'连接不可用'}[connectionState]) : pending ? `${pending} 段待上传` : '已连接'}</span><ScrollToTop root={scrollRoot}/></div></header>
+    <main id="workspace" className={`workspace ${translationOpen ? 'with-translation' : ''}`}><header className="topbar glass"><div className="workspace-breadcrumb"><button className="breadcrumb" disabled={recording||busy} onClick={()=>chooseScope(scope)}>{directoryName}</button><CaretRight size={14}/><span>{record ? '记录详情' : '目录概览'}</span></div><div className="search-box topbar-search"><MagnifyingGlass size={18}/><input type="search" aria-label="搜索当前目录会议内容" placeholder="搜索当前目录的会议、纪要与内容" value={query} onChange={e => setQuery(e.target.value)}/></div><div className="sync-state" title="页面与记录服务的连接状态；与语音、AI 模型服务连接无关" data-connection-state={connectionState}>{connectionState==='connected' ? <CloudCheck size={18}/> : <CloudSlash size={18}/>}<span>{localBackend && connectionState==='connected' ? (pending ? `${pending} 段待保存` : online ? '本机已连接' : '本机已连接 · 云端离线') : !online && !localBackend ? '离线 · 本地保留' : connectionState!=='connected' ? ({idle:'未连接',connecting:'连接中',reconnecting:'实时更新重连中',offline:'离线',unavailable:localBackend?'本机记录服务不可用':'记录服务不可用',inaccessible:'记录不可访问'}[connectionState]) : pending ? `${pending} 段待上传` : '已连接'}</span><ScrollToTop root={scrollRoot}/></div></header>
       <div className="workspace-body"><div ref={scrollRoot} className="workspace-scroll" tabIndex={0} aria-label="会议内容滚动区">
-      {error && <div className="global-message error" role="alert"><WarningCircle size={19}/><span>{error}</span><button aria-label="关闭错误提示" onClick={() => setError('')}><X size={17}/></button></div>}
-      {id && connectionState==='reconnecting' && <div className="global-message" role="status"><span>实时连接中断，正在自动重连；本地音频仍会保留。</span></div>}
+      {id && connectionState==='reconnecting' && <div className="global-message" role="status"><span>实时更新暂时中断，正在重连记录服务。</span></div>}
+      {id && record && connectionState==='unavailable' && <div className="global-message" role="status">记录服务暂时不可用，当前保留已读取内容；正在自动重试。<Button variant="ghost" onClick={()=>setRetryVersion(v=>v+1)}>重新连接</Button></div>}
       {boot.providers.fixture && <div className="fixture-notice">开发测试模式 · 识别与纪要为测试数据</div>}
-      {!id ? <WorkspaceHome key={`${scope}:${homeVersion}`} scope={scope} records={records} query={query} modelReady={boot.providers.minutes} disabled={recording||busy} open={selectRecord} archive={openArchive} create={newDirectory} edit={()=>{setEditingDirectory(directories.find(w=>w.id===scope));setModal('directory');}} quick={()=>void quickRecord()}/> : !record ? <div className="empty" role="status">{connectionState==='unavailable' ? '当前记录无法访问，请重新登录或选择其他记录。' : '正在读取记录…'}</div> : <><div className="record-heading"><div><p className="kicker">{new Date(records.find(r => r.id === id)?.createdAt || Date.now()).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+      {!id ? <WorkspaceHome key={`${scope}:${homeVersion}`} scope={scope} records={records} query={query} modelReady={boot.providers.minutes} disabled={recording||busy} open={selectRecord} archive={openArchive} create={newDirectory} edit={()=>{setEditingDirectory(directories.find(w=>w.id===scope));setModal('directory');}} quick={()=>void quickRecord()}/> : !record ? <div className="empty" role="status">{connectionState==='unavailable' ? <><p>记录服务暂时不可用，正在自动重试。</p><Button onClick={()=>setRetryVersion(v=>v+1)}>重新连接</Button></> : connectionState==='inaccessible' ? '当前记录不可访问，请选择其他记录。' : '正在读取记录…'}</div> : <><div className="record-heading"><div><p className="kicker">{new Date(records.find(r => r.id === id)?.createdAt || Date.now()).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
           <RecordTitle key={record.id} title={record.title} save={async title => { const saved = await mutate(`/records/${id}`, 'PATCH', {title}); if (saved) { await loadList(); showToast('会议标题已保存。'); } return saved; }}/><div className="record-meta"><Status tone={recording ? 'live' : ''}>{recording ? '正在记录' : record.capture === 'completed' ? '已完成' : record.capture === 'sealed' ? '整理中' : record.capture === 'paused' ? '已暂停' : '待开始'}</Status><span>{timecode(record.usage.samples / 16)} 音频 · 转录 v{record.transcriptRevision}</span><span>{record.retentionDays} 天留存</span><span>{directories.find(w=>w.id===record.workspaceId)?.name || '未归档'}</span></div></div>
           <div className="actions meeting-actions">{boot.learning?.enabled && <Button disabled={busy || record.capture!=='completed'} onClick={()=>setModal('learning')}><Sparkle size={17}/>{record.learning?.status==='ready' ? `学习评审 · ${record.learning.groups}` : record.learning?.status==='running' || record.learning?.status==='queued' ? '待标注准备中' : '学习评审'}</Button>}<RecordingPlayback key={record.id} record={record}/><Button disabled={busy} onClick={() => setModal('share')}><ShareNetwork size={17}/><span>分享</span></Button><Button aria-expanded={translationOpen} onClick={() => setTranslationOpen(!translationOpen)}><Translate size={17}/>实时翻译{record.translationTarget && <span className="live-dot"/>}</Button><Button disabled={recording||busy} onClick={()=>openArchive([id])}><Folder size={17}/>归档</Button><Button variant="ghost" aria-label="删除本次记录" disabled={recording} onClick={() => setModal('delete')}><Trash size={18}/></Button></div></div>
         <MeetingControls record={record} recording={recording} busy={busy} ready={sourceReady} signals={signals}
@@ -313,11 +337,13 @@ function Workspace() {
         microphone={() => void toggleMicrophone()}
         finish={() => { setError(''); setModal('finish'); }} importAudio={() => fileInput.current?.click()}/>
       {!sourceReady && <div className="notice">语音服务尚未配置。维护者配置服务后即可录音；现在可以<Button variant="ghost" onClick={() => setModal('import-text')}>导入已有转录</Button>体验整理流程。</div>}
-        {!recording && <div className="sub-actions">{!['sealed','completed'].includes(record.capture) && <Button variant="ghost" onClick={() => setModal('import-text')}><FileText size={16}/>导入文字</Button>}<Download href={`/api/records/${id}/export?format=json`}><ArrowDown size={15}/>备份记录</Download></div>}
         {importProgress !== null && <div className="notice" role="status">正在解码与保存音频：{Math.round(importProgress * 100)}%</div>}
         {record.capture === 'recording' && !recording && <div className="notice">检测到上次未结束的采集。可继续录音，或封存本机已保存的片段。<Button disabled={busy} onClick={() => setModal('finish')}>整理本场记录</Button></div>}
         {['blocked', 'failed'].includes(record.transcription) && <div className="notice error">语音处理受阻，音频仍在保存期内。检查服务配置后<Button disabled={busy} onClick={() => void mutate(`/records/${id}/retry`, 'POST')}>重新处理</Button></div>}
+      <div className="record-processing">
         {record.pendingChunks > 0 && <div className="processing-line" role="status">正在处理音频 · {record.pendingChunks} 个音频包<span>音频包会合并识别为发言，不代表待识别的语音段落</span></div>}
+        {!recording && <div className="sub-actions">{!['sealed','completed'].includes(record.capture) && <Button variant="ghost" onClick={() => setModal('import-text')}><FileText size={16}/>导入文字</Button>}<Download href={`/api/records/${id}/export?format=json`}><ArrowDown size={15}/>备份记录</Download></div>}
+      </div>
         {record.capture === 'completed' && record.usage.samples > 0 && record.pendingChunks === 0 && record.segments.length === 0 && <div className="notice audio-empty-result" role="status">音频已处理完成，但未识别出可用语音。请检查麦克风输入、系统权限或共享音轨，再开始一段试录。</div>}<MinutesPanel inline modelReady={boot.providers.minutes} automate={async (enabled, intervalSeconds) => { await mutate(`/records/${id}/automation`, 'PATCH', {enabled,intervalSeconds}); }} record={record} busy={busy} onClose={()=>{}} cite={cite} generate={async (template,mode) => { await mutate(`/records/${id}/minutes`, 'POST', { template,mode }); }} edit={async minutes => { return mutate(`/records/${id}/minutes`, 'PATCH', { revision: minutes.revision, minutes }); }}/>
         <Notes key={`notes:${record.id}`} record={record} save={async (notes, notesRevision) => { return mutate(`/records/${id}`, 'PATCH', { notes, notesRevision }); }}/>
         <footer className="record-footer"><span>{new Date(record.deleteAt).toLocaleDateString('zh-CN')} 到期</span><Download href={`/api/records/${id}/export?format=markdown`}>导出 Markdown<ArrowSquareOut size={15}/></Download></footer>
@@ -326,7 +352,7 @@ function Workspace() {
       {id && record && !['sealed','completed'].includes(record.capture) && <CurrentDiscussion key={record.id} record={record} minutes={(record.liveMinutes || record.minutes) || null} job={currentMinutesJob(record)} modelReady={boot.providers.minutes}/>}
       {record && translationOpen && <TranslationPanel key={record.id} record={record} ready={boot.providers.translation ?? boot.providers.minutes} close={()=>setTranslationOpen(false)} configure={()=>{setTranslationOpen(false);setModal('settings');}} save={async target=>{const recordId=record.id;await api(`/records/${recordId}`,'PATCH',{translationTarget:target});setRecord(current=>current?.id===recordId?{...current,translationTarget:target}:current);}} inspect={segment=>cite({segmentId:segment.id,revision:segment.revision},record.segments,record.transcriptRevision)}/>}
     </main><input ref={fileInput} className="sr-only" type="file" accept="audio/*" aria-label="导入音频文件" onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void onImport(file); }}/>
-      <Toast message={toast.message} messageKey={toast.key} dismiss={dismissToast}/>
+      <Toast message={error || toast.message} error={Boolean(error)} messageKey={error || toast.key} dismiss={dismissToast}/>
     {modal === 'directory' && <WorkspaceEditor directory={editingDirectory} save={saveDirectory} close={()=>{setModal(archiveIds.length?'archive':null);}}/>}
     {modal === 'archive' && <ArchiveRecords key={archiveInitial||'inbox'} directories={directories} count={archiveIds.length} initial={archiveInitial} save={saveArchive} close={()=>{setModal(null);setArchiveIds([]);}} create={newDirectory}/>}
 {modal === 'capture' && <CaptureSetup connected={signals.map(source => source.kind)} signals={signals} issues={captureIssues} busy={busy} onConnect={kind => void startCapture(kind)} onMicrophoneOff={() => void toggleMicrophone()} onClose={() => setModal(null)}/>}
