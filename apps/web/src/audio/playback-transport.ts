@@ -6,6 +6,7 @@ const finiteDuration = (media: PlaybackMedia) => Number.isFinite(media.duration)
 export class PlaybackTransport {
   private generation = 0;
   private requested = false;
+  private activeTracks: PlaybackMedia[] = [];
 
   constructor(private readonly tracks: () => PlaybackMedia[]) {}
 
@@ -23,19 +24,21 @@ export class PlaybackTransport {
   pause() {
     this.generation++;
     this.requested = false;
-    this.tracks().forEach(media => media.pause());
+    new Set([...this.tracks(), ...this.activeTracks]).forEach(media => media.pause());
   }
 
   async play() {
     const generation = ++this.generation;
     this.requested = true;
-    const results = await Promise.allSettled(this.tracks().filter(media => !finiteDuration(media) || media.currentTime < media.duration)
+    const tracks = this.tracks();
+    this.activeTracks = tracks;
+    const results = await Promise.allSettled(tracks.filter(media => !finiteDuration(media) || media.currentTime < media.duration)
       .map(async media => {
         try { await media.play(); }
         catch (error) { if (generation === this.generation) this.pause(); throw error; }
       }));
     // A reset or pause must also cancel a play() that was still loading.
-    if (generation !== this.generation && !this.requested) this.tracks().forEach(media => media.pause());
+    if (generation !== this.generation && !this.requested) tracks.forEach(media => media.pause());
     const failure = results.find(result => result.status === 'rejected');
     if (failure?.status === 'rejected') throw failure.reason;
     if (generation === this.generation) {
