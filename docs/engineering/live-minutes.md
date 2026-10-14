@@ -1,6 +1,6 @@
 # 会中纪要、主题与流式协议
 
-更新：2026-10-12。本文区分已实现行为、验证证据和后续建议。[飞书调研](../research/feishu-minutes-analysis-2026-10-12.md)提供产品参考，不代表获知飞书内部实现。
+更新：2026-10-14。本文区分已实现行为、验证证据和后续建议。[飞书调研](../research/feishu-minutes-analysis-2026-10-12.md)提供产品参考，不代表获知飞书内部实现。
 
 ## 使用方式与延迟
 
@@ -25,7 +25,7 @@
 - `services/records/src/llm.mjs` 统一两种协议的 JSON 与 SSE，处理 UTF-8 跨块、结束事件、长度限制和错误；截断流即使已有可解析 JSON，也不能发布为正式结果。
 - `packages/records/src/automation.mjs` 负责启用、间隔、去重、会中/终稿调度和受控预览。
 - `worker.mjs` 的 audio、minutes、intents、translation 使用独立轮询链。翻译等待不再阻塞转录持久化。各任务仍依靠租约、版本与 fence 防止并发重复写入。
-- `liveMinutes` 是最近 120 个片段的会中结果，与有正式版本号的 `minutes` 分开。追加转录不使会中结果失效，修改其快照片段会隔离旧结果。终稿仍要求整个转录版本一致。
+- `liveMinutes` 累计保留已校验的会中结果，与有正式版本号的 `minutes` 分开。首轮覆盖可用转录，后续只处理新增片段与前面两个片段，并携带有稳定主题 ID 的项目上下文。已校验窗口可先显示为“正在更新”的草稿。追加转录不使会中结果失效；修改当前窗口或已累计的旧引用会隔离在途结果。终稿仍要求整个转录版本一致。
 - 人工编辑后，自动纪要暂停覆盖。笔记版本、纪要版本、删除 generation 和任务 fence 变化都阻止旧任务提交。
 - 流式预览只显示 JSON 中的可见标题和文本，未校验引用不能用于编辑、分享或导出。完整结果通过引用校验后才成为有效草稿或正式版本。
 
@@ -44,3 +44,5 @@
 Node 回归验证 Responses/Chat 的真实本地 SSE、提前增量、UTF-8 分块、截断拒绝、自动调度、修改/取消保护、主题引用与 ASR 并行。浏览器使用隔离数据目录、虚构密钥和 localhost 上游，确认自动重生成、流式文本、主题背景、主题树、自定义协议选择和手机布局。它不证明真实模型质量、多人识别、长会话、Postgres、多机任务或生产部署。
 
 协议依据：[Responses 创建接口](https://developers.openai.com/api/reference/resources/responses/methods/create)、[流式事件](https://developers.openai.com/api/reference/resources/responses/streaming-events)。
+
+2026-10-14 的连接恢复、累计纪要与验证边界见[本轮验收记录](../evidence/meeting-recovery-incremental-2026-10-14.md)。

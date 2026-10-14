@@ -1,3 +1,4 @@
+import { liveBaseline, liveInput, minutesContext, mergeLiveMinutes } from './live-minutes.mjs';
 import {queueLearningReview, publicLearning} from './learning.mjs';
 import { validateMinutesStructure } from './minutes-structure.mjs';
 import { automaticRecordTitle } from './record-title.mjs';
@@ -161,16 +162,20 @@ export function requestMinutes(record, input = {}) {
   requireThat(scope === 'live' || record.capture === 'completed', 'record_not_finalized');
   requireThat(record.segments.length > 0, 'empty_transcript');
   const template = input.template || 'meeting'; requireThat(templates.includes(template), 'unknown_template', 400);
-  const snapshotOffset = scope === 'live' ? Math.max(0,record.segments.length-120) : 0;
-  const snapshot = record.segments.slice(snapshotOffset).map(({versions, ...s}) => ({ ...s }));
-  const manifestHash = digest(JSON.stringify(snapshot));
-  const key = `${record.id}:${record.transcriptRevision}:${manifestHash}:${template}:v3:${record.notesRevision}:${input.modelVersion || 'default'}:${input.mode || 'model'}:${scope}`;
+  const selected = scope === 'live' ? liveInput(record, template) : record.segments;
+  const snapshotOffset = record.segments.indexOf(selected[0]);
+  const snapshot = selected.map(({versions, ...s}) => ({ ...s }));
+  const liveBaseHash = scope === 'live' ? digest(JSON.stringify(record.liveMinutes || null)) : undefined;
+  const liveIncremental = Boolean(liveBaseline(record)?.template === template);
+  const liveContext = minutesContext(liveBaseline(record));
+  const manifestHash = digest(JSON.stringify({snapshot, liveBaseHash, liveContext}));
+  const key = `${record.id}:${record.transcriptRevision}:${manifestHash}:${template}:v4:${record.notesRevision}:${input.modelVersion || 'default'}:${input.mode || 'model'}:${scope}`;
   const existing = record.jobs.find(j => j.key === key && !['failed', 'stale', 'cancelled'].includes(j.status));
   if (existing) return existing;
-  for(const job of record.jobs)if(['queued','running'].includes(job.status) && job.scope==='live' && (scope==='final' || job.status==='queued')){job.status='cancelled';job.fence=null;job.snapshot=[];delete job.preview;}
+  for(const job of record.jobs)if(['queued','running'].includes(job.status) && job.scope==='live' && (scope==='final' || job.status==='queued')){job.status='cancelled';job.fence=null;job.snapshot=[];delete job.preview; delete job.partialMinutes;}
   requireThat(record.jobs.filter(j => ['queued', 'running'].includes(j.status)).length < 3, 'job_limit', 429);
   const job = { id: randomUUID(), key, status: 'queued', transcriptRevision: record.transcriptRevision, notesRevision: record.notesRevision,
-    baseMinutesRevision: record.minutesRevision, generation: record.generation, template, scope, automatic: input.automatic === true, mode: input.mode || 'model', modelVersion: input.modelVersion || 'default', snapshot, snapshotOffset, notes: record.notes, manifestHash,
+    baseMinutesRevision: record.minutesRevision, generation: record.generation, template, scope, automatic: input.automatic === true, mode: input.mode || 'model', modelVersion: input.modelVersion || 'default', snapshot, snapshotOffset, liveBaseHash, liveContext, liveIncremental, notes: record.notes, manifestHash,
     createdAt: new Date().toISOString(), attempts: 0 };
   record.jobs.push(job); emit(record, 'minutes.queued', { jobId: job.id }); return job;
 }
@@ -213,13 +218,16 @@ export function commitMinutes(record, jobId, result, fence) {
   validateMinutes(result, job.snapshot);
   const usageRecorded=result.usageRecorded;result={...result};delete result.usageRecorded;
   job.runtime = result.runtime || job.runtime;
-  const transcriptChanged = job.scope === 'live' ? job.snapshot.some(s => !record.segments.some(current => current.id === s.id && current.revision === s.revision)) : job.transcriptRevision !== record.transcriptRevision;
-  if (transcriptChanged || job.notesRevision !== record.notesRevision || job.baseMinutesRevision !== record.minutesRevision) {
-    job.status = 'stale'; delete job.preview; job.snapshot = []; emit(record, 'minutes.stale', { jobId }); return;
+  const transcriptChanged = job.scope === 'live' ? (job.liveIncremental && !liveBaseline(record)) || job.snapshot.some(s => !record.segments.some(current => current.id === s.id && current.revision === s.revision)) : job.transcriptRevision !== record.transcriptRevision;
+  if ((job.scope === 'live' && record.liveMinutes?.transcriptRevision > job.transcriptRevision) || (job.scope === 'live' && job.liveBaseHash && job.liveBaseHash !== digest(JSON.stringify(record.liveMinutes || null))) || transcriptChanged || job.notesRevision !== record.notesRevision || job.baseMinutesRevision !== record.minutesRevision) {
+    job.status = 'stale'; delete job.preview; delete job.partialMinutes; job.snapshot = []; emit(record, 'minutes.stale', { jobId }); return;
   }
   if (job.scope === 'live') {
-    record.liveMinutes = { ...result, actions: result.actions || [], transcriptRevision: job.transcriptRevision, evidenceSnapshot: job.snapshot, generatedAt: new Date().toISOString() };
-    job.status = 'completed'; job.snapshot = []; delete job.preview;
+    const baseline = liveBaseline(record);
+    const merged = mergeLiveMinutes(baseline?.template === job.template ? baseline : null, result, job.snapshot);
+    validateMinutes(merged, merged.evidenceSnapshot);
+    record.liveMinutes = { ...merged, notesRevision: job.notesRevision, template: job.template, transcriptRevision: job.transcriptRevision, generatedAt: new Date().toISOString() };
+    job.status = 'completed'; job.snapshot = []; delete job.preview; delete job.partialMinutes;
     if(!usageRecorded)record.usage.llmTokens += Number.isSafeInteger(result.usageTokens) && result.usageTokens >= 0 ? result.usageTokens : 0;
     emit(record, 'minutes.live', { transcriptRevision: job.transcriptRevision }); return;
   }
@@ -228,7 +236,7 @@ export function commitMinutes(record, jobId, result, fence) {
   record.minutes = { ...result, actions: result.actions || [], revision: record.minutesRevision, transcriptRevision: job.transcriptRevision, manifestHash: job.manifestHash,
     evidenceSnapshot: job.snapshot, edited: false, generatedAt: new Date().toISOString() };
   if(job.mode==='model')autoNameRecord(record,result.title);
-  job.status = 'completed'; job.snapshot = []; delete job.preview; if(!usageRecorded)record.usage.llmTokens += Number.isSafeInteger(result.usageTokens) && result.usageTokens >= 0 ? result.usageTokens : 0;
+  job.status = 'completed'; job.snapshot = []; delete job.preview; delete job.partialMinutes; if(!usageRecorded)record.usage.llmTokens += Number.isSafeInteger(result.usageTokens) && result.usageTokens >= 0 ? result.usageTokens : 0;
   emit(record, 'minutes.committed', { revision: record.minutesRevision });
 }
 export function publicRecord(record) {
@@ -236,5 +244,5 @@ export function publicRecord(record) {
   return { ...rest, ...(learning ? {learning:publicLearning(record)} : {}), segments: record.segments.map(({translationFence,translationLease,...segment})=>segment), sources: record.sources.map(({asr,...source})=>({...source,...(asr ? {asr:{state:asr.state,error:asr.error,identityWarning:asr.identityWarning,preview:asr.preview,runtime:asr.runtime}} : {})})), audio: record.sources.map(s => receipt(record, s)),
     pendingChunks: chunks.filter(c => c.state !== 'done').length,
     minuteVersions: [...(minutesHistory || []), ...(record.minutes ? [record.minutes] : [])].map(m => ({ revision: m.revision, transcriptRevision: m.transcriptRevision, edited: m.edited })),
-    jobs: jobs.map(({ snapshot, notes, fence, windowCache, manifest, usageCalls, ...job }) => job) };
+    jobs: jobs.map(({ snapshot, notes, fence, windowCache, manifest, usageCalls,liveBaseHash,liveContext,liveIncremental, ...job }) => job) };
 }

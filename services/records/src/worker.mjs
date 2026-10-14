@@ -144,7 +144,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
         await repo.change(candidate.id, r => {
           const job = r.jobs.find(j => j.id === jobClaim.id);
           if (!job || job.fence !== jobClaim.fence || r.deleted) return;
-          job.status = error.code==='minutes_snapshot_changed' ? 'stale' : 'failed'; delete job.preview; job.snapshot = []; job.error = error.code || 'minutes_request_failed'; job.failedAt=Date.now(); emit(r, 'minutes.failed', { jobId: job.id, error: job.error });
+          job.status = error.code==='minutes_snapshot_changed' ? 'stale' : 'failed'; delete job.preview; delete job.partialMinutes; job.snapshot = []; job.error = error.code || 'minutes_request_failed'; job.failedAt=Date.now(); emit(r, 'minutes.failed', { jobId: job.id, error: job.error });
         });
       }
     }

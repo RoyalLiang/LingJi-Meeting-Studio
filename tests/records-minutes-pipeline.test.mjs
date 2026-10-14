@@ -237,7 +237,7 @@ test('concurrent identical split windows share one provider request and account 
   } finally {await f.close();}
 });
 
-test('rolling live snapshots reuse unchanged middle windows when one confirmed segment arrives', async t => {
+test('incremental live snapshots process only new segments with a short overlap and retain earlier facts', async t => {
   const f=await fixture(160);
   try {
     await f.repo.change(f.record.id,r=>{r.capture='recording';});
@@ -254,15 +254,19 @@ test('rolling live snapshots reuse unchanged middle windows when one confirmed s
     });
     const next=await claimLive();let generatedWindows=0;
     const result=await runMinutesPipeline(f.repo,f.record.id,next,config,async job=>{if(job.stage!=='synthesis')generatedWindows++;return summarize(job);});
-    assert.equal(first.snapshot.length,120);assert.equal(next.snapshot.length,120);
-    assert.equal(next.snapshot[0].id,'s-41');
+    assert.equal(first.snapshot.length,160);assert.equal(next.snapshot.length,3);
+    assert.equal(next.snapshot[0].id,'s-158');
+    assert.ok(next.liveContext.headings.includes('讨论与决定'));
+    assert.equal(publicRecord(await f.repo.get(f.record.id)).jobs.at(-1).liveContext,undefined);
     assert.ok(generatedWindows<=2,`only rolling boundary windows should regenerate, got ${generatedWindows}`);
-    assert.ok(result.coverage.reused>=previous.coverage.windows-2);
+    assert.equal(result.coverage.windows,1);
     t.diagnostic(JSON.stringify({initialCalls:previous.coverage.calls,rollingCalls:result.coverage.calls,generatedWindows,reused:result.coverage.reused}));
     validateMinutes(result,next.snapshot);
     await f.repo.change(f.record.id,r=>commitMinutes(r,next.id,result,next.fence));
     const record=await f.repo.get(f.record.id);
     assert.equal(record.liveMinutes.transcriptRevision,2);
+    assert.equal(record.liveMinutes.evidenceSnapshot.length,161);
+    assert.ok(record.liveMinutes.sections.flatMap(section=>section.items).some(item=>item.text.includes('早期决定')));
     assert.equal(record.jobs.at(-1).status,'completed');
   } finally {await f.close();}
 });
@@ -339,11 +343,14 @@ test('model prompts preserve table topic associations and rebuild IDs during syn
   try {
     const env={LLM_API_URL:'https://unused.invalid',LLM_API_KEY:'synthetic-local-key',LLM_MODEL:'synthetic',LLM_PROTOCOL:'chat-completions'};
     for(const stage of [undefined,'synthesis']){
-      const result=await generateMinutes({scope:'live',template:'meeting',snapshot,stage,summaries:stage?[response,response]:undefined},env);
+      const result=await generateMinutes({scope:'live',template:'meeting',snapshot,stage,liveContext:{title:'项目周会',topics:[{id:'t1',title:'唐山项目'}],headings:['唐山项目']},summaries:stage?[response,response]:undefined},env);
       assert.equal(result.topics[0].id,'t1');assert.equal(result.tables[0].topicId,'t1');validateMinutes(result,snapshot);
       const prompt=request.messages.filter(message=>message.role==='system').map(message=>message.content).join('\n');
       assert.ok(prompt.includes('topics:[{id:string'));
       assert.ok(prompt.includes('topicId:string'));
+      assert.equal(JSON.parse(request.messages.find(message=>message.role==='user').content).context.topics[0].title,'唐山项目');
+      assert.ok(prompt.includes('沿用 context.topics'));
+      assert.ok(prompt.includes('不能仅因都提到相机就合并不同项目'));
       assert.ok(prompt.includes('每张表必须完整归属一个主题'));
       assert.ok(prompt.includes('每行仍须引用给定原始片段 ID 与 revision'));
       if(stage)assert.ok(prompt.includes('重新分配唯一主题 id'));
@@ -351,18 +358,18 @@ test('model prompts preserve table topic associations and rebuild IDs during syn
   } finally {globalThis.fetch=original;}
 });
 
-test('old completed v2 jobs do not block explicit v3 requests, while new requests remain idempotent', async () => {
+test('old completed v3 jobs do not block explicit v4 requests, while new requests remain idempotent', async () => {
   const f=await fixture(2);
   try {
     let oldId,newId;
     await f.repo.change(f.record.id,r=>{
       const previous=requestMinutes(r,{modelVersion:'fixture-model'});oldId=previous.id;
-      previous.key=previous.key.replace(':v3:',':v2:');previous.status='completed';previous.snapshot=[];
+      previous.key=previous.key.replace(':v4:',':v3:');previous.status='completed';previous.snapshot=[];
       r.minutes={...summarize({snapshot:r.segments}),revision:1,edited:true};r.minutesRevision=1;
       r.autoMinutes={enabled:true,lastRevision:r.transcriptRevision,lastScope:'final',intervalSeconds:30};
       assert.equal(queueAutomaticMinutes(r,'fixture-model'),undefined,'format upgrades must not auto-replace an edited minutes version');
       const current=requestMinutes(r,{modelVersion:'fixture-model'});newId=current.id;
-      assert.notEqual(newId,oldId);assert.ok(current.key.includes(':v3:'));
+      assert.notEqual(newId,oldId);assert.ok(current.key.includes(':v4:'));
       assert.equal(requestMinutes(r,{modelVersion:'fixture-model'}).id,newId);
       assert.equal(r.minutes.edited,true);
       assert.equal(r.minutesRevision,1);
@@ -429,5 +436,95 @@ test('summaries beyond the synthesis hard cap fail finitely without truncation o
     assert.equal(calls,2);
     const record=await f.repo.get(f.record.id);assert.equal(record.minutes,null);assert.equal(record.jobs[0].windowCache.length,2);
     for(const window of record.jobs[0].windowCache){assert.equal(window.result.sections[0].items.length,7);assert.ok(window.result.sections[0].items.every(item=>item.text.length>7500));}
+  } finally {await f.close();}
+});
+
+test('validated window minutes appear before slower windows and final synthesis finish', async () => {
+  const f=await fixture(30); let release, started;
+  const gate=new Promise(resolve=>{release=resolve;}), ready=new Promise(resolve=>{started=resolve;});
+  try {
+    await f.repo.change(f.record.id,r=>{r.jobs=[];r.capture='recording';const job=requestMinutes(r,{scope:'live',modelVersion:'fixture-model'});job.status='running';job.fence=job.id;});
+    const claim=(await f.repo.get(f.record.id)).jobs.at(-1);
+    const pending=runMinutesPipeline(f.repo,f.record.id,claim,config,async job=>{
+      if(job.snapshot[0].id!=='s-0'){started();await gate;} return summarize(job);
+    });
+    await ready;
+    let record;
+    for(let i=0;i<100;i++){record=await f.repo.get(f.record.id);if(record.jobs.at(-1).partialMinutes)break;await new Promise(resolve=>setTimeout(resolve,5));}
+    assert.equal(record.liveMinutes,null);
+    const partial=publicRecord(record).jobs.at(-1).partialMinutes;
+    assert.ok(partial.sections.flatMap(section=>section.items).some(item=>item.text.includes('早期决定')));
+    validateMinutes(partial,partial.evidenceSnapshot); assert.ok(partial.evidenceSnapshot.length<claim.snapshot.length);
+    release();await pending;
+  } finally {release();await f.close();}
+});
+
+test('incremental project context survives long sessions and an edit to earlier evidence invalidates the in-flight result', async () => {
+  const f=await fixture(160);
+  try {
+    let first;
+    await f.repo.change(f.record.id,r=>{r.jobs=[];r.capture='recording';const job=requestMinutes(r,{scope:'live',modelVersion:'fixture-model'});job.status='running';job.fence=job.id;first=structuredClone(job);});
+    const ref={segmentId:'s-0',revision:1};
+    const old={title:'项目周会',topics:[{id:'project-tangshan',title:'唐山项目',summary:'相机问题与排查',evidence:[ref]}],sections:[{heading:'唐山项目',items:[{text:'唐山相机断连，需要查明根因。',evidence:[ref]}]}],actions:[]};
+    await f.repo.change(f.record.id,r=>{commitMinutes(r,first.id,old,first.fence);r.segments.push({...r.segments.at(-1),id:'s-160',text:'相机恢复后仍需排查。'});r.transcriptRevision++;});
+    let claim;
+    await f.repo.change(f.record.id,r=>{const job=requestMinutes(r,{scope:'live',modelVersion:'fixture-model'});job.status='running';job.fence=job.id;claim=structuredClone(job);});
+    assert.equal(claim.snapshot.length,3);assert.equal(claim.liveContext.topics[0].title,'唐山项目');
+    const result=await runMinutesPipeline(f.repo,f.record.id,claim,config,async job=>{
+      assert.equal(job.liveContext.topics[0].id,'project-tangshan');
+      return {title:'相机恢复',topics:[{id:job.liveContext.topics[0].id,title:job.liveContext.topics[0].title,summary:'恢复后仍需排查',evidence:[{segmentId:'s-160',revision:1}]}],sections:[{heading:'唐山项目',items:[{text:'恢复后仍需排查。',evidence:[{segmentId:'s-160',revision:1}]}]}],actions:[]};
+    });
+    await f.repo.change(f.record.id,r=>commitMinutes(r,claim.id,result,claim.fence));
+    const updated=await f.repo.get(f.record.id);
+    assert.equal(updated.liveMinutes.topics.length,1);assert.equal(updated.liveMinutes.sections[0].items.length,2);
+    assert.equal(updated.liveMinutes.evidenceSnapshot.length,161);
+    let stale;
+    await f.repo.change(f.record.id,r=>{r.segments.push({...r.segments.at(-1),id:'s-161'});r.transcriptRevision++;const job=requestMinutes(r,{scope:'live'});job.status='running';job.fence=job.id;stale=structuredClone(job);r.segments[0].revision++;r.transcriptRevision++;});
+    await assert.rejects(runMinutesPipeline(f.repo,f.record.id,stale,config,summarize),{code:'minutes_snapshot_changed'});
+    await f.repo.change(f.record.id,r=>{const next=requestMinutes(r,{scope:'live'});assert.equal(next.snapshot.length,162);assert.equal(next.liveContext,undefined);});
+  } finally {await f.close();}
+});
+
+test('project memory is bounded while preserving stable identities and cumulative facts', async () => {
+  const {minutesContext,mergeLiveMinutes}=await import('../packages/records/src/live-minutes.mjs');
+  const previous={title:'长会议',topics:Array.from({length:30},(_,i)=>({id:'项目'+String(i).padStart(2,'0')+'名'.repeat(70),title:'项目'+i+'名'.repeat(190),summary:'已确认'.repeat(100)})),sections:Array.from({length:20},(_,i)=>({heading:'分类'+i+'名'.repeat(190),items:[]}))};
+  const context=minutesContext(previous);
+  assert.ok(Buffer.byteLength(JSON.stringify(context))<=12000);
+  assert.deepEqual(context.topics.map(topic=>topic.id),previous.topics.map(topic=>topic.id));
+  const evidence=[{segmentId:'s',revision:1}],snapshot=[{id:'s',revision:1,text:'安排'}];
+  const base={title:'项目会',sections:[{heading:'安排',items:[{text:'排查相机',evidence}]}],actions:[{text:'排查相机',owner:'已确认负责人',due:'今天',evidence}],evidenceSnapshot:snapshot};
+  const delta={title:'最新讨论',sections:[{heading:'安排',items:[{text:'排查相机',evidence}]}],actions:[{text:'排查相机',owner:null,due:null,evidence}]};
+  const result=mergeLiveMinutes(base,delta,snapshot);
+  assert.equal(result.sections[0].items.length,1);assert.equal(result.actions[0].owner,'已确认负责人');
+  assert.equal(result.actions[0].due,'今天');assert.equal(result.title,'项目会');
+});
+
+test('partial citations retain the complete frozen transcript when a provider window splits a long segment', async () => {
+  const f=await fixture(1);let release,started;
+  const gate=new Promise(resolve=>{release=resolve;}),ready=new Promise(resolve=>{started=resolve;});
+  try {
+    const original='完整原文：'+'内容'.repeat(20000);let claim;
+    await f.repo.change(f.record.id,r=>{r.segments[0].text=original;r.jobs=[];r.capture='recording';const job=requestMinutes(r,{scope:'live',modelVersion:'fixture-model'});job.status='running';job.fence=job.id;claim=structuredClone(job);});
+    let calls=0;
+    const pending=runMinutesPipeline(f.repo,f.record.id,claim,config,async job=>{if(++calls>1){started();await gate;}return summarize(job);});
+    await ready;let partial;
+    for(let i=0;i<100;i++){partial=(await f.repo.get(f.record.id)).jobs[0].partialMinutes;if(partial)break;await new Promise(resolve=>setTimeout(resolve,5));}
+    assert.equal(partial.evidenceSnapshot[0].text,original);validateMinutes(partial,partial.evidenceSnapshot);
+    release();await pending;
+  } finally {release();await f.close();}
+});
+
+test('a legacy in-flight live job cannot overwrite a newer cumulative result after upgrade', async () => {
+  const f=await fixture(2);
+  try {
+    await f.repo.change(f.record.id,r=>{
+      r.jobs=[];r.capture='recording';
+      const old=requestMinutes(r,{scope:'live'});delete old.liveBaseHash;old.status='running';old.fence=old.id;
+      r.segments.push({...r.segments.at(-1),id:'s-2'});r.transcriptRevision++;
+      const next=requestMinutes(r,{scope:'live'});next.status='running';next.fence=next.id;
+      commitMinutes(r,next.id,summarize(next),next.fence);
+      const current=r.liveMinutes;commitMinutes(r,old.id,summarize(old),old.fence);
+      assert.equal(old.status,'stale');assert.equal(r.liveMinutes,current);
+    });
   } finally {await f.close();}
 });
