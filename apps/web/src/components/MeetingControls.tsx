@@ -25,6 +25,6 @@ export function MeetingControls({ record, recording, busy, ready, signals, start
         </>}
       </div>
     </div>
-    {recording && <div className="meeting-source-strip"><CaptureSignals signals={signals}/><span className="source-scope-note">{microphoneOn ? '麦克风独立录音；会议软件静音不会关闭此音源' : '仅系统／会议音频 · 麦克风未开启'}</span></div>}
+    {recording && <div className="meeting-source-strip"><CaptureSignals signals={signals}/></div>}
   </section>;
 }
