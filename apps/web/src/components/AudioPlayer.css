@@ -32,6 +32,8 @@
 .player-source { display: flex; flex: 0 0 20px; align-items: center; justify-content: center; margin-left: 8px; color: var(--ink-2); }
 .player-timeline { position: relative; flex: 1; min-width: 100px; height: 44px; }
 .player-scale { position: absolute; inset: 0 7px; pointer-events: none; }
+.player-current-time { position: absolute; top: 0; left: clamp(22px, var(--playback-progress), calc(100% - 22px)); transform: translateX(-50%); color: var(--ink-2); font-size: 11px; line-height: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.player-duration { flex: 0 0 auto; min-width: 5ch; color: var(--ink-2); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
 .player-progress { position: absolute; top: 20px; width: 100%; height: 3px; overflow: hidden; border-radius: 2px; background: var(--border); }
 .player-progress-fill { width: var(--playback-progress); height: 100%; background: var(--accent); }
 .player-ruler { position: absolute; inset: 28px 0 0; color: var(--ink-3); }
