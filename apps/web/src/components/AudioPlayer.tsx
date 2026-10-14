@@ -93,6 +93,7 @@ function PlaybackControls({ src, label, autoPlay = false, sourceIcon }: Props) {
     </Button>
     <div className="player-timeline" style={{ '--playback-progress': `${progress}%` } as CSSProperties}>
       <div className="player-scale" aria-hidden="true">
+        <span className="player-current-time">{timecode(position * 1000)}</span>
         <div className="player-progress"><div className="player-progress-fill"/></div>
         <div className="player-ruler">{Array.from({ length: 41 }, (_, i) =>
           <i key={i} className={i % 5 === 0 ? 'major' : undefined} style={{ left: `${i * 2.5}%` }}/>)}</div>
@@ -103,6 +104,9 @@ function PlaybackControls({ src, label, autoPlay = false, sourceIcon }: Props) {
         onPointerDown={event => { if (event.button === 0) { beginScrub(); event.currentTarget.setPointerCapture(event.pointerId); } }}
         onPointerUp={finishScrub} onPointerCancel={finishScrub} onLostPointerCapture={finishScrub} onBlur={finishScrub}/>
     </div>
+    <span className="player-duration" aria-label={`总时长 ${timecode(duration * 1000)}`}>
+      {duration ? timecode(duration * 1000) : '--:--'}
+    </span>
     {error && <span className="player-error" role="alert" aria-label={error} title={error}><WarningCircle size={20} aria-hidden="true"/></span>}
   </div>;
 }
