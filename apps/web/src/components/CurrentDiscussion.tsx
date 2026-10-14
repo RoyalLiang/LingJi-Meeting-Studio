@@ -47,7 +47,7 @@ export function CurrentDiscussion({ record, minutes, job, modelReady }: { record
     : live && !record.autoMinutes?.enabled ? '自动 AI 纪要未开启'
     : pending ? '新发言已接收，等待整理'
     : minutes ? 'AI 纪要已更新' : '等待对话开始';
-  const active = record.capture === 'recording' || running;
+  const active = record.capture !== 'paused' && (record.capture === 'recording' || running);
   const activity = [record.capture, record.usage?.samples ?? 0, record.transcriptRevision, minutes?.revision ?? 0, job?.id || '', job?.progress?.completed ?? 0, status].join(':');
   const captureState = record.capture === 'recording' ? '正在记录' : record.capture === 'paused' ? '已暂停' : record.capture === 'completed' ? '已完成' : record.capture === 'sealed' ? '整理中' : '待开始';
   return <section className="current-discussion discussion-dock" aria-label={live ? '当前正在聊' : '本场纪要'}>

@@ -1,7 +1,9 @@
 {
   "version": "0.1.0-alpha.14",
   "date": "2026-10-14",
-  "stage": "component-validated",
+  "stage": "superseded-candidate",
+  "supersededBy": "0.1.0-alpha.15",
+  "knownGap": "Paused recordings could still animate while their minutes job was running; corrected and explicitly regressed in Alpha15.",
   "selection": {"variant": "轻弹三点", "amplitudePx": 6, "durationMs": 520, "staggerMs": 85, "iterations": 2},
   "layout": {"heightPx": 108, "maximumTextLines": 3, "containerAnimation": false},
   "validation": {"chromium": 11, "nativeWKWebView": 6, "nativeMovingFrames": 61, "naturalMotion": true, "seekOrFinishUsed": false, "nativeWindowClosed": true, "fixtureServerClosed": true},

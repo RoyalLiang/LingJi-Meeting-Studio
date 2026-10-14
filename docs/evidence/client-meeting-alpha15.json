@@ -1,0 +1,11 @@
+{
+  "version": "0.1.0-alpha.15",
+  "date": "2026-10-14",
+  "stage": "component-validated",
+  "selection": {"variant": "轻弹三点", "amplitudePx": 6, "durationMs": 520, "staggerMs": 85, "iterations": 2},
+  "layout": {"heightPx": 108, "maximumTextLines": 3, "containerAnimation": false},
+  "validation": {"chromium": 11, "nativeWKWebView": 7, "nativeMovingFrames": 48, "trustedNativeClicks": 4, "pausedMinutesJobCovered": true, "oldPauseCheckFailed": true, "durableSSRRegression": true, "oldSSRRegressionFailed": true, "naturalMotion": true, "seekOrFinishUsed": false, "nativeWindowClosed": true, "fixtureServerClosed": true},
+  "microphoneSourceCommit": "a81ce02c15748937fe6f256243165b009bfba51b",
+  "boundaries": {"realAudioDevicesOpened": false, "realProvidersCalled": false, "systemPermissionsModified": false, "userClientReplacedOrRestarted": false, "fullNativeMeetingVerified": false, "crossVersionOSGrantReuseVerified": false, "trustedUpdaterConfigured": false},
+  "evidence": [".agent-runtime/tasks/20261014-discussion-bounce/manifest.json", ".agent-runtime/tasks/20261014-discussion-bounce/paused-job-red.log", ".agent-runtime/tasks/20261014-discussion-bounce/paused-job-green.log", ".agent-runtime/tasks/20261014-discussion-bounce/native-verification-alpha15.json"]
+}

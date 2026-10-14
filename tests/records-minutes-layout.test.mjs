@@ -19,6 +19,24 @@ vm.runInNewContext(compiled.outputFiles[0].text, {
   matchMedia: () => ({ matches: false }), console, structuredClone,
 });
 const { MinutesPanel } = module.exports;
+const discussionCompiled = await build({ entryPoints: ['apps/web/src/components/CurrentDiscussion.tsx'], bundle: true, write: false, platform: 'node', format: 'cjs', jsx: 'automatic', loader: { '.css': 'empty' }, external: ['react', 'react/jsx-runtime', 'react-dom'] });
+const discussionModule = { exports: {} };
+vm.runInNewContext(discussionCompiled.outputFiles[0].text, { module: discussionModule, exports: discussionModule.exports, require: createRequire(resolve('package.json')), console });
+const { CurrentDiscussion } = discussionModule.exports;
+
+test('paused discussion stays inactive while a queued or running minutes job remains visible', () => {
+  const record = { id:'fixture',capture:'paused',usage:{samples:16000},transcriptRevision:1,autoMinutes:{enabled:true} };
+  for (const status of ['queued','running']) {
+    const job={id:'unfinished-job',status,progress:{completed:1,total:4}};
+    const html=renderToStaticMarkup(React.createElement(CurrentDiscussion,{record,minutes:null,job,modelReady:true}));
+    assert.match(html,/已暂停/);
+    assert.match(html,/正在整理 AI 纪要/,'processing remains visible independently from paused capture');
+    assert.match(html,/class="discussion-activity"/);
+    assert.doesNotMatch(html,/discussion-activity is-active/);
+    const resumed=renderToStaticMarkup(React.createElement(CurrentDiscussion,{record:{...record,capture:'recording'},minutes:null,job,modelReady:true}));
+    assert.match(resumed,/discussion-activity is-active/);
+  }
+});
 const helpers = {};
 const helperSource = (await readFile(new URL('../apps/web/src/minutes-views.ts', import.meta.url), 'utf8'))
   .replace(/^import .*$/gm, '').replace(/export /g, '');
