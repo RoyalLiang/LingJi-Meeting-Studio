@@ -1,7 +1,7 @@
 {
   "version": "0.1.0-alpha.16",
   "date": "2026-10-14",
-  "stage": "preparing",
+  "stage": "packaged-awaiting-delivery-reflection",
   "selection": {
     "variant": "轻弹三点",
     "amplitudePx": 6,
@@ -30,7 +30,10 @@
     "rustTests": 19,
     "lint": true,
     "typecheck": true,
-    "webBuild": true
+    "webBuild": true,
+    "nodeTests": 282,
+    "rustSourceUnchangedSinceTests": true,
+    "docs": 90
   },
   "microphoneSourceCommit": "a81ce02c15748937fe6f256243165b009bfba51b",
   "boundaries": {
@@ -47,7 +50,46 @@
     ".agent-runtime/tasks/20261014-discussion-bounce/paused-job-red.log",
     ".agent-runtime/tasks/20261014-discussion-bounce/paused-job-green.log",
     ".agent-runtime/tasks/20261014-discussion-bounce/native-verification-alpha15.json",
-    ".agent-runtime/tasks/20261014-discussion-bounce/release-alpha16-independent-verification.json"
+    ".agent-runtime/tasks/20261014-discussion-bounce/release-alpha16-independent-verification.json",
+    ".agent-runtime/tasks/20261014-discussion-bounce/frozen-inputs-alpha16.json",
+    ".agent-runtime/tasks/20261014-discussion-bounce/frozen-node-tests-alpha16.log",
+    ".agent-runtime/tasks/20261014-discussion-bounce/frozen-lint-alpha16.log",
+    ".agent-runtime/tasks/20261014-discussion-bounce/frozen-typecheck-alpha16.log",
+    ".agent-runtime/tasks/20261014-discussion-bounce/frozen-web-build-alpha16.log",
+    ".agent-runtime/tasks/20261014-discussion-bounce/frozen-docs-alpha16.log",
+    ".agent-runtime/tasks/20261014-discussion-bounce/release-alpha16.log"
   ],
-  "backendStabilityCommit": "34fa8f672042dc80541b9ccf90c1af2cc1887f60"
+  "backendStabilityCommit": "34fa8f672042dc80541b9ccf90c1af2cc1887f60",
+  "sourceRevision": "8056e736cd407907fc79eb956206b21ec32d3a37",
+  "package": {
+    "version": "0.1.0-alpha.16",
+    "sourceRevision": "8056e736cd407907fc79eb956206b21ec32d3a37",
+    "sourceFilesVerified": 209,
+    "nativeComponentHashesMatch": true,
+    "sha256": "182d2cb1b1bfe92553a6c59b6d0e6d703db54c4203f0e43dcf1dfce7626df8ee",
+    "bytes": 47425856,
+    "smokePassed": true,
+    "priorArtifactsUnchanged": true,
+    "priorArtifactCount": 4,
+    "artifact": "dist/releases/0.1.0-alpha.16/Lingji-0.1.0-alpha.16-macos-arm64.dmg",
+    "signing": "ad-hoc",
+    "notarized": false,
+    "minimumMacOS": "14.6",
+    "architecture": "arm64"
+  },
+  "packageSmoke": {
+    "timestamp": "2026-10-14T03:58:54.666Z",
+    "packagedApp": true,
+    "independentBackend": true,
+    "developerBackendRequests": 0,
+    "restartPersistence": true,
+    "stableWebviewProfile": true,
+    "parentOwnsBackend": true,
+    "localAccount": true,
+    "devAccountDisabled": true,
+    "node": "v24.21.0",
+    "sqlite": "3.53.4",
+    "realAudioDevicesOpened": false,
+    "realProvidersInvoked": false
+  }
 }

@@ -13,3 +13,11 @@
 本阶段不修改现有系统权限、不打开真实音频设备、不调用真实 ASR/LLM、不替换或重启用户客户端，不推送或远程发布。真实设备采音、跨版本系统授权复用、全新 Mac 安装仍需单独实测。安装包仍为 ad-hoc 签名、未公证、未配置可信自动更新源。
 
 结构化记录见 [Alpha16 验证](client-meeting-alpha16.json)。本地逐项输出位于 `.agent-runtime/tasks/20261014-discussion-bounce/`，包含 `native-verification-alpha15.json`、`browser-verification.json` 与 Alpha16 冻结构建、测试和安装校验记录。
+
+## 安装包核验结果
+
+安装包：`dist/releases/0.1.0-alpha.16/Lingji-0.1.0-alpha.16-macos-arm64.dmg`，47,425,856 字节。SHA-256：`182d2cb1b1bfe92553a6c59b6d0e6d703db54c4203f0e43dcf1dfce7626df8ee`。冻结源码为 `8056e736cd407907fc79eb956206b21ec32d3a37`，209 项构建源文件哈希逐项一致，排除了其他会话未提交修改。四项原生动效验证输入与包内源码一致；Alpha12～Alpha15 旧包校验值保持不变。
+
+冻结副本通过 282/282 项 Node 回归、ESLint、类型检查、Web 构建以及 90 份 Markdown 文档检查。Rust 19/19 项回归已通过，期间 Rust 源码未变；版本配置按 Alpha16 更新。DMG 完整性、arm64、应用版本和签名由构建脚本检查。独立临时安装副本通过后台启动、父进程持有、重启持久化、本机账户、开发账户关闭与稳定 WebView 目录验证；开发后台请求为 0，真实设备采音与真实供应商调用均为 false。测试磁盘已卸载。
+
+安装包已完成本地验证，按仓库规则等待交付前自查回应；尚未替换用户客户端、推送或远程发布。
