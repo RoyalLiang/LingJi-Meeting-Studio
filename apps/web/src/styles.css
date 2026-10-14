@@ -97,9 +97,12 @@ svg { flex-shrink:0; }
 .global-message button { display:flex; align-items:center; padding:4px; border:0; background:transparent; margin-left:auto; color:inherit; }
 .global-message.error,.notice.error { background:var(--down-soft); color:var(--down); }
 .fixture-notice { margin:12px 0; color:var(--warn); background:var(--warn-soft); padding:8px 12px; border-radius:8px; font-size:12px; }
-.record-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; padding:35px 0 25px; }
+.record-heading { display:flex; flex-wrap:wrap; align-items:flex-start; justify-content:space-between; gap:12px 20px; padding:35px 0 25px; container-type:inline-size; container-name:record-heading; }
 .record-heading .kicker { margin-bottom:8px; }
-.record-heading>.actions { padding-top:28px; flex:none; }
+.record-heading>div:first-child { flex:1; min-width:min(100%, 380px); }
+.record-heading>.actions { padding-top:28px; flex:0 1 auto; justify-content:flex-end; min-width:0; max-width:100%; margin-left:auto; }
+.record-meta>span { white-space:nowrap; }
+@container record-heading (max-width:1120px) { .record-heading>.actions { padding-top:0; width:100%; } }
 .record-meta { display:flex; align-items:center; gap:12px; flex-wrap:wrap; font-size:11px; color:var(--ink-3); margin-top:14px; }
 .status { display:inline-flex; align-items:center; font-size:10px; letter-spacing:.02em; border-radius:6px; padding:3px 7px; background:var(--panel-2); color:var(--ink-2); line-height:1.5; }
 .status.live { color:var(--down); background:var(--down-soft); }
