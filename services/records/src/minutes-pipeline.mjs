@@ -1,3 +1,4 @@
+import { liveBaseline, mergeLiveMinutes } from '../../../packages/records/src/live-minutes.mjs';
 import { telemetry } from './telemetry.mjs';
 import { createHash } from 'node:crypto';
 import { requireThat, validateMinutes, emit } from '../../../packages/records/src/record.mjs';
@@ -20,19 +21,19 @@ const refs = result => {
   visit(result);return [...found.values()];
 };
 export function buildMinutesManifest(job,config={},budget=inputBudget(config)){
-  const policy=hash({version:2,budget,model:job.modelVersion==='default'?config.LLM_MODEL:job.modelVersion,base:config.LLM_API_URL,protocol:config.LLM_PROTOCOL,template:job.template,scope:job.scope,mode:job.mode,notes:job.notes,notesRevision:job.notesRevision,generation:job.generation});
+  const policy=hash({version:3,budget,context:job.liveContext,model:job.modelVersion==='default'?config.LLM_MODEL:job.modelVersion,base:config.LLM_API_URL,protocol:config.LLM_PROTOCOL,template:job.template,scope:job.scope,mode:job.mode,notes:job.notes,notesRevision:job.notesRevision,generation:job.generation});
   const windows=[];let current=[];
   const flush=()=>{if(current.length){windows.push({key:hash({policy,snapshot:current}),snapshot:current});current=[];}};
   function add(segment){
-    if(size({transcript:[segment],notes:job.notes})>budget){
+    if(size({transcript:[segment],notes:job.notes,context:job.liveContext})>budget){
       requireThat(segment.text?.length>1,'minutes_input_metadata_too_large',422);
       const middle=Math.ceil(segment.text.length/2);add({...segment,text:segment.text.slice(0,middle)});add({...segment,text:segment.text.slice(middle)});return;
     }
-    if(current.length && size({transcript:[...current,segment],notes:job.notes})>budget)flush();current.push(segment);
+    if(current.length && size({transcript:[...current,segment],notes:job.notes,context:job.liveContext})>budget)flush();current.push(segment);
   }
   const snapshot=job.snapshot.map(({id,revision,text,sourceId,speakerId,speaker,speakerName,startMs,endMs})=>({id,revision,text,sourceId,speakerId,speaker,speakerName,startMs,endMs}));
   const snapshotOffset=Number.isSafeInteger(job.snapshotOffset)&&job.snapshotOffset>=0?job.snapshotOffset:0;
-  const single=size({transcript:snapshot,notes:job.notes})<=budget;
+  const single=size({transcript:snapshot,notes:job.notes,context:job.liveContext})<=budget;
   snapshot.forEach((segment,index)=>{if(!single && (index+snapshotOffset)%24===0)flush();add(segment);});flush();
   requireThat(windows.length>0 && windows.length<=512,'minutes_window_limit',422);
   return {version:1,budget,synthesisBudget:synthesisBudget(config),policy,generation:job.generation,transcriptRevision:job.transcriptRevision,notesRevision:job.notesRevision,snapshotOffset,hash:job.manifestHash,windows};
@@ -40,12 +41,14 @@ export function buildMinutesManifest(job,config={},budget=inputBudget(config)){
 function currentJob(record,claim){
   const job=record.jobs.find(j=>j.id===claim.id);
   requireThat(job && !record.deleted && record.generation===claim.generation && job.fence===claim.fence && job.status==='running','stale_job',410);
+  const liveAdvanced=claim.scope==='live' && record.liveMinutes?.transcriptRevision>claim.transcriptRevision;
+  const baselineChanged=claim.scope==='live' && claim.liveBaseHash && hash(record.liveMinutes || null)!==claim.liveBaseHash;
   const changed=claim.scope==='live' ? claim.snapshot.some(s=>!record.segments.some(current=>current.id===s.id&&current.revision===s.revision)) : record.transcriptRevision!==claim.transcriptRevision;
-  requireThat(!changed && record.notesRevision===claim.notesRevision && record.minutesRevision===claim.baseMinutesRevision,'minutes_snapshot_changed',409);
+  requireThat(!liveAdvanced && !baselineChanged && !(claim.liveIncremental && !liveBaseline(record)) && !changed && record.notesRevision===claim.notesRevision && record.minutesRevision===claim.baseMinutesRevision,'minutes_snapshot_changed',409);
   return job;
 }
 export async function runMinutesPipeline(repo,recordId,claim,config,generate,options={}){
-  const manifest=buildMinutesManifest(claim,config),cache=new Map(),inFlight=new Map();let tokens=0,calls=0,reused=0;
+  const manifest=buildMinutesManifest(claim,config),cache=new Map(),inFlight=new Map(), completedWindows=new Map();let tokens=0,calls=0,reused=0;
   async function mapWindows(items,execute){
     const results=new Array(items.length);let next=0,failure,failed=false;
     // Keep input order, stop scheduling on failure, and drain every in-flight call
@@ -84,7 +87,17 @@ export async function runMinutesPipeline(repo,recordId,claim,config,generate,opt
     await repo.change(recordId,record=>{
       const job=currentJob(record,claim);job.windowCache ||= [];
       if(!job.windowCache.some(entry=>entry.key===key))job.windowCache.push({key,policy:manifest.policy,result});
-      if(stage==='window'||stage==='single')job.progress.completed++;
+      if(stage==='window'||stage==='single') {
+        job.progress.completed++;
+        if (claim.scope === 'live') {
+          const ids = new Set(input.snapshot.map(segment=>`${segment.id}:${segment.revision}`));
+          completedWindows.set(key, {result, snapshot:claim.snapshot.filter(segment=>ids.has(`${segment.id}:${segment.revision}`))});
+          let partial = liveBaseline(record);
+          for (const window of completedWindows.values()) partial = mergeLiveMinutes(partial, window.result, window.snapshot);
+          validateMinutes(partial, partial.evidenceSnapshot);
+          job.partialMinutes = {...partial, transcriptRevision:claim.transcriptRevision, generatedAt:new Date().toISOString()};
+        }
+      }
       job.progress.stage=stage;job.lease=Date.now()+(claim.scope==='live'?180000:300000);emit(record,'minutes.progress',{jobId:job.id,completed:job.progress.completed,total:job.progress.total,stage});
     });
     cache.set(key,result);return {key,result};
@@ -97,7 +110,7 @@ export async function runMinutesPipeline(repo,recordId,claim,config,generate,opt
       const wanted=new Set(items.flatMap(node=>refs(node.result).map(ref=>`${ref.segmentId}:${ref.revision}`)));
       return {snapshot:claim.snapshot.filter(s=>wanted.has(`${s.id}:${s.revision}`)).map(({id,revision,speakerId,speaker,speakerName,sourceId})=>({id,revision,speakerId,speaker,speakerName,sourceId})),summaries:items.map(node=>content(node.result)),stage:'synthesis'};
     };
-    const payloadFor=input=>JSON.stringify({transcript:input.snapshot,notes:claim.notes,summaries:input.summaries,stage:input.stage});
+    const payloadFor=input=>JSON.stringify({transcript:input.snapshot,notes:claim.notes,context:claim.liveContext,summaries:input.summaries,stage:input.stage});
     for(const node of nodes){
       if(group.length && (group.length>=8 || Buffer.byteLength(payloadFor(inputFor([...group,node])))>manifest.synthesisBudget)){groups.push(group);group=[];}
       group.push(node);

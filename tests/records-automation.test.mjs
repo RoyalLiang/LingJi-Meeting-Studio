@@ -31,7 +31,7 @@ test('manual corrections, disabled automation and edited evidence fence drafts',
  assert.equal(j.preview.at(-1).text,'周五');assert.equal(r.minutes,null);
  r.segments[0].translation='旧翻译';r.segments[0].translationLease=999999;editSegment(r,'s1',{revision:1,text:'改为周六评审'});assert.equal(r.segments[0].translation,undefined);assert.equal(r.segments[0].translationLease,undefined);commitMinutes(r,j.id,result,'f');assert.equal(j.status,'stale');assert.equal(j.preview,undefined);
  const retry=requestMinutes(r,{scope:'live',automatic:true});retry.status='running';retry.fence='x';
- setAutomation(r,{enabled:false});updateMinutesPreview(r,retry.id,'x','{"title":"迟到结果"}',{});assert.equal(retry.preview,undefined);
+ retry.partialMinutes={title:'已校验窗口'};setAutomation(r,{enabled:false});assert.equal(retry.partialMinutes,undefined);updateMinutesPreview(r,retry.id,'x','{"title":"迟到结果"}',{});assert.equal(retry.preview,undefined);
  assert.throws(()=>commitMinutes(r,retry.id,result,'x'),/stale_job/);
 });
 test('topic citations are validated and local/model jobs have separate identities', () => {

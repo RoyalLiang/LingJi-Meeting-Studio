@@ -6,7 +6,7 @@ export function setAutomation(record, input, now = Date.now()) {
  requireThat([15, 30, 60, 120].includes(intervalSeconds), 'invalid_automation_interval', 400);
  record.autoMinutes = { ...record.autoMinutes, enabled: input.enabled, intervalSeconds, enabledAt: now };
  if (!input.enabled) for (const job of record.jobs) if (job.automatic && ['queued', 'running'].includes(job.status)) {
-  job.status = 'cancelled'; job.fence = null; job.snapshot = []; delete job.preview;
+  job.status = 'cancelled'; job.fence = null; job.snapshot = []; delete job.preview; delete job.partialMinutes;
  }
  emit(record, 'minutes.automation', { enabled: input.enabled });
 }
