@@ -1,11 +1,65 @@
 {
   "version": "0.1.0-alpha.15",
   "date": "2026-10-14",
-  "stage": "component-validated",
-  "selection": {"variant": "轻弹三点", "amplitudePx": 6, "durationMs": 520, "staggerMs": 85, "iterations": 2},
-  "layout": {"heightPx": 108, "maximumTextLines": 3, "containerAnimation": false},
-  "validation": {"chromium": 11, "nativeWKWebView": 7, "nativeMovingFrames": 48, "trustedNativeClicks": 4, "pausedMinutesJobCovered": true, "oldPauseCheckFailed": true, "durableSSRRegression": true, "oldSSRRegressionFailed": true, "naturalMotion": true, "seekOrFinishUsed": false, "nativeWindowClosed": true, "fixtureServerClosed": true},
+  "stage": "packaged-superseded",
+  "selection": {
+    "variant": "轻弹三点",
+    "amplitudePx": 6,
+    "durationMs": 520,
+    "staggerMs": 85,
+    "iterations": 2
+  },
+  "layout": {
+    "heightPx": 108,
+    "maximumTextLines": 3,
+    "containerAnimation": false
+  },
+  "validation": {
+    "chromium": 11,
+    "nativeWKWebView": 7,
+    "nativeMovingFrames": 48,
+    "trustedNativeClicks": 4,
+    "pausedMinutesJobCovered": true,
+    "oldPauseCheckFailed": true,
+    "durableSSRRegression": true,
+    "oldSSRRegressionFailed": true,
+    "naturalMotion": true,
+    "seekOrFinishUsed": false,
+    "nativeWindowClosed": true,
+    "fixtureServerClosed": true,
+    "nodeTests": 280,
+    "rustTests": 19,
+    "lint": true,
+    "typecheck": true,
+    "webBuild": true,
+    "docs": 89
+  },
   "microphoneSourceCommit": "a81ce02c15748937fe6f256243165b009bfba51b",
-  "boundaries": {"realAudioDevicesOpened": false, "realProvidersCalled": false, "systemPermissionsModified": false, "userClientReplacedOrRestarted": false, "fullNativeMeetingVerified": false, "crossVersionOSGrantReuseVerified": false, "trustedUpdaterConfigured": false},
-  "evidence": [".agent-runtime/tasks/20261014-discussion-bounce/manifest.json", ".agent-runtime/tasks/20261014-discussion-bounce/paused-job-red.log", ".agent-runtime/tasks/20261014-discussion-bounce/paused-job-green.log", ".agent-runtime/tasks/20261014-discussion-bounce/native-verification-alpha15.json"]
+  "boundaries": {
+    "realAudioDevicesOpened": false,
+    "realProvidersCalled": false,
+    "systemPermissionsModified": false,
+    "userClientReplacedOrRestarted": false,
+    "fullNativeMeetingVerified": false,
+    "crossVersionOSGrantReuseVerified": false,
+    "trustedUpdaterConfigured": false
+  },
+  "evidence": [
+    ".agent-runtime/tasks/20261014-discussion-bounce/manifest.json",
+    ".agent-runtime/tasks/20261014-discussion-bounce/paused-job-red.log",
+    ".agent-runtime/tasks/20261014-discussion-bounce/paused-job-green.log",
+    ".agent-runtime/tasks/20261014-discussion-bounce/native-verification-alpha15.json"
+  ],
+  "supersededBy": "0.1.0-alpha.16",
+  "package": {
+    "version": "0.1.0-alpha.15",
+    "sourceRevision": "42ea9dd24fbce1cffb6c538f412befbcf223b40a",
+    "sourceFilesVerified": 209,
+    "nativeComponentHashesMatch": true,
+    "sha256": "30773e2bd6214d235029217725f54c6b4f3353389b7752db31ef25933be2810b",
+    "bytes": 47425668,
+    "smokePassed": true,
+    "priorArtifactsUnchanged": true,
+    "priorArtifactCount": 2
+  }
 }

@@ -11,3 +11,7 @@
 麦克风修复来自 `a81ce02`，详见[麦克风入口阶段](microphone-direct-and-motion-preview-2026-10-13.md)。新会议默认请求麦克风与系统音频，默认设备自动策略与失效 ID 回退保留；点击开启的错误直接显示，已工作音源继续采集，设备选择只由显式来源操作进入。快速新建全部音源失败时仍保留恢复窗口。系统首次授权和真实硬件失败不会伪装成功，跨版本系统权限复用仍未验证。
 
 本轮另一个会话已提交的音源状态和纪要视觉修复作为父提交保留；未提交或实验工作不纳入固定源构建。证据在 `.agent-runtime/tasks/20261014-discussion-bounce/`，重点为 `paused-job-red.log`、`paused-job-green.log`、`browser-verification.json`、`native-verification-alpha15.json`；结构化摘要见 [Alpha15 验证](client-meeting-alpha15.json)。
+
+本地候选安装包已通过独立校验：冻结源码 `42ea9dd24fbce1cffb6c538f412befbcf223b40a`，209 项源文件哈希一致；280 项 Node 与 19 项 Rust 回归、lint、类型检查、Web 构建及文档检查通过。DMG 为 47,425,668 字节，SHA-256 `30773e2bd6214d235029217725f54c6b4f3353389b7752db31ef25933be2810b`。独立后台、重启持久化与 WebView 数据目录测试通过，未请求开发后台。
+
+随后共享分支提交事件连接关闭后仍写心跳的修复 `34fa8f6`，该修改晚于本包冻结。为避免交付包漏带影响录制稳定性的已提交修复，最终交付改用 Alpha16；Alpha15 保留，不覆盖。
