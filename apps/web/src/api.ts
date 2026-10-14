@@ -5,6 +5,8 @@ export function setAudioTransport(value?: string) { binaryAudio = value === 'pcm
 let csrf = '';
 export const setCsrf = (token: string) => { csrf = token; };
 const messages: Record<string, string> = {
+  service_unavailable: '记录服务暂时不可用，正在尝试恢复连接。',
+  invalid_response: '记录服务返回不完整，操作结果尚未确认，请恢复连接后检查。',
   translation_not_configured: '请在设置中配置豆包翻译模型与服务连接。',
   translation_connection_failed: '翻译连接失败，请检查翻译服务地址后重试。',
   translation_credentials_rejected: '翻译密钥被拒绝，请核对对应服务。',
@@ -57,10 +59,26 @@ export async function uploadAudio<T>(path: string, chunk: AudioChunk): Promise<T
 }
 async function request<T>(path: string, method: string, body: BodyInit | undefined, headers: Record<string, string>, signal?: AbortSignal): Promise<T> {
   const started = performance.now(), traceId = globalThis.crypto?.randomUUID?.() || `${Date.now().toString(16)}-${Math.random().toString(16).slice(2).padEnd(16,'0')}`;
-  const response = await fetch(`/api${path}`, { method, credentials: 'same-origin', signal,
+  const response = await serviceFetch(`/api${path}`, { method, credentials: 'same-origin', signal,
     headers: { ...headers, 'X-Record-Trace': traceId, ...(method === 'GET' ? {} : { 'X-CSRF-Token': csrf }) },
     ...(body === undefined ? {} : { body }) });
   trace('http.received', {traceId, durationMs:performance.now()-started});
-  const data = await response.json(); if (!response.ok) throw new ApiError(data.error || 'request_failed', response.status); return data;
+  const data = await readServiceJson<T & { error?: string }>(response); if (!response.ok) throw new ApiError(typeof data.error === 'string' ? data.error : 'request_failed', response.status); return data;
 }
 export const messageOf = (error: unknown) => error instanceof Error ? error.message : '操作失败，请重试。';
+
+export async function serviceFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  try { return await fetch(input, init); }
+  catch (error) {
+    if ((error as { name?: string })?.name === 'AbortError') throw error;
+    throw new ApiError('service_unavailable', 0);
+  }
+}
+export async function readServiceJson<T>(response: Response): Promise<T> {
+  try {
+    const data = await response.json();
+    if (!data || typeof data !== 'object') throw new Error('invalid_json_shape');
+    return data as T;
+  }
+  catch { throw new ApiError(response.status >= 500 ? 'service_unavailable' : 'invalid_response', response.status); }
+}

@@ -7,6 +7,16 @@ import {stripTypeScriptTypes} from 'node:module';
 const source=await readFile(new URL('../apps/web/src/record-subscription.ts',import.meta.url),'utf8');
 const javascript=stripTypeScriptTypes(source).replaceAll('export function','function')+'\nexports.subscribeToRecord=subscribeToRecord;exports.applyRecordDelta=applyRecordDelta;';
 const settle=async()=>{for(let i=0;i<12;i++)await Promise.resolve();};
+
+test('API unavailable is distinguished from a broken SSE stream and retries without discarding the last snapshot', async () => {
+  let unavailable = false;
+  const h = harness(async () => { if (unavailable) throw Object.assign(new Error('service down'), {status: 502}); return {cursor: '7'}; });
+  await settle(); h.streams[0].onopen(); unavailable = true; h.streams[0].onerror();
+  assert.equal(h.states.at(-1), 'reconnecting'); await h.tick();
+  assert.equal(h.states.at(-1), 'unavailable'); assert.equal(h.records.at(-1).cursor, '7');
+  assert.equal(h.errors.length, 0); unavailable = false; await h.tick();
+  h.streams.at(-1).onopen(); assert.equal(h.states.at(-1), 'connected'); h.stop();
+});
 function harness(loadRecord=async()=>({cursor:'1'}),applyDelta,localBackend=false){
   const streams=[],timers=new Map(),states=[],records=[],errors=[],navigator={onLine:true};let next=0;
   class EventSource{
@@ -33,7 +43,7 @@ test('SSE HTTP failure recreates the stream with a freshly validated snapshot cu
 test('initial transient API failures retry with capped backoff; auth and access failures stop',async()=>{
   const h=harness(async()=>{throw Object.assign(new Error('unavailable'),{status:503});});await settle();
   const delays=[];for(let i=0;i<7;i++)delays.push(await h.tick());assert.deepEqual(delays,[1000,2000,4000,8000,15000,15000,15000]);h.stop();assert.equal(h.timers.size,0);
-  for(const status of [401,403,404,410]){const permanent=harness(async()=>{throw Object.assign(new Error('access denied'),{status});});await settle();assert.equal(permanent.states.at(-1),'unavailable');assert.equal(permanent.errors.length,1);assert.equal(permanent.timers.size,0);assert.equal(permanent.streams.length,0);}
+  for(const status of [401,403,404,410]){const permanent=harness(async()=>{throw Object.assign(new Error('access denied'),{status});});await settle();assert.equal(permanent.states.at(-1),'inaccessible');assert.equal(permanent.errors.length,1);assert.equal(permanent.timers.size,0);assert.equal(permanent.streams.length,0);}
 });
 
 test('disposing while loading or retrying cannot create orphaned subscriptions',async()=>{
@@ -44,7 +54,7 @@ test('disposing while loading or retrying cannot create orphaned subscriptions',
 test('revocation revalidates access, coalesces event refreshes, and ignores stale snapshots',async()=>{
   let calls=0,release;const h=harness(async()=>{calls++;if(calls===2)return new Promise(r=>{release=r;});if(calls>=4)throw Object.assign(new Error('expired'),{status:401});return{cursor:String(calls)};});await settle();
   const stream=h.streams[0];stream.onmessage();stream.listeners.reset();stream.onmessage();assert.equal(calls,2);release({cursor:'2'});await settle();assert.equal(calls,3);assert.equal(h.records.at(-1).cursor,'3');
-  stream.listeners.revoked();await h.tick();assert.equal(h.states.at(-1),'unavailable');assert.equal(h.errors[0].status,401);assert.equal(h.timers.size,0);assert.equal(h.streams.length,1);
+  stream.listeners.revoked();await h.tick();assert.equal(h.states.at(-1),'inaccessible');assert.equal(h.errors[0].status,401);assert.equal(h.timers.size,0);assert.equal(h.streams.length,1);
   const offline=harness();await settle();offline.navigator.onLine=false;offline.streams[0].onerror();assert.equal(offline.states.at(-1),'offline');assert.equal(offline.timers.size,0);offline.stop();
 });
 

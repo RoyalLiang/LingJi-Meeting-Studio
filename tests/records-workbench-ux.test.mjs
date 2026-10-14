@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import {readFile} from 'node:fs/promises';
 import {stripTypeScriptTypes} from 'node:module';
 const source=await Promise.all(['api.ts','downloads.ts','provider-settings.ts'].map(async file=>stripTypeScriptTypes(await readFile(new URL(`../apps/web/src/${file}`,import.meta.url),'utf8'),{mode:'transform'}).replace(/^import .*$/gm,'').replace(/export /g,'')));
-function harness(fetch){const sandbox={exports:{},fetch,URL,location:{origin:'https://studio.example'}};vm.runInNewContext(source.join('\n')+'\nObject.assign(exports,{fetchDownload,protocolForAddress});',sandbox);return sandbox.exports;}
+function harness(fetch){const sandbox={exports:{},fetch,URL,location:{origin:'https://studio.example'},performance:{now:()=>0},trace:()=>{}};vm.runInNewContext(source.join('\n')+'\nObject.assign(exports,{fetchDownload,protocolForAddress,api});',sandbox);return sandbox.exports;}
 test('backup reads authenticated response before returning a named download and preserves HTTP errors',async()=>{
   const blob={size:200};let request;
   const h=harness(async(href,options)=>{request={href,options};return{ok:true,blob:async()=>blob,headers:new Map([['content-disposition','attachment; filename="meeting.json"']])};});
@@ -65,4 +65,17 @@ test('touch, keyboard and source navigation preserve reading intent until explic
       h.api.enable();h.render();h.settle();assert.equal(h.api.following,true);assert.equal(h.container.scrollTop,1120);
     }finally{h.close();}
   }
+});
+
+test('common requests normalize WebKit pattern and malformed JSON failures while preserving abort and HTTP domain errors', async () => {
+  const network = harness(async () => { throw new SyntaxError('The string did not match the expected pattern'); });
+  await assert.rejects(network.api('/records'), error => error.code === 'service_unavailable' && !error.message.includes('pattern'));
+  await assert.rejects(network.fetchDownload('/api/records/example/export?format=json'), error => error.code === 'service_unavailable');
+  const malformed = harness(async () => ({ok:true,status:200,json:async()=>{throw new SyntaxError('The string did not match the expected pattern');}}));
+  await assert.rejects(malformed.api('/records/example','PATCH',{notes:'saved?'}), error => error.code === 'invalid_response' && error.message.includes('尚未确认'));
+  await assert.rejects(harness(async()=>({ok:true,status:200,json:async()=>null})).api('/records'),error=>error.code==='invalid_response');
+  const aborted = Object.assign(new Error('aborted'), {name:'AbortError'});
+  await assert.rejects(harness(async()=>{throw aborted;}).api('/records'), error => error === aborted);
+  const rejected = harness(async()=>({ok:false,status:409,json:async()=>({error:'segment_revision_conflict'})}));
+  await assert.rejects(rejected.api('/records/example','PATCH',{}), error => error.status === 409 && error.code === 'segment_revision_conflict');
 });

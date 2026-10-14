@@ -1,4 +1,4 @@
-export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'offline' | 'unavailable';
+export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'offline' | 'unavailable' | 'inaccessible';
 
 interface SubscriptionOptions<T extends { cursor: string }> {
   recordId: string;
@@ -22,11 +22,11 @@ export function subscribeToRecord<T extends { cursor: string }>(options: Subscri
     if (timer !== undefined) clearTimeout(timer);
     timer = undefined; source?.close(); source = undefined; controller?.abort();
   }
-  function retry() {
+  function retry(state: ConnectionState = 'reconnecting') {
     if (disposed || timer !== undefined) return;
     generation++; source?.close(); source = undefined; controller?.abort();
     if (!navigator.onLine && !options.localBackend) { options.onState('offline'); return; }
-    options.onState('reconnecting');
+    options.onState(state);
     const delay = Math.min(15000, 1000 * 2 ** Math.min(retries++, 4));
     timer = setTimeout(() => { timer = undefined; void connect(); }, delay);
   }
@@ -34,8 +34,8 @@ export function subscribeToRecord<T extends { cursor: string }>(options: Subscri
     if (!current(version)) return;
     const status = (error as { status?: number } | null)?.status;
     if (status && [401, 403, 404, 410].includes(status)) {
-      dispose(); options.onState('unavailable'); options.onFatal(error);
-    } else retry();
+      dispose(); options.onState('inaccessible'); options.onFatal(error);
+    } else retry('unavailable');
   }
   async function connect() {
     if (disposed) return;
