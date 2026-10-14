@@ -1,0 +1,73 @@
+{
+  "runtimePlaybackTests": 6,
+  "version": "0.1.0-alpha.18",
+  "sourceRevision": "b01e4aca9004c468da052361d0b5ffd833a71d37",
+  "sourceFiles": 210,
+  "sourceDirty": false,
+  "bytes": 47425662,
+  "sha256": "2d17f6b1d2a4fde56ee3badc375425159452c8f9c2179a0ce9bd1a5fdcfb5133",
+  "manifestFilesVerified": 13,
+  "bundledBackendFilesVerified": 7,
+  "signatureVerified": true,
+  "bundleVersion": "0.1.18",
+  "architecture": "arm64",
+  "packageSmoke": {
+    "timestamp": "2026-10-14T05:21:48.736Z",
+    "packagedApp": true,
+    "independentBackend": true,
+    "developerBackendRequests": 0,
+    "restartPersistence": true,
+    "stableWebviewProfile": true,
+    "parentOwnsBackend": true,
+    "localAccount": true,
+    "devAccountDisabled": true,
+    "node": "v24.21.0",
+    "sqlite": "3.53.4",
+    "realAudioDevicesOpened": false,
+    "realProvidersInvoked": false
+  },
+  "artifact": "dist/releases/0.1.0-alpha.18/Lingji-0.1.0-alpha.18-macos-arm64.dmg",
+  "checks": {
+    "nodeRegressionTests": 290,
+    "packagedNodePlaybackTests": 6,
+    "eslint": true,
+    "typecheck": true,
+    "webBuild": true,
+    "sourceManifestVerified": true,
+    "bundledBackendVerified": true,
+    "dmgVerified": true,
+    "isolatedNativeStartAndRestart": true,
+    "realProvidersInvoked": false,
+    "realAudioDevicesOpened": false,
+    "realMeetingPlayed": false,
+    "installedAppReplacedByThisTask": false
+  },
+  "realRecordReadonlyAudit": {
+    "capture": "sealed",
+    "transcription": "processing",
+    "retainAudio": true,
+    "audioPurged": false,
+    "sources": [
+      {
+        "kind": "microphone",
+        "filesValidated": 1862,
+        "missing": 0,
+        "corrupt": 0,
+        "samples": 29776000,
+        "durationSeconds": 1861,
+        "watermark": 1861,
+        "lastSequence": 1861
+      },
+      {
+        "kind": "display",
+        "filesValidated": 1861,
+        "missing": 0,
+        "corrupt": 0,
+        "samples": 29762901,
+        "durationSeconds": 1860.1813125,
+        "watermark": 1860,
+        "lastSequence": 1860
+      }
+    ]
+  }
+}
