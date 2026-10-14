@@ -190,23 +190,42 @@ export async function createRecordServer(options = {}) {
         let cursor = String(req.headers['last-event-id'] || url.searchParams.get('after') || record.cursor);
         requireThat(/^\d{1,20}$/.test(cursor), 'invalid_cursor', 400);
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
-        res.write(': connected\n\n'); let busy = false;
-        const timer = setInterval(async () => {
-          if (busy) return; busy = true;
+        let busy = false, closed = false, timer;
+        const cleanup = () => { closed = true; clearInterval(timer); streams.delete(res); };
+        const ended = () => closed || res.destroyed || res.writableEnded;
+        const finish = () => { cleanup(); if (!res.destroyed && !res.writableEnded) res.end(); };
+        const write = frame => {
+          if (ended()) return false;
+          try { if (res.write(frame)) return true; } catch { /* The response can close during an asynchronous poll. */ }
+          finish(); return false;
+        };
+        res.once('close', cleanup);
+        res.once('error', () => { cleanup(); res.destroy(); });
+        req.once('close', cleanup);
+        streams.add(res);
+        if (!write(': connected\n\n')) return;
+        timer = setInterval(async () => {
+          if (busy || ended()) return; busy = true;
           try {
-            await auth.user(req); const r = deltaEnabled ? await repo.eventsAfter(id,cursor) : await owned(id,user);
-              requireThat(r && r.owner===user.id && !r.deleted && Date.parse(r.deleteAt)>Date.now(),'record_deleted',410); const first = BigInt(r.first || r.events[0]?.cursor || r.cursor);
+            await auth.user(req); if (ended()) return;
+            const r = deltaEnabled ? await repo.eventsAfter(id, cursor) : await owned(id, user);
+            if (ended()) return;
+            requireThat(r && r.owner === user.id && !r.deleted && Date.parse(r.deleteAt) > Date.now(), 'record_deleted', 410);
+            const first = BigInt(r.first || r.events[0]?.cursor || r.cursor);
             if (BigInt(cursor) < first - 1n || BigInt(cursor) > BigInt(r.cursor)) {
-              res.write(`event: reset\ndata: ${JSON.stringify({ cursor: r.cursor })}\n\n`); cursor = r.cursor;
+              if (!write(`event: reset\ndata: ${JSON.stringify({ cursor: r.cursor })}\n\n`)) return;
+              cursor = r.cursor;
             }
             for (const event of r.events.filter(e => BigInt(e.cursor) > BigInt(cursor))) {
-              if (!res.write(`id: ${event.cursor}\ndata: ${JSON.stringify(event)}\n\n`)) { res.end(); break; }
+              if (!write(`id: ${event.cursor}\ndata: ${JSON.stringify(event)}\n\n`)) return;
               cursor = event.cursor;
             }
-            res.write(': heartbeat\n\n');
-          } catch { res.write('event: revoked\ndata: {}\n\n'); res.end(); } finally { busy = false; }
+            write(': heartbeat\n\n');
+          } catch {
+            if (!ended()) { write('event: revoked\ndata: {}\n\n'); finish(); }
+          } finally { busy = false; }
         }, 100);
-        streams.add(res); req.on('close', () => { clearInterval(timer); streams.delete(res); }); return;
+        return;
       }
       if (action === 'export' && req.method === 'GET') {
         const format = url.searchParams.get('format') || 'markdown'; requireThat(['markdown', 'json', 'ics', 'issues'].includes(format), 'invalid_format', 400);
