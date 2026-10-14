@@ -1,0 +1,29 @@
+{
+  "runtimePlaybackTests": 11,
+  "version": "0.1.0-alpha.20",
+  "sourceRevision": "13317359af4addd8d3aed07009dc6f08ca23f9a6",
+  "sourceFiles": 211,
+  "sourceDirty": false,
+  "bytes": 47427993,
+  "sha256": "449872d7dbd219ac957e7a2810de1293293aad9124b098bf309936b9fd9f1212",
+  "manifestFilesVerified": 18,
+  "bundledBackendFilesVerified": 7,
+  "signatureVerified": true,
+  "bundleVersion": "0.1.20",
+  "architecture": "arm64",
+  "packageSmoke": {
+    "timestamp": "2026-10-14T09:53:00.529Z",
+    "packagedApp": true,
+    "independentBackend": true,
+    "developerBackendRequests": 0,
+    "restartPersistence": true,
+    "stableWebviewProfile": true,
+    "parentOwnsBackend": true,
+    "localAccount": true,
+    "devAccountDisabled": true,
+    "node": "v24.21.0",
+    "sqlite": "3.53.4",
+    "realAudioDevicesOpened": false,
+    "realProvidersInvoked": false
+  }
+}
