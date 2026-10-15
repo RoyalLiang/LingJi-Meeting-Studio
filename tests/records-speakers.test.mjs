@@ -185,3 +185,18 @@ test('speech connection preserves HTTP and transport errors when the socket late
     assert.equal(stream.state.error.code, 'doubao_connection_failed');
   } finally { stream.close(); }
 });
+
+test('recovered connection remains restartable after worker ownership expires', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'meeting-recovery-restart-')), repo = await createRepository({ root }); let opened = 0;
+  const factory = () => { opened++; return { state: { latest: null, error: null, complete: false }, ready: Promise.resolve(), async write() {}, end() {}, close() {} }; };
+  try {
+    const { r, s } = fixture(); s.asr = { state: 'failed', error: 'doubao_connection_failed', attempts: 5, retryAt: 0 };
+    for (const chunk of r.chunks) Object.assign(chunk, { attempts: 5 }, await repo.putAudio(r.id, Buffer.alloc(6400)));
+    await repo.insert(r); await processSpeakerSources(repo, r, {}, factory);
+    assert.equal(opened, 1);
+    closeSpeakerStreams(repo);
+    await repo.change(r.id, r => { r.sources[0].asr.lease = 0; });
+    await processSpeakerSources(repo, await repo.get(r.id), {}, factory);
+    assert.equal(opened, 2, 'expired ownership must not restore the old attempt lockout');
+  } finally { closeSpeakerStreams(repo); await repo.close(); await rm(root, { recursive: true, force: true }); }
+});
