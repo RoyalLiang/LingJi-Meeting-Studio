@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { commitSpeakerTurns, finishSpeakerSource, updateTranscriptPreview } from '../../../packages/records/src/speakers.mjs';
 import { emit } from '../../../packages/records/src/record.mjs';
 import { createDoubaoSpeakerStream } from './doubao.mjs';
-import { canStartSpeechSource, retryableSpeechError } from './asr-recovery.mjs';
+import { canRecoverSpeechSource, canStartSpeechSource, retryableSpeechError } from './asr-recovery.mjs';
 
 const owners=new WeakMap();
 function streamsFor(repo){if(!owners.has(repo))owners.set(repo,new Map());return owners.get(repo);}
@@ -29,6 +29,8 @@ export async function processSpeakerSources(repo,candidate,config,createStream=c
       try { await repo.change(candidate.id,r=>{
         const current=r.sources.find(s=>s.id===source.id),asr=current.asr;
         if(streams.size>limit || !canStartSpeechSource(r,current))return;
+        // A recovered connection must also remain claimable after a worker restart.
+        if(canRecoverSpeechSource(r,current))for(const chunk of r.chunks.filter(c=>c.sourceId===source.id && c.state!=='done')){chunk.attempts=0;delete chunk.retryAt;}
         r.speakerOriginSourceId ||= source.id;
         current.asr={state:'running',fence:randomUUID(),lease:Date.now()+90000,attempts:asr?.attempts||0,lastFedSequence:-1,speakerMap:{},mayAllocate:r.speakerOriginSourceId===source.id && !r.speakers?.length && !r.segments.some(s=>s.sourceId===source.id)};
         r.transcription=r.sources.some(s=>s.asr?.state==='failed')?'blocked':'processing';
