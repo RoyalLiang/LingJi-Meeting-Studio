@@ -113,7 +113,11 @@ export function createDoubaoSpeakerStream(language, config, options={}) {
   const createdAt=Date.now();let audioStartedAt;
   const elapsed=()=>audioStartedAt==null ? undefined : Date.now()-audioStartedAt;
   let drainTimer,rejectReady,closed=false,receivedText=false,receivedTurns=false;
-  const fail=error=>{if(!closed && !state.complete)state.error=error instanceof DomainError ? error : new DomainError('doubao_connection_failed',502);};
+  const fail=error=>{
+    if(closed || state.complete || state.error)return;
+    state.error=error instanceof DomainError ? error : new DomainError('doubao_connection_failed',502);
+    if(!(error instanceof DomainError) && /^[A-Z0-9_]{1,60}$/.test(error?.code||''))state.error.transportCode=error.code;
+  };
   const ready=new Promise((resolve,reject)=>{rejectReady=reject;
     socket.once('open',()=>{
       state.runtime.connectionMs=Date.now()-createdAt;

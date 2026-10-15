@@ -14,12 +14,15 @@ export function decodeNativePacket(raw: ArrayBuffer, sequence: number, offset: n
 export async function openNativeStream(invoke: NativeInvoke, kind: 'display' | 'microphone', deviceId: string,
   onPacket: (packet: NativePacket) => Promise<void>, onError: (error: Error) => void): Promise<NativeStream> {
   const started = await invoke('capture_start', { kind, deviceId }) as { id: string; label: string };
-  let stopping: Promise<void> | undefined, discard = false, sequence = 0, offset = 0;
+  let stopping: Promise<void> | undefined, discard = false, stopRequested = false, sequence = 0, offset = 0;
   const done = (async () => {
     try {
       for (;;) {
         const raw = await invoke('capture_read', { id: started.id }) as ArrayBuffer;
-        if (raw.byteLength === 0) break;
+        if (raw.byteLength === 0) {
+          if (!stopRequested) throw new Error('音频采集意外停止，已保留本地录音。请恢复录制并检查音频设备。');
+          break;
+        }
         const packet = decodeNativePacket(raw, sequence, offset); sequence++; offset += packet.buffer.byteLength / 2;
         if (!discard) await onPacket(packet); // Persist before requesting another native packet.
       }
@@ -32,7 +35,7 @@ export async function openNativeStream(invoke: NativeInvoke, kind: 'display' | '
   })();
   void done.catch(() => {});
   return { ...started, done, stop: async (drop = false) => {
-    discard ||= drop;
+    stopRequested = true; discard ||= drop;
     stopping ??= invoke('capture_stop', { id: started.id, discard }).then(() => {});
     await stopping; await done;
   } };

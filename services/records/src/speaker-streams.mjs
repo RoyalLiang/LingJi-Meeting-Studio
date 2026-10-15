@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { commitSpeakerTurns, finishSpeakerSource, updateTranscriptPreview } from '../../../packages/records/src/speakers.mjs';
 import { emit } from '../../../packages/records/src/record.mjs';
 import { createDoubaoSpeakerStream } from './doubao.mjs';
+import { canStartSpeechSource, retryableSpeechError } from './asr-recovery.mjs';
 
 const owners=new WeakMap();
 function streamsFor(repo){if(!owners.has(repo))owners.set(repo,new Map());return owners.get(repo);}
@@ -18,17 +19,19 @@ export async function processSpeakerSources(repo,candidate,config,createStream=c
     if(entry && entry.busy)return;
     if(entry && (source.asr?.fence!==entry.fence || candidate.generation!==entry.generation)){entry.client.close();streams.delete(key);entry=null;}
     if(!entry){
+      if(!canStartSpeechSource(candidate,source))return;
       const limit=Math.max(1,Math.min(32,Number(process.env.RECORD_ASR_MAX_STREAMS||8)||8));
-      if(streams.size>=limit)return;
+      // Leave room for a new meeting while older saved audio recovers.
+      const capacity=candidate.capture==='recording' && !source.stopped ? limit : Math.max(1,limit-2);
+      if(streams.size>=capacity)return;
       streams.set(key,{recordId:candidate.id,busy:true,client:{close(){}}});
       let claim;
       try { await repo.change(candidate.id,r=>{
         const current=r.sources.find(s=>s.id===source.id),asr=current.asr;
-        if(streams.size>limit || r.deleted || current.watermark<0 || (asr?.lease||0)>Date.now() || (asr?.retryAt||0)>Date.now())return;
-        const chunks=r.chunks.filter(c=>c.sourceId===source.id);
-        if(chunks.some(c=>c.expired || (c.state!=='done' && c.attempts>=5)) || !chunks.some(c=>c.state!=='done' && c.attempts<5) || chunks.some(c=>c.state==='processing' && (c.lease||0)>Date.now()))return;
+        if(streams.size>limit || !canStartSpeechSource(r,current))return;
         r.speakerOriginSourceId ||= source.id;
         current.asr={state:'running',fence:randomUUID(),lease:Date.now()+90000,attempts:asr?.attempts||0,lastFedSequence:-1,speakerMap:{},mayAllocate:r.speakerOriginSourceId===source.id && !r.speakers?.length && !r.segments.some(s=>s.sourceId===source.id)};
+        r.transcription=r.sources.some(s=>s.asr?.state==='failed')?'blocked':'processing';
         // Only the very first connection may allocate identities; reconnects must anchor to prior audio.
         if(asr && !r.speakers?.length && r.speakerOriginSourceId===source.id)current.asr.mayAllocate=true;
         claim={recordId:r.id,sourceId:source.id,fence:current.asr.fence,generation:r.generation,language:r.language};
@@ -85,7 +88,8 @@ export async function processSpeakerSources(repo,candidate,config,createStream=c
       await repo.change(candidate.id,r=>{
         const s=r.sources.find(s=>s.id===source.id);if(r.deleted || r.generation!==entry.generation || s.asr?.fence!==entry.fence)return;
         const attempts=(s.asr.attempts||0)+1;
-        Object.assign(s.asr,{state:'failed',preview:null,attempts,error:error.code||'doubao_stream_failed',retryAt:Date.now()+Math.min(60000,2000*2**attempts)});delete s.asr.lease;
+        Object.assign(s.asr,{state:'failed',preview:null,attempts,error:error.code||'doubao_stream_failed',retryable:retryableSpeechError(error.code||'doubao_stream_failed'),retryAt:Date.now()+Math.min(300000,2000*2**Math.min(attempts,8))});
+        if(error.transportCode)s.asr.transportCode=error.transportCode;delete s.asr.lease;
         for(const c of r.chunks.filter(c=>c.sourceId===source.id && c.state!=='done')){c.state='pending';c.attempts=attempts;c.error=s.asr.error;c.retryAt=s.asr.retryAt;delete c.lease;}
         r.transcription=attempts>=5?'failed':'blocked';emit(r,'transcription.blocked',{error:s.asr.error,sourceId:source.id});
       });

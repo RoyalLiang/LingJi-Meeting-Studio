@@ -25,7 +25,7 @@ vm.runInNewContext(discussionCompiled.outputFiles[0].text, { module: discussionM
 const { CurrentDiscussion } = discussionModule.exports;
 
 test('paused discussion stays inactive while a queued or running minutes job remains visible', () => {
-  const record = { id:'fixture',capture:'paused',usage:{samples:16000},transcriptRevision:1,autoMinutes:{enabled:true} };
+  const record = { id:'fixture',sources:[],transcription:'processing',capture:'paused',usage:{samples:16000},transcriptRevision:1,autoMinutes:{enabled:true} };
   for (const status of ['queued','running']) {
     const job={id:'unfinished-job',status,progress:{completed:1,total:4}};
     const html=renderToStaticMarkup(React.createElement(CurrentDiscussion,{record,minutes:null,job,modelReady:true}));

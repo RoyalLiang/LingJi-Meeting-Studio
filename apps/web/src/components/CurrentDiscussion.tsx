@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { ChatCircleDots } from '@phosphor-icons/react';
 import type { Job, Minutes, RecordDetail } from '../model';
 import './CurrentDiscussion.css';
+import { recognitionStatus } from '../audio/recognition-status';
 
 function DiscussionPulse({ activity, active }: { activity: string; active: boolean }) {
   const element = useRef<HTMLSpanElement>(null);
@@ -40,13 +41,13 @@ export function CurrentDiscussion({ record, minutes, job, modelReady }: { record
   const live = record.capture !== 'completed' || running;
   const protectedMinutes = Boolean(record.minutes?.edited);
   const pending = record.transcriptRevision > (minutes?.transcriptRevision || 0);
-  const status = protectedMinutes ? '人工版本已保护'
+  const status = recognitionStatus(record) || (protectedMinutes ? '人工版本已保护'
     : job?.status === 'failed' ? '本轮整理未完成，可重试'
     : !modelReady ? '尚未连接纪要模型'
     : running ? job?.progress && job.progress.total > 1 ? `正在整理 AI 纪要 · ${job.progress.completed}/${job.progress.total}` : '正在整理 AI 纪要…'
     : live && !record.autoMinutes?.enabled ? '自动 AI 纪要未开启'
     : pending ? '新发言已接收，等待整理'
-    : minutes ? 'AI 纪要已更新' : '等待对话开始';
+    : minutes ? 'AI 纪要已更新' : '等待对话开始');
   const active = record.capture !== 'paused' && (record.capture === 'recording' || running);
   const activity = [record.capture, record.usage?.samples ?? 0, record.transcriptRevision, minutes?.revision ?? 0, job?.id || '', job?.progress?.completed ?? 0, status].join(':');
   const captureState = record.capture === 'recording' ? '正在记录' : record.capture === 'paused' ? '已暂停' : record.capture === 'completed' ? '已完成' : record.capture === 'sealed' ? '整理中' : '待开始';

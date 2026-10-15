@@ -1,51 +1,9 @@
-.recording-playback { display:grid; flex:0 1 280px; width:280px; max-width:100%; }
-.audio-player {
-  display: flex;
-  align-items: center;
-  flex-wrap: nowrap;
-  gap: 4px;
-  min-width: 0;
-  padding: 0 8px 0 0;
-  border: 0;
-  border-radius: 10px;
-  background: var(--panel-2);
-}
-.audio-player audio { display: none; }
-.audio-player .player-control,
-.recording-playback-trigger .player-control {
-  flex: 0 0 44px;
-  width: 44px;
-  min-width: 44px;
-  height: 44px;
-  min-height: 44px;
-  padding: 0;
-}
-.audio-player .player-control { background: transparent; border-color: transparent; }
-.audio-player .player-control:hover:not(:disabled) { background: var(--accent-soft); }
-.audio-player .player-control:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.player-timeline { position: relative; flex: 1; min-width: 80px; height: 44px; }
-.player-scale { position: absolute; inset: 0 7px; pointer-events: none; }
-.player-current-time { position: absolute; top: 0; left: clamp(22px, var(--playback-progress), calc(100% - 22px)); transform: translateX(-50%); color: var(--ink-2); font-size: 11px; line-height: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.player-duration { flex: 0 0 auto; min-width: 5ch; color: var(--ink-2); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
-.player-progress { position: absolute; top: 20px; width: 100%; height: 3px; overflow: hidden; border-radius: 2px; background: var(--border); }
-.player-progress-fill { width: var(--playback-progress); height: 100%; background: var(--accent); }
-.player-ruler { position: absolute; inset: 28px 0 0; color: var(--ink-3); }
-.player-ruler i { position: absolute; width: 1px; height: 4px; background: currentColor; opacity: .5; transform: translateX(-50%); }
-.player-ruler i.major { height: 9px; opacity: .85; }
-.audio-player[data-scrubbing=true] .player-ruler i,
-.player-timeline:hover .player-ruler i { opacity: 1; }
-.player-seek {
-  position: absolute; inset: 0; width: 100%; height: 44px; border-radius: 4px;
-  cursor: ew-resize; touch-action: none; user-select: none; -webkit-user-select: none;
-}
-.player-thumb {
-  position: absolute; top: 14px; left: var(--playback-progress); transform: translateX(-50%);
-  width: 14px; height: 14px; border: 0; border-radius: 50%;
-  background: var(--accent); box-shadow: none;
-}
-.player-seek[aria-disabled=true] { cursor: default; opacity: .45; }
-.audio-player .player-seek:focus, .audio-player .player-seek:focus-visible { outline: none; border: 0; box-shadow: none; }
-.player-timeline:has(.player-seek:focus-visible) .player-ruler { color: var(--accent); }
-.player-timeline:has(.player-seek:focus-visible) .player-thumb,
-.audio-player[data-scrubbing=true] .player-thumb { transform: translateX(-50%) scale(1.15); }
-.player-error { display: flex; color: var(--down); }
+.recording-playback, .recording-playback-trigger { display:inline-flex; flex:0 0 44px; width:44px; height:44px; }
+.audio-player { position:relative; display:inline-flex; flex:0 0 44px; width:44px; height:44px; z-index:2; }
+.audio-player audio { display:none; }
+.player-control.button { display:inline-flex; align-items:center; justify-content:center; flex:0 0 44px; width:44px; min-width:44px; height:44px; padding:0; border-radius:12px; }
+.audio-player .player-reset { position:absolute; left:calc(100% + 4px); top:-48px; background:var(--bg); opacity:0; visibility:hidden; pointer-events:none; transform:translateX(-6px); transition:opacity .14s ease, transform .14s ease, visibility .14s; }
+.audio-player:hover::after { content:''; position:absolute; left:0; top:-48px; width:calc(200% + 4px); height:48px; z-index:-1; }
+.audio-player:hover .player-reset, .audio-player:has(:focus-visible) .player-reset { opacity:1; visibility:visible; pointer-events:auto; transform:translateX(0); }
+.player-error { position:absolute; top:-5px; right:-5px; display:flex; color:var(--danger); pointer-events:none; }
+@media (prefers-reduced-motion:reduce) { .audio-player .player-reset { transition:none; } }
