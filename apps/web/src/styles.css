@@ -106,8 +106,6 @@ svg { flex-shrink:0; }
 .record-meta>span { white-space:nowrap; }
 @container record-heading (max-width:1100px) {
   .record-heading-toolbar>.meeting-actions>.button { padding-inline:8px; }
-  .record-heading-toolbar .recording-playback { flex-basis:220px; width:220px; }
-  .record-heading-toolbar .player-timeline { min-width:64px; }
 }
 .record-meta { display:flex; align-items:center; gap:12px; flex-wrap:wrap; font-size:11px; color:var(--ink-3); margin-top:14px; }
 .status { display:inline-flex; align-items:center; font-size:10px; letter-spacing:.02em; border-radius:6px; padding:3px 7px; background:var(--panel-2); color:var(--ink-2); line-height:1.5; }

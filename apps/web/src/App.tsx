@@ -201,13 +201,15 @@ function Workspace() {
     try { const r = await api<RecordDetail>('/records', 'POST', { workspaceId: scope==='all'?null:scope, title: form.get('title'), language: form.get('language'), retentionDays: Number(form.get('retentionDays')), retainAudio: true, autoMinutes: form.has('autoMinutes') });
       const list = await api<{records: RecordListItem[]}>('/records'); setQueueRecords(list.records.map(r => r.id)); await loadList(); selectRecord(r.id); setModal(null); await loadList(); } catch (e) { setError(messageOf(e)); } finally { setBusy(false); }
   }
-  async function stopCapture(mode: 'pause' | 'seal' = 'seal', title = '') {
+  async function stopCapture(mode: 'pause' | 'seal' = 'seal', title = '', interrupted = false) {
     if (stopping.current) return false;
     stopping.current = true; setBusy(true); setError('');
     try {
       const controller = capture.current;
-      if (mode === 'pause' && controller && 'pause' in controller) await controller.pause();
-      else await controller?.stop();
+      try {
+        if (mode === 'pause' && controller && 'pause' in controller) await controller.pause();
+        else await controller?.stop();
+      } catch (error) { if (!interrupted) throw error; }
       setRecording(false);
       if (!activeId.current) return false;
       const current = await api<RecordDetail>(`/records/${activeId.current}`), manifests = await localManifests(current.id);
@@ -227,7 +229,7 @@ function Workspace() {
     return true;
   }
   function controllerFor(recordId: string | Promise<string>) {
-    return new CaptureController(recordId, () => {}, e => { setError(messageOf(e)); setRecording(false); },
+    return new CaptureController(recordId, () => {}, e => { setRecording(false); void stopCapture('pause', '', true).finally(() => setError(messageOf(e))); },
       () => { void upload(); }, () => { void stopCapture('pause'); }, setSignals);
   }
   async function quickRecord() {
@@ -341,7 +343,7 @@ function Workspace() {
         {record.capture === 'recording' && !recording && <div className="notice">检测到上次未结束的采集。可继续录音，或封存本机已保存的片段。<Button disabled={busy} onClick={() => setModal('finish')}>整理本场记录</Button></div>}
         {['blocked', 'failed'].includes(record.transcription) && <div className="notice error">语音处理受阻，音频仍在保存期内。检查服务配置后<Button disabled={busy} onClick={() => void mutate(`/records/${id}/retry`, 'POST')}>重新处理</Button></div>}
       <div className="record-processing">
-        {record.pendingChunks > 0 && <div className="processing-line" role="status">正在处理音频 · {record.pendingChunks} 个音频包<span>音频包会合并识别为发言，不代表待识别的语音段落</span></div>}
+        {record.pendingChunks > 0 && <div className="processing-line" role="status">正在处理音频 · {record.pendingChunks} 个音频包</div>}
         {!recording && <div className="sub-actions">{!['sealed','completed'].includes(record.capture) && <Button variant="ghost" onClick={() => setModal('import-text')}><FileText size={16}/>导入文字</Button>}<Download href={`/api/records/${id}/export?format=json`}><ArrowDown size={15}/>备份记录</Download></div>}
       </div>
         {record.capture === 'completed' && record.usage.samples > 0 && record.pendingChunks === 0 && record.segments.length === 0 && <div className="notice audio-empty-result" role="status">音频已处理完成，但未识别出可用语音。请检查麦克风输入、系统权限或共享音轨，再开始一段试录。</div>}<MinutesPanel inline modelReady={boot.providers.minutes} automate={async (enabled, intervalSeconds) => { await mutate(`/records/${id}/automation`, 'PATCH', {enabled,intervalSeconds}); }} record={record} busy={busy} onClose={()=>{}} cite={cite} generate={async (template,mode) => { await mutate(`/records/${id}/minutes`, 'POST', { template,mode }); }} edit={async minutes => { return mutate(`/records/${id}/minutes`, 'PATCH', { revision: minutes.revision, minutes }); }}/>

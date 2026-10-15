@@ -76,7 +76,7 @@ export function acknowledge(record, chunk) {
   record.usage.samples += chunk.sampleCount;
   const sequences = new Set(record.chunks.filter(c => c.sourceId === source.id).map(c => c.sequence));
   while (sequences.has(source.watermark + 1)) source.watermark++;
-  record.transcription = 'queued'; emit(record, 'audio.durable', { sourceId: source.id, watermark: source.watermark });
+  if(!record.sources.some(s=>s.asr?.state==='failed'))record.transcription = 'queued'; emit(record, 'audio.durable', { sourceId: source.id, watermark: source.watermark });
   return receipt(record, source);
 }
 export function receipt(record, source) {
@@ -241,7 +241,8 @@ export function commitMinutes(record, jobId, result, fence) {
 }
 export function publicRecord(record) {
   const { owner, events, chunks, shares, jobs, minutesHistory, learning, ...rest } = record;
-  return { ...rest, ...(learning ? {learning:publicLearning(record)} : {}), segments: record.segments.map(({translationFence,translationLease,...segment})=>segment), sources: record.sources.map(({asr,...source})=>({...source,...(asr ? {asr:{state:asr.state,error:asr.error,identityWarning:asr.identityWarning,preview:asr.preview,runtime:asr.runtime}} : {})})), audio: record.sources.map(s => receipt(record, s)),
+  return { ...rest,
+    transcription: record.sources.some(source => source.asr?.state === 'failed') && ['queued', 'processing'].includes(record.transcription) ? 'blocked' : record.transcription, ...(learning ? {learning:publicLearning(record)} : {}), segments: record.segments.map(({translationFence,translationLease,...segment})=>segment), sources: record.sources.map(({asr,...source})=>({...source,...(asr ? {asr:{state:asr.state,error:asr.error,retryable:asr.retryable,retryAt:asr.retryAt,transportCode:asr.transportCode,identityWarning:asr.identityWarning,preview:asr.preview,runtime:asr.runtime}} : {})})), audio: record.sources.map(s => receipt(record, s)),
     pendingChunks: chunks.filter(c => c.state !== 'done').length,
     minuteVersions: [...(minutesHistory || []), ...(record.minutes ? [record.minutes] : [])].map(m => ({ revision: m.revision, transcriptRevision: m.transcriptRevision, edited: m.edited })),
     jobs: jobs.map(({ snapshot, notes, fence, windowCache, manifest, usageCalls,liveBaseHash,liveContext,liveIncremental, ...job }) => job) };

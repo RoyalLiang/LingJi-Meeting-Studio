@@ -97,3 +97,91 @@ test('manual attribution updates its hash while acoustic replay anchors remain s
   commitSpeakerTurns(r,s.id,'reconnected',turns,1);
   assert.equal(r.segments[0].speakerId,null);assert.equal(r.segments[0].speakerHash,null);
 });
+
+test('a transient speaker connection recovers after five failures without another capture or manual retry',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'meeting-speaker-recover-')),repo=await createRepository({root});let opens=0;
+  const factory=()=>{
+    opens++;const state={latest:null,error:opens<=5?Object.assign(new Error('network'),{code:'doubao_connection_failed'}):null,complete:false};
+    return {state,ready:Promise.resolve(),async write(){state.latest=[turns[0]];},end(){state.complete=true;},close(){}};
+  };
+  try{
+    const {r,s}=fixture();delete s.asr;for(const c of r.chunks)Object.assign(c,await repo.putAudio(r.id,Buffer.alloc(6400)));await repo.insert(r);
+    for(let i=0;i<5;i++){
+      await processSpeakerSources(repo,await repo.get(r.id),{},factory);
+      await repo.change(r.id,r=>{r.sources[0].asr.retryAt=0;});
+    }
+    assert.equal(opens,5);
+    await processSpeakerSources(repo,await repo.get(r.id),{},factory);
+    assert.equal(opens,6,'a recovered network must not leave a saved source permanently locked');
+    const saved=await repo.get(r.id);assert.equal(saved.segments.length,1);assert.equal(saved.capture,'recording');
+  }finally{closeSpeakerStreams(repo);await repo.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('new durable audio cannot hide an existing failed speech connection as merely queued',()=>{
+  const {r,s}=fixture();s.asr={state:'failed',error:'doubao_connection_failed',attempts:5,retryAt:Date.now()+60000};r.transcription='failed';
+  acknowledge(r,{sessionId:s.sessionId,sourceId:s.id,epoch:s.epoch,sequence:3,sampleOffset:9600,sampleCount:3200,sampleRate:16000,digest:'next',object:'next'});
+  assert.notEqual(r.transcription,'queued');assert.equal(publicRecord(r).sources[0].asr.error,'doubao_connection_failed');
+});
+
+test('cooling down speech connections do not repeatedly persist unchanged long records',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'meeting-speaker-cooldown-')),repo=await createRepository({root});
+  try{
+    const {r,s}=fixture();s.asr={state:'failed',attempts:1,error:'doubao_connection_failed',retryAt:Date.now()+60000};await repo.insert(r);
+    const change=repo.change.bind(repo);let writes=0;repo.change=(...args)=>{writes++;return change(...args);};
+    for(let i=0;i<20;i++)await processSpeakerSources(repo,r,{},()=>{throw Error('must not connect during backoff');});
+    assert.equal(writes,0,'backoff must not recompress and rewrite the entire meeting each tick');
+  }finally{closeSpeakerStreams(repo);await repo.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('saved audio recovery leaves two stream slots for an ongoing meeting', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'meeting-live-priority-')), repo = await createRepository({ root });
+  const before = process.env.RECORD_ASR_MAX_STREAMS; let opened = 0;
+  const factory = () => { opened++; return { state: { latest: null, error: null, complete: false }, ready: Promise.resolve(), async write() {}, end() {}, close() {} }; };
+  try {
+    process.env.RECORD_ASR_MAX_STREAMS = '8';
+    for (let i = 0; i < 8; i++) {
+      const { r, s } = fixture(); delete s.asr; r.capture = 'sealed'; s.stopped = true;
+      for (const chunk of r.chunks) Object.assign(chunk, await repo.putAudio(r.id, Buffer.alloc(6400)));
+      await repo.insert(r); await processSpeakerSources(repo, r, {}, factory);
+    }
+    assert.equal(opened, 6);
+    for (let i = 0; i < 2; i++) {
+      const { r, s } = fixture(); delete s.asr; r.capture = 'recording';
+      for (const chunk of r.chunks) Object.assign(chunk, await repo.putAudio(r.id, Buffer.alloc(6400)));
+      await repo.insert(r); await processSpeakerSources(repo, r, {}, factory);
+    }
+    assert.equal(opened, 8);
+  } finally {
+    if (before === undefined) delete process.env.RECORD_ASR_MAX_STREAMS; else process.env.RECORD_ASR_MAX_STREAMS = before;
+    closeSpeakerStreams(repo); await repo.close(); await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('public record exposes masked historical recognition failures without mutating saved state', () => {
+  const { r, s } = fixture(); r.transcription = 'queued'; s.asr = { state: 'failed', error: 'doubao_http_401', retryable: false, transportCode: 'ECONNREFUSED', fence: 'private' };
+  const view = publicRecord(r);
+  assert.equal(view.transcription, 'blocked'); assert.equal(r.transcription, 'queued');
+  assert.equal(view.sources[0].asr.retryable, false);
+  assert.equal(view.sources[0].asr.transportCode, 'ECONNREFUSED');
+  assert.equal(view.sources[0].asr.fence, undefined);
+});
+
+test('speech connection preserves HTTP and transport errors when the socket later closes', async () => {
+  const { createServer } = await import('node:http');
+  const server = createServer((_request, response) => { response.writeHead(401); response.end(); });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const config = { DOUBAO_API_KEY: 'fixture', DOUBAO_ASR_URL: `ws://127.0.0.1:${server.address().port}`, DOUBAO_ASR_RESOURCE_ID: 'fixture' };
+  let stream = createDoubaoSpeakerStream('zh', config);
+  try {
+    await assert.rejects(stream.ready, error => error.code === 'doubao_http_401');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(stream.state.error.code, 'doubao_http_401');
+  } finally { stream.close(); await new Promise(resolve => server.close(resolve)); }
+  stream = createDoubaoSpeakerStream('zh', config);
+  try {
+    await assert.rejects(stream.ready, error => error.code === 'doubao_connection_failed');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(stream.state.error.transportCode, 'ECONNREFUSED');
+    assert.equal(stream.state.error.code, 'doubao_connection_failed');
+  } finally { stream.close(); }
+});

@@ -199,3 +199,34 @@ test('native smoke probe validates both queued source identities, contiguous sam
     await assert.rejects(context.verifyNativeUiLanes(badRecord, badQueue));
   }
 });
+
+test('unexpected native end reports interruption instead of silently finishing recording', async () => {
+  const errors = [], commands = [];
+  const stream = await openNativeStream(async command => {
+    commands.push(command);
+    return command === 'capture_start' ? { id: 'unexpected-end', label: 'synthetic' } : new ArrayBuffer(0);
+  }, 'microphone', 'default', async () => {}, error => errors.push(error));
+  await assert.rejects(stream.done, /意外停止/);
+  assert.equal(errors.length, 1);
+  assert.equal(commands.at(-1), 'capture_stop');
+});
+
+test('native capture keeps consecutive audio beyond thirty minutes until explicit stop', async () => {
+  const saved = [], errors = [];
+  let sequence = 0, stopping = false;
+  const count = 16000, total = 35 * 60;
+  const stream = await openNativeStream(async command => {
+    if (command === 'capture_start') return { id: 'long-capture', label: 'synthetic' };
+    if (command === 'capture_stop') { stopping = true; return; }
+    if (stopping) return new ArrayBuffer(0);
+    assert.ok(sequence < total, 'capture must be stopped explicitly');
+    return packet(sequence, sequence++ * count, count);
+  }, 'display', 'default', async next => {
+    saved.push([next.sequence, next.sampleOffset]);
+    if (saved.length === total) queueMicrotask(() => { void stream.stop(); });
+  }, error => errors.push(error));
+  await stream.done;
+  assert.equal(saved.length, total);
+  assert.deepEqual(saved.at(-1), [total - 1, (total - 1) * count]);
+  assert.deepEqual(errors, []);
+});

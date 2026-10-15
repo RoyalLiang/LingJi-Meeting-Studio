@@ -134,6 +134,20 @@ fn input_list(host: &cpal::Host) -> Result<Vec<Input>, String> {
         .collect()
 }
 
+// Keep a bounded queue while the processor catches up from a short CPU or disk stall.
+fn raw_input_channel() -> (SyncSender<Vec<f32>>, Receiver<Vec<f32>>) {
+    mpsc::sync_channel(256)
+}
+
+fn queue_input<T>(sender: &SyncSender<Vec<f32>>, data: &[T], error: &Mutex<Option<String>>, stop: &AtomicBool)
+where T: cpal::SizedSample, f32: FromSample<T> {
+    if stop.load(Ordering::Relaxed) { return; }
+    if data.len() > 65_536 || sender.try_send(data.iter().map(|x| f32::from_sample(*x)).collect()).is_err() {
+        *error.lock().unwrap() = Some("原生音频处理积压，已停止采集。请检查设备性能与本地存储，避免继续丢失音频。".into());
+        stop.store(true, Ordering::Release);
+    }
+}
+
 fn input_stream<T>(
     device: &cpal::Device,
     config: &cpal::StreamConfig,
@@ -147,13 +161,7 @@ where
 {
     let failure = error.clone();
     let failed = stop.clone();
-    device.build_input_stream(*config, move |data: &[T], _| {
-        if stop.load(Ordering::Relaxed) { return; }
-        if data.len() > 65_536 || sender.try_send(data.iter().map(|x| f32::from_sample(*x)).collect()).is_err() {
-            *error.lock().unwrap() = Some("原生音频处理积压，已停止采集。请检查设备性能与本地存储，避免继续丢失音频。".into());
-            stop.store(true, Ordering::Release);
-        }
-    }, move |e| { *failure.lock().unwrap() = Some(format!("音频设备停止：{e}")); failed.store(true, Ordering::Release); }, None)
+    device.build_input_stream(*config, move |data: &[T], _| { queue_input(&sender, data, &error, &stop); }, move |e| { *failure.lock().unwrap() = Some(format!("音频设备停止：{e}")); failed.store(true, Ordering::Release); }, None)
         .map_err(|e| e.to_string())
 }
 
@@ -277,7 +285,7 @@ impl Captures {
                 }
                 .map_err(|e| e.to_string())?;
                 let mut pipeline = Pipeline::new(config.sample_rate(), config.channels() as usize)?;
-                let (raw, frames) = mpsc::sync_channel(8);
+                let (raw, frames) = raw_input_channel();
                 let stream_config = config.config();
                 let stream = match config.sample_format() {
                     cpal::SampleFormat::F32 => input_stream::<f32>(
@@ -403,6 +411,38 @@ impl Drop for Captures {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn short_input_stall_retains_ordered_audio_without_stopping_capture() {
+        let (sender, receiver) = raw_input_channel();
+        let stop = AtomicBool::new(false);
+        let error = Mutex::new(None);
+        // 96 callbacks of 128 stereo frames represent 256 ms at 48 kHz.
+        for index in 0..96 {
+            queue_input(&sender, &vec![index as f32; 256], &error, &stop);
+        }
+        assert!(!stop.load(Ordering::Acquire), "a brief stall must not end a long recording");
+        assert!(error.lock().unwrap().is_none());
+        drop(sender);
+        let blocks: Vec<_> = receiver.into_iter().collect();
+        assert_eq!(blocks.len(), 96);
+        for (index, block) in blocks.iter().enumerate() {
+            assert_eq!(block, &vec![index as f32; 256]);
+        }
+    }
+
+    #[test]
+    fn prolonged_input_stall_stops_explicitly_with_a_bounded_queue() {
+        let (sender, receiver) = raw_input_channel();
+        let stop = AtomicBool::new(false);
+        let error = Mutex::new(None);
+        for index in 0..257 {
+            queue_input(&sender, &[index as f32], &error, &stop);
+        }
+        assert!(stop.load(Ordering::Acquire));
+        assert!(error.lock().unwrap().as_ref().unwrap().contains("已停止采集"));
+        assert_eq!(receiver.try_iter().collect::<Vec<_>>(), (0..256).map(|i| vec![i as f32]).collect::<Vec<_>>());
+    }
+
     #[test]
     fn bounded_queue_reports_overflow_without_reordering_saved_packets() {
         let (sender, receiver) = mpsc::sync_channel(2);
