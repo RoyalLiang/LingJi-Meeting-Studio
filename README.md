@@ -158,7 +158,7 @@ Node 回归覆盖领域、供应商协议、持久化、恢复、权限、播放
 TTS_RELEASE_SOURCE_REF=<完整提交号> npm run release:macos:preview
 ```
 
-产物写入 `dist/releases/0.1.0/`，包含 DMG、安装说明、SHA-256 和构建来源。同版本已有产物时拒绝覆盖；打包验证使用隔离数据，不替换现有安装。正式多平台签名发布与可信更新是独立流程，见[客户端发版](docs/releases/github-client.md)。
+产物写入 `dist/releases/0.1.0/`，包含 DMG、安装说明、SHA-256 和构建来源。同版本已有产物时拒绝覆盖；打包验证使用隔离数据，不替换现有安装。首发可用 [GitHub Actions 构建与发布](docs/releases/actions-preview.md)。正式多平台签名发布与可信更新是独立流程，见[客户端发版](docs/releases/github-client.md)。
 
 ## 常见问题
 

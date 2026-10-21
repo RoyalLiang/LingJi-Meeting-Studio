@@ -1,0 +1,130 @@
+// Only the explicitly dispatched CI publish job receives a write token.
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { readFile, readdir, writeFile } from 'node:fs/promises';
+import { resolve, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
+const title=tag=>`聆记 ${tag} · 首次公开测试版 / First Public Preview`;
+const sha=value=>typeof value==='string' && /^[a-f0-9]{40}$/.test(value);
+export async function loadPreview(directory,{tag,commit,repository,workflowSha,runId}) {
+  assert.match(tag,/^v\d+\.\d+\.\d+$/);
+  assert.ok(sha(commit) && sha(workflowSha),'Full source and workflow SHAs required');
+  assert.match(repository,/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/);
+  assert.match(runId,/^\d+$/);
+  const metadata=JSON.parse(await readFile(join(directory,'release.json'),'utf8'));
+  const artifact=`Lingji-${tag.slice(1)}-macos-arm64.dmg`;
+  assert.deepEqual([metadata.version,metadata.channel,metadata.platform,metadata.architecture,metadata.artifact,metadata.sourceRevision,metadata.sourceDirty,metadata.signing,metadata.notarized,metadata.frozenSourceBuild],
+    [tag.slice(1),'preview','macos','arm64',artifact,commit,false,'ad-hoc',false,true]);
+  const runUrl=`https://github.com/${repository}/actions/runs/${runId}`;
+  assert.deepEqual(metadata.ci,{repository,runId,runUrl,workflowSha,sourceRevision:commit});
+  for(const key of ['imageVerified','copiedAppSignatureVerified','productionSmoke'])assert.equal(metadata.validation?.[key],true);
+  for(const key of ['realAudioDevicesTested','realProvidersTested','freshMachineTested'])assert.equal(metadata.validation?.[key],false);
+  const names=[artifact,'SHA256SUMS.txt','release.json','INSTALL-macos-arm64.md','package-smoke.json'];
+  assert.deepEqual((await readdir(directory)).sort(),[...names].sort(),'Unexpected or missing release files');
+  const files=await Promise.all(names.map(async name=>{const bytes=await readFile(join(directory,name));assert.ok(bytes.length>0);return {name,bytes,size:bytes.length,digest:'sha256:'+hash(bytes)};}));
+  assert.equal(files[0].digest,'sha256:'+metadata.sha256);
+  assert.equal(files[1].bytes.toString().trim(),`${metadata.sha256}  ${artifact}`);
+  const smoke=JSON.parse(files[4].bytes);
+  for(const key of ['packagedApp','independentBackend','restartPersistence','stableWebviewProfile','parentOwnsBackend','localAccount','devAccountDisabled'])assert.equal(smoke[key],true);
+  assert.equal(smoke.developerBackendRequests,0);
+  assert.equal(smoke.realAudioDevicesOpened,false);assert.equal(smoke.realProvidersInvoked,false);
+  return {metadata,files,runUrl};
+}
+export function verifyInventory(assets,files,{complete=false}={}) {
+  assert.ok(Array.isArray(assets));
+  const seen=new Set();
+  for(const asset of assets) {
+    assert.ok(!seen.has(asset.name),'Duplicate remote asset');seen.add(asset.name);
+    const file=files.find(file=>file.name===asset.name);
+    assert.ok(file,'Unexpected remote asset; preserve and investigate');
+    assert.equal(asset.state,'uploaded');assert.equal(asset.size,file.size);assert.equal(asset.digest,file.digest,'Existing asset differs; never overwrite');
+  }
+  if(complete)assert.equal(seen.size,files.length,'Incomplete release inventory');
+}
+export function previewNotes({tag,commit,workflowSha,metadata,runUrl}) {
+  return `首个公开测试版：源码 + macOS Apple Silicon 测试安装包。\n\n`+
+    `### 下载与安装\nmacOS 14.6+、Apple Silicon（M 系列）。下载 ${metadata.artifact}，按 INSTALL-macos-arm64.md 安装，并用 SHA256SUMS.txt 校验。内置 Node 24 后台，无需另装运行时。\n\n`+
+    `**ad-hoc 签名，未进行 Developer ID 签名及 Apple 公证。** Preview 与 Alpha 使用相同应用标识；先结束录制、等待补传、退出并备份，勿同时运行。\n\n`+
+    `### 本版变化\n- 完整 README：功能、启动、配置、架构、隐私、故障排查与贡献说明。\n- 紧凑同行操作区、移除播放器悬浮按钮；完整原音播放不等待转录完成。\n- Markdown 纪要和分音源 WAV 导出；自动标题采用纪要名称。\n- 纪要结合近期两分钟已确认转录，保留来源版本与人工编辑保护。\n- 豆包语言参数与顺滑配置修正、可选中英二遍场景背景。\n- 离线 CER/WER 工具与人工核听标注方案；尚无本轮人工金标准，不声明准确率提升百分比。\n\n`+
+    `### Actions 构建与验证\n由 [GitHub Actions](${runUrl}) 在 macOS ARM runner 构建。构建阶段运行 Node/Rust 回归、ESLint、类型与文档检查；DMG、arm64、签名结构、包内后台及隔离启动/重启检查通过。实际执行记录以该 run 为准。\n\n`+
+    `源码标签：${tag}\n源码 SHA：\`${commit}\`\n工作流 SHA：\`${workflowSha}\`\nDMG SHA-256：\`${metadata.sha256}\`\n\n`+
+    `未验证实体设备长会议、真实 ASR/LLM 质量、全新 Mac Gatekeeper 安装、PG/S3 和其他系统。本包不建立正式可信自动更新基线。\n\n`+
+    `### English\nFirst public preview with source code and a macOS Apple Silicon test installer (macOS 14.6+), built and published by GitHub Actions. Includes README, playback/export/title improvements, two-minute confirmed-transcript context, endpoint-aware ASR settings and offline evaluation guidance.\n\n`+
+    `**Ad-hoc signed; not Developer ID signed or notarized.** Back up existing data and stop Alpha before installing. Automated and isolated package checks passed; real-meeting accuracy, long capture, fresh-machine installation and other platforms remain unverified. No measured accuracy gain is claimed.\n`;
+}
+async function sourceCommit(api,base,tag) {
+  let object=(await api('GET',`${base}/git/ref/tags/${tag}`)).object;
+  for(let i=0;object?.type==='tag' && i<5;i++) {
+    assert.ok(sha(object.sha));object=(await api('GET',`${base}/git/tags/${object.sha}`)).object;
+  }
+  assert.equal(object?.type,'commit');assert.ok(sha(object.sha));return object.sha;
+}
+export async function publishPreview(options) {
+  const {api,tag,commit,workflowSha,repository}=options;
+  const {metadata,files,runUrl}=await loadPreview(options.directory,options);
+  const base=`/repos/${repository}`;
+  assert.equal(await sourceCommit(api,base,tag),commit,'Source tag moved');
+  const candidates=[];
+  for(let page=1;page<=10;page++) {
+    const releases=await api('GET',`${base}/releases?per_page=100&page=${page}`);
+    assert.ok(Array.isArray(releases));
+    candidates.push(...releases.filter(r=>r.tag_name===tag || (r.draft && r.name===title(tag) && r.body?.includes(commit))));
+    if(releases.length<100)break;
+    assert.ok(page<10,'Release list truncated');
+  }
+  assert.ok(candidates.length<=1,'Ambiguous existing release');
+  let release=candidates[0];
+  if(release) {
+    assert.ok(release.draft===true,'Published release is immutable to this workflow');
+    assert.ok(release.body?.includes(commit),'Existing draft source differs');
+    verifyInventory(release.assets,files);
+  }
+  const body=previewNotes({tag,commit,workflowSha,metadata,runUrl});
+  const payload={tag_name:tag,target_commitish:commit,name:title(tag),body,draft:true,prerelease:true,make_latest:'false'};
+  if(!release)release=await api('POST',`${base}/releases`,payload);
+  else {
+    const current=await api('GET',`${base}/releases/${release.id}`);
+    assert.equal(current.draft,true,'Draft was published after list snapshot');
+    assert.equal(current.tag_name,release.tag_name,'Draft tag changed');
+    assert.ok(current.body?.includes(commit),'Draft source changed');verifyInventory(current.assets,files);
+    release=await api('PATCH',`${base}/releases/${release.id}`,payload);
+  }
+  assert.ok(Number.isSafeInteger(release.id) && release.id>0);const id=release.id;
+  for(const file of files) {
+    release=await api('GET',`${base}/releases/${id}`);
+    assert.equal(release.draft,true,'Release changed during upload');assert.equal(release.tag_name,tag);
+    verifyInventory(release.assets,files);
+    if(!release.assets.some(asset=>asset.name===file.name))await api('POST',`${base}/releases/${id}/assets?name=${encodeURIComponent(file.name)}`,file.bytes,true);
+  }
+  release=await api('GET',`${base}/releases/${id}`);
+  assert.equal(release.draft,true);verifyInventory(release.assets,files,{complete:true});
+  assert.equal(await sourceCommit(api,base,tag),commit,'Source tag moved before publication');
+  release=await api('GET',`${base}/releases/${id}`);
+  assert.equal(release.draft,true,'Release changed before publication');assert.equal(release.tag_name,tag);
+  verifyInventory(release.assets,files,{complete:true});
+  await api('PATCH',`${base}/releases/${id}`,{...payload,draft:false});
+  const published=await api('GET',`${base}/releases/${id}`);
+  assert.equal(published.draft,false);assert.equal(published.prerelease,true);assert.equal(published.tag_name,tag);
+  verifyInventory(published.assets,files,{complete:true});
+  return {published:true,url:published.html_url,tag,sourceRevision:commit,workflowSha,runUrl,assets:published.assets.map(({name,size,digest})=>({name,size,digest}))};
+}
+async function main() {
+  assert.equal(process.env.CI,'true');assert.equal(process.env.GITHUB_ACTIONS,'true');
+  assert.equal(process.env.GITHUB_EVENT_NAME,'workflow_dispatch');assert.equal(process.env.GITHUB_REF,'refs/heads/main');
+  const token=process.env.GH_TOKEN;assert.ok(token,'CI write token required');
+  const repository=process.env.GITHUB_REPOSITORY;
+  const api=async (method,path,data,upload=false)=>{
+    assert.ok(path.startsWith(`/repos/${repository}/`));
+    const response=await fetch(`https://${upload?'uploads':'api'}.github.com${path}`,{method,redirect:'error',signal:AbortSignal.timeout(120000),
+      headers:{Authorization:`Bearer ${token}`,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2026-03-10',...(data?{'Content-Type':upload?'application/octet-stream':'application/json'}:{})},
+      ...(data?{body:upload?data:JSON.stringify(data)}:{})});
+    if(!response.ok)throw new Error(`GitHub ${method} request failed: HTTP ${response.status}`);
+    return response.json();
+  };
+  const result=await publishPreview({api,repository,tag:process.env.RELEASE_TAG,commit:process.env.RELEASE_SHA,workflowSha:process.env.RELEASE_WORKFLOW_SHA,
+    runId:process.env.GITHUB_RUN_ID,directory:resolve(process.argv[2]||'preview-artifacts')});
+  await writeFile('preview-publication-receipt.json',JSON.stringify(result,null,2)+'\n');console.log(JSON.stringify(result));
+}
+if(process.argv[1] && import.meta.url===pathToFileURL(resolve(process.argv[1])).href)main().catch(error=>{console.error(error.message);process.exitCode=1;});
