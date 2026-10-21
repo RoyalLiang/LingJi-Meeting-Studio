@@ -1,6 +1,6 @@
 ## 2026-10-21 Actions 发布推进
 
-用户明确改用 GitHub Actions 构建发布。保留 v0.1.0 -> ef9786c 标签；新建独立 preview workflow 与受约束发布器，controller SHA 单列。仅显式 workflow_dispatch 从main触发，macos-15 ARM构建，publish短期令牌写Release。当前：实现和本地契约检查，独立复核中；下一步提交推送、触发、观察和核验远端资产。
+用户明确改用 GitHub Actions 构建发布。保留 v0.1.0 -> ef9786c 标签；新建独立 preview workflow 与受约束发布器，controller SHA 单列。仅显式 workflow_dispatch 从main触发，macos-15 ARM构建，publish短期令牌写Release。当前：独立复核、本地329 Node/actionlint及云端构建发布通过。Release v0.1.0 已公开，五附件实际下载SHA与来源核验通过；等待一次交付前反思回应。
 
 # 项目规则、竞品研究与系统设计计划
 
@@ -9,10 +9,10 @@
 - [完成] 核实源码与首发范围，完成业内 README / ASR 一手研究。
 - [完成] 重写 README、安装说明、标注与评估方案。
 - [完成] 建立离线评测，修正识别参数与复核发现；提供标注优化方案。
-- [源码通过，包待验] 323 Node、21 Rust、lint/type/build/docs100，独立复核两项问题修复后通过；随后冻结打包。
-- [待发布] 提交并上传首个版本，在 GitHub 发布用户确认的交付物；读回核实标签/资产/摘要。
+- [完成] 323 Node、21 Rust、lint/type/build/docs100，独立复核两项问题修复后通过；随后冻结打包。
+- [完成] Actions 发布 v0.1.0 pre-release；标签、五资产摘要及公开完整下载均读回核实。
 - 授权：用户明确要求提交与发布；不覆盖正在使用的客户端，不改生产或真实会议。起点 4b69885，保留 .idea 脏文件。
-- 风险 medium：用户已选择源码＋macOS Apple Silicon 测试安装包；不得将测试安装包描述为四平台正式签名发行。SSH RoyalLiang 已认证，HTTPS Git 缺凭据，GitHub 插件已连接；canonical 为 RoyalLiang/LingJi-MS，同 repo id；插件不支持 Release 写入，使用已登录浏览器发布。
+- 风险 medium：用户已选择源码＋macOS Apple Silicon 测试安装包；不得将测试安装包描述为四平台正式签名发行。SSH RoyalLiang 已认证，HTTPS Git 缺凭据，GitHub 插件已连接；canonical 为 RoyalLiang/LingJi-MS，同 repo id；插件不支持 Release 写入，按用户要求由 Actions 短期令牌发布，已登录浏览器仅用于触发 workflow_dispatch。
 
 ## 2026-10-21 会议收尾、导出与纪要改进
 

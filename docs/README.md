@@ -1,5 +1,6 @@
 # 当前首发入口（2026-10-21）
 
+- [v0.1.0 Actions 发布验证](evidence/first-public-preview-2026-10-21.md)
 - [产品首页与快速开始](../README.md)
 - [v0.1.0 macOS 测试安装说明](releases/v0.1.0-preview.md)
 - [转录优化、标注与离线评估](engineering/asr-quality.md)

@@ -1,3 +1,7 @@
+## 2026-10-21 首发验证完成，待反思回应
+
+Actions run39552320372 verify/build/publish成功，tag v0.1.0仍为ef9786c，workflow cf61105。云端323 Node/21 Rust与完整包验证通过；公开五附件实际字节SHA均匹配。前两次CI失败分别修复生成资源准备顺序与Tauri默认跳过Finder布局，不移除检查。详细回执见 docs/evidence/first-public-preview-2026-10-21.md。待执行一次交付前自查并等待用户回应；不再等待Chrome权限。
+
 ## 2026-10-21 转用 Actions
 
 Chrome 设置页被工具URL策略拒绝，未更改扩展文件权限。用户授权改用 Actions。新增 verify/build/publish 分离流程、5附件哈希与草稿保护、源码/工作流双SHA留证。工作流不移动已公开标签。发布器5项合成契约与lint通过，仍待云端运行。

@@ -145,10 +145,11 @@ npm run lint
 npm run typecheck
 npm run build:web
 npm run check:docs
+node scripts/prepare-client-backend.mjs
 cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked
 ```
 
-Node 回归覆盖领域、供应商协议、持久化、恢复、权限、播放及导出等。Lint/类型检查只覆盖脚本声明的范围。Postgres 使用 `npm run test:records:postgres` 并准备真实测试数据库；Go 实验在其目录运行 `go test ./...`。见[验收表](docs/engineering/acceptance.md)。
+Node 回归覆盖领域、供应商协议、持久化、恢复、权限、播放及导出等。原生检查另需 Rust 和 Tauri 系统依赖；先构建 Web 并准备随包 Node/后台资源，再执行 Cargo，干净 checkout 不包含这些生成资源。Lint/类型检查只覆盖脚本声明的范围。Postgres 使用 `npm run test:records:postgres` 并准备真实测试数据库；Go 实验在其目录运行 `go test ./...`。见[验收表](docs/engineering/acceptance.md)。
 
 离线评估使用 `npm run evaluate:asr -- GOLD.jsonl REPORT.json`。必须先准备核听参考文本；工具只比较已有结果，不调用云端、不训练模型、不替换主转录。[数据格式与标注流程](docs/engineering/asr-quality.md)
 

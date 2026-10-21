@@ -1,5 +1,7 @@
 # v0.1.0 公开测试版增量（2026-10-21）
 
+v0.1.0 已由 [Actions run 39552320372](https://github.com/RoyalLiang/LingJi-MS/actions/runs/39552320372) 构建并发布 [GitHub pre-release](https://github.com/RoyalLiang/LingJi-MS/releases/tag/v0.1.0)。源码 ef9786c、工作流 cf61105，公开五附件字节与 SHA-256 已核对；云端 323 项 Node、21 项 Rust 及包内隔离启动/重启通过。完整边界见[首发证据](../evidence/first-public-preview-2026-10-21.md)。
+
 本轮源码增加豆包端点语言参数修正、显式关闭顺滑改写、可选中英二遍场景背景，以及离线 CER/WER 配对评估。新增 macOS Preview 打包配置，正式签名工作流不变。准确率尚无本轮人工金标准验证；打包与发布事实以 [v0.1.0 安装说明](../releases/v0.1.0-preview.md)及发布页为准。标注方案见[识别质量](asr-quality.md)。下方历史记录不代表本版额外完成了真实供应商或实体设备验收。
 
 # 当前运行路径与证据
