@@ -31,7 +31,7 @@ function response(utterances,final=false){const payload=gzipSync(Buffer.from(JSO
 test('continuous vendor socket yields live A-B-A across chunks and drains once, never one connection per chunk',async()=>{
  const root=await mkdtemp(join(tmpdir(),'meeting-speakers-')),repo=await createRepository({root}),server=new WebSocketServer({port:0,host:'127.0.0.1'});await new Promise(r=>server.once('listening',r));let connections=0,packets=0,tails=0;
  server.on('connection',socket=>{connections++;socket.on('message',frame=>{if(frame[1]>>4===1){const init=JSON.parse(gunzipSync(frame.subarray(8)));assert.equal(init.request.enable_speaker_info,true);assert.equal(init.request.enable_nonstream,true);assert.equal(init.request.ssd_version,'200');}else if(frame[1]&2){tails++;socket.send(response(turns.map(t=>({text:t.text,...(t.startMs ? {start_time:t.startMs} : {}),end_time:t.endMs,definite:true,additions:{speaker_id:t.speakerId}})),true));}else{packets++;socket.send(response(turns.slice(0,Math.min(3,packets)).map(t=>({text:t.text,...(t.startMs ? {start_time:t.startMs} : {}),end_time:t.endMs,definite:true,additions:{speaker_id:t.speakerId}}))));}});});
- const config={DOUBAO_API_KEY:'fixture',DOUBAO_ASR_URL:`ws://127.0.0.1:${server.address().port}`,DOUBAO_ASR_RESOURCE_ID:'fixture'};
+ const config={DOUBAO_API_KEY:'fixture',DOUBAO_ASR_URL:`ws://127.0.0.1:${server.address().port}/api/v3/sauc/bigmodel_async`,DOUBAO_ASR_RESOURCE_ID:'fixture'};
  try{
   const {r,s}=fixture();delete s.asr;for(const c of r.chunks)Object.assign(c,await repo.putAudio(r.id,Buffer.alloc(6400)));await repo.insert(r);
   const tick=async()=>{await processSpeakerSources(repo,await repo.get(r.id),config,(lang,c)=>createDoubaoSpeakerStream(lang,c,{interval:1}));await wait();};

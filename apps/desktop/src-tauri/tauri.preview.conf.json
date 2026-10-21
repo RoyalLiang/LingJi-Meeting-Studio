@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "聆记 Preview",
+  "version": "0.1.0",
+  "bundle": {
+    "macOS": {
+      "bundleVersion": "0.1.22",
+      "signingIdentity": "-",
+      "dmg": {
+        "background": "../assets/macos-installer-background.tiff",
+        "windowSize": { "width": 720, "height": 480 },
+        "appPosition": { "x": 180, "y": 250 },
+        "applicationFolderPosition": { "x": 540, "y": 250 }
+      }
+    },
+    "resources": {
+      "resources/client-backend/": "client-backend/",
+      "resources/runtime/": "runtime/"
+    }
+  }
+}

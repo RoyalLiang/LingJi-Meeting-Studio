@@ -11,9 +11,31 @@ export function parseAsrHotwords(value = '') {
 
 export function doubaoRecognitionRequest(config, { secondPass = true } = {}) {
   const hotwords = parseAsrHotwords(config.DOUBAO_ASR_HOTWORDS);
+  const context = parseAsrContext(config.DOUBAO_ASR_CONTEXT);
+  requireThat(!context || secondPass, 'asr_context_requires_second_pass', 400);
   return {
-    model_name: 'bigmodel', enable_itn: true, enable_punc: true,
+    model_name: 'bigmodel', enable_itn: true, enable_punc: true, enable_ddc: false,
     show_utterances: true, ...(secondPass ? { enable_nonstream: true } : {}),
-    ...(hotwords.length ? { corpus: { context: JSON.stringify({ hotwords }) } } : {}),
+    ...(hotwords.length || context ? { corpus: { context: JSON.stringify({ ...(hotwords.length ? {hotwords} : {}),
+      ...(context ? {context_type:'dialog_ctx',context_data:[{text:context}]} : {}) }) } } : {}),
   };
+}
+export function parseAsrContext(value = '') {
+  requireThat(typeof value === 'string' && !/[\u0000-\u001f]/u.test(value), 'invalid_asr_context', 400);
+  const text=value.trim();
+  // Engineering bounds, not a claim about the provider tokenizer's 800-token limit.
+  requireThat([...text].length<=400 && Buffer.byteLength(text)<=1600, 'invalid_asr_context', 400);
+  return text;
+}
+
+// Scene context applies only to the supported Chinese/English second pass.
+// Keep other language recordings working when a global scene hint is saved.
+export function doubaoRecognitionForLanguage(config, language) {
+  const secondPass=['zh','en','zhen'].includes(language) && new URL(config.DOUBAO_ASR_URL).pathname.endsWith('/bigmodel_async');
+  return doubaoRecognitionRequest(secondPass?config:{...config,DOUBAO_ASR_CONTEXT:''},{secondPass});
+}
+export function doubaoAudioConfig(config, language) {
+  const supportsLanguage=new URL(config.DOUBAO_ASR_URL).pathname.endsWith('/bigmodel_nostream');
+  return {format:'pcm',codec:'raw',rate:16000,bits:16,channel:1,
+    ...(supportsLanguage ? {language:({zh:'zh-CN',en:'en-US',ja:'ja-JP'}[language]||language)} : {})};
 }

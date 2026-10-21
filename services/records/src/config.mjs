@@ -2,7 +2,7 @@ import { readFile, writeFile, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { requireThat } from '../../../packages/records/src/record.mjs';
-import { parseAsrHotwords } from './asr-terms.mjs';
+import { parseAsrHotwords, parseAsrContext } from './asr-terms.mjs';
 
 export const defaults = {
   ASR_PROVIDER: 'doubao',
@@ -15,7 +15,7 @@ export const defaults = {
   LLM_PROTOCOL: 'responses',
   DOUBAO_TRANSLATION_MODEL: 'doubao-seed-translation-250915',
 };
-const fields = ['DOUBAO_TRANSLATION_API_URL', 'DOUBAO_TRANSLATION_API_KEY', 'DOUBAO_TRANSLATION_MODEL', 'DOUBAO_ASR_HOTWORDS', 'ASR_PROVIDER', 'DOUBAO_API_KEY', 'DOUBAO_ASR_URL', 'DOUBAO_ASR_RESOURCE_ID', 'DOUBAO_AST_BASE_URL', 'DOUBAO_AST_ENDPOINT', 'DOUBAO_AST_RESOURCE_ID', 'DOUBAO_AST_APP_ID', 'DOUBAO_AST_APP_KEY', 'DOUBAO_AST_ACCESS_KEY', 'ASR_API_URL', 'ASR_API_KEY', 'ASR_MODEL', 'DEEPGRAM_API_KEY', 'LLM_API_URL', 'LLM_API_KEY', 'LLM_MODEL', 'LLM_PROTOCOL'];
+const fields = ['DOUBAO_TRANSLATION_API_URL', 'DOUBAO_TRANSLATION_API_KEY', 'DOUBAO_TRANSLATION_MODEL', 'DOUBAO_ASR_HOTWORDS', 'DOUBAO_ASR_CONTEXT', 'ASR_PROVIDER', 'DOUBAO_API_KEY', 'DOUBAO_ASR_URL', 'DOUBAO_ASR_RESOURCE_ID', 'DOUBAO_AST_BASE_URL', 'DOUBAO_AST_ENDPOINT', 'DOUBAO_AST_RESOURCE_ID', 'DOUBAO_AST_APP_ID', 'DOUBAO_AST_APP_KEY', 'DOUBAO_AST_ACCESS_KEY', 'ASR_API_URL', 'ASR_API_KEY', 'ASR_MODEL', 'DEEPGRAM_API_KEY', 'LLM_API_URL', 'LLM_API_KEY', 'LLM_MODEL', 'LLM_PROTOCOL'];
 const secretFields = new Set(['DOUBAO_TRANSLATION_API_KEY', 'DOUBAO_API_KEY', 'DOUBAO_AST_APP_KEY', 'DOUBAO_AST_ACCESS_KEY', 'ASR_API_KEY', 'DEEPGRAM_API_KEY', 'LLM_API_KEY']);
 export const configured = value => Boolean(value && !/^(your[-_]|replace|mock|<|xxx)/i.test(value));
 export function normalizeConfig(env = process.env) {
@@ -51,6 +51,7 @@ export async function saveConfig(root, input, env = process.env) {
   requireThat(['doubao', 'doubao-ast', 'deepgram', 'openai-compatible'].includes(next.ASR_PROVIDER), 'invalid_asr_provider', 400);
   requireThat(['chat-completions', 'responses'].includes(next.LLM_PROTOCOL), 'invalid_llm_protocol', 400);
   parseAsrHotwords(next.DOUBAO_ASR_HOTWORDS);
+  const context=parseAsrContext(next.DOUBAO_ASR_CONTEXT);
   for (const key of ['DOUBAO_ASR_URL', 'DOUBAO_AST_BASE_URL', 'ASR_API_URL', 'LLM_API_URL', 'DOUBAO_TRANSLATION_API_URL']) {
     if (!next[key]) continue;
     let url; try { url = new URL(next[key]); } catch { requireThat(false, 'invalid_provider_url', 400); }
@@ -59,6 +60,7 @@ export async function saveConfig(root, input, env = process.env) {
     if (env.NODE_ENV !== 'production') protocols.push(socketUrl ? 'ws:' : 'http:');
     requireThat(protocols.includes(url.protocol) && !url.username && !url.password && !url.hash, 'invalid_provider_url', 400);
   }
+  requireThat(!context || next.ASR_PROVIDER!=='doubao' || new URL(next.DOUBAO_ASR_URL).pathname.endsWith('/bigmodel_async'),'asr_context_requires_second_pass',400);
   let previous = {};
   try { previous = JSON.parse(await readFile(join(root, 'providers.json'), 'utf8')); } catch (e) { if (e.code !== 'ENOENT') throw e; }
   const temporary = join(root, `providers-${randomUUID()}.tmp`);
