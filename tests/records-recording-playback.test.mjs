@@ -83,6 +83,10 @@ test('retained recordings serve complete WAV and byte ranges while temporary or 
     const early=await fetch(url,{headers}),earlyWav=Buffer.from(await early.arrayBuffer());
     assert.equal(early.status,200,'complete retained audio is playable while ASR is pending');
     assert.deepEqual(earlyWav.subarray(44),audioBytes);
+    const download=await fetch(url+'?download=1',{headers});
+    assert.equal(download.status,200);
+    assert.match(download.headers.get('content-disposition'),/^attachment;.*filename\*=UTF-8''.*\.wav$/);
+    assert.deepEqual(Buffer.from(await download.arrayBuffer()),earlyWav,'export preserves every retained PCM sample while ASR is pending');
     assert.equal((await app.repo.get(retained.id)).capture,'sealed');
     assert.ok((await app.repo.get(retained.id)).chunks.every(chunk=>chunk.state!=='done'));
     await app.repo.change(retained.id,value=>{value.sources[0].watermark=0;});

@@ -20,10 +20,15 @@ export function liveInput(record, template) {
   const previous = liveBaseline(record);
   if (!previous || previous.template !== template) return record.segments;
   const covered = new Set(previous.evidenceSnapshot.map(identity));
-  // A short overlap resolves pronouns while every uncovered earlier segment is backfilled.
+  // Use two minutes of confirmed speech, not two arbitrarily short ASR fragments.
+  // All uncovered evidence is still backfilled; this lookback is not a truncation limit.
   const boundary = record.segments.findIndex(segment => !covered.has(identity(segment)));
-  const start = Math.max(0, (boundary < 0 ? record.segments.length : boundary) - 2);
-  return record.segments.filter((segment, index) => !covered.has(identity(segment)) || (index >= start && (boundary < 0 || index < boundary)));
+  const end = boundary < 0 ? record.segments.length : boundary;
+  const anchor = record.segments[boundary < 0 ? end - 1 : boundary];
+  const timed = Number.isFinite(anchor?.startMs) && Number.isFinite(anchor?.endMs) && anchor.endMs > anchor.startMs;
+  const since = (boundary < 0 ? anchor?.endMs : anchor?.startMs) - 120000;
+  return record.segments.filter((segment, index) => !covered.has(identity(segment)) || (index < end &&
+    (timed ? segment.endMs > since && segment.startMs <= anchor.startMs : index >= Math.max(0, end - 2))));
 }
 export function minutesContext(previous) {
   if (!previous) return undefined;

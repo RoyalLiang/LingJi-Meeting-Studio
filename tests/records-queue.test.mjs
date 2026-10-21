@@ -48,3 +48,16 @@ test('local backend drains durable queue without internet while Web queue stays 
   h.navigator.onLine=false;await h.enqueue('local',chunk());await h.drainQueue();assert.equal(uploads,0);assert.equal(await h.pendingCount('local'),1);
   h.setLocalQueueBackend(true);await h.drainQueue();assert.equal(uploads,1);assert.equal(await h.pendingCount('local'),0);
 });
+
+test('ending capture awaits an upload already draining before reporting saved audio ready',async()=>{
+  let release,entered;const gate=new Promise(resolve=>{release=resolve;}),started=new Promise(resolve=>{entered=resolve;});
+  const h=harness(new IDBFactory(),async()=>{entered();await gate;});h.setQueueRecords(['ending']);
+  await h.enqueue('ending',chunk());
+  const background=h.drainQueue();await started;
+  let finished=false;const finish=h.drainQueue().then(()=>{finished=true;});
+  try {
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(finished,false,'end-meeting drain must wait for its durable tail, even when background upload owns the queue');
+  } finally {release();await Promise.all([background,finish]);}
+  assert.equal(await h.pendingCount('ending'),0);
+});

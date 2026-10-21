@@ -1,5 +1,15 @@
 # 本轮进展
 
+## 2026-10-21
+
+- 已完成 A 版及五项源码变更；316/316、ESLint、typecheck、build:web 和本轮 diff --check 通过。
+- 隔离 Chromium：封存但 40 个音频包待 ASR 时双路媒体可播放，Markdown/两路 WAV 准备与中文名正确，1280/390px 无页面横向溢出。
+- 原生实体录音、真实纪要语义质量与新版安装尚未验证。已本地提交并完成一次交付前反思门；用户知悉边界并确认交付当前源码，不制作安装包。
+
+- 已读取项目路由、当前状态与视觉方向；CodeGraph 导航可用。
+- 已应用 diagnosing-bugs、ui-design-system 与 planning-with-files。
+- 起始 IDE 脏文件保留，远程 origin 已配置；本轮暂只本地提交。
+
 ## 2026-10-11
 
 - 已保留起始 Git 状态，初始化项目规则和 CodeGraph。

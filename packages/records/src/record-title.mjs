@@ -19,12 +19,13 @@ export function keywordRecordTitle(segments) {
 }
 
 export function automaticRecordTitle(record,preferredTitle) {
- if(record.deleted || record.capture!=='completed' || record.titleEdited)return '';
+ if(record.deleted || record.titleEdited)return '';
  const current=String(record.title || '').trim();
  if(current && !placeholders.test(current) && current!==record.autoTitle)return '';
- // Only a validated final model title may refine our previous keyword title.
+ // Validated minutes may refine an automatic title; explicit meeting names stay protected.
  const preferred=typeof preferredTitle==='string' ? preferredTitle.trim().replace(/\s+/g,' ').slice(0,160) : '';
  if(preferred && !placeholders.test(preferred))return preferred;
+ if(record.capture!=='completed')return '';
  if(record.autoTitle===current)return '';
  return keywordRecordTitle(record.segments || []);
 }
