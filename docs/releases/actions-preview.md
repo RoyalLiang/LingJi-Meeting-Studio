@@ -14,7 +14,7 @@
 标签必须已存在、对应版本配置且为 main 祖先，解析出的完整 SHA 必须与输入一致。工作流不会创建或移动标签。
 
 1. verify 验证来源并执行发布器的隔离契约回归。
-2. build 使用 `macos-15`，实际检查 arm64，在标签源码上执行 `npm ci`、Node/Rust 测试、lint、类型及文档检查，再冻结构建、校验 DMG 与隔离启动/重启。
+2. build 使用 `macos-15`，实际检查 arm64，在标签源码上执行 `npm ci`、Node 测试、lint、类型及文档检查，先准备随包 Node 后台资源与 Web 静态文件，再执行 Rust 测试、冻结构建、校验 DMG 与隔离启动/重启。
 3. publish 下载本次 run 的 5 个附件，复查字节哈希、构建来源、完整集合及远端标签；匹配并复用已保存草稿，上传后再发布 pre-release。
 
 build 只有 contents:read；publish 使用短期 `GITHUB_TOKEN` 的 contents:write，不要求 PAT、浏览器本地文件权限、Apple 证书或更新签名密钥。正式签名工作流保持原样。
