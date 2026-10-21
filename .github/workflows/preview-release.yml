@@ -87,6 +87,8 @@ jobs:
       - name: Build and verify isolated preview package
         env:
           TTS_RELEASE_SOURCE_REF: ${{ needs.verify.outputs.sha }}
+          # Keep the configured Finder background/positions and their validation.
+          TAURI_BUNDLER_DMG_IGNORE_CI: 'true'
         run: npm run release:macos:preview
       - name: Add CI provenance and collect five release files
         env:

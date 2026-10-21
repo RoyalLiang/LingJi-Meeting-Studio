@@ -19,6 +19,8 @@
 
 build 只有 contents:read；publish 使用短期 `GITHUB_TOKEN` 的 contents:write，不要求 PAT、浏览器本地文件权限、Apple 证书或更新签名密钥。正式签名工作流保持原样。
 
+DMG 构建显式使用 Tauri 的 `TAURI_BUNDLER_DMG_IGNORE_CI=true`，在 macOS runner 上保留 Finder 自定义背景及图标位置生成，继续检查 `.DS_Store` 与背景文件。它只改变 DMG 的 CI 外观处理，不关闭 Actions 的 CI 标识或发布权限检查。依据见 [Tauri DMG 实现](https://github.com/tauri-apps/tauri/blob/dev/crates/tauri-bundler/src/bundle/macos/dmg/mod.rs)。
+
 ## 来源与重跑
 
 `release.json.sourceRevision` 对应实际标签源码；新增 `ci` 字段分别记录 sourceRevision、workflowSha、runId、runUrl。发布工具来自工作流提交，应用来自冻结标签，二者可能不同，发布说明会同时列出。
