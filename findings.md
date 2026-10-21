@@ -1,3 +1,7 @@
+## 2026-10-21 Actions 发布事实
+
+新增 preview workflow 的 source_sha 与标签硬比对；controller 与源码分别记SHA，不移动v0.1.0。发布器防止过期草稿快照改写已发布版本，6项契约和独立复核通过。329 Node、ESLint、docs101、官方actionlint通过。云端构建及发布尚未执行。Chrome文件URL权限未改变。
+
 # 本轮发现
 
 ## 2026-10-21 首发与 ASR

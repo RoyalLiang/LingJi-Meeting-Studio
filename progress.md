@@ -1,3 +1,7 @@
+## 2026-10-21 转用 Actions
+
+Chrome 设置页被工具URL策略拒绝，未更改扩展文件权限。用户授权改用 Actions。新增 verify/build/publish 分离流程、5附件哈希与草稿保护、源码/工作流双SHA留证。工作流不移动已公开标签。发布器5项合成契约与lint通过，仍待云端运行。
+
 ## 2026-10-21 v0.1.0 冻结前
 
 完成 README/安装/标注方案，协议修正与离线评估器。独立复核两项发现已修正，反例回归通过；323 Node、21 Rust、lint/type/build/docs100 通过。下一步冻结相同 SHA 构建并发布 pre-release；不替换已安装 Alpha。

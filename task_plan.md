@@ -1,3 +1,7 @@
+## 2026-10-21 Actions 发布推进
+
+用户明确改用 GitHub Actions 构建发布。保留 v0.1.0 -> ef9786c 标签；新建独立 preview workflow 与受约束发布器，controller SHA 单列。仅显式 workflow_dispatch 从main触发，macos-15 ARM构建，publish短期令牌写Release。当前：实现和本地契约检查，独立复核中；下一步提交推送、触发、观察和核验远端资产。
+
 # 项目规则、竞品研究与系统设计计划
 
 ## 2026-10-21 首次发布与转录质量（WORK-20261021-RELEASE-ASR）
