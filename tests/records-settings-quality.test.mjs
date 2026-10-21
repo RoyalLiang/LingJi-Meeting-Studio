@@ -65,8 +65,10 @@ test('batch and speaker recognition send the same bounded terminology with secon
     for (const { request } of requests) {
       assert.equal(request.enable_nonstream, true);
       assert.equal(request.enable_itn, true);
+      assert.equal(request.enable_ddc, false, 'verbatim recognition must preserve spoken repetitions');
       assert.deepEqual(JSON.parse(request.corpus.context).hotwords, [{ word: '聆记' }, { word: 'Redis Sentinel' }, { word: 'FMS' }]);
     }
+    for(const init of requests)assert.equal(init.audio.language,undefined,'async second-pass recognition does not support audio.language');
     await transcribeDoubaoAsr(Buffer.alloc(6400), 'ja', config, { interval: 0 });
     await transcribeDoubaoAsr(Buffer.alloc(6400), 'zh', { ...config, DOUBAO_ASR_URL: config.DOUBAO_ASR_URL.replace('bigmodel_async', 'bigmodel') }, { interval: 0 });
     assert.equal(requests[2].request.enable_nonstream, undefined);

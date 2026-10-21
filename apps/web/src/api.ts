@@ -46,7 +46,9 @@ const messages: Record<string, string> = {
   segment_revision_conflict: '这段转录已有更新，请重新载入后合并。', record_duration_limit: '本次记录已达到两小时音频配额。',
   csrf_required: '登录状态已变化，请重新登录。', session_expired: '登录已过期，请重新登录。', login_rate_limited: '尝试过于频繁，请一分钟后重试。',
   temporary_audio_expired: '临时音频已超过 24 小时保存期，请重新导入原音。', audio_identity_conflict: '音频身份发生冲突，已保留本地数据，请导出并联系维护者。', share_expired_or_revoked: '分享已过期或被撤销。',
-  minutes_unavailable: '还没有已保存的会议纪要，请生成后再导出。'
+  minutes_unavailable: '还没有已保存的会议纪要，请生成后再导出。',
+  invalid_asr_context: '识别场景背景最多 400 字，请移除控制字符。',
+  asr_context_requires_second_pass: '识别场景背景需要 bigmodel_async 二遍接口；切换接口前请清空背景。'
 };
 export class ApiError extends Error { constructor(public code: string, public status: number) { super(messages[code] || `操作未完成（${code}）`); } }
 export async function api<T>(path: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {

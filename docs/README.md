@@ -1,3 +1,12 @@
+# 当前首发入口（2026-10-21）
+
+- [产品首页与快速开始](../README.md)
+- [v0.1.0 macOS 测试安装说明](releases/v0.1.0-preview.md)
+- [转录优化、标注与离线评估](engineering/asr-quality.md)
+- [README 与 ASR 一手研究](research/readme-and-asr-quality-2026-10-21.md)
+
+以下保留历史索引，带日期的历史验收结论仅对应当时版本。
+
 # 项目文档入口
 
 [Alpha 双任务学习与标注](engineering/alpha-learning.md)：Alpha 13 会后生成待标注结果，按会议和发言归组，人工确认后训练回测；尚无人工金标准，主转录未启用自动改写。

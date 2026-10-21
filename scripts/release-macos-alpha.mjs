@@ -12,9 +12,14 @@ const sourceRef = process.env.TTS_RELEASE_SOURCE_REF ? capture('git', ['rev-pars
 const readSource = path => sourceRef ? Promise.resolve(execFileSync('git', ['show', `${sourceRef}:${path}`], { maxBuffer: 8 * 1024 * 1024 })) : readFile(path);
 assert.equal(process.platform, 'darwin', 'This release command requires macOS.');
 assert.equal(process.arch, 'arm64', 'This Alpha is for Apple Silicon.');
-const config = JSON.parse((await readSource('apps/desktop/src-tauri/tauri.alpha.conf.json')).toString());
+const channel=process.env.TTS_RELEASE_CHANNEL || 'alpha';
+assert.ok(['alpha','preview'].includes(channel),'Unknown local test release channel');
+const configPath=`apps/desktop/src-tauri/tauri.${channel}.conf.json`;
+const installationGuide=channel==='preview'?'docs/releases/v0.1.0-preview.md':'docs/releases/macos-alpha.md';
+const config = JSON.parse((await readSource(configPath)).toString());
 const baseConfig = JSON.parse((await readSource('apps/desktop/src-tauri/tauri.conf.json')).toString());
-assert.match(config.version, /^\d+\.\d+\.\d+-alpha\.\d+$/);
+assert.match(config.version, channel==='preview'?/^\d+\.\d+\.\d+$/:/^\d+\.\d+\.\d+-alpha\.\d+$/);
+if(channel==='preview')assert.equal(config.version,baseConfig.version);
 assert.equal(baseConfig.build.frontendDist, '../../web/dist');
 const output = join(root, 'dist/releases', config.version);
 try {
@@ -42,7 +47,7 @@ async function sourceSnapshot(destination) {
   const paths = capture('git', [...(sourceRef ? ['ls-tree', '-r', '--name-only', '-z', sourceRef] : ['ls-files', '--cached', '--others', '--exclude-standard', '-z']), '--',
     '.gitignore', 'package.json', 'package-lock.json', 'apps/web', 'apps/desktop/package.json',
     'apps/desktop/src-tauri', 'apps/desktop/assets', 'scripts/release-macos-alpha.mjs', 'scripts/test-standalone-package.mjs', 'scripts/prepare-client-backend.mjs', 'scripts/alpha-learning', 'tools/neohorse',
-    'services/records/src', 'packages/records/src', 'services/session-gateway/src/providers/doubao-ast-codec.mjs', 'services/session-gateway/src/providers/doubao-ast/protos', 'docs/releases/macos-alpha.md',
+    'services/records/src', 'packages/records/src', 'services/session-gateway/src/providers/doubao-ast-codec.mjs', 'services/session-gateway/src/providers/doubao-ast/protos', installationGuide,
   ]).split('\0').filter(Boolean).sort();
   const files = [];
   for (const path of paths) {
@@ -112,10 +117,10 @@ try {
   await run('npm', ['run', 'build:web'], {}, frozen);
   const cargoTarget = join(root, '.agent-runtime/releases/macos-alpha/target');
   await run('npm', ['exec', '--workspace', 'apps/desktop', '--', 'tauri', 'build', '--ci', '--bundles', 'app,dmg',
-    '--config', join(frozen, 'apps/desktop/src-tauri/tauri.alpha.conf.json')], { CARGO_TARGET_DIR: cargoTarget }, frozen);
+    '--config', join(frozen, configPath)], { CARGO_TARGET_DIR: cargoTarget }, frozen);
   const builtApp = join(cargoTarget, 'release/bundle/macos', appName);
   await run('codesign', ['--verify', '--deep', '--strict', builtApp]);
-  await copyFile(join(frozen, 'docs/releases/macos-alpha.md'), join(release, '安装说明.md'));
+  await copyFile(join(frozen, installationGuide), join(release, '安装说明.md'));
   const dmgName = `Lingji-${config.version}-macos-arm64.dmg`;
   const dmg = join(release, dmgName);
   const bundleDmg = join(cargoTarget, 'release/bundle/dmg', `${config.productName}_${config.version}_aarch64.dmg`);
@@ -146,7 +151,7 @@ try {
   const checksum = createHash('sha256').update(await readFile(dmg)).digest('hex');
   await writeFile(join(release, 'SHA256SUMS.txt'), `${checksum}  ${dmgName}\n`);
   await writeFile(join(release, 'release.json'), JSON.stringify({
-    version: config.version, productName: config.productName, platform: 'macos', architecture: 'arm64',
+    version: config.version, channel, productName: config.productName, platform: 'macos', architecture: 'arm64',
     installer: config.bundle.macOS.dmg, iconSource: 'apps/desktop/assets/lingji-app-icon.svg',
     minimumSystemVersion: readPlist('LSMinimumSystemVersion'),
     bundleVersion: readPlist('CFBundleVersion'), bundleShortVersion: readPlist('CFBundleShortVersionString'),
@@ -159,7 +164,7 @@ try {
   await run('hdiutil', ['detach', mount]);
   mounted = false;
   await rename(release, output);
-  console.log(`Local Alpha release: ${output}`);
+  console.log(`Local ${channel} release: ${output}`);
 } finally {
   if (mounted) await run('hdiutil', ['detach', mount]);
   await rm(scratch, { recursive: true, force: true });
