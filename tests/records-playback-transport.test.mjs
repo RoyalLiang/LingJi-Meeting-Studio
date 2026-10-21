@@ -97,3 +97,11 @@ test('switching meetings stops a pending track even after its element ref has de
   tracks = []; transport.pause(); release(); await pending;
   assert.equal(media.paused, true);
 });
+
+test('play retries a failed initial media load after the retained audio becomes available',async()=>{
+  const media=track(10);media.error={code:4};let loads=0;
+  media.load=()=>{loads++;media.error=null;};
+  media.play=async()=>{if(media.error)throw new Error('initial audio fetch failed');media.paused=false;};
+  const transport=new PlaybackTransport(()=>[media]);
+  await transport.play();assert.equal(loads,1);assert.equal(transport.playing,true);
+});

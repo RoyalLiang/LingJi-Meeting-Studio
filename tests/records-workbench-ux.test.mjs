@@ -21,6 +21,11 @@ test('address editing prefers Responses while recognizing explicit legacy Chat p
   assert.equal(protocolForAddress('https://models.example/v1/responses'),'responses');
   assert.equal(protocolForAddress('https://models.example/v1/chat/completions?region=cn'),'chat-completions');
 });
+test('downloads preserve Unicode meeting filenames and fall back for malformed encoding',async()=>{
+  const h=header=>harness(async()=>({ok:true,blob:async()=>({size:10}),headers:new Map([['content-disposition',header]])}));
+  assert.equal((await h("attachment; filename=\"meeting.wav\"; filename*=UTF-8''%E4%BC%9A%E8%AE%AE.wav").fetchDownload('/api/records/r/audio/s?download=1')).filename,'会议.wav');
+  assert.equal((await h("attachment; filename=\"meeting.wav\"; filename*=UTF-8''%XX.wav").fetchDownload('/api/records/r/audio/s?download=1')).filename,'meeting.wav');
+});
 
 const followSource=stripTypeScriptTypes(await readFile(new URL('../apps/web/src/components/useContentFollow.ts',import.meta.url),'utf8'),{mode:'transform'}).replace(/^import .*$/gm,'').replace(/export /g,'');
 function followHarness(){

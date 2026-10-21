@@ -4,6 +4,8 @@ import { fetchDownload } from '../downloads';
 import { messageOf } from '../api';
 import { Toast } from './Toast';
 import './CloseButton.css';
+import { isTauri } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 export function Button({ children, variant = 'secondary', className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'ghost' | 'danger' }) {
   return <button className={`button ${variant} ${className}`} {...props}>{children}</button>;
 }
@@ -46,20 +48,41 @@ export function Download({ href, children }: { href: string; children: ReactNode
   const [busy,setBusy] = useState(false), [error,setError] = useState(''), [notice,setNotice] = useState('');
   const [prepared,setPrepared] = useState<{url:string;filename:string}|null>(null), request = useRef<AbortController|null>(null);
   const dismiss = useCallback(() => { setNotice(''); setError(''); }, []);
-  useEffect(() => { setPrepared(null); setError(''); setNotice(''); setBusy(false); return () => { request.current?.abort(); }; }, [href]);
+  const native = isTauri(), [downloadReady, setDownloadReady] = useState(!native);
+  const downloadUrl = useRef(''), timer = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (!native) return;
+    let active = true, stop: (() => void) | undefined;
+    void listen<{url:string;success:boolean}>('client-download-finished', event => {
+      if (!active || event.payload.url !== downloadUrl.current) return;
+      downloadUrl.current = ''; clearTimeout(timer.current); setBusy(false);
+      if (event.payload.success) setNotice('文件已保存至下载文件夹。');
+      else setError('下载未完成，请点击重新下载。');
+    }).then(unlisten => { if (active) { stop = unlisten; setDownloadReady(true); } else unlisten(); })
+      .catch(() => { if (active) setError('无法接收下载结果，请重新打开导出窗口。'); });
+    return () => { active = false; stop?.(); clearTimeout(timer.current); };
+  }, [native]);
+  useEffect(() => { setPrepared(null); setError(''); setNotice(''); setBusy(false); return () => { request.current?.abort(); request.current=null; downloadUrl.current=''; clearTimeout(timer.current); }; }, [href]);
   useEffect(() => () => { if (prepared) URL.revokeObjectURL(prepared.url); }, [prepared]);
+  function beginSave(url: string) {
+    if (!native) return;
+    downloadUrl.current = url; setBusy(true); setError(''); setNotice(''); clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => { downloadUrl.current = ''; setBusy(false); setError('未收到保存结果，请点击重新下载。'); }, 30000);
+  }
   async function download() {
+    if (request.current || downloadUrl.current) return;
     const controller = new AbortController(); request.current = controller; setBusy(true); setPrepared(null); setError(''); setNotice('');
     try {
       const file = await fetchDownload(href, controller.signal); if (controller.signal.aborted) return;
       const url = URL.createObjectURL(file.blob); setPrepared({url,filename:file.filename});
+      beginSave(url);
       const link = document.createElement('a'); link.href=url; link.download=file.filename; document.body.append(link); link.click(); link.remove();
-      setNotice('文件已准备。若浏览器拦截下载，请点击“重新下载”。');
+      if (!native) setNotice('文件已准备。若浏览器拦截下载，请点击“重新下载”。');
     } catch (error) { if (!controller.signal.aborted) setError(messageOf(error)); }
-    finally { if (!controller.signal.aborted) setBusy(false); }
+    finally { if (request.current === controller) request.current=null; if (!controller.signal.aborted && !downloadUrl.current) setBusy(false); }
   }
-  return <span className="download-control"><Button disabled={busy} onClick={() => void download()}>{busy ? '正在准备…' : children}</Button>
-    {prepared && <a className="download-retry" href={prepared.url} download={prepared.filename}>重新下载</a>}
+  return <span className="download-control"><Button disabled={busy || !downloadReady} onClick={() => void download()}>{busy ? '正在准备…' : children}</Button>
+    {prepared && !busy && <a className="download-retry" href={prepared.url} download={prepared.filename} onClick={()=>beginSave(prepared.url)}>重新下载</a>}
     <Toast message={error || notice} error={Boolean(error)} dismiss={dismiss}/>
   </span>;
 }

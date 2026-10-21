@@ -10,6 +10,7 @@ const canUpload = () => navigator.onLine || localBackend;
 const MAX_BYTES = 48 * 1024 * 1024;
 let database: Promise<IDBDatabase> | undefined;
 let permittedRecords = new Set<string>(), uploading = false;
+let draining: Promise<void> | undefined;
 export const setQueueRecords = (ids: string[]) => { permittedRecords = new Set(ids); };
 function db() {
   return database ||= new Promise<IDBDatabase>((resolve, reject) => {
@@ -91,10 +92,14 @@ async function remove(entry:Pending){
     current.onsuccess=total.onsuccess=erase;tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);
   });
 }
-export async function drainQueue(onChange?:()=>void){
-  if(uploading||!canUpload())return;uploading=true;
-  const blocked=new Set<string>();let failure:unknown;
-  try{
+export function drainQueue(onChange?:()=>void): Promise<void>{
+  // Finishing capture must join the current upload, then check for its flushed tail.
+  if(draining)return draining.then(()=>drainQueue(onChange));
+  if(!canUpload())return Promise.resolve();uploading=true;
+  draining=run().finally(()=>{uploading=false;draining=undefined;});
+  return draining;
+  async function run(){
+    const blocked=new Set<string>();let failure:unknown;
     while(canUpload()){
       const entries=await heads(blocked);if(!entries.length)break;
       let next=0;
@@ -114,7 +119,7 @@ export async function drainQueue(onChange?:()=>void){
       }));
     }
     if(failure)throw failure;
-  }finally{uploading=false;}
+  }
 }
 export async function clearRecordAudio(recordId:string){
   const connection=await db();

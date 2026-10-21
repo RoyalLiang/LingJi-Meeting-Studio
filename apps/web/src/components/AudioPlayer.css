@@ -2,8 +2,8 @@
 .audio-player { position:relative; display:inline-flex; flex:0 0 44px; width:44px; height:44px; z-index:2; }
 .audio-player audio { display:none; }
 .player-control.button { display:inline-flex; align-items:center; justify-content:center; flex:0 0 44px; width:44px; min-width:44px; height:44px; padding:0; border-radius:12px; }
-.audio-player .player-reset { position:absolute; left:calc(100% + 4px); top:-48px; background:var(--bg); opacity:0; visibility:hidden; pointer-events:none; transform:translateX(-6px); transition:opacity .14s ease, transform .14s ease, visibility .14s; }
-.audio-player:hover::after { content:''; position:absolute; left:0; top:-48px; width:calc(200% + 4px); height:48px; z-index:-1; }
-.audio-player:hover .player-reset, .audio-player:has(:focus-visible) .player-reset { opacity:1; visibility:visible; pointer-events:auto; transform:translateX(0); }
 .player-error { position:absolute; top:-5px; right:-5px; display:flex; color:var(--danger); pointer-events:none; }
-@media (prefers-reduced-motion:reduce) { .audio-player .player-reset { transition:none; } }
+
+.meeting-export { display:grid; gap:18px; }
+.meeting-export > p { margin:0; }
+.meeting-export .download-control { justify-self:start; }

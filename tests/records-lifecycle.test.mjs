@@ -40,6 +40,15 @@ test('automatic titles protect user titles, manual minutes and empty recordings'
   assert.equal(r.title,'用户在模型运行时补填');
 });
 
+test('default meeting name follows validated live minutes before the final transcript drains',()=>{
+  const r=records.createRecord('fixture'),s=records.addSource(r,{kind:'microphone'});
+  records.acknowledge(r,chunk(s));records.commitTranscript(r,r.chunks[0].key,'讨论发布计划',r.generation);
+  const job=records.requestMinutes(r,{mode:'model',scope:'live'});job.fence='fixture';
+  records.commitMinutes(r,job.id,{title:'产品发布计划',sections:[{heading:'发布',items:[{text:'讨论发布',evidence:[{segmentId:r.segments[0].id,revision:1}]}]}]},'fixture');
+  assert.equal(r.title,r.liveMinutes.title);
+  records.seal(r,manifest(r));assert.equal(r.title,'产品发布计划');
+});
+
 test('an ended meeting cannot silently accept another recording', () => {
   const r = records.createRecord('fixture'), s = records.addSource(r, { kind: 'microphone' });
   records.seal(r, manifest(r));

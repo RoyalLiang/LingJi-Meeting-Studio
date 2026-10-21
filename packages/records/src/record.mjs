@@ -164,7 +164,9 @@ export function requestMinutes(record, input = {}) {
   const template = input.template || 'meeting'; requireThat(templates.includes(template), 'unknown_template', 400);
   const selected = scope === 'live' ? liveInput(record, template) : record.segments;
   const snapshotOffset = record.segments.indexOf(selected[0]);
-  const snapshot = selected.map(({versions, ...s}) => ({ ...s }));
+  const baseline = scope === 'live' ? liveBaseline(record) : null;
+  const covered = new Set((baseline?.template === template ? baseline.evidenceSnapshot : []).map(s=>`${s.id}:${s.revision}`));
+  const snapshot = selected.map(({versions, ...s}) => ({ ...s, ...(scope === 'live' ? {contextOnly:covered.has(`${s.id}:${s.revision}`)} : {}) }));
   const liveBaseHash = scope === 'live' ? digest(JSON.stringify(record.liveMinutes || null)) : undefined;
   const liveIncremental = Boolean(liveBaseline(record)?.template === template);
   const liveContext = minutesContext(liveBaseline(record));
@@ -229,6 +231,7 @@ export function commitMinutes(record, jobId, result, fence) {
     record.liveMinutes = { ...merged, notesRevision: job.notesRevision, template: job.template, transcriptRevision: job.transcriptRevision, generatedAt: new Date().toISOString() };
     job.status = 'completed'; job.snapshot = []; delete job.preview; delete job.partialMinutes;
     if(!usageRecorded)record.usage.llmTokens += Number.isSafeInteger(result.usageTokens) && result.usageTokens >= 0 ? result.usageTokens : 0;
+    if(job.mode==='model')autoNameRecord(record,record.liveMinutes.title);
     emit(record, 'minutes.live', { transcriptRevision: job.transcriptRevision }); return;
   }
   if (record.minutes) record.minutesHistory = [...(record.minutesHistory || []), record.minutes].slice(-10);

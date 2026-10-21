@@ -1,4 +1,4 @@
-export type PlaybackMedia = Pick<HTMLAudioElement, 'duration' | 'currentTime' | 'paused' | 'ended' | 'play' | 'pause'>;
+export type PlaybackMedia = Pick<HTMLAudioElement, 'duration' | 'currentTime' | 'paused' | 'ended' | 'play' | 'pause' | 'error' | 'load'>;
 
 const finiteDuration = (media: PlaybackMedia) => Number.isFinite(media.duration) && media.duration > 0 ? media.duration : 0;
 
@@ -34,7 +34,7 @@ export class PlaybackTransport {
     this.activeTracks = tracks;
     const results = await Promise.allSettled(tracks.filter(media => !finiteDuration(media) || media.currentTime < media.duration)
       .map(async media => {
-        try { await media.play(); }
+        try { if (media.error) media.load(); await media.play(); }
         catch (error) { if (generation === this.generation) this.pause(); throw error; }
       }));
     // A reset or pause must also cancel a play() that was still loading.

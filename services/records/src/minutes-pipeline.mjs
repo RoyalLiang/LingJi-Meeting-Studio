@@ -21,7 +21,7 @@ const refs = result => {
   visit(result);return [...found.values()];
 };
 export function buildMinutesManifest(job,config={},budget=inputBudget(config)){
-  const policy=hash({version:3,budget,context:job.liveContext,model:job.modelVersion==='default'?config.LLM_MODEL:job.modelVersion,base:config.LLM_API_URL,protocol:config.LLM_PROTOCOL,template:job.template,scope:job.scope,mode:job.mode,notes:job.notes,notesRevision:job.notesRevision,generation:job.generation});
+  const policy=hash({version:4,windowMs:120000,budget,context:job.liveContext,model:job.modelVersion==='default'?config.LLM_MODEL:job.modelVersion,base:config.LLM_API_URL,protocol:config.LLM_PROTOCOL,template:job.template,scope:job.scope,mode:job.mode,notes:job.notes,notesRevision:job.notesRevision,generation:job.generation});
   const windows=[];let current=[];
   const flush=()=>{if(current.length){windows.push({key:hash({policy,snapshot:current}),snapshot:current});current=[];}};
   function add(segment){
@@ -31,10 +31,16 @@ export function buildMinutesManifest(job,config={},budget=inputBudget(config)){
     }
     if(current.length && size({transcript:[...current,segment],notes:job.notes,context:job.liveContext})>budget)flush();current.push(segment);
   }
-  const snapshot=job.snapshot.map(({id,revision,text,sourceId,speakerId,speaker,speakerName,startMs,endMs})=>({id,revision,text,sourceId,speakerId,speaker,speakerName,startMs,endMs}));
+  const snapshot=job.snapshot.map(({id,revision,text,sourceId,speakerId,speaker,speakerName,startMs,endMs,contextOnly})=>({id,revision,text,sourceId,speakerId,speaker,speakerName,startMs,endMs,contextOnly}));
   const snapshotOffset=Number.isSafeInteger(job.snapshotOffset)&&job.snapshotOffset>=0?job.snapshotOffset:0;
   const single=size({transcript:snapshot,notes:job.notes,context:job.liveContext})<=budget;
-  snapshot.forEach((segment,index)=>{if(!single && (index+snapshotOffset)%24===0)flush();add(segment);});flush();
+  let bucket;
+  snapshot.forEach((segment,index)=>{
+    const timed=Number.isFinite(segment.startMs)&&Number.isFinite(segment.endMs)&&segment.endMs>segment.startMs;
+    const next=timed?Math.floor(segment.startMs/120000):undefined;
+    if(current.length && (timed ? next!==bucket : !single && (index+snapshotOffset)%24===0))flush();
+    bucket=next;add(segment);
+  });flush();
   requireThat(windows.length>0 && windows.length<=512,'minutes_window_limit',422);
   return {version:1,budget,synthesisBudget:synthesisBudget(config),policy,generation:job.generation,transcriptRevision:job.transcriptRevision,notesRevision:job.notesRevision,snapshotOffset,hash:job.manifestHash,windows};
 }
@@ -108,7 +114,7 @@ export async function runMinutesPipeline(repo,recordId,claim,config,generate,opt
     const groups=[];let group=[];
     const inputFor=items=>{
       const wanted=new Set(items.flatMap(node=>refs(node.result).map(ref=>`${ref.segmentId}:${ref.revision}`)));
-      return {snapshot:claim.snapshot.filter(s=>wanted.has(`${s.id}:${s.revision}`)).map(({id,revision,speakerId,speaker,speakerName,sourceId})=>({id,revision,speakerId,speaker,speakerName,sourceId})),summaries:items.map(node=>content(node.result)),stage:'synthesis'};
+      return {snapshot:claim.snapshot.filter(s=>wanted.has(`${s.id}:${s.revision}`)).map(({id,revision,speakerId,speaker,speakerName,sourceId,contextOnly})=>({id,revision,speakerId,speaker,speakerName,sourceId,contextOnly})),summaries:items.map(node=>content(node.result)),stage:'synthesis'};
     };
     const payloadFor=input=>JSON.stringify({transcript:input.snapshot,notes:claim.notes,context:claim.liveContext,summaries:input.summaries,stage:input.stage});
     for(const node of nodes){

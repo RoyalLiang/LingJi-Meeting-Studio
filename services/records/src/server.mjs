@@ -15,6 +15,7 @@ import { createAuth } from './auth.mjs';
 import { readConfig, saveConfig, publicConfig, canConfigure } from './config.mjs';
 import { providerStatus, transcribe, completeJson, waveHeader } from './providers.mjs';
 import { sharedMinutes, sharedSegments } from '../../../packages/records/src/shared-content.mjs';
+import { exportMinutesMarkdown, attachmentHeader } from './markdown-export.mjs';
 
 async function readBytes(request, max = 600000) {
   let size = 0; const chunks = [];
@@ -49,12 +50,7 @@ export function exportRecord(record, format = 'markdown') {
     ...(record.minutes?.actions || []).flatMap((a, i) => ['BEGIN:VTODO', `UID:${record.id}-${i}@meeting.local`,
       `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z')}`, `SUMMARY:${escapeIcs(a.text)}`,
       ...(/^\d{4}-\d{2}-\d{2}$/.test(a.due || '') ? [`DUE;VALUE=DATE:${a.due.replace(/-/g, '')}`] : []), 'STATUS:NEEDS-ACTION', 'END:VTODO']), 'END:VCALENDAR', ''].join('\r\n');
-  const lines = [`# ${record.title}`, '', `转录版本 ${record.transcriptRevision} · 纪要版本 ${record.minutesRevision}`, ''];
-  if (record.minutes) for (const section of record.minutes.sections) {
-    lines.push(`## ${section.heading}`, ''); for (const item of section.items) lines.push(`- ${item.text} [${item.evidence.map(e => `${e.segmentId}@${e.revision}`).join(', ')}]`); lines.push('');
-  }
-  lines.push('## 转录', ''); for (const s of record.segments) lines.push(`[${Math.floor(s.startMs / 1000)}s] ${s.speaker ? `${s.speaker}：` : ''}${s.text}`, '');
-  if (record.notes) lines.push('## 人工笔记', '', record.notes); return lines.join('\n');
+  return exportMinutesMarkdown(record);
 }
 export async function createRecordServer(options = {}) {
   const repo = options.repo || await createRepository(options); const auth = await createAuth(repo, { seedDevelopment: !options.repo, ...options });
@@ -179,6 +175,7 @@ export async function createRecordServer(options = {}) {
         const start = range ? Number(range[1]) : 0, end = range && range[2] ? Math.min(Number(range[2]), total - 1) : total - 1;
         requireThat(start <= end && start < total, 'range_not_satisfiable', 416);
         res.writeHead(range ? 206 : 200, { 'Content-Type': 'audio/wav', 'Accept-Ranges': 'bytes', 'Cache-Control': 'no-store',
+          ...(url.searchParams.get('download') === '1' ? { 'Content-Disposition': attachmentHeader(`${record.title}-${source.label || source.kind}-${source.id.slice(0,8)}`, 'wav') } : {}),
           'Content-Length': end - start + 1, ...(range ? { 'Content-Range': `bytes ${start}-${end}/${total}` } : {}) });
         res.once('error', () => res.destroy());
         let offset = 0;
@@ -243,8 +240,9 @@ export async function createRecordServer(options = {}) {
       }
       if (action === 'export' && req.method === 'GET') {
         const format = url.searchParams.get('format') || 'markdown'; requireThat(['markdown', 'json', 'ics', 'issues'].includes(format), 'invalid_format', 400);
+        const exported = exportRecord(record, format);
         res.writeHead(200, { 'Content-Type': ['json', 'issues'].includes(format) ? 'application/json' : format === 'ics' ? 'text/calendar; charset=utf-8' : 'text/markdown; charset=utf-8',
-          'Content-Disposition': `attachment; filename="meeting.${format === 'markdown' ? 'md' : format === 'issues' ? 'issues.json' : format}"`, 'Cache-Control': 'no-store' }); res.end(exportRecord(record, format)); return;
+          'Content-Disposition': attachmentHeader(record.title, format === 'markdown' ? 'md' : format === 'issues' ? 'issues.json' : format), 'Cache-Control': 'no-store' }); res.end(exported); return;
       }
       if (action === 'audio' && req.method === 'POST') {
         const { body, bytes } = await readAudio(req); requireThat(bytes.length === body.sampleCount * 2 && bytes.length > 0 && bytes.length <= 480000, 'audio_size_mismatch', 400);
@@ -287,7 +285,7 @@ export async function createRecordServer(options = {}) {
         requireThat(r.minutes && body.revision === r.minutesRevision, 'minutes_revision_conflict');
         validateMinutes(body.minutes, r.minutes.evidenceSnapshot);
         r.minutesHistory = [...(r.minutesHistory || []), r.minutes].slice(-10);
-        r.minutesRevision++; r.minutes = { ...r.minutes, title: body.minutes.title, sections: body.minutes.sections, actions: body.minutes.actions || [], revision: r.minutesRevision, edited: true }; emit(r, 'minutes.edited'); return publicRecord(r);
+        r.minutesRevision++; r.minutes = { ...r.minutes, title: body.minutes.title, sections: body.minutes.sections, actions: body.minutes.actions || [], revision: r.minutesRevision, edited: true }; autoNameRecord(r,r.minutes.title); emit(r, 'minutes.edited'); return publicRecord(r);
       });
       else if (action === '' && req.method === 'PATCH') result = await changeOwned(id, user, r => {
         if (body.title !== undefined) { requireThat(typeof body.title === 'string' && body.title.trim(), 'invalid_title', 400); r.title = body.title.trim().slice(0, 160); r.titleEdited = true; }

@@ -10,6 +10,20 @@ import {buildMinutesManifest,runMinutesPipeline} from '../services/records/src/m
 import {beginMinutesUsage,updateMinutesUsage} from '../packages/records/src/usage.mjs';
 import {generateMinutes} from '../services/records/src/providers.mjs';
 const config={LLM_MODEL:'fixture-model',LLM_API_URL:'http://fixture.invalid'};
+test('two-minute agent windows respect real timestamps even when all text fits one request',()=>{
+  const snapshot=Array.from({length:10},(_,i)=>({id:`timed-${i}`,revision:1,text:'短句',startMs:i*30000,endMs:i*30000+1000}));
+  const manifest=buildMinutesManifest({snapshot,scope:'final',notes:'',modelVersion:'default'},config);
+  assert.deepEqual(manifest.windows.map(w=>w.snapshot.map(s=>s.id)),[
+    ['timed-0','timed-1','timed-2','timed-3'],['timed-4','timed-5','timed-6','timed-7'],['timed-8','timed-9']]);
+  assert.equal(manifest.windows.flatMap(w=>w.snapshot).length,snapshot.length);
+});
+test('switching templates treats the full transcript as new rather than context-only evidence',()=>{
+  const record=createRecord('owner');record.capture='recording';record.transcriptRevision=1;
+  record.segments=[{id:'earlier',revision:1,text:'项目讨论',startMs:0,endMs:1000}];
+  record.liveMinutes={template:'meeting',notesRevision:0,evidenceSnapshot:[...record.segments],title:'项目周会',topics:[],sections:[]};
+  const job=requestMinutes(record,{scope:'live',template:'interview'});
+  assert.equal(job.snapshot.length,1);assert.equal(job.snapshot[0].contextOnly,false);
+});
 async function fixture(count=100){
   const root=await mkdtemp(join(tmpdir(),'minutes-pipeline-')),repo=await createRepository({root});
   const record=createRecord('owner',{title:'Long transcript',language:'zh'});record.capture='completed';record.transcription='completed';record.transcriptRevision=1;
@@ -237,7 +251,7 @@ test('concurrent identical split windows share one provider request and account 
   } finally {await f.close();}
 });
 
-test('incremental live snapshots process only new segments with a short overlap and retain earlier facts', async t => {
+test('incremental live snapshots process only new segments with a two-minute overlap and retain earlier facts', async t => {
   const f=await fixture(160);
   try {
     await f.repo.change(f.record.id,r=>{r.capture='recording';});
@@ -254,12 +268,12 @@ test('incremental live snapshots process only new segments with a short overlap 
     });
     const next=await claimLive();let generatedWindows=0;
     const result=await runMinutesPipeline(f.repo,f.record.id,next,config,async job=>{if(job.stage!=='synthesis')generatedWindows++;return summarize(job);});
-    assert.equal(first.snapshot.length,160);assert.equal(next.snapshot.length,3);
-    assert.equal(next.snapshot[0].id,'s-158');
+    assert.equal(first.snapshot.length,160);assert.equal(next.snapshot.length,121);
+    assert.equal(next.snapshot[0].id,'s-40');assert.equal(next.snapshot[0].contextOnly,true);assert.equal(next.snapshot.at(-1).contextOnly,false);
     assert.ok(next.liveContext.headings.includes('讨论与决定'));
     assert.equal(publicRecord(await f.repo.get(f.record.id)).jobs.at(-1).liveContext,undefined);
-    assert.ok(generatedWindows<=2,`only rolling boundary windows should regenerate, got ${generatedWindows}`);
-    assert.equal(result.coverage.windows,1);
+    assert.ok(generatedWindows>0);
+    assert.equal(result.coverage.completed,result.coverage.windows);
     t.diagnostic(JSON.stringify({initialCalls:previous.coverage.calls,rollingCalls:result.coverage.calls,generatedWindows,reused:result.coverage.reused}));
     validateMinutes(result,next.snapshot);
     await f.repo.change(f.record.id,r=>commitMinutes(r,next.id,result,next.fence));
@@ -309,7 +323,7 @@ test('independent synthesis groups overlap while the final synthesis waits for t
   const held=new Promise(resolve=>{release=resolve;}),ready=new Promise(resolve=>{started=resolve;});
   try {
     const claim=await f.claim();
-    run=runMinutesPipeline(f.repo,f.record.id,claim,config,async job=>{
+    run=runMinutesPipeline(f.repo,f.record.id,claim,{...config,RECORD_MINUTES_INPUT_BYTES:20000},async job=>{
       if(job.stage==='synthesis'&&job.summaries.length>2){synthesisStarted++;started();await held;}
       return summarize(job);
     });
@@ -469,9 +483,10 @@ test('incremental project context survives long sessions and an edit to earlier 
     await f.repo.change(f.record.id,r=>{commitMinutes(r,first.id,old,first.fence);r.segments.push({...r.segments.at(-1),id:'s-160',text:'相机恢复后仍需排查。'});r.transcriptRevision++;});
     let claim;
     await f.repo.change(f.record.id,r=>{const job=requestMinutes(r,{scope:'live',modelVersion:'fixture-model'});job.status='running';job.fence=job.id;claim=structuredClone(job);});
-    assert.equal(claim.snapshot.length,3);assert.equal(claim.liveContext.topics[0].title,'唐山项目');
+    assert.equal(claim.snapshot.length,122);assert.equal(claim.liveContext.topics[0].title,'唐山项目');
     const result=await runMinutesPipeline(f.repo,f.record.id,claim,config,async job=>{
       assert.equal(job.liveContext.topics[0].id,'project-tangshan');
+      if(!job.snapshot.some(segment=>segment.id==='s-160'))return summarize(job);
       return {title:'相机恢复',topics:[{id:job.liveContext.topics[0].id,title:job.liveContext.topics[0].title,summary:'恢复后仍需排查',evidence:[{segmentId:'s-160',revision:1}]}],sections:[{heading:'唐山项目',items:[{text:'恢复后仍需排查。',evidence:[{segmentId:'s-160',revision:1}]}]}],actions:[]};
     });
     await f.repo.change(f.record.id,r=>commitMinutes(r,claim.id,result,claim.fence));
