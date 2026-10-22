@@ -4,7 +4,7 @@ import { automaticMinutesAt } from '../../../packages/records/src/automation.mjs
 import { mkdir, open, readFile, readdir, rm, stat, link } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { DomainError, requireThat } from '../../../packages/records/src/record.mjs';
+import { DomainError, requireThat, needsMinutesAudio } from '../../../packages/records/src/record.mjs';
 import { createS3Objects } from './s3.mjs';
 import { telemetry } from './telemetry.mjs';
 import { encodeStorage, decodeStorage } from './storage-codec.mjs';
@@ -15,7 +15,8 @@ function schedule(value) {
   const now = Date.now();
   if (value.deleted) { value.nextWorkAt = value.cleanup === 'completed' ? (value.cleanupAt || 0) + 600000 : now; return; }
   const times = [learningWorkAt(value, now), ...(value.learning?.enabled && value.capture==='completed' && value.learning.revision!==value.transcriptRevision ? [now] : []), automaticMinutesAt(value, now), Date.parse(value.deleteAt), (value.gcAt || 0) + 3600000];
-  if (!value.retainAudio && !value.audioPurged && value.capture === 'completed') times.push(now);
+  if (!value.retainAudio && !value.audioPurged && value.capture === 'completed' && !needsMinutesAudio(value)) times.push(now);
+  if (value.realtimeAudioConsent && value.autoMinutes?.enabled && value.realtime?.state === 'blocked') times.push(Math.max(value.realtime.retryAt || 0, now));
   for (const source of value.sources) {
     if (source.asr?.state === 'running') times.push(now+250);
     if (source.asr?.state === 'failed' && source.asr.attempts<5) times.push(Math.max(source.asr.retryAt||0,now));

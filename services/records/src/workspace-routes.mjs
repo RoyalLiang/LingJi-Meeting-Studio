@@ -49,7 +49,7 @@ export async function workspaceRoutes({ req, res, path, repo, user, readBody, se
     send(res, 200, { workspace: { id: workspace.id, name: workspace.name, description: workspace.description }, ...workspaceOverview(records), analysis: publicWorkspaceAnalysis(job, records) }); return true;
   }
   if (action === 'analysis' && req.method === 'POST') {
-    requireThat(providerStatus(await readConfig(repo.root)).minutes, 'minutes_not_configured', 503);
+    requireThat(providerStatus(await readConfig(repo.root)).textMinutes, 'minutes_not_configured', 503);
     const next = requestWorkspaceAnalysis(user.id, scope, records, job);
     if (next === job) { send(res, 202, publicWorkspaceAnalysis(job, records)); return true; }
     if (!job) await repo.insert(next);

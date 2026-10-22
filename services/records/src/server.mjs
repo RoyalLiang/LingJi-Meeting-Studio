@@ -13,6 +13,8 @@ import { createRecord, addSource, acknowledge, seal, pause, publicRecord, editSe
 import { createRepository } from './repository.mjs';
 import { createAuth } from './auth.mjs';
 import { readConfig, saveConfig, publicConfig, canConfigure } from './config.mjs';
+import { minutesModelVersion } from './config.mjs';
+import { testRealtime, realtimeEnabled } from './realtime-minutes.mjs';
 import { providerStatus, transcribe, completeJson, waveHeader } from './providers.mjs';
 import { sharedMinutes, sharedSegments } from '../../../packages/records/src/shared-content.mjs';
 import { exportMinutesMarkdown, attachmentHeader } from './markdown-export.mjs';
@@ -107,14 +109,15 @@ export async function createRecordServer(options = {}) {
       }
       if (path === '/api/diagnostics/traces' && req.method === 'GET') { requireThat(canConfigure(user), 'configuration_admin_required', 403); send(res,200,telemetry.snapshot()); return; }
       if (path === '/api/bootstrap' && req.method === 'GET') {
-        send(res, 200, { email: user.email, csrf: auth.csrf(user), audioTransport: 'pcm-v1', localAccount: Boolean(options.localAccount), learning:{enabled:await learningEnabled()}, providers: providerStatus(await readConfig(repo.root)), limits: { maxMinutes: 120, maxRecords: 200, maxChunkSeconds: 15 }, storage: repo.backend, canConfigure: canConfigure(user) }); return;
+        send(res, 200, { email: user.email, csrf: auth.csrf(user), audioTransport: 'pcm-v1', localAccount: Boolean(options.localAccount), learning:{enabled:await learningEnabled()}, providers: providerStatus(await readConfig(repo.root)), limits: { maxMinutes: null, maxRecords: 200, maxChunkSeconds: 15 }, storage: repo.backend, canConfigure: canConfigure(user) }); return;
       }
       if (path === '/api/settings/providers/test' && req.method === 'POST') {
         requireThat(canConfigure(user), 'configuration_admin_required', 403);
         const {kind} = await readBody(req, 1000), config = await readConfig(repo.root);
         requireThat(['asr', 'minutes'].includes(kind), 'invalid_provider_test', 400);
         if (kind === 'asr') await transcribe(Buffer.alloc(6400), {language:'zh'}, {}, config);
-        else await completeJson([{role:'system', content:'Return JSON {ok:true}.'},{role:'user',content:'Synthetic connectivity check.'}], config);
+        else if (realtimeEnabled(config)) await testRealtime(config);
+      else await completeJson([{role:'system', content:'Return JSON {ok:true}.'},{role:'user',content:'Synthetic connectivity check.'}], config);
         send(res, 200, {message: '连接测试通过。真实会议识别质量仍需试录核对。'}); return;
       }
       if (path === '/api/settings/providers') {
@@ -130,7 +133,9 @@ export async function createRecordServer(options = {}) {
         const all = (await repo.list()).filter(r => r.owner === user.id && !r.deleted);
         requireThat(all.length < 200, 'record_limit', 429); const input = await readBody(req, 4000);
         if (input.workspaceId) { requireThat(!['all', 'inbox'].includes(input.workspaceId), 'invalid_workspace', 400); await requireWorkspace(repo, user.id, input.workspaceId); }
-        requireThat(!input.autoMinutes || providerStatus(await readConfig(repo.root)).minutes, 'minutes_not_configured', 503);
+        const config = await readConfig(repo.root);
+      requireThat(!input.autoMinutes || providerStatus(config).minutes, 'minutes_not_configured', 503);
+      requireThat(!input.autoMinutes || !realtimeEnabled(config) || input.realtimeAudioConsent === true, 'realtime_audio_consent_required', 403);
         const r = await repo.insert(createRecord(user.id, {...input,learningEnabled:await learningEnabled()}));
         send(res, 201, publicRecord(r)); return;
       }
@@ -145,12 +150,14 @@ export async function createRecordServer(options = {}) {
       if(await learningRoutes({req,res,url,action,repo,user,record,readBody,send,csrf:auth.csrf(user)}))return;
       if (action === 'automation' && req.method === 'PATCH') {
         const body = await readBody(req, 4000);
-        requireThat(!body.enabled || providerStatus(await readConfig(repo.root)).minutes, 'minutes_not_configured', 503);
+        const config = await readConfig(repo.root);
+      requireThat(!body.enabled || providerStatus(config).minutes, 'minutes_not_configured', 503);
+      requireThat(!body.enabled || !realtimeEnabled(config) || record.realtimeAudioConsent || body.realtimeAudioConsent === true, 'realtime_audio_consent_required', 403);
         const result = await changeOwned(id, user, r => { setAutomation(r, body); return publicRecord(r); });
         send(res, 200, result); return;
       }
       if (action === 'insights' && req.method === 'POST') {
-        requireThat(providerStatus(await readConfig(repo.root)).minutes, 'minutes_not_configured', 503);
+        requireThat(providerStatus(await readConfig(repo.root)).textMinutes, 'minutes_not_configured', 503);
         await changeOwned(id, user, r => { r.analysisConsent = true; r.insights = null; delete r.intentRetryAt; emit(r, 'intents.requested'); });
         send(res, 202, {queued:true}); return;
       }
@@ -279,7 +286,8 @@ export async function createRecordServer(options = {}) {
         const config = await readConfig(repo.root), mode = body.mode || 'model';
         requireThat(['model', 'extractive'].includes(mode), 'invalid_minutes_mode', 400);
         requireThat(mode === 'extractive' || providerStatus(config).minutes || providerStatus(config).fixture, 'minutes_not_configured', 503);
-        result = await changeOwned(id, user, r => requestMinutes(r, { ...body, mode, modelVersion: mode === 'extractive' ? 'local-extractive-v1' : config.LLM_MODEL || 'default' }));
+        requireThat(mode !== 'model' || !realtimeEnabled(config) || record.realtimeAudioConsent || body.realtimeAudioConsent === true, 'realtime_audio_consent_required', 403);
+      result = await changeOwned(id, user, r => { if (mode === 'model' && body.realtimeAudioConsent === true) r.realtimeAudioConsent = true; return requestMinutes(r, { ...body, mode, modelVersion: mode === 'extractive' ? 'local-extractive-v1' : minutesModelVersion(config) || 'default' }); });
       }
       else if (action === 'minutes' && req.method === 'PATCH') result = await changeOwned(id, user, r => {
         requireThat(r.minutes && body.revision === r.minutesRevision, 'minutes_revision_conflict');

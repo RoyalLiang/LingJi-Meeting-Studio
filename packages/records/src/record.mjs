@@ -25,7 +25,7 @@ export function createRecord(owner, input = {}) {
   const record = { id: randomUUID(), owner, kind: 'record', workspaceId: input.workspaceId || null, title: title.slice(0, 160) || '未命名会议', titleEdited:Boolean(title), ...(input.learningEnabled ? {learning:{enabled:true,status:'waiting'}} : {}),
     language: input.language || 'zh', createdAt: now, updatedAt: now, cursor: '0', events: [], generation: 1,
     capture: 'idle', transcription: 'idle', sessions: [], sources: [], chunks: [], segments: [], transcriptRevision: 0,
-    notes: '', notesRevision: 0, minutes: null, liveMinutes: null, autoMinutes: { enabled: input.autoMinutes === true, intervalSeconds: 30 }, minutesRevision: 0, minutesHistory: [], jobs: [], shares: [],
+    notes: '', notesRevision: 0, minutes: null, liveMinutes: null, realtimeAudioConsent: input.realtimeAudioConsent === true, autoMinutes: { enabled: input.autoMinutes === true, intervalSeconds: 30 }, minutesRevision: 0, minutesHistory: [], jobs: [], shares: [],
     retentionDays: days, retainAudio: input.retainAudio !== false, deleteAt: new Date(Date.now() + days * 86400000).toISOString(),
     usage: { samples: 0, sampleRate: 16000, llmTokens: 0 }, deleted: false };
   emit(record, 'record.created'); return record;
@@ -55,7 +55,7 @@ export function acknowledge(record, chunk) {
   const source = record.sources.find(s => s.id === chunk.sourceId && s.epoch === chunk.epoch);
   requireThat(source, 'unknown_source', 400);
   requireThat(source.sessionId === chunk.sessionId, 'audio_session_mismatch', 400);
-  requireThat(Number.isSafeInteger(chunk.sequence) && chunk.sequence >= 0 && chunk.sequence < 100000, 'invalid_sequence', 400);
+  requireThat(Number.isSafeInteger(chunk.sequence) && chunk.sequence >= 0 && chunk.sequence < 1000000, 'invalid_sequence', 400);
   requireThat(Number.isSafeInteger(chunk.sampleOffset) && chunk.sampleOffset >= 0 && Number.isSafeInteger(chunk.sampleCount)
     && chunk.sampleCount > 0 && chunk.sampleCount <= 16000 * 15 && chunk.sampleRate === 16000, 'invalid_audio_timing', 400);
   const key = keyOf(chunk), existing = record.chunks.find(c => c.key === key);
@@ -66,8 +66,7 @@ export function acknowledge(record, chunk) {
   requireThat(source.lastSequence === null || chunk.sequence <= source.lastSequence, 'outside_sealed_manifest');
   requireThat(!record.audioCleanup, 'audio_cleanup_in_progress');
   requireThat(!source.stopped || source.lastSequence !== null, 'source_stopped');
-  requireThat(record.chunks.length < 10000, 'record_chunk_limit', 429);
-  requireThat(record.usage.samples + chunk.sampleCount <= 16000 * 60 * 120, 'record_duration_limit', 429);
+  requireThat(record.chunks.length < 200000, 'record_chunk_limit', 429);
   const left = record.chunks.find(c => c.sourceId === source.id && c.sequence === chunk.sequence - 1);
   const right = record.chunks.find(c => c.sourceId === source.id && c.sequence === chunk.sequence + 1);
   requireThat((chunk.sequence !== 0 || chunk.sampleOffset === 0) && (!left || left.sampleOffset + left.sampleCount === chunk.sampleOffset)
@@ -249,4 +248,9 @@ export function publicRecord(record) {
     pendingChunks: chunks.filter(c => c.state !== 'done').length,
     minuteVersions: [...(minutesHistory || []), ...(record.minutes ? [record.minutes] : [])].map(m => ({ revision: m.revision, transcriptRevision: m.transcriptRevision, edited: m.edited })),
     jobs: jobs.map(({ snapshot, notes, fence, windowCache, manifest, usageCalls,liveBaseHash,liveContext,liveIncremental, ...job }) => job) };
+}
+
+// Temporary audio is still needed after ASR when direct-audio minutes are pending.
+export function needsMinutesAudio(record) {
+  return Boolean(record.realtimeAudioConsent && (record.jobs.some(job => job.mode === 'model' && ['queued', 'running'].includes(job.status)) || (record.autoMinutes?.enabled && !record.minutes?.edited && record.minutes?.transcriptRevision !== record.transcriptRevision)));
 }

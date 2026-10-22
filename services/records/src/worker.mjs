@@ -7,23 +7,27 @@ import { processSpeakerSources, closeSpeakerStreams } from './speaker-streams.mj
 import { queueAutomaticMinutes, updateMinutesPreview } from '../../../packages/records/src/automation.mjs';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { commitMinutes, commitTranscript, emit } from '../../../packages/records/src/record.mjs';
+import { commitMinutes, commitTranscript, emit, needsMinutesAudio } from '../../../packages/records/src/record.mjs';
 import { createRepository } from './repository.mjs';
 import { readConfig } from './config.mjs';
 import { commitIntents, ruleIntents } from '../../../packages/records/src/intents.mjs';
 import { providerStatus, analyzeIntents, generateMinutes, minutesTimeoutMs, transcribe, translateText } from './providers.mjs';
+
+import { processRealtimeAudio, generateRealtimeMinutes, closeRealtime, reconcileRealtime, realtimeEnabled } from './realtime-minutes.mjs';
+import { minutesModelVersion } from './config.mjs';
 
 export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
   const config = await readConfig(repo.root);
   const learningEnabled=config.RECORD_LEARNING_ENABLED==='true' || (config.RECORD_LEARNING_ENABLED!=='false' && process.env.NODE_ENV==='desktop');
   if(lane==='learning'){if(learningEnabled && (!providerStatus(config).fixture || providers.learningPreparation))await runLearningCycle(repo,providers);return;}
   if (lane === 'workspace') { await processWorkspaceAnalysis(repo, config, providers); return; }
+  if (lane === 'realtime' || lane === 'all') await reconcileRealtime(repo, config);
   const records = await repo.listWork();
   async function processCandidate(candidate) {
-    if (lane !== 'all' && lane !== 'audio' && (candidate.deleted || Date.parse(candidate.deleteAt) < Date.now())) return;
+    if (lane !== 'all' && lane !== 'audio' && lane !== 'realtime' && (candidate.deleted || Date.parse(candidate.deleteAt) < Date.now())) return;
     if (candidate.deleted && candidate.cleanup === 'completed' && Date.now() - (candidate.cleanupAt || 0) < 600000) return;
     if (candidate.deleted || Date.parse(candidate.deleteAt) < Date.now()) {
-      closeSpeakerStreams(repo,candidate.id);
+      closeSpeakerStreams(repo,candidate.id);closeRealtime(repo,candidate.id);
       await repo.change(candidate.id, r => {
         if (!r.deleted) { r.deleted = true; r.generation++; r.title = '已删除'; r.segments = []; r.notes = ''; r.minutes = null; r.liveMinutes = null;
           r.jobs = []; r.shares = []; r.minutesHistory = []; r.insights = null; emit(r, 'record.deleted'); }
@@ -31,12 +35,14 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
       });
       await repo.cleanAudio(candidate.id); await repo.change(candidate.id, r => { r.chunks = []; r.cleanup = 'completed'; r.cleanupAt = Date.now(); }); return;
     }
+    if (lane === 'realtime') { await processRealtimeAudio(repo, candidate, config, providers.realtimeFactory); return; }
     if (lane === 'all' || lane === 'audio') {
     const expired = candidate.chunks.filter(c => !c.expired && !candidate.retainAudio && Date.now() - (c.acceptedAt || Date.parse(candidate.createdAt)) > 86400000);
     if (expired.length) {
       await repo.change(candidate.id, r => { for (const c of r.chunks) if (expired.some(e => e.key === c.key)) { c.expired = true; if (c.state !== 'done') { c.attempts = 5; c.error = 'temporary_audio_expired'; r.transcription = 'failed'; delete c.lease; } } emit(r, 'audio.expired'); });
       await repo.cleanAudio(candidate.id, new Set(candidate.chunks.filter(c => !expired.some(e => e.key === c.key)).map(c => c.object)));
     }
+    const realtimeWork = lane === 'all' ? processRealtimeAudio(repo, candidate, config, providers.realtimeFactory) : Promise.resolve();
     const speakerMode=!providers.transcribe && providerStatus(config).asrProvider==='doubao' && providerStatus(config).asr && !providerStatus(config).fixture && ['zh','en','zhen'].includes(candidate.language);
     async function processAudio() {
       if (speakerMode) return;
@@ -71,7 +77,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
     }
     if (speakerMode) await processSpeakerSources(repo,candidate,config);
     // Two independent sources can progress together; a source remains strictly ordered.
-    await Promise.all([processAudio(), processAudio()]);
+    await Promise.all([processAudio(), processAudio(), realtimeWork]);
     }
     if (lane === 'all' || lane === 'translation') {
       let claim;
@@ -105,7 +111,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
       });
       if (claim) {
         try {
-          const model = updated.analysisConsent === true && providerStatus(config).minutes && JSON.stringify(claim.snapshot).length <= 180000;
+          const model = updated.analysisConsent === true && providerStatus(config).textMinutes && JSON.stringify(claim.snapshot).length <= 180000;
           const result = model ? await (providers.intents || analyzeIntents)(claim.snapshot, config) : ruleIntents(claim.snapshot);
           await repo.change(candidate.id, r => { if (r.generation !== claim.generation) return; commitIntents(r, claim.snapshot, result, model ? 'model' : 'rules', claim.revision, claim.generation); delete r.intentLease; delete r.intentRetryAt; });
         } catch (error) {
@@ -115,7 +121,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
     }
     let jobClaim;
     if (lane === 'all' || lane === 'minutes') {
-    if (providerStatus(config).minutes) await repo.change(candidate.id, r => { queueAutomaticMinutes(r, config.LLM_MODEL); });
+    if (providerStatus(config).minutes) await repo.change(candidate.id, r => { if (!realtimeEnabled(config) || r.realtimeAudioConsent) queueAutomaticMinutes(r, minutesModelVersion(config)); });
     const minutesCandidate = await repo.get(candidate.id);
     if (minutesCandidate.jobs.some(j => j.status === 'queued' || (j.status === 'running' && j.lease < Date.now()))) await repo.change(candidate.id, r => {
       if (r.deleted) return;
@@ -128,7 +134,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
     if (jobClaim) {
       try {
         let json = '', lastPublished = 0;
-        const generate=providers.minutes||generateMinutes;
+        const generate=providers.minutes || (realtimeEnabled(config) && jobClaim.mode !== 'extractive' ? (job,env,opts)=>generateRealtimeMinutes(repo,candidate.id,job,env,opts,providers.realtimeFactory) : generateMinutes);
         const processMinutes=config.RECORD_MINUTES_PIPELINE_ENABLED==='false' ? async(job,env,opts)=>({...await meteredMinutesCall(repo,candidate.id,job,generate,job,env,opts),usageRecorded:true}) : (job,env,opts)=>runMinutesPipeline(repo,candidate.id,job,env,generate,opts);
         const result = await telemetry.measure('minutes.complete', {recordId:candidate.id, jobId:jobClaim.id, revision:jobClaim.transcriptRevision, queueMs:Date.now()-Date.parse(jobClaim.createdAt)}, () => processMinutes(jobClaim, config,{ onDelta: async (delta, runtime) => {
           if(!json)telemetry.event('minutes.first-text',{recordId:candidate.id,jobId:jobClaim.id,durationMs:runtime?.firstTokenMs});
@@ -151,9 +157,9 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
     }
     if (lane !== 'all' && lane !== 'audio') return;
     const latest = await repo.get(candidate.id);
-    if (!latest.audioPurged && !latest.retainAudio && latest.capture === 'completed' && latest.chunks.every(c => c.state === 'done')) {
+    if (!latest.audioPurged && !latest.retainAudio && latest.capture === 'completed' && latest.chunks.every(c => c.state === 'done') && !needsMinutesAudio(latest)) {
       let purge = false;
-      await repo.change(latest.id, r => { if (r.capture === 'completed' && !r.retainAudio) { r.audioCleanup = true; purge = true; } });
+      await repo.change(latest.id, r => { if (r.capture === 'completed' && !r.retainAudio && !needsMinutesAudio(r)) { r.audioCleanup = true; purge = true; } });
       if (purge) { await repo.cleanAudio(latest.id); await repo.change(latest.id, r => { r.audioPurged = true; r.audioCleanup = false; }); }
     } else {
       // Objects written before a failed metadata transaction are removed after a one-hour grace period.
@@ -174,13 +180,13 @@ export async function startWorker() {
   const repo = await createRepository(); let stop = false;
   process.on('SIGTERM', () => { stop = true; }); process.on('SIGINT', () => { stop = true; });
   console.log(`[record-worker] ${repo.backend}; durable audio and minutes queue`);
-  await Promise.all(['audio', 'minutes', 'intents', 'translation', 'workspace', 'learning'].map(async lane => {
+  await Promise.all(['audio', 'realtime', 'minutes', 'intents', 'translation', 'workspace', 'learning'].map(async lane => {
   while (!stop) {
    try { await runCycle(repo, {}, { lane }); } catch (e) { console.error('[record-worker]', lane, e.code || e.name); }
    await new Promise(resolve => setTimeout(resolve, lane === 'audio' ? 250 : 500));
   }
  }));
-  closeSpeakerStreams(repo);
+  closeSpeakerStreams(repo);closeRealtime(repo);
   await repo.close();
 }
 
