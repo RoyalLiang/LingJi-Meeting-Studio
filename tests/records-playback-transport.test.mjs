@@ -10,7 +10,7 @@ const { PlaybackTransport, PlaybackScrub } = await import(`data:text/javascript;
 function track(duration) {
   let currentTime = 0;
   return {
-    duration, paused: true, seeks: [], starts: 0,
+    duration, paused: true, seeks: [], starts: 0, playbackRate: 1, preservesPitch: true,
     get ended() { return currentTime >= duration; },
     get currentTime() { return currentTime; },
     set currentTime(time) { currentTime = time; this.seeks.push(time); },
@@ -18,6 +18,78 @@ function track(duration) {
     pause() { this.paused = true; },
   };
 }
+
+test('15 second jumps clamp to the timeline and keep paused recordings paused', async () => {
+  const mic = track(90), meeting = track(60), transport = new PlaybackTransport(() => [mic, meeting]);
+  await transport.skip(-15);
+  assert.equal(transport.time, 0);
+  transport.seek(50);
+  await transport.skip(15);
+  assert.equal(mic.currentTime, 65);
+  assert.equal(meeting.currentTime, 60);
+  assert.equal(mic.starts, 0);
+  await transport.skip(100);
+  assert.equal(transport.time, 90);
+  await transport.skip(-100);
+  assert.equal(transport.time, 0);
+});
+
+test('jumping backwards resumes an ended shorter track alongside a playing longer track', async () => {
+  const mic = track(90), meeting = track(60), transport = new PlaybackTransport(() => [mic, meeting]);
+  transport.seek(70);
+  await transport.play();
+  assert.equal(meeting.starts, 0);
+  await transport.skip(-15);
+  assert.equal(mic.currentTime, 55);
+  assert.equal(meeting.currentTime, 55);
+  assert.equal(mic.paused, false);
+  assert.equal(meeting.paused, false);
+  await transport.skip(100);
+  assert.equal(transport.time, 90);
+  assert.equal(transport.playing, false);
+});
+
+test('rate changes preserve pitch and apply to both tracks including a replacement', async () => {
+  const mic = track(90), meeting = track(60);
+  let tracks = [mic, meeting];
+  const transport = new PlaybackTransport(() => tracks);
+  transport.setRate(1.5);
+  for (const media of tracks) {
+    assert.equal(media.playbackRate, 1.5);
+    assert.equal(media.preservesPitch, true);
+  }
+  const replacement = track(100); tracks = [replacement];
+  await transport.play();
+  assert.equal(replacement.playbackRate, 1.5);
+  assert.throws(() => transport.setRate(NaN), /rate/);
+  assert.throws(() => transport.setRate(0), /rate/);
+  assert.equal(replacement.playbackRate, 1.5);
+});
+
+test('jumping before metadata is ready never writes an invalid seek position', async () => {
+  const mic = track(90), meeting = track(NaN), transport = new PlaybackTransport(() => [mic, meeting]);
+  await transport.skip(15);
+  assert.deepEqual(mic.seeks, []);
+  assert.deepEqual(meeting.seeks, []);
+});
+
+test('pause cancels a pending jump resume and a seek rejects non-finite positions', async () => {
+  const media = track(90), transport = new PlaybackTransport(() => [media]);
+  await transport.play();
+  transport.seek(20);
+  let release;
+  media.play = () => new Promise(resolve => { release = () => { media.paused = false; resolve(); }; });
+  const jumping = transport.skip(15);
+  transport.pause();
+  release();
+  await jumping;
+  assert.equal(media.currentTime, 35);
+  assert.equal(media.paused, true);
+  assert.equal(transport.playing, false);
+  const before = media.seeks.length;
+  transport.seek(NaN); transport.seek(Infinity);
+  assert.equal(media.seeks.length, before);
+});
 
 test('one transport plays, pauses and seeks both saved sources on the longest timeline', async () => {
   const mic = track(1861), meeting = track(1860), transport = new PlaybackTransport(() => [mic, meeting]);
