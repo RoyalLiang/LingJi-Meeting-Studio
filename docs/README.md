@@ -1,14 +1,12 @@
-## 本地修复增量（2026-10-22）
+# 当前发布入口（2026-10-22）
 
-- [会议收尾、提示条、创建时间排序和启动优化验证](evidence/meeting-lifecycle-startup-2026-10-22.md)：源码、本地验证及当前安装版差距。
-
-# 当前首发入口（2026-10-21）
-
-- [v0.1.0 Actions 发布验证](evidence/first-public-preview-2026-10-21.md)
+- [v0.1.1 Actions 后台构建与发布验证](evidence/preview-v0.1.1-2026-10-22.md)：四项修复、公开五附件与完整下载校验。
 - [产品首页与快速开始](../README.md)
-- [v0.1.0 macOS 测试安装说明](releases/v0.1.0-preview.md)
+- [v0.1.1 macOS 测试安装说明](releases/v0.1.1-preview.md)
+- [会议收尾、提示条、创建时间排序和启动优化验证](evidence/meeting-lifecycle-startup-2026-10-22.md)
 - [转录优化、标注与离线评估](engineering/asr-quality.md)
 - [README 与 ASR 一手研究](research/readme-and-asr-quality-2026-10-21.md)
+- 历史首发：[v0.1.0 发布验证](evidence/first-public-preview-2026-10-21.md)及[安装说明](releases/v0.1.0-preview.md)。
 
 以下保留历史索引，带日期的历史验收结论仅对应当时版本。
 

@@ -1,3 +1,10 @@
+## 2026-10-22 v0.1.1 发布事实
+
+- 仓库当前规范名称为 RoyalLiang/LingJi-Meeting-Studio，稳定 ID 1416481402；保留 origin 旧别名，通过 SSH 推送，不改写已有标签。
+- Actions run 39722736145 由 v0.1.1 tag push 自动触发；固定 source/controller 均为 6e719c7874a955e86f4133288b930fd0bbc55294，verify/build/publish 成功。
+- release ID 420315736 已公开，五个附件完整下载校验通过。DMG 47432862 字节，SHA-256 `b4bd5902e8bdd0ba14cf23fbb0606e93d0a4928f4f463915206ea90d05d1c941`；不能把旧版 DMG 的校验值沿用到新版。
+- 云端包内后端和隔离启动/重启检查通过；真实设备/供应商、长会议、全新 Mac 和完整原生冷启动仍未验收。测试包 ad-hoc 签名、未公证。
+
 2026-10-22：收尾流程错误地等待后台上传/刷新，且通用 busy 误标为接入声音；列表按更新时间排序并存在过期响应覆盖新会议的竞态；启动恢复对每场未变化的已结束会议仍执行数据库写入。均以实际函数或真实 SQLite 先红后绿验证。源码 9db4982，验证见 docs/evidence/meeting-lifecycle-startup-2026-10-22.md。完整 App 冷启动、真实设备与真实 ASR 未验证。
 
 ## 2026-10-21 Actions 发布事实
