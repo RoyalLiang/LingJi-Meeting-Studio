@@ -27,10 +27,12 @@ export class CaptureController {
   private connecting = new Map<CaptureKind, Promise<Source>>();
   private disconnected = new WeakSet<AudioWorkletNode>();
   private streams: MediaStream[] = []; private contexts: AudioContext[] = []; private nodes: AudioWorkletNode[] = [];
-  private writes: Promise<void>[] = []; private flushes: (() => void)[] = [];
+  private writes: Promise<void>[] = []; private flushes = new Map<AudioWorkletNode, () => void>();
+  private disconnecting = new Map<CaptureKind, Promise<void>>();
+  private writeFailure: Error | undefined;
   private signals: CaptureSignal[] = [];
   sources: Source[] = []; active = false;
-  constructor(private recordId: string | Promise<string>, private onMeter: (value: number) => void, private onFailure: (error: Error) => void,
+  constructor(private recordId: string | Promise<string>, private onMeter: (value: number) => void, private onFailure: (error: Error, continuing?: boolean) => void,
     private onSaved: () => void, private onEnded: () => void, private onSignals: (signals: CaptureSignal[]) => void = () => {}) {
     // Permission denial can settle before record creation fails. Observe the deferred ID immediately.
     if (typeof recordId !== 'string') void recordId.catch(() => {});
@@ -88,32 +90,58 @@ export class CaptureController {
       node.port.onmessage = event => {
         if (this.disconnected.has(node)) return;
         if (event.data.type === 'meter') { this.onMeter(event.data.value); return; }
-        if (event.data.type === 'flushed') { this.flushes.shift()?.(); return; }
+        if (event.data.type === 'flushed') { this.flushes.get(node)?.(); return; }
         if (event.data.type !== 'pcm') return;
-        if (!track.enabled || track.muted || track.readyState === 'ended') { signal.rms = 0; report(); return; }
+        if (!track.enabled || track.muted) { signal.rms = 0; report(); return; }
         const { rms } = pcmSignal(event.data.buffer), seconds = event.data.buffer.byteLength / 32000;
         signal.rms = rms; signal.seconds += seconds; quietSeconds = rms >= 0.0005 ? 0 : quietSeconds + seconds; report();
         const current = sequence++, start = offset; offset += event.data.buffer.byteLength / 2;
         const write = makeChunk(source.id, source.epoch, current, start, event.data.buffer, source.sessionId).then(chunk => this.disconnected.has(node) ? undefined : enqueue(recordId, chunk)).then(this.onSaved)
-          .catch(error => { this.onFailure(error); void this.stop(); });
+          .catch(error => { this.writeFailure ||= error; this.onFailure(error); void this.stop(); });
         this.writes.push(write);
         if (this.writes.length > 100) this.writes.splice(0, this.writes.length - 100);
       };
-      stream.getTracks().forEach(track => track.addEventListener('ended', () => { if (this.active) this.onEnded(); }, { once: true }));
+      track.addEventListener('ended', () => {
+        if (!this.active || this.disconnected.has(node)) return;
+        void this.disconnect(kind, false).then(async () => {
+          await Promise.allSettled([...this.connecting.values()]);
+          if (!this.active) this.onEnded();
+          this.onFailure(new Error(`${kind === 'display' ? '会议声音' : '我的声音'}已中断，已保存采集到的音频。${this.active ? '其他音源继续录制，可重新接入此音源。' : '会议已暂停，可恢复录制；尚未结束本场。'}`), true);
+        }).catch(error => this.onFailure(error));
+      }, { once: true });
       this.streams.push(stream); this.contexts.push(context); this.nodes.push(node); this.sources.push(source); this.active = true;
       return source;
     } catch (error) { stream.getTracks().forEach(t => t.stop()); await context?.close(); throw error; }
   }
-  async disconnect(kind: CaptureKind) {
+  private flush(node: AudioWorkletNode) {
+    return new Promise<void>(resolve => {
+      const done = () => { clearTimeout(timer); this.flushes.delete(node); resolve(); };
+      const timer = window.setTimeout(done, 2000);
+      this.flushes.set(node, done); node.port.postMessage({ type: 'pause' });
+    });
+  }
+  async disconnect(kind: CaptureKind, discard = true) {
+    const pending = this.disconnecting.get(kind);
+    if (pending) return pending;
+    const operation = this.removeSource(kind, discard);
+    this.disconnecting.set(kind, operation);
+    try { await operation; } finally { this.disconnecting.delete(kind); }
+  }
+  private async removeSource(kind: CaptureKind, discard: boolean) {
     if (kind === 'microphone') this.microphoneEnabled = false;
     this.retained.get(kind)?.getTracks().forEach(track => track.stop()); this.retained.delete(kind);
-    const index = this.sources.findIndex(source => source.kind === kind);
+    let index = this.sources.findIndex(source => source.kind === kind);
     if (index < 0) return;
-    const [node] = this.nodes.splice(index, 1), [stream] = this.streams.splice(index, 1), [context] = this.contexts.splice(index, 1);
-    const [source] = this.sources.splice(index, 1);
-    // Discard this input's unfinished packet; reopening creates a new Source/epoch.
-    this.disconnected.add(node); node.port.onmessage = null;
-    stream.getTracks().forEach(track => track.stop());
+    const node = this.nodes[index];
+    if (!discard) {
+      await this.flush(node); await Promise.all(this.writes);
+      if (this.writeFailure) throw this.writeFailure;
+    }
+    index = this.nodes.indexOf(node);
+    if (index < 0) return;
+    const [stream] = this.streams.splice(index, 1), [context] = this.contexts.splice(index, 1), [source] = this.sources.splice(index, 1);
+    this.nodes.splice(index, 1);
+    this.disconnected.add(node); node.port.onmessage = null; stream.getTracks().forEach(track => track.stop());
     this.signals = this.signals.filter(signal => signal.sourceId !== source.id);
     this.active = this.streams.length > 0; this.onMeter(0); this.onSignals(this.signals.map(signal => ({ ...signal })));
     await context.close();
@@ -125,13 +153,12 @@ export class CaptureController {
     await this.finish(false);
   }
   private async finish(retain: boolean) {
+    await Promise.allSettled([...this.disconnecting.values()]);
     if (!retain) { this.retained.forEach(stream => stream.getTracks().forEach(track => track.stop())); this.retained.clear(); }
     if (!this.active) return;
     this.active = false;
     // The worklet atomically stops input and flushes before its context is closed.
-    await Promise.all(this.nodes.map(node => new Promise<void>(resolve => {
-      const timer = window.setTimeout(resolve, 2000); this.flushes.push(() => { clearTimeout(timer); resolve(); }); node.port.postMessage({ type: 'pause' });
-    })));
+    await Promise.all(this.nodes.map(node => this.flush(node)));
     this.streams.forEach((stream, index) => {
       if (retain) this.retained.set(this.sources[index].kind as CaptureKind, stream);
       else stream.getTracks().forEach(track => track.stop());
@@ -139,7 +166,7 @@ export class CaptureController {
     await Promise.all(this.contexts.map(context => context.close()));
     await Promise.all(this.writes);
     this.nodes.forEach(node => { this.disconnected.add(node); node.port.onmessage = null; });
-    this.streams = []; this.nodes = []; this.contexts = []; this.sources = []; this.writes = []; this.onMeter(0); this.signals = []; this.onSignals([]);
+    this.streams = []; this.nodes = []; this.contexts = []; this.sources = []; this.writes = []; this.writeFailure = undefined; this.onMeter(0); this.signals = []; this.onSignals([]);
   }
 }
 export async function importAudio(file: File, record: RecordDetail, progress: (value: number) => void) {

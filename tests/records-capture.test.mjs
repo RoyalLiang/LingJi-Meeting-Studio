@@ -100,13 +100,13 @@ test('enable microphone starts directly and a successful explicit recovery close
   assert.deepEqual(off.state.disconnects,['microphone']);assert.equal(off.state.modal,null);
 });
 
-async function captureHarness({ noDisplayAudio = false, micFailure = false, displayDenied = false, displayUnsupported = false, recordId = 'record', chunkWait } = {}) {
+async function captureHarness({ noDisplayAudio = false, micFailure = false, displayDenied = false, displayUnsupported = false, recordId = 'record', chunkWait, displayVideo = false, enqueueFailure = false } = {}) {
   let source = await readFile(new URL('../apps/web/src/audio/capture.ts', import.meta.url), 'utf8');
   source = stripTypeScriptTypes(source, { mode: 'transform' }).replace(/^import .*$/gm, '').replace(/export /g, '');
   const signalSource = stripTypeScriptTypes(await readFile(new URL('../apps/web/src/audio/signal.ts', import.meta.url), 'utf8')).replace(/^import .*$/gm, '').replace(/export /g, '');
-  const health = [], nodes = [], calls = [], contexts = [], uploads = []; let sourceNumber = 0;
+  const health = [], nodes = [], calls = [], contexts = [], uploads = [], errors = [], ended = []; let sourceNumber = 0;
   const track = label => ({ label, enabled: true, muted: false, readyState: 'live', handlers: {}, addEventListener(name, fn) { this.handlers[name] = fn; }, stop() { this.readyState = 'ended'; } });
-  const stream = (label, audio = true) => { const audioTrack = track(label); return { audioTrack, getAudioTracks: () => audio ? [audioTrack] : [], getTracks: () => [audioTrack] }; };
+  const stream = (label, audio = true) => { const audioTrack = track(label), videoTrack = track(label + " video"); return { audioTrack, getAudioTracks: () => audio ? [audioTrack] : [], videoTrack, getTracks: () => displayVideo && label === '测试共享音频' ? [audioTrack, videoTrack] : [audioTrack] }; };
   const mic = stream('测试麦克风'), display = stream('测试共享音频', !noDisplayAudio);
   class AudioContext {
     constructor() { this.state = 'suspended'; this.handlers = {}; contexts.push(this); this.audioWorklet = { addModule: async () => {} }; }
@@ -125,12 +125,12 @@ async function captureHarness({ noDisplayAudio = false, micFailure = false, disp
     } },
     preferredDevice: () => 'default', inputDevices: async () => [], microphoneConstraints: () => ({}),
     api: async (_url, _method, input) => ({ id: `source-${input.kind}-${++sourceNumber}`, sessionId: 'session', epoch: 'epoch', ...input }),
-    makeChunk: async (...args) => { await chunkWait; return { sourceId: args[0], sequence: args[2], sampleOffset: args[3], buffer: args[4] }; }, enqueue: async (_id, chunk) => uploads.push(chunk), drainQueue: async () => {},
+    makeChunk: async (...args) => { await chunkWait; return { sourceId: args[0], sequence: args[2], sampleOffset: args[3], buffer: args[4] }; }, enqueue: async (_id, chunk) => { if(enqueueFailure) throw new Error("本机存储空间不足"); uploads.push(chunk); }, drainQueue: async () => {},
   };
   sandbox.openMicrophone = () => sandbox.navigator.mediaDevices.getUserMedia({ audio: true });
   vm.runInNewContext(signalSource + '\n' + source + '\nexports.CaptureController = CaptureController;', sandbox);
-  const controller = new sandbox.exports.CaptureController(recordId, () => {}, () => {}, () => {}, () => {}, sources => health.push(structuredClone(sources)));
-  return { controller, nodes, health, calls, contexts, mic, display, uploads };
+  const controller = new sandbox.exports.CaptureController(recordId, () => {}, (error, continuing) => errors.push({error, continuing}), () => {}, () => ended.push(true), sources => health.push(structuredClone(sources)));
+  return { controller, nodes, health, calls, contexts, mic, display, uploads, errors, ended };
 }
 
 test('quick recording requests both permissions before record creation completes', async () => {
@@ -412,4 +412,78 @@ test('worklet pause flushes its tail and does not capture subsequent input', asy
   assert.equal(events[0].buffer.byteLength,256);
   for(let i=0;i<60;i++)worklet.process([[new Float32Array(128).fill(0.2)]]);
   assert.equal(events.length,2);
+});
+
+
+test('ending a shared video track leaves both audio sources recording', async () => {
+  const h = await captureHarness({displayVideo:true});
+  await h.controller.startMeeting();
+  h.display.videoTrack.readyState = 'ended';
+  h.display.videoTrack.handlers.ended?.();
+  assert.equal(h.ended.length, 0, 'video completion must not pause a meeting');
+  assert.equal(h.controller.active, true);
+  assert.equal(h.controller.sources.length, 2);
+  await h.controller.stop();
+});
+
+test('lost browser audio source drains its saved tail and leaves the other source recording', async () => {
+  const h = await captureHarness();
+  await h.controller.startMeeting();
+  const index = h.controller.sources.findIndex(source => source.kind === 'display');
+  const node = h.nodes[index];
+  node.port.onmessage({data:{type:'pcm',buffer:new ArrayBuffer(320)}});
+  h.display.audioTrack.readyState = 'ended';
+  h.display.audioTrack.handlers.ended();
+  for(let i=0;i<12;i++) await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(h.ended.length, 0, 'one lost source must not pause the meeting');
+  assert.equal(h.controller.active, true);
+  assert.equal(h.controller.sources.length, 1);
+  assert.equal(h.controller.sources[0].kind, 'microphone');
+  assert.equal(h.uploads.length, 1, 'already captured audio must remain durable');
+  assert.equal(h.errors.length, 1);
+  assert.equal(h.errors[0].continuing, true);
+  await h.controller.stop();
+});
+
+test('a recoverable source interruption reports a bubble without pausing or sealing capture', async () => {
+  const app = await readFile(new URL('../apps/web/src/App.tsx', import.meta.url),'utf8');
+  const fragment = app.slice(app.indexOf('  function controllerFor('),app.indexOf('  async function quickRecord('));
+  const code = (await transform(fragment+'\nexports.factory=controllerFor;', {loader:'ts'})).code;
+  const state={stops:[],error:'',recording:true};
+  class Controller { constructor(...args) { this.args=args;this.active=true; } }
+  const sandbox={exports:{},CaptureController:Controller,capture:{current:{active:true}},setRecording:v=>state.recording=v,setError:v=>state.error=v,
+    messageOf:e=>e.message,stopCapture:async(...args)=>state.stops.push(args),upload(){},setSignals(){}};
+  vm.runInNewContext(code,sandbox);
+  const controller=sandbox.exports.factory('r');
+  sandbox.capture.current=controller;
+  controller.args[2](new Error('会议声音中断'),true);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(state.stops,[]);
+  assert.equal(state.recording,true);
+  assert.equal(state.error,'会议声音中断');
+});
+
+
+test('an interruption from an old controller cannot pause a newer meeting', async () => {
+  const app=await readFile(new URL('../apps/web/src/App.tsx',import.meta.url),'utf8');
+  const code=(await transform(app.slice(app.indexOf('  function controllerFor('),app.indexOf('  async function quickRecord('))+'\nexports.factory=controllerFor;',{loader:'ts'})).code;
+  const state={stops:0,errors:0};class Controller{constructor(...args){this.args=args;this.active=true;}}
+  const sandbox={exports:{},CaptureController:Controller,capture:{current:null},setRecording(){},setError(){state.errors++;},messageOf:e=>e.message,stopCapture:async()=>{state.stops++;},upload(){},setSignals(){}};
+  vm.runInNewContext(code,sandbox);const old=sandbox.exports.factory('old');sandbox.capture.current=sandbox.exports.factory('new');
+  old.args[2](new Error('旧音源中断'));old.args[4]();
+  await new Promise(resolve=>setImmediate(resolve));assert.equal(state.stops,0);assert.equal(state.errors,0);
+});
+
+
+test('source loss never claims audio was saved after tail persistence fails', async () => {
+  const h=await captureHarness({enqueueFailure:true});await h.controller.startMeeting();
+  const index=h.controller.sources.findIndex(source=>source.kind==='display'), node=h.nodes[index];
+  const original=node.port.postMessage;
+  node.port.postMessage=message=>{if(message.type==='pause')node.port.onmessage?.({data:{type:'pcm',buffer:new ArrayBuffer(320)}});original(message);};
+  h.display.audioTrack.readyState='ended';h.display.audioTrack.handlers.ended();
+  for(let i=0;i<20;i++)await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(h.uploads.length,0);
+  assert.ok(h.errors.some(({error})=>error.message==='本机存储空间不足'));
+  assert.equal(h.errors.some(({continuing})=>continuing===true),false,'failed persistence must not produce a recoverable saved-audio notice');
+  await h.controller.stop();
 });

@@ -248,8 +248,15 @@ function Workspace() {
     return true;
   }
   function controllerFor(recordId: string | Promise<string>) {
-    return new CaptureController(recordId, () => {}, e => { setRecording(false); void stopCapture('pause', '', true).finally(() => setError(messageOf(e))); },
-      () => { void upload(); }, () => { void stopCapture('pause'); }, setSignals);
+    const controller = new CaptureController(recordId, () => {}, (error, continuing) => {
+      if (capture.current !== controller) return;
+      if (continuing) { setRecording(controller.active); setError(messageOf(error)); return; }
+      setRecording(false);
+      void stopCapture('pause', '', true).finally(() => { if (capture.current === controller) setError(messageOf(error)); });
+    }, () => { void upload(); }, () => {
+      if (capture.current === controller) void stopCapture('pause');
+    }, setSignals);
+    return controller;
   }
   async function quickRecord() {
     if (boot?.providers.minutesMode === 'openai-realtime') { setModal('new'); return; }
