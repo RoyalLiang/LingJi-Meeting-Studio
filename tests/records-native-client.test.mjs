@@ -79,7 +79,7 @@ async function controllerHarness({ beforeStart } = {}) {
     if (command === 'capture_read') {
       session.reads++; if (session.reads === 1) return packet(0, 0);
       if (session.stopped) return new ArrayBuffer(0);
-      return new Promise(resolve => { session.release = resolve; });
+      return new Promise((resolve,reject) => { session.release = resolve; session.reject=reject; });
     }
     if (command === 'capture_stop') { session.stopped = true; session.release?.(args.discard ? new ArrayBuffer(0) : packet(1, 320, 80)); }
   };
@@ -100,7 +100,7 @@ async function controllerHarness({ beforeStart } = {}) {
   const module = await import(`data:text/javascript;base64,${Buffer.from(code + `\n// fixture ${Math.random()}`).toString('base64')}`);
   const errors = [];
   const controller = new module.NativeCaptureController('record', () => {}, error => errors.push(error), () => {}, () => {});
-  return { controller, starts, uploads, errors };
+  return { controller, starts, uploads, errors, sessions };
 }
 
 test('native controller deduplicates starts and defaults to system output plus microphone', async () => {
@@ -229,4 +229,19 @@ test('native capture keeps consecutive audio beyond thirty minutes until explici
   assert.equal(saved.length, total);
   assert.deepEqual(saved.at(-1), [total - 1, (total - 1) * count]);
   assert.deepEqual(errors, []);
+});
+
+
+test('native device failure leaves the other source recording and lets the lost source reconnect', async () => {
+  const h=await controllerHarness();await h.controller.startMeeting();
+  for(let i=0;i<6;i++)await tick();
+  h.sessions.get('native-0').reject(new Error('系统音频设备中断'));
+  for(let i=0;i<12;i++)await tick();
+  assert.equal(h.controller.active,true);
+  assert.equal(h.controller.sources.length,1);
+  assert.equal(h.controller.sources[0].kind,'microphone');
+  assert.equal(h.errors.length,1);
+  await h.controller.start('display');
+  assert.equal(h.controller.sources.length,2);
+  await h.controller.stop();
 });

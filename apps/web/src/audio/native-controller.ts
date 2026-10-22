@@ -34,7 +34,7 @@ export class NativeCaptureController {
     let resolveSource!: (source: Source) => void, rejectSource!: (error: unknown) => void;
     const ready = new Promise<Source>((resolve, reject) => { resolveSource = resolve; rejectSource = reject; });
     void ready.catch(() => {});
-    let quiet = 0, dropped = false, failure: Error | undefined;
+    let quiet = 0, dropped = false, persistenceFailed = false, failure: Error | undefined;
     const stream = await startNativeStream(kind, deviceId, async packet => {
       const source = await ready;
       if (dropped) return;
@@ -46,9 +46,24 @@ export class NativeCaptureController {
         if (kind === 'display' && quiet >= 5) signal.message = '连续 5 秒没有收到系统播放声音，请播放会议声音并检查系统音频权限。';
         this.args[1](rms); this.report();
       }
-      const chunk = await makeChunk(source.id, source.epoch, packet.sequence, packet.sampleOffset, packet.buffer, source.sessionId);
-      if (!dropped) { await enqueue(recordId, chunk); this.args[3](); }
-    }, error => { failure = error; this.args[2](error); void this.stop().catch(() => {}); });
+      try {
+        const chunk = await makeChunk(source.id, source.epoch, packet.sequence, packet.sampleOffset, packet.buffer, source.sessionId);
+        if (!dropped) { await enqueue(recordId, chunk); this.args[3](); }
+      } catch (error) { persistenceFailed = true; throw error; }
+    }, error => {
+      failure = error;
+      if (persistenceFailed) { this.args[2](error); void this.stop().catch(() => {}); return; }
+      const entry = this.streams.get(kind);
+      if (!entry) return; // Connection failures are reported by start/startMeeting.
+      entry.dropped = true; this.streams.delete(kind);
+      this.sources = this.sources.filter(source => source.id !== entry.source.id);
+      this.active = this.streams.size > 0; this.report();
+      void entry.stream.stop(true).catch(() => {});
+      void Promise.allSettled([...this.connecting.values()]).then(() => {
+        if (!this.active) this.args[4]();
+        this.args[2](new Error(`${kind === 'display' ? '会议声音' : '我的声音'}中断：${error.message}。${this.active ? '其他音源继续录制，可重新接入此音源。' : '会议已暂停，可恢复录制；尚未结束本场。'}`), true);
+      });
+    });
     try {
       const source = await api<Source>(`/records/${recordId}/sources`, 'POST', { kind, label: stream.label });
       if (failure) throw failure;
