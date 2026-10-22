@@ -6,6 +6,9 @@ import { parseAsrHotwords, parseAsrContext } from './asr-terms.mjs';
 
 export const defaults = {
   ASR_PROVIDER: 'doubao',
+  MINUTES_MODE: 'asr-llm',
+  OPENAI_REALTIME_URL: 'wss://api.openai.com/v1/realtime',
+  OPENAI_REALTIME_MODEL: 'gpt-realtime-2.1',
   DOUBAO_ASR_URL: 'wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async',
   DOUBAO_ASR_RESOURCE_ID: 'volc.bigasr.sauc.duration',
   DOUBAO_AST_BASE_URL: 'wss://openspeech.bytedance.com/api/v4/ast/v2/translate',
@@ -15,8 +18,8 @@ export const defaults = {
   LLM_PROTOCOL: 'responses',
   DOUBAO_TRANSLATION_MODEL: 'doubao-seed-translation-250915',
 };
-const fields = ['DOUBAO_TRANSLATION_API_URL', 'DOUBAO_TRANSLATION_API_KEY', 'DOUBAO_TRANSLATION_MODEL', 'DOUBAO_ASR_HOTWORDS', 'DOUBAO_ASR_CONTEXT', 'ASR_PROVIDER', 'DOUBAO_API_KEY', 'DOUBAO_ASR_URL', 'DOUBAO_ASR_RESOURCE_ID', 'DOUBAO_AST_BASE_URL', 'DOUBAO_AST_ENDPOINT', 'DOUBAO_AST_RESOURCE_ID', 'DOUBAO_AST_APP_ID', 'DOUBAO_AST_APP_KEY', 'DOUBAO_AST_ACCESS_KEY', 'ASR_API_URL', 'ASR_API_KEY', 'ASR_MODEL', 'DEEPGRAM_API_KEY', 'LLM_API_URL', 'LLM_API_KEY', 'LLM_MODEL', 'LLM_PROTOCOL'];
-const secretFields = new Set(['DOUBAO_TRANSLATION_API_KEY', 'DOUBAO_API_KEY', 'DOUBAO_AST_APP_KEY', 'DOUBAO_AST_ACCESS_KEY', 'ASR_API_KEY', 'DEEPGRAM_API_KEY', 'LLM_API_KEY']);
+const fields = ['MINUTES_MODE', 'OPENAI_REALTIME_URL', 'OPENAI_REALTIME_MODEL', 'OPENAI_REALTIME_API_KEY', 'DOUBAO_TRANSLATION_API_URL', 'DOUBAO_TRANSLATION_API_KEY', 'DOUBAO_TRANSLATION_MODEL', 'DOUBAO_ASR_HOTWORDS', 'DOUBAO_ASR_CONTEXT', 'ASR_PROVIDER', 'DOUBAO_API_KEY', 'DOUBAO_ASR_URL', 'DOUBAO_ASR_RESOURCE_ID', 'DOUBAO_AST_BASE_URL', 'DOUBAO_AST_ENDPOINT', 'DOUBAO_AST_RESOURCE_ID', 'DOUBAO_AST_APP_ID', 'DOUBAO_AST_APP_KEY', 'DOUBAO_AST_ACCESS_KEY', 'ASR_API_URL', 'ASR_API_KEY', 'ASR_MODEL', 'DEEPGRAM_API_KEY', 'LLM_API_URL', 'LLM_API_KEY', 'LLM_MODEL', 'LLM_PROTOCOL'];
+const secretFields = new Set(['OPENAI_REALTIME_API_KEY', 'DOUBAO_TRANSLATION_API_KEY', 'DOUBAO_API_KEY', 'DOUBAO_AST_APP_KEY', 'DOUBAO_AST_ACCESS_KEY', 'ASR_API_KEY', 'DEEPGRAM_API_KEY', 'LLM_API_KEY']);
 export const configured = value => Boolean(value && !/^(your[-_]|replace|mock|<|xxx)/i.test(value));
 export function normalizeConfig(env = process.env) {
   const protocol = env.LLM_PROTOCOL || (/\/chat\/completions\/?(?:\?|$)/.test(env.LLM_API_URL || '') ? 'chat-completions' : defaults.LLM_PROTOCOL);
@@ -50,12 +53,13 @@ export async function saveConfig(root, input, env = process.env) {
   const next = { ...current, ...values };
   requireThat(['doubao', 'doubao-ast', 'deepgram', 'openai-compatible'].includes(next.ASR_PROVIDER), 'invalid_asr_provider', 400);
   requireThat(['chat-completions', 'responses'].includes(next.LLM_PROTOCOL), 'invalid_llm_protocol', 400);
+  requireThat(['asr-llm', 'openai-realtime'].includes(next.MINUTES_MODE), 'invalid_minutes_mode', 400);
   parseAsrHotwords(next.DOUBAO_ASR_HOTWORDS);
   const context=parseAsrContext(next.DOUBAO_ASR_CONTEXT);
-  for (const key of ['DOUBAO_ASR_URL', 'DOUBAO_AST_BASE_URL', 'ASR_API_URL', 'LLM_API_URL', 'DOUBAO_TRANSLATION_API_URL']) {
+  for (const key of ['OPENAI_REALTIME_URL', 'DOUBAO_ASR_URL', 'DOUBAO_AST_BASE_URL', 'ASR_API_URL', 'LLM_API_URL', 'DOUBAO_TRANSLATION_API_URL']) {
     if (!next[key]) continue;
     let url; try { url = new URL(next[key]); } catch { requireThat(false, 'invalid_provider_url', 400); }
-    const socketUrl = ['DOUBAO_ASR_URL', 'DOUBAO_AST_BASE_URL'].includes(key);
+    const socketUrl = ['OPENAI_REALTIME_URL', 'DOUBAO_ASR_URL', 'DOUBAO_AST_BASE_URL'].includes(key);
     const protocols = socketUrl ? ['wss:'] : ['https:'];
     if (env.NODE_ENV !== 'production') protocols.push(socketUrl ? 'ws:' : 'http:');
     requireThat(protocols.includes(url.protocol) && !url.username && !url.password && !url.hash, 'invalid_provider_url', 400);
@@ -68,3 +72,5 @@ export async function saveConfig(root, input, env = process.env) {
   await rename(temporary, join(root, 'providers.json'));
   return publicConfig(next);
 }
+
+export const minutesModelVersion = config => config.MINUTES_MODE === 'openai-realtime' ? `openai-realtime:${config.OPENAI_REALTIME_MODEL}` : config.LLM_MODEL;

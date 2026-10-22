@@ -25,7 +25,7 @@ export async function processWorkspaceAnalysis(repo, config, providers = {}) {
       return current?.fence === fence && current.status === 'running' && inputHash(retainedRecords(await repo.list(), candidate.owner, candidate.scope)) === candidate.inputHash;
     };
     try {
-      if (!providers.completeJson && !providerStatus(config).minutes) throw Object.assign(new Error('minutes_not_configured'), { code: 'minutes_not_configured' });
+      if (!providers.completeJson && !providerStatus(config).textMinutes) throw Object.assign(new Error('minutes_not_configured'), { code: 'minutes_not_configured' });
       timer = setInterval(async () => {
         if (checking) return; checking = true;
         try { if (!(await valid())) controller.abort(); } catch { controller.abort(); } finally { checking = false; }

@@ -6,11 +6,13 @@ import { transcribeDoubaoAsr, transcribeDoubao } from './doubao.mjs';
 import { DomainError, requireThat } from '../../../packages/records/src/record.mjs';
 import { validateMinutesStructure } from '../../../packages/records/src/minutes-structure.mjs';
 
+import { realtimeConfigured, realtimeEnabled } from './realtime-minutes.mjs';
+
 export function providerStatus(input = process.env) {
   const env = normalizeConfig(input);
   const asr = env.ASR_PROVIDER === 'doubao' ? configured(env.DOUBAO_API_KEY) : env.ASR_PROVIDER === 'doubao-ast' ? configured(env.DOUBAO_AST_APP_KEY) && configured(env.DOUBAO_AST_ACCESS_KEY) : env.ASR_PROVIDER === 'deepgram' ? configured(env.DEEPGRAM_API_KEY) : Boolean(env.ASR_API_URL && configured(env.ASR_API_KEY));
   const translation = translationConnection(env);
-  return { translation: Boolean(translation.url && configured(translation.key) && translation.model), asr, asrProvider: env.ASR_PROVIDER, minutes: Boolean(env.LLM_API_URL && configured(env.LLM_API_KEY) && env.LLM_MODEL), fixture: env.RECORD_PROVIDER === 'fixture' && env.NODE_ENV !== 'production' };
+  return { translation: Boolean(translation.url && configured(translation.key) && translation.model), asr, asrProvider: env.ASR_PROVIDER, minutesMode: env.MINUTES_MODE, textMinutes: Boolean(env.LLM_API_URL && configured(env.LLM_API_KEY) && env.LLM_MODEL), minutes: realtimeEnabled(env) ? realtimeConfigured(env) : Boolean(env.LLM_API_URL && configured(env.LLM_API_KEY) && env.LLM_MODEL), fixture: env.RECORD_PROVIDER === 'fixture' && env.NODE_ENV !== 'production' };
 }
 export function waveHeader(length) {
   const header = Buffer.alloc(44); header.write('RIFF'); header.writeUInt32LE(36 + length, 4); header.write('WAVEfmt ', 8);

@@ -21,7 +21,7 @@ const refs = result => {
   visit(result);return [...found.values()];
 };
 export function buildMinutesManifest(job,config={},budget=inputBudget(config)){
-  const policy=hash({version:4,windowMs:120000,budget,context:job.liveContext,model:job.modelVersion==='default'?config.LLM_MODEL:job.modelVersion,base:config.LLM_API_URL,protocol:config.LLM_PROTOCOL,template:job.template,scope:job.scope,mode:job.mode,notes:job.notes,notesRevision:job.notesRevision,generation:job.generation});
+  const policy=hash({version:5,minutesMode:config.MINUTES_MODE,realtimeModel:config.OPENAI_REALTIME_MODEL,realtimeUrl:config.OPENAI_REALTIME_URL,windowMs:120000,budget,context:job.liveContext,model:job.modelVersion==='default'?config.LLM_MODEL:job.modelVersion,base:config.LLM_API_URL,protocol:config.LLM_PROTOCOL,template:job.template,scope:job.scope,mode:job.mode,notes:job.notes,notesRevision:job.notesRevision,generation:job.generation});
   const windows=[];let current=[];
   const flush=()=>{if(current.length){windows.push({key:hash({policy,snapshot:current}),snapshot:current});current=[];}};
   function add(segment){
@@ -32,13 +32,24 @@ export function buildMinutesManifest(job,config={},budget=inputBudget(config)){
     if(current.length && size({transcript:[...current,segment],notes:job.notes,context:job.liveContext})>budget)flush();current.push(segment);
   }
   const snapshot=job.snapshot.map(({id,revision,text,sourceId,speakerId,speaker,speakerName,startMs,endMs,contextOnly})=>({id,revision,text,sourceId,speakerId,speaker,speakerName,startMs,endMs,contextOnly}));
+  if (config.MINUTES_MODE === 'openai-realtime') {
+    // Group by source before timeline buckets: simultaneous tracks count as
+    // separate audio. Split long ASR turns without inventing new transcript IDs.
+    const slices = snapshot.flatMap(segment => {
+      if (!Number.isFinite(segment.startMs) || !Number.isFinite(segment.endMs) || segment.endMs - segment.startMs <= 120000) return [segment];
+      const parts = [];
+      for (let startMs = segment.startMs; startMs < segment.endMs; startMs += 120000) parts.push({...segment,startMs,endMs:Math.min(startMs+120000,segment.endMs)});
+      return parts;
+    }).sort((a,b) => String(a.sourceId).localeCompare(String(b.sourceId)) || a.startMs-b.startMs);
+    snapshot.splice(0,snapshot.length,...slices);
+  }
   const snapshotOffset=Number.isSafeInteger(job.snapshotOffset)&&job.snapshotOffset>=0?job.snapshotOffset:0;
   const single=size({transcript:snapshot,notes:job.notes,context:job.liveContext})<=budget;
   let bucket;
   snapshot.forEach((segment,index)=>{
     const timed=Number.isFinite(segment.startMs)&&Number.isFinite(segment.endMs)&&segment.endMs>segment.startMs;
     const next=timed?Math.floor(segment.startMs/120000):undefined;
-    if(current.length && (timed ? next!==bucket : !single && (index+snapshotOffset)%24===0))flush();
+    if(current.length && (timed ? next!==bucket || (config.MINUTES_MODE === 'openai-realtime' && current[0].sourceId !== segment.sourceId) : !single && (index+snapshotOffset)%24===0))flush();
     bucket=next;add(segment);
   });flush();
   requireThat(windows.length>0 && windows.length<=512,'minutes_window_limit',422);
@@ -114,7 +125,7 @@ export async function runMinutesPipeline(repo,recordId,claim,config,generate,opt
     const groups=[];let group=[];
     const inputFor=items=>{
       const wanted=new Set(items.flatMap(node=>refs(node.result).map(ref=>`${ref.segmentId}:${ref.revision}`)));
-      return {snapshot:claim.snapshot.filter(s=>wanted.has(`${s.id}:${s.revision}`)).map(({id,revision,speakerId,speaker,speakerName,sourceId,contextOnly})=>({id,revision,speakerId,speaker,speakerName,sourceId,contextOnly})),summaries:items.map(node=>content(node.result)),stage:'synthesis'};
+      return {snapshot:claim.snapshot.filter(s=>wanted.has(`${s.id}:${s.revision}`)).map(({id,revision,speakerId,speaker,speakerName,sourceId,startMs,endMs,contextOnly})=>({id,revision,speakerId,speaker,speakerName,sourceId,startMs,endMs,contextOnly})),summaries:items.map(node=>content(node.result)),stage:'synthesis'};
     };
     const payloadFor=input=>JSON.stringify({transcript:input.snapshot,notes:claim.notes,context:claim.liveContext,summaries:input.summaries,stage:input.stage});
     for(const node of nodes){

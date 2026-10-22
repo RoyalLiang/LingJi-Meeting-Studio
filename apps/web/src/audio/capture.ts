@@ -147,7 +147,6 @@ export async function importAudio(file: File, record: RecordDetail, progress: (v
   const context = new AudioContext();
   try {
     const decoded = await context.decodeAudioData(await file.arrayBuffer());
-    if (decoded.duration > 120 * 60) throw new Error('单次导入最多两小时。');
     const offline = new OfflineAudioContext(1, Math.ceil(decoded.duration * 16000), 16000), node = offline.createBufferSource();
     node.buffer = decoded; node.connect(offline.destination); node.start(); const rendered = await offline.startRendering(), values = rendered.getChannelData(0);
     const source = await api<Source>(`/records/${record.id}/sources`, 'POST', { kind: 'import', label: file.name });
