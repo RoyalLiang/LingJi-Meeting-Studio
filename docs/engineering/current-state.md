@@ -1,3 +1,7 @@
+# C 版录音区与队列源码增量（2026-10-22）
+
+用户确认 C「一体会议头部」后，已实现气泡反馈、同排录音状态/音源/操作、图标工具栏与齿轮整理设置；调整块间距，并修复慢音源阻塞快音源后续上传的问题。347 项 Node、ESLint、类型检查、Web 构建及隔离浏览器检查通过；两路延迟上传仍可收尾并完成尾段确认。合成 ACK 基准中快路完成中位 388→42 ms，真实 ASR 端到端速度待实测。见[本轮证据](../evidence/compact-recording-c-2026-10-22.md)。本轮未推送或发布，当前公开 v0.1.1 不含这些增量。
+
 # v0.1.1 公开测试版增量（2026-10-22）
 
 四项修复已随 [v0.1.1](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.1) 发布；源码与工作流 `6e719c7`，bundle `0.1.23`。[Actions run 39722736145](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/39722736145) 由 tag push 后台触发，verify/build/publish 全部成功。五个公开附件已完整下载并核对字节与 SHA-256，包内独立后端及隔离启动/重启检查通过，详见[发布证据](../evidence/preview-v0.1.1-2026-10-22.md)。

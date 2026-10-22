@@ -61,3 +61,74 @@ test('ending capture awaits an upload already draining before reporting saved au
   } finally {release();await Promise.all([background,finish]);}
   assert.equal(await h.pendingCount('ending'),0);
 });
+
+test('a slow audio source does not stall the next durable packets of another source',async()=>{
+  let releaseSlow,fastFinished;
+  const slow=new Promise(resolve=>{releaseSlow=resolve;}),fast=new Promise(resolve=>{fastFinished=resolve;});
+  const sent=[],active=new Set();let maximum=0;
+  const h=harness(new IDBFactory(),async(_path,_method,c)=>{
+    assert.ok(!active.has(c.sourceId),'per-source ordering must remain serial');
+    active.add(c.sourceId);maximum=Math.max(maximum,active.size);sent.push(`${c.sourceId}:${c.sequence}`);
+    try{if(c.sourceId==='mic')await slow;else if(c.sequence===3)fastFinished();}
+    finally{active.delete(c.sourceId);}
+  });
+  h.setQueueRecords(['meeting']);
+  await h.enqueue('meeting',chunk('mic'));
+  for(let sequence=0;sequence<4;sequence++)await h.enqueue('meeting',chunk('tab',sequence));
+  const draining=h.drainQueue();
+  try{
+    const completed=await Promise.race([fast.then(()=>true),new Promise(resolve=>setTimeout(()=>resolve(false),200))]);
+    assert.equal(completed,true,'fast source should finish its backlog before the slow source ACK is released');
+    assert.deepEqual(sent.filter(x=>x.startsWith('tab:')),['tab:0','tab:1','tab:2','tab:3']);
+  }finally{releaseSlow();await draining;}
+  assert.equal(maximum,2,'the concurrency limit remains two');
+  assert.equal(await h.pendingCount('meeting'),0);
+});
+
+test('new packets wake a running drain while a different source is waiting for its ACK',async()=>{
+  let releaseSlow,firstFast,nextFast;
+  const slow=new Promise(resolve=>{releaseSlow=resolve;});
+  const first=new Promise(resolve=>{firstFast=resolve;}),next=new Promise(resolve=>{nextFast=resolve;});
+  const h=harness(new IDBFactory(),async(_path,_method,c)=>{
+    if(c.sourceId==='mic')await slow;
+    else if(c.sequence===0)firstFast();else nextFast();
+  });
+  h.setQueueRecords(['meeting']);await h.enqueue('meeting',chunk('mic'));await h.enqueue('meeting',chunk('tab'));
+  const background=h.drainQueue();await first;
+  await h.enqueue('meeting',chunk('tab',1));const joined=h.drainQueue();
+  try{
+    assert.equal(await Promise.race([next.then(()=>true),new Promise(resolve=>setTimeout(()=>resolve(false),200))]),true,'newly saved packets should not await the unrelated source');
+  }finally{releaseSlow();await Promise.all([background,joined]);}
+  assert.equal(await h.pendingCount('meeting'),0);
+});
+
+test('going offline joins active acknowledgements and retains the unsent tail',async()=>{
+  let releaseSlow,fastFinished;
+  const slow=new Promise(resolve=>{releaseSlow=resolve;}),fast=new Promise(resolve=>{fastFinished=resolve;});
+  const sent=[];const h=harness(new IDBFactory(),async(_path,_method,c)=>{
+    sent.push(`${c.sourceId}:${c.sequence}`);
+    if(c.sourceId==='mic')await slow;else{h.navigator.onLine=false;fastFinished();}
+  });
+  h.setQueueRecords(['meeting']);await h.enqueue('meeting',chunk('mic'));
+  await h.enqueue('meeting',chunk('tab'));await h.enqueue('meeting',chunk('tab',1));
+  let settled=false;const draining=h.drainQueue().finally(()=>{settled=true;});await fast;
+  try{await new Promise(resolve=>setTimeout(resolve,15));assert.equal(settled,false,'active microphone ACK must stay attached');}
+  finally{releaseSlow();await draining;}
+  assert.deepEqual(sent,['mic:0','tab:0']);assert.equal(await h.pendingCount('meeting'),1);
+  h.navigator.onLine=true;await h.drainQueue();assert.equal(await h.pendingCount('meeting'),0);
+});
+
+test('storage selection failure still waits for an active source before rejecting the drain',async()=>{
+  let releaseSlow,fastFinished;
+  const slow=new Promise(resolve=>{releaseSlow=resolve;}),fast=new Promise(resolve=>{fastFinished=resolve;});
+  const h=harness(new IDBFactory(),async(_path,_method,c)=>{if(c.sourceId==='mic')await slow;else fastFinished();});
+  h.setQueueRecords(['meeting']);await h.enqueue('meeting',chunk('mic'));await h.enqueue('meeting',chunk('tab'));
+  let settled=false;const draining=h.drainQueue().then(()=>null,error=>error).finally(()=>{settled=true;});await fast;
+  const original=IDBObjectStore.prototype.index;
+  IDBObjectStore.prototype.index=function(name){if(name==='lane')throw new Error('synthetic storage failure');return original.call(this,name);};
+  try{
+    await new Promise(resolve=>setTimeout(resolve,15));assert.equal(settled,false,'a storage failure must not detach pending ACKs');
+    releaseSlow();assert.match((await draining)?.message||'',/synthetic storage failure/);
+  }finally{releaseSlow();await draining;IDBObjectStore.prototype.index=original;}
+  assert.equal(await h.pendingCount('meeting'),0);
+});

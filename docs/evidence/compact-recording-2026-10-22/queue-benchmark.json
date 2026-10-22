@@ -1,0 +1,50 @@
+{
+  "syntheticAckDelaysMs": {
+    "microphone": 40,
+    "meeting": 2
+  },
+  "packetsPerSource": 10,
+  "repeats": 3,
+  "realNetwork": false,
+  "realAsr": false,
+  "results": [
+    {
+      "label": "before",
+      "fastSourceMedianMs": 388,
+      "allSourcesMedianMs": 425,
+      "runs": [
+        {
+          "fastSourceMs": 386,
+          "allSourcesMs": 425
+        },
+        {
+          "fastSourceMs": 398,
+          "allSourcesMs": 437
+        },
+        {
+          "fastSourceMs": 388,
+          "allSourcesMs": 425
+        }
+      ]
+    },
+    {
+      "label": "after",
+      "fastSourceMedianMs": 42,
+      "allSourcesMedianMs": 421,
+      "runs": [
+        {
+          "fastSourceMs": 48,
+          "allSourcesMs": 435
+        },
+        {
+          "fastSourceMs": 42,
+          "allSourcesMs": 421
+        },
+        {
+          "fastSourceMs": 28,
+          "allSourcesMs": 416
+        }
+      ]
+    }
+  ]
+}

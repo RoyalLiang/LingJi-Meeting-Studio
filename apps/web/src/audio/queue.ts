@@ -11,6 +11,7 @@ const MAX_BYTES = 48 * 1024 * 1024;
 let database: Promise<IDBDatabase> | undefined;
 let permittedRecords = new Set<string>(), uploading = false;
 let draining: Promise<void> | undefined;
+let wakeDrain: (() => void) | undefined;
 export const setQueueRecords = (ids: string[]) => { permittedRecords = new Set(ids); };
 function db() {
   return database ||= new Promise<IDBDatabase>((resolve, reject) => {
@@ -94,33 +95,49 @@ async function remove(entry:Pending){
 }
 export function drainQueue(onChange?:()=>void): Promise<void>{
   // Finishing capture must join the current upload, then check for its flushed tail.
-  if(draining)return draining.then(()=>drainQueue(onChange));
+  if(draining){wakeDrain?.();return draining.then(()=>drainQueue(onChange));}
   if(!canUpload())return Promise.resolve();uploading=true;
-  draining=run().finally(()=>{uploading=false;draining=undefined;});
+  draining=run().finally(()=>{uploading=false;draining=undefined;wakeDrain=undefined;});
   return draining;
   async function run(){
-    const blocked=new Set<string>();let failure:unknown;
+    const blocked=new Set<string>(),active=new Map<string,Promise<void>>();let failure:unknown,completed=0;
+    try {
     while(canUpload()){
-      const entries=await heads(blocked);if(!entries.length)break;
-      let next=0;
-      await Promise.all(Array.from({length:parallelism()}).map(async()=>{
-        while(next<entries.length){
-          const entry=entries[next++];if(!permittedRecords.has(entry.recordId))continue;
+      let notified=false;
+      const notification=new Promise<void>(resolve=>{wakeDrain=()=>{notified=true;resolve();};});
+      const generation=completed;
+      const entries=await heads(new Set([...blocked,...active.keys()]));
+      // ACKs can finish while IndexedDB is selecting heads. Re-read instead of
+      // waiting on another source with an otherwise unused upload slot.
+      if(notified||completed!==generation)continue;
+      for(const entry of entries){
+        if(active.size>=parallelism()||!canUpload())break;
+        if(!permittedRecords.has(entry.recordId))continue;
+        const key=lane(entry);
+        const request=(async()=>{
           const started=performance.now();
           trace('audio.queue-age',{recordId:entry.recordId,sourceId:entry.chunk.sourceId,queueMs:Date.now()-entry.createdAt,durationMs:Date.now()-entry.createdAt});
           try{
             await uploadAudio(`/records/${entry.recordId}/audio`,entry.chunk);
             await remove(entry);trace('audio.ack',{recordId:entry.recordId,sourceId:entry.chunk.sourceId,sequence:entry.chunk.sequence,bytes:entry.bytes,durationMs:performance.now()-started});onChange?.();
           }catch(error){
-            if(error instanceof ApiError && error.status===410){await remove(entry);onChange?.();}
-            else{blocked.add(lane(entry));if(!(error instanceof ApiError && error.status===404))failure ||= error;}
+            if(error instanceof ApiError&&error.status===410){await remove(entry);onChange?.();}
+            else{blocked.add(key);if(!(error instanceof ApiError&&error.status===404))failure ||= error;}
           }
-        }
-      }));
+        })().catch(error=>{blocked.add(key);failure ||= error;}).finally(()=>{active.delete(key);completed++;});
+        active.set(key,request);
+      }
+      if(!active.size)break;
+      await Promise.race([...active.values(),notification]);
+    }
+    } finally {
+      // Network, storage and account changes must never detach an in-flight ACK.
+      await Promise.allSettled(active.values());
     }
     if(failure)throw failure;
   }
 }
+
 export async function clearRecordAudio(recordId:string){
   const connection=await db();
   // Cursor reads one payload at a time; aggregate byte accounting stays in the same transaction.

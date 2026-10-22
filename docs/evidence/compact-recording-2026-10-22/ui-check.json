@@ -1,0 +1,230 @@
+{
+  "syntheticDataOnly": true,
+  "realDevicesOpened": false,
+  "warningDoesNotShiftLayout": true,
+  "dismissalSurvivesRefresh": true,
+  "warningCanReopen": true,
+  "toolbarSettingsDialog": true,
+  "stopMs": 75,
+  "stoppedWhileTwoUploadsPending": true,
+  "twoSourceTailAcknowledged": true,
+  "layouts": [
+    {
+      "width": 1440,
+      "theme": "light",
+      "headerWidth": 1050,
+      "rowWidth": 1018,
+      "rowScrollWidth": 1018,
+      "bodyOverflow": false,
+      "centers": [
+        306.6953125,
+        306.6875,
+        306.6875
+      ],
+      "sources": 2,
+      "icons": [
+        {
+          "name": "原音待结束",
+          "text": ""
+        },
+        {
+          "name": "导出",
+          "text": ""
+        },
+        {
+          "name": "分享",
+          "text": ""
+        },
+        {
+          "name": "实时翻译",
+          "text": ""
+        },
+        {
+          "name": "归档",
+          "text": ""
+        },
+        {
+          "name": "整理设置",
+          "text": ""
+        }
+      ],
+      "controls": [
+        {
+          "width": 37,
+          "height": 34
+        },
+        {
+          "width": 37,
+          "height": 34
+        },
+        {
+          "width": 96.78125,
+          "height": 34
+        }
+      ]
+    },
+    {
+      "width": 1100,
+      "theme": "light",
+      "headerWidth": 778,
+      "rowWidth": 746,
+      "rowScrollWidth": 746,
+      "bodyOverflow": false,
+      "centers": [
+        306.6953125,
+        306.6875,
+        306.6875
+      ],
+      "sources": 2,
+      "icons": [
+        {
+          "name": "原音待结束",
+          "text": ""
+        },
+        {
+          "name": "导出",
+          "text": ""
+        },
+        {
+          "name": "分享",
+          "text": ""
+        },
+        {
+          "name": "实时翻译",
+          "text": ""
+        },
+        {
+          "name": "归档",
+          "text": ""
+        },
+        {
+          "name": "整理设置",
+          "text": ""
+        }
+      ],
+      "controls": [
+        {
+          "width": 37,
+          "height": 34
+        },
+        {
+          "width": 37,
+          "height": 34
+        },
+        {
+          "width": 96.78125,
+          "height": 34
+        }
+      ]
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "headerWidth": 348,
+      "rowWidth": 328,
+      "rowScrollWidth": 328,
+      "bodyOverflow": false,
+      "centers": [
+        554.890625,
+        554.890625,
+        554.890625
+      ],
+      "sources": 2,
+      "icons": [
+        {
+          "name": "原音待结束",
+          "text": ""
+        },
+        {
+          "name": "导出",
+          "text": ""
+        },
+        {
+          "name": "分享",
+          "text": ""
+        },
+        {
+          "name": "实时翻译",
+          "text": ""
+        },
+        {
+          "name": "归档",
+          "text": ""
+        },
+        {
+          "name": "整理设置",
+          "text": ""
+        }
+      ],
+      "controls": [
+        {
+          "width": 44,
+          "height": 44
+        },
+        {
+          "width": 44,
+          "height": 44
+        },
+        {
+          "width": 44,
+          "height": 44
+        }
+      ]
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "headerWidth": 348,
+      "rowWidth": 328,
+      "rowScrollWidth": 328,
+      "bodyOverflow": false,
+      "centers": [
+        554.890625,
+        554.890625,
+        554.890625
+      ],
+      "sources": 2,
+      "icons": [
+        {
+          "name": "原音待结束",
+          "text": ""
+        },
+        {
+          "name": "导出",
+          "text": ""
+        },
+        {
+          "name": "分享",
+          "text": ""
+        },
+        {
+          "name": "实时翻译",
+          "text": ""
+        },
+        {
+          "name": "归档",
+          "text": ""
+        },
+        {
+          "name": "整理设置",
+          "text": ""
+        }
+      ],
+      "controls": [
+        {
+          "width": 44,
+          "height": 44
+        },
+        {
+          "width": 44,
+          "height": 44
+        },
+        {
+          "width": 44,
+          "height": 44
+        }
+      ]
+    }
+  ],
+  "errors": []
+}
