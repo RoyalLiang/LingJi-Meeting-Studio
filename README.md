@@ -1,3 +1,7 @@
+# v0.1.5 豆包音频纪要发布准备（2026-10-22）
+
+本轮豆包音频纪要已准备 v0.1.5 测试版，由后台 GitHub Actions 构建和发布；见[安装与模型配置](docs/releases/v0.1.5-preview.md)。发布完成以 Actions 和 Release 附件为准。
+
 # 聆记 · LingJi Meeting Studio
 
 把会议录音、逐字稿和有出处的 AI 纪要放在同一个工作台。

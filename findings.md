@@ -73,3 +73,9 @@
 官方音频理解文档列出 doubao-seed-2-1-lite-260915 和 Responses input_audio/audio_url。真实合成中文音频（无转录输入）成功返回负责人小林、下周三前截止和上线待定，76 个增量，17145ms。证据：.agent-runtime/doubao-audio-20261022/probe-result.json。不得存储测试密钥到跟踪文件。
 
 真实应用工作流通过，ASR fixture；纪要带2条冻结版本引用及原音映射，56.483秒、5513 tokens。独立复核修复冻结模型和发送告知；定向11项与全量385项通过。
+
+## 2026-10-22 豆包发布
+
+远端 main=a8a409e，v0.1.3 已使用；本轮采用 v0.1.4。gh 不在 PATH，Python urllib 缺本机 CA 信任；系统 curl TLS 验证成功，规范仓库 RoyalLiang/LingJi-Meeting-Studio。使用 Git＋GitHub API，保留 IDE 未提交变更。
+
+v0.1.4 在准备期间被并行播放器修复占用（cba5dc8，父 a8a409e）。本轮保留其标签并采用 v0.1.5 / bundle0.1.27；自身未推送的发布准备提交可安全 amend，随后隔离合并。

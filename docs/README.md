@@ -1,3 +1,7 @@
+# v0.1.5 豆包音频纪要发布准备（2026-10-22）
+
+豆包音频纪要 v0.1.5 已准备后台发布，见[安装与模型配置](releases/v0.1.5-preview.md)；实际发布状态以 Actions 和 Release 回执为准。
+
 # v0.1.3 播放器与 macOS 安全提示说明（2026-10-22）
 
 已按用户选择实现 A 版完整单行控制；新增跳转、拖动与倍速。正式 Developer ID 签名与 Apple 公证仍受账号缺失阻塞。见[安装说明](releases/v0.1.3-preview.md)、[安全提示](releases/macos-trust.md)和[本地验证](evidence/playback-a-trust-2026-10-22.md)。远端发布以 Actions 与发布回执为准。
