@@ -9,7 +9,7 @@ on:
       tag:
         description: Existing vX.Y.Z source tag (published tags are never moved)
         required: true
-        default: v0.1.3
+        default: v0.1.4
         type: string
       source_sha:
         description: Expected full source commit; reject a moved tag
