@@ -49,10 +49,14 @@ export class PlaybackTransport {
     this.requested = true;
     const tracks = this.tracks();
     this.activeTracks = tracks;
-    this.setRate(this.rate);
     const results = await Promise.allSettled(tracks.filter(media => !finiteDuration(media) || media.currentTime < media.duration)
       .map(async media => {
-        try { if (media.error) media.load(); await media.play(); }
+        try {
+          if (media.error) media.load();
+          // load() resets playbackRate to defaultPlaybackRate in browser media elements.
+          media.playbackRate = this.rate; media.preservesPitch = true;
+          await media.play();
+        }
         catch (error) { if (generation === this.generation) this.pause(); throw error; }
       }));
     // A reset or pause must also cancel a play() that was still loading.
