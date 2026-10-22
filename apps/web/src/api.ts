@@ -43,7 +43,7 @@ const messages: Record<string, string> = {
   asr_not_configured: '尚未配置语音识别服务。', minutes_not_configured: '尚未配置纪要模型，请联系服务维护者。',
   record_not_finalized: '音频仍在补传或转录，请等待处理完成。', empty_transcript: '还没有可总结的转录。',
   notes_revision_conflict: '笔记已有更新，请保留当前内容并重新载入后合并。', minutes_revision_conflict: '纪要已有更新，请重新载入后合并。',
-  segment_revision_conflict: '这段转录已有更新，请重新载入后合并。', record_duration_limit: '本次记录已达到两小时音频配额。',
+  segment_revision_conflict: '这段转录已有更新，请重新载入后合并。', realtime_audio_consent_required: '请在整理设置中明确开启音频直接理解，授权本场音频发送到 Realtime。', realtime_not_configured: '请先配置 OpenAI Realtime 地址、模型和密钥。', realtime_connection_failed: 'Realtime 连接失败，转录仍独立进行。', realtime_connection_closed: 'Realtime 连接中断，将从本机音频恢复。', realtime_provider_error: 'Realtime 服务拒绝了请求，请核对服务地址、模型和权限。', realtime_timeout: 'Realtime 请求超时，请稍后重试。', realtime_audio_unavailable: 'Realtime 需要的原音已不可用，可切回转录后整理。', invalid_realtime_response: 'Realtime 返回的内容无法校验，请重试。', realtime_response_incomplete: 'Realtime 响应未完成，请重试。', record_chunk_limit: '本次会议的音频片段已达到资源上限，请结束后新建会议。', record_duration_limit: '旧版服务仍有音频时长限制，请升级服务后继续。',
   csrf_required: '登录状态已变化，请重新登录。', session_expired: '登录已过期，请重新登录。', login_rate_limited: '尝试过于频繁，请一分钟后重试。',
   temporary_audio_expired: '临时音频已超过 24 小时保存期，请重新导入原音。', audio_identity_conflict: '音频身份发生冲突，已保留本地数据，请导出并联系维护者。', share_expired_or_revoked: '分享已过期或被撤销。',
   minutes_unavailable: '还没有已保存的会议纪要，请生成后再导出。',

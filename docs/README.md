@@ -1,3 +1,7 @@
+## 本地 Realtime 与长会议增量（2026-10-22）
+
+新增可选 OpenAI Realtime 原音理解与并行转录留证，保留旧 ASR＋LLM；移除两小时累计样本与导入时长上限。见[启用说明](engineering/openai-realtime.md)、[本地验证](evidence/openai-realtime-2026-10-22.md)和[proposed ADR 0016](adr/0016-openai-realtime-minutes.md)。本地验证不代表真实供应商或长录制验收，尚未发布。
+
 # 本地 C 版录音区增量（2026-10-22）
 
 用户已确认 C「一体会议头部」。气泡提示、单行录音区、图标工具栏、齿轮设置和跨音源队列优化已实现并通过本地验证，见[验证与截图](evidence/compact-recording-c-2026-10-22.md)。当前公开 v0.1.1 不含本轮增量，尚无新安装包。
