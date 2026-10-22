@@ -1,3 +1,5 @@
+import { audioMinutesEnabled } from './config.mjs';
+import { testDoubaoAudio } from './doubao-audio-minutes.mjs';
 import {learningRoutes} from './learning-routes.mjs';
 import { telemetry } from './telemetry.mjs';
 import { clientUpdateBarrier } from './client-update.mjs';
@@ -117,6 +119,7 @@ export async function createRecordServer(options = {}) {
         requireThat(['asr', 'minutes'].includes(kind), 'invalid_provider_test', 400);
         if (kind === 'asr') await transcribe(Buffer.alloc(6400), {language:'zh'}, {}, config);
         else if (realtimeEnabled(config)) await testRealtime(config);
+      else if (config.MINUTES_MODE === 'doubao-audio') await testDoubaoAudio(config);
       else await completeJson([{role:'system', content:'Return JSON {ok:true}.'},{role:'user',content:'Synthetic connectivity check.'}], config);
         send(res, 200, {message: '连接测试通过。真实会议识别质量仍需试录核对。'}); return;
       }
@@ -135,7 +138,7 @@ export async function createRecordServer(options = {}) {
         if (input.workspaceId) { requireThat(!['all', 'inbox'].includes(input.workspaceId), 'invalid_workspace', 400); await requireWorkspace(repo, user.id, input.workspaceId); }
         const config = await readConfig(repo.root);
       requireThat(!input.autoMinutes || providerStatus(config).minutes, 'minutes_not_configured', 503);
-      requireThat(!input.autoMinutes || !realtimeEnabled(config) || input.realtimeAudioConsent === true, 'realtime_audio_consent_required', 403);
+      requireThat(!input.autoMinutes || !audioMinutesEnabled(config) || input.realtimeAudioConsent === true, 'realtime_audio_consent_required', 403);
         const r = await repo.insert(createRecord(user.id, {...input,learningEnabled:await learningEnabled()}));
         send(res, 201, publicRecord(r)); return;
       }
@@ -152,7 +155,7 @@ export async function createRecordServer(options = {}) {
         const body = await readBody(req, 4000);
         const config = await readConfig(repo.root);
       requireThat(!body.enabled || providerStatus(config).minutes, 'minutes_not_configured', 503);
-      requireThat(!body.enabled || !realtimeEnabled(config) || record.realtimeAudioConsent || body.realtimeAudioConsent === true, 'realtime_audio_consent_required', 403);
+      requireThat(!body.enabled || !audioMinutesEnabled(config) || record.realtimeAudioConsent || body.realtimeAudioConsent === true, 'realtime_audio_consent_required', 403);
         const result = await changeOwned(id, user, r => { setAutomation(r, body); return publicRecord(r); });
         send(res, 200, result); return;
       }
@@ -286,7 +289,7 @@ export async function createRecordServer(options = {}) {
         const config = await readConfig(repo.root), mode = body.mode || 'model';
         requireThat(['model', 'extractive'].includes(mode), 'invalid_minutes_mode', 400);
         requireThat(mode === 'extractive' || providerStatus(config).minutes || providerStatus(config).fixture, 'minutes_not_configured', 503);
-        requireThat(mode !== 'model' || !realtimeEnabled(config) || record.realtimeAudioConsent || body.realtimeAudioConsent === true, 'realtime_audio_consent_required', 403);
+        requireThat(mode !== 'model' || !audioMinutesEnabled(config) || record.realtimeAudioConsent || body.realtimeAudioConsent === true, 'realtime_audio_consent_required', 403);
       result = await changeOwned(id, user, r => { if (mode === 'model' && body.realtimeAudioConsent === true) r.realtimeAudioConsent = true; return requestMinutes(r, { ...body, mode, modelVersion: mode === 'extractive' ? 'local-extractive-v1' : minutesModelVersion(config) || 'default' }); });
       }
       else if (action === 'minutes' && req.method === 'PATCH') result = await changeOwned(id, user, r => {

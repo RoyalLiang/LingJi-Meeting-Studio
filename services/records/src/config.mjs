@@ -53,7 +53,8 @@ export async function saveConfig(root, input, env = process.env) {
   const next = { ...current, ...values };
   requireThat(['doubao', 'doubao-ast', 'deepgram', 'openai-compatible'].includes(next.ASR_PROVIDER), 'invalid_asr_provider', 400);
   requireThat(['chat-completions', 'responses'].includes(next.LLM_PROTOCOL), 'invalid_llm_protocol', 400);
-  requireThat(['asr-llm', 'openai-realtime'].includes(next.MINUTES_MODE), 'invalid_minutes_mode', 400);
+  requireThat(['asr-llm', 'openai-realtime', 'doubao-audio'].includes(next.MINUTES_MODE), 'invalid_minutes_mode', 400);
+  requireThat(next.MINUTES_MODE !== 'doubao-audio' || next.LLM_PROTOCOL === 'responses', 'doubao_audio_requires_responses', 400);
   parseAsrHotwords(next.DOUBAO_ASR_HOTWORDS);
   const context=parseAsrContext(next.DOUBAO_ASR_CONTEXT);
   for (const key of ['OPENAI_REALTIME_URL', 'DOUBAO_ASR_URL', 'DOUBAO_AST_BASE_URL', 'ASR_API_URL', 'LLM_API_URL', 'DOUBAO_TRANSLATION_API_URL']) {
@@ -73,4 +74,6 @@ export async function saveConfig(root, input, env = process.env) {
   return publicConfig(next);
 }
 
-export const minutesModelVersion = config => config.MINUTES_MODE === 'openai-realtime' ? `openai-realtime:${config.OPENAI_REALTIME_MODEL}` : config.LLM_MODEL;
+export const minutesModelVersion = config => config.MINUTES_MODE === 'openai-realtime' ? `openai-realtime:${config.OPENAI_REALTIME_MODEL}` : config.MINUTES_MODE === 'doubao-audio' ? `doubao-audio:${config.LLM_MODEL}` : config.LLM_MODEL;
+
+export const audioMinutesEnabled = config => ['openai-realtime', 'doubao-audio'].includes(config.MINUTES_MODE);
