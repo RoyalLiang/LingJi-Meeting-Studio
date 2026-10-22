@@ -111,7 +111,7 @@ WORK-ID：TTS-20261022-MEETING-LIFECYCLE。源码提交 `9db4982`，本轮未推
 
 - [x] 读取持续授权发布规则，核对 main 与标签。
 - [x] 版本、安装说明与发布说明同步；隔离合并后386项Node与lint/typecheck/build、119文档检查通过。
-- [ ] 原子推送 main＋v0.1.5，等待后台 Actions verify/build/publish。
-- [ ] 校验源码、五附件、摘要与运行回执，补记并推送证据。
+- [x] 原子推送 main＋v0.1.5，后台 Actions verify/build/publish 均通过。
+- [x] 校验223个源码文件、五附件摘要与只读验包；同版本回执与机器校验结果已备齐。
 
 发布计划修订：v0.1.4 已由并行播放器修复 cba5dc8 占用并推送；保留该标签，本轮改为 v0.1.5，并在隔离目录合入远端 main。初次预检发现占用，未推送豆包 v0.1.4。

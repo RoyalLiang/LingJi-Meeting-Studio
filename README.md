@@ -1,6 +1,6 @@
-# v0.1.5 豆包音频纪要发布准备（2026-10-22）
+# v0.1.5 豆包音频纪要已发布（2026-10-22）
 
-本轮豆包音频纪要已准备 v0.1.5 测试版，由后台 GitHub Actions 构建和发布；见[安装与模型配置](docs/releases/v0.1.5-preview.md)。发布完成以 Actions 和 Release 附件为准。
+v0.1.5 已由后台 GitHub Actions 构建并发布，五附件完整下载与摘要核对通过。见[安装与模型配置](docs/releases/v0.1.5-preview.md)及[发布回执](docs/evidence/preview-v0.1.5-2026-10-22.md)。
 
 # 聆记 · LingJi Meeting Studio
 
@@ -8,15 +8,15 @@
 
 聆记面向中文会议，提供浏览器工作台与独立桌面客户端。可以采集麦克风和会议音轨、查看转录、整理主题与行动候选，并沿引用回到原文和原音。纪要可人工修改，后台重新整理不会覆盖人工编辑。
 
-**当前版本：v0.1.4，公开测试版。** 本次提供源码与 macOS Apple Silicon 测试安装包。真实会议识别质量、长时间录制和全新设备安装仍需试用验证。
+**当前版本：v0.1.5，公开测试版。** 本次提供源码与 macOS Apple Silicon 测试安装包。真实会议识别质量、长时间录制和全新设备安装仍需试用验证。
 
-[下载测试版](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.4) · [安装说明](docs/releases/v0.1.4-preview.md) · [文档目录](docs/README.md) · [问题反馈](https://github.com/RoyalLiang/LingJi-Meeting-Studio/issues)
+[下载测试版](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.5) · [安装说明](docs/releases/v0.1.5-preview.md) · [文档目录](docs/README.md) · [问题反馈](https://github.com/RoyalLiang/LingJi-Meeting-Studio/issues)
 
 ![聆记工作台预览](docs/assets/workbench-preview.png)
 
 上图使用虚构会议和隔离测试数据，仅展示界面，不代表真实识别结果。
 
-本版采用已确认的 A 版单行播放器，支持前后跳转 15 秒、拖动进度与 0.75×–2× 倍速。构建与发布以 [GitHub Actions](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/workflows/preview-release.yml) 和 Release 附件为准，[本轮验证](docs/evidence/playback-a-trust-2026-10-22.md)。
+本版新增豆包原生音频纪要，保留并行转录留证、ASR＋LLM 和 OpenAI Realtime；继承已确认的 A 版单行播放器、前后跳转 15 秒、拖动进度与 0.75×–2× 倍速。构建与发布以 [GitHub Actions](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/workflows/preview-release.yml) 和 Release 附件为准，[本轮验证](docs/evidence/playback-a-trust-2026-10-22.md)。
 
 ## 能做什么
 
@@ -45,8 +45,8 @@
 
 ## 安装 macOS 测试版
 
-1. 从 [v0.1.4 发布页](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.4)下载 `Lingji-0.1.4-macos-arm64.dmg` 和校验文件。
-2. 按[安装说明](docs/releases/v0.1.4-preview.md)核对 SHA-256，将 **聆记 Preview.app** 拖到 Applications。
+1. 从 [v0.1.5 发布页](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.5)下载 `Lingji-0.1.5-macos-arm64.dmg` 和校验文件。
+2. 按[安装说明](docs/releases/v0.1.5-preview.md)核对 SHA-256，将 **聆记 Preview.app** 拖到 Applications。
 3. 首次打开时按 macOS 提示处理应用信任和采集授权，在设置中填写自己的服务配置。
 
 Apple 无法验证开发者的原因与单应用授权步骤见[macOS 安全提示说明](docs/releases/macos-trust.md)。当前尚无 Apple Developer Program 账号，未完成正式签名公证，安装仍可能被拦截。

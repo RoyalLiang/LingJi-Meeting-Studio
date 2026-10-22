@@ -79,3 +79,5 @@
 远端 main=a8a409e，v0.1.3 已使用；本轮采用 v0.1.4。gh 不在 PATH，Python urllib 缺本机 CA 信任；系统 curl TLS 验证成功，规范仓库 RoyalLiang/LingJi-Meeting-Studio。使用 Git＋GitHub API，保留 IDE 未提交变更。
 
 v0.1.4 在准备期间被并行播放器修复占用（cba5dc8，父 a8a409e）。本轮保留其标签并采用 v0.1.5 / bundle0.1.27；自身未推送的发布准备提交可安全 amend，随后隔离合并。
+
+v0.1.5 Actions 39767980520 三阶段通过；五附件完整下载与API摘要通过，223个源码文件与整体清单摘要一致。本机只读DMG/签名/架构/版本/豆包模块检查通过；未安装App或采集真实设备。

@@ -1,0 +1,128 @@
+{
+  "version": "0.1.5",
+  "sourceSha": "fae01b0c499ebdb6fcfc95a64a79ba980b20c486",
+  "runId": "39767980520",
+  "runUrl": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/39767980520",
+  "releaseUrl": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.5",
+  "assets": [
+    {
+      "name": "INSTALL-macos-arm64.md",
+      "bytes": 3609,
+      "sha256": "a11f788f6dab58c80687360287d84f837a7c84be5f4848dde01a8ac6958ff864",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.5/INSTALL-macos-arm64.md",
+      "apiDigestMatched": true
+    },
+    {
+      "name": "Lingji-0.1.5-macos-arm64.dmg",
+      "bytes": 47460661,
+      "sha256": "7b28bf6f85e516da3d826fa0d1438f145e1a44ac2329e90fbd8e4df9a74eae6c",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.5/Lingji-0.1.5-macos-arm64.dmg",
+      "apiDigestMatched": true
+    },
+    {
+      "name": "package-smoke.json",
+      "bytes": 389,
+      "sha256": "55f626566ed973cb55d6704d7c7958253dd98e6dc864cc99615e7307c26942de",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.5/package-smoke.json",
+      "apiDigestMatched": true
+    },
+    {
+      "name": "release.json",
+      "bytes": 37891,
+      "sha256": "75b5a53a96df51277cd5769c8d30a589a4bc9fe106cf5a77379b61e4778eb41d",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.5/release.json",
+      "apiDigestMatched": true
+    },
+    {
+      "name": "SHA256SUMS.txt",
+      "bytes": 95,
+      "sha256": "5db271e3a93bcf4cf68d70e0fd144d516944f3b0ff1e072036060f1284953fcc",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.5/SHA256SUMS.txt",
+      "apiDigestMatched": true
+    }
+  ],
+  "sourceFilesMatched": 223,
+  "sourceManifestMatched": true,
+  "checksumMatched": true,
+  "packageSmoke": {
+    "timestamp": "2026-10-22T11:17:53.824Z",
+    "packagedApp": true,
+    "independentBackend": true,
+    "developerBackendRequests": 0,
+    "restartPersistence": true,
+    "stableWebviewProfile": true,
+    "parentOwnsBackend": true,
+    "localAccount": true,
+    "devAccountDisabled": true,
+    "node": "v24.21.0",
+    "sqlite": "3.53.4",
+    "realAudioDevicesOpened": false,
+    "realProvidersInvoked": false
+  },
+  "validation": {
+    "imageVerified": true,
+    "copiedAppSignatureVerified": true,
+    "productionSmoke": true,
+    "realAudioDevicesTested": false,
+    "realProvidersTested": false,
+    "freshMachineTested": false
+  },
+  "signing": "ad-hoc",
+  "notarized": false,
+  "localPackageInspection": {
+    "imageVerified": true,
+    "signatureVerified": true,
+    "architecture": "arm64",
+    "version": "0.1.5",
+    "bundleVersion": "0.1.27",
+    "bundleIdentifier": "com.tts.meeting",
+    "minimumSystemVersion": "14.6",
+    "doubaoModuleMatchesSource": true,
+    "doubaoModuleSha256": "5a4b8550a1afc8f680e9890a8f6c8f045b4ac1d51119bf0639971461d5ec2e24",
+    "applicationInstalled": false,
+    "applicationLaunched": false,
+    "realAudioDevicesOpened": false,
+    "sourceSha": "fae01b0c499ebdb6fcfc95a64a79ba980b20c486"
+  },
+  "workflow": {
+    "event": "push",
+    "status": "completed",
+    "conclusion": "success",
+    "headSha": "fae01b0c499ebdb6fcfc95a64a79ba980b20c486",
+    "headBranch": "v0.1.5",
+    "jobs": [
+      {
+        "id": 119788082481,
+        "name": "verify",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2026-10-22T11:05:35Z",
+        "completed_at": "2026-10-22T11:05:42Z"
+      },
+      {
+        "id": 119788141892,
+        "name": "build",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2026-10-22T11:05:44Z",
+        "completed_at": "2026-10-22T11:18:16Z"
+      },
+      {
+        "id": 119793376477,
+        "name": "publish",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2026-10-22T11:18:19Z",
+        "completed_at": "2026-10-22T11:18:44Z"
+      }
+    ]
+  },
+  "publishedAt": "2026-10-22T11:18:39Z",
+  "localMergedValidation": {
+    "nodeTests": 386,
+    "lint": "passed",
+    "typecheck": "passed",
+    "webBuild": "passed",
+    "markdownFiles": 119
+  }
+}
