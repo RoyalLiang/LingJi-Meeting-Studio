@@ -95,3 +95,8 @@
 - [工作目录与历史会议分析](engineering/workspaces.md)：目录归档、统计口径、有来源的按需洞察、阅读控件与本地验收。
 
 - [智能纪要主阅读区与实时翻译](engineering/intelligent-minutes.md)：当前讨论、可查来源的总结表格与图表、自动跟随，以及专用豆包翻译配置和验证边界。
+
+## 豆包音频纪要本地接入
+
+- [App 配置与验证边界](engineering/doubao-audio.md)
+- [2026-10-22 真实接口与本地回归证据](evidence/doubao-audio-2026-10-22.md)

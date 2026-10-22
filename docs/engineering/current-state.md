@@ -1,5 +1,9 @@
 # 播放器 A 版增量（2026-10-22）
 
+## 2026-10-22 豆包音频纪要本地增量
+
+已在本地实现可选 `doubao-audio` 模式（`f189cf7`），通过 Responses 原生音频输入，保留并行转录版本引用、ASR＋LLM 和 OpenAI Realtime。真实合成语音探针及真实纪要模型工作流通过；工作流 ASR 为 fixture，真实设备长录音与安装包为 NOT_VERIFIED。见[配置说明](doubao-audio.md)和[测试证据](../evidence/doubao-audio-2026-10-22.md)。
+
 已按用户选择实现 A 版完整单行控制；新增跳转、拖动与倍速。正式 Developer ID 签名与 Apple 公证仍受账号缺失阻塞。见[安装说明](../releases/v0.1.3-preview.md)、[安全提示](../releases/macos-trust.md)和[本地验证](../evidence/playback-a-trust-2026-10-22.md)。远端发布以 Actions 与发布回执为准。
 
 # v0.1.2 长会议与恢复已发布（2026-10-22）
