@@ -1,10 +1,31 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, readFile, rename, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { loadPreview, publishPreview, verifyInventory } from '../scripts/publish-preview-release.mjs';
+import { loadPreview, publishPreview, verifyInventory, assertReleaseEvent } from '../scripts/publish-preview-release.mjs';
+
+test('a follow-up preview publishes its version and the changes from its own installer guide', async t => {
+  const {options,metadata}=await fixture(t);
+  options.tag='v0.1.1';
+  const oldArtifact=metadata.artifact;
+  metadata.version='0.1.1';metadata.artifact='Lingji-0.1.1-macos-arm64.dmg';
+  await rename(join(options.directory,oldArtifact),join(options.directory,metadata.artifact));
+  await writeFile(join(options.directory,'release.json'),JSON.stringify(metadata));
+  await writeFile(join(options.directory,'SHA256SUMS.txt'),metadata.sha256+'  '+metadata.artifact+'\n');
+  const changes='- 修复会议收尾等待后台上传\n- 优化处理提示\n- 新会议按创建时间靠前\n- 减少启动重复写入';
+  await writeFile(join(options.directory,'INSTALL-macos-arm64.md'),'# 0.1.1\n\n## 本版变化\n'+changes+'\n\n## 安装\nDo not include the rest as changes.');
+  const server=remote(options);
+  const result=await publishPreview({...options,api:server.api});
+  assert.equal(result.published,true);
+  assert.match(server.release.name,/v0\.1\.1.*Public Preview/);
+  assert.doesNotMatch(server.release.name,/首次|First Public/);
+  assert.ok(server.release.body.includes(changes));
+  assert.match(server.release.body,/Lingji-0\.1\.1-macos-arm64\.dmg/);
+  assert.doesNotMatch(server.release.body,/Do not include the rest|v0\.1\.0/);
+  assert.match((await readFile(join(options.directory,'INSTALL-macos-arm64.md'),'utf8')),/0\.1\.1/);
+});
 
 async function fixture(t) {
   const directory=await mkdtemp(join(tmpdir(),'preview-publish-'));t.after(()=>rm(directory,{recursive:true,force:true}));
@@ -78,4 +99,19 @@ test('preview publication refuses a saved draft published after the list snapsho
   const server=remote(options,draft,({method,path,release})=>{if(method==='GET' && path.endsWith('/releases/8'))release.draft=false;});
   await assert.rejects(publishPreview({...options,api:server.api}));
   assert.equal(server.writes.length,0);
+});
+
+
+test('publication entry accepts only main manual dispatch or its exact version tag push', () => {
+  const base={tag:'v0.1.1',commit:'a'.repeat(40),workflowSha:'a'.repeat(40)};
+  assert.doesNotThrow(()=>assertReleaseEvent({...base,eventName:'push',ref:'refs/tags/v0.1.1'}));
+  assert.doesNotThrow(()=>assertReleaseEvent({...base,eventName:'workflow_dispatch',ref:'refs/heads/main',workflowSha:'b'.repeat(40)}));
+  for(const event of [
+    {eventName:'push',ref:'refs/heads/main'},
+    {eventName:'push',ref:'refs/tags/v0.1.0'},
+    {eventName:'push',ref:'refs/tags/v0.1.1',workflowSha:'b'.repeat(40)},
+    {eventName:'workflow_dispatch',ref:'refs/heads/dev'},
+    {eventName:'pull_request',ref:'refs/tags/v0.1.1'},
+    {eventName:'repository_dispatch',ref:'refs/heads/main'},
+  ])assert.throws(()=>assertReleaseEvent({...base,...event}));
 });

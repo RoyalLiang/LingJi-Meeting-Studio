@@ -4,9 +4,9 @@
 
 聆记面向中文会议，提供浏览器工作台与独立桌面客户端。可以采集麦克风和会议音轨、查看转录、整理主题与行动候选，并沿引用回到原文和原音。纪要可人工修改，后台重新整理不会覆盖人工编辑。
 
-**当前版本：v0.1.0，首次公开测试版。** 本次提供源码与 macOS Apple Silicon 测试安装包。真实会议识别质量、长时间录制和全新设备安装仍需试用验证。
+**当前版本：v0.1.1，公开测试版。** 本次提供源码与 macOS Apple Silicon 测试安装包。真实会议识别质量、长时间录制和全新设备安装仍需试用验证。
 
-[下载测试版](https://github.com/RoyalLiang/LingJi-MS/releases/tag/v0.1.0) · [安装说明](docs/releases/v0.1.0-preview.md) · [文档目录](docs/README.md) · [问题反馈](https://github.com/RoyalLiang/LingJi-MS/issues)
+[下载测试版](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.1) · [安装说明](docs/releases/v0.1.1-preview.md) · [文档目录](docs/README.md) · [问题反馈](https://github.com/RoyalLiang/LingJi-Meeting-Studio/issues)
 
 ![聆记工作台预览](docs/assets/workbench-preview.png)
 
@@ -39,8 +39,8 @@
 
 ## 安装 macOS 测试版
 
-1. 从 [v0.1.0 发布页](https://github.com/RoyalLiang/LingJi-MS/releases/tag/v0.1.0)下载 `Lingji-0.1.0-macos-arm64.dmg` 和校验文件。
-2. 按[安装说明](docs/releases/v0.1.0-preview.md)核对 SHA-256，将 **聆记 Preview.app** 拖到 Applications。
+1. 从 [v0.1.1 发布页](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.1)下载 `Lingji-0.1.1-macos-arm64.dmg` 和校验文件。
+2. 按[安装说明](docs/releases/v0.1.1-preview.md)核对 SHA-256，将 **聆记 Preview.app** 拖到 Applications。
 3. 首次打开时按 macOS 提示处理应用信任和采集授权，在设置中填写自己的服务配置。
 
 此包采用 ad-hoc 签名，尚无 Apple Developer ID 签名及公证。包中包含运行时，不需要另装 Node。已有 Alpha 用户应先结束录制、等待补传并备份；Preview 与 Alpha 使用相同应用标识，数据目录可能共享，不适合同时运行。
@@ -48,7 +48,7 @@
 ## 从源码启动
 
 ```bash
-git clone https://github.com/RoyalLiang/LingJi-MS.git
+git clone https://github.com/RoyalLiang/LingJi-Meeting-Studio.git
 cd LingJi-MS
 npm ci
 cp .env.example .env
@@ -159,7 +159,7 @@ Node 回归覆盖领域、供应商协议、持久化、恢复、权限、播放
 TTS_RELEASE_SOURCE_REF=<完整提交号> npm run release:macos:preview
 ```
 
-产物写入 `dist/releases/0.1.0/`，包含 DMG、安装说明、SHA-256 和构建来源。同版本已有产物时拒绝覆盖；打包验证使用隔离数据，不替换现有安装。首发可用 [GitHub Actions 构建与发布](docs/releases/actions-preview.md)。正式多平台签名发布与可信更新是独立流程，见[客户端发版](docs/releases/github-client.md)。
+产物写入 `dist/releases/0.1.1/`，包含 DMG、安装说明、SHA-256 和构建来源。同版本已有产物时拒绝覆盖；打包验证使用隔离数据，不替换现有安装。首发可用 [GitHub Actions 构建与发布](docs/releases/actions-preview.md)。正式多平台签名发布与可信更新是独立流程，见[客户端发版](docs/releases/github-client.md)。
 
 ## 常见问题
 
@@ -175,7 +175,7 @@ TTS_RELEASE_SOURCE_REF=<完整提交号> npm run release:macos:preview
 
 ## 反馈、贡献与后续方向
 
-通过 [GitHub Issues](https://github.com/RoyalLiang/LingJi-MS/issues)提供版本、系统/浏览器、音源、最小复现步骤和脱敏日志。提交代码前跑相关回归及上述检查；涉及音频协议、权限和人工编辑时请补失败场景。
+通过 [GitHub Issues](https://github.com/RoyalLiang/LingJi-Meeting-Studio/issues)提供版本、系统/浏览器、音源、最小复现步骤和脱敏日志。提交代码前跑相关回归及上述检查；涉及音频协议、权限和人工编辑时请补失败场景。
 
 后续优先验证真实会议 CER/实体准确率、长会话恢复、全新 Mac 安装及正式签名公证。跨平台安装矩阵、团队身份和直接音频理解需单独设计与验收；[路线图](docs/design/roadmap.md)中的目标不代表已实现。
 
