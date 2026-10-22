@@ -36,7 +36,8 @@ export async function recoverTemporaryAudio(root) {
 export async function recoverLocalWork(repo) {
   for (const record of await repo.list()) {
     if (record.deleted) continue;
-    if(record.capture==='completed' && process.env.RECORD_LEARNING_ENABLED!=='false')await repo.change(record.id,r=>{if(queueLearningReview(r,true))emit(r,'learning.queued');});
+    // Avoid serializing and rebuilding projections for unchanged history.
+    if(record.capture==='completed' && process.env.RECORD_LEARNING_ENABLED!=='false' && queueLearningReview(record,true))await repo.change(record.id,r=>{if(queueLearningReview(r,true))emit(r,'learning.queued');});
     const interrupted = record.jobs.some(job => job.status === 'running') || record.chunks.some(chunk => chunk.lease) || record.intentLease || record.sources.some(source => source.asr?.state === 'running' || source.asr?.lease) || record.segments.some(segment => segment.translationLease);
     if(record.learning?.status==='running')await repo.change(record.id,r=>{r.learning.status='queued';delete r.learning.lease;delete r.learning.fence;emit(r,'learning.recovered');});
     if (!interrupted) continue;

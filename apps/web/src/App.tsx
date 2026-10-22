@@ -1,4 +1,5 @@
 import {LearningReview} from './components/LearningReview';
+import { TranscriptionNotice } from './components/TranscriptionNotice';
 import { useClientUpdates } from './useClientUpdates';
 import { ClientUpdatesPanel } from './components/ClientUpdates';
 import { useNativeMenuBar } from './useNativeMenuBar';
@@ -90,6 +91,7 @@ function Workspace() {
   const [boot, setBoot] = useState<Bootstrap | null>(null), [authReady, setAuthReady] = useState(false), [loading, setLoading] = useState(true);
   const [records, setRecords] = useState<RecordListItem[]>([]), [query, setQuery] = useState(''), [id, setId] = useState(new URLSearchParams(location.search).get('record') || ''), [record, setRecord] = useState<RecordDetail | null>(null);
   const [error, setError] = useState(''), [busy, setBusy] = useState(false), [translationOpen, setTranslationOpen] = useState(false);
+  const [capturePhase, setCapturePhase] = useState<'idle' | 'starting' | 'stopping'>('idle');
   const [toast, setToast] = useState({ message: '', key: 0 });
   const dismissToast = useCallback(() => { setToast(current => ({ ...current, message: '' })); setError(''); }, []);
   const showToast = useCallback((message: string) => { setError(''); setToast(current => ({ message, key: current.key + 1 })); }, []);
@@ -99,6 +101,8 @@ function Workspace() {
   const [connectionState, setConnectionState] = useState<ConnectionState>('idle');
   const recordCache = useRef(new Map<string, RecordDetail>());
   const cacheEpoch = useRef(0);
+  const listRequest = useRef(0), listView = useRef({query, scope});
+  listView.current = {query, scope};
   const [retryVersion, setRetryVersion] = useState(0);
   const rememberRecord = useCallback((detail: RecordDetail) => {
     const cache = recordCache.current; cache.delete(detail.id); cache.set(detail.id, detail);
@@ -127,7 +131,8 @@ function Workspace() {
   const loadBoot = useCallback(() => {
     if (bootRequest.current) return bootRequest.current;
     const request = (async () => {
-    cacheEpoch.current++; recordCache.current.clear(); setError(''); try { const b = await api<Bootstrap>('/bootstrap'); setCsrf(b.csrf); setAudioTransport(b.audioTransport); setLocalQueueBackend(Boolean(b.localAccount)); const list = await api<{records: RecordListItem[]}>('/records'); setQueueRecords(list.records.map(r => r.id)); const folders=await api<{workspaces:WorkspaceDirectory[]}>('/workspaces');setDirectories(folders.workspaces); setBoot(b); setAuthReady(true); return true; }
+    cacheEpoch.current++; recordCache.current.clear(); setError(''); try { const b = await api<Bootstrap>('/bootstrap'); setCsrf(b.csrf); setAudioTransport(b.audioTransport); setLocalQueueBackend(Boolean(b.localAccount)); const [list, folders] = await Promise.all([api<{records: RecordListItem[]}>('/records'), api<{workspaces:WorkspaceDirectory[]}>('/workspaces')]);
+        setQueueRecords(list.records.map(r => r.id)); setDirectories(folders.workspaces); setBoot(b); setAuthReady(true); return true; }
     catch (e) { if (!(e instanceof ApiError && e.status === 401)) setError(messageOf(e)); setAuthReady(false); return false; } finally { setLoading(false); }
     })();
     bootRequest.current = request;
@@ -138,15 +143,20 @@ function Workspace() {
     const next = await api<Bootstrap>('/bootstrap'); setCsrf(next.csrf); setAudioTransport(next.audioTransport); setLocalQueueBackend(Boolean(next.localAccount)); setBoot(next);
   }, []);
   useEffect(() => { void loadBoot(); mounted.current = true; return () => { mounted.current = false; void capture.current?.stop(); }; }, [loadBoot]);
-  const loadList = useCallback(async () => { const result = await api<{ records: RecordListItem[] }>(`/records?q=${encodeURIComponent(query)}&workspace=${encodeURIComponent(scope)}`); setRecords(result.records); }, [query,scope]);
+  const loadList = useCallback(async (signal?: AbortSignal) => {
+    if (listView.current.query !== query || listView.current.scope !== scope) return;
+    const version = ++listRequest.current, epoch = cacheEpoch.current;
+    const result = await api<{ records: RecordListItem[] }>(`/records?q=${encodeURIComponent(query)}&workspace=${encodeURIComponent(scope)}`, 'GET', undefined, signal);
+    if (!signal?.aborted && version === listRequest.current && epoch === cacheEpoch.current && listView.current.query === query && listView.current.scope === scope) setRecords(result.records);
+  }, [query,scope]);
   const refresh = useCallback(async () => {
     const current = activeId.current; if (!current) return;
     const epoch = cacheEpoch.current; const detail = await api<RecordDetail>(`/records/${current}`); if (epoch === cacheEpoch.current) rememberRecord(detail);
   }, [rememberRecord]);
   useEffect(() => {
-    if (!authReady) return; const controller = new AbortController(); const timer = setTimeout(() => { api<{ records: RecordListItem[] }>(`/records?q=${encodeURIComponent(query)}&workspace=${encodeURIComponent(scope)}`, 'GET', undefined, controller.signal).then(d => setRecords(d.records)).catch(e => { if (e.name !== 'AbortError') setError(messageOf(e)); }); }, 180);
+    if (!authReady) return; const controller = new AbortController(); const timer = setTimeout(() => { loadList(controller.signal).catch(e => { if (e.name !== 'AbortError') setError(messageOf(e)); }); }, 180);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [query, scope, authReady]);
+  }, [loadList, authReady]);
   useEffect(() => {
     if (activeId.current !== id || !authReady) { void capture.current?.stop(); capture.current = null; setSignals([]); }
     activeId.current = id; if (!authReady) { cacheEpoch.current++; recordCache.current.clear(); } setRecord(recordCache.current.get(id) || null); setTranslationOpen(false); setEvidence(null);
@@ -204,7 +214,7 @@ function Workspace() {
   }
   async function stopCapture(mode: 'pause' | 'seal' = 'seal', title = '', interrupted = false) {
     if (stopping.current) return false;
-    stopping.current = true; setBusy(true); setError('');
+    stopping.current = true; setBusy(true); setCapturePhase('stopping'); setError('');
     try {
       const controller = capture.current;
       try {
@@ -213,16 +223,21 @@ function Workspace() {
       } catch (error) { if (!interrupted) throw error; }
       setRecording(false);
       if (!activeId.current) return false;
-      const current = await api<RecordDetail>(`/records/${activeId.current}`), manifests = await localManifests(current.id);
-      if (title.trim() && title.trim() !== current.title) await api(`/records/${current.id}`, 'PATCH', {title:title.trim()});
+      const current = await api<RecordDetail>(`/records/${activeId.current}`, 'GET', undefined, AbortSignal.timeout(15000));
+      const manifests = await localManifests(current.id);
+      if (title.trim() && title.trim() !== current.title) await api(`/records/${current.id}`, 'PATCH', {title:title.trim()}, AbortSignal.timeout(15000));
       const saved = await api<RecordDetail>(`/records/${current.id}/${mode}`, 'POST', {
         sources: current.sources.map(source => ({ sourceId: source.id, epoch: source.epoch, lastSequence: source.lastSequence ?? manifests.find(m => m.sourceId === source.id)?.lastSequence ?? source.watermark }))
-      });
-      setRecord(saved); setModal(null); await upload(); await refresh(); await loadList();
+      }, AbortSignal.timeout(15000));
+      setRecord(saved); setModal(null);
+      // Local persistence and sealing are the finish barrier. Network upload
+      // and ASR continue independently, including after a lost connection.
+      void upload().catch(e => setError(messageOf(e)));
+      void Promise.allSettled([refresh(), loadList()]);
       showToast(mode === 'pause' ? '已暂停' : '会议已结束');
       return true;
     } catch (e) { setError(messageOf(e)); return false; }
-    finally { stopping.current = false; setRecording(false); setBusy(false); if (mode === 'seal') capture.current = null; }
+    finally { stopping.current = false; setRecording(false); setBusy(false); setCapturePhase('idle'); if (mode === 'seal') capture.current = null; }
   }
   function captureAllowed() {
     if (!boot?.providers.asr && !boot?.providers.fixture) { setError('请先在设置中连接转录服务。'); return false; }
@@ -235,7 +250,7 @@ function Workspace() {
   }
   async function quickRecord() {
     if (recording || busy || !captureAllowed()) return;
-    setError(''); setCaptureIssues([]); setBusy(true);
+    setError(''); setCaptureIssues([]); setBusy(true); setCapturePhase('starting');
     void capture.current?.stop(); capture.current = null;
     const created = api<RecordDetail>('/records', 'POST', { workspaceId: scope==='all'?null:scope, retainAudio: true, autoMinutes: Boolean(boot?.providers.minutes) });
     const controller = capture.current = controllerFor(created.then(next => next.id));
@@ -254,7 +269,7 @@ function Workspace() {
       await refresh();
     } catch (e) {
       await started; await controller.stop(); capture.current = null; setRecording(false); setError(messageOf(e));
-    } finally { setBusy(false); if (!controller.active) capture.current = null; }
+    } finally { setBusy(false); setCapturePhase('idle'); if (!controller.active) capture.current = null; }
   }
   async function startCapture(kind: 'microphone' | 'display' | 'meeting') {
     if (!record || busy || !captureAllowed()) return;
@@ -262,7 +277,7 @@ function Workspace() {
     setError(''); dismissToast();
     const controller = capture.current ||= controllerFor(record.id);
     const started = kind === 'meeting' ? controller.startMeeting() : controller.start(kind);
-    setBusy(true);
+    setBusy(true); setCapturePhase('starting');
     try {
       const result = await started;
       const issues = kind === 'meeting' ? result as CaptureIssue[] : [];
@@ -271,7 +286,7 @@ function Workspace() {
     } catch (e) {
       setCaptureIssues([{ kind: kind === 'microphone' ? 'microphone' : 'display', message: messageOf(e) }]);
       setError(messageOf(e)); setRecording(controller.active);
-    } finally { setBusy(false); if (controller.active) await refresh().catch(e => setError(messageOf(e))); else capture.current = null; }
+    } finally { setBusy(false); setCapturePhase('idle'); if (controller.active) void refresh().catch(e => setError(messageOf(e))); else capture.current = null; }
   }
   async function toggleMicrophone() {
     if (busy) return;
@@ -335,17 +350,19 @@ function Workspace() {
       {!id ? <WorkspaceHome key={`${scope}:${homeVersion}`} scope={scope} records={records} query={query} modelReady={boot.providers.minutes} disabled={recording||busy} open={selectRecord} archive={openArchive} create={newDirectory} edit={()=>{setEditingDirectory(directories.find(w=>w.id===scope));setModal('directory');}} quick={()=>void quickRecord()}/> : !record ? <div className="empty" role="status">{connectionState==='unavailable' ? <><p>记录服务暂时不可用，正在自动重试。</p><Button onClick={()=>setRetryVersion(v=>v+1)}>重新连接</Button></> : connectionState==='inaccessible' ? '当前记录不可访问，请选择其他记录。' : '正在读取记录…'}</div> : <><div className="record-heading"><div className="record-heading-main"><p className="kicker">{new Date(records.find(r => r.id === id)?.createdAt || Date.now()).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
           <RecordTitle key={record.id} title={record.title} save={async title => { const saved = await mutate(`/records/${id}`, 'PATCH', {title}); if (saved) { await loadList(); showToast('会议标题已保存。'); } return saved; }}/></div><div className="record-heading-toolbar"><div className="record-meta"><Status tone={recording ? 'live' : ''}>{recording ? '正在记录' : record.capture === 'completed' ? '已完成' : record.capture === 'sealed' ? '整理中' : record.capture === 'paused' ? '已暂停' : '待开始'}</Status><span>{timecode(record.usage.samples / 16)} 音频 · 转录 v{record.transcriptRevision}</span><span>{record.retentionDays} 天留存</span><span>{directories.find(w=>w.id===record.workspaceId)?.name || '未归档'}</span></div>
           <div className="actions meeting-actions">{boot.learning?.enabled && <Button disabled={busy || record.capture!=='completed'} onClick={()=>setModal('learning')}><Sparkle size={17}/>{record.learning?.status==='ready' ? `学习评审 · ${record.learning.groups}` : record.learning?.status==='running' || record.learning?.status==='queued' ? '待标注准备中' : '学习评审'}</Button>}<RecordingPlayback key={record.id} record={record}/><Button disabled={busy} onClick={()=>setModal('export')}><ArrowDown size={17}/>导出</Button><Button disabled={busy} onClick={() => setModal('share')}><ShareNetwork size={17}/><span>分享</span></Button><Button aria-expanded={translationOpen} onClick={() => setTranslationOpen(!translationOpen)}><Translate size={17}/>实时翻译{record.translationTarget && <span className="live-dot"/>}</Button><Button disabled={recording||busy} onClick={()=>openArchive([id])}><Folder size={17}/>归档</Button><Button variant="ghost" aria-label="删除本次记录" disabled={recording} onClick={() => setModal('delete')}><Trash size={18}/></Button></div></div></div>
-        <MeetingControls record={record} recording={recording} busy={busy} ready={sourceReady} signals={signals}
+        <MeetingControls record={record} recording={recording} busy={busy} phase={capturePhase} ready={sourceReady} signals={signals}
         start={kind => void startCapture(kind)} quick={() => void quickRecord()} sources={() => setModal('capture')}
         microphone={() => void toggleMicrophone()}
         finish={() => { setError(''); setModal('finish'); }} importAudio={() => fileInput.current?.click()}/>
       {!sourceReady && <div className="notice">语音服务尚未配置。维护者配置服务后即可录音；现在可以<Button variant="ghost" onClick={() => setModal('import-text')}>导入已有转录</Button>体验整理流程。</div>}
         {importProgress !== null && <div className="notice" role="status">正在解码与保存音频：{Math.round(importProgress * 100)}%</div>}
         {record.capture === 'recording' && !recording && <div className="notice">检测到上次未结束的采集。可继续录音，或封存本机已保存的片段。<Button disabled={busy} onClick={() => setModal('finish')}>整理本场记录</Button></div>}
-        {['blocked', 'failed'].includes(record.transcription) && <div className="notice error">语音处理受阻，音频仍在保存期内。检查服务配置后<Button disabled={busy} onClick={() => void mutate(`/records/${id}/retry`, 'POST')}>重新处理</Button></div>}
       <div className="record-processing">
+        {['blocked', 'failed'].includes(record.transcription) && <TranscriptionNotice key={record.id} busy={busy} retained={record.retainAudio && !record.audioPurged && record.usage.samples > 0} retry={() => mutate(`/records/${id}/retry`, 'POST')} configure={boot.canConfigure ? () => setModal('settings') : undefined}/>}
+        {(record.pendingChunks > 0 || !recording) && <div className="processing-summary">
         {record.pendingChunks > 0 && <div className="processing-line" role="status">正在处理音频 · {record.pendingChunks} 个音频包</div>}
         {!recording && <div className="sub-actions">{!['sealed','completed'].includes(record.capture) && <Button variant="ghost" onClick={() => setModal('import-text')}><FileText size={16}/>导入文字</Button>}<Download href={`/api/records/${id}/export?format=json`}><ArrowDown size={15}/>备份记录</Download></div>}
+        </div>}
       </div>
         {record.capture === 'completed' && record.usage.samples > 0 && record.pendingChunks === 0 && record.segments.length === 0 && <div className="notice audio-empty-result" role="status">音频已处理完成，但未识别出可用语音。请检查麦克风输入、系统权限或共享音轨，再开始一段试录。</div>}<MinutesPanel inline modelReady={boot.providers.minutes} automate={async (enabled, intervalSeconds) => { await mutate(`/records/${id}/automation`, 'PATCH', {enabled,intervalSeconds}); }} record={record} busy={busy} onClose={()=>{}} cite={cite} generate={async (template,mode) => { await mutate(`/records/${id}/minutes`, 'POST', { template,mode }); }} edit={async minutes => { return mutate(`/records/${id}/minutes`, 'PATCH', { revision: minutes.revision, minutes }); }}/>
         <Notes key={`notes:${record.id}`} record={record} save={async (notes, notesRevision) => { return mutate(`/records/${id}`, 'PATCH', { notes, notesRevision }); }}/>
