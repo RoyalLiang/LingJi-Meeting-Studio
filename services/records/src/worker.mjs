@@ -1,3 +1,5 @@
+import { audioMinutesEnabled } from './config.mjs';
+import { generateDoubaoAudioMinutes } from './doubao-audio-minutes.mjs';
 import {runLearningCycle} from './learning-worker.mjs';
 import { runMinutesPipeline } from './minutes-pipeline.mjs';
 import { meteredMinutesCall } from './minutes-usage.mjs';
@@ -121,7 +123,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
     }
     let jobClaim;
     if (lane === 'all' || lane === 'minutes') {
-    if (providerStatus(config).minutes) await repo.change(candidate.id, r => { if (!realtimeEnabled(config) || r.realtimeAudioConsent) queueAutomaticMinutes(r, minutesModelVersion(config)); });
+    if (providerStatus(config).minutes) await repo.change(candidate.id, r => { if (!audioMinutesEnabled(config) || r.realtimeAudioConsent) queueAutomaticMinutes(r, minutesModelVersion(config)); });
     const minutesCandidate = await repo.get(candidate.id);
     if (minutesCandidate.jobs.some(j => j.status === 'queued' || (j.status === 'running' && j.lease < Date.now()))) await repo.change(candidate.id, r => {
       if (r.deleted) return;
@@ -134,7 +136,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
     if (jobClaim) {
       try {
         let json = '', lastPublished = 0;
-        const generate=providers.minutes || (realtimeEnabled(config) && jobClaim.mode !== 'extractive' ? (job,env,opts)=>generateRealtimeMinutes(repo,candidate.id,job,env,opts,providers.realtimeFactory) : generateMinutes);
+        const generate=providers.minutes || (realtimeEnabled(config) && jobClaim.mode !== 'extractive' ? (job,env,opts)=>generateRealtimeMinutes(repo,candidate.id,job,env,opts,providers.realtimeFactory) : config.MINUTES_MODE === 'doubao-audio' && jobClaim.mode !== 'extractive' ? (job,env,opts)=>generateDoubaoAudioMinutes(repo,candidate.id,job,env,opts) : generateMinutes);
         const processMinutes=config.RECORD_MINUTES_PIPELINE_ENABLED==='false' ? async(job,env,opts)=>({...await meteredMinutesCall(repo,candidate.id,job,generate,job,env,opts),usageRecorded:true}) : (job,env,opts)=>runMinutesPipeline(repo,candidate.id,job,env,generate,opts);
         const result = await telemetry.measure('minutes.complete', {recordId:candidate.id, jobId:jobClaim.id, revision:jobClaim.transcriptRevision, queueMs:Date.now()-Date.parse(jobClaim.createdAt)}, () => processMinutes(jobClaim, config,{ onDelta: async (delta, runtime) => {
           if(!json)telemetry.event('minutes.first-text',{recordId:candidate.id,jobId:jobClaim.id,durationMs:runtime?.firstTokenMs});

@@ -1,3 +1,4 @@
+import { audioMinutesEnabled } from './config.mjs';
 import { liveBaseline, mergeLiveMinutes } from '../../../packages/records/src/live-minutes.mjs';
 import { telemetry } from './telemetry.mjs';
 import { createHash } from 'node:crypto';
@@ -21,7 +22,7 @@ const refs = result => {
   visit(result);return [...found.values()];
 };
 export function buildMinutesManifest(job,config={},budget=inputBudget(config)){
-  const policy=hash({version:5,minutesMode:config.MINUTES_MODE,realtimeModel:config.OPENAI_REALTIME_MODEL,realtimeUrl:config.OPENAI_REALTIME_URL,windowMs:120000,budget,context:job.liveContext,model:job.modelVersion==='default'?config.LLM_MODEL:job.modelVersion,base:config.LLM_API_URL,protocol:config.LLM_PROTOCOL,template:job.template,scope:job.scope,mode:job.mode,notes:job.notes,notesRevision:job.notesRevision,generation:job.generation});
+  const policy=hash({version:6,minutesMode:config.MINUTES_MODE,realtimeModel:config.OPENAI_REALTIME_MODEL,realtimeUrl:config.OPENAI_REALTIME_URL,windowMs:120000,budget,context:job.liveContext,model:job.modelVersion==='default'?config.LLM_MODEL:job.modelVersion,base:config.LLM_API_URL,protocol:config.LLM_PROTOCOL,template:job.template,scope:job.scope,mode:job.mode,notes:job.notes,notesRevision:job.notesRevision,generation:job.generation});
   const windows=[];let current=[];
   const flush=()=>{if(current.length){windows.push({key:hash({policy,snapshot:current}),snapshot:current});current=[];}};
   function add(segment){
@@ -32,7 +33,7 @@ export function buildMinutesManifest(job,config={},budget=inputBudget(config)){
     if(current.length && size({transcript:[...current,segment],notes:job.notes,context:job.liveContext})>budget)flush();current.push(segment);
   }
   const snapshot=job.snapshot.map(({id,revision,text,sourceId,speakerId,speaker,speakerName,startMs,endMs,contextOnly})=>({id,revision,text,sourceId,speakerId,speaker,speakerName,startMs,endMs,contextOnly}));
-  if (config.MINUTES_MODE === 'openai-realtime') {
+  if (audioMinutesEnabled(config)) {
     // Group by source before timeline buckets: simultaneous tracks count as
     // separate audio. Split long ASR turns without inventing new transcript IDs.
     const slices = snapshot.flatMap(segment => {
@@ -49,7 +50,7 @@ export function buildMinutesManifest(job,config={},budget=inputBudget(config)){
   snapshot.forEach((segment,index)=>{
     const timed=Number.isFinite(segment.startMs)&&Number.isFinite(segment.endMs)&&segment.endMs>segment.startMs;
     const next=timed?Math.floor(segment.startMs/120000):undefined;
-    if(current.length && (timed ? next!==bucket || (config.MINUTES_MODE === 'openai-realtime' && current[0].sourceId !== segment.sourceId) : !single && (index+snapshotOffset)%24===0))flush();
+    if(current.length && (timed ? next!==bucket || (audioMinutesEnabled(config) && current[0].sourceId !== segment.sourceId) : !single && (index+snapshotOffset)%24===0))flush();
     bucket=next;add(segment);
   });flush();
   requireThat(windows.length>0 && windows.length<=512,'minutes_window_limit',422);

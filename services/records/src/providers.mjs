@@ -1,3 +1,4 @@
+import { doubaoAudioConfigured } from './doubao-audio-minutes.mjs';
 import { translationConnection, translateSeedText } from './seed-translation.mjs';
 import { completeModelJson } from './llm.mjs';
 import { normalizeConfig, configured } from './config.mjs';
@@ -12,7 +13,7 @@ export function providerStatus(input = process.env) {
   const env = normalizeConfig(input);
   const asr = env.ASR_PROVIDER === 'doubao' ? configured(env.DOUBAO_API_KEY) : env.ASR_PROVIDER === 'doubao-ast' ? configured(env.DOUBAO_AST_APP_KEY) && configured(env.DOUBAO_AST_ACCESS_KEY) : env.ASR_PROVIDER === 'deepgram' ? configured(env.DEEPGRAM_API_KEY) : Boolean(env.ASR_API_URL && configured(env.ASR_API_KEY));
   const translation = translationConnection(env);
-  return { translation: Boolean(translation.url && configured(translation.key) && translation.model), asr, asrProvider: env.ASR_PROVIDER, minutesMode: env.MINUTES_MODE, textMinutes: Boolean(env.LLM_API_URL && configured(env.LLM_API_KEY) && env.LLM_MODEL), minutes: realtimeEnabled(env) ? realtimeConfigured(env) : Boolean(env.LLM_API_URL && configured(env.LLM_API_KEY) && env.LLM_MODEL), fixture: env.RECORD_PROVIDER === 'fixture' && env.NODE_ENV !== 'production' };
+  return { translation: Boolean(translation.url && configured(translation.key) && translation.model), asr, asrProvider: env.ASR_PROVIDER, minutesMode: env.MINUTES_MODE, textMinutes: Boolean(env.LLM_API_URL && configured(env.LLM_API_KEY) && env.LLM_MODEL), minutes: realtimeEnabled(env) ? realtimeConfigured(env) : env.MINUTES_MODE === 'doubao-audio' ? doubaoAudioConfigured(env) : Boolean(env.LLM_API_URL && configured(env.LLM_API_KEY) && env.LLM_MODEL), fixture: env.RECORD_PROVIDER === 'fixture' && env.NODE_ENV !== 'production' };
 }
 export function waveHeader(length) {
   const header = Buffer.alloc(44); header.write('RIFF'); header.writeUInt32LE(36 + length, 4); header.write('WAVEfmt ', 8);
