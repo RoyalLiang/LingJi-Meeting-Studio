@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>聆记 · 录音区版式预览</title><link rel="stylesheet" href="/preview.css"></head><body>
+<div class="app"><!--SIDEBAR--><div class="workspace"><nav class="topbar"><div class="breadcrumb">所有会议<!--TOPICONS--></div><div class="search"><!--SEARCH--><span>搜索当前目录的会议、纪要与内容</span></div><span class="sync"><!--SYNC-->本机已连接</span></nav><main><!--VARIANTS--></main></div></div>
+<!--TOAST--><nav class="prototype-switcher" aria-label="预览方案切换"><span class="preview-badge">布局预览</span><!--ARROWS--></nav>
+<script src="/playback-demo.js"></script><script>
+const names={A:'一行完整控制',B:'按需浮层',C:'精确波形'};
+const key=new URLSearchParams(location.search).get('variant')||'A';
+const current=names[key]?key:'A';
+document.body.dataset.variant=current;
+document.getElementById('variant-label').textContent=current+' · '+names[current];
+function cycle(step){const keys=Object.keys(names);const next=keys[(keys.indexOf(current)+step+keys.length)%keys.length];const url=new URL(location.href);url.searchParams.set('variant',next);location.replace(url);}
+document.querySelector('[aria-label="上一版"]').onclick=()=>cycle(-1);
+document.querySelector('[aria-label="下一版"]').onclick=()=>cycle(1);
+document.addEventListener('keydown',event=>{if(event.target.closest('input,textarea,[contenteditable]'))return;if(event.key==='ArrowLeft')cycle(-1);if(event.key==='ArrowRight')cycle(1);});
+
+console.info('THROWAWAY UI PREVIEW: variant='+current+'; synthetic data; no API, recording or persistence.');
+</script></body></html>

@@ -1,0 +1,70 @@
+{
+  "synthetic": true,
+  "productionPlayerChanged": false,
+  "errors": [],
+  "results": [
+    {
+      "variant": "A",
+      "width": 1136,
+      "height": 71,
+      "pageOverflow": false,
+      "playerOverflow": false,
+      "skipTargets": [
+        {
+          "label": "后退 15 秒",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "前进 15 秒",
+          "width": 44,
+          "height": 44
+        }
+      ],
+      "time": "516",
+      "rate": "1"
+    },
+    {
+      "variant": "B",
+      "width": 388,
+      "height": 160,
+      "pageOverflow": false,
+      "playerOverflow": false,
+      "skipTargets": [
+        {
+          "label": "后退 15 秒",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "前进 15 秒",
+          "width": 44,
+          "height": 44
+        }
+      ],
+      "time": "516",
+      "rate": "1"
+    },
+    {
+      "variant": "C",
+      "width": 1136,
+      "height": 174,
+      "pageOverflow": false,
+      "playerOverflow": false,
+      "skipTargets": [
+        {
+          "label": "后退 15 秒",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "前进 15 秒",
+          "width": 44,
+          "height": 44
+        }
+      ],
+      "time": "516",
+      "rate": "1"
+    }
+  ]
+}

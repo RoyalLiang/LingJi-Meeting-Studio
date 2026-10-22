@@ -1,0 +1,15 @@
+{
+  "version": "0.1.2",
+  "artifact": "Lingji-0.1.2-macos-arm64.dmg",
+  "sha256": "d0752b7cdedac862e00036f7a778bf29bde95af77ebc0d8290c9639246d3da5c",
+  "publishedDigestMatches": true,
+  "signature": "adhoc",
+  "teamIdentifier": null,
+  "integrityVerified": true,
+  "gatekeeperAccepted": false,
+  "gatekeeperExit": 3,
+  "readOnlyMountDetached": true,
+  "formalSigningPrerequisitesAvailable": false,
+  "applicationRun": false,
+  "productionCodeChanged": false
+}
