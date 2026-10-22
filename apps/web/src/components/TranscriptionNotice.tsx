@@ -1,9 +1,8 @@
 import { useRef, useState } from 'react';
-import { ArrowClockwise, GearSix, WarningCircle } from '@phosphor-icons/react';
-import { Button } from './ui';
+import { FeedbackNotice } from './FeedbackNotice';
 
-export function TranscriptionNotice({ busy, retained, retry, configure }: {
-  busy: boolean; retained: boolean; retry: () => Promise<boolean>; configure?: () => void;
+export function TranscriptionNotice({ busy, retained, retry, configure, active = true }: {
+  busy: boolean; retained: boolean; retry: () => Promise<boolean>; configure?: () => void; active?: boolean;
 }) {
   const [retrying, setRetrying] = useState(false);
   const submitting = useRef(false);
@@ -13,14 +12,6 @@ export function TranscriptionNotice({ busy, retained, retry, configure }: {
     try { await retry(); }
     finally { submitting.current = false; setRetrying(false); }
   }
-  return <div className="transcription-notice" role="status">
-    <div className="transcription-notice-copy">
-      <strong><WarningCircle size={18} aria-hidden="true"/>语音处理暂时受阻</strong>
-      <p>{retained ? '保存期内的录音仍可播放或导出。' : '已保存的转录和笔记不受影响。'}请检查语音服务配置后重试。</p>
-    </div>
-    <div className="transcription-notice-actions">
-      {configure && <Button variant="ghost" disabled={busy || retrying} onClick={configure}><GearSix size={16}/>检查配置</Button>}
-      <Button disabled={busy || retrying} aria-busy={retrying} onClick={() => void reprocess()}><ArrowClockwise size={16}/>{retrying ? '正在提交…' : '重新处理'}</Button>
-    </div>
-  </div>;
+  const message = `语音处理暂时受阻。${retained ? '保存期内的录音仍可播放或导出。' : '已保存的转录和笔记不受影响。'}${configure ? '可在设置与诊断中检查语音服务配置后重试。' : '请联系维护者检查语音服务配置后重试。'}`;
+  return <FeedbackNotice open={active} message={message} action={{ label: retrying ? '正在提交…' : '重新处理', run: () => void reprocess(), disabled: busy || retrying, busy: retrying }}/>;
 }

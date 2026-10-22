@@ -866,3 +866,76 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 .record-processing .sub-actions { margin:0 0 0 auto; flex:none; }
 .record-processing .processing-line { display:flex; flex-wrap:wrap; gap:4px 18px; margin:0; flex:1; }
 .record-processing .processing-line > span { color:var(--ink-3); }
+
+/* Unified meeting header: status, sources and capture actions share one row. */
+.meeting-header { container:meeting / inline-size; margin:20px 0 16px; border:1px solid var(--border); border-radius:18px; overflow:clip; }
+.meeting-header .record-heading { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px 16px; padding:20px 20px 16px; container-type:normal; container-name:none; }
+.meeting-header .record-heading-main { grid-column:1; grid-row:1; align-self:center; }
+.meeting-header .record-heading-main h1 { font-size:23px; line-height:1.4; }
+.meeting-header .record-heading-toolbar { display:contents; }
+.meeting-header .record-heading-toolbar>.record-meta { grid-column:1 / -1; grid-row:2; min-height:0; gap:6px 10px; margin:0; font-size:10px; }
+.meeting-header .record-heading-toolbar>.meeting-actions { grid-column:2; grid-row:1; flex:initial; gap:3px; justify-content:flex-end; align-self:center; max-width:none; }
+.meeting-header .meeting-actions>.button { position:relative; min-width:34px; width:34px; min-height:34px; height:34px; padding:7px; border-color:transparent; background:transparent; }
+.meeting-header .meeting-actions>.button:hover { background:var(--panel-2); border-color:var(--border); }
+.meeting-header .meeting-actions>.button[aria-expanded=true] { color:var(--accent); background:var(--accent-soft); }
+.meeting-header .meeting-actions .live-dot { position:absolute; right:4px; top:4px; width:4px; height:4px; margin:0; }
+.meeting-header .record-warning { min-width:24px; min-height:24px; width:24px; height:24px; padding:4px; color:var(--warn); }
+.meeting-header .meeting-controls { margin:0; padding:12px 16px; border:0; border-top:1px solid var(--border); border-radius:0; background:color-mix(in srgb,var(--accent-soft) 35%,var(--bg)); box-shadow:none; }
+.meeting-header .meeting-controls-main { gap:12px; flex-wrap:nowrap; }
+.meeting-header .meeting-controls .capture-status { flex:1 1 150px; min-width:0; gap:8px; }
+.meeting-header .capture-status>div { min-width:0; }
+.meeting-header .capture-status b { font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.meeting-header .capture-status small { font-size:10px; margin-top:4px; line-height:1.4; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.meeting-header .record-indicator { flex:none; width:28px; height:28px; }
+.meeting-header .record-indicator svg { width:18px; height:18px; }
+.meeting-header .meeting-source-strip { flex:none; flex-wrap:nowrap; gap:0; margin:0; padding:0; border:0; }
+.meeting-header .capture-signals { flex-wrap:nowrap; gap:8px; }
+.meeting-header .source-signal { width:112px; height:32px; grid-template-columns:minmax(0,1fr) 16px; gap:5px; padding:5px 7px; border-radius:18px; }
+.meeting-header .source-signal-heading { font-size:10px; gap:4px; }
+.meeting-header .source-signal-heading svg { width:15px; height:15px; }
+.meeting-header .capture-controls { width:auto; flex:none; flex-wrap:nowrap; gap:4px; }
+.meeting-header .capture-controls>.button { flex:0 0 auto; min-height:34px; min-width:34px; padding:6px 9px; white-space:nowrap; }
+.meeting-header .capture-action-label { display:none; }
+.meeting-header .capture-finish-label { font-size:11px; }
+.record-processing { margin:0 0 12px; }
+.record-processing .processing-summary { margin-left:auto; }
+.minutes-panel.is-inline { margin:12px 0 16px; }
+.minutes-panel.is-inline>header { padding:12px 0; }
+.minutes-panel.is-inline .minutes-content { padding-top:14px; }
+.minutes-panel.is-inline .minutes-control-bar { margin-bottom:10px; }
+.minutes-panel.is-inline .minutes-title { margin-top:16px; }
+.minutes-panel.is-inline .minutes-tree { margin-top:16px; }
+.meeting-header~.notes { margin-top:16px; }
+.record-footer { margin-top:16px; }
+.record-footer .record-secondary-actions>.button { width:36px; min-width:36px; min-height:36px; padding:7px; }
+@media(max-width:700px) {
+  .record-footer .record-secondary-actions>.button { width:44px; min-width:44px; min-height:44px; }
+}
+@container meeting (max-width:680px) {
+  .meeting-header .record-heading { padding:16px; }
+  .meeting-header .record-heading-main h1 { font-size:20px; }
+  .meeting-header .capture-status { gap:6px; }
+  .meeting-header .record-indicator { display:none; }
+  .meeting-header .meeting-controls { padding:10px 12px; }
+  .meeting-header .meeting-controls-main { gap:8px; }
+  .meeting-header .source-signal { width:92px; grid-template-columns:minmax(0,1fr) 12px; padding-inline:6px; gap:4px; }
+  .meeting-header .source-signal-heading { font-size:9px; gap:3px; }
+}
+@container meeting (max-width:480px) {
+  .meeting-header .record-heading { grid-template-columns:minmax(0,1fr); gap:10px; padding:14px; }
+  .meeting-header .record-heading-main { grid-column:1; grid-row:1; }
+  .meeting-header .record-heading-toolbar>.record-meta { grid-column:1; grid-row:2; flex-wrap:wrap; font-size:9px; }
+  .meeting-header .record-heading-toolbar>.meeting-actions { grid-column:1; grid-row:3; justify-content:flex-start; gap:2px; }
+  .meeting-header .meeting-actions>.button { min-width:44px; width:44px; min-height:44px; height:44px; }
+  .meeting-header .meeting-controls { padding:10px; }
+  .meeting-header .meeting-controls-main { gap:6px; }
+  .meeting-header .meeting-controls .capture-status { flex:1 1 76px; }
+  .meeting-header .capture-status b { font-size:10px; }
+  .meeting-header .capture-status small { font-size:9px; }
+  .meeting-header .capture-signals { gap:4px; }
+  .meeting-header .source-signal { width:29px; height:32px; grid-template-columns:14px 3px; padding:4px; gap:2px; }
+  .meeting-header .source-signal-heading b { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+  .meeting-header .capture-controls { gap:0; }
+  .meeting-header .capture-controls>.button { min-height:44px; min-width:44px; padding:9px; }
+  .meeting-header .capture-finish-label { display:none; }
+}

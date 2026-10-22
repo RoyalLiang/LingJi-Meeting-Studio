@@ -7,6 +7,18 @@ import { transform } from 'esbuild';
 const source = await readFile(new URL('../apps/web/src/components/Toast.tsx', import.meta.url), 'utf8');
 const compiled = (await transform(source, { loader: 'tsx', jsx: 'automatic', format: 'cjs' })).code;
 
+test('actionable warnings stay visible until dismissed and expose the requested action',()=>{
+  const h=harness();let actions=0,dismissals=0;
+  const tree=h.render({message:'转录暂时中断。',warning:true,persistent:true,action:{label:'重新处理',run:()=>{actions++;}},dismiss:()=>{dismissals++;}});
+  assert.match(tree.props.className,/is-warning/);assert.equal(tree.props.role,'status');
+  const content=tree.props.children.find(node=>node?.props?.className==='toast-content');
+  const action=content.props.children.find(node=>node?.props?.className==='toast-action');
+  assert.equal(action.props.children,'重新处理');action.props.onClick();assert.equal(actions,1);
+  h.tick(60000);assert.equal(dismissals,0,'actionable warning must not disappear during a pending recovery');
+  tree.props.children.find(node=>node?.props?.['aria-label']==='关闭提示').props.onClick();assert.equal(dismissals,1);
+  h.unmount();
+});
+
 function harness() {
   const slots = [], pending = [], timers = new Map(), listeners = new Map(), elementListeners = new Map();
   let cursor = 0, now = 0, nextTimer = 0, open = false, hovered = false;

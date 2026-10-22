@@ -64,6 +64,20 @@ async function renderControls(props) {
   return JSON.stringify(sandbox.exports.render({ record: { capture: 'recording', sources: [] }, ready: true, signals: [], ...props }));
 }
 
+test('audio processing and import progress stay inside the capture status container',async()=>{
+  const findStatus=node=>{
+    if(!node||typeof node!=='object')return null;
+    if(node.attributes?.className==='capture-status')return node;
+    return (Array.isArray(node)?node:Object.values(node)).map(findStatus).find(Boolean);
+  };
+  const props={record:{capture:'recording',sources:[],pendingChunks:3},recording:true,busy:false};
+  const processing=await renderControls(props);
+  assert.match(JSON.stringify(findStatus(JSON.parse(processing))),/正在处理音频/);
+  assert.equal(processing.match(/正在处理音频/g).length,1);
+  const importing=await renderControls({...props,progress:'正在导入音频 75%'});
+  assert.match(JSON.stringify(findStatus(JSON.parse(importing))),/正在导入音频 75%/);
+});
+
 test('meeting controls distinguish ending capture from starting audio or unrelated page work', async () => {
   const ending = await renderControls({ recording: false, busy: true, phase: 'stopping' });
   assert.doesNotMatch(ending, /正在接入声音/);
