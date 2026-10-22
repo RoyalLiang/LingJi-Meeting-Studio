@@ -4,6 +4,7 @@
     "30 pointer moves produce one committed seek per track and resume",
     "keyboard Home/End seek while paused",
     "play at end restarts from beginning",
+    "selected speed restored after actual HTMLAudioElement.load()",
     {
       "width": 1440,
       "theme": "light",

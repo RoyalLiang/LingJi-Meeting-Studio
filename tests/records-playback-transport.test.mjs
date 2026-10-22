@@ -73,6 +73,17 @@ test('jumping before metadata is ready never writes an invalid seek position', a
   assert.deepEqual(meeting.seeks, []);
 });
 
+test('retry reapplies the selected rate after load resets browser playbackRate', async () => {
+  const media = track(90), other = track(60), transport = new PlaybackTransport(() => [media, other]);
+  media.error = { code: 4 };
+  media.load = () => { media.error = null; media.playbackRate = 1; };
+  transport.setRate(1.5);
+  await transport.play();
+  assert.equal(media.playbackRate, 1.5);
+  assert.equal(other.playbackRate, 1.5);
+  assert.equal(media.preservesPitch, true);
+});
+
 test('pause cancels a pending jump resume and a seek rejects non-finite positions', async () => {
   const media = track(90), transport = new PlaybackTransport(() => [media]);
   await transport.play();
