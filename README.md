@@ -183,4 +183,4 @@ TTS_RELEASE_SOURCE_REF=<完整提交号> npm run release:macos:preview
 
 结构参考 WhisperX、Buzz、Meetily、Vibe 等项目的一手文档，依据与能力核对见[研究记录](docs/research/readme-and-asr-quality-2026-10-21.md)。
 
-For English readers: LingJi is a browser-first meeting recorder with cloud transcription, source-linked AI minutes, and a Tauri desktop client. This first public preview includes source code and an ad-hoc signed macOS Apple Silicon test installer. Real-meeting accuracy and production readiness remain unverified.
+For English readers: LingJi is a browser-first meeting recorder with cloud transcription, source-linked AI minutes, and a Tauri desktop client. This public preview includes source code and an ad-hoc signed macOS Apple Silicon test installer. Real-meeting accuracy and production readiness remain unverified.
