@@ -1,0 +1,120 @@
+{
+  "observedAt": "2026-10-22T09:09:39.005354+00:00",
+  "version": "0.1.2",
+  "sourceRevision": "c14f06db0466a4f7c2814cbc18d775cfeb2818e1",
+  "workflowRevision": "c14f06db0466a4f7c2814cbc18d775cfeb2818e1",
+  "sourceFilesMatched": 221,
+  "actions": {
+    "id": 39749681733,
+    "name": "Preview v0.1.2 · push",
+    "status": "completed",
+    "conclusion": "success",
+    "event": "push",
+    "head_sha": "c14f06db0466a4f7c2814cbc18d775cfeb2818e1",
+    "html_url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/39749681733",
+    "created_at": "2026-10-22T08:41:55Z",
+    "updated_at": "2026-10-22T08:54:07Z"
+  },
+  "jobs": [
+    {
+      "id": 119726805138,
+      "name": "verify",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-22T08:41:58Z",
+      "completed_at": "2026-10-22T08:42:05Z"
+    },
+    {
+      "id": 119726871322,
+      "name": "build",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-22T08:42:08Z",
+      "completed_at": "2026-10-22T08:53:44Z"
+    },
+    {
+      "id": 119731890134,
+      "name": "publish",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-22T08:53:45Z",
+      "completed_at": "2026-10-22T08:54:06Z"
+    }
+  ],
+  "release": {
+    "id": 420496194,
+    "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.2",
+    "publishedAt": "2026-10-22T08:54:02Z",
+    "draft": false,
+    "prerelease": true
+  },
+  "assets": [
+    {
+      "name": "INSTALL-macos-arm64.md",
+      "bytes": 3084,
+      "sha256": "54294729f7566a955e3b3dc275775bf0b0d1f039dde1f2851e4d2304461a1b6d",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.2/INSTALL-macos-arm64.md"
+    },
+    {
+      "name": "Lingji-0.1.2-macos-arm64.dmg",
+      "bytes": 47443524,
+      "sha256": "d0752b7cdedac862e00036f7a778bf29bde95af77ebc0d8290c9639246d3da5c",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.2/Lingji-0.1.2-macos-arm64.dmg"
+    },
+    {
+      "name": "package-smoke.json",
+      "bytes": 389,
+      "sha256": "ff39705783cfeb0b153e53330babb4d4b9f3079573f7c4eb744f2d9a061001ac",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.2/package-smoke.json"
+    },
+    {
+      "name": "release.json",
+      "bytes": 37564,
+      "sha256": "3bb8300e9408afaeda17418f676876773ee1337e1315dcd11d91627d757171ca",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.2/release.json"
+    },
+    {
+      "name": "SHA256SUMS.txt",
+      "bytes": 95,
+      "sha256": "a57d351a15942b6b4ad143cba5f17e5d26e51529b589136268e09c52fb19eed5",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.2/SHA256SUMS.txt"
+    }
+  ],
+  "allFiveAssetsDownloadedAndHashed": true,
+  "localValidation": {
+    "nodeTests": 369,
+    "captureTests": 48,
+    "lint": "pass",
+    "typecheck": "pass",
+    "webBuild": "pass",
+    "markdownFiles": 111
+  },
+  "packageValidation": {
+    "imageVerified": true,
+    "copiedAppSignatureVerified": true,
+    "productionSmoke": true,
+    "realAudioDevicesTested": false,
+    "realProvidersTested": false,
+    "freshMachineTested": false
+  },
+  "packagedBackendSmoke": {
+    "timestamp": "2026-10-22T08:53:20.975Z",
+    "packagedApp": true,
+    "independentBackend": true,
+    "developerBackendRequests": 0,
+    "restartPersistence": true,
+    "stableWebviewProfile": true,
+    "parentOwnsBackend": true,
+    "localAccount": true,
+    "devAccountDisabled": true,
+    "node": "v24.21.0",
+    "sqlite": "3.53.4",
+    "realAudioDevicesOpened": false,
+    "realProvidersInvoked": false
+  },
+  "signing": "ad-hoc",
+  "notarized": false,
+  "userInstallationChanged": false,
+  "userMeetingsChanged": false,
+  "receiptMarkdownFilesValidated": 112
+}
