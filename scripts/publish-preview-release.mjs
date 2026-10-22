@@ -6,7 +6,7 @@ import { resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
-const title=tag=>`聆记 ${tag} · 首次公开测试版 / First Public Preview`;
+const title=tag=>tag==='v0.1.0'?`聆记 ${tag} · 首次公开测试版 / First Public Preview`:`聆记 ${tag} · 公开测试版 / Public Preview`;
 const sha=value=>typeof value==='string' && /^[a-f0-9]{40}$/.test(value);
 export async function loadPreview(directory,{tag,commit,repository,workflowSha,runId}) {
   assert.match(tag,/^v\d+\.\d+\.\d+$/);
@@ -30,7 +30,7 @@ export async function loadPreview(directory,{tag,commit,repository,workflowSha,r
   for(const key of ['packagedApp','independentBackend','restartPersistence','stableWebviewProfile','parentOwnsBackend','localAccount','devAccountDisabled'])assert.equal(smoke[key],true);
   assert.equal(smoke.developerBackendRequests,0);
   assert.equal(smoke.realAudioDevicesOpened,false);assert.equal(smoke.realProvidersInvoked,false);
-  return {metadata,files,runUrl};
+  return {metadata,files,runUrl,guide:files[3].bytes.toString('utf8')};
 }
 export function verifyInventory(assets,files,{complete=false}={}) {
   assert.ok(Array.isArray(assets));
@@ -43,16 +43,18 @@ export function verifyInventory(assets,files,{complete=false}={}) {
   }
   if(complete)assert.equal(seen.size,files.length,'Incomplete release inventory');
 }
-export function previewNotes({tag,commit,workflowSha,metadata,runUrl}) {
-  return `首个公开测试版：源码 + macOS Apple Silicon 测试安装包。\n\n`+
+export function previewNotes({tag,commit,workflowSha,metadata,runUrl,guide=''}) {
+  const changes=guide.replace(/\r\n/g,'\n').split('\n## 本版变化\n')[1]?.split('\n## ')[0].trim()
+    || '本版变更请参阅随包 INSTALL-macos-arm64.md。';
+  return `公开测试版：源码 + macOS Apple Silicon 测试安装包。\n\n`+
     `### 下载与安装\nmacOS 14.6+、Apple Silicon（M 系列）。下载 ${metadata.artifact}，按 INSTALL-macos-arm64.md 安装，并用 SHA256SUMS.txt 校验。内置 Node 24 后台，无需另装运行时。\n\n`+
     `**ad-hoc 签名，未进行 Developer ID 签名及 Apple 公证。** Preview 与 Alpha 使用相同应用标识；先结束录制、等待补传、退出并备份，勿同时运行。\n\n`+
-    `### 本版变化\n- 完整 README：功能、启动、配置、架构、隐私、故障排查与贡献说明。\n- 紧凑同行操作区、移除播放器悬浮按钮；完整原音播放不等待转录完成。\n- Markdown 纪要和分音源 WAV 导出；自动标题采用纪要名称。\n- 纪要结合近期两分钟已确认转录，保留来源版本与人工编辑保护。\n- 豆包语言参数与顺滑配置修正、可选中英二遍场景背景。\n- 离线 CER/WER 工具与人工核听标注方案；尚无本轮人工金标准，不声明准确率提升百分比。\n\n`+
+    `### 本版变化\n${changes}\n\n`+
     `### Actions 构建与验证\n由 [GitHub Actions](${runUrl}) 在 macOS ARM runner 构建。构建阶段运行 Node/Rust 回归、ESLint、类型与文档检查；DMG、arm64、签名结构、包内后台及隔离启动/重启检查通过。实际执行记录以该 run 为准。\n\n`+
-    `源码标签：${tag}\n源码 SHA：\`${commit}\`\n工作流 SHA：\`${workflowSha}\`\nDMG SHA-256：\`${metadata.sha256}\`\n\n`+
-    `未验证实体设备长会议、真实 ASR/LLM 质量、全新 Mac Gatekeeper 安装、PG/S3 和其他系统。本包不建立正式可信自动更新基线。\n\n`+
-    `### English\nFirst public preview with source code and a macOS Apple Silicon test installer (macOS 14.6+), built and published by GitHub Actions. Includes README, playback/export/title improvements, two-minute confirmed-transcript context, endpoint-aware ASR settings and offline evaluation guidance.\n\n`+
-    `**Ad-hoc signed; not Developer ID signed or notarized.** Back up existing data and stop Alpha before installing. Automated and isolated package checks passed; real-meeting accuracy, long capture, fresh-machine installation and other platforms remain unverified. No measured accuracy gain is claimed.\n`;
+    `源码 SHA：\`${commit}\`\n工作流 SHA：\`${workflowSha}\`\nDMG SHA-256：\`${metadata.sha256}\`\n\n`+
+    `### 已知边界\n尚未验证真实设备长会议、真实 ASR/LLM 质量、全新 Mac 首次安装、完整 App 冷启动、PG/S3 或 Windows/Linux 安装。此测试包不替代正式签名发版。\n\n`+
+    `### English\nPublic preview ${tag}: source code and a macOS Apple Silicon test installer (macOS 14.6+), built and published by GitHub Actions. See INSTALL-macos-arm64.md for this version's changes.\n\n`+
+    `**Ad-hoc signed; not Developer ID signed or notarized.** Back up existing data and do not run Preview and Alpha concurrently. Real-meeting quality, full native cold startup and fresh-machine acceptance remain unverified.\n`;
 }
 async function sourceCommit(api,base,tag) {
   let object=(await api('GET',`${base}/git/ref/tags/${tag}`)).object;
@@ -63,7 +65,7 @@ async function sourceCommit(api,base,tag) {
 }
 export async function publishPreview(options) {
   const {api,tag,commit,workflowSha,repository}=options;
-  const {metadata,files,runUrl}=await loadPreview(options.directory,options);
+  const {metadata,files,runUrl,guide}=await loadPreview(options.directory,options);
   const base=`/repos/${repository}`;
   assert.equal(await sourceCommit(api,base,tag),commit,'Source tag moved');
   const candidates=[];
@@ -81,7 +83,7 @@ export async function publishPreview(options) {
     assert.ok(release.body?.includes(commit),'Existing draft source differs');
     verifyInventory(release.assets,files);
   }
-  const body=previewNotes({tag,commit,workflowSha,metadata,runUrl});
+  const body=previewNotes({tag,commit,workflowSha,metadata,runUrl,guide});
   const payload={tag_name:tag,target_commitish:commit,name:title(tag),body,draft:true,prerelease:true,make_latest:'false'};
   if(!release)release=await api('POST',`${base}/releases`,payload);
   else {
@@ -110,9 +112,17 @@ export async function publishPreview(options) {
   verifyInventory(published.assets,files,{complete:true});
   return {published:true,url:published.html_url,tag,sourceRevision:commit,workflowSha,runUrl,assets:published.assets.map(({name,size,digest})=>({name,size,digest}))};
 }
+export function assertReleaseEvent({eventName,ref,tag,commit,workflowSha}) {
+  assert.match(tag,/^v\d+\.\d+\.\d+$/);
+  assert.ok(sha(commit) && sha(workflowSha),'Full source and workflow SHAs required');
+  const manual=eventName==='workflow_dispatch' && ref==='refs/heads/main';
+  const tagPush=eventName==='push' && ref===`refs/tags/${tag}` && commit===workflowSha;
+  assert.ok(manual || tagPush,'Only main manual dispatch or a matching source tag push may publish');
+}
+
 async function main() {
   assert.equal(process.env.CI,'true');assert.equal(process.env.GITHUB_ACTIONS,'true');
-  assert.equal(process.env.GITHUB_EVENT_NAME,'workflow_dispatch');assert.equal(process.env.GITHUB_REF,'refs/heads/main');
+  assertReleaseEvent({eventName:process.env.GITHUB_EVENT_NAME,ref:process.env.GITHUB_REF,tag:process.env.RELEASE_TAG,commit:process.env.RELEASE_SHA,workflowSha:process.env.RELEASE_WORKFLOW_SHA});
   const token=process.env.GH_TOKEN;assert.ok(token,'CI write token required');
   const repository=process.env.GITHUB_REPOSITORY;
   const api=async (method,path,data,upload=false)=>{
