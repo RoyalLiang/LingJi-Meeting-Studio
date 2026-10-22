@@ -1,6 +1,6 @@
 # 播放器 A 版增量（2026-10-22）
 
-已按用户选择实现 A 版完整单行控制；新增跳转、拖动与倍速。正式 Developer ID 签名与 Apple 公证仍受账号缺失阻塞。见[安装说明](../releases/v0.1.3-preview.md)、[安全提示](../releases/macos-trust.md)和[本地验证](../evidence/playback-a-trust-2026-10-22.md)。远端发布以 Actions 与发布回执为准。
+已按用户选择实现 A 版完整单行控制；新增跳转、拖动与倍速。正式 Developer ID 签名与 Apple 公证仍受账号缺失阻塞。见[安装说明](../releases/v0.1.4-preview.md)、[安全提示](../releases/macos-trust.md)和[本地验证](../evidence/playback-a-trust-2026-10-22.md)。远端发布以 Actions 与发布回执为准。
 
 # v0.1.2 长会议与恢复已发布（2026-10-22）
 
