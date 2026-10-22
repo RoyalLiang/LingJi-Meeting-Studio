@@ -1,0 +1,122 @@
+{
+  "checks": [
+    "backward jump resumes ended shorter real WAV",
+    "30 pointer moves produce one committed seek per track and resume",
+    "keyboard Home/End seek while paused",
+    "play at end restarts from beginning",
+    {
+      "width": 1440,
+      "theme": "light",
+      "overflow": false,
+      "height": 69,
+      "targets": [
+        {
+          "width": 44,
+          "height": 44
+        },
+        {
+          "width": 44,
+          "height": 44
+        },
+        {
+          "width": 44,
+          "height": 44
+        },
+        {
+          "width": 577.359375,
+          "height": 44
+        },
+        {
+          "width": 72,
+          "height": 44
+        }
+      ]
+    },
+    {
+      "width": 900,
+      "theme": "light",
+      "overflow": false,
+      "height": 69,
+      "targets": [
+        {
+          "width": 44,
+          "height": 44
+        },
+        {
+          "width": 44,
+          "height": 44
+        },
+        {
+          "width": 44,
+          "height": 44
+        },
+        {
+          "width": 377.359375,
+          "height": 44
+        },
+        {
+          "width": 72,
+          "height": 44
+        }
+      ]
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "overflow": false,
+      "height": 117,
+      "targets": [
+        {
+          "width": 44,
+          "height": 44
+        },
+        {
+          "width": 44,
+          "height": 44
+        },
+        {
+          "width": 44,
+          "height": 44
+        },
+        {
+          "width": 308,
+          "height": 44
+        },
+        {
+          "width": 64,
+          "height": 44
+        }
+      ]
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "overflow": false,
+      "height": 69,
+      "targets": [
+        {
+          "width": 44,
+          "height": 44
+        },
+        {
+          "width": 44,
+          "height": 44
+        },
+        {
+          "width": 44,
+          "height": 44
+        },
+        {
+          "width": 577.359375,
+          "height": 44
+        },
+        {
+          "width": 72,
+          "height": 44
+        }
+      ]
+    }
+  ],
+  "pageErrors": [],
+  "fixture": "real two-track synthetic WAV; actual React AudioPlayer"
+}

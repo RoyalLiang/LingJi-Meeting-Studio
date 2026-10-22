@@ -1,3 +1,7 @@
+# 播放器 A 版增量（2026-10-22）
+
+已按用户选择实现 A 版完整单行控制；新增跳转、拖动与倍速。正式 Developer ID 签名与 Apple 公证仍受账号缺失阻塞。见[安装说明](../releases/v0.1.3-preview.md)、[安全提示](../releases/macos-trust.md)和[本地验证](../evidence/playback-a-trust-2026-10-22.md)。远端发布以 Actions 与发布回执为准。
+
 # v0.1.2 长会议与恢复已发布（2026-10-22）
 
 本轮已将两小时限制移除、单路音源故障隔离及 C 版界面纳入同一测试安装包，发布使用后台 GitHub Actions。见[安装说明](../releases/v0.1.2-preview.md)与[修复验证](../evidence/recording-unlimited-recovery-2026-10-22.md)。下文“仅本地/尚未发布”描述保留其历史时点；本轮已由 tag push 自动触发后台 Actions，三个任务成功，五附件完整下载及摘要相符，见[发布回执](../evidence/preview-v0.1.2-2026-10-22.md)。

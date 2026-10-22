@@ -1,4 +1,4 @@
-export type PlaybackMedia = Pick<HTMLAudioElement, 'duration' | 'currentTime' | 'paused' | 'ended' | 'play' | 'pause' | 'error' | 'load'>;
+export type PlaybackMedia = Pick<HTMLAudioElement, 'duration' | 'currentTime' | 'paused' | 'ended' | 'play' | 'pause' | 'error' | 'load' | 'playbackRate' | 'preservesPitch'>;
 
 const finiteDuration = (media: PlaybackMedia) => Number.isFinite(media.duration) && media.duration > 0 ? media.duration : 0;
 
@@ -7,6 +7,7 @@ export class PlaybackTransport {
   private generation = 0;
   private requested = false;
   private activeTracks: PlaybackMedia[] = [];
+  private rate = 1;
 
   constructor(private readonly tracks: () => PlaybackMedia[]) {}
 
@@ -21,6 +22,22 @@ export class PlaybackTransport {
   }
   get playing() { return this.requested && this.tracks().some(media => !media.paused && !media.ended); }
 
+  setRate(rate: number) {
+    if (![0.75, 1, 1.25, 1.5, 2].includes(rate)) throw new RangeError('Unsupported playback rate');
+    this.rate = rate;
+    this.tracks().forEach(media => { media.playbackRate = rate; media.preservesPitch = true; });
+  }
+
+  async skip(delta: number) {
+    if (!this.duration || !Number.isFinite(delta)) return this.time;
+    const resume = this.playing;
+    const position = this.time + delta;
+    this.pause();
+    this.seek(position);
+    if (resume && this.time < this.duration) await this.play();
+    return this.time;
+  }
+
   pause() {
     this.generation++;
     this.requested = false;
@@ -32,6 +49,7 @@ export class PlaybackTransport {
     this.requested = true;
     const tracks = this.tracks();
     this.activeTracks = tracks;
+    this.setRate(this.rate);
     const results = await Promise.allSettled(tracks.filter(media => !finiteDuration(media) || media.currentTime < media.duration)
       .map(async media => {
         try { if (media.error) media.load(); await media.play(); }
@@ -50,6 +68,7 @@ export class PlaybackTransport {
   }
 
   seek(time: number) {
+    if (!this.duration || !Number.isFinite(time)) return this.time;
     const position = Math.max(0, Math.min(this.duration, time));
     this.tracks().forEach(media => {
       const duration = finiteDuration(media);
