@@ -4,13 +4,15 @@
 
 聆记面向中文会议，提供浏览器工作台与独立桌面客户端。可以采集麦克风和会议音轨、查看转录、整理主题与行动候选，并沿引用回到原文和原音。纪要可人工修改，后台重新整理不会覆盖人工编辑。
 
-**当前版本：v0.1.1，公开测试版。** 本次提供源码与 macOS Apple Silicon 测试安装包。真实会议识别质量、长时间录制和全新设备安装仍需试用验证。
+**本轮发布版本：v0.1.2，公开测试版。** 本次提供源码与 macOS Apple Silicon 测试安装包。真实会议识别质量、长时间录制和全新设备安装仍需试用验证。
 
-[下载测试版](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.1) · [安装说明](docs/releases/v0.1.1-preview.md) · [文档目录](docs/README.md) · [问题反馈](https://github.com/RoyalLiang/LingJi-Meeting-Studio/issues)
+[下载测试版](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.2) · [安装说明](docs/releases/v0.1.2-preview.md) · [文档目录](docs/README.md) · [问题反馈](https://github.com/RoyalLiang/LingJi-Meeting-Studio/issues)
 
 ![聆记工作台预览](docs/assets/workbench-preview.png)
 
 上图使用虚构会议和隔离测试数据，仅展示界面，不代表真实识别结果。
+
+本版移除两小时累计音频限制；单路音源中断时，其他音源继续录制。下载是否就绪及构建结果以 Release 附件和 Actions 回执为准。
 
 ## 能做什么
 
@@ -39,8 +41,8 @@
 
 ## 安装 macOS 测试版
 
-1. 从 [v0.1.1 发布页](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.1)下载 `Lingji-0.1.1-macos-arm64.dmg` 和校验文件。
-2. 按[安装说明](docs/releases/v0.1.1-preview.md)核对 SHA-256，将 **聆记 Preview.app** 拖到 Applications。
+1. 从 [v0.1.2 发布页](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.2)下载 `Lingji-0.1.1-macos-arm64.dmg` 和校验文件。
+2. 按[安装说明](docs/releases/v0.1.2-preview.md)核对 SHA-256，将 **聆记 Preview.app** 拖到 Applications。
 3. 首次打开时按 macOS 提示处理应用信任和采集授权，在设置中填写自己的服务配置。
 
 此包采用 ad-hoc 签名，尚无 Apple Developer ID 签名及公证。包中包含运行时，不需要另装 Node。已有 Alpha 用户应先结束录制、等待补传并备份；Preview 与 Alpha 使用相同应用标识，数据目录可能共享，不适合同时运行。

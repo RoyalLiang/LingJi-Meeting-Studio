@@ -1,3 +1,7 @@
+# v0.1.2 长会议与恢复发布候选（2026-10-22）
+
+本轮将两小时限制移除、单路音源故障隔离及 C 版界面纳入同一测试安装包，发布使用后台 GitHub Actions。见[安装说明](releases/v0.1.2-preview.md)与[修复验证](evidence/recording-unlimited-recovery-2026-10-22.md)。下文“仅本地/尚未发布”描述保留其历史时点；最终交付以本轮发布回执为准。
+
 ## 本地 Realtime 与长会议增量（2026-10-22）
 
 新增可选 OpenAI Realtime 原音理解与并行转录留证，保留旧 ASR＋LLM；移除两小时累计样本与导入时长上限。见[启用说明](engineering/openai-realtime.md)、[本地验证](evidence/openai-realtime-2026-10-22.md)和[proposed ADR 0016](adr/0016-openai-realtime-minutes.md)。本地验证不代表真实供应商或长录制验收，尚未发布。
