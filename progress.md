@@ -1,3 +1,5 @@
+2026-10-22：4 项改进源码已提交 9db4982。338/338 回归、静态/类型/Web 构建通过；独立评审 9/9 新增用例通过并关闭列表竞态。Chrome 隔离合成会议确认上传 waiting=1 时可结束，释放后 samples=1600、lastSequence=watermark=0；390px/深色布局与配置/重试入口通过。后台基准未变化历史写入100->0，就绪中位60->27ms（另次复测25ms）；不代表完整冷启动。本轮尚未推送或构建新安装包，待交付前自查回应。
+
 ## 2026-10-21 首发验证完成，待反思回应
 
 Actions run39552320372 verify/build/publish成功，tag v0.1.0仍为ef9786c，workflow cf61105。云端323 Node/21 Rust与完整包验证通过；公开五附件实际字节SHA均匹配。前两次CI失败分别修复生成资源准备顺序与Tauri默认跳过Finder布局，不移除检查。详细回执见 docs/evidence/first-public-preview-2026-10-21.md。待执行一次交付前自查并等待用户回应；不再等待Chrome权限。

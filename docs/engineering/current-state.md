@@ -1,3 +1,7 @@
+# 会议收尾与启动增量（2026-10-22）
+
+源码 `9db4982` 修复收尾被后台上传/刷新阻塞、错误接入文案、列表乱序与过期响应覆盖；优化语音处理提示条及启动恢复/首屏并发。338 项回归、静态/类型检查、Web 构建和独立审查通过；隔离浏览器确认挂起上传时可结束且尾段可补齐，390px 与明暗提示条通过。100 场合成历史的无变化恢复写入从 100 次变为 0 次，后台就绪中位 60→27 ms；不是完整 App 冷启动测量。见[本轮证据](../evidence/meeting-lifecycle-startup-2026-10-22.md)。本轮尚无新安装包或远端发布，当前公开 v0.1.0 不含这些增量。
+
 # v0.1.0 公开测试版增量（2026-10-21）
 
 v0.1.0 已由 [Actions run 39552320372](https://github.com/RoyalLiang/LingJi-MS/actions/runs/39552320372) 构建并发布 [GitHub pre-release](https://github.com/RoyalLiang/LingJi-MS/releases/tag/v0.1.0)。源码 ef9786c、工作流 cf61105，公开五附件字节与 SHA-256 已核对；云端 323 项 Node、21 项 Rust 及包内隔离启动/重启通过。完整边界见[首发证据](../evidence/first-public-preview-2026-10-21.md)。

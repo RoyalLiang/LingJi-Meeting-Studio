@@ -1,3 +1,7 @@
+## 本地修复增量（2026-10-22）
+
+- [会议收尾、提示条、创建时间排序和启动优化验证](evidence/meeting-lifecycle-startup-2026-10-22.md)：源码、本地验证及当前安装版差距。
+
 # 当前首发入口（2026-10-21）
 
 - [v0.1.0 Actions 发布验证](evidence/first-public-preview-2026-10-21.md)

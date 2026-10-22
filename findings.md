@@ -1,3 +1,5 @@
+2026-10-22：收尾流程错误地等待后台上传/刷新，且通用 busy 误标为接入声音；列表按更新时间排序并存在过期响应覆盖新会议的竞态；启动恢复对每场未变化的已结束会议仍执行数据库写入。均以实际函数或真实 SQLite 先红后绿验证。源码 9db4982，验证见 docs/evidence/meeting-lifecycle-startup-2026-10-22.md。完整 App 冷启动、真实设备与真实 ASR 未验证。
+
 ## 2026-10-21 Actions 发布事实
 
 新增 preview workflow 的 source_sha 与标签硬比对；controller 与源码分别记SHA，不移动v0.1.0。发布器防止过期草稿快照改写已发布版本，6项契约和独立复核通过。329 Node、ESLint、docs101、官方actionlint通过。云端构建及发布尚未执行。Chrome文件URL权限未改变。
