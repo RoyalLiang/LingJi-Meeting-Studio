@@ -35,7 +35,7 @@ jobs:
           if [[ "$native_status" -ne 0 ]]; then
             node --input-type=module <<'NODE'
           import { readFileSync } from 'node:fs';
-          const tail = readFileSync('.agent-runtime/native-ci-tests.log', 'utf8').slice(-18000);
+          const tail = readFileSync('.agent-runtime/native-ci-tests.log', 'utf8').slice(-6000);
           const blocks = tail.match(/[\s\S]{1,1000}/g) || [];
           for (const [index, block] of blocks.entries()) {
             const message = block.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
