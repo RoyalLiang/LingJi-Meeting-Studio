@@ -1,3 +1,4 @@
+import { recordingWaveform } from './waveform.mjs';
 import { doubaoAudioEnabled } from './config.mjs';
 import { audioMinutesEnabled } from './config.mjs';
 import { testDoubaoAudio } from './doubao-audio-minutes.mjs';
@@ -181,6 +182,11 @@ export async function createRecordServer(options = {}) {
           const contiguous = chunk.sequence === index && chunk.sampleOffset === sampleOffset;
           sampleOffset += chunk.sampleCount; return contiguous;
         }), 'audio_unavailable', 404);
+        if (url.searchParams.get('waveform') === '1') {
+          const waveform = await recordingWaveform(chunks, object => repo.readAudio(object), () => res.destroyed || res.writableEnded);
+          if (waveform) send(res, 200, waveform);
+          return;
+        }
         const length = chunks.reduce((n, c) => n + c.sampleCount * 2, 0), total = length + 44;
         const range = req.headers.range?.match(/^bytes=(\d+)-(\d*)$/);
         const start = range ? Number(range[1]) : 0, end = range && range[2] ? Math.min(Number(range[2]), total - 1) : total - 1;
