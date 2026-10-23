@@ -1,3 +1,4 @@
+import { automaticMinutesAt } from '../../../packages/records/src/automation.mjs';
 import {queueLearningReview} from '../../../packages/records/src/learning.mjs';
 // Private bundled runtime entry; never imports a developer .env or starts Vite.
 import { randomBytes } from 'node:crypto';
@@ -36,6 +37,10 @@ export async function recoverTemporaryAudio(root) {
 export async function recoverLocalWork(repo) {
   for (const record of await repo.list()) {
     if (record.deleted) continue;
+    const minutesAt = automaticMinutesAt(record);
+    if (['paused', 'completed'].includes(record.capture) && minutesAt < (record.nextWorkAt ?? Infinity)) {
+      await repo.change(record.id, current => emit(current, 'minutes.recovery-scheduled'));
+    }
     // Avoid serializing and rebuilding projections for unchanged history.
     if(record.capture==='completed' && process.env.RECORD_LEARNING_ENABLED!=='false' && queueLearningReview(record,true))await repo.change(record.id,r=>{if(queueLearningReview(r,true))emit(r,'learning.queued');});
     const interrupted = record.jobs.some(job => job.status === 'running') || record.chunks.some(chunk => chunk.lease) || record.intentLease || record.sources.some(source => source.asr?.state === 'running' || source.asr?.lease) || record.segments.some(segment => segment.translationLease);

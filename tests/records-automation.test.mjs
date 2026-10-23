@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createRecord, requestMinutes, commitMinutes, validateMinutes, addSource, acknowledge, digest, editSegment } from '../packages/records/src/record.mjs';
+import { createRecord, requestMinutes, commitMinutes, validateMinutes, addSource, acknowledge, digest, editSegment, pause, commitTranscript } from '../packages/records/src/record.mjs';
 import { setAutomation, automaticMinutesAt, queueAutomaticMinutes, updateMinutesPreview } from '../packages/records/src/automation.mjs';
 import { createRepository } from '../services/records/src/repository.mjs';
 import { runCycle } from '../services/records/src/worker.mjs';
@@ -67,8 +67,8 @@ test('manual final success ends retry scheduling and a fresh manual failure rece
  const third=queueAutomaticMinutes(retryRecord,'fixture',145000);assert.equal(third.retryAttempt,3);third.status='failed';third.error='llm_timeout';third.failedAt=145000;
  assert.equal(automaticMinutesAt(retryRecord,999999),Infinity);
 });
-test('automatic retries preserve human minutes and do not retry invalid configuration or unvalidated output', () => {
- for(const error of ['provider_unauthorized','llm_endpoint_not_api','invalid_minutes_schema','minutes_intermediate_too_large']) {
+test('automatic retries preserve human minutes and do not retry invalid configuration or unsafe evidence', () => {
+ for(const error of ['provider_unauthorized','llm_endpoint_not_api','invalid_minutes_evidence','minutes_intermediate_too_large']) {
   const r=record();r.capture='completed';setAutomation(r,{enabled:true},1000);
   const job=queueAutomaticMinutes(r,'fixture',1000);job.status='failed';job.error=error;
   assert.equal(automaticMinutesAt(r,999999),Infinity,error);
@@ -189,11 +189,11 @@ test('translation waiting never delays audio transcript persistence', async () =
 });
 
 
-test('a final minutes job keeps its lease while a longer model request is in flight', async () => {
+for (const capture of ['paused','completed']) test(`a ${capture} completion job keeps its lease while the longer model request is in flight`, async () => {
  const root=await mkdtemp(join(tmpdir(),'tts-final-lease-')),repo=await createRepository({root,databaseUrl:''});
  const originalNow=Date.now;let now=originalNow();Date.now=()=>now;
  let release,started,pending,calls=0;const blocked=new Promise(resolve=>{release=resolve;});const ready=new Promise(resolve=>{started=resolve;});
- const r=record();r.capture='completed';requestMinutes(r);await repo.insert(r);
+ const r=record();r.capture=capture;if(capture==='completed')requestMinutes(r);else{setAutomation(r,{enabled:true},now);queueAutomaticMinutes(r,'fixture',now);}await repo.insert(r);
  try{
   pending=runCycle(repo,{minutes:async()=>{calls++;started();await blocked;return result;}},{lane:'minutes'});
   await ready;
@@ -204,4 +204,74 @@ test('a final minutes job keeps its lease while a longer model request is in fli
   assert.equal((await repo.get(r.id)).jobs[0].fence,fence);
   release();await pending;assert.equal((await repo.get(r.id)).jobs[0].status,'completed');
  }finally{release();await pending;Date.now=originalNow;await repo.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('final minutes automatically recover a malformed model response with bounded retries and edit protection', () => {
+  for (const error of ['invalid_minutes_schema','invalid_llm_response']) {
+    const r=record(); r.capture='completed'; setAutomation(r,{enabled:true},1000);
+    const first=queueAutomaticMinutes(r,'fixture',1000);
+    Object.assign(first,{status:'failed',error,failedAt:1000});
+    assert.equal(automaticMinutesAt(r,1001),16000, `${error} must leave a bounded automatic recovery path`);
+    const second=queueAutomaticMinutes(r,'fixture',16000);
+    assert.equal(second.retryAttempt,2);
+    Object.assign(second,{status:'failed',error,failedAt:16000});
+    const third=queueAutomaticMinutes(r,'fixture',46000);
+    assert.equal(third.retryAttempt,3);
+    Object.assign(third,{status:'failed',error,failedAt:46000});
+    assert.equal(automaticMinutesAt(r,999999),Infinity,'malformed output must not loop or create unlimited paid requests');
+    r.minutes={edited:true};
+    assert.equal(automaticMinutesAt(r,999999),Infinity);
+  }
+});
+
+test('pausing automatically catches up saved content and retries a failed live summary without ending the meeting', () => {
+  const r=record(); r.capture='paused'; setAutomation(r,{enabled:true},1000);
+  const failed=requestMinutes(r,{mode:'model',scope:'live',automatic:true,modelVersion:'fixture'});
+  Object.assign(failed,{status:'failed',error:'invalid_minutes_schema',failedAt:1000,retryAttempt:1});
+  Object.assign(r.autoMinutes,{lastRevision:r.transcriptRevision,lastScope:'live',lastRequestedAt:1000});
+  assert.equal(automaticMinutesAt(r,1001),16000,'pause must not abandon a failed final live batch');
+  const retry=queueAutomaticMinutes(r,'fixture',16000);
+  assert.equal(retry.scope,'live');assert.equal(retry.retryAttempt,2);
+  assert.equal(r.capture,'paused','catch-up must preserve resumable capture');
+  retry.status='running';retry.fence='pause-retry';
+  commitMinutes(r,retry.id,result,'pause-retry');
+  assert.ok(r.liveMinutes);assert.equal(r.minutes,null);
+  assert.equal(automaticMinutesAt(r,17000),Infinity,'an unchanged successful pause checkpoint must not repeat requests');
+});
+
+for (const capture of ['paused','completed']) test(`worker recovers malformed ${capture} minutes after restart and only commits validated content`, async () => {
+  const root=await mkdtemp(join(tmpdir(),'tts-checkpoint-recovery-'));let repo=await createRepository({root,databaseUrl:''});
+  const originalNow=Date.now;let now=originalNow(),calls=0;Date.now=()=>now;
+  const r=record();r.capture=capture;setAutomation(r,{enabled:true},now);await repo.insert(r);
+  const providers={minutes:async()=>++calls===1?{title:'incomplete model response'}:result};
+  try {
+    await saveConfig(root,{LLM_API_URL:'http://fixture.invalid/responses',LLM_API_KEY:'fixture-key',LLM_MODEL:'fixture-model'},{});
+    await runCycle(repo,providers,{lane:'minutes'});
+    let saved=await repo.get(r.id);
+    assert.equal(saved.jobs.at(-1).status,'failed');assert.equal(saved.jobs.at(-1).error,'invalid_minutes_schema');
+    assert.equal(saved.minutes,null);assert.ok(!saved.liveMinutes,'malformed content must never become a saved summary');
+    assert.equal(automaticMinutesAt(saved,now),now+15000);
+    await repo.close();repo=await createRepository({root,databaseUrl:''});now+=15001;
+    await runCycle(repo,providers,{lane:'minutes'});saved=await repo.get(r.id);
+    assert.equal(saved.capture,capture);assert.equal(saved.jobs.at(-1).status,'completed');assert.equal(saved.jobs.at(-1).retryAttempt,2);
+    const document=capture==='paused'?saved.liveMinutes:saved.minutes;
+    assert.equal(document.title,'评审');assert.equal(document.transcriptRevision,saved.transcriptRevision);
+    assert.deepEqual(document.sections,result.sections);
+    await runCycle(repo,providers,{lane:'minutes'});assert.equal(calls,2,'a recovered stable checkpoint must not regenerate again');
+  } finally {Date.now=originalNow;await repo.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('paused catch-up waits for the stop manifest tail to be durably acknowledged and transcribed', () => {
+  const r=record(),source=addSource(r,{kind:'microphone'}),bytes=Buffer.alloc(32000);
+  const packet=sequence=>({sessionId:source.sessionId,sourceId:source.id,epoch:source.epoch,sequence,sampleOffset:sequence*16000,sampleCount:16000,sampleRate:16000,digest:digest(bytes),object:`synthetic-${sequence}`});
+  acknowledge(r,packet(0));commitTranscript(r,r.chunks[0].key,'已录内容',r.generation);
+  pause(r,[{sourceId:source.id,epoch:source.epoch,lastSequence:1}]);setAutomation(r,{enabled:true},1000);
+  assert.ok(r.chunks.every(chunk=>chunk.state==='done'));
+  assert.equal(source.watermark,0);assert.equal(source.lastSequence,1);
+  assert.equal(automaticMinutesAt(r,2000),Infinity,'a local tail absent from the durable server chunks must block catch-up');
+  acknowledge(r,packet(1));
+  assert.equal(automaticMinutesAt(r,2000),Infinity,'durable audio still waits for transcript commit');
+  commitTranscript(r,r.chunks[1].key,'补传尾音',r.generation);
+  const checkpoint=queueAutomaticMinutes(r,'fixture',2000);
+  assert.equal(checkpoint.scope,'live');assert.equal(checkpoint.pausedCheckpoint,true);assert.equal(r.capture,'paused');
 });

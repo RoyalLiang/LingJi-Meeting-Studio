@@ -69,3 +69,18 @@ test('a late older refresh cannot hide a just-created meeting in the same worksp
   h.pending[0].resolve({records:[]});await older;
   assert.equal(h.state.records[0]?.id,'just-created');
 });
+
+test('upgrading reschedules an overdue paused recovery without waiting for the old scheduler deadline', async () => {
+  const {setAutomation,queueAutomaticMinutes}=await import('../packages/records/src/automation.mjs');
+  const now=Date.now(),record=createRecord('fixture-owner');record.capture='paused';
+  record.segments=[{id:'s1',revision:1,text:'周五评审',startMs:0,endMs:1000,sourceId:'text-import'}];record.transcriptRevision=1;
+  setAutomation(record,{enabled:true},now-60000);
+  const job=queueAutomaticMinutes(record,'fixture',now-60000);
+  Object.assign(job,{status:'failed',error:'invalid_minutes_schema',failedAt:now-30000});
+  record.nextWorkAt=now+3600000;
+  let writes=0;
+  const repo={list:async(kind='record')=>kind==='record'?[structuredClone(record)]:[],change:async(_id,change)=>{writes++;change(record);}};
+  await recoverLocalWork(repo);
+  assert.equal(writes,1,'an overdue new recovery rule must recompute the persisted schedule at startup');
+  assert.equal(record.capture,'paused');assert.equal(record.minutes,null);
+});

@@ -265,7 +265,9 @@ export function recordingDurationMs(record) {
 }
 export function publicRecord(record) {
   const { owner, events, chunks, shares, jobs, minutesHistory, learning, ...rest } = record;
-  return { ...rest, durationMs: recordingDurationMs(record),
+  const errorCodes = [...new Set([...record.sources.filter(source => source.asr?.state === 'failed').map(source => source.asr.error), ...chunks.filter(chunk => chunk.state !== 'done').map(chunk => chunk.error)].filter(Boolean))].sort();
+  const transcriptionIssue = errorCodes.length ? {code: errorCodes[0], identity: digest(JSON.stringify([record.generation, record.transcriptionRetryVersion || 0, errorCodes]))} : undefined;
+  return { ...rest, ...(transcriptionIssue ? {transcriptionIssue} : {}), durationMs: recordingDurationMs(record),
     transcription: record.sources.some(source => source.asr?.state === 'failed') && ['queued', 'processing'].includes(record.transcription) ? 'blocked' : record.transcription, ...(learning ? {learning:publicLearning(record)} : {}), segments: record.segments.map(({translationFence,translationLease,...segment})=>segment), sources: record.sources.map(({asr,...source})=>({...source,...(asr ? {asr:{state:asr.state,error:asr.error,retryable:asr.retryable,retryAt:asr.retryAt,transportCode:asr.transportCode,identityWarning:asr.identityWarning,preview:asr.preview,runtime:asr.runtime}} : {})})), audio: record.sources.map(s => receipt(record, s)),
     pendingChunks: chunks.filter(c => c.state !== 'done').length,
     minuteVersions: [...(minutesHistory || []), ...(record.minutes ? [record.minutes] : [])].map(m => ({ revision: m.revision, transcriptRevision: m.transcriptRevision, edited: m.edited })),

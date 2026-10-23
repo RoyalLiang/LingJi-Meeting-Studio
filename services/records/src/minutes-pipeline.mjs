@@ -1,3 +1,4 @@
+import { minutesTimeoutMs } from './minutes-deadline.mjs';
 import { audioMinutesEnabled } from './config.mjs';
 import { liveBaseline, mergeLiveMinutes } from '../../../packages/records/src/live-minutes.mjs';
 import { telemetry } from './telemetry.mjs';
@@ -87,7 +88,7 @@ export async function runMinutesPipeline(repo,recordId,claim,config,generate,opt
     job.progress={completed:0,total:manifest.windows.length,stage:'windows'};
   });
   async function execute(key,input,stage,preview=false){
-    await repo.change(recordId,record=>{const job=currentJob(record,claim);job.lease=Date.now()+(claim.scope==='live'?180000:300000);});
+    await repo.change(recordId,record=>{const job=currentJob(record,claim);job.lease=Date.now()+(minutesTimeoutMs(claim)+60000);});
     let result=cache.get(key);
     if(result){validateMinutes(result,claim.snapshot);reused++;}
     else if(inFlight.has(key)){result=await inFlight.get(key);reused++;}
@@ -116,7 +117,7 @@ export async function runMinutesPipeline(repo,recordId,claim,config,generate,opt
           job.partialMinutes = {...partial, transcriptRevision:claim.transcriptRevision, generatedAt:new Date().toISOString()};
         }
       }
-      job.progress.stage=stage;job.lease=Date.now()+(claim.scope==='live'?180000:300000);emit(record,'minutes.progress',{jobId:job.id,completed:job.progress.completed,total:job.progress.total,stage});
+      job.progress.stage=stage;job.lease=Date.now()+(minutesTimeoutMs(claim)+60000);emit(record,'minutes.progress',{jobId:job.id,completed:job.progress.completed,total:job.progress.total,stage});
     });
     cache.set(key,result);return {key,result};
   }

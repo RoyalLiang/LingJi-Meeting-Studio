@@ -1,3 +1,4 @@
+import { minutesTimeoutMs } from './minutes-deadline.mjs';
 import { transcribeDoubaoModelAudio } from './doubao-model-transcription.mjs';
 import { doubaoAudioEnabled } from './config.mjs';
 import { doubaoAudioConfigured } from './doubao-audio-minutes.mjs';
@@ -64,7 +65,7 @@ export async function transcribe(bytes, record, chunk, env = process.env) {
 export async function completeJson(messages, env = process.env, options = {}) {
   return completeModelJson(messages, env, options);
 }
-export const minutesTimeoutMs = job => job.scope === 'live' ? 120000 : 240000;
+export { minutesTimeoutMs };
 export async function generateMinutes(job, env = process.env, options = {}) {
   if (job.mode === 'extractive') {
     const hints = ruleIntents(job.snapshot), sections = [];

@@ -1,0 +1,8 @@
+{
+  "syntheticOnly": true,
+  "oldFutureDeadlineRecovered": true,
+  "sqliteRestartPersistence": true,
+  "capturePreserved": true,
+  "realProviders": false,
+  "realAudioDevices": false
+}
