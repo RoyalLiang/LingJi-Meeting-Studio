@@ -178,6 +178,11 @@ impl Captures {
     }
     #[cfg(feature = "smoke-test")]
     pub fn synthetic(&self, kind: &str) -> Result<Started, String> {
+        self.synthetic_source(kind, None)
+    }
+
+    #[cfg(feature = "smoke-test")]
+    fn synthetic_source(&self, kind: &str, frame_limit: Option<(usize, mpsc::SyncSender<()>)>) -> Result<Started, String> {
         let id = format!("fixture-{}", self.next.fetch_add(1, Ordering::Relaxed));
         let stop = Arc::new(AtomicBool::new(false));
         let discard = Arc::new(AtomicBool::new(false));
@@ -203,7 +208,8 @@ impl Captures {
             let result = (|| {
                 let mut pipe = Pipeline::new(48_000, 2)?;
                 let mut offset = 0;
-                while !stop.load(Ordering::Acquire) {
+                let mut frames = 0;
+                while !stop.load(Ordering::Acquire) && frame_limit.as_ref().is_none_or(|(limit, _)| frames < *limit) {
                     let data: Vec<f32> = (0..960)
                         .flat_map(|n| {
                             let v = ((offset + n) as f32 * 440.0 * std::f32::consts::TAU
@@ -215,7 +221,13 @@ impl Captures {
                         .collect();
                     send_packets(&packets, pipe.push(&data)?)?;
                     offset += 960;
-                    std::thread::sleep(Duration::from_millis(20));
+                    frames += 1;
+                    if frame_limit.is_none() { std::thread::sleep(Duration::from_millis(20)); }
+                }
+                if let Some((_, ready)) = frame_limit {
+                    ready.send(()).map_err(|_| "合成测试调用已结束")?;
+                    // The test controls stop explicitly so the real stop path must flush the tail.
+                    while !stop.load(Ordering::Acquire) { std::thread::sleep(Duration::from_millis(1)); }
                 }
                 if !discard.load(Ordering::Acquire) {
                     send_packets(&packets, pipe.finish()?)?;
@@ -464,16 +476,13 @@ mod tests {
     #[test]
     fn native_capture_survives_delayed_frontend_reads_and_drains_on_stop() {
         let captures = Captures::default();
-        let started = captures.synthetic("display").unwrap();
+        let (ready, produced) = mpsc::sync_channel(0);
+        let started = captures.synthetic_source("display", Some((560, ready))).unwrap();
         let session = captures.sessions.lock().unwrap()[&started.id].clone();
-        let deadline = std::time::Instant::now() + Duration::from_secs(30);
-        while session.receiver.buffered_bytes() < 10 * (32_012 + 4) {
-            assert!(session.error.lock().unwrap().is_none());
-            assert!(std::time::Instant::now() < deadline, "synthetic producer did not progress");
-            std::thread::sleep(Duration::from_millis(20));
-        }
+        produced.recv_timeout(Duration::from_secs(120)).expect("finite source must reach its stop barrier");
         assert!(captures.active());
         assert!(session.error.lock().unwrap().is_none());
+        assert!(session.receiver.buffered_bytes() > 10 * (32_000 + 12), "finite producer must accumulate beyond the old queue before any read");
         captures.stop(&started.id, false).unwrap();
         let (mut sequence, mut offset) = (0u32, 0u32);
         loop {
@@ -487,6 +496,7 @@ mod tests {
             offset += field(8);
         }
         assert!(offset >= 9 * pipeline::RATE, "must preserve audio beyond the old eight-packet limit");
+        assert_eq!(offset, 560 * (960 * pipeline::RATE / 48_000), "every finite source sample and the final tail must drain");
         assert!(!captures.active());
     }
 
