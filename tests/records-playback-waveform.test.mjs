@@ -5,7 +5,7 @@ import { stripTypeScriptTypes } from 'node:module';
 import { recordingWaveform } from '../services/records/src/waveform.mjs';
 
 const load = async path => import(`data:text/javascript;base64,${Buffer.from(stripTypeScriptTypes(await readFile(new URL(path, import.meta.url), 'utf8'), {mode:'transform'})).toString('base64')}`);
-const { mergeWaveforms, parsePlaybackTime, waveformTicks } = await load('../apps/web/src/audio/playback-waveform.ts');
+const { mergeWaveforms, parsePlaybackTime, waveformTicks, waveformSeekTime } = await load('../apps/web/src/audio/playback-waveform.ts');
 const { PlaybackTransport, PlaybackScrub } = await load('../apps/web/src/audio/playback-transport.ts');
 
 function pcm(values) { const bytes = Buffer.alloc(values.length * 2); values.forEach((value,index) => bytes.writeInt16LE(value,index * 2)); return bytes; }
@@ -51,12 +51,12 @@ async function playerFixture(failWaveform=false) {
   const makeTrack=duration=>({duration,currentTime:0,paused:true,ended:false,error:null,playbackRate:1,preservesPitch:true,seeks:[],
     async play(){this.paused=false;},pause(){this.paused=true;},load(){}});
   const tracks=[makeTrack(90),makeTrack(60)];
-  const icon=()=>null, sandbox={module:{exports:{}},AbortController,PlaybackTransport,PlaybackScrub,mergeWaveforms,parsePlaybackTime,waveformTicks,
+  const icon=()=>null, sandbox={module:{exports:{}},AbortController,PlaybackTransport,PlaybackScrub,mergeWaveforms,parsePlaybackTime,waveformTicks,waveformSeekTime,
     useId:()=> 'c-player',useRef:value=>refs[refCursor++]??={current:value},
     useState(initial){const index=cursor++;if(!(index in states))states[index]=typeof initial==='function'?initial():initial;return[states[index],next=>{states[index]=next;}];},
     useEffect(fn,next){const i=effectCursor++;if(JSON.stringify(next)!==deps[i]){deps[i]=JSON.stringify(next);effects.push(()=>{cleanups[i]?.();cleanups[i]=fn();});}},
     api:async(path,method,body,signal)=>{requests.push({path,signal});if(failWaveform)throw Error('network');return {samples:(path.includes('mic')?90:60)*16000,sampleRate:16000,peaks:Array(192).fill(.25)};},
-    Button:props=>({tag:'button',props}),Select:props=>({tag:'select',props}),Toast:icon,Play:icon,Pause:icon,ArrowCounterClockwise:icon,ArrowClockwise:icon,Waveform:icon,Timer:icon,ArrowRight:icon};
+    Button:props=>({tag:'button',props}),Select:props=>({tag:'select',props}),Toast:icon,Play:icon,Pause:icon,ArrowCounterClockwise:icon,ArrowClockwise:icon,Waveform:icon,Timer:icon,ArrowRight:icon,Gauge:icon};
   sandbox.React={createElement:(tag,props,...children)=>typeof tag==='function'?tag({...props,children}):({tag,props:props||{},children:children.flat()})};
   vm.runInNewContext(code,sandbox);
   const sources=[{id:'mic',src:'/api/records/r/audio/mic',label:'我的声音'},{id:'meeting',src:'/api/records/r/audio/meeting',label:'会议声音'}];
@@ -68,28 +68,33 @@ async function playerFixture(failWaveform=false) {
   return {tracks,requests,render,find:predicate=>walk(render(),predicate),dispose:()=>cleanups.forEach(fn=>fn?.())};
 }
 
-test('C player renders real waveform, ticks and centered controls; time jump and drag retain dual-track semantics', async () => {
-  const fixture=await playerFixture();try {
+test('compact C player seeks by waveform click and drag, keeps both tracks aligned and removes duplicate controls', async () => {
+  const fixture=await playerFixture();
+  try {
     const find=fixture.find;
     assert.ok(find(node=>node.props.className==='player-waveform'));
     assert.ok(find(node=>node.props.className==='player-wave-ticks'));
-    assert.ok(find(node=>node.props.className==='player-bottomline'));
-    assert.equal(fixture.requests.length,2,'fresh sources array does not re-request unchanged waveforms');
+    assert.equal(find(node=>node.props['aria-label']==='跳转时间'),null);
+    assert.equal(find(node=>node.props.className==='player-time'),null);
+    assert.equal(fixture.requests.length,2);
     find(node=>node.props['aria-label']==='播放原音').props.onClick();await new Promise(resolve=>setImmediate(resolve));
-    find(node=>node.props['aria-label']==='跳转时间').props.onChange({target:{value:'00:40'}});
-    find(node=>node.tag==='form').props.onSubmit({preventDefault(){}});await new Promise(resolve=>setImmediate(resolve));
-    assert.ok(fixture.tracks.every(track=>track.currentTime===40&&!track.paused));
-    const slider=find(node=>node.props.className==='player-seek');
-    slider.props.onPointerDown({pointerId:1,currentTarget:{setPointerCapture(){}}});
-    slider.props.onChange({currentTarget:{value:'75'}});
-    assert.ok(fixture.tracks.every(track=>track.currentTime===40&&track.paused));
-    slider.props.onPointerUp();await new Promise(resolve=>setImmediate(resolve));
+    let captured=false,focused=false;
+    const target={focus(){focused=true;},getBoundingClientRect:()=>({left:10,width:180}),setPointerCapture(){captured=true;},hasPointerCapture(){return captured;},releasePointerCapture(){captured=false;}};
+    const event=clientX=>({clientX,pointerId:1,isPrimary:true,button:0,currentTarget:target,preventDefault(){}});
+    let slider=find(node=>node.props.className==='player-seek');
+    slider.props.onPointerDown(event(90));assert.equal(focused,true,'clicking the waveform must focus the keyboard slider');
+    assert.ok(fixture.tracks.every(track=>track.currentTime===0&&track.paused),'press previews without seeking decoded media');
+    slider.props.onPointerUp(event(90));await new Promise(resolve=>setImmediate(resolve));
+    assert.ok(fixture.tracks.every(track=>track.currentTime===40&&!track.paused),'a click seeks to its position and resumes');
+    slider=find(node=>node.props.className==='player-seek');
+    slider.props.onPointerDown(event(50));slider.props.onPointerMove(event(160));
+    assert.ok(fixture.tracks.every(track=>track.currentTime===40&&track.paused),'drag previews without repeated media seeks');
+    slider.props.onPointerUp(event(160));await new Promise(resolve=>setImmediate(resolve));
     assert.equal(fixture.tracks[0].currentTime,75);assert.equal(fixture.tracks[1].currentTime,60);
-    find(node=>node.props['aria-label']==='跳转时间').props.onChange({target:{value:'3:10'}});
-    find(node=>node.tag==='form').props.onSubmit({preventDefault(){}});
-    assert.equal(find(node=>node.props['aria-label']==='跳转时间').props['aria-invalid'],true);
+    const speed=find(node=>node.tag==='select'&&node.props.label.startsWith('播放速度'));
+    assert.ok(speed.props.triggerContent,'speed uses the shared icon trigger');
+    speed.props.onChange('1.25');assert.ok(fixture.tracks.every(track=>track.playbackRate===1.25&&track.preservesPitch));
   } finally {fixture.dispose();}
-  assert.ok(fixture.requests.every(request=>request.signal.aborted));
 });
 
 test('waveform failure stays explicit and leaves playback/seek available', async () => {

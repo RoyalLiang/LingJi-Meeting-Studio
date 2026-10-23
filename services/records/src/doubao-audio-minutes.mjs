@@ -1,3 +1,4 @@
+import { minutesTimeoutMs } from './minutes-deadline.mjs';
 import { normalizeConfig, configured } from './config.mjs';
 import { completeModelJson } from './llm.mjs';
 import { audioMinutesInstructions } from './audio-minutes.mjs';
@@ -61,7 +62,7 @@ export async function generateDoubaoAudioMinutes(repo, recordId, job, input, opt
   const result = await completeModelJson([
     { role: 'system', content: audioMinutesInstructions },
     { role: 'user', content: [...clips.flatMap(clip => [{ type: 'input_text', text: `音频 ${clip.clipId}，对应时间及来源见下方 audio 映射。` }, clip.audio]), { type: 'input_text', text: JSON.stringify(data) }] },
-  ], config, { ...options, timeoutMs: job.scope === 'live' ? 120000 : 240000 });
+  ], config, { ...options, timeoutMs: minutesTimeoutMs(job) });
   validateMinutes(result, refs);
   result.audioEvidence = clips.flatMap(clip => clip.chunks.map(chunk => ({ clipId: clip.clipId, ...chunk })));
   result.runtime = { ...result.runtime, inputMode: config.MINUTES_MODE, model: config.LLM_MODEL };

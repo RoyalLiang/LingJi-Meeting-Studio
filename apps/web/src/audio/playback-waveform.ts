@@ -25,3 +25,9 @@ export function waveformTicks(duration: number): number[] {
   if (!(duration > 0)) return [];
   return [0, duration / 4, duration / 2, duration * 3 / 4, duration];
 }
+
+/** Map pointer coordinates to the shared recording clock, including clicks beyond the waveform edges. */
+export function waveformSeekTime(clientX: number, left: number, width: number, duration: number): number {
+  if (![clientX, left, width, duration].every(Number.isFinite) || width <= 0 || duration <= 0) return 0;
+  return Math.max(0, Math.min(1, (clientX - left) / width)) * duration;
+}

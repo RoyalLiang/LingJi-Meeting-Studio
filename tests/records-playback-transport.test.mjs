@@ -197,13 +197,13 @@ test('player speed uses the shared selector and changes both tracks without paus
   const tracks=[track(30),track(45)]; tracks.forEach(media=>{media.paused=false;});
   const icon=()=>null, sandbox={module:{exports:{}},useEffect(){},useId:()=> 'wave-fixture',waveformTicks:()=>[],useRef(value){return refs[refCursor++]??={current:value};},
     useState(initial){const index=cursor++;if(!(index in states))states[index]=typeof initial==='function'?initial():initial;return [states[index],next=>{states[index]=next;}];},
-    PlaybackTransport,PlaybackScrub,Button:icon,Toast:icon,Play:icon,Pause:icon,ArrowCounterClockwise:icon,ArrowClockwise:icon,Waveform:icon,Timer:icon,ArrowRight:icon,
+    PlaybackTransport,PlaybackScrub,Button:icon,Toast:icon,Play:icon,Pause:icon,ArrowCounterClockwise:icon,ArrowClockwise:icon,Waveform:icon,Timer:icon,ArrowRight:icon,Gauge:icon,
     Select:props=>{selection=props;return null;}};
   sandbox.React={createElement:(tag,props,...children)=>typeof tag==='function'?tag({...props,children}):({tag,props,children})};
   vm.runInNewContext(code,sandbox);
   const render=()=>{cursor=0;refCursor=0;sandbox.module.exports.AudioPlayer({sources:[{id:'mic',src:'/mic',label:'我的声音'},{id:'meeting',src:'/meeting',label:'会议声音'}]});};
   render(); refs[0].current=tracks;
-  assert.equal(selection.label,'播放速度');assert.equal(selection.menuMinWidth,112);
+  assert.match(selection.label,/^播放速度/);assert.ok(selection.triggerContent);assert.equal(selection.menuMinWidth,112);
   assert.deepEqual(Array.from(selection.options,option=>option.value),['0.75','1','1.25','1.5','2']);
   selection.onChange('1.5');render();
   assert.equal(selection.value,'1.5');
