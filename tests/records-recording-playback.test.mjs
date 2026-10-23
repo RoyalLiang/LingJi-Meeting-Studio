@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import vm from 'node:vm';
 import { createRecordServer } from '../services/records/src/server.mjs';
+import { transform } from 'esbuild';
+import { createRecord, addSource, acknowledge, publicRecord, pause } from '../packages/records/src/record.mjs';
 import { digest } from '../packages/records/src/record.mjs';
 import { runCycle } from '../services/records/src/worker.mjs';
 
@@ -147,4 +149,31 @@ test('retained recordings serve complete WAV and byte ranges while temporary or 
     await app.stop();
     await rm(root, { recursive: true });
   }
+});
+
+async function renderAudioDuration(record) {
+  const source = await readFile(new URL('../apps/web/src/App.tsx', import.meta.url), 'utf8');
+  const span = source.match(/<span>\{timecode\([^\n]+? 音频 · 转录 v\{record.transcriptRevision\}<\/span>/)?.[0];
+  assert.ok(span, 'use the actual meeting header');
+  const code = (await transform(`exports.render = () => (${span});`, { loader: 'tsx' })).code;
+  const sandbox = { exports: {}, record, React: { createElement: (_tag, _props, ...children) => children.join('') }, timecode: ms => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000 % 60)).padStart(2, '0')}` };
+  vm.runInNewContext(code, sandbox);
+  return sandbox.exports.render();
+}
+function timedRecording() {
+  const record = createRecord('duration-fixture'), mic = addSource(record, { kind: 'microphone' }), display = addSource(record, { kind: 'display' });
+  for (const [source, count] of [[mic, 88], [display, 72]]) for (let sequence = 0; sequence < count; sequence++) acknowledge(record, { sessionId: source.sessionId, sourceId: source.id, epoch: source.epoch, sequence, sampleOffset: sequence * 240000, sampleCount: 240000, sampleRate: 16000, digest: `fixture-${source.id}-${sequence}`, object: 'fixture' });
+  return record;
+}
+test('meeting header shows a 22-minute dual-source timeline instead of 40 track-minutes', async () => {
+  const record = timedRecording(), detail = publicRecord(record);
+  assert.equal(record.usage.samples / 16000, 40 * 60, 'aggregate usage still counts both tracks');
+  assert.match(await renderAudioDuration(detail), /^22:00 音频/);
+});
+test('meeting duration includes resumed audio once while parallel and empty sources do not inflate it', async () => {
+  const record = timedRecording();
+  pause(record, record.sources.map(s => ({ sourceId: s.id, epoch: s.epoch, lastSequence: s.watermark })));
+  const resumed = addSource(record, { kind: 'microphone' }); addSource(record, { kind: 'display' });
+  for (let sequence = 0; sequence < 4; sequence++) acknowledge(record, { sessionId: resumed.sessionId, sourceId: resumed.id, epoch: resumed.epoch, sequence, sampleOffset: sequence * 240000, sampleCount: 240000, sampleRate: 16000, digest: `resumed-${sequence}`, object: 'fixture' });
+  assert.match(await renderAudioDuration(publicRecord(record)), /^23:00 音频/);
 });

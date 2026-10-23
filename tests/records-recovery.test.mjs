@@ -50,3 +50,8 @@ test('speech failure is visible even when legacy record still says queued or has
   record.usage.samples = 0;
   assert.equal(recognitionStatus(record), null);
 });
+
+test('provider quota refusal is visible as quota exhaustion rather than generic unavailability', () => {
+  const record = { capture: 'recording', transcription: 'failed', transcriptRevision: 0, usage: { samples: 16000 }, sources: [{ asr: { state: 'failed', error: 'doubao_asr_45000292', retryable: false } }] };
+  assert.match(recognitionStatus(record), /配额.*45000292/);
+});
