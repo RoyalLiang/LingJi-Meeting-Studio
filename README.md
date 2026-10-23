@@ -1,4 +1,6 @@
-# v0.1.14 纪要内容与多场景阅读（2026-10-23）
+# v0.1.14 纪要内容与多场景阅读已发布（2026-10-23）
+
+后台 verify/build/publish 全部成功，五附件、231 个源码文件及独立包内启动核验通过。[Release](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.14)，[完整回执](docs/evidence/preview-v0.1.14-2026-10-23.md)。
 
 新增重点速览、明确主题归属和短标签、可展开讨论细节、收拢的原文入口，以及有证据的时间线和业务数值图。项目、访谈和培训采用相应内容取舍；旧纪要兼容，人工版本受保护。见[本版说明](docs/releases/v0.1.14-preview.md)、[设计与场景](docs/design/minutes-reading.md)、[本地验证](docs/evidence/minutes-quality-2026-10-23.md)及[发布状态](docs/evidence/preview-v0.1.14-2026-10-23.md)。
 
