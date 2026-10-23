@@ -9,7 +9,7 @@ on:
       tag:
         description: Existing vX.Y.Z source tag (published tags are never moved)
         required: true
-        default: v0.1.8
+        default: v0.1.9
         type: string
       source_sha:
         description: Expected full source commit; reject a moved tag
@@ -95,7 +95,22 @@ jobs:
       - run: npm run lint && npm run typecheck && npm run check:docs
       - name: Prepare bundled runtime and Web assets for native checks
         run: node scripts/prepare-client-backend.mjs && npm run build:web
-      - run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --features smoke-test
+      - name: Native regression
+        run: |
+          mkdir -p .agent-runtime
+          set +e
+          cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --features smoke-test -- --test-threads=1 2>&1 | tee .agent-runtime/native-ci-tests.log
+          native_status=${PIPESTATUS[0]}
+          set -e
+          if [[ "$native_status" -ne 0 ]]; then
+            node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const tail = readFileSync('.agent-runtime/native-ci-tests.log', 'utf8').slice(-14000);
+          const message = tail.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
+          console.log(`::error title=Native regression failed::${message}`);
+          NODE
+          fi
+          exit "$native_status"
       - name: Build and verify isolated preview package
         env:
           TTS_RELEASE_SOURCE_REF: ${{ needs.verify.outputs.sha }}
