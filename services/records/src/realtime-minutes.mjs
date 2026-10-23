@@ -1,3 +1,4 @@
+import { groundSpeakerSummaries, orderMinutesTimelines } from '../../../packages/records/src/minutes-quality.mjs';
 import { minutesTimeoutMs } from './minutes-deadline.mjs';
 import { audioMinutesInstructions as instructions } from './audio-minutes.mjs';
 import { createHash } from 'node:crypto';
@@ -114,7 +115,9 @@ export async function generateRealtimeMinutes(repo, recordId, job, input, option
       const inputItems = [...new Set(audio.map(item => item.itemId))].map(id => ({ type: 'item_reference', id }));
       inputItems.push({ type: 'message', role: 'user', content: [{ type: 'input_text', text: JSON.stringify(data) }] });
       const result = await entry.client.respond(inputItems, instructions, { ...options, timeoutMs: minutesTimeoutMs(job) });
-      validateMinutes(result, refs);
+      groundSpeakerSummaries(result, job.validationSnapshot || refs);
+  orderMinutesTimelines(result, job.validationSnapshot || refs);
+  validateMinutes(result, job.validationSnapshot || refs);
       // Preserve the provider/item ↔ durable audio ↔ frozen transcript chain.
       result.audioEvidence = audio.map(({ itemId, sourceId, epoch, sequence, startMs, endMs, chunkKey }) => ({ itemId, sourceId, epoch, sequence, startMs, endMs, chunkKey }));
       return result;

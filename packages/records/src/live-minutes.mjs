@@ -1,3 +1,4 @@
+import { orderMinutesTimelines } from './minutes-quality.mjs';
 // Keep live input incremental without treating prior summaries as new evidence.
 const identity = ref => `${ref.segmentId ?? ref.id}:${ref.revision}`;
 const uniqueRefs = refs => [...new Map(refs.map(ref => [identity(ref), ref])).values()];
@@ -48,6 +49,12 @@ export function minutesContext(previous) {
     context.topics[index].summary = (previous.topics[index].summary || '').slice(0, 160);
     if (bytes(context) > budget) delete context.topics[index].summary;
   }
+  context.recentPoints = [];
+  const recent = [...previous.sections.flatMap(section => section.items).map(item => ({ text: item.text.slice(0, 240), topicId: item.topicId })), ...(previous.actions || []).map(item => ({ text: item.text.slice(0, 240), owner: item.owner, due: item.due }))].reverse();
+  for (const item of recent.slice(0, 24)) {
+    context.recentPoints.push(item);
+    if (bytes(context) > budget) { context.recentPoints.pop(); break; }
+  }
   return context;
 }
 export function mergeLiveMinutes(previous, incoming, snapshot) {
@@ -65,17 +72,31 @@ export function mergeLiveMinutes(previous, incoming, snapshot) {
     }
   }
   // Tables and speaker digests are compact views; prose retains the accumulated facts.
+  const remapItem = item => item.topicId && aliases.has(item.topicId) ? { ...item, topicId: aliases.get(item.topicId) } : item;
   const tables = new Map(base.tables?.map(table => [`${table.topicId}:${table.title}`, table]) || []);
   for (const table of incoming.tables || []) {
     const next = { ...table, topicId: aliases.get(table.topicId) || table.topicId };
     tables.set(`${next.topicId}:${next.title}`, next);
   }
+  const visuals = new Map((base.visuals || []).map(visual => [`${visual.topicId}:${visual.kind}:${visual.title}:${visual.unit || ''}`, visual]));
+  for (const visual of incoming.visuals || []) {
+    const next = { ...visual, ...(visual.topicId ? { topicId: aliases.get(visual.topicId) || visual.topicId } : {}) };
+    const key = `${next.topicId}:${next.kind}:${next.title}:${next.unit || ''}`, old = visuals.get(key);
+    const entries = new Map();
+    for (const entry of [...(old?.entries || []), ...next.entries]) {
+      const id = next.kind === 'bar' ? entry.label : `${entry.label}:${entry.text}`;
+      const prior = entries.get(id);
+      entries.set(id, { ...entry, evidence: uniqueRefs([...(prior?.evidence || []), ...entry.evidence]) });
+    }
+    visuals.set(key, { ...next, entries: [...entries.values()].slice(-12) });
+  }
   const speakers = new Map(base.speakerSummaries?.map(speaker => [speaker.speakerId || speaker.speaker, speaker]) || []);
   for (const speaker of incoming.speakerSummaries || []) speakers.set(speaker.speakerId || speaker.speaker, speaker);
-  return {
-    ...incoming, title: previous?.title || incoming.title, sections, topics,
-    actions: mergeItems(base.actions, incoming.actions), decisions: mergeItems(base.decisions, incoming.decisions),
+  return orderMinutesTimelines({
+    ...incoming, title: previous?.title || incoming.title, sections: sections.map(section => ({ ...section, items: section.items.map(remapItem) })), topics,
+    actions: mergeItems(base.actions, incoming.actions).map(remapItem), decisions: mergeItems(base.decisions, incoming.decisions).map(remapItem),
     speakerSummaries: [...speakers.values()], tables: [...tables.values()].slice(-6),
+    highlights: mergeItems(incoming.highlights, base.highlights).slice(0, 6), visuals: [...visuals.values()].slice(-4),
     evidenceSnapshot: uniqueRefs([...base.evidenceSnapshot, ...snapshot])
-  };
+  }, uniqueRefs([...base.evidenceSnapshot, ...snapshot]));
 }

@@ -30,6 +30,8 @@ export function createShareDocument(record: RecordDetail, scope: ShareScope) {
   const source = (segment: Segment, frozen: boolean) => `<li${frozen ? ` id="${escapeHtml(refId({segmentId: segment.id, revision: segment.revision}))}"` : ''}><div class="source-meta"><b>${escapeHtml(segment.speaker || '未标注说话人')}</b><time>${clock(segment.startMs)}–${clock(segment.endMs)}</time>${frozen ? `<small>片段 v${segment.revision}</small>` : ''}</div><p>${escapeHtml(segment.text)}</p></li>`;
   const body: string[] = [];
   if (minutes) {
+    if (minutes.highlights?.length) body.push(`<section><h2>重点速览</h2><ul>${minutes.highlights.map(item).join('')}</ul></section>`);
+    for (const visual of minutes.visuals || []) body.push(`<section><h2>${escapeHtml(visual.title)}</h2>${visual.kind === 'timeline' ? `<p>按会议提及顺序排列，时间保留原话</p><ul>${visual.entries.map(entry => item({text:`${entry.label}：${entry.text}`,evidence:entry.evidence})).join('')}</ul>` : `<p>单位：${escapeHtml(visual.unit)}</p><ul>${visual.entries.map(entry => item({text:`${entry.label}：${entry.valueText} ${visual.unit}`,evidence:entry.evidence})).join('')}</ul>`}</section>`);
     const assigned = new Set<SummaryTable>();
     for (const topic of minutes.topics || []) {
       const tables = (minutes.tables || []).filter(value => topic.id && value.topicId === topic.id);

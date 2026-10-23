@@ -104,7 +104,7 @@ test('legacy sections and action fallback tables retain row ownership without mu
   const { branches, unassigned } = helpers.topicTableLayout(value);
   assert.equal(branches.length, 1);
   assert.equal(branches[0].tables[0].title, '行动候选汇总');
-  assert.deepEqual(Array.from(branches[0].tables[0].rows[0].cells), ['确认发布窗口', '说话人 1', '待确认']);
+  assert.deepEqual(Array.from(branches[0].tables[0].rows[0].cells), ['确认发布窗口', '说话人 1']);
   assert.equal(unassigned.length, 0);
   assert.equal(JSON.stringify(value), before);
 });
@@ -183,6 +183,6 @@ test('large citation groups keep a compact initial view with an explicit disclos
   value.topics[0].evidence = Array.from({ length: 20 }, (_, i) => ref(`extra${i}`));
   const html = render({ liveMinutes: value });
   const first = html.split('class="minutes-branch"')[1];
-  assert.equal((first.match(/aria-label="查看引用原文/g) || []).length, 3);
-  assert.match(first, /aria-expanded="false">\+17 条来源/);
+  assert.equal((first.match(/class="citation-entry"/g) || []).length, 1);
+  assert.match(first, /aria-expanded="false">原文 · 20/);
 });

@@ -1,3 +1,4 @@
+import { manualMinutesContent } from '../../../packages/records/src/minutes-quality.mjs';
 import { recordingWaveform } from './waveform.mjs';
 import { doubaoAudioEnabled } from './config.mjs';
 import { audioMinutesEnabled } from './config.mjs';
@@ -303,7 +304,10 @@ export async function createRecordServer(options = {}) {
         requireThat(r.minutes && body.revision === r.minutesRevision, 'minutes_revision_conflict');
         validateMinutes(body.minutes, r.minutes.evidenceSnapshot);
         r.minutesHistory = [...(r.minutesHistory || []), r.minutes].slice(-10);
-        r.minutesRevision++; r.minutes = { ...r.minutes, title: body.minutes.title, sections: body.minutes.sections, actions: body.minutes.actions || [], revision: r.minutesRevision, edited: true }; autoNameRecord(r,r.minutes.title); emit(r, 'minutes.edited'); return publicRecord(r);
+        r.minutesRevision++;
+          const previous = { ...r.minutes };
+          for (const key of ['highlights','visuals','topics','tables','decisions','speakerSummaries','currentDiscussion']) delete previous[key];
+          r.minutes = { ...previous, ...manualMinutesContent(body.minutes), revision: r.minutesRevision, edited: true }; autoNameRecord(r,r.minutes.title); emit(r, 'minutes.edited'); return publicRecord(r);
       });
       else if (action === '' && req.method === 'PATCH') result = await changeOwned(id, user, r => {
         if (body.title !== undefined) { requireThat(typeof body.title === 'string' && body.title.trim(), 'invalid_title', 400); r.title = body.title.trim().slice(0, 160); r.titleEdited = true; }

@@ -9,35 +9,46 @@ export function currentMinutesJob(record: Pick<RecordDetail,'capture'|'jobs'|'tr
 export function topicBranches(minutes: Minutes): (Topic & { items: MinutesItem[] })[] {
   const items = minutes.sections.flatMap(section => section.items);
   if (!minutes.topics?.length) return minutes.sections.map(section => ({ title: section.heading, summary: '', evidence: section.items.flatMap(item => item.evidence), items: section.items }));
-  const firstTopic = new Map<string, number>();
-  minutes.topics.forEach((topic, index) => topic.evidence.forEach(ref => {
-    const key = `${ref.segmentId}:${ref.revision}`;
-    if (!firstTopic.has(key)) firstTopic.set(key, index);
-  }));
-  const groups = minutes.topics.map(() => [] as MinutesItem[]), other: MinutesItem[] = [];
-  for (const item of items) {
-    let owner = Infinity;
-    for (const ref of item.evidence) owner = Math.min(owner, firstTopic.get(`${ref.segmentId}:${ref.revision}`) ?? Infinity);
-    if (owner === Infinity) other.push(item); else groups[owner].push(item);
+  const key = (ref: Evidence) => `${ref.segmentId}:${ref.revision}`;
+  const topics = minutes.topics, groups = topics.map(() => [] as MinutesItem[]), other: MinutesItem[] = [];
+  const sources = topics.map(topic => new Set(topic.evidence.map(key)));
+  for (const section of minutes.sections) for (const item of section.items) {
+    let candidates: number[] = [];
+    if (item.topicId) candidates = topics.flatMap((topic, index) => topic.id === item.topicId ? [index] : []);
+    else {
+      candidates = topics.flatMap((topic, index) => topic.title === section.heading ? [index] : []);
+      if (candidates.length !== 1) {
+        const scores = sources.map(refs => new Set(item.evidence.map(key).filter(ref => refs.has(ref))).size);
+        const max = Math.max(0, ...scores);
+        candidates = max ? scores.flatMap((score, index) => score === max ? [index] : []) : [];
+      }
+    }
+    if (candidates.length === 1) groups[candidates[0]].push(item); else other.push(item);
   }
-  const branches = minutes.topics.map((topic, index) => {
-    return { ...topic, items: groups[index].filter(item => item.text !== topic.summary) };
+  const normalize = (text: string) => text.trim().replace(/\s+/g, ' ');
+  const union = (refs: Evidence[]) => [...new Map(refs.map(ref => [key(ref), ref])).values()];
+  const branches = topics.map((topic, index) => {
+    const unique = new Map<string, MinutesItem>();
+    let evidence = [...topic.evidence];
+    for (const item of groups[index]) {
+      const text = normalize(item.text);
+      if (text === normalize(topic.summary)) { evidence = union([...evidence, ...item.evidence]); continue; }
+      const previous = unique.get(text);
+      unique.set(text, previous ? { ...previous, evidence: union([...previous.evidence, ...item.evidence]) } : { ...item });
+    }
+    return { ...topic, evidence, items: [...unique.values()] };
   });
-  if (other.length) branches.push({ title: '其他讨论要点', summary: '', evidence: other.flatMap(item => item.evidence), items: other });
+  if (other.length) branches.push({ title: '补充要点', summary: '', evidence: other.flatMap(item => item.evidence), items: other });
   return branches;
 }
 
 export function summaryTables(minutes: Minutes): SummaryTable[] {
-  if (minutes.tables?.length) return minutes.tables;
-  return minutes.actions.length ? [{
-    title: '行动候选汇总', columns: ['事项', '负责人', '时间'],
-    rows: minutes.actions.map(action => ({
-      cells: [action.text, action.owner || '待确认', action.due || '待确认'], evidence: action.evidence,
-    })),
-  }] : [];
+  const tables = minutes.tables || [];
+  if (!minutes.actions.length) return tables;
+  const hasOwner = minutes.actions.some(action => action.owner?.trim()), hasDue = minutes.actions.some(action => action.due?.trim());
+  return [...tables, { title: '行动候选汇总', columns: ['事项', ...(hasOwner ? ['负责人'] : []), ...(hasDue ? ['时间'] : [])], rows: minutes.actions.map(action => ({ cells: [action.text, ...(hasOwner ? [action.owner || '未明确'] : []), ...(hasDue ? [action.due || '未明确'] : [])], evidence: action.evidence })) }];
 }
 
-/** Explicit model ownership keeps a whole table in its topic; legacy rows use exact source revisions. */
 export function topicTableLayout(minutes: Minutes) {
   const branches = topicBranches(minutes).map(branch => ({ ...branch, tables: [] as SummaryTable[] }));
   const key = (ref: Evidence) => `${ref.segmentId}:${ref.revision}`;
