@@ -1,0 +1,29 @@
+{
+  "runId": 39964988275,
+  "sourceSha": "e5cf04e2ebc8a87c1417b2524c68f58fe2d78325",
+  "event": "push",
+  "conclusion": "success",
+  "jobs": [
+    {
+      "name": "verify",
+      "conclusion": "success"
+    },
+    {
+      "name": "build",
+      "conclusion": "success"
+    },
+    {
+      "name": "publish",
+      "conclusion": "success"
+    }
+  ],
+  "releaseId": 421916935,
+  "tag": "v0.1.14",
+  "draft": false,
+  "prerelease": true,
+  "publishedAt": "2026-10-23T14:06:37Z",
+  "tagObjectSha": "750867186783141082bc08d392e30c9fbecf3f06",
+  "tagSourceSha": "e5cf04e2ebc8a87c1417b2524c68f58fe2d78325",
+  "runUrl": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/39964988275",
+  "releaseUrl": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.14"
+}
