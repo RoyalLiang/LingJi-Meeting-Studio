@@ -1,0 +1,72 @@
+{
+  "version": "0.1.7",
+  "sourceSha": "d7ec7fa55e38e37052c64dc25d199b652e51928c",
+  "runId": "39895638203",
+  "runUrl": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/39895638203",
+  "releaseUrl": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.7",
+  "assets": [
+    {
+      "name": "INSTALL-macos-arm64.md",
+      "bytes": 3948,
+      "sha256": "5b49ce94e2594d588c451bb0b4e26dfda679e47fafe116d0c161edb1a3be4cc6",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.7/INSTALL-macos-arm64.md",
+      "apiDigestMatched": true
+    },
+    {
+      "name": "Lingji-0.1.7-macos-arm64.dmg",
+      "bytes": 47465033,
+      "sha256": "96f1dc9902b6adf628c92b5f24c0b06bdd84e2381e66f3dd21ef009b8696ba21",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.7/Lingji-0.1.7-macos-arm64.dmg",
+      "apiDigestMatched": true
+    },
+    {
+      "name": "package-smoke.json",
+      "bytes": 389,
+      "sha256": "31ccd593e7695c7f9802b19230e8da74f8455ce1a0da54df49c68a19927808af",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.7/package-smoke.json",
+      "apiDigestMatched": true
+    },
+    {
+      "name": "release.json",
+      "bytes": 38064,
+      "sha256": "b5888db48fc101e06743b565fe6991e848e3f40ddd6ce76fe309324383a35071",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.7/release.json",
+      "apiDigestMatched": true
+    },
+    {
+      "name": "SHA256SUMS.txt",
+      "bytes": 95,
+      "sha256": "cee1e458f40ddd687dd27feb928bd9f1a01721a19886452eb5f43ff19b7ee7b2",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.7/SHA256SUMS.txt",
+      "apiDigestMatched": true
+    }
+  ],
+  "sourceFilesMatched": 224,
+  "sourceManifestMatched": true,
+  "checksumMatched": true,
+  "packageSmoke": {
+    "timestamp": "2026-10-23T03:43:05.513Z",
+    "packagedApp": true,
+    "independentBackend": true,
+    "developerBackendRequests": 0,
+    "restartPersistence": true,
+    "stableWebviewProfile": true,
+    "parentOwnsBackend": true,
+    "localAccount": true,
+    "devAccountDisabled": true,
+    "node": "v24.21.0",
+    "sqlite": "3.53.4",
+    "realAudioDevicesOpened": false,
+    "realProvidersInvoked": false
+  },
+  "validation": {
+    "imageVerified": true,
+    "copiedAppSignatureVerified": true,
+    "productionSmoke": true,
+    "realAudioDevicesTested": false,
+    "realProvidersTested": false,
+    "freshMachineTested": false
+  },
+  "signing": "ad-hoc",
+  "notarized": false
+}
