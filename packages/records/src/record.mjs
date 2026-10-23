@@ -183,7 +183,7 @@ export function requestMinutes(record, input = {}) {
   const liveIncremental = Boolean(liveBaseline(record)?.template === template);
   const liveContext = minutesContext(liveBaseline(record));
   const manifestHash = digest(JSON.stringify({snapshot, liveBaseHash, liveContext}));
-  const key = `${record.id}:${record.transcriptRevision}:${manifestHash}:${template}:v4:${record.notesRevision}:${input.modelVersion || 'default'}:${input.mode || 'model'}:${scope}`;
+  const key = `${record.id}:${record.transcriptRevision}:${manifestHash}:${template}:v5:${record.notesRevision}:${input.modelVersion || 'default'}:${input.mode || 'model'}:${scope}`;
   const existing = record.jobs.find(j => j.key === key && !['failed', 'stale', 'cancelled'].includes(j.status));
   if (existing) return existing;
   for(const job of record.jobs)if(['queued','running'].includes(job.status) && job.scope==='live' && (scope==='final' || job.status==='queued')){job.status='cancelled';job.fence=null;job.snapshot=[];delete job.preview; delete job.partialMinutes;}
