@@ -1,0 +1,23 @@
+{
+  "imageVerified": true,
+  "signatureVerified": true,
+  "architecture": "arm64",
+  "version": "0.1.12",
+  "bundleVersion": "0.1.34",
+  "bundleIdentifier": "com.tts.meeting",
+  "minimumSystemVersion": "14.6",
+  "doubaoModuleMatchesSource": true,
+  "doubaoModuleSha256": "4819b3f3b382a73e1a23ba7fdb1ae13509c6ec224fc946aa3c147470dfbdfc70",
+  "applicationInstalled": false,
+  "applicationLaunched": true,
+  "realAudioDevicesOpened": false,
+  "sourceSha": "d1a50b48116805099be814aeb66e9582af62ffe4",
+  "isolatedEmptyDataDirectory": true,
+  "nativePageRequiresPrivateSession": true,
+  "frontendVerification": "source manifest and separately captured native synthetic UI; embedded assets require private WebView session",
+  "minutesRecoveryModulesMatchSource": true,
+  "cWaveformBackendMatchesSource": true,
+  "nativeSpoolMarkerPresent": true,
+  "legacyEightPacketStopMarkerAbsent": true,
+  "temporaryLaunchPathCanonicalized": true
+}
