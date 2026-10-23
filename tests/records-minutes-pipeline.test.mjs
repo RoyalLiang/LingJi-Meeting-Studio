@@ -372,18 +372,18 @@ test('model prompts preserve table topic associations and rebuild IDs during syn
   } finally {globalThis.fetch=original;}
 });
 
-test('old completed v3 jobs do not block explicit v4 requests, while new requests remain idempotent', async () => {
+test('old completed v4 jobs do not block explicit v5 requests, while new requests remain idempotent', async () => {
   const f=await fixture(2);
   try {
     let oldId,newId;
     await f.repo.change(f.record.id,r=>{
       const previous=requestMinutes(r,{modelVersion:'fixture-model'});oldId=previous.id;
-      previous.key=previous.key.replace(':v4:',':v3:');previous.status='completed';previous.snapshot=[];
+      previous.key=previous.key.replace(':v5:',':v4:');previous.status='completed';previous.snapshot=[];
       r.minutes={...summarize({snapshot:r.segments}),revision:1,edited:true};r.minutesRevision=1;
       r.autoMinutes={enabled:true,lastRevision:r.transcriptRevision,lastScope:'final',intervalSeconds:30};
       assert.equal(queueAutomaticMinutes(r,'fixture-model'),undefined,'format upgrades must not auto-replace an edited minutes version');
       const current=requestMinutes(r,{modelVersion:'fixture-model'});newId=current.id;
-      assert.notEqual(newId,oldId);assert.ok(current.key.includes(':v4:'));
+      assert.notEqual(newId,oldId);assert.ok(current.key.includes(':v5:'));
       assert.equal(requestMinutes(r,{modelVersion:'fixture-model'}).id,newId);
       assert.equal(r.minutes.edited,true);
       assert.equal(r.minutesRevision,1);
