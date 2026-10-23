@@ -41,8 +41,7 @@ export function addSource(record, input) {
   record.sessions ||= [];
   let session = record.sessions.at(-1);
   if (!session || session.status !== 'recording') {
-    const timelineOffsetMs = Math.max(0, ...record.sources.map(s => (s.timelineOffsetMs || 0) + Math.max(0,
-      ...record.chunks.filter(c => c.sourceId === s.id).map(c => (c.sampleOffset + c.sampleCount) / 16))));
+    const timelineOffsetMs = recordingDurationMs(record);
     session = { id: randomUUID(), status: 'recording', timelineOffsetMs, startedAt: new Date().toISOString() }; record.sessions.push(session);
   }
   const source = { id: randomUUID(), sessionId: session.id, timelineOffsetMs: session.timelineOffsetMs || 0, epoch: randomUUID(), kind: input.kind, label: String(input.label || input.kind).slice(0, 80),
@@ -241,9 +240,18 @@ export function commitMinutes(record, jobId, result, fence) {
   job.status = 'completed'; job.snapshot = []; delete job.preview; delete job.partialMinutes; if(!usageRecorded)record.usage.llmTokens += Number.isSafeInteger(result.usageTokens) && result.usageTokens >= 0 ? result.usageTokens : 0;
   emit(record, 'minutes.committed', { revision: record.minutesRevision });
 }
+// Meeting time follows the shared source timeline; parallel track usage is separate.
+export function recordingDurationMs(record) {
+  const offsets = new Map(record.sources.map(source => [source.id, source.timelineOffsetMs || 0]));
+  let duration = 0;
+  for (const chunk of record.chunks) {
+    if (offsets.has(chunk.sourceId)) duration = Math.max(duration, offsets.get(chunk.sourceId) + (chunk.sampleOffset + chunk.sampleCount) / 16);
+  }
+  return duration;
+}
 export function publicRecord(record) {
   const { owner, events, chunks, shares, jobs, minutesHistory, learning, ...rest } = record;
-  return { ...rest,
+  return { ...rest, durationMs: recordingDurationMs(record),
     transcription: record.sources.some(source => source.asr?.state === 'failed') && ['queued', 'processing'].includes(record.transcription) ? 'blocked' : record.transcription, ...(learning ? {learning:publicLearning(record)} : {}), segments: record.segments.map(({translationFence,translationLease,...segment})=>segment), sources: record.sources.map(({asr,...source})=>({...source,...(asr ? {asr:{state:asr.state,error:asr.error,retryable:asr.retryable,retryAt:asr.retryAt,transportCode:asr.transportCode,identityWarning:asr.identityWarning,preview:asr.preview,runtime:asr.runtime}} : {})})), audio: record.sources.map(s => receipt(record, s)),
     pendingChunks: chunks.filter(c => c.state !== 'done').length,
     minuteVersions: [...(minutesHistory || []), ...(record.minutes ? [record.minutes] : [])].map(m => ({ revision: m.revision, transcriptRevision: m.transcriptRevision, edited: m.edited })),

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { digest, requireThat } from './record.mjs';
+import { digest, requireThat, recordingDurationMs } from './record.mjs';
 
 export const virtualScopes = ['all', 'inbox'];
 export const analysisId = (owner, scope) => `workspace-analysis:${digest(`${owner}:${scope}`)}`;
@@ -15,13 +15,9 @@ export function createWorkspace(owner, input) {
   return { id: randomUUID(), kind: 'workspace', owner, ...workspaceFields(input), createdAt: at, updatedAt: at };
 }
 export function meetingSeconds(record) {
-  let duration = 0;
-  for (const source of record.sources) {
-    const end = record.chunks.reduce((max, c) => c.sourceId === source.id ? Math.max(max, (c.sampleOffset + c.sampleCount) / 16) : max, 0);
-    duration = Math.max(duration, (source.timelineOffsetMs || 0) + end);
-  }
-  return Math.round(duration / 1000);
+  return Math.round(recordingDurationMs(record) / 1000);
 }
+
 export const inputHash = records => digest(JSON.stringify(records.map(r => [r.id, r.workspaceId || null, r.title, r.transcriptRevision, r.minutesRevision, r.notesRevision, r.capture, r.generation]).sort((a, b) => a[0].localeCompare(b[0]))));
 const sourceOf = r => ({ recordId: r.id, title: r.title, transcriptRevision: r.minutes?.transcriptRevision ?? r.transcriptRevision, minutesRevision: r.minutesRevision });
 const normalize = text => text.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();

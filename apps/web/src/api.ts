@@ -5,6 +5,7 @@ export function setAudioTransport(value?: string) { binaryAudio = value === 'pcm
 let csrf = '';
 export const setCsrf = (token: string) => { csrf = token; };
 const messages: Record<string, string> = {
+  doubao_asr_45000292: '豆包语音识别配额超限，请在语音服务控制台检查额度后重试（45000292）。',
   service_unavailable: '记录服务暂时不可用，正在尝试恢复连接。',
   invalid_response: '记录服务返回不完整，操作结果尚未确认，请恢复连接后检查。',
   translation_not_configured: '请在设置中配置豆包翻译模型与服务连接。',
