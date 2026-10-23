@@ -259,11 +259,11 @@ function Workspace() {
     return controller;
   }
   async function quickRecord() {
-    if (['openai-realtime', 'doubao-audio'].includes(boot?.providers.minutesMode || '')) { setModal('new'); return; }
     if (recording || busy || !captureAllowed()) return;
     setError(''); setCaptureIssues([]); setBusy(true); setCapturePhase('starting');
     void capture.current?.stop(); capture.current = null;
-    const created = api<RecordDetail>('/records', 'POST', { workspaceId: scope==='all'?null:scope, retainAudio: true, autoMinutes: Boolean(boot?.providers.minutes) });
+    const audioMode = ['openai-realtime', 'doubao-audio'].includes(boot?.providers.minutesMode || '');
+    const created = api<RecordDetail>('/records', 'POST', { workspaceId: scope==='all'?null:scope, retainAudio: true, autoMinutes: Boolean(boot?.providers.minutes) && !audioMode, realtimeAudioConsent: false });
     const controller = capture.current = controllerFor(created.then(next => next.id));
     // Request permissions in this click, before waiting for the new record ID.
     const started = controller.startMeeting();

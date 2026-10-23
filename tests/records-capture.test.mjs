@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { stripTypeScriptTypes } from 'node:module';
 import { transform } from 'esbuild';
 
-async function quickRecordHarness({ active, issues }) {
+async function quickRecordHarness({ active, issues, minutesMode = 'asr-llm' }) {
   const app = await readFile(new URL('../apps/web/src/App.tsx', import.meta.url), 'utf8');
   const start = app.indexOf('  async function quickRecord()');
   const end = app.indexOf('  async function startCapture(', start);
@@ -13,7 +13,7 @@ async function quickRecordHarness({ active, issues }) {
   const compiled = (await transform(app.slice(start, end) + '\nexports.quickRecord = quickRecord;', { loader: 'ts' })).code;
   const state = { modal: undefined, error: '', recording: false, issues: [], created: null, starts: 0 };
   const controller = { active, startMeeting: async () => { state.starts++; return issues; }, stop: async () => { controller.active = false; } };
-  const sandbox = { exports: {}, recording: false, busy: false, scope: 'all', boot: { providers: { minutes: true } }, captureAllowed: () => true,
+  const sandbox = { exports: {}, recording: false, busy: false, scope: 'all', boot: { providers: { minutes: true, minutesMode } }, captureAllowed: () => true,
     capture: { current: null }, activeId: { current: '' }, controllerFor: () => controller,
     api: async (_path, method, body) => method === 'POST' ? (state.created = body, { id: 'quick-fixture' }) : { records: [{ id: 'quick-fixture' }] },
     setError: value => { state.error = value; }, setCaptureIssues: value => { state.issues = value; }, setBusy() {}, setCapturePhase() {},
@@ -33,6 +33,7 @@ test('quick recording keeps a working microphone active without opening source s
   assert.equal(h.state.error, '系统音频权限被拒绝', 'partial failure must remain visible without interrupting working capture');
   assert.equal(h.state.issues.length, 1);
   assert.equal(h.state.created.retainAudio, true);
+  assert.equal(h.state.created.autoMinutes, true, 'legacy text mode keeps automatic minutes');
 });
 
 test('quick recording opens explicit recovery only when no requested audio source could start', async () => {
@@ -486,4 +487,13 @@ test('source loss never claims audio was saved after tail persistence fails', as
   assert.ok(h.errors.some(({error})=>error.message==='本机存储空间不足'));
   assert.equal(h.errors.some(({continuing})=>continuing===true),false,'failed persistence must not produce a recoverable saved-audio notice');
   await h.controller.stop();
+});
+
+for (const minutesMode of ['doubao-audio', 'openai-realtime']) test(`quick recording starts without meeting form in ${minutesMode}`, async () => {
+  const h = await quickRecordHarness({ active: true, issues: [], minutesMode });
+  assert.equal(h.state.starts, 1, `quick click opened ${h.state.modal} instead of starting capture`);
+  assert.equal(h.state.recording, true);
+  assert.equal(h.state.created.title, undefined);
+  assert.equal(h.state.created.autoMinutes, false, 'audio upload needs separate per-meeting consent');
+  assert.equal(h.state.created.realtimeAudioConsent, false, 'quick capture cannot grant undisclosed audio upload consent');
 });
