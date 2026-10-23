@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Play, Pause, ArrowCounterClockwise, ArrowClockwise, Waveform } from '@phosphor-icons/react';
 import { Button } from './ui';
+import { Select } from './Select';
 import { Toast } from './Toast';
 import { PlaybackTransport, PlaybackScrub } from '../audio/playback-transport';
 import './AudioPlayer.css';
@@ -83,9 +84,9 @@ function PlaybackControls({ sources }: Props) {
       onKeyDown={event => { if (seekKeys.has(event.key)) beginScrub(); else if (event.key === 'Escape') { event.preventDefault(); finishScrub(false); } }}
       onKeyUp={event => { if (seekKeys.has(event.key)) finishScrub(); }} onBlur={() => finishScrub()}/>
     <span className="player-time" aria-hidden="true">{clock(time)}<span> / {duration ? clock(duration) : '--:--'}</span></span>
-    <select className="player-rate" aria-label="播放速度" value={rate} onChange={event => { const value = Number(event.currentTarget.value); transport.setRate(value); setRate(value); }}>
-      {rates.map(value => <option key={value} value={value}>{value}×</option>)}
-    </select>
+    <div className="player-rate"><Select label="播放速度" value={String(rate)} menuMinWidth={112}
+      options={rates.map(value => ({ value: String(value), label: `${value}×` }))}
+      onChange={next => { const value = Number(next); transport.setRate(value); setRate(value); }}/></div>
     {error && <Toast message={error} error dismiss={() => setError('')} action={{ label: '重试播放', run: () => void play(), disabled: starting }}/>}
   </div>;
 }

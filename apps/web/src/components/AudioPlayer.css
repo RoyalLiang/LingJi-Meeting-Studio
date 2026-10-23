@@ -14,23 +14,28 @@
 .player-seek::-webkit-slider-thumb { appearance:none; -webkit-appearance:none; width:16px; height:16px; border:3px solid var(--bg); border-radius:50%; background:var(--accent); box-shadow:0 0 0 1px var(--accent); }
 .player-seek::-moz-range-thumb { width:12px; height:12px; border:3px solid var(--bg); border-radius:50%; background:var(--accent); box-shadow:0 0 0 1px var(--accent); }
 .player-seek:disabled { opacity:.45; cursor:default; }
-.player-seek:focus-visible, .player-rate:focus-visible { outline:2px solid var(--accent); outline-offset:3px; border-radius:6px; }
+.player-seek:focus-visible { outline:2px solid var(--accent); outline-offset:3px; border-radius:6px; }
 .player-time { flex:0 0 auto; font:12px var(--mono); font-variant-numeric:tabular-nums; white-space:nowrap; color:var(--ink-1); }
 .player-time > span { color:var(--ink-3); }
-.player-rate { flex:0 0 72px; width:72px; min-height:44px; border:1px solid var(--border); border-radius:10px; padding:0 8px; background:var(--bg); color:var(--ink-1); font:600 12px var(--sans); cursor:pointer; }
+.player-rate { flex:0 0 80px; width:80px; }
+.player-rate .select { width:100%; min-width:0; }
+.player-rate .select.select-enhanced .select-trigger { min-height:44px; padding:0 10px; gap:6px; border-radius:10px; border-color:transparent; background:transparent; font:600 12px var(--sans); font-variant-numeric:tabular-nums; }
+.player-rate .select-trigger > span { text-align:center; }
+.player-rate .select.select-enhanced .select-trigger:hover:not([aria-disabled=true]) { background:var(--accent-soft); }
+.player-rate .select.select-enhanced.is-open .select-trigger, .player-rate .select.select-enhanced .select-trigger:focus-visible { border-color:var(--accent); background:var(--accent-soft); }
 .recording-playback-unavailable { gap:10px; color:var(--ink-3); font-size:12px; }
 @media (max-width:720px) {
   .audio-player { gap:8px; }
   .player-label span { display:none; }
   .player-buttons { gap:0; }
-  .player-rate { flex-basis:64px; width:64px; padding:0 4px; }
+  .player-rate { flex-basis:72px; width:72px; }
 }
 @media (max-width:480px) {
   .audio-player { flex-wrap:wrap; gap:4px 8px; }
   .player-label { display:none; }
   .player-seek { order:3; flex-basis:100%; }
   .player-time { margin-left:auto; }
-  .player-time, .player-rate { font-size:11px; }
+  .player-time { font-size:11px; }
 }
 
 .meeting-export { display:grid; gap:18px; }

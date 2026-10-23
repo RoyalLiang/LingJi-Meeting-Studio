@@ -308,6 +308,7 @@ fn main() {
             app.add_capability(CapabilityBuilder::new("probe-only").window("main").local(false).remote(format!("{origin}/*")).permission("allow-client-probe"))?;
             let client_origin = origin.clone(); let nav_handle = app.handle().clone();
             let builder = tauri::WebviewWindowBuilder::new(app, "main", WebviewUrl::External(startup_url.parse()?))
+                .background_throttling(tauri::utils::config::BackgroundThrottlingPolicy::Disabled)
                 .title("聆记 · Meeting Studio").inner_size(1280.0, 900.0).min_inner_size(760.0, 600.0)
                 .on_navigation(move |url| url.origin().ascii_serialization() == client_origin && !nav_handle.state::<Client>().captures.active() && !nav_handle.state::<Client>().updates.gate.installing())
                 .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)

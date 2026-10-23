@@ -95,7 +95,7 @@ jobs:
       - run: npm run lint && npm run typecheck && npm run check:docs
       - name: Prepare bundled runtime and Web assets for native checks
         run: node scripts/prepare-client-backend.mjs && npm run build:web
-      - run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked
+      - run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --features smoke-test
       - name: Build and verify isolated preview package
         env:
           TTS_RELEASE_SOURCE_REF: ${{ needs.verify.outputs.sha }}

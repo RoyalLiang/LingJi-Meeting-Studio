@@ -188,3 +188,48 @@ test('play retries a failed initial media load after the retained audio becomes 
   const transport=new PlaybackTransport(()=>[media]);
   await transport.play();assert.equal(loads,1);assert.equal(transport.playing,true);
 });
+
+test('player speed uses the shared selector and changes both tracks without pausing', async () => {
+  const { transform } = await import('esbuild'), vm = await import('node:vm');
+  const source = await readFile(new URL('../apps/web/src/components/AudioPlayer.tsx', import.meta.url), 'utf8');
+  const code = (await transform(source.replace(/^import .*$/gm, ''), { loader:'tsx',format:'cjs' })).code;
+  const states=[], refs=[]; let cursor=0,refCursor=0,selection;
+  const tracks=[track(30),track(45)]; tracks.forEach(media=>{media.paused=false;});
+  const icon=()=>null, sandbox={module:{exports:{}},useEffect(){},useRef(value){return refs[refCursor++]??={current:value};},
+    useState(initial){const index=cursor++;if(!(index in states))states[index]=typeof initial==='function'?initial():initial;return [states[index],next=>{states[index]=next;}];},
+    PlaybackTransport,PlaybackScrub,Button:icon,Toast:icon,Play:icon,Pause:icon,ArrowCounterClockwise:icon,ArrowClockwise:icon,Waveform:icon,
+    Select:props=>{selection=props;return null;}};
+  sandbox.React={createElement:(tag,props,...children)=>typeof tag==='function'?tag({...props,children}):({tag,props,children})};
+  vm.runInNewContext(code,sandbox);
+  const render=()=>{cursor=0;refCursor=0;sandbox.module.exports.AudioPlayer({sources:[{id:'mic',src:'/mic',label:'我的声音'},{id:'meeting',src:'/meeting',label:'会议声音'}]});};
+  render(); refs[0].current=tracks;
+  assert.equal(selection.label,'播放速度');assert.equal(selection.menuMinWidth,112);
+  assert.deepEqual(Array.from(selection.options,option=>option.value),['0.75','1','1.25','1.5','2']);
+  selection.onChange('1.5');render();
+  assert.equal(selection.value,'1.5');
+  for(const media of tracks){assert.equal(media.playbackRate,1.5);assert.equal(media.paused,false);assert.equal(media.preservesPitch,true);}
+});
+
+test('shared speed menu fits a narrow trigger, stays in view and supports keyboard choice', async () => {
+  const { transform } = await import('esbuild'),vm=await import('node:vm');
+  const source=await readFile(new URL('../apps/web/src/components/Select.tsx',import.meta.url),'utf8');
+  const code=(await transform(source.replace(/^import .*$/gm,''),{loader:'tsx',format:'cjs'})).code;
+  const states=[],refs=[],effects=[],choices=[];let cursor=0,refCursor=0,focused=0;
+  const viewport={width:400,height:500,addEventListener(){},removeEventListener(){}},icon=()=>null;
+  const sandbox={module:{exports:{}},useEffect(){},useLayoutEffect:fn=>effects.push(fn),useId:()=> 'speed-fixture',
+    useState(initial){const index=cursor++;if(!(index in states))states[index]=typeof initial==='function'?initial():initial;return[states[index],next=>{states[index]=typeof next==='function'?next(states[index]):next;}];},
+    useRef(value){return refs[refCursor++]??={current:value};},createPortal:element=>element,CaretDown:icon,Check:icon,
+    document:{body:{}},window:{visualViewport:viewport},visualViewport:viewport,addEventListener(){},removeEventListener(){}};
+  sandbox.React={createElement:(tag,props,...children)=>typeof tag==='function'?tag({...props,children}):({tag,props,children})};vm.runInNewContext(code,sandbox);
+  const options=['0.75','1','1.25','1.5','2'].map(value=>({value,label:`${value}×`}));
+  const render=()=>{cursor=0;refCursor=0;effects.length=0;return sandbox.module.exports.Select({label:'播放速度',value:'1',menuMinWidth:112,options,onChange:value=>choices.push(value)});};
+  let tree=render();refs[1].current={showPopover(){},hidePopover(){},querySelector:()=>({scrollIntoView(){}})};
+  refs[2].current={focus(){focused++;},getBoundingClientRect:()=>({left:336,width:56,top:440,bottom:484}),closest:()=>null};
+  tree.children[1].props.onClick();tree=render();effects.splice(0).forEach(fn=>fn());tree=render();
+  const popup=tree.children[2];assert.equal(popup.props.style.width,112);assert.equal(popup.props.style.minWidth,112);
+  assert.equal(popup.props.style.left,280);assert.equal(popup.props['data-placement'],'top');
+  assert.equal(tree.children[1].props['aria-expanded'],true);
+  const key=key=>({key,preventDefault(){},stopPropagation(){}});
+  tree.props.onKeyDown(key('ArrowDown'));tree=render();tree.props.onKeyDown(key('Enter'));
+  assert.deepEqual(choices,['1.25']);tree=render();assert.equal(tree.children[1].props['aria-expanded'],false);assert.ok(focused>=2);
+});
