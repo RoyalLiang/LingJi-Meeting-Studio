@@ -75,10 +75,11 @@ test('invented speaker names, duplicate identities and unsupported decisions are
 test('topic trees preserve uncovered information without repeating the same minute item across branches', () => {
   const minutes={...base(),topics:[{title:'发布时间',summary:'第一版计划',evidence:[ref(0)]},{title:'重复引用的讨论',summary:'时间复核',evidence:[ref(0)]}]};
   const branches=topicBranches(minutes);
-  assert.equal(branches[0].items.length,1);
+  assert.equal(branches[0].items.length,0);
   assert.equal(branches[1].items.length,0);
-  assert.equal(branches[2].title,'其他讨论要点');
-  assert.equal(branches[2].items[0].evidence[0].segmentId,'s2');
+  assert.equal(branches[2].title,'补充要点');
+  assert.equal(branches[2].items.length,2);
+  assert.equal(branches[2].items[1].evidence[0].segmentId,'s2');
 });
 
 test('legacy summaries remain excerpts and unknown voices never become invented speaker summaries', () => {

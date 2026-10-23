@@ -22,6 +22,18 @@ export function exportMinutesMarkdown(record) {
     for (const item of values) lines.push(`- ${inline(item.text)}${cite(item.evidence)}`);
     lines.push('');
   };
+  items('重点速览', minutes.highlights);
+  for (const visual of minutes.visuals || []) {
+    lines.push(`## ${inline(visual.title)}`, '');
+    if (visual.kind === 'timeline') {
+      lines.push('按会议提及顺序排列，时间保留原话。', '');
+      for (const entry of visual.entries) lines.push(`- **${inline(entry.label)}**：${inline(entry.text)}${cite(entry.evidence)}`);
+    } else {
+      lines.push(`单位：${inline(visual.unit)}`, '', '| 对象 | 数值 | 来源 |', '| --- | --- | --- |');
+      for (const entry of visual.entries) lines.push(`| ${inline(entry.label)} | ${inline(entry.valueText)} | ${cite(entry.evidence)} |`);
+    }
+    lines.push('');
+  }
   if (minutes.topics?.length) {
     lines.push('## 讨论主题', '');
     for (const topic of minutes.topics) lines.push(`### ${inline(topic.title)}`, '', `${inline(topic.summary)}${cite(topic.evidence)}`, '');

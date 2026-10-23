@@ -1,0 +1,876 @@
+{
+  "model": "doubao-seed-2-1-lite-260915",
+  "synthetic": true,
+  "results": [
+    {
+      "id": "interview",
+      "version": "after",
+      "ok": true,
+      "elapsedMs": 43964,
+      "result": {
+        "title": "远程协作方式相关访谈纪要",
+        "currentDiscussion": [
+          {
+            "text": "围绕全程异步协作是否更高效展开讨论，受访者不认同该观点，认为需结合事件紧急程度选择沟通方式。",
+            "evidence": [
+              {
+                "segmentId": "interview-2",
+                "revision": 1
+              }
+            ]
+          }
+        ],
+        "topics": [
+          {
+            "id": "topic-01",
+            "title": "远程协作沟通方式的选择逻辑",
+            "summary": "本次访谈围绕远程协作的沟通方式选择展开，受访者提出书面记录可减少信息丢失，但存在适用场景边界：紧急、情绪激烈的场景需先同步沟通再补记录，该判断为个人经验而非实验结论；同时受访者不认同全程异步更高效的判断，主张结合事件紧急程度决策沟通方式，访谈未约定后续任务。",
+            "evidence": [
+              {
+                "segmentId": "interview-0",
+                "revision": 1
+              },
+              {
+                "segmentId": "interview-1",
+                "revision": 1
+              },
+              {
+                "segmentId": "interview-2",
+                "revision": 1
+              }
+            ]
+          }
+        ],
+        "sections": [
+          {
+            "heading": "远程协作沟通方式选择",
+            "items": [
+              {
+                "text": "书面记录能够减少信息丢失，但并不适用于所有冲突处理场景。",
+                "topicId": "topic-01",
+                "label": "书面记录价值与局限",
+                "kind": "fact",
+                "evidence": [
+                  {
+                    "segmentId": "interview-0",
+                    "revision": 1
+                  }
+                ]
+              },
+              {
+                "text": "在紧急事故或情绪激烈的场景下，应优先开展同步沟通，后续再补充书面记录。",
+                "topicId": "topic-01",
+                "label": "特殊场景沟通优先级",
+                "kind": "fact",
+                "evidence": [
+                  {
+                    "segmentId": "interview-1",
+                    "revision": 1
+                  }
+                ]
+              },
+              {
+                "text": "上述场景的沟通方式判断为受访者个人经验，并非经过实验验证的结论。",
+                "topicId": "topic-01",
+                "label": "经验属性说明",
+                "kind": "fact",
+                "evidence": [
+                  {
+                    "segmentId": "interview-1",
+                    "revision": 1
+                  }
+                ]
+              },
+              {
+                "text": "受访者不认同“全程异步协作更高效”的观点，强调沟通方式选择必须参考事件的紧急程度。",
+                "topicId": "topic-01",
+                "label": "异步协作适用性分歧",
+                "kind": "fact",
+                "evidence": [
+                  {
+                    "segmentId": "interview-2",
+                    "revision": 1
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "decisions": [],
+        "actions": [],
+        "tables": [],
+        "speakerSummaries": [],
+        "highlights": [
+          {
+            "text": "书面记录可减少信息丢失，但在紧急、情绪激烈场景需先同步沟通再补记录，该判断为受访者个人经验。",
+            "evidence": [
+              {
+                "segmentId": "interview-0",
+                "revision": 1
+              },
+              {
+                "segmentId": "interview-1",
+                "revision": 1
+              }
+            ]
+          },
+          {
+            "text": "受访者反对“全程异步更高效”的判断，主张需结合事件紧急程度选择适配的沟通方式。",
+            "evidence": [
+              {
+                "segmentId": "interview-2",
+                "revision": 1
+              }
+            ]
+          }
+        ],
+        "usageTokens": 4531,
+        "tokenUsage": {
+          "inputTokens": 1704,
+          "outputTokens": 2827,
+          "totalTokens": 4531
+        },
+        "usageReported": true,
+        "runtime": {
+          "protocol": "responses",
+          "streamed": false,
+          "firstTokenMs": 43961,
+          "durationMs": 43962
+        }
+      },
+      "input": {
+        "template": "interview",
+        "snapshot": [
+          {
+            "id": "interview-0",
+            "revision": 1,
+            "text": "访谈主题是远程协作。受访者认为书面记录能减少信息丢失，但不适合所有冲突。",
+            "speaker": "",
+            "sourceId": "synthetic",
+            "startMs": 0,
+            "endMs": 20000
+          },
+          {
+            "id": "interview-1",
+            "revision": 1,
+            "text": "追问：什么时候不适合？受访者举例，紧急事故或情绪激烈时应先同步沟通，再补记录；这是个人经验，不是实验结论。",
+            "speaker": "",
+            "sourceId": "synthetic",
+            "startMs": 20000,
+            "endMs": 40000
+          },
+          {
+            "id": "interview-2",
+            "revision": 1,
+            "text": "采访者认为全程异步更高效，受访者不同意，强调要看紧急程度。没有约定后续任务。",
+            "speaker": "",
+            "sourceId": "synthetic",
+            "startMs": 40000,
+            "endMs": 60000
+          }
+        ]
+      }
+    },
+    {
+      "id": "lesson",
+      "version": "after",
+      "ok": true,
+      "elapsedMs": 96452,
+      "result": {
+        "title": "相关性与因果性基础概念讲解",
+        "currentDiscussion": [
+          {
+            "text": "两类事物同时发生、同步变化仅能说明二者存在相关性，无法直接推导存在因果关系",
+            "evidence": [
+              {
+                "segmentId": "lesson-0",
+                "revision": 1
+              }
+            ]
+          },
+          {
+            "text": "以冰淇淋销量、溺水事件随炎热天气同步上升为例，说明炎热天气是二者的共同混杂因素",
+            "evidence": [
+              {
+                "segmentId": "lesson-1",
+                "revision": 1
+              }
+            ]
+          },
+          {
+            "text": "识别因果需控制混杂因素，随机对照实验是可选方法，但现实中存在伦理与执行层面限制",
+            "evidence": [
+              {
+                "segmentId": "lesson-2",
+                "revision": 1
+              }
+            ]
+          }
+        ],
+        "highlights": [
+          {
+            "text": "两类事物同步共变仅代表相关性，未控制混杂因素时不能直接推导因果关系",
+            "evidence": [
+              {
+                "segmentId": "lesson-0",
+                "revision": 1
+              },
+              {
+                "segmentId": "lesson-1",
+                "revision": 1
+              }
+            ]
+          },
+          {
+            "text": "因果识别需控制混杂因素，随机对照实验是可选方法，但存在现实伦理、执行层面的应用限制",
+            "evidence": [
+              {
+                "segmentId": "lesson-2",
+                "revision": 1
+              }
+            ]
+          }
+        ],
+        "topics": [
+          {
+            "id": "t1",
+            "title": "相关性与因果性的核心差异",
+            "summary": "本次内容明确相关性与因果性的概念边界：仅观测到两类事物伴随变化仅能判定为相关，无法直接推导因果；并通过冰淇淋销量与溺水事件随炎热天气同步上升的教学示例，说明未识别共同混杂因素时的相关不构成因果结论，该示例未附实际统计数据。",
+            "evidence": [
+              {
+                "segmentId": "lesson-0",
+                "revision": 1
+              },
+              {
+                "segmentId": "lesson-1",
+                "revision": 1
+              }
+            ]
+          },
+          {
+            "id": "t2",
+            "title": "因果识别的方法与现实限制",
+            "summary": "讲解因果识别的基本逻辑：需要对混杂因素进行控制，随机对照实验是可采用的因果识别方法，但该类方法在现实应用中存在伦理约束与执行层面的限制。",
+            "evidence": [
+              {
+                "segmentId": "lesson-2",
+                "revision": 1
+              }
+            ]
+          }
+        ],
+        "sections": [
+          {
+            "heading": "相关性与因果性的核心差异",
+            "items": [
+              {
+                "text": "仅观察到两类事物同时发生或同步变化，仅能说明二者存在相关性，不能直接推导出二者具有因果关系",
+                "topicId": "t1",
+                "label": "核心概念",
+                "kind": "fact",
+                "evidence": [
+                  {
+                    "segmentId": "lesson-0",
+                    "revision": 1
+                  }
+                ]
+              },
+              {
+                "text": "教学示例：炎热天气下冰淇淋销量与溺水事件数量均会上升，炎热天气是驱动二者共变的共同混杂因素，该示例未提供实际统计数据",
+                "topicId": "t1",
+                "label": "示例说明",
+                "kind": "fact",
+                "evidence": [
+                  {
+                    "segmentId": "lesson-1",
+                    "revision": 1
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "heading": "因果识别的方法与现实限制",
+            "items": [
+              {
+                "text": "识别因果关系需要控制混杂因素，随机对照实验是可采用的方法，但现实应用中可能存在伦理层面、执行层面的限制",
+                "topicId": "t2",
+                "label": "方法与约束",
+                "kind": "fact",
+                "evidence": [
+                  {
+                    "segmentId": "lesson-2",
+                    "revision": 1
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "decisions": [],
+        "actions": [],
+        "tables": [],
+        "speakerSummaries": [],
+        "visuals": [],
+        "usageTokens": 7865,
+        "tokenUsage": {
+          "inputTokens": 1704,
+          "outputTokens": 6161,
+          "totalTokens": 7865
+        },
+        "usageReported": true,
+        "runtime": {
+          "protocol": "responses",
+          "streamed": false,
+          "firstTokenMs": 96452,
+          "durationMs": 96452
+        }
+      },
+      "input": {
+        "template": "lecture",
+        "snapshot": [
+          {
+            "id": "lesson-0",
+            "revision": 1,
+            "text": "今天讲相关性和因果性。两者同时发生只能说明相关，不能直接推出因果。",
+            "speaker": "",
+            "sourceId": "synthetic",
+            "startMs": 0,
+            "endMs": 20000
+          },
+          {
+            "id": "lesson-1",
+            "revision": 1,
+            "text": "例如冰淇淋销量和溺水事件都会随炎热天气增加，天气可能是共同原因。这是教学例子，没有给出统计数据。",
+            "speaker": "",
+            "sourceId": "synthetic",
+            "startMs": 20000,
+            "endMs": 40000
+          },
+          {
+            "id": "lesson-2",
+            "revision": 1,
+            "text": "识别因果需要控制混杂因素，随机对照实验是一种方法；现实中也可能存在伦理和执行限制。下课了，大家再见。",
+            "speaker": "",
+            "sourceId": "synthetic",
+            "startMs": 40000,
+            "endMs": 60000
+          }
+        ]
+      }
+    },
+    {
+      "id": "project",
+      "version": "after",
+      "ok": true,
+      "elapsedMs": 145578,
+      "result": {
+        "title": "小舟项目发布计划调整及相关事项讨论",
+        "currentDiscussion": [
+          {
+            "text": "确认发布调整节奏为周五完成回归、下周一交付发布候选版",
+            "evidence": [
+              {
+                "segmentId": "project-4",
+                "revision": 1
+              }
+            ]
+          },
+          {
+            "text": "明确当前核心风险为验收环境未准备好，陈舟承诺次日确认环境",
+            "evidence": [
+              {
+                "segmentId": "project-4",
+                "revision": 1
+              }
+            ]
+          },
+          {
+            "text": "预算方案暂不决策，待确认乙方案是否包含运维费用",
+            "evidence": [
+              {
+                "segmentId": "project-3",
+                "revision": 1
+              }
+            ]
+          }
+        ],
+        "topics": [
+          {
+            "id": "topic-publish",
+            "title": "小舟项目发布计划调整",
+            "summary": "因回归测试尚未完成，原定于周五的上线计划被取消，明确调整后的发布节奏为周五完成回归测试、下周一交付发布候选版，并对应明确了相关工作的责任分工。",
+            "evidence": [
+              {
+                "segmentId": "project-0",
+                "revision": 1
+              },
+              {
+                "segmentId": "project-1",
+                "revision": 1
+              },
+              {
+                "segmentId": "project-4",
+                "revision": 1
+              }
+            ]
+          },
+          {
+            "id": "topic-budget",
+            "title": "小舟项目预算方案对比",
+            "summary": "当前对比甲、乙两个预算方案，其中甲方案预算100万元、乙方案预算80万元，暂未选定最终方案，需先确认乙方案是否包含运维费用后再开展决策。",
+            "evidence": [
+              {
+                "segmentId": "project-2",
+                "revision": 1
+              },
+              {
+                "segmentId": "project-3",
+                "revision": 1
+              }
+            ]
+          },
+          {
+            "id": "topic-risk",
+            "title": "发布相关风险与待确认事项",
+            "summary": "项目当前的主要发布风险为验收环境尚未准备完成，已明确由陈舟在次日确认验收环境的准备状态。",
+            "evidence": [
+              {
+                "segmentId": "project-4",
+                "revision": 1
+              }
+            ]
+          }
+        ],
+        "sections": [
+          {
+            "heading": "小舟项目发布计划调整",
+            "items": [
+              {
+                "text": "原计划周五上线，因回归测试尚未完成，无法按原计划发布",
+                "evidence": [
+                  {
+                    "segmentId": "project-0",
+                    "revision": 1
+                  }
+                ],
+                "topicId": "topic-publish",
+                "label": "计划调整原因",
+                "kind": "fact"
+              },
+              {
+                "text": "调整后发布节奏为周五先完成回归测试，下周一交付发布候选版",
+                "evidence": [
+                  {
+                    "segmentId": "project-1",
+                    "revision": 1
+                  },
+                  {
+                    "segmentId": "project-4",
+                    "revision": 1
+                  }
+                ],
+                "topicId": "topic-publish",
+                "label": "调整后安排",
+                "kind": "decision"
+              },
+              {
+                "text": "林青负责回归测试工作，需在周五交付测试结果",
+                "evidence": [
+                  {
+                    "segmentId": "project-1",
+                    "revision": 1
+                  }
+                ],
+                "topicId": "topic-publish",
+                "label": "责任分工",
+                "kind": "action"
+              },
+              {
+                "text": "陈舟负责发布候选版相关工作，需在下周一交付发布候选版",
+                "evidence": [
+                  {
+                    "segmentId": "project-1",
+                    "revision": 1
+                  }
+                ],
+                "topicId": "topic-publish",
+                "label": "责任分工",
+                "kind": "action"
+              }
+            ]
+          },
+          {
+            "heading": "小舟项目预算方案对比",
+            "items": [
+              {
+                "text": "目前对比的两个预算方案分别为：甲方案预算100万元，乙方案预算80万元",
+                "evidence": [
+                  {
+                    "segmentId": "project-2",
+                    "revision": 1
+                  },
+                  {
+                    "segmentId": "project-3",
+                    "revision": 1
+                  }
+                ],
+                "topicId": "topic-budget",
+                "label": "方案基本情况",
+                "kind": "fact"
+              },
+              {
+                "text": "预算方案暂未选定，需先确认乙方案是否包含运维费用后再开展决策",
+                "evidence": [
+                  {
+                    "segmentId": "project-2",
+                    "revision": 1
+                  },
+                  {
+                    "segmentId": "project-3",
+                    "revision": 1
+                  }
+                ],
+                "topicId": "topic-budget",
+                "label": "待决策前提",
+                "kind": "question"
+              }
+            ]
+          },
+          {
+            "heading": "发布相关风险与待确认事项",
+            "items": [
+              {
+                "text": "当前主要发布风险为验收环境尚未准备完成",
+                "evidence": [
+                  {
+                    "segmentId": "project-4",
+                    "revision": 1
+                  }
+                ],
+                "topicId": "topic-risk",
+                "label": "风险提示",
+                "kind": "risk"
+              },
+              {
+                "text": "陈舟承诺次日确认验收环境准备情况",
+                "evidence": [
+                  {
+                    "segmentId": "project-4",
+                    "revision": 1
+                  }
+                ],
+                "topicId": "topic-risk",
+                "label": "待确认安排",
+                "kind": "action"
+              }
+            ]
+          }
+        ],
+        "decisions": [
+          {
+            "text": "取消原定于周五的小舟项目上线计划，调整为周五完成回归测试、下周一交付发布候选版",
+            "evidence": [
+              {
+                "segmentId": "project-0",
+                "revision": 1
+              },
+              {
+                "segmentId": "project-1",
+                "revision": 1
+              },
+              {
+                "segmentId": "project-4",
+                "revision": 1
+              }
+            ]
+          },
+          {
+            "text": "暂不选定最终预算方案，需先确认乙方案是否包含运维费用后再做决策",
+            "evidence": [
+              {
+                "segmentId": "project-3",
+                "revision": 1
+              }
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "text": "完成小舟项目回归测试，交付测试结果",
+            "owner": "林青",
+            "due": "周五",
+            "evidence": [
+              {
+                "segmentId": "project-1",
+                "revision": 1
+              }
+            ]
+          },
+          {
+            "text": "制作并交付小舟项目发布候选版",
+            "owner": "陈舟",
+            "due": "下周一",
+            "evidence": [
+              {
+                "segmentId": "project-1",
+                "revision": 1
+              }
+            ]
+          },
+          {
+            "text": "确认验收环境的准备情况",
+            "owner": "陈舟",
+            "due": "明天",
+            "evidence": [
+              {
+                "segmentId": "project-4",
+                "revision": 1
+              }
+            ]
+          }
+        ],
+        "tables": [
+          {
+            "title": "小舟项目预算方案对比表",
+            "topicId": "topic-budget",
+            "columns": [
+              "方案名称",
+              "预算金额",
+              "当前说明"
+            ],
+            "rows": [
+              {
+                "cells": [
+                  "甲方案",
+                  "100万元",
+                  "暂未选定，未提及是否包含运维费用"
+                ],
+                "evidence": [
+                  {
+                    "segmentId": "project-2",
+                    "revision": 1
+                  },
+                  {
+                    "segmentId": "project-3",
+                    "revision": 1
+                  }
+                ]
+              },
+              {
+                "cells": [
+                  "乙方案",
+                  "80万元",
+                  "暂未选定，待确认是否包含运维费用"
+                ],
+                "evidence": [
+                  {
+                    "segmentId": "project-2",
+                    "revision": 1
+                  },
+                  {
+                    "segmentId": "project-3",
+                    "revision": 1
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "speakerSummaries": [],
+        "highlights": [
+          {
+            "text": "小舟项目原周五上线计划因回归测试未完成，调整为下周一交付发布候选版",
+            "evidence": [
+              {
+                "segmentId": "project-0",
+                "revision": 1
+              },
+              {
+                "segmentId": "project-1",
+                "revision": 1
+              }
+            ]
+          },
+          {
+            "text": "两个预算方案（甲100万元/乙80万元）暂未选定，需先确认乙方案是否包含运维费用",
+            "evidence": [
+              {
+                "segmentId": "project-2",
+                "revision": 1
+              },
+              {
+                "segmentId": "project-3",
+                "revision": 1
+              }
+            ]
+          },
+          {
+            "text": "当前核心发布风险为验收环境未就绪，已安排陈舟次日确认环境状态",
+            "evidence": [
+              {
+                "segmentId": "project-4",
+                "revision": 1
+              }
+            ]
+          }
+        ],
+        "visuals": [
+          {
+            "kind": "timeline",
+            "title": "小舟项目发布相关时间安排",
+            "topicId": "topic-publish",
+            "entries": [
+              {
+                "label": "周五",
+                "text": "完成项目回归测试，林青交付回归测试结果",
+                "evidence": [
+                  {
+                    "segmentId": "project-0",
+                    "revision": 1
+                  },
+                  {
+                    "segmentId": "project-1",
+                    "revision": 1
+                  }
+                ]
+              },
+              {
+                "label": "下周一",
+                "text": "陈舟交付小舟项目发布候选版",
+                "evidence": [
+                  {
+                    "segmentId": "project-1",
+                    "revision": 1
+                  },
+                  {
+                    "segmentId": "project-4",
+                    "revision": 1
+                  }
+                ]
+              },
+              {
+                "label": "明天",
+                "text": "陈舟确认验收环境准备情况",
+                "evidence": [
+                  {
+                    "segmentId": "project-4",
+                    "revision": 1
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "bar",
+            "title": "小舟项目两个预算方案金额对比",
+            "topicId": "topic-budget",
+            "unit": "万元",
+            "entries": [
+              {
+                "label": "甲方案",
+                "valueText": "100",
+                "quote": "甲方案预算100万元",
+                "evidence": [
+                  {
+                    "segmentId": "project-2",
+                    "revision": 1
+                  }
+                ]
+              },
+              {
+                "label": "乙方案",
+                "valueText": "80",
+                "quote": "乙方案预算80万元",
+                "evidence": [
+                  {
+                    "segmentId": "project-2",
+                    "revision": 1
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "usageTokens": 11268,
+        "tokenUsage": {
+          "inputTokens": 1930,
+          "outputTokens": 9338,
+          "totalTokens": 11268
+        },
+        "usageReported": true,
+        "runtime": {
+          "protocol": "responses",
+          "streamed": false,
+          "firstTokenMs": 145576,
+          "durationMs": 145576
+        }
+      },
+      "input": {
+        "template": "meeting",
+        "snapshot": [
+          {
+            "id": "project-0",
+            "revision": 1,
+            "text": "大家都到了吗？先试一下声音，听得到。今天讨论小舟项目发布。原计划周五上线，但回归还没完成，所以不能按原计划发布。",
+            "speaker": "",
+            "sourceId": "synthetic",
+            "startMs": 0,
+            "endMs": 20000
+          },
+          {
+            "id": "project-1",
+            "revision": 1,
+            "text": "确认调整：周五先完成回归，下周一再发布候选版。林青明确说我负责回归，周五交测试结果。陈舟负责发布候选版，下周一交付。",
+            "speaker": "",
+            "sourceId": "synthetic",
+            "startMs": 20000,
+            "endMs": 40000
+          },
+          {
+            "id": "project-2",
+            "revision": 1,
+            "text": "预算有两个方案：甲方案预算100万元。乙方案预算80万元。现在只是在对比，还没有选定。",
+            "speaker": "",
+            "sourceId": "synthetic",
+            "startMs": 40000,
+            "endMs": 60000
+          },
+          {
+            "id": "project-3",
+            "revision": 1,
+            "text": "甲方案100万元，乙方案80万元，这个刚才说过了。先不决定预算，必须确认乙方案是否包含运维费用。",
+            "speaker": "",
+            "sourceId": "synthetic",
+            "startMs": 60000,
+            "endMs": 80000
+          },
+          {
+            "id": "project-4",
+            "revision": 1,
+            "text": "所以发布调整就是周五回归、下周一候选版。主要风险是验收环境还没准备好，陈舟承诺明天确认环境。",
+            "speaker": "",
+            "sourceId": "synthetic",
+            "startMs": 80000,
+            "endMs": 100000
+          },
+          {
+            "id": "project-5",
+            "revision": 1,
+            "text": "好的，谢谢，周末大家去哪里玩？今天天气不错。",
+            "speaker": "",
+            "sourceId": "synthetic",
+            "startMs": 100000,
+            "endMs": 120000
+          }
+        ]
+      }
+    }
+  ],
+  "capturedAt": "2026-10-23T13:27:40.106Z",
+  "notes": [
+    "Only synthetic content was sent. App configured key was read without displaying or copying it.",
+    "Actual model JSON followed by deterministic source-order normalization and frozen-evidence validation.",
+    "Three samples are a smoke evaluation, not a long-meeting accuracy or cost benchmark."
+  ]
+}

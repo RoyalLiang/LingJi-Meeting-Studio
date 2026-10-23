@@ -1,6 +1,6 @@
 const pick = (value, fields) => Object.fromEntries(fields.filter(key => value[key] !== undefined).map(key => [key, value[key]]));
 const evidence = values => (values || []).map(value => pick(value, ['segmentId', 'revision']));
-const item = value => ({ text: value.text, evidence: evidence(value.evidence) });
+const item = value => ({ ...pick(value, ['text', 'topicId', 'label', 'kind']), evidence: evidence(value.evidence) });
 
 export function sharedSegments(segments) {
   return segments.map(segment => pick(segment, ['id', 'revision', 'text', 'speaker', 'speakerId', 'startMs', 'endMs']));
@@ -23,6 +23,8 @@ export function sharedMinutes(minutes) {
   };
   if (minutes.topics) output.topics = minutes.topics.map(value => ({ ...pick(value, ['id', 'title', 'summary']), evidence: evidence(value.evidence) }));
   if (minutes.tables) output.tables = minutes.tables.map(value => ({ ...pick(value, ['topicId', 'title', 'columns']), rows: value.rows.map(row => ({ cells: row.cells, evidence: evidence(row.evidence) })) }));
+  if (minutes.highlights) output.highlights = minutes.highlights.map(item);
+  if (minutes.visuals) output.visuals = minutes.visuals.map(value => ({ ...pick(value, ['kind', 'title', 'topicId', 'unit']), entries: value.entries.map(entry => ({ ...pick(entry, ['label', 'text', 'valueText', 'quote']), evidence: evidence(entry.evidence) })) }));
   if (minutes.decisions) output.decisions = minutes.decisions.map(item);
   if (minutes.currentDiscussion) output.currentDiscussion = minutes.currentDiscussion.map(item);
   if (minutes.speakerSummaries) output.speakerSummaries = minutes.speakerSummaries.map(value => ({ ...pick(value, ['speakerId', 'speaker', 'summary']), evidence: evidence(value.evidence) }));

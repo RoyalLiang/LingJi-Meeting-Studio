@@ -1,3 +1,4 @@
+import { groundSpeakerSummaries, orderMinutesTimelines } from '../../../packages/records/src/minutes-quality.mjs';
 import { minutesTimeoutMs } from './minutes-deadline.mjs';
 import { normalizeConfig, configured } from './config.mjs';
 import { completeModelJson } from './llm.mjs';
@@ -63,7 +64,9 @@ export async function generateDoubaoAudioMinutes(repo, recordId, job, input, opt
     { role: 'system', content: audioMinutesInstructions },
     { role: 'user', content: [...clips.flatMap(clip => [{ type: 'input_text', text: `音频 ${clip.clipId}，对应时间及来源见下方 audio 映射。` }, clip.audio]), { type: 'input_text', text: JSON.stringify(data) }] },
   ], config, { ...options, timeoutMs: minutesTimeoutMs(job) });
-  validateMinutes(result, refs);
+  groundSpeakerSummaries(result, job.validationSnapshot || refs);
+  orderMinutesTimelines(result, job.validationSnapshot || refs);
+  validateMinutes(result, job.validationSnapshot || refs);
   result.audioEvidence = clips.flatMap(clip => clip.chunks.map(chunk => ({ clipId: clip.clipId, ...chunk })));
   result.runtime = { ...result.runtime, inputMode: config.MINUTES_MODE, model: config.LLM_MODEL };
   return result;
