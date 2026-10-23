@@ -48,7 +48,7 @@ async function audioClips(repo, record, chunks) {
 
 export async function generateDoubaoAudioMinutes(repo, recordId, job, input, options = {}) {
   const config = normalizeConfig(input);
-  if (job.modelVersion && job.modelVersion !== 'default') config.LLM_MODEL = job.modelVersion.replace(/^doubao-audio:/, '');
+  if (job.modelVersion && job.modelVersion !== 'default') config.LLM_MODEL = job.modelVersion.replace(/^doubao-audio(?:-only)?:/, '');
   requireThat(doubaoAudioConfigured(config), 'doubao_audio_not_configured', 503);
   const record = await repo.get(recordId);
   requireThat(record && !record.deleted && record.generation === job.generation, 'stale_job', 410);
@@ -64,7 +64,7 @@ export async function generateDoubaoAudioMinutes(repo, recordId, job, input, opt
   ], config, { ...options, timeoutMs: job.scope === 'live' ? 120000 : 240000 });
   validateMinutes(result, refs);
   result.audioEvidence = clips.flatMap(clip => clip.chunks.map(chunk => ({ clipId: clip.clipId, ...chunk })));
-  result.runtime = { ...result.runtime, inputMode: 'doubao-audio', model: config.LLM_MODEL };
+  result.runtime = { ...result.runtime, inputMode: config.MINUTES_MODE, model: config.LLM_MODEL };
   return result;
 }
 
