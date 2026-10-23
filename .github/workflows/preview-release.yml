@@ -9,7 +9,7 @@ on:
       tag:
         description: Existing vX.Y.Z source tag (published tags are never moved)
         required: true
-        default: v0.1.9
+        default: v0.1.10
         type: string
       source_sha:
         description: Expected full source commit; reject a moved tag
@@ -105,9 +105,12 @@ jobs:
           if [[ "$native_status" -ne 0 ]]; then
             node --input-type=module <<'NODE'
           import { readFileSync } from 'node:fs';
-          const tail = readFileSync('.agent-runtime/native-ci-tests.log', 'utf8').slice(-14000);
-          const message = tail.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
-          console.log(`::error title=Native regression failed::${message}`);
+          const tail = readFileSync('.agent-runtime/native-ci-tests.log', 'utf8').slice(-18000);
+          const blocks = tail.match(/[\s\S]{1,1000}/g) || [];
+          for (const [index, block] of blocks.entries()) {
+            const message = block.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
+            console.log(`::error title=Native regression ${index + 1}/${blocks.length}::${message}`);
+          }
           NODE
           fi
           exit "$native_status"
