@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { CaretDown, Check } from '@phosphor-icons/react';
 import './Select.css';
 type Option = { value: string; label: string };
-export function Select({ value, defaultValue, onChange, options, name, label, disabled = false, readOnly = false }: { value?: string; defaultValue?: string; onChange?: (value: string) => void; options: Option[]; name?: string; label: string; disabled?: boolean; readOnly?: boolean }) {
+export function Select({ value, defaultValue, onChange, options, name, label, disabled = false, readOnly = false, menuMinWidth = 0 }: { value?: string; defaultValue?: string; onChange?: (value: string) => void; options: Option[]; name?: string; label: string; disabled?: boolean; readOnly?: boolean; menuMinWidth?: number }) {
  const [local, setLocal] = useState(defaultValue ?? options[0]?.value ?? ''), [open, setOpen] = useState(false), [index, setIndex] = useState(0);
  const [position,setPosition] = useState<CSSProperties>({});
  const selected=value ?? local, root=useRef<HTMLDivElement>(null), popup=useRef<HTMLDivElement>(null), button=useRef<HTMLButtonElement>(null), id=useId();
@@ -20,11 +20,12 @@ export function Select({ value, defaultValue, onChange, options, name, label, di
    const height=window.visualViewport?.height || innerHeight, width=window.visualViewport?.width || innerWidth;
    const below=height-rect.bottom-12, above=rect.top-12, flip=below<Math.min(240,options.length*44+Math.max(0,options.length-1)*8+10) && above>below;
    const maxHeight=Math.max(44,Math.min(300,flip?above:below));
-   setPosition({position:'fixed',left:Math.max(8,Math.min(rect.left,width-Math.min(rect.width,width-16)-8)),width:Math.min(rect.width,width-16),maxHeight,top:flip?'auto':rect.bottom+4,bottom:flip?height-rect.top+4:'auto'});
+   const menuWidth=Math.min(Math.max(rect.width,menuMinWidth),width-16);
+   setPosition({position:'fixed',left:Math.max(8,Math.min(rect.left,width-menuWidth-8)),width:menuWidth,minWidth:menuMinWidth?menuWidth:undefined,maxHeight,top:flip?'auto':rect.bottom+4,bottom:flip?height-rect.top+4:'auto'});
   };
   place();addEventListener('resize',place);addEventListener('scroll',place,true);visualViewport?.addEventListener('resize',place);
   return()=>{popup.current?.hidePopover();removeEventListener('resize',place);removeEventListener('scroll',place,true);visualViewport?.removeEventListener('resize',place);};
- },[open,options.length]);
+ },[open,options.length,menuMinWidth]);
  useEffect(()=>{if(open)popup.current?.querySelector<HTMLElement>(`[data-option-index="${index}"]`)?.scrollIntoView({block:'nearest'});},[index,open]);
  return <div ref={root} className={`select select-enhanced ${open?'is-open':''}`} onKeyDown={e=>{
   if(disabled || readOnly || !options.length)return;

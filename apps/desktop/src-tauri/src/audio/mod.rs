@@ -1,3 +1,5 @@
+mod packet_queue;
+use packet_queue::PacketQueue;
 pub mod pipeline;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, Sample};
@@ -27,7 +29,7 @@ struct Capture {
     kind: String,
     stop: Arc<AtomicBool>,
     discard: Arc<AtomicBool>,
-    receiver: Mutex<Receiver<Vec<u8>>>,
+    receiver: Arc<PacketQueue>,
     error: Arc<Mutex<Option<String>>>,
 }
 #[derive(Default)]
@@ -165,12 +167,8 @@ where
         .map_err(|e| e.to_string())
 }
 
-fn send_packets(sender: &SyncSender<Vec<u8>>, packets: Vec<Vec<u8>>) -> Result<(), String> {
-    for packet in packets {
-        sender
-            .try_send(packet)
-            .map_err(|_| "本地持久化积压，原生采集已停止。已保存的音频仍可补传。".to_string())?;
-    }
+fn send_packets(sender: &PacketQueue, packets: Vec<Vec<u8>>) -> Result<(), String> {
+    for packet in packets { sender.push(&packet)?; }
     Ok(())
 }
 
@@ -184,7 +182,8 @@ impl Captures {
         let stop = Arc::new(AtomicBool::new(false));
         let discard = Arc::new(AtomicBool::new(false));
         let error = Arc::new(Mutex::new(None));
-        let (packets, receiver) = mpsc::sync_channel(8);
+        let packets = Arc::new(PacketQueue::new()?);
+        let receiver = packets.clone();
         let mut sessions = self.sessions.lock().unwrap();
         if sessions.values().any(|s| s.kind == kind) {
             return Err("此合成音源已接入".into());
@@ -195,11 +194,12 @@ impl Captures {
                 kind: kind.into(),
                 stop: stop.clone(),
                 discard: discard.clone(),
-                receiver: Mutex::new(receiver),
+                receiver,
                 error: error.clone(),
             }),
         );
         std::thread::spawn(move || {
+            let _writer = packets.writer();
             let result = (|| {
                 let mut pipe = Pipeline::new(48_000, 2)?;
                 let mut offset = 0;
@@ -243,7 +243,8 @@ impl Captures {
         let stop = Arc::new(AtomicBool::new(false));
         let discard = Arc::new(AtomicBool::new(false));
         let error = Arc::new(Mutex::new(None));
-        let (packets, receiver) = mpsc::sync_channel(8);
+        let packets = Arc::new(PacketQueue::new()?);
+        let receiver = packets.clone();
         let (ready, started) = mpsc::sync_channel(1);
         sessions.insert(
             id.clone(),
@@ -251,7 +252,7 @@ impl Captures {
                 kind: kind.into(),
                 stop: stop.clone(),
                 discard: discard.clone(),
-                receiver: Mutex::new(receiver),
+                receiver,
                 error: error.clone(),
             }),
         );
@@ -261,6 +262,7 @@ impl Captures {
         let worker_kind = kind.to_string();
         let selected = selected.map(str::to_string);
         std::thread::spawn(move || {
+            let _writer = packets.writer();
             let result = (|| {
                 let host = audio_host(worker_kind == "display")?;
                 let devices = if worker_kind == "microphone" {
@@ -367,12 +369,14 @@ impl Captures {
             .cloned()
             .ok_or("采集已结束")?;
         // WASAPI/PipeWire may provide no packets while the output is idle. An idle output is not a failed device.
-        let result = session.receiver.lock().unwrap().recv();
+        let result = session.receiver.read();
         match result {
-            Ok(bytes) => Ok(bytes),
-            Err(_) => {
+            Ok(Some(bytes)) => Ok(bytes),
+            result => {
                 session.stop.store(true, Ordering::Release);
+                session.receiver.cancel();
                 self.sessions.lock().unwrap().remove(id);
+                if let Err(error) = result { return Err(error); }
                 if let Some(error) = session.error.lock().unwrap().take() {
                     Err(error)
                 } else {
@@ -387,6 +391,7 @@ impl Captures {
         if let Some(session) = sessions.get(id) {
             session.discard.store(discard, Ordering::Release);
             session.stop.store(true, Ordering::Release);
+            if discard { session.receiver.cancel(); }
         }
         if discard {
             sessions.remove(id);
@@ -398,6 +403,7 @@ impl Captures {
         for session in self.sessions.lock().unwrap().values() {
             session.discard.store(true, Ordering::Release);
             session.stop.store(true, Ordering::Release);
+            session.receiver.cancel();
         }
     }
 }
@@ -444,15 +450,46 @@ mod tests {
     }
 
     #[test]
-    fn bounded_queue_reports_overflow_without_reordering_saved_packets() {
-        let (sender, receiver) = mpsc::sync_channel(2);
-        let error = send_packets(&sender, vec![vec![1], vec![2], vec![3]]).unwrap_err();
-        assert!(error.contains("已停止"));
-        assert_eq!(
-            receiver.try_iter().collect::<Vec<_>>(),
-            vec![vec![1], vec![2]]
-        );
+    fn frontend_delay_preserves_all_audio_instead_of_stopping_at_ninth_packet() {
+        let packets = PacketQueue::new().unwrap();
+        let expected: Vec<Vec<u8>> = (0..180).map(|i| vec![i; 32_012]).collect();
+        send_packets(&packets, expected.clone()).unwrap();
+        packets.close();
+        for packet in expected {
+            assert_eq!(packets.read().unwrap(), Some(packet));
+        }
+        assert!(packets.read().unwrap().is_none());
     }
+    #[cfg(feature = "smoke-test")]
+    #[test]
+    fn native_capture_survives_delayed_frontend_reads_and_drains_on_stop() {
+        let captures = Captures::default();
+        let started = captures.synthetic("display").unwrap();
+        let session = captures.sessions.lock().unwrap()[&started.id].clone();
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        while session.receiver.buffered_bytes() < 10 * (32_012 + 4) {
+            assert!(session.error.lock().unwrap().is_none());
+            assert!(std::time::Instant::now() < deadline, "synthetic producer did not progress");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(captures.active());
+        assert!(session.error.lock().unwrap().is_none());
+        captures.stop(&started.id, false).unwrap();
+        let (mut sequence, mut offset) = (0u32, 0u32);
+        loop {
+            let packet = captures.read(&started.id).unwrap();
+            if packet.is_empty() { break; }
+            let field = |at| u32::from_le_bytes(packet[at..at + 4].try_into().unwrap());
+            assert_eq!(field(0), sequence);
+            assert_eq!(field(4), offset);
+            assert_eq!(packet.len(), 12 + field(8) as usize * 2);
+            sequence += 1;
+            offset += field(8);
+        }
+        assert!(offset >= 9 * pipeline::RATE, "must preserve audio beyond the old eight-packet limit");
+        assert!(!captures.active());
+    }
+
     #[test]
     fn automatic_microphone_avoids_virtual_defaults_and_requires_explicit_unknown_input() {
         let mut devices = vec![Input {
