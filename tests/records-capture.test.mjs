@@ -489,7 +489,7 @@ test('source loss never claims audio was saved after tail persistence fails', as
   await h.controller.stop();
 });
 
-for (const minutesMode of ['doubao-audio', 'openai-realtime']) test(`quick recording starts without meeting form in ${minutesMode}`, async () => {
+for (const minutesMode of ['doubao-audio', 'openai-realtime', 'doubao-audio-only']) test(`quick recording starts without meeting form in ${minutesMode}`, async () => {
   const h = await quickRecordHarness({ active: true, issues: [], minutesMode });
   assert.equal(h.state.starts, 1, `quick click opened ${h.state.modal} instead of starting capture`);
   assert.equal(h.state.recording, true);

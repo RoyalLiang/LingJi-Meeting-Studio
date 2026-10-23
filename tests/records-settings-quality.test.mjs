@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import vm from 'node:vm';
+import { transform } from 'esbuild';
+import { readFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { WebSocketServer } from 'ws';
@@ -87,4 +89,15 @@ test('terminology settings validate limits and can be cleared', async () => {
     await saveConfig(root, { DOUBAO_ASR_HOTWORDS: '' }, {});
     assert.equal((await readConfig(root, {})).DOUBAO_ASR_HOTWORDS, '');
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('audio-only settings render the shared model fields and omit independent ASR credentials',async()=>{
+ const source=await readFile(new URL('../apps/web/src/components/ProviderSettings.tsx',import.meta.url),'utf8');
+ const code=(await transform(source.replace(/^import .*$/gm,'').replace('export function','function')+'\nexports.render=ProviderSettings;',{loader:'tsx'})).code;
+ const config={MINUTES_MODE:'doubao-audio-only',LLM_PROTOCOL:'responses',ASR_PROVIDER:'doubao'};
+ const states=[config,'doubao','','',false,config];let cursor=0;
+ const sandbox={exports:{},React:{Fragment:'fragment',createElement:(tag,attributes,...children)=>({tag:typeof tag==='string'?tag:'component',attributes,children})},useState:()=>[states[cursor++],()=>{}],useRef:value=>({current:value}),useEffect(){},useCallback:fn=>fn,Button(){},Status(){},Select(){},Toast(){},CloudCheck(){},GearSix(){},Plug(){}};
+ vm.runInNewContext(code,sandbox);const result=JSON.stringify(sandbox.exports.render({saved:async()=>{}}));
+ assert.match(result,/doubao-audio-only/);assert.match(result,/LLM_API_KEY/);assert.doesNotMatch(result,/DOUBAO_API_KEY|name":"ASR_PROVIDER/);
+ assert.match(result,/15 秒短批次/);
 });

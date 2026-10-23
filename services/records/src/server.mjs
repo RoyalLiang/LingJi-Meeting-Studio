@@ -1,3 +1,4 @@
+import { doubaoAudioEnabled } from './config.mjs';
 import { audioMinutesEnabled } from './config.mjs';
 import { testDoubaoAudio } from './doubao-audio-minutes.mjs';
 import {learningRoutes} from './learning-routes.mjs';
@@ -117,9 +118,9 @@ export async function createRecordServer(options = {}) {
         requireThat(canConfigure(user), 'configuration_admin_required', 403);
         const {kind} = await readBody(req, 1000), config = await readConfig(repo.root);
         requireThat(['asr', 'minutes'].includes(kind), 'invalid_provider_test', 400);
-        if (kind === 'asr') await transcribe(Buffer.alloc(6400), {language:'zh'}, {}, config);
+        if (kind === 'asr') await transcribe(Buffer.alloc(6400), {language:'zh',realtimeAudioConsent:true}, {}, config);
         else if (realtimeEnabled(config)) await testRealtime(config);
-      else if (config.MINUTES_MODE === 'doubao-audio') await testDoubaoAudio(config);
+      else if (doubaoAudioEnabled(config)) await testDoubaoAudio(config);
       else await completeJson([{role:'system', content:'Return JSON {ok:true}.'},{role:'user',content:'Synthetic connectivity check.'}], config);
         send(res, 200, {message: '连接测试通过。真实会议识别质量仍需试录核对。'}); return;
       }

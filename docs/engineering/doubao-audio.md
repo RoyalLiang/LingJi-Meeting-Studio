@@ -63,3 +63,8 @@ LLM_API_KEY=<方舟密钥>
 - 本次合成会议的完整模型工作流约 56.5 秒；这不代表真实会议延迟或长会议容量。原音过期或已清理的历史会议不能直接重放为音频纪要，可由用户显式选择旧文字模式。
 
 官方参考：[音频理解](https://docs.volcengine.com/docs/ark/audio-understanding?lang=en)、[创建 Response](https://docs.volcengine.com/docs/ark/create-model-responses-api?lang=zh)、[模型列表](https://docs.volcengine.com/docs/ark/model-list?lang=zh)。
+
+
+## 可选：不使用独立 ASR
+
+新增显式 `doubao-audio-only` 模式，见[仅豆包音频模型配置](doubao-audio-only.md)。仅在用户选择该模式后，同一个方舟模型负责转录和音频纪要；上文独立 ASR 约束仍适用于原 `doubao-audio` 模式。

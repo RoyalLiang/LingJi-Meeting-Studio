@@ -1,3 +1,5 @@
+import { processDoubaoModelAudio } from './doubao-model-transcription.mjs';
+import { doubaoAudioEnabled } from './config.mjs';
 import { audioMinutesEnabled } from './config.mjs';
 import { generateDoubaoAudioMinutes } from './doubao-audio-minutes.mjs';
 import {runLearningCycle} from './learning-worker.mjs';
@@ -47,7 +49,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
     const realtimeWork = lane === 'all' ? processRealtimeAudio(repo, candidate, config, providers.realtimeFactory) : Promise.resolve();
     const speakerMode=!providers.transcribe && providerStatus(config).asrProvider==='doubao' && providerStatus(config).asr && !providerStatus(config).fixture && ['zh','en','zhen'].includes(candidate.language);
     async function processAudio() {
-      if (speakerMode) return;
+      if (speakerMode || (config.MINUTES_MODE === 'doubao-audio-only' && !providerStatus(config).fixture)) return;
     let claimed;
     if (candidate.chunks.some(c => c.state !== 'done' && c.attempts < 5 && (!c.retryAt || c.retryAt <= Date.now()) && (!c.lease || c.lease < Date.now()))) await repo.change(candidate.id, r => {
       if (r.deleted || Date.parse(r.deleteAt) <= Date.now()) return;
@@ -77,6 +79,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
       }
     }
     }
+    if (config.MINUTES_MODE === 'doubao-audio-only' && !providerStatus(config).fixture) { closeSpeakerStreams(repo,candidate.id); await processDoubaoModelAudio(repo,candidate,config); }
     if (speakerMode) await processSpeakerSources(repo,candidate,config);
     // Two independent sources can progress together; a source remains strictly ordered.
     await Promise.all([processAudio(), processAudio(), realtimeWork]);
@@ -136,7 +139,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
     if (jobClaim) {
       try {
         let json = '', lastPublished = 0;
-        const generate=providers.minutes || (realtimeEnabled(config) && jobClaim.mode !== 'extractive' ? (job,env,opts)=>generateRealtimeMinutes(repo,candidate.id,job,env,opts,providers.realtimeFactory) : config.MINUTES_MODE === 'doubao-audio' && jobClaim.mode !== 'extractive' ? (job,env,opts)=>generateDoubaoAudioMinutes(repo,candidate.id,job,env,opts) : generateMinutes);
+        const generate=providers.minutes || (realtimeEnabled(config) && jobClaim.mode !== 'extractive' ? (job,env,opts)=>generateRealtimeMinutes(repo,candidate.id,job,env,opts,providers.realtimeFactory) : doubaoAudioEnabled(config) && jobClaim.mode !== 'extractive' ? (job,env,opts)=>generateDoubaoAudioMinutes(repo,candidate.id,job,env,opts) : generateMinutes);
         const processMinutes=config.RECORD_MINUTES_PIPELINE_ENABLED==='false' ? async(job,env,opts)=>({...await meteredMinutesCall(repo,candidate.id,job,generate,job,env,opts),usageRecorded:true}) : (job,env,opts)=>runMinutesPipeline(repo,candidate.id,job,env,generate,opts);
         const result = await telemetry.measure('minutes.complete', {recordId:candidate.id, jobId:jobClaim.id, revision:jobClaim.transcriptRevision, queueMs:Date.now()-Date.parse(jobClaim.createdAt)}, () => processMinutes(jobClaim, config,{ onDelta: async (delta, runtime) => {
           if(!json)telemetry.event('minutes.first-text',{recordId:candidate.id,jobId:jobClaim.id,durationMs:runtime?.firstTokenMs});
