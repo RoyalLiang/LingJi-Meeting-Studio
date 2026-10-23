@@ -195,9 +195,9 @@ test('player speed uses the shared selector and changes both tracks without paus
   const code = (await transform(source.replace(/^import .*$/gm, ''), { loader:'tsx',format:'cjs' })).code;
   const states=[], refs=[]; let cursor=0,refCursor=0,selection;
   const tracks=[track(30),track(45)]; tracks.forEach(media=>{media.paused=false;});
-  const icon=()=>null, sandbox={module:{exports:{}},useEffect(){},useRef(value){return refs[refCursor++]??={current:value};},
+  const icon=()=>null, sandbox={module:{exports:{}},useEffect(){},useId:()=> 'wave-fixture',waveformTicks:()=>[],useRef(value){return refs[refCursor++]??={current:value};},
     useState(initial){const index=cursor++;if(!(index in states))states[index]=typeof initial==='function'?initial():initial;return [states[index],next=>{states[index]=next;}];},
-    PlaybackTransport,PlaybackScrub,Button:icon,Toast:icon,Play:icon,Pause:icon,ArrowCounterClockwise:icon,ArrowClockwise:icon,Waveform:icon,
+    PlaybackTransport,PlaybackScrub,Button:icon,Toast:icon,Play:icon,Pause:icon,ArrowCounterClockwise:icon,ArrowClockwise:icon,Waveform:icon,Timer:icon,ArrowRight:icon,
     Select:props=>{selection=props;return null;}};
   sandbox.React={createElement:(tag,props,...children)=>typeof tag==='function'?tag({...props,children}):({tag,props,children})};
   vm.runInNewContext(code,sandbox);

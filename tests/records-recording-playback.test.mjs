@@ -84,6 +84,11 @@ test('retained recordings serve complete WAV and byte ranges while temporary or 
     const retained = await recording(true), url = base + recordingAudioUrl(retained.id, retained.sourceId).slice(4);
     const early=await fetch(url,{headers}),earlyWav=Buffer.from(await early.arrayBuffer());
     assert.equal(early.status,200,'complete retained audio is playable while ASR is pending');
+    const waveform=await fetch(url+'?waveform=1',{headers});
+    assert.equal(waveform.status,200);assert.equal(waveform.headers.get('cache-control'),'no-store');
+    const peaks=await waveform.json();assert.equal(peaks.samples,2400);assert.equal(peaks.peaks.length,192);
+    assert.ok(peaks.peaks.slice(0,128).every(value=>value===1285/32768));assert.ok(peaks.peaks.slice(128).every(value=>value===2313/32768));
+    assert.equal((await fetch(url+'?waveform=1')).status,401);
     assert.deepEqual(earlyWav.subarray(44),audioBytes);
     const download=await fetch(url+'?download=1',{headers});
     assert.equal(download.status,200);
@@ -93,6 +98,7 @@ test('retained recordings serve complete WAV and byte ranges while temporary or 
     assert.ok((await app.repo.get(retained.id)).chunks.every(chunk=>chunk.state!=='done'));
     await app.repo.change(retained.id,value=>{value.sources[0].watermark=0;});
     assert.equal((await fetch(url,{headers})).status,404,'a missing durable receipt blocks playback');
+    assert.equal((await fetch(url+'?waveform=1',{headers})).status,404);
     await app.repo.change(retained.id,value=>{value.sources[0].watermark=1;});
     const earlyPart=await fetch(url,{headers:{...headers,Range:'bytes=0-43'}});
     assert.equal(earlyPart.status,206);assert.deepEqual(Buffer.from(await earlyPart.arrayBuffer()),earlyWav.subarray(0,44));
