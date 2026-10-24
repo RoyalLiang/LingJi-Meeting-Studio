@@ -1,3 +1,4 @@
+import { processFunasrAudio } from './funasr-transcription.mjs';
 import { processDoubaoModelAudio } from './doubao-model-transcription.mjs';
 import { doubaoAudioEnabled } from './config.mjs';
 import { audioMinutesEnabled } from './config.mjs';
@@ -48,8 +49,9 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
     }
     const realtimeWork = lane === 'all' ? processRealtimeAudio(repo, candidate, config, providers.realtimeFactory) : Promise.resolve();
     const speakerMode=!providers.transcribe && providerStatus(config).asrProvider==='doubao' && providerStatus(config).asr && !providerStatus(config).fixture && ['zh','en','zhen'].includes(candidate.language);
+    const funasrMode=!providers.transcribe && config.ASR_PROVIDER==='funasr' && config.MINUTES_MODE!=='doubao-audio-only' && !providerStatus(config).fixture;
     async function processAudio() {
-      if (speakerMode || (config.MINUTES_MODE === 'doubao-audio-only' && !providerStatus(config).fixture)) return;
+      if (funasrMode || speakerMode || (config.MINUTES_MODE === 'doubao-audio-only' && !providerStatus(config).fixture)) return;
     let claimed;
     if (candidate.chunks.some(c => c.state !== 'done' && c.attempts < 5 && (!c.retryAt || c.retryAt <= Date.now()) && (!c.lease || c.lease < Date.now()))) await repo.change(candidate.id, r => {
       if (r.deleted || Date.parse(r.deleteAt) <= Date.now()) return;
@@ -79,6 +81,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
       }
     }
     }
+    if (funasrMode) { closeSpeakerStreams(repo,candidate.id); await processFunasrAudio(repo,candidate,config); }
     if (config.MINUTES_MODE === 'doubao-audio-only' && !providerStatus(config).fixture) { closeSpeakerStreams(repo,candidate.id); await processDoubaoModelAudio(repo,candidate,config); }
     if (speakerMode) await processSpeakerSources(repo,candidate,config);
     // Two independent sources can progress together; a source remains strictly ordered.

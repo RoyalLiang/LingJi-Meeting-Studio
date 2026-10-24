@@ -97,6 +97,8 @@ function stopSources(record, manifest) {
   for (const source of record.sources) {
     source.lastSequence = manifest.find(m => m.sourceId === source.id).lastSequence; source.stopped = true;
   }
+  // A pause/stop flushes waiting ASR batches, but preserves real failure backoff.
+  for (const chunk of record.chunks) if (chunk.batchWaiting) { delete chunk.retryAt; delete chunk.batchWaiting; }
   for (const session of record.sessions || []) if (session.status === 'recording') session.status = 'sealed';
 }
 export function pause(record, manifest) {
@@ -135,7 +137,7 @@ export function commitTranscript(record, chunkKey, text, generation, translation
   record.transcriptRevision++; record.transcription = 'processing';
   emit(record, 'transcript.committed', { transcriptRevision: record.transcriptRevision }); finalize(record);
 }
-export function commitTranscriptBatch(record, keys, text, generation, model) {
+export function commitTranscriptBatch(record, keys, text, generation, model, metadata = {}) {
   requireThat(!record.deleted && record.generation === generation, 'stale_generation', 410);
   requireThat(keys.length > 0 && new Set(keys).size === keys.length, 'invalid_audio_batch', 409);
   const index = new Map(record.chunks.map(chunk => [chunk.key, chunk]));
@@ -143,9 +145,9 @@ export function commitTranscriptBatch(record, keys, text, generation, model) {
   requireThat(chunks.every(Boolean) && chunks.every((c,i) => c.state !== 'done' && !c.expired && c.sourceId === chunks[0].sourceId && c.epoch === chunks[0].epoch && (!i || (c.sequence === chunks[i-1].sequence+1 && c.sampleOffset === chunks[i-1].sampleOffset+chunks[i-1].sampleCount))), 'invalid_audio_batch', 409);
   const source=record.sources.find(s=>s.id===chunks[0].sourceId && s.epoch===chunks[0].epoch);
   requireThat(source && chunks.at(-1).sequence <= source.watermark && typeof text === 'string' && text.length <= 8000, 'invalid_audio_batch', 409);
-  if (text.trim()) record.segments.push({id:randomUUID(),revision:1,sourceId:source.id,chunkKey:keys[0],startMs:(source.timelineOffsetMs||0)+chunks[0].sampleOffset/16,
-    endMs:(source.timelineOffsetMs||0)+(chunks.at(-1).sampleOffset+chunks.at(-1).sampleCount)/16,text:text.trim(),speaker:'',translation:null,edited:false,transcriptProvider:'doubao-audio-only',modelVersion:model});
-  for (const chunk of chunks) { chunk.state='done'; delete chunk.error; delete chunk.lease; }
+  if (text.trim()) record.segments.push({id:randomUUID(),revision:1,sourceId:source.id,chunkKey:keys[0],chunkKeys:[...keys],startMs:(source.timelineOffsetMs||0)+chunks[0].sampleOffset/16,
+    endMs:(source.timelineOffsetMs||0)+(chunks.at(-1).sampleOffset+chunks.at(-1).sampleCount)/16,text:text.trim(),speaker:'',translation:null,edited:false,transcriptProvider:metadata.provider || 'doubao-audio-only',modelVersion:model});
+  for (const chunk of chunks) { chunk.state='done'; delete chunk.error; delete chunk.lease; delete chunk.batchWaiting; delete chunk.retryAt; }
   record.transcriptRevision+=chunks.length;record.transcription='processing';
   emit(record,'transcript.committed',{transcriptRevision:record.transcriptRevision});finalize(record);
 }

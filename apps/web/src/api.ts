@@ -5,6 +5,13 @@ export function setAudioTransport(value?: string) { binaryAudio = value === 'pcm
 let csrf = '';
 export const setCsrf = (token: string) => { csrf = token; };
 const messages: Record<string, string> = {
+  funasr_not_configured: '请在设置中填写 FunASR 转录地址和识别模型。',
+  funasr_service_unavailable: 'FunASR 服务暂不可用，请先启动本机服务或检查私有服务连接，再重新处理。录音已保留。',
+  funasr_credentials_rejected: 'FunASR 服务拒绝了密钥，请检查服务认证配置。',
+  funasr_endpoint_unavailable: 'FunASR 转录接口不存在，请使用完整的 /v1/audio/transcriptions 地址。',
+  funasr_compatible_endpoint_required: 'FunASR 需要兼容转录地址，路径以 /v1/audio/transcriptions 结尾。',
+  invalid_funasr_response: 'FunASR 未返回有效转录，请检查服务和模型版本。录音已保留。',
+  invalid_funasr_audio: '转录音频格式异常，录音已保留，请重新处理。',
   doubao_asr_45000292: '豆包语音识别配额超限，请在语音服务控制台检查额度后重试（45000292）。',
   service_unavailable: '记录服务暂时不可用，正在尝试恢复连接。',
   invalid_response: '记录服务返回不完整，操作结果尚未确认，请恢复连接后检查。',

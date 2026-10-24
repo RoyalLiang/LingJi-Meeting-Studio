@@ -6,6 +6,8 @@ import { parseAsrHotwords, parseAsrContext } from './asr-terms.mjs';
 
 export const defaults = {
   ASR_PROVIDER: 'doubao',
+  FUNASR_API_URL: 'http://127.0.0.1:18586/v1/audio/transcriptions',
+  FUNASR_MODEL: 'sensevoice',
   MINUTES_MODE: 'asr-llm',
   OPENAI_REALTIME_URL: 'wss://api.openai.com/v1/realtime',
   OPENAI_REALTIME_MODEL: 'gpt-realtime-2.1',
@@ -18,8 +20,8 @@ export const defaults = {
   LLM_PROTOCOL: 'responses',
   DOUBAO_TRANSLATION_MODEL: 'doubao-seed-translation-250915',
 };
-const fields = ['MINUTES_MODE', 'OPENAI_REALTIME_URL', 'OPENAI_REALTIME_MODEL', 'OPENAI_REALTIME_API_KEY', 'DOUBAO_TRANSLATION_API_URL', 'DOUBAO_TRANSLATION_API_KEY', 'DOUBAO_TRANSLATION_MODEL', 'DOUBAO_ASR_HOTWORDS', 'DOUBAO_ASR_CONTEXT', 'ASR_PROVIDER', 'DOUBAO_API_KEY', 'DOUBAO_ASR_URL', 'DOUBAO_ASR_RESOURCE_ID', 'DOUBAO_AST_BASE_URL', 'DOUBAO_AST_ENDPOINT', 'DOUBAO_AST_RESOURCE_ID', 'DOUBAO_AST_APP_ID', 'DOUBAO_AST_APP_KEY', 'DOUBAO_AST_ACCESS_KEY', 'ASR_API_URL', 'ASR_API_KEY', 'ASR_MODEL', 'DEEPGRAM_API_KEY', 'LLM_API_URL', 'LLM_API_KEY', 'LLM_MODEL', 'LLM_PROTOCOL'];
-const secretFields = new Set(['OPENAI_REALTIME_API_KEY', 'DOUBAO_TRANSLATION_API_KEY', 'DOUBAO_API_KEY', 'DOUBAO_AST_APP_KEY', 'DOUBAO_AST_ACCESS_KEY', 'ASR_API_KEY', 'DEEPGRAM_API_KEY', 'LLM_API_KEY']);
+const fields = ['FUNASR_API_URL', 'FUNASR_MODEL', 'FUNASR_API_KEY', 'MINUTES_MODE', 'OPENAI_REALTIME_URL', 'OPENAI_REALTIME_MODEL', 'OPENAI_REALTIME_API_KEY', 'DOUBAO_TRANSLATION_API_URL', 'DOUBAO_TRANSLATION_API_KEY', 'DOUBAO_TRANSLATION_MODEL', 'DOUBAO_ASR_HOTWORDS', 'DOUBAO_ASR_CONTEXT', 'ASR_PROVIDER', 'DOUBAO_API_KEY', 'DOUBAO_ASR_URL', 'DOUBAO_ASR_RESOURCE_ID', 'DOUBAO_AST_BASE_URL', 'DOUBAO_AST_ENDPOINT', 'DOUBAO_AST_RESOURCE_ID', 'DOUBAO_AST_APP_ID', 'DOUBAO_AST_APP_KEY', 'DOUBAO_AST_ACCESS_KEY', 'ASR_API_URL', 'ASR_API_KEY', 'ASR_MODEL', 'DEEPGRAM_API_KEY', 'LLM_API_URL', 'LLM_API_KEY', 'LLM_MODEL', 'LLM_PROTOCOL'];
+const secretFields = new Set(['FUNASR_API_KEY', 'OPENAI_REALTIME_API_KEY', 'DOUBAO_TRANSLATION_API_KEY', 'DOUBAO_API_KEY', 'DOUBAO_AST_APP_KEY', 'DOUBAO_AST_ACCESS_KEY', 'ASR_API_KEY', 'DEEPGRAM_API_KEY', 'LLM_API_KEY']);
 export const configured = value => Boolean(value && !/^(your[-_]|replace|mock|<|xxx)/i.test(value));
 export function normalizeConfig(env = process.env) {
   const protocol = env.LLM_PROTOCOL || (/\/chat\/completions\/?(?:\?|$)/.test(env.LLM_API_URL || '') ? 'chat-completions' : defaults.LLM_PROTOCOL);
@@ -51,17 +53,19 @@ export async function saveConfig(root, input, env = process.env) {
   }
   for (const key of input.clearSecrets || []) { requireThat(secretFields.has(key), 'invalid_secret_field', 400); values[key] = ''; }
   const next = { ...current, ...values };
-  requireThat(['doubao', 'doubao-ast', 'deepgram', 'openai-compatible'].includes(next.ASR_PROVIDER), 'invalid_asr_provider', 400);
+  requireThat(['doubao', 'doubao-ast', 'deepgram', 'openai-compatible', 'funasr'].includes(next.ASR_PROVIDER), 'invalid_asr_provider', 400);
   requireThat(['chat-completions', 'responses'].includes(next.LLM_PROTOCOL), 'invalid_llm_protocol', 400);
   requireThat(['asr-llm', 'openai-realtime', 'doubao-audio', 'doubao-audio-only'].includes(next.MINUTES_MODE), 'invalid_minutes_mode', 400);
   requireThat(!doubaoAudioEnabled(next) || next.LLM_PROTOCOL === 'responses', 'doubao_audio_requires_responses', 400);
   parseAsrHotwords(next.DOUBAO_ASR_HOTWORDS);
   const context=parseAsrContext(next.DOUBAO_ASR_CONTEXT);
-  for (const key of ['OPENAI_REALTIME_URL', 'DOUBAO_ASR_URL', 'DOUBAO_AST_BASE_URL', 'ASR_API_URL', 'LLM_API_URL', 'DOUBAO_TRANSLATION_API_URL']) {
+  for (const key of ['OPENAI_REALTIME_URL', 'DOUBAO_ASR_URL', 'DOUBAO_AST_BASE_URL', 'ASR_API_URL', 'LLM_API_URL', 'DOUBAO_TRANSLATION_API_URL', 'FUNASR_API_URL']) {
     if (!next[key]) continue;
     let url; try { url = new URL(next[key]); } catch { requireThat(false, 'invalid_provider_url', 400); }
     const socketUrl = ['OPENAI_REALTIME_URL', 'DOUBAO_ASR_URL', 'DOUBAO_AST_BASE_URL'].includes(key);
     const protocols = socketUrl ? ['wss:'] : ['https:'];
+    if (key === 'FUNASR_API_URL' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) && !protocols.includes('http:')) protocols.push('http:');
+    if (key === 'FUNASR_API_URL') requireThat(url.pathname.replace(/\/+$/, '').endsWith('/v1/audio/transcriptions'), 'funasr_compatible_endpoint_required', 400);
     if (env.NODE_ENV !== 'production') protocols.push(socketUrl ? 'ws:' : 'http:');
     requireThat(protocols.includes(url.protocol) && !url.username && !url.password && !url.hash, 'invalid_provider_url', 400);
   }
