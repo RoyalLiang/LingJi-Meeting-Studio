@@ -332,7 +332,7 @@ export async function createRecordServer(options = {}) {
       send(res, 200, result);
     } catch (error) {
       if (res.headersSent) { res.end(); return; }
-      if (!(error instanceof DomainError)) console.error('[record-api]', error.code || error.name);
+      if (!(error instanceof DomainError)) { console.error('[record-api]', error.code || error.name); try { options.onError?.(error); } catch { /* Observability must not alter the response. */ } }
       send(res, error.status || 500, { error: error.code || 'internal_error' });
     }
   });

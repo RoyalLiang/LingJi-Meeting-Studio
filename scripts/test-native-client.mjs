@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
@@ -10,9 +10,11 @@ const root = await mkdtemp(join(tmpdir(), 'tts-native-fixture-'));
 const output = join(root, 'probe.json');
 // Isolated fixture: no worker or provider is started.
 process.env.RECORD_PROVIDER = 'fixture'; process.env.NODE_ENV = 'test';
-const apiOptions = { root: join(root, 'records'), port: 0, host: '127.0.0.1', databaseUrl: '', seedDevelopment: false };
+const apiOptions = { onError:error=>{if(['EPERM','EBUSY','EACCES','ENAMETOOLONG'].includes(error.code))console.error('[native filesystem]',error.stack);}, root: join(root, 'records'), port: 0, host: '127.0.0.1', databaseUrl: '', seedDevelopment: false };
 const api = await createRecordServer(apiOptions);
 let child, logs = '';
+let failure;
+const terminateClient=()=>{if(process.platform==='win32'){try{execFileSync('taskkill.exe',['/PID',String(child.pid),'/T','/F'],{stdio:'ignore',timeout:5000});}catch{child.kill('SIGTERM');}}else child.kill('SIGTERM');};
 try {
   const address = await api.start();
   apiOptions.origin = `http://127.0.0.1:${address.port}`;
@@ -44,7 +46,7 @@ try {
   assert.equal(stored.capture, 'paused');
   delete result.recordId;
   const initialOrigin = result.origin;
-  child.kill('SIGTERM'); await new Promise(resolve => child.once('exit', resolve)); await rm(output);
+  terminateClient(); await new Promise(resolve => child.once('exit', resolve)); await rm(output);
   child = launch();
   for (const stream of [child.stdout, child.stderr]) stream.on('data', bytes => { logs = (logs + bytes).slice(-6000); });
   const restarted = await waitProbe(); assert.equal(restarted.ok, true, JSON.stringify(restarted));
@@ -79,9 +81,9 @@ try {
     const target = resolve(process.argv[2]); await mkdir(dirname(target), { recursive: true }); await writeFile(target, JSON.stringify(evidence, null, 2) + '\n');
   }
   console.log(JSON.stringify({ ok: true, nativePcmPackets: result.pcm.length, totalSamples: offset, authenticated: result.authenticated, sse: result.sse, iframeBlocked: result.iframeBlocked }));
-} finally {
+} catch(error) { failure=error; console.error('[native test failure]',error); throw error; } finally {
   if (child && child.exitCode == null) {
-    child.kill('SIGTERM'); await new Promise(resolve => child.once('exit', resolve));
+    terminateClient(); await new Promise(resolve => child.once('exit', resolve));
   }
-  await api.stop(); await rm(root, { recursive: true, force: true });
+  await api.stop(); try { await rm(root,{recursive:true,force:true,maxRetries:20,retryDelay:100}); } catch(error) { if(!failure)throw error; console.error('[native cleanup]',error.code); }
 }
