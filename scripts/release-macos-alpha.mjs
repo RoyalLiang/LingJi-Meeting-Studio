@@ -126,10 +126,10 @@ try {
   assert.ok(readPlist('NSMicrophoneUsageDescription'));
   assert.ok(readPlist('NSAudioCaptureUsageDescription'));
   await run(process.execPath, ['scripts/test-standalone-package.mjs', join(release, 'package-smoke.json')], {
-    NATIVE_CLIENT_EXECUTABLE: binary,
+    NATIVE_CLIENT_EXECUTABLE: binary, TTS_VERIFY_BUNDLED_ASR: '1',
   }, frozen);
   const checksum = createHash('sha256').update(await readFile(dmg)).digest('hex');
-  await run(join(installedApp, 'Contents/Resources/runtime/node'), ['scripts/test-bundled-asr.mjs', join(installedApp, 'Contents/Resources/client-backend'), join(release, 'bundled-asr-macos-arm64.json')]);
+  await run(join(installedApp, 'Contents/Resources/runtime/node'), ['scripts/test-bundled-asr.mjs', join(installedApp, 'Contents/Resources/client-backend'), join(release, 'bundled-asr-macos-arm64.json')], {}, frozen);
   await writeFile(join(release, 'SHA256SUMS.txt'), `${checksum}  ${dmgName}\n`);
   await writeFile(join(release, 'release.json'), JSON.stringify({
     bundledAsr: JSON.parse(await readFile(join(release, 'bundled-asr-macos-arm64.json'))),

@@ -66,6 +66,15 @@ async function launch() {
   const result = await fetch(state.url + '/api/bootstrap', { headers });
   assert.equal(result.status, 200);
   const boot = await result.json(); assert.equal(boot.localAccount, true); assert.equal(boot.email, 'local@device.invalid');
+  if(process.env.TTS_VERIFY_BUNDLED_ASR==='1') {
+    assert.equal(boot.providers.asrProvider,'sensevoice-local');
+    assert.equal(boot.providers.asr,true);
+    const settings=await fetch(state.url+'/api/settings/providers',{headers});
+    assert.equal(settings.status,200);
+    const {values}=await settings.json();
+    assert.equal(values.LOCAL_ASR_AVAILABLE,true);assert.equal(values.ASR_PROVIDER,'sensevoice-local');
+    assert.equal('LINGJI_LOCAL_ASR_DIR' in values,false);
+  }
   assert.equal((await fetch(state.url + '/api/development-account')).status, 404);
   assert.equal((await fetch(state.url + '/api/auth/register', { method: 'POST' })).status, 404);
   state.headers = headers;
@@ -97,7 +106,7 @@ try {
   if (profile) assert.equal(await readFile(join(data, 'profiles.json'), 'utf8'), profile);
   assert.equal(externalRequests, 0); await assert.rejects(stat(join(root, 'must-not-exist.json')), { code: 'ENOENT' });
   await stop(state);
-  const evidence = { timestamp: new Date().toISOString(), packagedApp: Boolean(process.env.NATIVE_CLIENT_EXECUTABLE), independentBackend: true, developerBackendRequests: externalRequests, restartPersistence: true, stableWebviewProfile: Boolean(profile), parentOwnsBackend: true, localAccount: true, devAccountDisabled: true, node: state.node, sqlite: state.sqlite, realAudioDevicesOpened: false, realProvidersInvoked: false };
+  const evidence = { timestamp: new Date().toISOString(), packagedApp: Boolean(process.env.NATIVE_CLIENT_EXECUTABLE), independentBackend: true, bundledAsrConfigured: process.env.TTS_VERIFY_BUNDLED_ASR==='1', developerBackendRequests: externalRequests, restartPersistence: true, stableWebviewProfile: Boolean(profile), parentOwnsBackend: true, localAccount: true, devAccountDisabled: true, node: state.node, sqlite: state.sqlite, realAudioDevicesOpened: false, realProvidersInvoked: false };
   if (process.argv[2]) { const target = resolve(process.argv[2]); await mkdir(dirname(target), { recursive: true }); await writeFile(target, JSON.stringify(evidence, null, 2) + '\n'); }
   console.log(JSON.stringify(evidence));
 } catch (error) {
