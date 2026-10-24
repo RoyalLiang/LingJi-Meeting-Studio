@@ -74,7 +74,7 @@ lingji_chrome_loop:
 FunctionEnd
 
 Function LingJiAfterShow
-  nsDialogs::KillTimer LingJiAfterShow
+  ${NSD_KillTimer} LingJiAfterShow
   ; MUI settles its separators when nsDialogs reports the custom page ready.
   Call LingJiHideChrome
   Call LingJiButtons
@@ -83,7 +83,7 @@ FunctionEnd
 
 Function LingJiReady
   Call LingJiHideChrome
-  nsDialogs::CreateTimer LingJiAfterShow 50
+  ${NSD_CreateTimer} LingJiAfterShow 50
   ; Child controls are created below the first child. Lower the bitmap after all controls exist.
   System::Call 'user32::SetWindowPos(p $LingJiBitmap,p 1,i 0,i 0,i 0,i 0,i 0x13)'
   Call LingJiButtons
