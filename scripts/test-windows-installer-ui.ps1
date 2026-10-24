@@ -79,6 +79,10 @@ try {
  Wait-Page '选择安装位置'
  Capture-Page 'directory'
  Click-Next
+ Start-Sleep -Milliseconds 200
+ $progressRoot=[System.Windows.Automation.AutomationElement]::FromHandle($script:handle)
+ $progressCondition=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty,'正在安装聆记')
+ if($null -ne $progressRoot.FindFirst([System.Windows.Automation.TreeScope]::Descendants,$progressCondition)){Capture-Page 'installing'}
  Wait-Page '安装完成' 180
  Capture-Page 'finish'
  $rootElement=[System.Windows.Automation.AutomationElement]::FromHandle($script:handle)

@@ -400,6 +400,7 @@ Var AppStartMenuFolder
 
 ; 7. Installation page
 !define MUI_PAGE_CUSTOMFUNCTION_SHOW LingJiProgressShow
+!define MUI_PAGE_CUSTOMFUNCTION_LEAVE LingJiProgressLeave
 !insertmacro MUI_PAGE_INSTFILES
 
 ; 8. Full-background finish page; desktop preference was collected on destination page.

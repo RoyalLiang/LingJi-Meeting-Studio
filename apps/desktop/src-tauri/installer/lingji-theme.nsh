@@ -23,6 +23,8 @@ Function LingJiInitialize
     Return
   ${EndIf}
   StrCpy $LingJiInitialized 1
+  ; The standard MUI finish page sets this; our custom finish page retains it.
+  SetAutoClose true
   StrCpy $LingJiShortcut 1
   InitPluginsDir
   File /oname=$PLUGINSDIR\lingji-background.bmp "${LINGJI_BACKGROUND}"
@@ -171,10 +173,9 @@ Function LingJiDirectory
   Pop $LingJiControl
   SendMessage $LingJiControl ${WM_SETFONT} $LingJiBodyFont 1
   ${NSD_OnClick} $LingJiControl LingJiBrowse
-  ${NSD_CreateCheckbox} 12% 60% 80% 20u "创建桌面快捷方式"
+  ${NSD_CreateCheckbox} 12% 60% 35% 20u "创建桌面快捷方式"
   Pop $LingJiShortcutControl
   SendMessage $LingJiShortcutControl ${WM_SETFONT} $LingJiBodyFont 1
-  System::Call 'uxtheme::SetWindowTheme(p $LingJiShortcutControl,w "",w "")'
   SetCtlColors $LingJiShortcutControl 203A2D transparent
   ${If} $LingJiShortcut == 1
     ${NSD_Check} $LingJiShortcutControl
@@ -233,15 +234,15 @@ Function LingJiFinish
   SendMessage $0 ${WM_SETTEXT} 0 "STR:完成"
   GetDlgItem $0 $HWNDPARENT 3
   EnableWindow $0 0
+  ShowWindow $0 0
   GetDlgItem $0 $HWNDPARENT 2
   ShowWindow $0 0
   !insertmacro LingJiLabel 12% 18% 80% 32u "安装完成" 1
   !insertmacro LingJiLabel 12% 34% 80% 18u "聆记已安装到你的电脑。" 0
   !insertmacro LingJiLabel 12% 44% 80% 28u "打开「设置与诊断」，连接转录与纪要服务。" 0
-  ${NSD_CreateCheckbox} 12% 58% 80% 20u "立即启动聆记"
+  ${NSD_CreateCheckbox} 12% 58% 35% 20u "立即启动聆记"
   Pop $LingJiLaunch
   SendMessage $LingJiLaunch ${WM_SETFONT} $LingJiBodyFont 1
-  System::Call 'uxtheme::SetWindowTheme(p $LingJiLaunch,w "",w "")'
   SetCtlColors $LingJiLaunch 203A2D transparent
   ${NSD_Check} $LingJiLaunch
   !insertmacro LingJiLabel 12% 70% 80% 24u "关闭窗口后，可从系统托盘重新打开。" 0
@@ -294,6 +295,20 @@ FunctionEnd
   !insertmacro RestartManager_EndSession $R0
 !macroend
 
+!macro LingJiProgressControl identifier top height
+  GetDlgItem $0 $LingJiDialog ${identifier}
+  IntOp $1 $LingJiWidth * 12
+  IntOp $1 $1 / 100
+  IntOp $2 $LingJiHeight * ${top}
+  IntOp $2 $2 / 100
+  IntOp $3 $LingJiWidth * 76
+  IntOp $3 $3 / 100
+  IntOp $4 ${height} * $LingJiDpi
+  IntOp $4 $4 / 96
+  System::Call 'user32::SetWindowPos(p r0,p 0,i r1,i r2,i r3,i r4,i 0x14)'
+  SendMessage $0 ${WM_SETFONT} $LingJiBodyFont 1
+!macroend
+
 Function LingJiProgressShow
   Call LingJiInitialize
   FindWindow $LingJiDialog "#32770" "" $HWNDPARENT
@@ -301,7 +316,27 @@ Function LingJiProgressShow
     Call LingJiBackground
     Call LingJiHideChrome
     Call LingJiButtons
-    GetDlgItem $0 $LingJiDialog 1006
+    IntOp $1 $LingJiWidth * 12
+    IntOp $1 $1 / 100
+    IntOp $2 $LingJiHeight * 14
+    IntOp $2 $2 / 100
+    IntOp $3 $LingJiWidth * 76
+    IntOp $3 $3 / 100
+    IntOp $4 40 * $LingJiDpi
+    IntOp $4 $4 / 96
+    System::Call 'user32::CreateWindowExW(i 0,w "STATIC",w "正在安装聆记",i 0x50000000,i r1,i r2,i r3,i r4,p $LingJiDialog,p 0,p 0,p 0)p.r0'
+    SendMessage $0 ${WM_SETFONT} $LingJiTitleFont 1
     SetCtlColors $0 203A2D transparent
+    !insertmacro LingJiProgressControl 1006 36 24
+    ; Dynamic status needs an opaque background to erase the previous filename.
+    GetDlgItem $0 $LingJiDialog 1006
+    SetCtlColors $0 203A2D F7FAF8
+    !insertmacro LingJiProgressControl 1004 46 18
+    !insertmacro LingJiProgressControl 1027 56 30
+    !insertmacro LingJiProgressControl 1016 65 80
   ${EndIf}
+FunctionEnd
+
+Function LingJiProgressLeave
+  ${NSD_FreeBitmap} $LingJiImage
 FunctionEnd
