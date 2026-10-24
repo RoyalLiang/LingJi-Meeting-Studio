@@ -24,7 +24,7 @@ jobs:
             const response=await fetch(base+'/actions/workflows/bundled-asr-candidate.yml/runs?branch=dev_bundled-sensevoice&per_page=30',{headers});
             if(!response.ok)throw new Error('list status '+response.status);
             for(const run of (await response.json()).workflow_runs){
-              if(String(run.id)===process.env.CURRENT_RUN || run.head_branch!=='dev_bundled-sensevoice' || !['queued','in_progress','waiting','pending'].includes(run.status))continue;
+              if(BigInt(run.id)>=BigInt(process.env.CURRENT_RUN) || run.head_branch!=='dev_bundled-sensevoice' || !['queued','in_progress','waiting','pending'].includes(run.status))continue;
               const cancelled=await fetch(base+'/actions/runs/'+run.id+'/cancel',{method:'POST',headers});
               console.log(JSON.stringify({supersededRun:run.id,status:cancelled.status}));
             }
