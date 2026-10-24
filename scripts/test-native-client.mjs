@@ -18,6 +18,7 @@ try {
   apiOptions.origin = `http://127.0.0.1:${address.port}`;
   const launch = () => spawn(resolve(process.env.NATIVE_CLIENT_EXECUTABLE || 'apps/desktop/src-tauri/target/debug/tts-client'), [], { env: {
     PATH: process.env.PATH, HOME: process.env.HOME, TMPDIR: process.env.TMPDIR,
+      ...(process.platform==='win32'?{SystemRoot:process.env.SystemRoot,USERPROFILE:process.env.USERPROFILE,LOCALAPPDATA:process.env.LOCALAPPDATA,TEMP:process.env.TEMP,TMP:process.env.TMP}:{}),
     TTS_CLIENT_DATA_DIR: join(root, 'client'), TTS_RECORD_API_URL: `http://127.0.0.1:${address.port}`,
     TTS_CLIENT_SYNTHETIC: '1', TTS_CLIENT_PROBE_OUTPUT: output,
   }, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -33,7 +34,8 @@ try {
   for (const stream of [child.stdout, child.stderr]) stream.on('data', bytes => { logs = (logs + bytes).slice(-6000); });
   let result = await waitProbe();
   assert.ok(result, `Native probe timed out: ${logs}`); assert.equal(result.ok, true, JSON.stringify(result));
-  assert.equal(result.iframeBlocked, true); assert.ok(result.pcm.length >= 2);
+  assert.equal(result.iframeBlocked, true);
+  assert.deepEqual(result.residentCapture,{hiddenWindow:true,continuedNativeCapture:true,continuedDurableQueue:true,recordingNotPaused:true,restoredWindow:true,hiddenMs:9000}); assert.ok(result.pcm.length >= 2);
   let offset = 0;
   result.pcm.forEach((packet, sequence) => { assert.equal(packet.sequence, sequence); assert.equal(packet.offset, offset); offset += packet.samples; });
   assert.equal(result.pcm[0].nonzero, true);

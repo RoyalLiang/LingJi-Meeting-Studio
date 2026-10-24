@@ -5,27 +5,23 @@ mod downloads;
 mod local_backend;
 mod menu_status;
 mod proxy;
-#[cfg(target_os = "macos")]
+mod resident;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 mod status_bar;
 mod update_gate;
 mod updates;
-use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc,
-};
+use std::sync::Arc;
 use tauri::{
     ipc::{CapabilityBuilder, Response},
     Emitter, Manager, State, WebviewUrl, WebviewWindow,
 };
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
 struct Client {
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     menu_bar: status_bar::StatusBar,
     origin: String,
     captures: Arc<audio::Captures>,
-    ready: AtomicBool,
-    close_serial: AtomicU64,
+    resident: resident::Resident,
     _lock: std::fs::File,
     _backend: Option<local_backend::LocalBackend>,
     updates: updates::Updates,
@@ -113,19 +109,19 @@ fn client_status(
     report: menu_status::Report,
 ) -> Result<(), String> {
     authorize(&window, &state)?;
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     state.menu_bar.report(report);
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let _ = report;
     Ok(())
 }
 
 fn menu_has_pending(state: &Client) -> bool {
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     {
         state.menu_bar.has_pending()
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = state;
         false
@@ -135,7 +131,7 @@ fn menu_has_pending(state: &Client) -> bool {
 #[tauri::command]
 fn client_ready(window: WebviewWindow, state: State<'_, Client>) -> Result<(), String> {
     authorize(&window, &state)?;
-    state.ready.store(true, Ordering::Release);
+    state.resident.ready();
     Ok(())
 }
 
@@ -145,18 +141,27 @@ fn client_probe(
     window: WebviewWindow,
     state: State<'_, Client>,
     result: serde_json::Value,
-) -> Result<(), String> {
+) -> Result<serde_json::Value, String> {
     authorize(&window, &state)?;
+    if let Some(action) = result.get("residentAction").and_then(|value| value.as_str()) {
+        match action {
+            "close" => window.close().map_err(|e| e.to_string())?,
+            "restore" => resident::show(window.app_handle()),
+            "snapshot" => {},
+            _ => return Err("unknown resident probe action".into()),
+        }
+        return Ok(serde_json::json!({"visible":window.is_visible().map_err(|e|e.to_string())?,"nativeActive":state.captures.active()}));
+    }
     if let Some(activity) = result.get("updateActivity") {
         state
             .updates
             .gate
             .report(serde_json::from_value(activity.clone()).map_err(|e| e.to_string())?);
-        return Ok(());
+        return Ok(serde_json::Value::Null);
     }
     let path =
         std::env::var("TTS_CLIENT_PROBE_OUTPUT").map_err(|_| "probe output not configured")?;
-    std::fs::write(path, serde_json::to_vec_pretty(&result).unwrap()).map_err(|e| e.to_string())
+    std::fs::write(path, serde_json::to_vec_pretty(&result).unwrap()).map(|_|serde_json::Value::Null).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -166,22 +171,7 @@ async fn client_close(
     force: bool,
 ) -> Result<(), String> {
     authorize(&window, &state)?;
-    if state.updates.gate.installing() {
-        return Err("更新正在安装，请稍候".into());
-    }
-    state.close_serial.fetch_add(1, Ordering::AcqRel);
-    if force || state.captures.active() || menu_has_pending(&state) {
-        let dialog = window.dialog().message("录音或补传尚未完成。请先在会议中暂停或结束，并等待补传完成。\n强制关闭会停止原生采集，尚未保存的末尾音频可能丢失。已持久化的片段会在重启并重新登录同一服务后保留。").title("录音尚未完成")
-            .buttons(MessageDialogButtons::OkCancelCustom("强制关闭".into(), "留在会议".into()));
-        if !tauri::async_runtime::spawn_blocking(move || dialog.blocking_show())
-            .await
-            .map_err(|e| e.to_string())?
-        {
-            return Ok(());
-        }
-    }
-    state.captures.stop_all();
-    window.destroy().map_err(|e| e.to_string())
+    resident::confirm_quit(&window, force).await
 }
 
 #[tauri::command]
@@ -236,7 +226,13 @@ async fn update_install(window: WebviewWindow, state: State<'_, Client>) -> Resu
 }
 
 fn main() {
-    let builder = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // Explicit profile overrides are separate development/test instances.
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    let builder = if std::env::var_os("TTS_CLIENT_DATA_DIR").is_none() {
+        builder.plugin(tauri_plugin_single_instance::init(|app, _, _| resident::show(app)))
+    } else { builder };
+    let builder = builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build());
     #[cfg(feature = "smoke-test")]
@@ -295,11 +291,11 @@ fn main() {
                 let listener = tokio::net::TcpListener::from_std(listener).expect("client loopback listener");
                 if let Err(e) = axum::serve(listener, proxy.router()).await { eprintln!("client proxy stopped: {e}"); }
             });
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             let menu_bar = status_bar::StatusBar::new(app.handle(), &menu_api_origin)?;
             app.manage(Client {
-                #[cfg(target_os = "macos")]
-                menu_bar, origin: origin.clone(), captures: Arc::new(audio::Captures::default()), ready: AtomicBool::new(false), close_serial: AtomicU64::new(0), _lock: binding._lock, _backend: backend, updates, api });
+                #[cfg(any(target_os = "macos", target_os = "windows"))]
+                menu_bar, origin: origin.clone(), captures: Arc::new(audio::Captures::default()), resident: resident::Resident::default(), _lock: binding._lock, _backend: backend, updates, api });
             app.add_capability(CapabilityBuilder::new("local-capture").window("main").local(false).remote(format!("{origin}/*"))
                 .permission("allow-capture-start").permission("allow-capture-read").permission("allow-capture-stop").permission("allow-capture-inputs")
                 .permission("allow-client-close").permission("allow-client-ready").permission("allow-client-status").permission("allow-update-status").permission("allow-update-activity").permission("allow-update-check").permission("allow-update-download").permission("allow-update-install")
@@ -354,7 +350,7 @@ fn main() {
             let builder = builder.data_directory(profile.clone());
             let _ = (profile, store_id);
             builder.build()?;
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             {
                 let handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
@@ -370,26 +366,21 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                let state = window.state::<Client>();
-                if state.ready.load(Ordering::Acquire) || state.captures.active() {
-                    api.prevent_close(); let serial = state.close_serial.fetch_add(1, Ordering::AcqRel) + 1;
-                    let _ = window.emit("client-close-requested", ());
-                    let window = window.clone();
-                    tauri::async_runtime::spawn(async move {
-                        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-                        if window.state::<Client>().updates.gate.installing() { return; }
-                        if window.state::<Client>().close_serial.load(Ordering::Acquire) != serial { return; }
-                        let dialog = window.dialog().message("会议页面未响应关闭请求。强制关闭可能丢失尚未保存的末尾音频；已保存的片段会保留。")
-                            .buttons(MessageDialogButtons::OkCancelCustom("强制关闭".into(), "取消".into()));
-                        if tauri::async_runtime::spawn_blocking(move || dialog.blocking_show()).await.unwrap_or(false) {
-                            window.state::<Client>().captures.stop_all(); let _ = window.destroy();
-                        }
-                    });
-                }
+            if window.label() == "main" && matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event { api.prevent_close(); }
+                #[cfg(any(target_os = "macos", target_os = "windows"))]
+                { let _ = window.hide(); }
+                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+                resident::request_quit(window.app_handle());
             }
         })
-        .run(client_context()).expect("TTS desktop runtime");
+        .build(client_context()).expect("TTS desktop runtime")
+        .run(|app, event| match event {
+            tauri::RunEvent::ExitRequested { api, .. } => resident::exit_requested(app, api),
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen { .. } => resident::show(app),
+            _ => {}
+        });
 }
 
 fn client_context() -> tauri::Context<tauri::Wry> {
