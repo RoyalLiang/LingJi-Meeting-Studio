@@ -49,10 +49,19 @@ Function LingJiBackground
   System::Free $0
   StrCpy $LingJiWidth $3
   StrCpy $LingJiHeight $4
-  System::Call 'user32::SetWindowPos(p $LingJiDialog,p 1,i 0,i 0,i $LingJiWidth,i $LingJiHeight,i 0x10)'
-  System::Call 'user32::CreateWindowExW(i 0,w "STATIC",w "",i 0x5000000E,i 0,i 0,i $LingJiWidth,i $LingJiHeight,p $LingJiDialog,p 0,p 0,p 0)p.s'
+  System::Call 'user32::GetWindowLongW(p $LingJiDialog,i -16)i.r0'
+  IntOp $0 $0 | 0x04000000
+  System::Call 'user32::SetWindowLongW(p $LingJiDialog,i -16,i r0)'
+  System::Call 'user32::SetWindowPos(p $LingJiDialog,p 0,i 0,i 0,i $LingJiWidth,i $LingJiHeight,i 0x10)'
+  System::Call 'user32::CreateWindowExW(i 0,w "STATIC",w "",i 0x5400000E,i 0,i 0,i $LingJiWidth,i $LingJiHeight,p $LingJiDialog,p 0,p 0,p 0)p.s'
   Pop $LingJiBitmap
   ${NSD_SetStretchedBitmap} $LingJiBitmap "$PLUGINSDIR\lingji-background.bmp" $LingJiImage
+  System::Call 'user32::SetWindowPos(p $LingJiBitmap,p 1,i 0,i 0,i 0,i 0,i 0x13)'
+  Call LingJiButtons
+FunctionEnd
+
+Function LingJiReady
+  ; Child controls are created below the first child. Lower the bitmap after all controls exist.
   System::Call 'user32::SetWindowPos(p $LingJiBitmap,p 1,i 0,i 0,i 0,i 0,i 0x13)'
   Call LingJiButtons
 FunctionEnd
@@ -70,16 +79,16 @@ Function LingJiButtons
   IntOp $4 $LingJiHeight - $2
   IntOp $4 $4 - $1
   GetDlgItem $5 $HWNDPARENT 1
-  System::Call 'user32::SetWindowPos(p r5,p 0,i r3,i r4,i r0,i r1,i 0x14)'
+  System::Call 'user32::SetWindowPos(p r5,p 0,i r3,i r4,i r0,i r1,i 0x10)'
   SetCtlColors $5 F7FAF8 286249
   IntOp $3 $3 - $0
   IntOp $3 $3 - 8
   GetDlgItem $5 $HWNDPARENT 2
-  System::Call 'user32::SetWindowPos(p r5,p 0,i r3,i r4,i r0,i r1,i 0x14)'
+  System::Call 'user32::SetWindowPos(p r5,p 0,i r3,i r4,i r0,i r1,i 0x10)'
   IntOp $3 $3 - $0
   IntOp $3 $3 - 8
   GetDlgItem $5 $HWNDPARENT 3
-  System::Call 'user32::SetWindowPos(p r5,p 0,i r3,i r4,i r0,i r1,i 0x14)'
+  System::Call 'user32::SetWindowPos(p r5,p 0,i r3,i r4,i r0,i r1,i 0x10)'
   GetDlgItem $5 $HWNDPARENT 1028
   ShowWindow $5 0
 FunctionEnd
@@ -117,6 +126,7 @@ Function LingJiWelcome
   !insertmacro LingJiLabel 12% 48% 80% 18u "Windows · x64" 0
   !insertmacro LingJiLabel 12% 60% 80% 24u "录音中关闭窗口，录音与整理继续运行。" 0
   !insertmacro LingJiLabel 12% 72% 80% 28u "本地语音模型需另行部署，可在设置中连接服务。" 0
+  Call LingJiReady
   nsDialogs::Show
   ${NSD_FreeBitmap} $LingJiImage
   ${NSD_FreeIcon} $LingJiIconImage
@@ -139,6 +149,7 @@ Function LingJiDirectory
   ${If} $LingJiShortcut == 1
     ${NSD_Check} $LingJiShortcutControl
   ${EndIf}
+  Call LingJiReady
   nsDialogs::Show
   ${NSD_FreeBitmap} $LingJiImage
 FunctionEnd
@@ -191,6 +202,7 @@ Function LingJiFinish
   SetCtlColors $LingJiLaunch 203A2D transparent
   ${NSD_Check} $LingJiLaunch
   !insertmacro LingJiLabel 12% 70% 80% 24u "关闭窗口后，可从系统托盘重新打开。" 0
+  Call LingJiReady
   nsDialogs::Show
   ${NSD_FreeBitmap} $LingJiImage
 FunctionEnd

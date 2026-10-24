@@ -150,6 +150,14 @@ jobs:
           node-version: '24.21.0'
       - run: rustup toolchain install 1.92.0 --profile minimal; rustup default 1.92.0
       - run: npm ci
+      - name: Check installer PowerShell syntax
+        shell: pwsh
+        run: |
+          foreach ($script in @('scripts/test-windows-installer.ps1','scripts/test-windows-installer-ui.ps1')) {
+            $tokens=$null; $parseErrors=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $script),[ref]$tokens,[ref]$parseErrors)
+            if ($parseErrors.Count -gt 0) { throw ($parseErrors | Out-String) }
+          }
       - run: node --test tests/records-audio-storage-sync.test.mjs tests/records-release-source.test.mjs tests/records-preview-release.test.mjs
       - run: npm run build:web
       - run: node scripts/prepare-client-backend.mjs
