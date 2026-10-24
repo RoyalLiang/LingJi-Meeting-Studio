@@ -25,7 +25,21 @@ jobs:
       - run: npm run build:web
       - run: node scripts/prepare-client-backend.mjs
       - name: Native regression
-        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --features smoke-test -- --test-threads=1
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          New-Item -ItemType Directory -Force .agent-runtime | Out-Null
+          & cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --features smoke-test -- --test-threads=1 2>&1 | Tee-Object .agent-runtime/windows-rust.log
+          $nativeStatus = $LASTEXITCODE
+          if ($nativeStatus -ne 0) {
+            $log = Get-Content .agent-runtime/windows-rust.log -Raw
+            $tail = $log.Substring([Math]::Max(0, $log.Length - 6500))
+            for ($at = 0; $at -lt $tail.Length; $at += 1000) {
+              $part = $tail.Substring($at, [Math]::Min(1000, $tail.Length - $at)).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+              Write-Output "::error title=Windows native diagnostic::$part"
+            }
+          }
+          exit $nativeStatus
       - name: Build native probe
         run: cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --features smoke-test
       - name: Hidden recording and restart replay
