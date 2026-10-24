@@ -18,10 +18,12 @@ void roundBox(HDC dc, RECT r, COLORREF color, COLORREF border, int radius) {
   RoundRect(dc, r.left, r.top, r.right, r.bottom, radius, radius);
   SelectObject(dc, oldPen); SelectObject(dc, oldBrush); DeleteObject(pen); DeleteObject(brush);
 }
-void paper(HWND control, HDC dc) {
+void paper(HWND control, HDC dc, bool outer = false) {
   RECT root{}, bounds{}; GetClientRect(rootWindow, &root); GetClientRect(control, &bounds);
   if (!background) { fill(dc, bounds, RGB(248, 249, 243)); return; }
-  POINT origin{}; MapWindowPoints(control, rootWindow, &origin, 1);
+  POINT origin{};
+  if (outer) { RECT position{}; GetWindowRect(control, &position); origin = {position.left,position.top}; MapWindowPoints(nullptr,rootWindow,&origin,1); }
+  else MapWindowPoints(control, rootWindow, &origin, 1);
   HDC image = CreateCompatibleDC(dc); HGDIOBJ previous = SelectObject(image, background);
   BITMAP bitmap{}; GetObject(background, sizeof(bitmap), &bitmap);
   const int saved = SaveDC(dc); SetViewportOrgEx(dc, -origin.x, -origin.y, nullptr);
@@ -54,7 +56,7 @@ void paintButton(HWND window, HDC dc, bool hover) {
     if (checked) checkmark(dc, box.left, box.top, RGB(255,255,255));
     r.left += px(26); label(window, dc, r, enabled ? ink : muted, DT_LEFT);
   } else if (window == browseButton) {
-    fill(dc, r, hover ? RGB(240,247,239) : RGB(255,255,255));
+    roundBox(dc, r, hover ? RGB(240,247,239) : RGB(255,255,255), RGB(213,225,214), px(7));
     label(window, dc, r, jade, DT_CENTER);
   } else if (GetDlgCtrlID(window) == IDOK) {
     COLORREF color = !enabled ? RGB(175,197,180) : pressed ? RGB(29,83,65) : hover ? RGB(31,92,71) : jade;
@@ -72,11 +74,26 @@ void paintProgress(HWND window, HDC dc) {
   const int position = static_cast<int>(SendMessageW(window, PBM_GETPOS, 0, 0));
   const int total = std::max(1, range.iHigh - range.iLow);
   roundBox(dc, r, RGB(222,234,221), RGB(222,234,221), px(7));
-  r.right = std::clamp(MulDiv(r.right, position - range.iLow, total), 0, r.right);
+  r.right = std::clamp<LONG>(MulDiv(r.right, position - range.iLow, total), 0L, r.right);
   if (r.right > 0) roundBox(dc, r, jade, jade, px(7));
 }
 LRESULT CALLBACK themed(HWND window, UINT message, WPARAM w, LPARAM l, UINT_PTR kind, DWORD_PTR data) {
   if (message == WM_NCDESTROY) { RemoveWindowSubclass(window, themed, kind); return DefSubclassProc(window, message, w, l); }
+  if (kind == 3) {
+    if (message == WM_NCCALCSIZE) {
+      RECT* r = w ? &reinterpret_cast<NCCALCSIZE_PARAMS*>(l)->rgrc[0] : reinterpret_cast<RECT*>(l);
+      r->left += px(50); r->right -= px(12); r->top += px(11); r->bottom -= px(11); return 0;
+    }
+    if (message == WM_NCPAINT) {
+      HDC dc = GetWindowDC(window); RECT r{}; GetWindowRect(window,&r); OffsetRect(&r,-r.left,-r.top);
+      ExcludeClipRect(dc,px(50),px(11),r.right-px(12),r.bottom-px(11));
+      paper(window,dc,true); roundBox(dc,r,RGB(255,255,255),RGB(213,225,214),px(7));
+      HPEN pen=CreatePen(PS_SOLID,px(1),muted); HGDIOBJ old=SelectObject(dc,pen),brush=SelectObject(dc,GetStockObject(NULL_BRUSH));
+      MoveToEx(dc,px(20),px(16),nullptr); LineTo(dc,px(28),px(16)); LineTo(dc,px(31),px(19)); LineTo(dc,px(38),px(19)); LineTo(dc,px(38),px(30)); LineTo(dc,px(20),px(30)); LineTo(dc,px(20),px(16));
+      SelectObject(dc,old); SelectObject(dc,brush); DeleteObject(pen); ReleaseDC(window,dc); return 0;
+    }
+    return DefSubclassProc(window,message,w,l);
+  }
   if (message == WM_ERASEBKGND) return 1;
   if (message == WM_MOUSEMOVE && kind == 1 && !data) {
     SetWindowSubclass(window, themed, kind, 1); TRACKMOUSEEVENT tracking{sizeof(tracking), TME_LEAVE, window, 0};
@@ -110,9 +127,10 @@ BOOL CALLBACK apply(HWND window, LPARAM) {
   if (wcscmp(name,L"Button") == 0) SetWindowSubclass(window, themed, 1, 0);
   else if (wcscmp(name,PROGRESS_CLASSW) == 0) SetWindowSubclass(window, themed, 2, 0);
   if (window == folderEdit) {
+    SetWindowSubclass(window, themed, 3, 0);
     SetWindowLongPtrW(window,GWL_EXSTYLE,GetWindowLongPtrW(window,GWL_EXSTYLE) & ~WS_EX_CLIENTEDGE);
     SetWindowLongPtrW(window,GWL_STYLE,GetWindowLongPtrW(window,GWL_STYLE) & ~WS_BORDER);
-    SendMessageW(window, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(px(16),px(16)));
+    SendMessageW(window, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, 0);
     SetWindowPos(window,nullptr,0,0,0,0,SWP_NOSIZE|SWP_NOMOVE|SWP_NOZORDER|SWP_FRAMECHANGED);
   }
   InvalidateRect(window, nullptr, TRUE); return TRUE;

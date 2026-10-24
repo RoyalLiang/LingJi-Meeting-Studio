@@ -22,6 +22,18 @@ jobs:
           node-version: '24.21.0'
       - run: rustup toolchain install 1.92.0 --profile minimal; rustup default 1.92.0
       - run: npm ci
+      - name: Compile installer painter
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          & node scripts/prepare-installer-theme.mjs 2>&1 | Tee-Object installer-theme-build.log
+          $status = $LASTEXITCODE
+          if ($status -ne 0) {
+            $log = Get-Content installer-theme-build.log -Raw
+            $tail = $log.Substring([Math]::Max(0,$log.Length-6500)).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Output "::error title=Installer painter compiler::$tail"
+          }
+          exit $status
       - name: Check installer PowerShell syntax
         shell: pwsh
         run: |
