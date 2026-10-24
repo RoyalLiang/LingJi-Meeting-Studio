@@ -14,6 +14,8 @@ public class LingJiInstallerWindow {
  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
  [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h,IntPtr dc,uint flags);
+ [DllImport("user32.dll")] public static extern int GetWindowLongW(IntPtr h,int index);
+ [DllImport("user32.dll")] public static extern IntPtr SendMessageW(IntPtr h,uint m,IntPtr w,IntPtr l);
 }
 '@
 New-Item -ItemType Directory -Force $Root | Out-Null
@@ -87,10 +89,24 @@ try {
  Capture-Page 'finish'
  $rootElement=[System.Windows.Automation.AutomationElement]::FromHandle($script:handle)
  $condition=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty,'立即启动聆记')
- $launch=$rootElement.FindFirst([System.Windows.Automation.TreeScope]::Descendants,$condition)
- if($null -eq $launch){throw 'Installer launch checkbox missing'}
- $toggle=$launch.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern)
- if($toggle.Current.ToggleState -eq [System.Windows.Automation.ToggleState]::On){$toggle.Toggle()}
+ # The dialog proxy can share its first control's accessible name. Select a
+ # native BS_AUTOCHECKBOX handle, then verify the real click by reading state.
+ $launchHandle=[IntPtr]::Zero
+ foreach($candidate in $rootElement.FindAll([System.Windows.Automation.TreeScope]::Descendants,$condition)){
+  $candidateHandle=[IntPtr]$candidate.Current.NativeWindowHandle
+  if($candidateHandle -ne [IntPtr]::Zero -and $candidate.Current.ClassName -eq 'Button' -and ([LingJiInstallerWindow]::GetWindowLongW($candidateHandle,-16) -band 15) -eq 3){$launchHandle=$candidateHandle;break}
+ }
+ if($launchHandle -eq [IntPtr]::Zero){throw 'Installer native launch checkbox missing'}
+ $checked=[LingJiInstallerWindow]::SendMessageW($launchHandle,0x00f0,[IntPtr]::Zero,[IntPtr]::Zero).ToInt32()
+ if($checked -eq 1){
+  if(-not [LingJiInstallerWindow]::PostMessage($launchHandle,0x00f5,[IntPtr]::Zero,[IntPtr]::Zero)){throw 'Installer checkbox click could not be posted'}
+  for($i=0;$i -lt 20;$i++){
+   if([LingJiInstallerWindow]::SendMessageW($launchHandle,0x00f0,[IntPtr]::Zero,[IntPtr]::Zero).ToInt32() -eq 0){break}
+   Start-Sleep -Milliseconds 100
+  }
+ }
+ if([LingJiInstallerWindow]::SendMessageW($launchHandle,0x00f0,[IntPtr]::Zero,[IntPtr]::Zero).ToInt32() -ne 0){throw 'Installer launch checkbox did not uncheck'}
+
  Click-Next
  if(-not $setup.WaitForExit(10000)){throw 'Installer did not finish'}
  if($setup.ExitCode -ne 0){throw 'Interactive installer failed'}
