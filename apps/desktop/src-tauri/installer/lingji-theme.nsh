@@ -124,9 +124,11 @@ Function LingJiButtons
   GetDlgItem $5 $HWNDPARENT 1
   SendMessage $5 ${WM_SETFONT} $LingJiBodyFont 1
   !insertmacro LingJiPlace $5 620 419 128 42
+  System::Call 'user32::SetWindowPos(p r5,p 0,i 0,i 0,i 0,i 0,i 0x13)'
   GetDlgItem $5 $HWNDPARENT 2
   SendMessage $5 ${WM_SETFONT} $LingJiBodyFont 1
   !insertmacro LingJiPlace $5 548 419 56 42
+  System::Call 'user32::SetWindowPos(p r5,p 0,i 0,i 0,i 0,i 0,i 0x13)'
   GetDlgItem $5 $HWNDPARENT 3
   ShowWindow $5 0
 FunctionEnd

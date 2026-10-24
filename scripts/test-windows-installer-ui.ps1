@@ -9,6 +9,9 @@ using System.Runtime.InteropServices;
 public class LingJiInstallerWindow {
  [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left,Top,Right,Bottom; }
  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h,out Rect r);
+ [StructLayout(LayoutKind.Sequential)] public struct Point { public int X,Y; }
+ [DllImport("user32.dll")] public static extern bool ScreenToClient(IntPtr h,ref Point p);
+ [DllImport("user32.dll")] public static extern IntPtr ChildWindowFromPointEx(IntPtr h,Point p,uint flags);
  [DllImport("user32.dll")] public static extern IntPtr GetDlgItem(IntPtr h,int id);
  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h,uint m,IntPtr w,IntPtr l);
  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
@@ -43,6 +46,12 @@ function Wait-Page([string]$text,[int]$seconds=30) {
 function Click-Next {
  $button=[LingJiInstallerWindow]::GetDlgItem($script:handle,1)
  if($button -eq [IntPtr]::Zero){throw 'Installer next button missing'}
+ $bounds=New-Object LingJiInstallerWindow+Rect
+ if(-not [LingJiInstallerWindow]::GetWindowRect($button,[ref]$bounds)){throw 'Installer button bounds missing'}
+ $point=New-Object LingJiInstallerWindow+Point
+ $point.X=[int](($bounds.Left+$bounds.Right)/2);$point.Y=[int](($bounds.Top+$bounds.Bottom)/2)
+ [void][LingJiInstallerWindow]::ScreenToClient($script:handle,[ref]$point)
+ if([LingJiInstallerWindow]::ChildWindowFromPointEx($script:handle,$point,0) -ne $button){throw 'Installer page covers the primary button'}
  if(-not [LingJiInstallerWindow]::PostMessage($script:handle,0x0111,[IntPtr]1,$button)){throw 'Installer next action could not be posted'}
 }
 function Capture-Page([string]$name) {
