@@ -24,11 +24,21 @@ jobs:
             Write-Output "::error title=Native installer UI diagnostic::$tail"
           }
           exit $status
-      - name: Expose native UI screenshots
+      - name: Expose native UI welcome
         if: always()
-        shell: pwsh
-        run: |
-          foreach($page in @('welcome','settings','installing','finish','unexpected')) { node scripts/expose-installer-screen.mjs $page }
+        run: node scripts/expose-installer-screen.mjs welcome
+      - name: Expose native UI settings
+        if: always()
+        run: node scripts/expose-installer-screen.mjs settings
+      - name: Expose native UI installing
+        if: always()
+        run: node scripts/expose-installer-screen.mjs installing
+      - name: Expose native UI finish
+        if: always()
+        run: node scripts/expose-installer-screen.mjs finish
+      - name: Expose native UI unexpected
+        if: always()
+        run: node scripts/expose-installer-screen.mjs unexpected
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         if: always()
         with:
