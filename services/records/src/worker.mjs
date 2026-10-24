@@ -49,7 +49,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
     }
     const realtimeWork = lane === 'all' ? processRealtimeAudio(repo, candidate, config, providers.realtimeFactory) : Promise.resolve();
     const speakerMode=!providers.transcribe && providerStatus(config).asrProvider==='doubao' && providerStatus(config).asr && !providerStatus(config).fixture && ['zh','en','zhen'].includes(candidate.language);
-    const funasrMode=!providers.transcribe && config.ASR_PROVIDER==='funasr' && config.MINUTES_MODE!=='doubao-audio-only' && !providerStatus(config).fixture;
+    const funasrMode=!providers.transcribe && ['funasr','sensevoice-local'].includes(config.ASR_PROVIDER) && config.MINUTES_MODE!=='doubao-audio-only' && !providerStatus(config).fixture;
     async function processAudio() {
       if (funasrMode || speakerMode || (config.MINUTES_MODE === 'doubao-audio-only' && !providerStatus(config).fixture)) return;
     let claimed;

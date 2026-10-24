@@ -60,6 +60,7 @@ impl LocalBackend {
             log_options.mode(0o600);
         }
         log_options.open(&log).map_err(|e| e.to_string())?;
+        let asr = entry.ancestors().nth(4).ok_or("本地语音资源目录不可用")?.join("local-asr");
         let mut command = Command::new(runtime);
         command
             .arg(entry)
@@ -67,6 +68,7 @@ impl LocalBackend {
             .current_dir(&root)
             .env_clear()
             .env("NODE_ENV", "desktop")
+            .env("LINGJI_LOCAL_ASR_DIR", asr)
             .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

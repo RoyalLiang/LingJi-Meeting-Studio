@@ -2,10 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { commitTranscriptBatch, emit, requireThat } from '../../../packages/records/src/record.mjs';
 import { readConfig } from './config.mjs';
 import { transcribeFunasr } from './funasr.mjs';
+import { LOCAL_ASR_MODEL } from './local-asr.mjs';
 
 const RATE = 16000, MAX_SAMPLES = RATE * 30, MAX_CHUNKS = 128;
-const enabled = config => config.ASR_PROVIDER === 'funasr' && config.MINUTES_MODE !== 'doubao-audio-only';
-const sameService = (a,b) => enabled(b) && ['FUNASR_API_URL','FUNASR_MODEL','FUNASR_API_KEY'].every(key => (a[key] || '') === (b[key] || ''));
+const enabled = config => ['funasr', 'sensevoice-local'].includes(config.ASR_PROVIDER) && config.MINUTES_MODE !== 'doubao-audio-only';
+const sameService = (a,b) => enabled(b) && a.ASR_PROVIDER === b.ASR_PROVIDER && (a.ASR_PROVIDER === 'sensevoice-local' ? a.LINGJI_LOCAL_ASR_DIR === b.LINGJI_LOCAL_ASR_DIR : ['FUNASR_API_URL','FUNASR_MODEL','FUNASR_API_KEY'].every(key => (a[key] || '') === (b[key] || '')));
 
 // Choose only durable packet boundaries. FunASR performs model VAD inside each
 // resulting utterance; this quiet-tail heuristic is not a streaming model.
@@ -26,14 +27,14 @@ function batchEnd(parts, chunks, stopped, oldestAt, now) {
   return 0;
 }
 
-export async function processFunasrAudio(repo, candidate, config) {
+export async function processFunasrAudio(repo, candidate, config, transcriber = transcribeFunasr) {
   async function work() {
     let claim;
     await repo.change(candidate.id, r => {
       if (r.deleted || Date.parse(r.deleteAt) <= Date.now()) return;
       const now = Date.now();
       for (const source of r.sources) {
-        if (source.asr?.state === 'failed' && source.asr.provider !== 'funasr' && source.asr.attempts !== 0) continue;
+        if (source.asr?.state === 'failed' && source.asr.provider !== config.ASR_PROVIDER && source.asr.attempts !== 0) continue;
         const pending = r.chunks.filter(c => c.sourceId === source.id && c.epoch === source.epoch && c.state !== 'done').sort((a,b) => a.sequence-b.sequence);
         const first = pending[0];
         if (!first || first.expired || first.attempts >= 5 || (first.lease || 0) > now || first.sequence > source.watermark
@@ -104,27 +105,27 @@ export async function processFunasrAudio(repo, candidate, config) {
       // Recheck the durable claim immediately before sending audio to the service.
       const current = await repo.get(candidate.id);
       if (!owns(current)) return;
-      const text = await transcribeFunasr(Buffer.concat(parts.slice(0,end)), {language:claim.language}, config);
+      const text = await transcriber(Buffer.concat(parts.slice(0,end)), {language:claim.language}, config);
       const afterConfig = await readConfig(repo.root);
       await repo.change(candidate.id, r => {
         if (!owns(r)) return;
         if (!sameService(config,afterConfig)) { release(r); return; }
-        commitTranscriptBatch(r, selected.map(c=>c.key), text, claim.generation, config.FUNASR_MODEL, {provider:'funasr'});
+        commitTranscriptBatch(r, selected.map(c=>c.key), text, claim.generation, config.ASR_PROVIDER === 'sensevoice-local' ? LOCAL_ASR_MODEL : config.FUNASR_MODEL, {provider:config.ASR_PROVIDER});
         release(r);
         const source = r.sources.find(s=>s.id===claim.sourceId && s.epoch===claim.epoch);
-        source.asr = {provider:'funasr',state:source.stopped && r.chunks.filter(c=>c.sourceId===source.id).every(c=>c.state==='done') ? 'completed' : 'queued'};
+        source.asr = {provider:config.ASR_PROVIDER,state:source.stopped && r.chunks.filter(c=>c.sourceId===source.id).every(c=>c.state==='done') ? 'completed' : 'queued'};
       });
     } catch (error) {
       const afterConfig = await readConfig(repo.root).catch(() => config);
       await repo.change(candidate.id, r => {
         if (!owns(r)) return;
-        if (!sameService(config,afterConfig)) { release(r); return; }
+        if (error.code === 'local_asr_shutdown' || !sameService(config,afterConfig)) { release(r); return; }
         for (const chunk of r.chunks.filter(c=>c.fence===claim.fence)) {
           chunk.state='pending'; delete chunk.lease; delete chunk.batchWaiting; delete chunk.fence;
           chunk.attempts++; chunk.error=error.code || 'funasr_service_unavailable'; chunk.retryAt=Date.now()+Math.min(60000,2000*2**chunk.attempts);
         }
         const source=r.sources.find(s=>s.id===claim.sourceId && s.epoch===claim.epoch);
-        source.asr={provider:'funasr',state:'failed',error:error.code || 'funasr_service_unavailable'};
+        source.asr={provider:config.ASR_PROVIDER,state:'failed',error:error.code || 'funasr_service_unavailable'};
         r.transcription=r.chunks.some(c=>c.attempts>=5 && c.state!=='done')?'failed':'blocked';
         emit(r,'transcription.blocked',{error:source.asr.error});
       });
