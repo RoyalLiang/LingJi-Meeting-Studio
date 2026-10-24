@@ -45,7 +45,21 @@ jobs:
       - name: Hidden recording and restart replay
         env:
           NATIVE_CLIENT_EXECUTABLE: ${{ github.workspace }}\apps\desktop\src-tauri\target\debug\tts-client.exe
-        run: node scripts/test-native-client.mjs .agent-runtime/windows-native.json
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          & node scripts/test-native-client.mjs .agent-runtime/windows-native.json 2>&1 | Tee-Object .agent-runtime/windows-probe.log
+          $probeStatus = $LASTEXITCODE
+          if ($probeStatus -ne 0) {
+            $log = Get-Content .agent-runtime/windows-probe.log -Raw
+            $log = [regex]::Replace($log, '(?im)^.*(?:authorization|cookie|api.?key|password).*$','[redacted diagnostic line]')
+            $tail = $log.Substring([Math]::Max(0, $log.Length - 6500))
+            for ($at = 0; $at -lt $tail.Length; $at += 1000) {
+              $part = $tail.Substring($at, [Math]::Min(1000, $tail.Length - $at)).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+              Write-Output "::error title=Windows probe diagnostic::$part"
+            }
+          }
+          exit $probeStatus
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         if: always()
         with:
