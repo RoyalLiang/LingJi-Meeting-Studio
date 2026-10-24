@@ -67,7 +67,7 @@ try{
  assert.equal(smoke.realAudioDevicesOpened,false);assert.equal(smoke.realProvidersInvoked,false);
  console.log('Windows packaging: Inspect installer UI');
  await run('pwsh.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',join(frozen,'scripts/test-windows-installer-ui.ps1'),'-Installer',join(stage,artifact),'-Root',join(scratch,'installer-preview'),'-Screenshots',join(root,'.agent-runtime/installer-ui')],frozen);
- const metadata={version:config.version,channel:'preview',platform:'windows',architecture:'x64',artifact,sourceRevision,sourceDirty:false,frozenSourceBuild:true,signing:'unsigned',sha256:releaseHash(bytes),source,
+ const metadata={bundledAsr:localAsr,version:config.version,channel:'preview',platform:'windows',architecture:'x64',artifact,sourceRevision,sourceDirty:false,frozenSourceBuild:true,signing:'unsigned',sha256:releaseHash(bytes),source,
   runtime:{node:smoke.node,sqlite:smoke.sqlite},validation:{peVerified:true,installerSilentSmoke:true,installedAppProbe:true,resourcesVerified:true,uninstallVerified:true,productionSmoke:true,realAudioDevicesTested:false,realProvidersTested:false,bundledAsrTested:true,freshMachineTested:false},
   timestamp:new Date().toISOString()};
  await writeFile(join(stage,'release-windows-x64.json'),JSON.stringify(metadata,null,2)+'\n');

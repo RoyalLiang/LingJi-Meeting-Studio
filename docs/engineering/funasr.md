@@ -1,3 +1,17 @@
+# 应用内置本地转录
+
+从 v0.1.17 测试版起，Windows x64 与 macOS Apple Silicon 安装包携带完整的 SenseVoiceSmall INT8、Silero VAD 与 sherpa-onnx 原生运行时。无需安装 Python、额外下载模型或手动运行转录服务器。在“设置 → 转录服务”选择“本地 SenseVoice”即可开始；未配置云端服务的新安装默认使用此项。
+
+应用通过私有子进程在 CPU 上推理，按需启动，空闲三分钟释放，真正退出时回收。它不监听本机 HTTP 端口。本地模式不需要 API Key；纪要仍使用独立配置的豆包等模型。已有云端或自定义 FunASR 配置不会被自动覆盖。
+
+本地转录采用短批次处理，保留音频标识、持久化确认、重试、转录版本与原音溯源。静音由 VAD 过滤；保留整段上下文交给模型。当前不提供本地说话人分离或自定义热词，不把短批次称为供应商流式 partial。中文、英文、日语、韩语、粤语为上游模型范围；本轮只对中文、英文和静音公开样本做了实际验证。
+
+模型版本固定为 `sensevoice-small-2024-07-17-int8`，原生运行时 `sherpa-onnx 1.13.8 / ONNX Runtime 1.28.2`。资源来源、固定 revision、下载摘要、权重协议与代码许可见 `services/records/src/local-asr-resources.json` 以及安装目录 `client-backend/local-asr/NOTICE.txt`、`licenses/`。模型数据启动前校验；原生库可能因 macOS 签名而改变摘要，其来源由构建时 npm SRI 和最终安装包校验和关联。
+
+公开短样本存在已观察到的 INT8 识别差异（英文 gold/code 等），不作为会议准确率承诺。真实会议、混合语种、噪声、多人及长时稳定性需独立评估；遇到错误可切回现有云端转录或高级外部服务。会议原音保存期内可重新处理，人工修订不会被后台覆盖。
+
+以下外部服务方式继续作为高级配置保留。
+
 # FunASR＋SenseVoice 转录
 
 聆记可连接本机或私有 FunASR 的兼容转录服务，默认识别模型为 SenseVoiceSmall。FunASR 负责推理和模型 VAD，SenseVoice 负责语音识别；会议纪要继续使用你配置的豆包等模型。旧的豆包 ASR、Deepgram 和兼容接口继续可用。

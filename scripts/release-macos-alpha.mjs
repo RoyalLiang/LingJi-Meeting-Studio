@@ -132,6 +132,7 @@ try {
   await run(join(installedApp, 'Contents/Resources/runtime/node'), ['scripts/test-bundled-asr.mjs', join(installedApp, 'Contents/Resources/client-backend'), join(release, 'bundled-asr-macos-arm64.json')]);
   await writeFile(join(release, 'SHA256SUMS.txt'), `${checksum}  ${dmgName}\n`);
   await writeFile(join(release, 'release.json'), JSON.stringify({
+    bundledAsr: JSON.parse(await readFile(join(release, 'bundled-asr-macos-arm64.json'))),
     version: config.version, channel, productName: config.productName, platform: 'macos', architecture: 'arm64',
     installer: config.bundle.macOS.dmg, iconSource: 'apps/desktop/assets/lingji-app-icon.svg',
     minimumSystemVersion: readPlist('LSMinimumSystemVersion'),

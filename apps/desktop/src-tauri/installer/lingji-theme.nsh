@@ -188,11 +188,11 @@ Function LingJiWelcome
   Pop $LingJiFolder
   SendMessage $LingJiFolder ${WM_SETFONT} $LingJiBodyFont 1
   SetCtlColors $LingJiFolder 273D35 FFFFFF
-  !insertmacro LingJiPlace $LingJiFolder 52 269 610 32
+  !insertmacro LingJiPlace $LingJiFolder 52 260 610 46
   ${NSD_CreateBrowseButton} 0 0 0 0 "更改"
   Pop $LingJiBrowseButton
   SendMessage $LingJiBrowseButton ${WM_SETFONT} $LingJiBodyFont 1
-  !insertmacro LingJiPlace $LingJiBrowseButton 662 269 86 32
+  !insertmacro LingJiPlace $LingJiBrowseButton 662 260 86 46
   ${NSD_OnClick} $LingJiBrowseButton LingJiBrowse
   ${NSD_CreateCheckbox} 0 0 0 0 "创建桌面快捷方式"
   Pop $LingJiShortcutControl
