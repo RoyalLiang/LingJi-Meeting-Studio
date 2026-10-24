@@ -22,7 +22,7 @@ try {
     PATH: process.env.PATH, HOME: process.env.HOME, TMPDIR: process.env.TMPDIR,
       ...(process.platform==='win32'?{SystemRoot:process.env.SystemRoot,USERPROFILE:process.env.USERPROFILE,LOCALAPPDATA:process.env.LOCALAPPDATA,TEMP:process.env.TEMP,TMP:process.env.TMP}:{}),
     TTS_CLIENT_DATA_DIR: join(root, 'client'), TTS_RECORD_API_URL: `http://127.0.0.1:${address.port}`,
-    TTS_CLIENT_SYNTHETIC: '1', TTS_CLIENT_PROBE_OUTPUT: output,
+    TTS_CLIENT_SYNTHETIC: '1', TTS_CLIENT_PROBE_OUTPUT: output, TTS_CLIENT_PROBE_AUTO_EXIT:'1',
   }, stdio: ['ignore', 'pipe', 'pipe'] });
   const waitProbe = async () => {
     for (let n = 0; n < 450; n++) {
@@ -46,7 +46,9 @@ try {
   assert.equal(stored.capture, 'paused');
   delete result.recordId;
   const initialOrigin = result.origin;
-  terminateClient(); await new Promise(resolve => child.once('exit', resolve)); await rm(output);
+  for(let i=0;i<100&&child.exitCode==null;i++)await new Promise(resolve=>setTimeout(resolve,100));
+  assert.equal(child.exitCode,0,'Native probe must exit normally before profile restart');
+  await rm(output);
   child = launch();
   for (const stream of [child.stdout, child.stderr]) stream.on('data', bytes => { logs = (logs + bytes).slice(-6000); });
   const restarted = await waitProbe(); assert.equal(restarted.ok, true, JSON.stringify(restarted));

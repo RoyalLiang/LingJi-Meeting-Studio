@@ -1,3 +1,4 @@
+import {snapshotReleaseSource} from './release-source.mjs';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFileSync, spawn } from 'node:child_process';
@@ -43,28 +44,7 @@ async function run(command, args, extraEnv = {}, cwd = root) {
 
 // Identify the actual build inputs, including existing uncommitted native work.
 // Never copy .env, meeting data, credentials, or unrelated IDE state into the release.
-async function sourceSnapshot(destination) {
-  const paths = capture('git', [...(sourceRef ? ['ls-tree', '-r', '--name-only', '-z', sourceRef] : ['ls-files', '--cached', '--others', '--exclude-standard', '-z']), '--',
-    '.gitignore', 'package.json', 'package-lock.json', 'apps/web', 'apps/desktop/package.json',
-    'apps/desktop/src-tauri', 'apps/desktop/assets', 'scripts/release-macos-alpha.mjs', 'scripts/test-standalone-package.mjs', 'scripts/prepare-client-backend.mjs', 'scripts/alpha-learning', 'tools/neohorse',
-    'services/records/src', 'packages/records/src', 'services/session-gateway/src/providers/doubao-ast-codec.mjs', 'services/session-gateway/src/providers/doubao-ast/protos', installationGuide,
-  ]).split('\0').filter(Boolean).sort();
-  const files = [];
-  for (const path of paths) {
-    if (path.split('/').some(part => ['.DS_Store', 'target', 'gen', 'dist', 'node_modules'].includes(part)) || /(^|\/)\.env(?:\.|$)/.test(path)) continue;
-    const bytes = await readSource(path).catch(error => {
-      if (error.code === 'ENOENT') return null;
-      throw error;
-    });
-    files.push({ path, sha256: bytes === null ? null : createHash('sha256').update(bytes).digest('hex') });
-    if (destination && bytes !== null) {
-      const target = join(destination, path);
-      await mkdir(dirname(target), { recursive: true });
-      await writeFile(target, bytes);
-    }
-  }
-  return { sha256: createHash('sha256').update(JSON.stringify(files)).digest('hex'), files };
-}
+const sourceSnapshot=destination=>snapshotReleaseSource({root,ref:sourceRef,destination});
 
 const appName = `${config.productName}.app`;
 const parent = dirname(output);

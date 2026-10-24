@@ -20,7 +20,8 @@ async function verifyNativeUiLanes(record, queued) {
 }
 
 (async () => {
-  const invoke = window.__TAURI_INTERNALS__.invoke;
+  if(window.__nativeProbeStarted)return;window.__nativeProbeStarted=true;
+ const invoke = window.__TAURI_INTERNALS__.invoke;
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   const until = async check => { for (let i = 0; i < 160; i++) { const result = await check(); if (result) return result; await sleep(100); } throw new Error('frontend probe timeout'); };
   try {

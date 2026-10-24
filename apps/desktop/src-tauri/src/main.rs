@@ -161,7 +161,15 @@ fn client_probe(
     }
     let path =
         std::env::var("TTS_CLIENT_PROBE_OUTPUT").map_err(|_| "probe output not configured")?;
-    std::fs::write(path, serde_json::to_vec_pretty(&result).unwrap()).map(|_|serde_json::Value::Null).map_err(|e| e.to_string())
+    std::fs::write(path, serde_json::to_vec_pretty(&result).unwrap()).map_err(|e| e.to_string())?;
+    if std::env::var_os("TTS_CLIENT_PROBE_AUTO_EXIT").is_some() {
+        let app=window.app_handle().clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            resident::probe_exit(&app);
+        });
+    }
+    Ok(serde_json::Value::Null)
 }
 
 #[tauri::command]
