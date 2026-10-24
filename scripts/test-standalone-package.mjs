@@ -103,5 +103,5 @@ try {
 } finally {
   if (child && child.exitCode == null) { child.kill('SIGKILL'); }
   await new Promise(resolve => trap.close(resolve));
-  if (process.env.CLIENT_SMOKE_KEEP_DATA === '1') console.log(`Isolated test data: ${root}`); else await rm(root, { recursive: true, force: true });
+  if (process.env.CLIENT_SMOKE_KEEP_DATA === '1') console.log(`Isolated test data: ${root}`); else await rm(root, { recursive: true, force: true, maxRetries:50, retryDelay:100 });
 }

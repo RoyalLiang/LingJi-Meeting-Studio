@@ -5,6 +5,7 @@ param(
   [Parameter(Mandatory=$true)][string]$ProbeScript,
   [Parameter(Mandatory=$true)][string]$SourceRoot
 )
+if($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted'){throw 'Installer verification requires disposable GitHub-hosted Windows CI'}
 $ErrorActionPreference = 'Stop'
 $installation = Join-Path $Root 'Installed App'
 $smoke = Join-Path $Root 'package-smoke.json'

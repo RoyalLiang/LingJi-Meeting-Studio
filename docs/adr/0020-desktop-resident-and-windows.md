@@ -11,3 +11,5 @@ Release must bind macOS and Windows metadata and checksums to one source SHA. CI
 References: [tray](https://v2.tauri.app/learn/system-tray/), [NSIS packaging](https://v2.tauri.app/distribute/windows-installer/), [single instance](https://v2.tauri.app/plugin/single-instance/).
 
 Windows CI confirmed EPERM at directory fsync after an audio object was linked. Windows now flushes the committed object with a writable file handle after the staged data flush and before ACK; macOS/Linux keep the directory barrier. Flush failures still propagate; no simulated success or silent fallback. NTFS physical power-loss behavior is not claimed by synthetic process-restart tests. See [Microsoft FlushFileBuffers](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers).
+
+Windows 自动安装与卸载探针仅允许在一次性的 GitHub 托管 Windows runner 执行，避免开发机现有用户级安装、卸载注册与快捷方式被测试安装覆盖。

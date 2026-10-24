@@ -1,3 +1,7 @@
+# v0.1.16 Windows 安装与桌面常驻候选（2026-10-24）
+
+已按确认的铺满背景三屏方案接入 Windows x64 NSIS 打包；macOS 菜单栏和 Windows 托盘支持关闭窗口后持续录音、补传与整理，显式退出仍检查未完成音频。macOS 原生合成验收与 Windows 候选原生验收通过；Windows 实际安装和本版发布状态以 Actions/发布回执为准。[版本范围与安装说明](releases/v0.1.16-preview.md)。
+
 # v0.1.15 FunASR＋SenseVoice 已发布（2026-10-24）
 
 新增可选本机/私有 FunASR＋SenseVoice 转录，保留原有模型链路及纪要溯源。后台三阶段构建发布成功，五附件、固定源码及隔离原生设置连接测试已核对。[发布回执与配置](evidence/preview-v0.1.15-2026-10-24.md)；[Release](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.15)。

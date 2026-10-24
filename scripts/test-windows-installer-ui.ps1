@@ -1,4 +1,5 @@
 param([Parameter(Mandatory=$true)][string]$Installer,[Parameter(Mandatory=$true)][string]$Root)
+if($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted'){throw 'Installer verification requires disposable GitHub-hosted Windows CI'}
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName System.Drawing
@@ -30,6 +31,7 @@ function Wait-Page([string]$text,[int]$seconds=30) {
   }
   Start-Sleep -Milliseconds 200
  }
+ try {Capture-Page 'unexpected'}catch{Write-Output ('::warning title=Installer capture::'+$_.Exception.Message)}
  throw "Installer page missing: $text"
 }
 function Click-Next {
