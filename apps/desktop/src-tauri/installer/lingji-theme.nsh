@@ -12,6 +12,7 @@ Var LingJiBrowseButton
 Var LingJiShortcutControl
 Var LingJiShortcut
 Var LingJiLaunch
+Var LingJiInstalling
 Var LingJiInitialized
 Var LingJiWidth
 Var LingJiHeight
@@ -148,9 +149,24 @@ Function LingJiButtons
   SendMessage $5 ${WM_SETFONT} $LingJiBodyFont 1
   !insertmacro LingJiPlace $5 620 419 128 42
   System::Call 'user32::SetWindowPos(p r5,p 0,i 0,i 0,i 0,i 0,i 0x13)'
+  ${If} $LingJiInstalling == 1
+    System::Call 'user32::SetPropW(p r5,w "LingJiInstallingHide",p 1)'
+    ShowWindow $5 0
+  ${Else}
+    System::Call 'user32::RemovePropW(p r5,w "LingJiInstallingHide")'
+    ShowWindow $5 5
+  ${EndIf}
   GetDlgItem $5 $HWNDPARENT 2
   SendMessage $5 ${WM_SETFONT} $LingJiBodyFont 1
-  !insertmacro LingJiPlace $5 548 419 56 42
+  ${If} $LingJiInstalling == 1
+    !insertmacro LingJiPlace $5 620 419 128 42
+    SendMessage $5 ${WM_SETTEXT} 0 "STR:取消安装"
+    System::Call 'user32::SetPropW(p r5,w "LingJiSecondaryButton",p 1)'
+  ${Else}
+    !insertmacro LingJiPlace $5 548 419 56 42
+    SendMessage $5 ${WM_SETTEXT} 0 "STR:取消"
+    System::Call 'user32::RemovePropW(p r5,w "LingJiSecondaryButton")'
+  ${EndIf}
   System::Call 'user32::SetWindowPos(p r5,p 0,i 0,i 0,i 0,i 0,i 0x13)'
   GetDlgItem $5 $HWNDPARENT 3
   ShowWindow $5 0
@@ -191,6 +207,7 @@ Function LingJiBrand
 FunctionEnd
 
 Function LingJiCreatePage
+  StrCpy $LingJiInstalling 0
   Call LingJiInitialize
   nsDialogs::Create 1018
   Pop $LingJiDialog
@@ -296,6 +313,7 @@ Function LingJiFinishLeave
 FunctionEnd
 
 Function LingJiProgressShow
+  StrCpy $LingJiInstalling 1
   Call LingJiInitialize
   FindWindow $LingJiDialog "#32770" "" $HWNDPARENT
   ${If} $LingJiDialog != 0

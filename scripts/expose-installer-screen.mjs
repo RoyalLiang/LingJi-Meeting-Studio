@@ -12,7 +12,7 @@ const bytes = await readFile(join('.agent-runtime/installer-ui', name + '.jpg'))
 });
 if (bytes) {
   const encoded = bytes.toString('base64');
-  assert.ok(encoded.length <= 60000, 'Screenshot exceeds ten check annotations');
-  const parts = Math.ceil(encoded.length / 6000);
-  for (let i = 0; i < parts; i++) console.log(`::notice title=LingJi installer ${name} ${i + 1}/${parts}::${encoded.slice(i * 6000, (i + 1) * 6000)}`);
+  assert.ok(encoded.length <= 38000, 'Screenshot exceeds ten check annotations');
+  const parts = Math.ceil(encoded.length / 3800);
+  for (let i = 0; i < parts; i++) console.log(`::notice title=LingJi installer ${name} ${i + 1}/${parts}::${encoded.slice(i * 3800, (i + 1) * 3800)}`);
 } else console.log('Installer page not reached: ' + name);

@@ -74,11 +74,20 @@ function Capture-Page([string]$name) {
   }
   $path=Join-Path $Screenshots "$name.jpg"
   $codec=[System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object {$_.MimeType -eq 'image/jpeg'}
-  $parameters=[System.Drawing.Imaging.EncoderParameters]::new(1)
-  try {
-   $parameters.Param[0]=[System.Drawing.Imaging.EncoderParameter]::new([System.Drawing.Imaging.Encoder]::Quality,[long]65)
-   $bitmap.Save($path,$codec,$parameters)
-  }finally {$parameters.Dispose()}
+  $bitmap.Save((Join-Path $Screenshots "$name.png"),[System.Drawing.Imaging.ImageFormat]::Png)
+  $data=$null
+  foreach($quality in @(65,55,45,35,25,15)) {
+    $parameters=[System.Drawing.Imaging.EncoderParameters]::new(1)
+    $buffer=[System.IO.MemoryStream]::new()
+    try {
+      $parameters.Param[0]=[System.Drawing.Imaging.EncoderParameter]::new([System.Drawing.Imaging.Encoder]::Quality,[long]$quality)
+      $bitmap.Save($buffer,$codec,$parameters)
+      $data=$buffer.ToArray()
+    }finally{$buffer.Dispose();$parameters.Dispose()}
+    if($data.Length -le 28000){break}
+  }
+  if($data.Length -gt 28000){throw 'Diagnostic screenshot remains too large; full PNG retained'}
+  [IO.File]::WriteAllBytes($path,$data)
   Write-Host "Saved installer screenshot: $name"
 
  } finally {$graphics.Dispose();$bitmap.Dispose()}

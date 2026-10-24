@@ -55,6 +55,9 @@ void paintButton(HWND window, HDC dc, bool hover) {
     roundBox(dc, box, checked ? jade : RGB(255,255,255), checked ? jade : RGB(177,194,181), px(4));
     if (checked) checkmark(dc, box.left, box.top, RGB(255,255,255));
     r.left += px(26); label(window, dc, r, enabled ? ink : muted, DT_LEFT);
+  } else if (GetPropW(window,L"LingJiSecondaryButton")) {
+    roundBox(dc,r,hover?RGB(240,247,239):RGB(250,251,248),RGB(213,225,214),px(7));
+    label(window,dc,r,enabled?ink:muted,DT_CENTER);
   } else if (window == browseButton) {
     roundBox(dc, r, hover ? RGB(240,247,239) : RGB(255,255,255), RGB(213,225,214), px(7));
     label(window, dc, r, jade, DT_CENTER);
@@ -78,6 +81,7 @@ void paintProgress(HWND window, HDC dc) {
   if (r.right > 0) roundBox(dc, r, jade, jade, px(7));
 }
 LRESULT CALLBACK themed(HWND window, UINT message, WPARAM w, LPARAM l, UINT_PTR kind, DWORD_PTR data) {
+  if (message == WM_SHOWWINDOW && w && GetPropW(window,L"LingJiInstallingHide")) { ShowWindow(window,SW_HIDE); return 0; }
   if (message == WM_NCDESTROY) { RemoveWindowSubclass(window, themed, kind); return DefSubclassProc(window, message, w, l); }
   if (kind == 3) {
     if (message == WM_NCCALCSIZE) {
