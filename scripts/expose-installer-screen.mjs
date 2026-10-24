@@ -5,7 +5,7 @@ import { join } from 'node:path';
 assert.equal(process.env.GITHUB_ACTIONS, 'true');
 assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted');
 const name = process.argv[2];
-assert.ok(['welcome', 'directory', 'finish', 'unexpected'].includes(name));
+assert.ok(['welcome', 'directory', 'installing', 'finish', 'unexpected'].includes(name));
 const bytes = await readFile(join('.agent-runtime/installer-ui', name + '.jpg')).catch(error => {
   if (error.code !== 'ENOENT') throw error;
   return null;
