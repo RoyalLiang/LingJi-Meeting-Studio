@@ -196,6 +196,7 @@ jobs:
           path: .agent-runtime/windows-native.json
           if-no-files-found: ignore
       - name: Build and verify Windows preview installer
+        timeout-minutes: 30
         env:
           TTS_RELEASE_SOURCE_REF: ${{ needs.verify.outputs.sha }}
         shell: pwsh

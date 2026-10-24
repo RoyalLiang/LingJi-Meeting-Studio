@@ -26,10 +26,11 @@ await access(npmCli);
 async function run(command,args,cwd,env={}){
  if(command==='npm'){command=process.execPath;args=[npmCli,...args];}
  await new Promise((resolve,reject)=>{
-  const child=spawn(command,args,{cwd,env:{...process.env,...env},stdio:'inherit'});
+  const child=spawn(command,args,{cwd,env:{...process.env,...env},stdio:'inherit',timeout:command==='pwsh.exe'?300000:0});
   child.once('error',reject);child.once('exit',code=>code===0?resolve():reject(new Error(`${command} failed (${code})`)));
  });
 }
+let buildFailure;
 try{
  const frozen=join(scratch,'source');const source=await snapshotReleaseSource({root,ref:sourceRevision,destination:frozen});
  assert.equal((await snapshotReleaseSource({root,ref:sourceRevision})).sha256,source.sha256);
@@ -50,7 +51,9 @@ try{
  await copyFile(join(bundle,installers[0]),join(stage,artifact));
  const bytes=await readFile(join(stage,artifact));assert.equal(bytes.toString('ascii',0,2),'MZ');
  assert.equal(bytes.readUInt16LE(bytes.readUInt32LE(0x3c)+4),0x14c,'NSIS bootstrap is a PE32 executable');
+ console.log('Windows packaging: Inspect installer UI');
  await run('pwsh.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',join(frozen,'scripts/test-windows-installer-ui.ps1'),'-Installer',join(stage,artifact),'-Root',join(scratch,'installer-preview')],frozen);
+ console.log('Windows packaging: Verify silent installation');
  const installerSmoke=join(stage,'installer-smoke.json');
  await run('pwsh.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',join(frozen,'scripts/test-windows-installer.ps1'),'-Installer',join(stage,artifact),'-Root',join(scratch,'installation'),'-Output',installerSmoke,'-ProbeScript',join(frozen,'scripts/test-standalone-package.mjs'),'-SourceRoot',frozen],frozen);
  const install=JSON.parse(await readFile(installerSmoke));
@@ -71,4 +74,6 @@ try{
  await rm(installerSmoke);
  await rename(stage,output);
  console.log(JSON.stringify({output,artifact,sourceRevision,sha256:metadata.sha256,platform:'windows',architecture:'x64'}));
-}finally{await rm(stage,{recursive:true,force:true});await rm(scratch,{recursive:true,force:true});}
+}catch(error){buildFailure=error;throw error;}finally{
+ for(const path of [stage,scratch]){try{await rm(path,{recursive:true,force:true,maxRetries:20,retryDelay:100});}catch(error){if(!buildFailure)throw error;console.warn('Windows build cleanup:',error.code);}}
+}

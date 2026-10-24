@@ -10,7 +10,7 @@ public class LingJiInstallerWindow {
  [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left,Top,Right,Bottom; }
  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h,out Rect r);
  [DllImport("user32.dll")] public static extern IntPtr GetDlgItem(IntPtr h,int id);
- [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h,uint m,IntPtr w,IntPtr l);
+ [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h,uint m,IntPtr w,IntPtr l);
  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
  [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h,IntPtr dc,uint flags);
 }
@@ -37,7 +37,7 @@ function Wait-Page([string]$text,[int]$seconds=30) {
 function Click-Next {
  $button=[LingJiInstallerWindow]::GetDlgItem($script:handle,1)
  if($button -eq [IntPtr]::Zero){throw 'Installer next button missing'}
- [void][LingJiInstallerWindow]::SendMessage($button,0x00F5,[IntPtr]::Zero,[IntPtr]::Zero)
+ if(-not [LingJiInstallerWindow]::PostMessage($button,0x00F5,[IntPtr]::Zero,[IntPtr]::Zero)){throw 'Installer next action could not be posted'}
 }
 function Capture-Page([string]$name) {
  [void][LingJiInstallerWindow]::SetForegroundWindow($script:handle)
@@ -46,7 +46,7 @@ function Capture-Page([string]$name) {
  if(-not [LingJiInstallerWindow]::GetWindowRect($script:handle,[ref]$rectangle)){throw 'Installer rectangle unavailable'}
  $width=$rectangle.Right-$rectangle.Left;$height=$rectangle.Bottom-$rectangle.Top
  if($width -lt 600 -or $height -lt 400){throw "Installer size too small: $width x $height"}
- $bitmap=New-Object System.Drawing.Bitmap($width,$height)
+ $bitmap=New-Object System.Drawing.Bitmap($width,$height,[System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
  $graphics=[System.Drawing.Graphics]::FromImage($bitmap)
  try {
   $dc=$graphics.GetHdc()
