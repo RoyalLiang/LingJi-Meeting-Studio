@@ -168,7 +168,7 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 
 ; Installer pages, must be ordered as they appear
 ; 1. Welcome Page
-Page custom LingJiWelcome
+Page custom LingJiWelcome LingJiDirectoryLeave
 
 ; 2. License Page (if defined)
 !if "${LICENSE}" != ""
@@ -386,7 +386,7 @@ Function PageLeaveReinstall
 FunctionEnd
 
 ; 5. Choose install directory page
-Page custom LingJiDirectory LingJiDirectoryLeave
+; Installation settings are on the welcome page.
 
 ; 6. Start menu shortcut page
 Var AppStartMenuFolder

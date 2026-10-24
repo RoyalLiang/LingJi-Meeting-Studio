@@ -8,6 +8,6 @@
     "dev:preview": "node ./src/shell-server.mjs",
     "dev:mock": "node ./src/mock-client.mjs",
     "dev:native": "node ../../scripts/prepare-client-backend.mjs && tauri dev",
-    "build:native": "node ../../scripts/prepare-client-backend.mjs && tauri build"
+    "build:native": "node ../../scripts/prepare-client-backend.mjs && node ../../scripts/prepare-installer-theme.mjs && tauri build"
   }
 }

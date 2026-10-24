@@ -1,4 +1,4 @@
-; Full-window skin over Tauri's pinned NSIS template. Native edit/buttons retain keyboard navigation.
+; Three approved pages; input and accessibility remain native Win32 controls.
 !include nsDialogs.nsh
 !define LINGJI_BACKGROUND "${__FILEDIR__}\background.bmp"
 Var LingJiDialog
@@ -8,6 +8,7 @@ Var LingJiIcon
 Var LingJiIconImage
 Var LingJiControl
 Var LingJiFolder
+Var LingJiBrowseButton
 Var LingJiShortcutControl
 Var LingJiShortcut
 Var LingJiLaunch
@@ -17,30 +18,73 @@ Var LingJiHeight
 Var LingJiDpi
 Var LingJiTitleFont
 Var LingJiBodyFont
+Var LingJiBrandFont
+Var LingJiPercent
+Var LingJiThemeModule
+
+!macro LingJiPlace handle x y width height
+  Push $0
+  Push $1
+  Push $2
+  Push $3
+  IntOp $0 $LingJiWidth * ${x}
+  IntOp $0 $0 / 800
+  IntOp $1 $LingJiHeight * ${y}
+  IntOp $1 $1 / 488
+  IntOp $2 $LingJiWidth * ${width}
+  IntOp $2 $2 / 800
+  IntOp $3 $LingJiHeight * ${height}
+  IntOp $3 $3 / 488
+  System::Call 'user32::SetWindowPos(p ${handle},p 0,i r0,i r1,i r2,i r3,i 0x14)'
+  Pop $3
+  Pop $2
+  Pop $1
+  Pop $0
+!macroend
+
+!macro LingJiLabel x y width height text title
+  ${NSD_CreateLabel} 0 0 0 0 "${text}"
+  Pop $LingJiControl
+  SetCtlColors $LingJiControl 273D35 transparent
+  !if ${title} == 1
+    SendMessage $LingJiControl ${WM_SETFONT} $LingJiTitleFont 1
+  !else
+    SendMessage $LingJiControl ${WM_SETFONT} $LingJiBodyFont 1
+  !endif
+  !insertmacro LingJiPlace $LingJiControl ${x} ${y} ${width} ${height}
+!macroend
 
 Function LingJiInitialize
   ${If} $LingJiInitialized == 1
     Return
   ${EndIf}
   StrCpy $LingJiInitialized 1
-  ; The standard MUI finish page sets this; our custom finish page retains it.
   SetAutoClose true
   StrCpy $LingJiShortcut 1
   InitPluginsDir
   File /oname=$PLUGINSDIR\lingji-background.bmp "${LINGJI_BACKGROUND}"
-  CreateFont $LingJiTitleFont "Microsoft YaHei UI" 18 600
-  CreateFont $LingJiBodyFont "Microsoft YaHei UI" 10
-  System::Call 'user32::GetDpiForWindow(p $HWNDPARENT) i.r0'
+  File /oname=$PLUGINSDIR\lingji-ui.dll "${__FILEDIR__}\generated\lingji-ui.dll"
+  ; Keep the module loaded while its window-subclass callbacks are registered.
+  System::Call 'kernel32::LoadLibraryW(w "$PLUGINSDIR\lingji-ui.dll")p.s'
+  Pop $LingJiThemeModule
+  ${If} $LingJiThemeModule == 0
+    MessageBox MB_OK|MB_ICONSTOP "安装界面无法初始化，请重新下载安装包。"
+    Quit
+  ${EndIf}
+  CreateFont $LingJiTitleFont "Microsoft YaHei UI" 24 600
+  CreateFont $LingJiBodyFont "Microsoft YaHei UI" 11
+  CreateFont $LingJiBrandFont "Microsoft YaHei UI" 16 500
+  System::Call 'user32::GetDpiForWindow(p $HWNDPARENT)i.r0'
   ${If} $0 < 96
     StrCpy $0 96
   ${EndIf}
   StrCpy $LingJiDpi $0
-  IntOp $1 700 * $0
+  IntOp $1 800 * $0
   IntOp $1 $1 / 96
-  IntOp $2 480 * $0
+  IntOp $2 520 * $0
   IntOp $2 $2 / 96
   System::Call 'user32::SetWindowPos(p $HWNDPARENT,p 0,i 0,i 0,i r1,i r2,i 0x16)'
-  SetCtlColors $HWNDPARENT 203A2D F7FAF8
+  SetCtlColors $HWNDPARENT 273D35 F8F9F3
 FunctionEnd
 
 Function LingJiBackground
@@ -58,8 +102,6 @@ Function LingJiBackground
   System::Call 'user32::CreateWindowExW(i 0,w "STATIC",w "",i 0x5400000E,i 0,i 0,i $LingJiWidth,i $LingJiHeight,p $LingJiDialog,p 0,p 0,p 0)p.s'
   Pop $LingJiBitmap
   ${NSD_SetStretchedBitmap} $LingJiBitmap "$PLUGINSDIR\lingji-background.bmp" $LingJiImage
-  System::Call 'user32::SetWindowPos(p $LingJiBitmap,p 1,i 0,i 0,i 0,i 0,i 0x13)'
-  Call LingJiButtons
 FunctionEnd
 
 Function LingJiHideChrome
@@ -75,62 +117,48 @@ lingji_chrome_loop:
   Goto lingji_chrome_loop
 FunctionEnd
 
+Function LingJiButtons
+  GetDlgItem $5 $HWNDPARENT 1
+  SendMessage $5 ${WM_SETFONT} $LingJiBodyFont 1
+  !insertmacro LingJiPlace $5 620 419 128 42
+  GetDlgItem $5 $HWNDPARENT 2
+  SendMessage $5 ${WM_SETFONT} $LingJiBodyFont 1
+  !insertmacro LingJiPlace $5 548 419 56 42
+  GetDlgItem $5 $HWNDPARENT 3
+  ShowWindow $5 0
+FunctionEnd
+
+Function LingJiThemeControls
+  Call LingJiButtons
+  System::Call 'user32::SetWindowPos(p $LingJiBitmap,p 1,i 0,i 0,i 0,i 0,i 0x13)'
+  System::Call '$PLUGINSDIR\lingji-ui.dll::LingJiTheme(p $HWNDPARENT,w "$PLUGINSDIR\lingji-background.bmp",p $LingJiFolder,p $LingJiBrowseButton,p $LingJiPercent)'
+FunctionEnd
+
 Function LingJiAfterShow
   ${NSD_KillTimer} LingJiAfterShow
-  ; MUI settles its separators when nsDialogs reports the custom page ready.
   Call LingJiHideChrome
-  Call LingJiButtons
+  Call LingJiThemeControls
   System::Call 'user32::RedrawWindow(p $HWNDPARENT,p 0,p 0,i 0x185)'
 FunctionEnd
 
 Function LingJiReady
   Call LingJiHideChrome
   ${NSD_CreateTimer} LingJiAfterShow 50
-  ; Child controls are created below the first child. Lower the bitmap after all controls exist.
-  System::Call 'user32::SetWindowPos(p $LingJiBitmap,p 1,i 0,i 0,i 0,i 0,i 0x13)'
-  Call LingJiButtons
+  Call LingJiThemeControls
 FunctionEnd
 
-Function LingJiButtons
-  ; Reposition original wizard buttons, retaining native command IDs and tab/Enter behavior.
-  IntOp $0 110 * $LingJiDpi
-  IntOp $0 $0 / 96
-  IntOp $1 34 * $LingJiDpi
-  IntOp $1 $1 / 96
-  IntOp $2 22 * $LingJiDpi
-  IntOp $2 $2 / 96
-  IntOp $3 $LingJiWidth - $2
-  IntOp $3 $3 - $0
-  IntOp $4 $LingJiHeight - $2
-  IntOp $4 $4 - $1
-  GetDlgItem $5 $HWNDPARENT 1
-  SendMessage $5 ${WM_SETFONT} $LingJiBodyFont 1
-  System::Call 'user32::SetWindowPos(p r5,p 0,i r3,i r4,i r0,i r1,i 0x10)'
-  SetCtlColors $5 F7FAF8 286249
-  IntOp $3 $3 - $0
-  IntOp $3 $3 - 8
-  GetDlgItem $5 $HWNDPARENT 2
-  SendMessage $5 ${WM_SETFONT} $LingJiBodyFont 1
-  System::Call 'user32::SetWindowPos(p r5,p 0,i r3,i r4,i r0,i r1,i 0x10)'
-  IntOp $3 $3 - $0
-  IntOp $3 $3 - 8
-  GetDlgItem $5 $HWNDPARENT 3
-  SendMessage $5 ${WM_SETFONT} $LingJiBodyFont 1
-  System::Call 'user32::SetWindowPos(p r5,p 0,i r3,i r4,i r0,i r1,i 0x10)'
-  GetDlgItem $5 $HWNDPARENT 1028
-  ShowWindow $5 0
+Function LingJiBrand
+  ${NSD_CreateIcon} 0 0 0 0 ""
+  Pop $LingJiIcon
+  ${NSD_SetIconFromInstaller} $LingJiIcon $LingJiIconImage
+  !insertmacro LingJiPlace $LingJiIcon 49 35 34 34
+  !insertmacro LingJiLabel 98 39 180 34 "聆记" 0
+  SendMessage $LingJiControl ${WM_SETFONT} $LingJiBrandFont 1
+  !insertmacro LingJiLabel 670 44 94 24 "Windows · x64" 0
+  SetCtlColors $LingJiControl 718177 transparent
+  !insertmacro LingJiLabel 52 398 696 1 "" 0
+  SetCtlColors $LingJiControl DDE6DC DDE6DC
 FunctionEnd
-
-!macro LingJiLabel x y w h text title
-  ${NSD_CreateLabel} ${x} ${y} ${w} ${h} "${text}"
-  Pop $LingJiControl
-  SetCtlColors $LingJiControl 203A2D transparent
-  !if ${title} == 1
-    SendMessage $LingJiControl ${WM_SETFONT} $LingJiTitleFont 1
-  !else
-    SendMessage $LingJiControl ${WM_SETFONT} $LingJiBodyFont 1
-  !endif
-!macroend
 
 Function LingJiCreatePage
   Call LingJiInitialize
@@ -139,50 +167,48 @@ Function LingJiCreatePage
   ${If} $LingJiDialog == error
     Abort
   ${EndIf}
+  StrCpy $LingJiFolder 0
+  StrCpy $LingJiBrowseButton 0
+  StrCpy $LingJiPercent 0
   Call LingJiBackground
+  Call LingJiBrand
 FunctionEnd
 
 Function LingJiWelcome
   Call SkipIfPassive
   Call LingJiCreatePage
-  ${NSD_CreateIcon} 10% 12% 42u 42u ""
-  Pop $LingJiIcon
-  ${NSD_SetIconFromInstaller} $LingJiIcon $LingJiIconImage
-  !insertmacro LingJiLabel 28% 15% 65% 30u "欢迎安装聆记" 1
-  !insertmacro LingJiLabel 28% 27% 65% 18u "会议录音与智能纪要" 0
-  !insertmacro LingJiLabel 12% 40% 80% 18u "安装向导将引导你完成设置。" 0
-  !insertmacro LingJiLabel 12% 48% 80% 18u "Windows · x64" 0
-  !insertmacro LingJiLabel 12% 60% 80% 24u "录音中关闭窗口，录音与整理继续运行。" 0
-  !insertmacro LingJiLabel 12% 72% 80% 28u "本地语音模型需另行部署，可在设置中连接服务。" 0
+  !insertmacro LingJiLabel 52 106 650 48 "安装聆记" 1
+  !insertmacro LingJiLabel 52 155 650 30 "会议录音与智能纪要，随时开始。" 0
+  SetCtlColors $LingJiControl 718177 transparent
+  !insertmacro LingJiLabel 52 191 650 28 "✓  本地转录模型已包含" 0
+  SetCtlColors $LingJiControl 276952 transparent
+  !insertmacro LingJiLabel 52 237 650 26 "安装位置" 0
+  SetCtlColors $LingJiControl 718177 transparent
+  ${NSD_CreateDirRequest} 0 0 0 0 "$INSTDIR"
+  Pop $LingJiFolder
+  SendMessage $LingJiFolder ${WM_SETFONT} $LingJiBodyFont 1
+  SetCtlColors $LingJiFolder 273D35 FFFFFF
+  !insertmacro LingJiPlace $LingJiFolder 52 269 610 32
+  ${NSD_CreateBrowseButton} 0 0 0 0 "更改"
+  Pop $LingJiBrowseButton
+  SendMessage $LingJiBrowseButton ${WM_SETFONT} $LingJiBodyFont 1
+  !insertmacro LingJiPlace $LingJiBrowseButton 662 269 86 32
+  ${NSD_OnClick} $LingJiBrowseButton LingJiBrowse
+  ${NSD_CreateCheckbox} 0 0 0 0 "创建桌面快捷方式"
+  Pop $LingJiShortcutControl
+  SendMessage $LingJiShortcutControl ${WM_SETFONT} $LingJiBodyFont 1
+  !insertmacro LingJiPlace $LingJiShortcutControl 52 326 350 27
+  ${If} $LingJiShortcut == 1
+    ${NSD_Check} $LingJiShortcutControl
+  ${EndIf}
+  !insertmacro LingJiLabel 52 431 360 24 "仅为当前用户安装" 0
+  SetCtlColors $LingJiControl 718177 transparent
+  GetDlgItem $0 $HWNDPARENT 1
+  SendMessage $0 ${WM_SETTEXT} 0 "STR:安装聆记"
   Call LingJiReady
   nsDialogs::Show
   ${NSD_FreeBitmap} $LingJiImage
   ${NSD_FreeIcon} $LingJiIconImage
-FunctionEnd
-
-Function LingJiDirectory
-  Call SkipIfPassive
-  Call LingJiCreatePage
-  !insertmacro LingJiLabel 12% 12% 80% 30u "选择安装位置" 1
-  !insertmacro LingJiLabel 12% 25% 80% 18u "仅为当前用户安装" 0
-  !insertmacro LingJiLabel 12% 38% 80% 18u "安装文件夹" 0
-  ${NSD_CreateDirRequest} 12% 46% 63% 22u "$INSTDIR"
-  Pop $LingJiFolder
-  SendMessage $LingJiFolder ${WM_SETFONT} $LingJiBodyFont 1
-  ${NSD_CreateBrowseButton} 77% 46% 13% 22u "浏览…"
-  Pop $LingJiControl
-  SendMessage $LingJiControl ${WM_SETFONT} $LingJiBodyFont 1
-  ${NSD_OnClick} $LingJiControl LingJiBrowse
-  ${NSD_CreateCheckbox} 12% 60% 35% 20u "创建桌面快捷方式"
-  Pop $LingJiShortcutControl
-  SendMessage $LingJiShortcutControl ${WM_SETFONT} $LingJiBodyFont 1
-  SetCtlColors $LingJiShortcutControl 203A2D transparent
-  ${If} $LingJiShortcut == 1
-    ${NSD_Check} $LingJiShortcutControl
-  ${EndIf}
-  Call LingJiReady
-  nsDialogs::Show
-  ${NSD_FreeBitmap} $LingJiImage
 FunctionEnd
 
 Function LingJiBrowse
@@ -192,6 +218,94 @@ Function LingJiBrowse
   ${If} $0 != error
     ${NSD_SetText} $LingJiFolder $0
   ${EndIf}
+FunctionEnd
+
+Function LingJiFinish
+  Call SkipIfPassive
+  Call LingJiCreatePage
+  GetDlgItem $0 $HWNDPARENT 1
+  SendMessage $0 ${WM_SETTEXT} 0 "STR:完成"
+  GetDlgItem $0 $HWNDPARENT 3
+  EnableWindow $0 0
+  ShowWindow $0 0
+  GetDlgItem $0 $HWNDPARENT 2
+  ShowWindow $0 0
+  !insertmacro LingJiLabel 52 106 650 48 "聆记已准备就绪" 1
+  !insertmacro LingJiLabel 52 155 650 30 "应用与本地转录模型已安装完成。" 0
+  SetCtlColors $LingJiControl 718177 transparent
+  !insertmacro LingJiLabel 52 238 650 30 "✓  无需启动转录服务器，即可开始记录" 0
+  SetCtlColors $LingJiControl 276952 transparent
+  ${NSD_CreateCheckbox} 0 0 0 0 "完成后启动聆记"
+  Pop $LingJiLaunch
+  SendMessage $LingJiLaunch ${WM_SETFONT} $LingJiBodyFont 1
+  !insertmacro LingJiPlace $LingJiLaunch 52 306 350 27
+  ${NSD_Check} $LingJiLaunch
+  !insertmacro LingJiLabel 52 431 540 24 "关闭窗口后，聆记会在系统托盘继续运行" 0
+  SetCtlColors $LingJiControl 718177 transparent
+  Call LingJiReady
+  nsDialogs::Show
+  ${NSD_FreeBitmap} $LingJiImage
+  ${NSD_FreeIcon} $LingJiIconImage
+FunctionEnd
+
+Function LingJiFinishLeave
+  ${If} $LingJiShortcut == 1
+    Call CreateOrUpdateDesktopShortcut
+  ${EndIf}
+  ${NSD_GetState} $LingJiLaunch $0
+  ${If} $0 == ${BST_CHECKED}
+    Call RunMainBinary
+  ${EndIf}
+FunctionEnd
+
+Function LingJiProgressShow
+  Call LingJiInitialize
+  FindWindow $LingJiDialog "#32770" "" $HWNDPARENT
+  ${If} $LingJiDialog != 0
+    StrCpy $LingJiFolder 0
+    StrCpy $LingJiBrowseButton 0
+    Call LingJiBackground
+    ; MUI's instfiles page uses ordinary STATIC children, not an nsDialogs page.
+    System::Call 'user32::CreateWindowExW(i 0,w "STATIC",w "聆记",i 0x50000000,i 0,i 0,i 0,i 0,p $LingJiDialog,p 0,p 0,p 0)p.s'
+    Pop $LingJiControl
+    SendMessage $LingJiControl ${WM_SETFONT} $LingJiBrandFont 1
+    SetCtlColors $LingJiControl 273D35 transparent
+    !insertmacro LingJiPlace $LingJiControl 52 39 500 34
+    System::Call 'user32::CreateWindowExW(i 0,w "STATIC",w "正在安装聆记",i 0x50000000,i 0,i 0,i 0,i 0,p $LingJiDialog,p 0,p 0,p 0)p.s'
+    Pop $LingJiControl
+    SendMessage $LingJiControl ${WM_SETFONT} $LingJiTitleFont 1
+    SetCtlColors $LingJiControl 273D35 transparent
+    !insertmacro LingJiPlace $LingJiControl 52 106 650 48
+    System::Call 'user32::CreateWindowExW(i 0,w "STATIC",w "正在准备应用与本地转录能力",i 0x50000000,i 0,i 0,i 0,i 0,p $LingJiDialog,p 0,p 0,p 0)p.s'
+    Pop $LingJiControl
+    SendMessage $LingJiControl ${WM_SETFONT} $LingJiBodyFont 1
+    SetCtlColors $LingJiControl 718177 transparent
+    !insertmacro LingJiPlace $LingJiControl 52 155 650 30
+    System::Call 'user32::CreateWindowExW(i 0,w "STATIC",w "正在安装",i 0x50000000,i 0,i 0,i 0,i 0,p $LingJiDialog,p 0,p 0,p 0)p.s'
+    Pop $LingJiControl
+    SendMessage $LingJiControl ${WM_SETFONT} $LingJiBodyFont 1
+    SetCtlColors $LingJiControl 273D35 transparent
+    !insertmacro LingJiPlace $LingJiControl 52 231 500 30
+    System::Call 'user32::CreateWindowExW(i 0,w "STATIC",w "0%",i 0x50000002,i 0,i 0,i 0,i 0,p $LingJiDialog,p 0,p 0,p 0)p.s'
+    Pop $LingJiPercent
+    SendMessage $LingJiPercent ${WM_SETFONT} $LingJiBrandFont 1
+    SetCtlColors $LingJiPercent 276952 F2F6EF
+    !insertmacro LingJiPlace $LingJiPercent 650 226 98 34
+    GetDlgItem $0 $LingJiDialog 1004
+    !insertmacro LingJiPlace $0 52 275 696 7
+    GetDlgItem $0 $LingJiDialog 1006
+    ShowWindow $0 0
+    GetDlgItem $0 $LingJiDialog 1027
+    ShowWindow $0 0
+    GetDlgItem $0 $LingJiDialog 1016
+    ShowWindow $0 0
+    Call LingJiHideChrome
+    Call LingJiThemeControls
+  ${EndIf}
+FunctionEnd
+
+Function LingJiProgressLeave
+  ${NSD_FreeBitmap} $LingJiImage
 FunctionEnd
 
 Function LingJiDirectoryLeave
@@ -227,42 +341,7 @@ Function LingJiDirectoryLeave
   ${NSD_GetState} $LingJiShortcutControl $LingJiShortcut
 FunctionEnd
 
-Function LingJiFinish
-  Call SkipIfPassive
-  Call LingJiCreatePage
-  GetDlgItem $0 $HWNDPARENT 1
-  SendMessage $0 ${WM_SETTEXT} 0 "STR:完成"
-  GetDlgItem $0 $HWNDPARENT 3
-  EnableWindow $0 0
-  ShowWindow $0 0
-  GetDlgItem $0 $HWNDPARENT 2
-  ShowWindow $0 0
-  !insertmacro LingJiLabel 12% 18% 80% 32u "安装完成" 1
-  !insertmacro LingJiLabel 12% 34% 80% 18u "聆记已安装到你的电脑。" 0
-  !insertmacro LingJiLabel 12% 44% 80% 28u "打开「设置与诊断」，连接转录与纪要服务。" 0
-  ${NSD_CreateCheckbox} 12% 58% 35% 20u "立即启动聆记"
-  Pop $LingJiLaunch
-  SendMessage $LingJiLaunch ${WM_SETFONT} $LingJiBodyFont 1
-  SetCtlColors $LingJiLaunch 203A2D transparent
-  ${NSD_Check} $LingJiLaunch
-  !insertmacro LingJiLabel 12% 70% 80% 24u "关闭窗口后，可从系统托盘重新打开。" 0
-  Call LingJiReady
-  nsDialogs::Show
-  ${NSD_FreeBitmap} $LingJiImage
-FunctionEnd
 
-Function LingJiFinishLeave
-  ${If} $LingJiShortcut == 1
-    Call CreateOrUpdateDesktopShortcut
-  ${EndIf}
-  ${NSD_GetState} $LingJiLaunch $0
-  ${If} $0 == ${BST_CHECKED}
-    Call RunMainBinary
-  ${EndIf}
-FunctionEnd
-
-
-; Reuse Tauri Restart Manager discovery without its force-shutdown path.
 !macro LingJiRequireClosed executablePath productName
   !insertmacro RestartManager_StartSession $R0
   ${If} $R0 == ""
@@ -295,50 +374,3 @@ FunctionEnd
   !insertmacro RestartManager_EndSession $R0
 !macroend
 
-!macro LingJiProgressControl identifier top height
-  GetDlgItem $0 $LingJiDialog ${identifier}
-  IntOp $1 $LingJiWidth * 12
-  IntOp $1 $1 / 100
-  IntOp $2 $LingJiHeight * ${top}
-  IntOp $2 $2 / 100
-  IntOp $3 $LingJiWidth * 76
-  IntOp $3 $3 / 100
-  IntOp $4 ${height} * $LingJiDpi
-  IntOp $4 $4 / 96
-  System::Call 'user32::SetWindowPos(p r0,p 0,i r1,i r2,i r3,i r4,i 0x14)'
-  SendMessage $0 ${WM_SETFONT} $LingJiBodyFont 1
-!macroend
-
-Function LingJiProgressShow
-  Call LingJiInitialize
-  FindWindow $LingJiDialog "#32770" "" $HWNDPARENT
-  ${If} $LingJiDialog != 0
-    Call LingJiBackground
-    Call LingJiHideChrome
-    Call LingJiButtons
-    IntOp $1 $LingJiWidth * 12
-    IntOp $1 $1 / 100
-    IntOp $2 $LingJiHeight * 14
-    IntOp $2 $2 / 100
-    IntOp $3 $LingJiWidth * 76
-    IntOp $3 $3 / 100
-    IntOp $4 40 * $LingJiDpi
-    IntOp $4 $4 / 96
-    System::Call 'user32::CreateWindowExW(i 0,w "STATIC",w "正在安装聆记",i 0x50000000,i r1,i r2,i r3,i r4,p $LingJiDialog,p 0,p 0,p 0)p.r0'
-    SendMessage $0 ${WM_SETFONT} $LingJiTitleFont 1
-    SetCtlColors $0 203A2D transparent
-    !insertmacro LingJiProgressControl 1006 36 24
-    ; Dynamic status needs an opaque background to erase the previous filename.
-    GetDlgItem $0 $LingJiDialog 1006
-    SetCtlColors $0 203A2D F7FAF8
-    !insertmacro LingJiProgressControl 1004 46 18
-    !insertmacro LingJiProgressControl 1027 56 30
-    !insertmacro LingJiProgressControl 1016 65 80
-    ; New child windows start below existing siblings; lower the bitmap last.
-    System::Call 'user32::SetWindowPos(p $LingJiBitmap,p 1,i 0,i 0,i 0,i 0,i 0x13)'
-  ${EndIf}
-FunctionEnd
-
-Function LingJiProgressLeave
-  ${NSD_FreeBitmap} $LingJiImage
-FunctionEnd
