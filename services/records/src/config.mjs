@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { requireThat } from '../../../packages/records/src/record.mjs';
 import { parseAsrHotwords, parseAsrContext } from './asr-terms.mjs';
+import { localAsrConfigured, LOCAL_ASR_MODEL } from './local-asr.mjs';
 
 export const defaults = {
   ASR_PROVIDER: 'doubao',
@@ -26,7 +27,7 @@ export const configured = value => Boolean(value && !/^(your[-_]|replace|mock|<|
 export function normalizeConfig(env = process.env) {
   const protocol = env.LLM_PROTOCOL || (/\/chat\/completions\/?(?:\?|$)/.test(env.LLM_API_URL || '') ? 'chat-completions' : defaults.LLM_PROTOCOL);
   return { ...defaults, ...env, LLM_PROTOCOL: protocol, LLM_API_URL: env.LLM_API_URL ?? defaults.LLM_API_URL,
-    ASR_PROVIDER: env.ASR_PROVIDER || (env.DEEPGRAM_API_KEY ? 'deepgram' : env.ASR_API_URL ? 'openai-compatible' : env.DOUBAO_AST_APP_KEY || env.DOUBAO_AST_SECRET ? 'doubao-ast' : 'doubao'),
+    ASR_PROVIDER: env.ASR_PROVIDER || (env.DEEPGRAM_API_KEY ? 'deepgram' : env.ASR_API_URL ? 'openai-compatible' : env.DOUBAO_AST_APP_KEY || env.DOUBAO_AST_SECRET ? 'doubao-ast' : env.DOUBAO_API_KEY ? 'doubao' : localAsrConfigured(env) ? 'sensevoice-local' : 'doubao'),
     DOUBAO_AST_APP_KEY: env.DOUBAO_AST_APP_KEY || env.DOUBAO_AST_SECRET || '',
     DOUBAO_AST_ACCESS_KEY: env.DOUBAO_AST_ACCESS_KEY || env.DOUBAO_AST_ACCESS_TOKEN || '',
   };
@@ -37,7 +38,7 @@ export async function readConfig(root, env = process.env) {
   return normalizeConfig({ ...env, ...saved });
 }
 export function publicConfig(config) {
-  return Object.fromEntries(fields.map(key => [key, secretFields.has(key) ? configured(config[key]) : config[key] || '']));
+  return { ...Object.fromEntries(fields.map(key => [key, secretFields.has(key) ? configured(config[key]) : config[key] || ''])), LOCAL_ASR_AVAILABLE: localAsrConfigured(config), LOCAL_ASR_MODEL }; 
 }
 export function canConfigure(user, env = process.env) {
   return env.NODE_ENV !== 'production' || (env.RECORD_CONFIG_ADMIN || '').split(',').map(v => v.trim().toLowerCase()).includes(user.email);
@@ -53,7 +54,8 @@ export async function saveConfig(root, input, env = process.env) {
   }
   for (const key of input.clearSecrets || []) { requireThat(secretFields.has(key), 'invalid_secret_field', 400); values[key] = ''; }
   const next = { ...current, ...values };
-  requireThat(['doubao', 'doubao-ast', 'deepgram', 'openai-compatible', 'funasr'].includes(next.ASR_PROVIDER), 'invalid_asr_provider', 400);
+  requireThat(['doubao', 'doubao-ast', 'deepgram', 'openai-compatible', 'funasr', 'sensevoice-local'].includes(next.ASR_PROVIDER), 'invalid_asr_provider', 400);
+  requireThat(next.ASR_PROVIDER !== 'sensevoice-local' || localAsrConfigured(next), 'local_asr_assets_missing', 503);
   requireThat(['chat-completions', 'responses'].includes(next.LLM_PROTOCOL), 'invalid_llm_protocol', 400);
   requireThat(['asr-llm', 'openai-realtime', 'doubao-audio', 'doubao-audio-only'].includes(next.MINUTES_MODE), 'invalid_minutes_mode', 400);
   requireThat(!doubaoAudioEnabled(next) || next.LLM_PROTOCOL === 'responses', 'doubao_audio_requires_responses', 400);

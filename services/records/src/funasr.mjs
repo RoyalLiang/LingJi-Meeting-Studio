@@ -1,10 +1,12 @@
 import { DomainError, requireThat } from '../../../packages/records/src/record.mjs';
 import { waveHeader } from './audio-wav.mjs';
+import { transcribeLocalAsr } from './local-asr.mjs';
 
 export const funasrConfigured = config => Boolean(config.FUNASR_API_URL && config.FUNASR_MODEL);
 
 // FunASR's OpenAI-compatible endpoint, not SenseVoice api.py's /api/v1/asr.
 export async function transcribeFunasr(bytes, record, config) {
+  if (config.ASR_PROVIDER === 'sensevoice-local') return transcribeLocalAsr(bytes, config);
   requireThat(funasrConfigured(config), 'funasr_not_configured', 503);
   requireThat(bytes.length > 0 && bytes.length <= 960000 && bytes.length % 2 === 0, 'invalid_funasr_audio', 422);
   const form = new FormData();

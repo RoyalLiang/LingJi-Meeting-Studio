@@ -1,4 +1,5 @@
 import { funasrConfigured, transcribeFunasr } from './funasr.mjs';
+import { localAsrConfigured } from './local-asr.mjs';
 import { waveHeader } from './audio-wav.mjs';
 export { waveHeader } from './audio-wav.mjs';
 import { minutesCoreInstructions, minutesQualityInstructions, groundSpeakerSummaries, orderMinutesTimelines } from '../../../packages/records/src/minutes-quality.mjs';
@@ -18,7 +19,7 @@ import { realtimeConfigured, realtimeEnabled } from './realtime-minutes.mjs';
 
 export function providerStatus(input = process.env) {
   const env = normalizeConfig(input);
-  const asr = env.MINUTES_MODE === 'doubao-audio-only' ? doubaoAudioConfigured(env) : env.ASR_PROVIDER === 'doubao' ? configured(env.DOUBAO_API_KEY) : env.ASR_PROVIDER === 'doubao-ast' ? configured(env.DOUBAO_AST_APP_KEY) && configured(env.DOUBAO_AST_ACCESS_KEY) : env.ASR_PROVIDER === 'funasr' ? funasrConfigured(env) : env.ASR_PROVIDER === 'deepgram' ? configured(env.DEEPGRAM_API_KEY) : Boolean(env.ASR_API_URL && configured(env.ASR_API_KEY));
+  const asr = env.MINUTES_MODE === 'doubao-audio-only' ? doubaoAudioConfigured(env) : env.ASR_PROVIDER === 'doubao' ? configured(env.DOUBAO_API_KEY) : env.ASR_PROVIDER === 'doubao-ast' ? configured(env.DOUBAO_AST_APP_KEY) && configured(env.DOUBAO_AST_ACCESS_KEY) : env.ASR_PROVIDER === 'sensevoice-local' ? localAsrConfigured(env) : env.ASR_PROVIDER === 'funasr' ? funasrConfigured(env) : env.ASR_PROVIDER === 'deepgram' ? configured(env.DEEPGRAM_API_KEY) : Boolean(env.ASR_API_URL && configured(env.ASR_API_KEY));
   const translation = translationConnection(env);
   return { translation: Boolean(translation.url && configured(translation.key) && translation.model), asr, asrProvider: env.MINUTES_MODE === 'doubao-audio-only' ? 'doubao-audio-only' : env.ASR_PROVIDER, minutesMode: env.MINUTES_MODE, textMinutes: Boolean(env.LLM_API_URL && configured(env.LLM_API_KEY) && env.LLM_MODEL), minutes: realtimeEnabled(env) ? realtimeConfigured(env) : doubaoAudioEnabled(env) ? doubaoAudioConfigured(env) : Boolean(env.LLM_API_URL && configured(env.LLM_API_KEY) && env.LLM_MODEL), fixture: env.RECORD_PROVIDER === 'fixture' && env.NODE_ENV !== 'production' };
 }
@@ -39,7 +40,7 @@ export async function transcribe(bytes, record, chunk, env = process.env) {
     requireThat(record.realtimeAudioConsent, 'realtime_audio_consent_required', 403);
     return (await transcribeDoubaoModelAudio(bytes, env, {language:record.language})).text;
   }
-  if (env.ASR_PROVIDER === 'funasr') return transcribeFunasr(bytes, record, env);
+  if (['funasr', 'sensevoice-local'].includes(env.ASR_PROVIDER)) return transcribeFunasr(bytes, record, env);
   if (env.ASR_PROVIDER === 'doubao') {
     requireThat(providerStatus(env).asr, 'doubao_credentials_required', 503);
     return transcribeDoubaoAsr(bytes, record.language, env);

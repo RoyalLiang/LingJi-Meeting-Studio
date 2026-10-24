@@ -5,6 +5,13 @@ export function setAudioTransport(value?: string) { binaryAudio = value === 'pcm
 let csrf = '';
 export const setCsrf = (token: string) => { csrf = token; };
 const messages: Record<string, string> = {
+  local_asr_assets_missing: '本地语音模型文件不完整，请重新安装完整安装包后重试。已保存的录音不受影响。',
+  local_asr_assets_invalid: '本地语音模型校验未通过，请重新安装完整安装包后重试。已保存的录音不受影响。',
+  local_asr_unavailable: '本地转录引擎已中断，可重新处理。录音已保留，应用会自动重新启动引擎。',
+  local_asr_timeout: '本地转录处理超时，可稍后重新处理。录音已保留。',
+  local_asr_inference_failed: '本地模型未能处理这段音频，可重新处理。录音已保留。',
+  local_asr_invalid_response: '本地转录引擎返回异常，可重新处理。录音已保留。',
+  local_asr_shutdown: '应用正在退出，未完成转录将在下次启动后继续。',
   funasr_not_configured: '请在设置中填写 FunASR 转录地址和识别模型。',
   funasr_service_unavailable: 'FunASR 服务暂不可用，请先启动本机服务或检查私有服务连接，再重新处理。录音已保留。',
   funasr_credentials_rejected: 'FunASR 服务拒绝了密钥，请检查服务认证配置。',
