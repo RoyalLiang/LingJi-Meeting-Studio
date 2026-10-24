@@ -55,7 +55,12 @@ function Capture-Page([string]$name) {
   $bitmap.Save($path,[System.Drawing.Imaging.ImageFormat]::Png)
   $encoded=[Convert]::ToBase64String([IO.File]::ReadAllBytes($path))
   if($encoded.Length -gt 60000){throw "Installer preview exceeds bounded annotation: $name"}
-  Write-Output "::notice title=LingJi installer $name::$encoded"
+  $parts=[int][Math]::Ceiling($encoded.Length/3800.0)
+  for($part=0;$part -lt $parts;$part++) {
+   $offset=$part*3800
+   $chunk=$encoded.Substring($offset,[Math]::Min(3800,$encoded.Length-$offset))
+   Write-Output "::notice title=LingJi installer $name $($part+1)/$parts::$chunk"
+  }
  } finally {$graphics.Dispose();$bitmap.Dispose()}
 }
 try {
