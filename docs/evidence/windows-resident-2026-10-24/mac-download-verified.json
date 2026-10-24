@@ -1,0 +1,13 @@
+{
+  "readOnlyDmg": true,
+  "version": "0.1.16",
+  "bundleVersion": "0.1.38",
+  "architecture": "arm64",
+  "signatureVerified": true,
+  "signing": "ad-hoc",
+  "notarized": false,
+  "downloadedProductionAppSmoke": true,
+  "developerBackendRequests": 0,
+  "realDevicesTested": false,
+  "realProvidersTested": false
+}

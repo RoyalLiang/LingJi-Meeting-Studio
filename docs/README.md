@@ -1,9 +1,6 @@
-# v0.1.16 Windows 安装与桌面常驻候选（2026-10-24）
+# v0.1.16 Windows 安装与双平台常驻已发布（2026-10-24）
 
-本轮 Windows 真实安装器、已安装生产应用生命周期及三屏交互已通过；[本轮验收与实际截图](evidence/windows-resident-2026-10-24.md)。正式发布状态以版本回执为准。
-
-
-已按确认的铺满背景三屏方案接入 Windows x64 NSIS 打包；macOS 菜单栏和 Windows 托盘支持关闭窗口后持续录音、补传与整理，显式退出仍检查未完成音频。macOS 原生合成验收与 Windows 候选原生验收通过；Windows 实际安装和本版发布状态以 Actions/发布回执为准。[版本范围与安装说明](releases/v0.1.16-preview.md)。
+Windows x64 EXE、macOS Apple Silicon DMG 已由后台构建并发布，四个任务及十附件核验通过。关闭窗口后继续录音、补传与整理，显式退出保留未完成音频检查。见[发布回执与下载](evidence/preview-v0.1.16-2026-10-24.md)。真实设备、长会议和新电脑验收仍单独保留。
 
 # v0.1.15 FunASR＋SenseVoice 已发布（2026-10-24）
 
