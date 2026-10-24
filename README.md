@@ -34,7 +34,7 @@
 
 # v0.1.5 豆包音频纪要已发布（2026-10-22）
 
-v0.1.5 已由后台 GitHub Actions 构建并发布，五附件完整下载与摘要核对通过。见[安装与模型配置](docs/releases/v0.1.5-preview.md)及[发布回执](docs/evidence/preview-v0.1.5-2026-10-22.md)。
+v0.1.5 已由后台 GitHub Actions 构建并发布，五附件完整下载与摘要核对通过。见[安装与模型配置](docs/releases/v0.1.16-preview.md)及[发布回执](docs/evidence/preview-v0.1.5-2026-10-22.md)。
 
 # 聆记 · LingJi Meeting Studio
 
@@ -44,7 +44,7 @@ v0.1.5 已由后台 GitHub Actions 构建并发布，五附件完整下载与摘
 
 **当前版本：v0.1.5，公开测试版。** 本次提供源码与 macOS Apple Silicon 测试安装包。真实会议识别质量、长时间录制和全新设备安装仍需试用验证。
 
-[下载测试版](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.5) · [安装说明](docs/releases/v0.1.5-preview.md) · [文档目录](docs/README.md) · [问题反馈](https://github.com/RoyalLiang/LingJi-Meeting-Studio/issues)
+[下载测试版](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.16) · [安装说明](docs/releases/v0.1.16-preview.md) · [文档目录](docs/README.md) · [问题反馈](https://github.com/RoyalLiang/LingJi-Meeting-Studio/issues)
 
 ![聆记工作台预览](docs/assets/workbench-preview.png)
 
@@ -72,6 +72,7 @@ v0.1.5 已由后台 GitHub Actions 构建并发布，五附件完整下载与摘
 | 方式 | 需要准备 |
 | --- | --- |
 | macOS 测试客户端 | Apple Silicon Mac、macOS 14.6+、自己的 ASR/纪要服务配置 |
+| Windows 测试客户端 | Windows 10/11 x64、自己的 ASR/纪要服务配置 |
 | 浏览器本地运行 | Node.js 22.14+、npm；推荐 Node 24 LTS |
 | 自行部署 | HTTPS、身份与访问控制、持久卷、备份及供应商配置，见[运行手册](docs/engineering/runbook.md) |
 
@@ -79,13 +80,19 @@ v0.1.5 已由后台 GitHub Actions 构建并发布，五附件完整下载与摘
 
 ## 安装 macOS 测试版
 
-1. 从 [v0.1.5 发布页](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.5)下载 `Lingji-0.1.5-macos-arm64.dmg` 和校验文件。
-2. 按[安装说明](docs/releases/v0.1.5-preview.md)核对 SHA-256，将 **聆记 Preview.app** 拖到 Applications。
+1. 从 [v0.1.16 发布页](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.16)下载 `Lingji-0.1.16-macos-arm64.dmg` 和校验文件。
+2. 按[安装说明](docs/releases/v0.1.16-preview.md)核对 SHA-256，将 **聆记 Preview.app** 拖到 Applications。
 3. 首次打开时按 macOS 提示处理应用信任和采集授权，在设置中填写自己的服务配置。
 
 Apple 无法验证开发者的原因与单应用授权步骤见[macOS 安全提示说明](docs/releases/macos-trust.md)。当前尚无 Apple Developer Program 账号，未完成正式签名公证，安装仍可能被拦截。
 
 此包采用 ad-hoc 签名，尚无 Apple Developer ID 签名及公证。包中包含运行时，不需要另装 Node。已有 Alpha 用户应先结束录制、等待补传并备份；Preview 与 Alpha 使用相同应用标识，数据目录可能共享，不适合同时运行。
+
+## 安装 Windows 测试版
+
+从 [v0.1.16 发布页](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.16)下载 `Lingji-0.1.16-windows-x64-setup.exe`，按 `SHA256SUMS-windows-x64.txt` 核对后运行。选择当前用户的安装位置、桌面快捷方式，并在完成页启动。包内有 Node 24 与 WebView2 离线安装组件；FunASR、SenseVoice 的服务和模型需另行部署，见[配置说明](docs/engineering/funasr.md)。
+
+Windows 测试包未代码签名。升级/卸载前先暂停或结束会议、等补传完成，再从托盘退出聆记。默认保留会议数据；后台常驻不包含登录自启。安装包是否已公开以及实际验证范围，以对应 Release 和发布回执为准。
 
 ## 从源码启动
 
