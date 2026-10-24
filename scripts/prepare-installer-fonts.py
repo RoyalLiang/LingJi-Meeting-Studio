@@ -14,7 +14,7 @@ out = root / 'apps/desktop/src-tauri/installer/fonts'
 source = Path(sys.argv[1])
 provenance = json.loads((out / 'provenance.json').read_text())
 assert hashlib.sha256(source.read_bytes()).hexdigest() == provenance['sourceSha256']
-text = ''.join(chr(i) for i in range(32, 127)) + (out.parent / 'lingji-theme.nsh').read_text()
+text = ''.join(chr(i) for i in range(32, 127)) + '取消安装下一步返回完成是否确定退出' + (out.parent / 'lingji-theme.nsh').read_text()
 for weight, style in [(400, 'Regular'), (600, 'SemiBold')]:
     font = TTFont(source, recalcTimestamp=False)
     options = subset.Options()
