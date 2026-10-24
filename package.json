@@ -1,7 +1,7 @@
 {
   "name": "tts-platform",
   "private": true,
-  "version": "0.1.15",
+  "version": "0.1.16",
   "packageManager": "npm@10.8.1",
   "type": "module",
   "workspaces": [
@@ -41,7 +41,8 @@
     "evaluate:asr": "node scripts/evaluate-asr.mjs",
     "benchmark:startup": "node scripts/benchmark-client-startup.mjs",
     "release:macos:preview": "TTS_RELEASE_CHANNEL=preview node scripts/release-macos-alpha.mjs",
-    "test:client:updates": "node --test tests/records-client-update.test.mjs"
+    "test:client:updates": "node --test tests/records-client-update.test.mjs",
+    "release:windows:preview": "node scripts/release-windows-preview.mjs"
   },
   "dependencies": {
     "protobufjs": "^8.0.0",

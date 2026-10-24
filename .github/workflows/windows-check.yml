@@ -66,3 +66,32 @@ jobs:
           name: windows-native-${{ github.sha }}
           path: .agent-runtime/windows-native.json
           if-no-files-found: ignore
+      - name: Build and verify Windows preview installer
+        env:
+          TTS_RELEASE_SOURCE_REF: ${{ github.sha }}
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          & npm run release:windows:preview 2>&1 | Tee-Object .agent-runtime/windows-package.log
+          $status = $LASTEXITCODE
+          if ($status -ne 0) {
+            $log = (Get-Content .agent-runtime/windows-package.log | Where-Object { $_ -notmatch '(?i)authorization|bearer |password|api[_-]?key|cookie' }) -join "`n"
+            $tail = $log.Substring([Math]::Max(0,$log.Length-7500))
+            for ($at=0;$at -lt $tail.Length;$at+=1000) {
+              $part=$tail.Substring($at,[Math]::Min(1000,$tail.Length-$at)).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+              Write-Output "::error title=Windows package diagnostic::$part"
+            }
+          }
+          exit $status
+      - name: Collect Windows release files
+        env:
+          RELEASE_VERSION: 0.1.16
+          SOURCE_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.sha }}
+        run: node scripts/collect-preview-artifacts.mjs windows
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: preview-windows-x64-${{ github.sha }}
+          path: preview-artifacts/*
+          if-no-files-found: error
+          retention-days: 14

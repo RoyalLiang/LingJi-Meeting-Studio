@@ -41,6 +41,9 @@ fn finish(app: &AppHandle) {
     app.exit(0);
 }
 
+#[cfg(feature = "smoke-test")]
+pub fn probe_exit(app: &AppHandle) { finish(app); }
+
 // A window close never enters this handshake. Explicit Quit and OS Quit do.
 pub fn request_quit(app: &AppHandle) {
     let Some(state) = app.try_state::<Client>() else { return; };

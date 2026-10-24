@@ -115,3 +115,26 @@ test('publication entry accepts only main manual dispatch or its exact version t
     {eventName:'repository_dispatch',ref:'refs/heads/main'},
   ])assert.throws(()=>assertReleaseEvent({...base,...event}));
 });
+
+async function windowsFixture(options,mac) {
+  const artifact=`Lingji-${mac.version}-windows-x64-setup.exe`,bytes=Buffer.from('synthetic NSIS installer');
+  const metadata={version:mac.version,channel:'preview',platform:'windows',architecture:'x64',artifact,sourceRevision:options.commit,sourceDirty:false,signing:'unsigned',frozenSourceBuild:true,
+    sha256:createHash('sha256').update(bytes).digest('hex'),ci:mac.ci,
+    validation:{peVerified:true,installerSilentSmoke:true,installedAppProbe:true,resourcesVerified:true,uninstallVerified:true,productionSmoke:true,realAudioDevicesTested:false,realProvidersTested:false,freshMachineTested:false}};
+  for(const [name,data] of [[artifact,bytes],['SHA256SUMS-windows-x64.txt',metadata.sha256+'  '+artifact+'\n'],['release-windows-x64.json',JSON.stringify(metadata)],['INSTALL-windows-x64.md','Windows synthetic guide'],['package-smoke-windows-x64.json',await readFile(join(options.directory,'package-smoke.json'))]])await writeFile(join(options.directory,name),data);
+  options.requireWindows=true;return metadata;
+}
+test('dual-platform publication requires ten verified files from the same source and workflow',async t=>{
+  const {options,metadata}=await fixture(t);const windows=await windowsFixture(options,metadata);
+  const loaded=await loadPreview(options.directory,options);assert.equal(loaded.files.length,10);assert.equal(loaded.windows.sha256,windows.sha256);
+  const server=remote(options);const result=await publishPreview({...options,api:server.api});
+  assert.equal(result.assets.length,10);assert.ok(server.release.body.includes(windows.artifact));assert.match(server.release.body,/未进行 Windows 代码签名/);
+});
+test('dual-platform publication rejects missing Windows files and mismatched source, checksum or validation',async t=>{
+  const {options,metadata}=await fixture(t);const windows=await windowsFixture(options,metadata);
+  for(const mutate of [m=>{m.sourceRevision='c'.repeat(40);},m=>{m.sha256='0'.repeat(64);},m=>{m.ci={...m.ci,runId:'999'};},m=>{m.validation={...m.validation,uninstallVerified:false};}]){
+    const changed=structuredClone(windows);mutate(changed);await writeFile(join(options.directory,'release-windows-x64.json'),JSON.stringify(changed));await assert.rejects(loadPreview(options.directory,options));
+  }
+  await writeFile(join(options.directory,'release-windows-x64.json'),JSON.stringify(windows));
+  await rm(join(options.directory,'INSTALL-windows-x64.md'));await assert.rejects(loadPreview(options.directory,options),/Unexpected or missing release files/);
+});

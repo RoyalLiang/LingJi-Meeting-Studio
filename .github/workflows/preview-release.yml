@@ -1,4 +1,4 @@
-name: macOS preview release
+name: Desktop preview release
 run-name: Preview ${{ inputs.tag || github.ref_name }} · ${{ github.event_name }}
 
 on:
@@ -9,7 +9,7 @@ on:
       tag:
         description: Existing vX.Y.Z source tag (published tags are never moved)
         required: true
-        default: v0.1.11
+        default: v0.1.16
         type: string
       source_sha:
         description: Expected full source commit; reject a moved tag
@@ -120,35 +120,111 @@ jobs:
           # Keep the configured Finder background/positions and their validation.
           TAURI_BUNDLER_DMG_IGNORE_CI: 'true'
         run: npm run release:macos:preview
-      - name: Add CI provenance and collect five release files
+      - name: Add CI provenance and collect macOS release files
         env:
           RELEASE_VERSION: ${{ needs.verify.outputs.version }}
           SOURCE_SHA: ${{ needs.verify.outputs.sha }}
           WORKFLOW_SHA: ${{ needs.verify.outputs.controller_sha }}
-        run: |
-          node --input-type=module <<'NODE'
-          import {readFile,writeFile,mkdir,copyFile} from 'node:fs/promises';
-          import assert from 'node:assert/strict';
-          const dir='dist/releases/'+process.env.RELEASE_VERSION;
-          const meta=JSON.parse(await readFile(dir+'/release.json','utf8'));
-          assert.equal(meta.sourceRevision,process.env.SOURCE_SHA);
-          assert.equal(meta.sourceDirty,false);
-          meta.ci={repository:process.env.GITHUB_REPOSITORY,runId:process.env.GITHUB_RUN_ID,
-            runUrl:`https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
-            workflowSha:process.env.WORKFLOW_SHA,sourceRevision:process.env.SOURCE_SHA};
-          await writeFile(dir+'/release.json',JSON.stringify(meta,null,2)+'\n');
-          await mkdir('preview-artifacts');
-          for(const name of [meta.artifact,'SHA256SUMS.txt','release.json','package-smoke.json'])await copyFile(dir+'/'+name,'preview-artifacts/'+name);
-          await copyFile(dir+'/安装说明.md','preview-artifacts/INSTALL-macos-arm64.md');
-          NODE
+        run: node scripts/collect-preview-artifacts.mjs macos
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: preview-macos-arm64-${{ needs.verify.outputs.sha }}
           path: preview-artifacts/*
           if-no-files-found: error
           retention-days: 14
+  build_windows:
+    needs: verify
+    runs-on: windows-2025
+    timeout-minutes: 90
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24.21.0'
+      - run: rustup toolchain install 1.92.0 --profile minimal; rustup default 1.92.0
+      - run: npm ci
+      - run: npm run build:web
+      - run: node scripts/prepare-client-backend.mjs
+      - name: Native regression
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          New-Item -ItemType Directory -Force .agent-runtime | Out-Null
+          & cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --features smoke-test -- --test-threads=1 2>&1 | Tee-Object .agent-runtime/windows-rust.log
+          $nativeStatus = $LASTEXITCODE
+          if ($nativeStatus -ne 0) {
+            $log = Get-Content .agent-runtime/windows-rust.log -Raw
+            $tail = $log.Substring([Math]::Max(0, $log.Length - 6500))
+            for ($at = 0; $at -lt $tail.Length; $at += 1000) {
+              $part = $tail.Substring($at, [Math]::Min(1000, $tail.Length - $at)).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+              Write-Output "::error title=Windows native diagnostic::$part"
+            }
+          }
+          exit $nativeStatus
+      - name: Build native probe
+        run: cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --features smoke-test
+      - name: Hidden recording and restart replay
+        env:
+          NATIVE_CLIENT_EXECUTABLE: ${{ github.workspace }}\apps\desktop\src-tauri\target\debug\tts-client.exe
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          & node scripts/test-native-client.mjs .agent-runtime/windows-native.json 2>&1 | Tee-Object .agent-runtime/windows-probe.log
+          $probeStatus = $LASTEXITCODE
+          if ($probeStatus -ne 0) {
+            $log = Get-Content .agent-runtime/windows-probe.log -Raw
+            $log = [regex]::Replace($log, '(?im)^.*(?:authorization|cookie|api.?key|password).*$','[redacted diagnostic line]')
+            $tail = $log.Substring([Math]::Max(0, $log.Length - 6500))
+            for ($at = 0; $at -lt $tail.Length; $at += 1000) {
+              $part = $tail.Substring($at, [Math]::Min(1000, $tail.Length - $at)).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+              Write-Output "::error title=Windows probe diagnostic::$part"
+            }
+          }
+          exit $probeStatus
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: always()
+        with:
+          name: windows-native-${{ github.sha }}
+          path: .agent-runtime/windows-native.json
+          if-no-files-found: ignore
+      - name: Build and verify Windows preview installer
+        env:
+          TTS_RELEASE_SOURCE_REF: ${{ needs.verify.outputs.sha }}
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          & npm run release:windows:preview 2>&1 | Tee-Object .agent-runtime/windows-package.log
+          $status = $LASTEXITCODE
+          if ($status -ne 0) {
+            $log = (Get-Content .agent-runtime/windows-package.log | Where-Object { $_ -notmatch '(?i)authorization|bearer |password|api[_-]?key|cookie' }) -join "`n"
+            $tail = $log.Substring([Math]::Max(0,$log.Length-7500))
+            for ($at=0;$at -lt $tail.Length;$at+=1000) {
+              $part=$tail.Substring($at,[Math]::Min(1000,$tail.Length-$at)).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+              Write-Output "::error title=Windows package diagnostic::$part"
+            }
+          }
+          exit $status
+      - name: Collect Windows release files
+        env:
+          RELEASE_VERSION: ${{ needs.verify.outputs.version }}
+          SOURCE_SHA: ${{ needs.verify.outputs.sha }}
+          WORKFLOW_SHA: ${{ needs.verify.outputs.controller_sha }}
+        run: node scripts/collect-preview-artifacts.mjs windows
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: preview-windows-x64-${{ needs.verify.outputs.sha }}
+          path: preview-artifacts/*
+          if-no-files-found: error
+          retention-days: 14
   publish:
-    needs: [verify, build]
+    needs: [verify, build, build_windows]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -164,7 +240,8 @@ jobs:
           node-version: '24.21.0'
       - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
-          name: preview-macos-arm64-${{ needs.verify.outputs.sha }}
+          pattern: preview-*-${{ needs.verify.outputs.sha }}
+          merge-multiple: true
           path: preview-artifacts
       - name: Verify assets, reconcile draft and publish prerelease
         env:

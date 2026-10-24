@@ -39,6 +39,7 @@ async function launch() {
   logs = '';
   child = spawn(executable, args, { env: {
     PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: process.env.HOME, TMPDIR: process.env.TMPDIR,
+      ...(process.platform==='win32'?{SystemRoot:process.env.SystemRoot,USERPROFILE:process.env.USERPROFILE,LOCALAPPDATA:process.env.LOCALAPPDATA,APPDATA:process.env.APPDATA,TEMP:process.env.TEMP,TMP:process.env.TMP}:{}),
     TTS_CLIENT_DATA_DIR: data, TTS_RECORD_API_URL: `http://127.0.0.1:${trap.address().port}`,
     TTS_CLIENT_SYNTHETIC: '1', TTS_CLIENT_PROBE_OUTPUT: join(root, 'must-not-exist.json'),
     TTS_UPDATE_TEST_URL: 'http://127.0.0.1:1/manifest', TTS_UPDATE_TEST_EXECUTABLE: '/must-not-be-used',
@@ -68,7 +69,7 @@ async function launch() {
   assert.equal((await fetch(state.url + '/api/development-account')).status, 404);
   assert.equal((await fetch(state.url + '/api/auth/register', { method: 'POST' })).status, 404);
   state.headers = headers;
-  assert.equal((await stat(join(data, 'backend'))).mode & 0o777, 0o700);
+  if(process.platform!=='win32') assert.equal((await stat(join(data, 'backend'))).mode & 0o777, 0o700);
   return state;
 }
 async function stop(state) {
