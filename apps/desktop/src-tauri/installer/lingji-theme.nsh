@@ -61,30 +61,29 @@ Function LingJiBackground
 FunctionEnd
 
 Function LingJiHideChrome
-  ; MUI's outer header, branding and separators are siblings of our page.
-  ; Hide them after each page is created so the bitmap covers the client area.
-  GetDlgItem $0 $HWNDPARENT 1037
+  ; Outer static controls include MUI headers, branding and separator frames.
+  ; FindWindow searches direct siblings, preserving the page's own controls.
+  StrCpy $0 0
+lingji_chrome_loop:
+  FindWindow $0 "Static" "" $HWNDPARENT $0
+  ${If} $0 == 0
+    Return
+  ${EndIf}
   ShowWindow $0 0
-  GetDlgItem $0 $HWNDPARENT 1038
-  ShowWindow $0 0
-  GetDlgItem $0 $HWNDPARENT 1034
-  ShowWindow $0 0
-  GetDlgItem $0 $HWNDPARENT 1039
-  ShowWindow $0 0
-  GetDlgItem $0 $HWNDPARENT 1046
-  ShowWindow $0 0
-  GetDlgItem $0 $HWNDPARENT 1028
-  ShowWindow $0 0
-  GetDlgItem $0 $HWNDPARENT 1256
-  ShowWindow $0 0
-  GetDlgItem $0 $HWNDPARENT 1035
-  ShowWindow $0 0
-  GetDlgItem $0 $HWNDPARENT 1045
-  ShowWindow $0 0
+  Goto lingji_chrome_loop
+FunctionEnd
+
+Function LingJiAfterShow
+  nsDialogs::KillTimer LingJiAfterShow
+  ; MUI settles its separators when nsDialogs reports the custom page ready.
+  Call LingJiHideChrome
+  Call LingJiButtons
+  System::Call 'user32::RedrawWindow(p $HWNDPARENT,p 0,p 0,i 0x185)'
 FunctionEnd
 
 Function LingJiReady
   Call LingJiHideChrome
+  nsDialogs::CreateTimer LingJiAfterShow 50
   ; Child controls are created below the first child. Lower the bitmap after all controls exist.
   System::Call 'user32::SetWindowPos(p $LingJiBitmap,p 1,i 0,i 0,i 0,i 0,i 0x13)'
   Call LingJiButtons
@@ -103,15 +102,18 @@ Function LingJiButtons
   IntOp $4 $LingJiHeight - $2
   IntOp $4 $4 - $1
   GetDlgItem $5 $HWNDPARENT 1
+  SendMessage $5 ${WM_SETFONT} $LingJiBodyFont 1
   System::Call 'user32::SetWindowPos(p r5,p 0,i r3,i r4,i r0,i r1,i 0x10)'
   SetCtlColors $5 F7FAF8 286249
   IntOp $3 $3 - $0
   IntOp $3 $3 - 8
   GetDlgItem $5 $HWNDPARENT 2
+  SendMessage $5 ${WM_SETFONT} $LingJiBodyFont 1
   System::Call 'user32::SetWindowPos(p r5,p 0,i r3,i r4,i r0,i r1,i 0x10)'
   IntOp $3 $3 - $0
   IntOp $3 $3 - 8
   GetDlgItem $5 $HWNDPARENT 3
+  SendMessage $5 ${WM_SETFONT} $LingJiBodyFont 1
   System::Call 'user32::SetWindowPos(p r5,p 0,i r3,i r4,i r0,i r1,i 0x10)'
   GetDlgItem $5 $HWNDPARENT 1028
   ShowWindow $5 0
@@ -164,11 +166,15 @@ Function LingJiDirectory
   !insertmacro LingJiLabel 12% 38% 80% 18u "安装文件夹" 0
   ${NSD_CreateDirRequest} 12% 46% 63% 22u "$INSTDIR"
   Pop $LingJiFolder
+  SendMessage $LingJiFolder ${WM_SETFONT} $LingJiBodyFont 1
   ${NSD_CreateBrowseButton} 77% 46% 13% 22u "浏览…"
   Pop $LingJiControl
+  SendMessage $LingJiControl ${WM_SETFONT} $LingJiBodyFont 1
   ${NSD_OnClick} $LingJiControl LingJiBrowse
   ${NSD_CreateCheckbox} 12% 60% 80% 20u "创建桌面快捷方式"
   Pop $LingJiShortcutControl
+  SendMessage $LingJiShortcutControl ${WM_SETFONT} $LingJiBodyFont 1
+  System::Call 'uxtheme::SetWindowTheme(p $LingJiShortcutControl,w "",w "")'
   SetCtlColors $LingJiShortcutControl 203A2D transparent
   ${If} $LingJiShortcut == 1
     ${NSD_Check} $LingJiShortcutControl
@@ -205,7 +211,7 @@ Function LingJiDirectoryLeave
   ${EndIf}
   ; NSIS GetFullPathName requires the final component to exist. Win32 permits
   ; a new destination, which is the usual first-install case.
-  System::Call 'kernel32::GetFullPathNameW(w $INSTDIR,i ${NSIS_MAX_STRLEN},w .r2,p 0)i.r0'
+  System::Call 'kernel32::GetFullPathNameW(w d,i ${NSIS_MAX_STRLEN},w .r2,p 0)i.r0'
   ${If} $0 == 0
   ${OrIf} $0 >= ${NSIS_MAX_STRLEN}
     MessageBox MB_OK|MB_ICONEXCLAMATION "安装路径无法使用，请重新选择。"
@@ -234,6 +240,8 @@ Function LingJiFinish
   !insertmacro LingJiLabel 12% 44% 80% 28u "打开「设置与诊断」，连接转录与纪要服务。" 0
   ${NSD_CreateCheckbox} 12% 58% 80% 20u "立即启动聆记"
   Pop $LingJiLaunch
+  SendMessage $LingJiLaunch ${WM_SETFONT} $LingJiBodyFont 1
+  System::Call 'uxtheme::SetWindowTheme(p $LingJiLaunch,w "",w "")'
   SetCtlColors $LingJiLaunch 203A2D transparent
   ${NSD_Check} $LingJiLaunch
   !insertmacro LingJiLabel 12% 70% 80% 24u "关闭窗口后，可从系统托盘重新打开。" 0
@@ -291,7 +299,8 @@ Function LingJiProgressShow
   FindWindow $LingJiDialog "#32770" "" $HWNDPARENT
   ${If} $LingJiDialog != 0
     Call LingJiBackground
-    Call LingJiReady
+    Call LingJiHideChrome
+    Call LingJiButtons
     GetDlgItem $0 $LingJiDialog 1006
     SetCtlColors $0 203A2D transparent
   ${EndIf}
