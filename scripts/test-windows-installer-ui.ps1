@@ -12,6 +12,7 @@ public class LingJiInstallerWindow {
  [DllImport("user32.dll")] public static extern IntPtr GetDlgItem(IntPtr h,int id);
  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h,uint m,IntPtr w,IntPtr l);
  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+ [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
  [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h,IntPtr dc,uint flags);
 }
 '@
@@ -31,13 +32,15 @@ function Wait-Page([string]$text,[int]$seconds=30) {
   }
   Start-Sleep -Milliseconds 200
  }
- try {Capture-Page 'unexpected'}catch{Write-Output ('::warning title=Installer capture::'+$_.Exception.Message)}
+ $names=@($elements | ForEach-Object {$_.Current.Name} | Where-Object {$_} | Select-Object -First 25) -join ' | '
+ Write-Host ('::notice title=Installer last page::'+$names)
+ try {Capture-Page 'unexpected'}catch{Write-Host ('::warning title=Installer capture::'+$_.Exception.Message)}
  throw "Installer page missing: $text"
 }
 function Click-Next {
  $button=[LingJiInstallerWindow]::GetDlgItem($script:handle,1)
  if($button -eq [IntPtr]::Zero){throw 'Installer next button missing'}
- if(-not [LingJiInstallerWindow]::PostMessage($button,0x00F5,[IntPtr]::Zero,[IntPtr]::Zero)){throw 'Installer next action could not be posted'}
+ if(-not [LingJiInstallerWindow]::PostMessage($script:handle,0x0111,[IntPtr]1,$button)){throw 'Installer next action could not be posted'}
 }
 function Capture-Page([string]$name) {
  [void][LingJiInstallerWindow]::SetForegroundWindow($script:handle)
@@ -49,8 +52,14 @@ function Capture-Page([string]$name) {
  $bitmap=New-Object System.Drawing.Bitmap($width,$height,[System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
  $graphics=[System.Drawing.Graphics]::FromImage($bitmap)
  try {
-  $dc=$graphics.GetHdc()
-  try {if(-not [LingJiInstallerWindow]::PrintWindow($script:handle,$dc,2)){throw 'Installer PrintWindow failed'}}finally{$graphics.ReleaseHdc($dc)}
+  $captured=$false
+  if([LingJiInstallerWindow]::GetForegroundWindow() -eq $script:handle) {
+   try {$graphics.CopyFromScreen($rectangle.Left,$rectangle.Top,0,0,$bitmap.Size);$captured=$true}catch{}
+  }
+  if(-not $captured) {
+   $dc=$graphics.GetHdc()
+   try {if(-not [LingJiInstallerWindow]::PrintWindow($script:handle,$dc,2)){throw 'Installer PrintWindow failed'}}finally{$graphics.ReleaseHdc($dc)}
+  }
   $path=Join-Path $Root "$name.png"
   $bitmap.Save($path,[System.Drawing.Imaging.ImageFormat]::Png)
   $encoded=[Convert]::ToBase64String([IO.File]::ReadAllBytes($path))
@@ -59,7 +68,7 @@ function Capture-Page([string]$name) {
   for($part=0;$part -lt $parts;$part++) {
    $offset=$part*3800
    $chunk=$encoded.Substring($offset,[Math]::Min(3800,$encoded.Length-$offset))
-   Write-Output "::notice title=LingJi installer $name $($part+1)/$parts::$chunk"
+   Write-Host "::notice title=LingJi installer ${name} $($part+1)/${parts}::${chunk}"
   }
  } finally {$graphics.Dispose();$bitmap.Dispose()}
 }

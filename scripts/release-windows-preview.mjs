@@ -51,8 +51,6 @@ try{
  await copyFile(join(bundle,installers[0]),join(stage,artifact));
  const bytes=await readFile(join(stage,artifact));assert.equal(bytes.toString('ascii',0,2),'MZ');
  assert.equal(bytes.readUInt16LE(bytes.readUInt32LE(0x3c)+4),0x14c,'NSIS bootstrap is a PE32 executable');
- console.log('Windows packaging: Inspect installer UI');
- await run('pwsh.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',join(frozen,'scripts/test-windows-installer-ui.ps1'),'-Installer',join(stage,artifact),'-Root',join(scratch,'installer-preview')],frozen);
  console.log('Windows packaging: Verify silent installation');
  const installerSmoke=join(stage,'installer-smoke.json');
  await run('pwsh.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',join(frozen,'scripts/test-windows-installer.ps1'),'-Installer',join(stage,artifact),'-Root',join(scratch,'installation'),'-Output',installerSmoke,'-ProbeScript',join(frozen,'scripts/test-standalone-package.mjs'),'-SourceRoot',frozen],frozen);
@@ -63,6 +61,8 @@ try{
  const smoke=JSON.parse(await readFile(smokePath));
  for(const key of ['packagedApp','independentBackend','restartPersistence','stableWebviewProfile','parentOwnsBackend','localAccount','devAccountDisabled'])assert.equal(smoke[key],true,key);
  assert.equal(smoke.realAudioDevicesOpened,false);assert.equal(smoke.realProvidersInvoked,false);
+ console.log('Windows packaging: Inspect installer UI');
+ await run('pwsh.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',join(frozen,'scripts/test-windows-installer-ui.ps1'),'-Installer',join(stage,artifact),'-Root',join(scratch,'installer-preview')],frozen);
  const metadata={version:config.version,channel:'preview',platform:'windows',architecture:'x64',artifact,sourceRevision,sourceDirty:false,frozenSourceBuild:true,signing:'unsigned',sha256:releaseHash(bytes),source,
   runtime:{node:smoke.node,sqlite:smoke.sqlite},validation:{peVerified:true,installerSilentSmoke:true,installedAppProbe:true,resourcesVerified:true,uninstallVerified:true,productionSmoke:true,realAudioDevicesTested:false,realProvidersTested:false,freshMachineTested:false},
   timestamp:new Date().toISOString()};

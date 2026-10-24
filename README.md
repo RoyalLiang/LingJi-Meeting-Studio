@@ -34,7 +34,7 @@
 
 # v0.1.5 豆包音频纪要已发布（2026-10-22）
 
-v0.1.5 已由后台 GitHub Actions 构建并发布，五附件完整下载与摘要核对通过。见[安装与模型配置](docs/releases/v0.1.16-preview.md)及[发布回执](docs/evidence/preview-v0.1.5-2026-10-22.md)。
+v0.1.5 已由后台 GitHub Actions 构建并发布，五附件完整下载与摘要核对通过。见[安装与模型配置](docs/releases/v0.1.5-preview.md)及[发布回执](docs/evidence/preview-v0.1.5-2026-10-22.md)。
 
 # 聆记 · LingJi Meeting Studio
 
@@ -42,7 +42,7 @@ v0.1.5 已由后台 GitHub Actions 构建并发布，五附件完整下载与摘
 
 聆记面向中文会议，提供浏览器工作台与独立桌面客户端。可以采集麦克风和会议音轨、查看转录、整理主题与行动候选，并沿引用回到原文和原音。纪要可人工修改，后台重新整理不会覆盖人工编辑。
 
-**当前版本：v0.1.5，公开测试版。** 本次提供源码与 macOS Apple Silicon 测试安装包。真实会议识别质量、长时间录制和全新设备安装仍需试用验证。
+**当前候选：v0.1.16，双平台公开测试版。** 本轮提供 macOS Apple Silicon 与 Windows x64 打包；公开发布状态以对应 Release 和发布回执为准。真实音频设备、长时间录制和全新电脑仍需试用验证。
 
 [下载测试版](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.16) · [安装说明](docs/releases/v0.1.16-preview.md) · [文档目录](docs/README.md) · [问题反馈](https://github.com/RoyalLiang/LingJi-Meeting-Studio/issues)
 
