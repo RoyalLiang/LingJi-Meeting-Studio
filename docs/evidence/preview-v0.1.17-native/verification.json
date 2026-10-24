@@ -1,0 +1,145 @@
+{
+  "published": {
+    "version": "0.1.17",
+    "sourceRevision": "c9c8f1daddeb389cca8bb93d7741a214079b803f",
+    "release": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.17",
+    "assets": [
+      {
+        "name": "INSTALL-macos-arm64.md",
+        "bytes": 1918,
+        "sha256": "8773b32123bf343826800e64c7f530f97f23a17d9ca9f49fbdd789c4da9a42dc"
+      },
+      {
+        "name": "INSTALL-windows-x64.md",
+        "bytes": 2857,
+        "sha256": "acc4ba3903bb63e9dd39a27d343389f9baf446c4816f54830a804ec8ffd09424"
+      },
+      {
+        "name": "Lingji-0.1.17-macos-arm64.dmg",
+        "bytes": 219508339,
+        "sha256": "0313f263dc6f47ceed82b519cfd7506d4a8ef5c9708567451fc585e267aa3bd8"
+      },
+      {
+        "name": "Lingji-0.1.17-windows-x64-setup.exe",
+        "bytes": 407556259,
+        "sha256": "8070c40b10937c0197cd94107d0e6d01863b857eb99fe890b07384c5fdeea137"
+      },
+      {
+        "name": "package-smoke-windows-x64.json",
+        "bytes": 421,
+        "sha256": "499e6f27f339c3e3e4e867836fafa7f70dc384430385ed95bca2c1e845806bef"
+      },
+      {
+        "name": "package-smoke.json",
+        "bytes": 421,
+        "sha256": "dd49ba8ff55f2c0d0d55351cdf9a2b98519692562d7b47bb86b3aae940198cb6"
+      },
+      {
+        "name": "release-windows-x64.json",
+        "bytes": 51273,
+        "sha256": "fb642a7dfd43e22ffd3b751d596aa09a1f2fe4cfecec43bf593ba4a299ee0696"
+      },
+      {
+        "name": "release.json",
+        "bytes": 52748,
+        "sha256": "b7f0d6fbbb7377a78b1de97fcdb44aaf3d6f83a932d95d84d3d0cfec9e81ae83"
+      },
+      {
+        "name": "SHA256SUMS-windows-x64.txt",
+        "bytes": 102,
+        "sha256": "5e3daa34479ea0a37aeac7e213aeeb9bc7fc21533866ebbe5380f9a49b7d7352"
+      },
+      {
+        "name": "SHA256SUMS.txt",
+        "bytes": 96,
+        "sha256": "8acfbcb2c626998721759c0d8c3ab61c72c119f257a9125d91e400e7c3fe90eb"
+      }
+    ],
+    "sourceFilesChecked": 308,
+    "bundledAsrPlatforms": [
+      "darwin",
+      "win32"
+    ],
+    "realDevicesTested": false,
+    "longMeetingTested": false
+  },
+  "downloadedMac": {
+    "sourceRevision": "c9c8f1daddeb389cca8bb93d7741a214079b803f",
+    "version": "0.1.17",
+    "bundleVersion": "0.1.39",
+    "downloadedDmgVerified": true,
+    "codesignDeepStrict": true,
+    "signing": "ad-hoc",
+    "appleNotarized": false,
+    "isolatedAppLifecycle": true,
+    "bundledAsr": {
+      "model": "sensevoice-small-2024-07-17-int8",
+      "runtime": "1.13.8",
+      "onnxruntime": "1.28.2",
+      "node": "v24.21.0",
+      "platform": "darwin",
+      "arch": "arm64",
+      "packagedResourcesVerified": true,
+      "nativeInference": true,
+      "pythonRequired": false,
+      "modelDownloadedDuringInference": false,
+      "publicFixturesOnly": true,
+      "realAudioDevicesTested": false,
+      "meetingAccuracyEvaluated": false,
+      "results": [
+        {
+          "language": "zh",
+          "fixtureSha256": "b77f1794fe374a0ba1ee1dc458bfaf9349496cbbfc32780c50ba3c5a7ad8e373",
+          "text": "开饭时间早上9点至下午5点。",
+          "seconds": 5.592,
+          "elapsedMs": 805
+        },
+        {
+          "language": "en",
+          "fixtureSha256": "eb1eb008904465b74c304aad8342e8c7d3c6e61ffe9f66adcaca9cf0f76a93f4",
+          "text": "The tribal chieftain called for the boy and presented him with 50 pieces of code.",
+          "seconds": 7.152,
+          "elapsedMs": 96
+        },
+        {
+          "language": "silence",
+          "text": "",
+          "seconds": 5,
+          "elapsedMs": 14
+        }
+      ]
+    },
+    "physicalAudioDevicesTested": false
+  },
+  "ci": {
+    "runId": 40116272681,
+    "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/40116272681",
+    "jobs": [
+      {
+        "id": 120938093690,
+        "name": "verify",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 120938132323,
+        "name": "build",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 120938132333,
+        "name": "build_windows",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 120942625291,
+        "name": "publish",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "nativeUiEvidence": "Actual Windows product installer in GitHub-hosted Windows CI; diagnostic JPEG copies; physical keyboard and 100-200 percent display DPI not separately tested."
+}

@@ -1,6 +1,6 @@
 # 应用内置本地转录
 
-从 v0.1.17 测试版起，Windows x64 与 macOS Apple Silicon 安装包携带完整的 SenseVoiceSmall INT8、Silero VAD 与 sherpa-onnx 原生运行时。无需安装 Python、额外下载模型或手动运行转录服务器。在“设置 → 转录服务”选择“本地 SenseVoice”即可开始；未配置云端服务的新安装默认使用此项。
+从 v0.1.17 测试版起，Windows x64 与 macOS Apple Silicon 安装包携带完整的 SenseVoiceSmall INT8、Silero VAD 与 sherpa-onnx 原生运行时。无需安装 Python、额外下载模型或手动运行转录服务器。在“设置 → 会议理解”选择“ASR＋LLM · 转录后整理”，再在“转录服务”选择“本地转录 · SenseVoice（已内置）”即可开始；未配置云端服务的新安装默认使用此项。
 
 应用通过私有子进程在 CPU 上推理，按需启动，空闲三分钟释放，真正退出时回收。它不监听本机 HTTP 端口。本地模式不需要 API Key；纪要仍使用独立配置的豆包等模型。已有云端或自定义 FunASR 配置不会被自动覆盖。
 
