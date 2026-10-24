@@ -239,9 +239,9 @@ jobs:
       - name: Inspect installer welcome screenshot
         if: ${{ always() }}
         run: node scripts/expose-installer-screen.mjs welcome
-      - name: Inspect installer directory screenshot
+      - name: Inspect installer settings screenshot
         if: ${{ always() }}
-        run: node scripts/expose-installer-screen.mjs directory
+        run: node scripts/expose-installer-screen.mjs settings
       - name: Inspect installer installing screenshot
         if: ${{ always() }}
         run: node scripts/expose-installer-screen.mjs installing

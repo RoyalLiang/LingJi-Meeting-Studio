@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.20)
+project(lingji_installer_ui LANGUAGES CXX)
+add_library(lingji-ui SHARED theme.cpp exports.def)
+target_compile_features(lingji-ui PRIVATE cxx_std_17)
+target_compile_definitions(lingji-ui PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+set_property(TARGET lingji-ui PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+target_compile_options(lingji-ui PRIVATE /W4 /WX /utf-8)
+target_link_libraries(lingji-ui PRIVATE user32 gdi32 comctl32)

@@ -75,20 +75,18 @@ function Capture-Page([string]$name) {
  } finally {$graphics.Dispose();$bitmap.Dispose()}
 }
 try {
- Wait-Page '欢迎安装聆记'
+ Wait-Page '安装聆记'
  Capture-Page 'welcome'
- Click-Next
- Wait-Page '选择安装位置'
- Capture-Page 'directory'
+ Capture-Page 'settings'
  Click-Next
  Start-Sleep -Milliseconds 200
  $progressRoot=[System.Windows.Automation.AutomationElement]::FromHandle($script:handle)
  $progressCondition=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty,'正在安装聆记')
  if($null -ne $progressRoot.FindFirst([System.Windows.Automation.TreeScope]::Descendants,$progressCondition)){Capture-Page 'installing'}
- Wait-Page '安装完成' 180
+ Wait-Page '聆记已准备就绪' 180
  Capture-Page 'finish'
  $rootElement=[System.Windows.Automation.AutomationElement]::FromHandle($script:handle)
- $condition=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty,'立即启动聆记')
+ $condition=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty,'完成后启动聆记')
  # The dialog proxy can share its first control's accessible name. Select a
  # native BS_AUTOCHECKBOX handle, then verify the real click by reading state.
  $launchHandle=[IntPtr]::Zero

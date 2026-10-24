@@ -129,6 +129,7 @@ try {
     NATIVE_CLIENT_EXECUTABLE: binary,
   }, frozen);
   const checksum = createHash('sha256').update(await readFile(dmg)).digest('hex');
+  await run(join(installedApp, 'Contents/Resources/runtime/node'), ['scripts/test-bundled-asr.mjs', join(installedApp, 'Contents/Resources/client-backend'), join(release, 'bundled-asr-macos-arm64.json')]);
   await writeFile(join(release, 'SHA256SUMS.txt'), `${checksum}  ${dmgName}\n`);
   await writeFile(join(release, 'release.json'), JSON.stringify({
     version: config.version, channel, productName: config.productName, platform: 'macos', architecture: 'arm64',
