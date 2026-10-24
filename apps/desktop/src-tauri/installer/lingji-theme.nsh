@@ -27,6 +27,8 @@ Var LingJiThemeModule
   Push $1
   Push $2
   Push $3
+  Push $4
+  StrCpy $4 ${handle}
   IntOp $0 $LingJiWidth * ${x}
   IntOp $0 $0 / 800
   IntOp $1 $LingJiHeight * ${y}
@@ -35,7 +37,8 @@ Var LingJiThemeModule
   IntOp $2 $2 / 800
   IntOp $3 $LingJiHeight * ${height}
   IntOp $3 $3 / 488
-  System::Call 'user32::SetWindowPos(p ${handle},p 0,i r0,i r1,i r2,i r3,i 0x14)'
+  System::Call 'user32::SetWindowPos(p r4,p 0,i r0,i r1,i r2,i r3,i 0x14)'
+  Pop $4
   Pop $3
   Pop $2
   Pop $1
@@ -299,6 +302,26 @@ Function LingJiProgressShow
     ShowWindow $0 0
     GetDlgItem $0 $LingJiDialog 1016
     ShowWindow $0 0
+    System::Call 'user32::CreateWindowExW(i 0,w "STATIC",w "应用文件",i 0x50000000,i 0,i 0,i 0,i 0,p $LingJiDialog,p 0,p 0,p 0)p.s'
+    Pop $LingJiControl
+    SendMessage $LingJiControl ${WM_SETFONT} $LingJiBodyFont 1
+    SetCtlColors $LingJiControl 718177 transparent
+    !insertmacro LingJiPlace $LingJiControl 52 313 200 26
+    System::Call 'user32::CreateWindowExW(i 0,w "STATIC",w "本地转录模型",i 0x50000000,i 0,i 0,i 0,i 0,p $LingJiDialog,p 0,p 0,p 0)p.s'
+    Pop $LingJiControl
+    SendMessage $LingJiControl ${WM_SETFONT} $LingJiBodyFont 1
+    SetCtlColors $LingJiControl 718177 transparent
+    !insertmacro LingJiPlace $LingJiControl 285 313 220 26
+    System::Call 'user32::CreateWindowExW(i 0,w "STATIC",w "完成配置",i 0x50000000,i 0,i 0,i 0,i 0,p $LingJiDialog,p 0,p 0,p 0)p.s'
+    Pop $LingJiControl
+    SendMessage $LingJiControl ${WM_SETFONT} $LingJiBodyFont 1
+    SetCtlColors $LingJiControl 718177 transparent
+    !insertmacro LingJiPlace $LingJiControl 560 313 188 26
+    System::Call 'user32::CreateWindowExW(i 0,w "STATIC",w "安装过程中请勿关闭此窗口",i 0x50000000,i 0,i 0,i 0,i 0,p $LingJiDialog,p 0,p 0,p 0)p.s'
+    Pop $LingJiControl
+    SendMessage $LingJiControl ${WM_SETFONT} $LingJiBodyFont 1
+    SetCtlColors $LingJiControl 718177 transparent
+    !insertmacro LingJiPlace $LingJiControl 52 431 540 26
     Call LingJiHideChrome
     Call LingJiThemeControls
   ${EndIf}

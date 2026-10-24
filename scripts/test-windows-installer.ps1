@@ -37,7 +37,8 @@ try {
     $env:NATIVE_CLIENT_EXECUTABLE = $executable
   & (Join-Path $installation 'runtime/node.exe') (Join-Path $SourceRoot 'scripts/test-bundled-asr.mjs') (Join-Path $installation 'client-backend') (Join-Path $Root 'bundled-asr-windows.json')
   if($LASTEXITCODE -ne 0){throw 'Installed native ASR probe failed'}
-    & node $ProbeScript $smoke
+    $env:TTS_VERIFY_BUNDLED_ASR='1'
+  & node $ProbeScript $smoke
     if ($LASTEXITCODE -ne 0) { throw 'Installed production App lifecycle probe failed' }
   } finally { $env:NATIVE_CLIENT_EXECUTABLE = $previous }
   $uninstaller = Join-Path $installation 'uninstall.exe'
