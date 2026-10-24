@@ -1,0 +1,40 @@
+name: Windows desktop verification
+on:
+  push:
+    branches: [dev_windows-resident]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: windows-check-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native:
+    runs-on: windows-2025
+    timeout-minutes: 90
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24.21.0'
+      - run: npm ci
+      - run: npm run build:web
+      - run: node scripts/prepare-client-backend.mjs
+      - name: Native regression
+        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --features smoke-test -- --test-threads=1
+      - name: Build native probe
+        run: cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --features smoke-test
+      - name: Hidden recording and restart replay
+        env:
+          NATIVE_CLIENT_EXECUTABLE: ${{ github.workspace }}\apps\desktop\src-tauri\target\debug\tts-client.exe
+        run: node scripts/test-native-client.mjs .agent-runtime/windows-native.json
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: always()
+        with:
+          name: windows-native-${{ github.sha }}
+          path: .agent-runtime/windows-native.json
+          if-no-files-found: ignore

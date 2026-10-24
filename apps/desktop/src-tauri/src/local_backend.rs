@@ -76,6 +76,8 @@ impl LocalBackend {
                 command.env(key, value);
             }
         }
+        #[cfg(windows)]
+        { use std::os::windows::process::CommandExt; command.creation_flags(0x08000000); }
         let mut child = command
             .spawn()
             .map_err(|e| format!("客户端后台无法启动：{e}"))?;

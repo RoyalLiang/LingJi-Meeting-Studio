@@ -82,6 +82,20 @@ async function verifyNativeUiLanes(record, queued) {
       request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
     });
     await until(async () => { const queued = await pendingUi(), counts = new Map(); for (const entry of queued) counts.set(entry.chunk.sourceId, (counts.get(entry.chunk.sourceId) || 0) + 1); return counts.size === 2 && [...counts.values()].every(count => count >= 2); });
+    const beforeHidden = await pendingUi();
+    await invoke('client_probe', {result:{residentAction:'close'}});
+    await until(async()=>{const state=await invoke('client_probe',{result:{residentAction:'snapshot'}});return !state.visible&&state.nativeActive;});
+    await sleep(9000);
+    const whileHidden = await pendingUi();
+    for(const source of (await json(`/records/${uiRecordId}`)).sources){
+      const before=beforeHidden.filter(entry=>entry.chunk.sourceId===source.id).length;
+      const after=whileHidden.filter(entry=>entry.chunk.sourceId===source.id).length;
+      if(after<before+4)throw new Error('hidden window did not continue native capture and durable queue');
+    }
+    if((await json(`/records/${uiRecordId}`)).capture!=='recording')throw new Error('window close paused recording');
+    await invoke('client_probe',{result:{residentAction:'restore'}});
+    await until(async()=>(await invoke('client_probe',{result:{residentAction:'snapshot'}})).visible);
+    const residentCapture={hiddenWindow:true,continuedNativeCapture:true,continuedDurableQueue:true,recordingNotPaused:true,restoredWindow:true,hiddenMs:9000};
     const finish = await until(() => document.querySelector('button[aria-label="暂停或结束会议"]:not(:disabled)')); finish.click();
     const pause = await until(() => [...document.querySelectorAll('button')].find(button => !button.disabled && button.textContent.includes('暂停，稍后继续'))); pause.click();
     const uiPaused = await until(async () => { const current = await json(`/records/${uiRecordId}`); return current.capture === 'paused' && current; });
@@ -95,6 +109,6 @@ async function verifyNativeUiLanes(record, queued) {
     const frame = document.createElement('iframe'); frame.src = '/index.html'; document.body.append(frame); await sleep(150);
     const iframeBlocked = !frame.contentDocument?.querySelector('#root'); frame.remove();
     localStorage.setItem('native-probe-retained', 'yes');
-    await invoke('client_probe', { result: { ok: true, origin: location.origin, renderer: navigator.userAgent, reactMounted: true, uiRecordId, uiLanes, pendingUiPackets, priorUiQueueReplayed, actualQueueUsed: true, nativeIpc: true, authenticated: true, csrfRejected: true, recordId: record.id, pcm, sse, indexedDbWritten: true, indexedDbRetained: retained, reloginRequired: sessionStorage.getItem('native-probe-relogin') === 'yes', iframeBlocked, kind: 'synthetic-only' } });
+    await invoke('client_probe', { result: { ok: true, residentCapture, origin: location.origin, renderer: navigator.userAgent, reactMounted: true, uiRecordId, uiLanes, pendingUiPackets, priorUiQueueReplayed, actualQueueUsed: true, nativeIpc: true, authenticated: true, csrfRejected: true, recordId: record.id, pcm, sse, indexedDbWritten: true, indexedDbRetained: retained, reloginRequired: sessionStorage.getItem('native-probe-relogin') === 'yes', iframeBlocked, kind: 'synthetic-only' } });
   } catch (error) { await invoke('client_probe', { result: { ok: false, error: String(error), phase: sessionStorage.getItem('native-probe-phase') } }); }
 })();

@@ -94,8 +94,8 @@ impl StatusBar {
             ],
         )?;
         let tray = TrayIconBuilder::with_id("lingji-status")
-            .icon(tauri::include_image!("icons/menu-bar.png"))
-            .icon_as_template(true)
+            .icon(if cfg!(target_os = "macos") { tauri::include_image!("icons/menu-bar.png") } else { tauri::include_image!("icons/icon.png") })
+            .icon_as_template(cfg!(target_os = "macos"))
             .tooltip("聆记 · 打开会议或右键查看状态")
             .menu(&menu)
             .show_menu_on_left_click(false)
@@ -116,11 +116,7 @@ impl StatusBar {
                         let _ = w.hide();
                     }
                 }
-                "status-quit" => {
-                    if let Some(w) = app.get_webview_window("main") {
-                        let _ = w.close();
-                    }
-                }
+                "status-quit" => crate::resident::request_quit(app),
                 "status-pause"
                 | "status-resume"
                 | "status-finish"
