@@ -60,7 +60,31 @@ Function LingJiBackground
   Call LingJiButtons
 FunctionEnd
 
+Function LingJiHideChrome
+  ; MUI's outer header, branding and separators are siblings of our page.
+  ; Hide them after each page is created so the bitmap covers the client area.
+  GetDlgItem $0 $HWNDPARENT 1037
+  ShowWindow $0 0
+  GetDlgItem $0 $HWNDPARENT 1038
+  ShowWindow $0 0
+  GetDlgItem $0 $HWNDPARENT 1034
+  ShowWindow $0 0
+  GetDlgItem $0 $HWNDPARENT 1039
+  ShowWindow $0 0
+  GetDlgItem $0 $HWNDPARENT 1046
+  ShowWindow $0 0
+  GetDlgItem $0 $HWNDPARENT 1028
+  ShowWindow $0 0
+  GetDlgItem $0 $HWNDPARENT 1256
+  ShowWindow $0 0
+  GetDlgItem $0 $HWNDPARENT 1035
+  ShowWindow $0 0
+  GetDlgItem $0 $HWNDPARENT 1045
+  ShowWindow $0 0
+FunctionEnd
+
 Function LingJiReady
+  Call LingJiHideChrome
   ; Child controls are created below the first child. Lower the bitmap after all controls exist.
   System::Call 'user32::SetWindowPos(p $LingJiBitmap,p 1,i 0,i 0,i 0,i 0,i 0x13)'
   Call LingJiButtons
@@ -169,17 +193,28 @@ Function LingJiDirectoryLeave
     MessageBox MB_OK|MB_ICONEXCLAMATION "请选择安装文件夹。"
     Abort
   ${EndIf}
-  GetFullPathName $INSTDIR "$INSTDIR"
+  ; Validate absolute drive syntax before normalization (C:folder is relative).
   StrLen $0 $INSTDIR
   StrCpy $1 $INSTDIR 1 1
+  StrCpy $2 $INSTDIR 1 2
   ${If} $0 < 4
   ${OrIf} $1 != ":"
+  ${OrIf} $2 != "\"
     MessageBox MB_OK|MB_ICONEXCLAMATION "请选择磁盘中的安装子文件夹。"
     Abort
   ${EndIf}
-  System::Call 'shlwapi::PathIsRelativeW(w $INSTDIR)i.r0'
-  ${If} $0 != 0
-    MessageBox MB_OK|MB_ICONEXCLAMATION "请选择完整的本机安装路径。"
+  ; NSIS GetFullPathName requires the final component to exist. Win32 permits
+  ; a new destination, which is the usual first-install case.
+  System::Call 'kernel32::GetFullPathNameW(w $INSTDIR,i ${NSIS_MAX_STRLEN},w .r2,p 0)i.r0'
+  ${If} $0 == 0
+  ${OrIf} $0 >= ${NSIS_MAX_STRLEN}
+    MessageBox MB_OK|MB_ICONEXCLAMATION "安装路径无法使用，请重新选择。"
+    Abort
+  ${EndIf}
+  StrCpy $INSTDIR $2
+  StrLen $0 $INSTDIR
+  ${If} $0 < 4
+    MessageBox MB_OK|MB_ICONEXCLAMATION "请选择磁盘中的安装子文件夹。"
     Abort
   ${EndIf}
   ${NSD_GetState} $LingJiShortcutControl $LingJiShortcut
@@ -256,6 +291,7 @@ Function LingJiProgressShow
   FindWindow $LingJiDialog "#32770" "" $HWNDPARENT
   ${If} $LingJiDialog != 0
     Call LingJiBackground
+    Call LingJiReady
     GetDlgItem $0 $LingJiDialog 1006
     SetCtlColors $0 203A2D transparent
   ${EndIf}

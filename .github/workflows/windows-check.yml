@@ -109,8 +109,20 @@ jobs:
             }
           }
           exit $status
+      - name: Inspect installer welcome screenshot
+        if: ${{ always() }}
+        run: node scripts/expose-installer-screen.mjs welcome
+      - name: Inspect installer directory screenshot
+        if: ${{ always() }}
+        run: node scripts/expose-installer-screen.mjs directory
+      - name: Inspect installer finish screenshot
+        if: ${{ always() }}
+        run: node scripts/expose-installer-screen.mjs finish
+      - name: Inspect installer unexpected screenshot
+        if: ${{ always() }}
+        run: node scripts/expose-installer-screen.mjs unexpected
       - name: Save Windows Rust dependency cache
-        if: ${{ always() && !cancelled() && steps.rust_cache.outputs.cache-hit != 'true' }}
+        if: ${{ always() && !cancelled() && steps.rust_cache.outcome == 'success' && steps.rust_cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: |

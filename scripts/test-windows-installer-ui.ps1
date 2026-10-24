@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$Installer,[Parameter(Mandatory=$true)][string]$Root)
+param([Parameter(Mandatory=$true)][string]$Installer,[Parameter(Mandatory=$true)][string]$Root,[Parameter(Mandatory=$true)][string]$Screenshots)
 if($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted'){throw 'Installer verification requires disposable GitHub-hosted Windows CI'}
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName UIAutomationClient
@@ -17,6 +17,7 @@ public class LingJiInstallerWindow {
 }
 '@
 New-Item -ItemType Directory -Force $Root | Out-Null
+New-Item -ItemType Directory -Force $Screenshots | Out-Null
 $install=Join-Path $Root 'Visual Install'
 $setup=Start-Process -FilePath $Installer -ArgumentList "/D=$install" -PassThru
 $script:handle=[IntPtr]::Zero
@@ -60,16 +61,15 @@ function Capture-Page([string]$name) {
    $dc=$graphics.GetHdc()
    try {if(-not [LingJiInstallerWindow]::PrintWindow($script:handle,$dc,2)){throw 'Installer PrintWindow failed'}}finally{$graphics.ReleaseHdc($dc)}
   }
-  $path=Join-Path $Root "$name.png"
-  $bitmap.Save($path,[System.Drawing.Imaging.ImageFormat]::Png)
-  $encoded=[Convert]::ToBase64String([IO.File]::ReadAllBytes($path))
-  if($encoded.Length -gt 60000){throw "Installer preview exceeds bounded annotation: $name"}
-  $parts=[int][Math]::Ceiling($encoded.Length/3800.0)
-  for($part=0;$part -lt $parts;$part++) {
-   $offset=$part*3800
-   $chunk=$encoded.Substring($offset,[Math]::Min(3800,$encoded.Length-$offset))
-   Write-Host "::notice title=LingJi installer ${name} $($part+1)/${parts}::${chunk}"
-  }
+  $path=Join-Path $Screenshots "$name.jpg"
+  $codec=[System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object {$_.MimeType -eq 'image/jpeg'}
+  $parameters=[System.Drawing.Imaging.EncoderParameters]::new(1)
+  try {
+   $parameters.Param[0]=[System.Drawing.Imaging.EncoderParameter]::new([System.Drawing.Imaging.Encoder]::Quality,[long]65)
+   $bitmap.Save($path,$codec,$parameters)
+  }finally {$parameters.Dispose()}
+  Write-Host "Saved installer screenshot: $name"
+
  } finally {$graphics.Dispose();$bitmap.Dispose()}
 }
 try {
