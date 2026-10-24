@@ -138,12 +138,12 @@ jobs:
             apps/desktop/src-tauri/target/release/.fingerprint
           key: ${{ steps.rust_cache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
-      if: always()
-      with:
-        name: windows-candidate-${{ github.sha }}
-        path: |
-          dist/releases/**
-          .agent-runtime/installer-ui/**
-          .agent-runtime/windows-native.json
-        if-no-files-found: warn
-        retention-days: 7
+        if: always()
+        with:
+          name: windows-candidate-${{ github.sha }}
+          path: |
+            dist/releases/**
+            .agent-runtime/installer-ui/**
+            .agent-runtime/windows-native.json
+          if-no-files-found: warn
+          retention-days: 7
