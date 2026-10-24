@@ -334,6 +334,8 @@ Function LingJiProgressShow
     !insertmacro LingJiProgressControl 1004 46 18
     !insertmacro LingJiProgressControl 1027 56 30
     !insertmacro LingJiProgressControl 1016 65 80
+    ; New child windows start below existing siblings; lower the bitmap last.
+    System::Call 'user32::SetWindowPos(p $LingJiBitmap,p 1,i 0,i 0,i 0,i 0,i 0x13)'
   ${EndIf}
 FunctionEnd
 
