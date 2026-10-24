@@ -1,3 +1,9 @@
+# v0.1.16 Windows 安装与双平台常驻已发布（2026-10-24）
+
+[Windows x64 安装器](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.16/Lingji-0.1.16-windows-x64-setup.exe) · [macOS Apple Silicon DMG](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.16/Lingji-0.1.16-macos-arm64.dmg) · [发布回执](docs/evidence/preview-v0.1.16-2026-10-24.md)
+
+新增整窗背景安装器，以及 Windows 托盘和 macOS 菜单栏常驻。双平台构建、安装验证、十附件及源码摘要已核对；测试包签名与真实设备边界见回执。
+
 # v0.1.14 纪要内容与多场景阅读已发布（2026-10-23）
 
 后台 verify/build/publish 全部成功，五附件、231 个源码文件及独立包内启动核验通过。[Release](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.14)，[完整回执](docs/evidence/preview-v0.1.14-2026-10-23.md)。
@@ -42,7 +48,7 @@ v0.1.5 已由后台 GitHub Actions 构建并发布，五附件完整下载与摘
 
 聆记面向中文会议，提供浏览器工作台与独立桌面客户端。可以采集麦克风和会议音轨、查看转录、整理主题与行动候选，并沿引用回到原文和原音。纪要可人工修改，后台重新整理不会覆盖人工编辑。
 
-**当前候选：v0.1.16，双平台公开测试版。** 本轮提供 macOS Apple Silicon 与 Windows x64 打包；公开发布状态以对应 Release 和发布回执为准。真实音频设备、长时间录制和全新电脑仍需试用验证。
+**当前版本：v0.1.16，双平台公开测试版。** 本轮提供 macOS Apple Silicon 与 Windows x64 打包；公开发布状态以对应 Release 和发布回执为准。真实音频设备、长时间录制和全新电脑仍需试用验证。
 
 [下载测试版](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.16) · [安装说明](docs/releases/v0.1.16-preview.md) · [文档目录](docs/README.md) · [问题反馈](https://github.com/RoyalLiang/LingJi-Meeting-Studio/issues)
 
