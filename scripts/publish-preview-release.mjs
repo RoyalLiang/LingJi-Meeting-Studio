@@ -23,7 +23,11 @@ export async function loadPreview(directory,{tag,commit,repository,workflowSha,r
   for(const key of ['realAudioDevicesTested','realProvidersTested','freshMachineTested'])assert.equal(metadata.validation?.[key],false);
   const names=[artifact,'SHA256SUMS.txt','release.json','INSTALL-macos-arm64.md','package-smoke.json'];
   const windows=requireWindows?await loadWindowsPreview(directory,{tag,commit,repository,workflowSha,runId}):undefined;
-  if(windows)names.push(...windows.names);
+  if(windows){
+    assert.match(metadata.source?.sha256,/^[a-f0-9]{64}$/);assert.ok(metadata.source.files.length>0);
+    assert.deepEqual(windows.metadata.source,metadata.source,'Platform source manifests differ');
+    names.push(...windows.names);
+  }
   assert.deepEqual((await readdir(directory)).sort(),[...names].sort(),'Unexpected or missing release files');
   const files=await Promise.all(names.map(async name=>{const bytes=await readFile(join(directory,name));assert.ok(bytes.length>0);return {name,bytes,size:bytes.length,digest:'sha256:'+hash(bytes)};}));
   assert.equal(files[0].digest,'sha256:'+metadata.sha256);
@@ -74,7 +78,7 @@ export function previewNotes({tag,commit,workflowSha,metadata,runUrl,guide='',wi
     `### Actions 构建与验证\n由 [GitHub Actions](${runUrl}) 在 macOS ARM runner${windows?' 与 Windows x64 runner':''} 构建。构建阶段运行 Node/Rust 回归、ESLint、类型与文档检查；DMG、arm64、签名结构、包内后台及隔离启动/重启检查通过。${windows?'Windows 静默安装、安装资源哈希、x64 主程序、包内独立后台、隔离启动/重启及卸载检查通过。':''}实际执行记录以该 run 为准。\n\n`+
     `源码 SHA：\`${commit}\`\n工作流 SHA：\`${workflowSha}\`\nDMG SHA-256：\`${metadata.sha256}\`\n\n`+
     `### 已知边界\n尚未验证真实设备长会议、真实 ASR/LLM 质量、全新 Mac 首次安装、完整 App 冷启动、PG/S3${windows?' 或全新 Windows 电脑交互安装、Linux 安装':' 或 Windows/Linux 安装'}。此测试包不替代正式签名发版。\n\n`+
-    `### English\nPublic preview ${tag}: source code and a macOS Apple Silicon test installer (macOS 14.6+), built and published by GitHub Actions. See INSTALL-macos-arm64.md for this version's changes.\n\n`+
+    `### English\nPublic preview ${tag}: source code and a macOS Apple Silicon test installer (macOS 14.6+)${windows?' plus a Windows x64 installer (Windows 10/11)':''}, built and published by GitHub Actions. See INSTALL-macos-arm64.md${windows?' and INSTALL-windows-x64.md':''} for this version's changes.\n\n`+
     `**Ad-hoc signed; not Developer ID signed or notarized.** Back up existing data and do not run Preview and Alpha concurrently. Real-meeting quality, full native cold startup and fresh-machine acceptance remain unverified.\n`;
 }
 async function sourceCommit(api,base,tag) {

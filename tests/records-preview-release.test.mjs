@@ -117,9 +117,11 @@ test('publication entry accepts only main manual dispatch or its exact version t
 });
 
 async function windowsFixture(options,mac) {
+  mac.source={sha256:'1'.repeat(64),files:[{path:'synthetic-source',sha256:'2'.repeat(64)}]};
+  await writeFile(join(options.directory,'release.json'),JSON.stringify(mac));
   const artifact=`Lingji-${mac.version}-windows-x64-setup.exe`,bytes=Buffer.from('synthetic NSIS installer');
   const metadata={version:mac.version,channel:'preview',platform:'windows',architecture:'x64',artifact,sourceRevision:options.commit,sourceDirty:false,signing:'unsigned',frozenSourceBuild:true,
-    sha256:createHash('sha256').update(bytes).digest('hex'),ci:mac.ci,
+    sha256:createHash('sha256').update(bytes).digest('hex'),ci:mac.ci,source:mac.source,
     validation:{peVerified:true,installerSilentSmoke:true,installedAppProbe:true,resourcesVerified:true,uninstallVerified:true,productionSmoke:true,realAudioDevicesTested:false,realProvidersTested:false,freshMachineTested:false}};
   for(const [name,data] of [[artifact,bytes],['SHA256SUMS-windows-x64.txt',metadata.sha256+'  '+artifact+'\n'],['release-windows-x64.json',JSON.stringify(metadata)],['INSTALL-windows-x64.md','Windows synthetic guide'],['package-smoke-windows-x64.json',await readFile(join(options.directory,'package-smoke.json'))]])await writeFile(join(options.directory,name),data);
   options.requireWindows=true;return metadata;
@@ -132,7 +134,7 @@ test('dual-platform publication requires ten verified files from the same source
 });
 test('dual-platform publication rejects missing Windows files and mismatched source, checksum or validation',async t=>{
   const {options,metadata}=await fixture(t);const windows=await windowsFixture(options,metadata);
-  for(const mutate of [m=>{m.sourceRevision='c'.repeat(40);},m=>{m.sha256='0'.repeat(64);},m=>{m.ci={...m.ci,runId:'999'};},m=>{m.validation={...m.validation,uninstallVerified:false};}]){
+  for(const mutate of [m=>{m.sourceRevision='c'.repeat(40);},m=>{m.source={...m.source,sha256:'0'.repeat(64)};},m=>{m.sha256='0'.repeat(64);},m=>{m.ci={...m.ci,runId:'999'};},m=>{m.validation={...m.validation,uninstallVerified:false};}]){
     const changed=structuredClone(windows);mutate(changed);await writeFile(join(options.directory,'release-windows-x64.json'),JSON.stringify(changed));await assert.rejects(loadPreview(options.directory,options));
   }
   await writeFile(join(options.directory,'release-windows-x64.json'),JSON.stringify(windows));

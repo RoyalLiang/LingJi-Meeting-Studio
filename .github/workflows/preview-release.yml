@@ -150,6 +150,7 @@ jobs:
           node-version: '24.21.0'
       - run: rustup toolchain install 1.92.0 --profile minimal; rustup default 1.92.0
       - run: npm ci
+      - run: node --test tests/records-audio-storage-sync.test.mjs tests/records-release-source.test.mjs tests/records-preview-release.test.mjs
       - run: npm run build:web
       - run: node scripts/prepare-client-backend.mjs
       - name: Native regression

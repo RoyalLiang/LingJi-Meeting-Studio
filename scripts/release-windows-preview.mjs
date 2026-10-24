@@ -8,6 +8,8 @@ import {readReleaseSource,snapshotReleaseSource,releaseHash} from './release-sou
 
 assert.equal(process.platform,'win32','Windows packaging requires Windows CI or a Windows development host');
 assert.equal(process.arch,'x64','This preview targets Windows x64');
+assert.equal(process.env.GITHUB_ACTIONS,'true','Installer probes require disposable GitHub-hosted Windows CI');
+assert.equal(process.env.RUNNER_ENVIRONMENT,'github-hosted','Never replace a developer current-user installation during package verification');
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const git=(...args)=>execFileSync('git',args,{cwd:root,maxBuffer:8*1024*1024}).toString().trim();
 const sourceRevision=git('rev-parse','--verify',`${process.env.TTS_RELEASE_SOURCE_REF||'HEAD'}^{commit}`);
@@ -48,9 +50,9 @@ try{
  await copyFile(join(bundle,installers[0]),join(stage,artifact));
  const bytes=await readFile(join(stage,artifact));assert.equal(bytes.toString('ascii',0,2),'MZ');
  assert.equal(bytes.readUInt16LE(bytes.readUInt32LE(0x3c)+4),0x14c,'NSIS bootstrap is a PE32 executable');
- await run('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',join(frozen,'scripts/test-windows-installer-ui.ps1'),'-Installer',join(stage,artifact),'-Root',join(scratch,'installer-preview')],frozen);
+ await run('pwsh.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',join(frozen,'scripts/test-windows-installer-ui.ps1'),'-Installer',join(stage,artifact),'-Root',join(scratch,'installer-preview')],frozen);
  const installerSmoke=join(stage,'installer-smoke.json');
- await run('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',join(frozen,'scripts/test-windows-installer.ps1'),'-Installer',join(stage,artifact),'-Root',join(scratch,'installation'),'-Output',installerSmoke,'-ProbeScript',join(frozen,'scripts/test-standalone-package.mjs'),'-SourceRoot',frozen],frozen);
+ await run('pwsh.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',join(frozen,'scripts/test-windows-installer.ps1'),'-Installer',join(stage,artifact),'-Root',join(scratch,'installation'),'-Output',installerSmoke,'-ProbeScript',join(frozen,'scripts/test-standalone-package.mjs'),'-SourceRoot',frozen],frozen);
  const install=JSON.parse(await readFile(installerSmoke));
  assert.equal(install.installed,true);assert.equal(install.uninstalled,true);assert.equal(install.resourcesVerified,true);
  const smokePath=join(stage,'package-smoke-windows-x64.json');
