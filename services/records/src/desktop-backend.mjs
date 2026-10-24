@@ -2,7 +2,7 @@ import { automaticMinutesAt } from '../../../packages/records/src/automation.mjs
 import {queueLearningReview} from '../../../packages/records/src/learning.mjs';
 // Private bundled runtime entry; never imports a developer .env or starts Vite.
 import { randomBytes } from 'node:crypto';
-import { mkdir, writeFile, opendir, rm } from 'node:fs/promises';
+import { mkdir, writeFile, opendir, rm, realpath } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
@@ -96,7 +96,8 @@ export async function startDesktopBackend({ root, port = 0, workers = true } = {
   };
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+// Node resolves module paths; argv can retain Windows 8.3 paths or directory aliases.
+if (process.argv[1] && await realpath(process.argv[1]).catch(() => null) === fileURLToPath(import.meta.url)) {
   let backend;
   try {
     if (!process.argv[2]) throw new Error('client_data_root_required');
