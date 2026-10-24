@@ -21,6 +21,7 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: '24.21.0'
+      - run: rustup toolchain install 1.92.0 --profile minimal; rustup default 1.92.0
       - run: npm ci
       - name: Check installer PowerShell syntax
         shell: pwsh
@@ -33,6 +34,21 @@ jobs:
       - run: node --test tests/records-audio-storage-sync.test.mjs tests/records-release-source.test.mjs tests/records-preview-release.test.mjs
       - run: npm run build:web
       - run: node scripts/prepare-client-backend.mjs
+      - name: Restore Windows Rust dependency cache
+        id: rust_cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5, Node 24
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/desktop/src-tauri/target/debug/deps
+            apps/desktop/src-tauri/target/debug/build
+            apps/desktop/src-tauri/target/debug/.fingerprint
+            apps/desktop/src-tauri/target/release/deps
+            apps/desktop/src-tauri/target/release/build
+            apps/desktop/src-tauri/target/release/.fingerprint
+          key: windows-2025-rust192-v1-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}
+          restore-keys: windows-2025-rust192-v1-
       - name: Native regression
         shell: pwsh
         run: |
@@ -85,7 +101,7 @@ jobs:
           & npm run release:windows:preview 2>&1 | Tee-Object .agent-runtime/windows-package.log
           $status = $LASTEXITCODE
           if ($status -ne 0) {
-            $log = (Get-Content .agent-runtime/windows-package.log | Where-Object { $_ -notmatch '(?i)authorization|bearer |password|api[_-]?key|cookie' }) -join "`n"
+            $log = (Get-Content .agent-runtime/windows-package.log | Where-Object { $_ -notmatch '(?i)authorization|bearer |password|api[_-]?key|cookie|::notice title=LingJi installer ' }) -join "`n"
             $tail = $log.Substring([Math]::Max(0,$log.Length-7500))
             for ($at=0;$at -lt $tail.Length;$at+=1000) {
               $part=$tail.Substring($at,[Math]::Min(1000,$tail.Length-$at)).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
@@ -93,6 +109,20 @@ jobs:
             }
           }
           exit $status
+      - name: Save Windows Rust dependency cache
+        if: ${{ always() && !cancelled() && steps.rust_cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/desktop/src-tauri/target/debug/deps
+            apps/desktop/src-tauri/target/debug/build
+            apps/desktop/src-tauri/target/debug/.fingerprint
+            apps/desktop/src-tauri/target/release/deps
+            apps/desktop/src-tauri/target/release/build
+            apps/desktop/src-tauri/target/release/.fingerprint
+          key: ${{ steps.rust_cache.outputs.cache-primary-key }}
       - name: Collect Windows release files
         env:
           RELEASE_VERSION: 0.1.16

@@ -44,8 +44,9 @@ try{
  try{await access(runtimeCache);await symlink(runtimeCache,join(frozen,'.agent-runtime/runtimes'),'junction');}catch(error){if(error.code!=='ENOENT')throw error;}
  await run('npm',['run','build:web'],frozen);
  await run(process.execPath,['scripts/installer-background.mjs','--check'],frozen);
- await run('npm',['run','build:native','--workspace','@tts/desktop','--','--config','src-tauri/tauri.preview.conf.json','--config','src-tauri/tauri.windows.conf.json','--bundles','nsis'],frozen);
- const bundle=join(frozen,'apps/desktop/src-tauri/target/release/bundle/nsis');
+ const cargoTarget=join(root,'apps/desktop/src-tauri/target');
+ await run('npm',['run','build:native','--workspace','@tts/desktop','--','--config','src-tauri/tauri.preview.conf.json','--config','src-tauri/tauri.windows.conf.json','--bundles','nsis'],frozen,{CARGO_TARGET_DIR:cargoTarget});
+ const bundle=join(cargoTarget,'release/bundle/nsis');
  const installers=(await readdir(bundle)).filter(name=>name.endsWith('.exe'));assert.equal(installers.length,1);
  const artifact=`Lingji-${config.version}-windows-x64-setup.exe`;
  await copyFile(join(bundle,installers[0]),join(stage,artifact));

@@ -24,10 +24,11 @@ try {
   if ([BitConverter]::ToUInt16($appBytes,$pe+4) -ne 0x8664) { throw 'Installed application is not x64' }
   foreach ($resource in @('client-backend','runtime')) {
     $expectedRoot = Join-Path $SourceRoot "apps\desktop\src-tauri\resources\$resource"
-    foreach ($file in Get-ChildItem $expectedRoot -File -Recurse) {
-      $relative = $file.FullName.Substring($expectedRoot.Length).TrimStart('\')
+    # Enumerate relative names: Windows can expand RUNNER~1 while walking files.
+    foreach ($relative in Get-ChildItem -LiteralPath $expectedRoot -File -Recurse -Force -Name) {
+      $expected = Join-Path $expectedRoot $relative
       $actual = Join-Path (Join-Path $installation $resource) $relative
-      if (-not (Test-Path $actual) -or (Get-FileHash $file.FullName -Algorithm SHA256).Hash -ne (Get-FileHash $actual -Algorithm SHA256).Hash) { throw "Installed resource differs: $resource/$relative" }
+      if (-not (Test-Path $actual) -or (Get-FileHash $expected -Algorithm SHA256).Hash -ne (Get-FileHash $actual -Algorithm SHA256).Hash) { throw "Installed resource differs: $resource/$relative" }
     }
   }
   $installed = $true
