@@ -105,7 +105,15 @@ LRESULT CALLBACK themed(HWND window, UINT message, WPARAM w, LPARAM l, UINT_PTR 
     RECT r{}; GetClientRect(window, &r);
     HDC dc = CreateCompatibleDC(output); HBITMAP bitmap = CreateCompatibleBitmap(output, std::max(1L,r.right), std::max(1L,r.bottom));
     HGDIOBJ previous = SelectObject(dc, bitmap);
-    if (kind == 1) paintButton(window, dc, data != 0); else paintProgress(window, dc);
+    if (kind == 1) paintButton(window, dc, data != 0);
+    else if (kind == 2) paintProgress(window, dc);
+    else {
+      paper(window,dc);
+      const HANDLE tone=GetPropW(window,L"LingJiTextColor");
+      const COLORREF color=tone ? static_cast<COLORREF>(reinterpret_cast<ULONG_PTR>(tone)) : ink;
+      if(r.bottom<=px(2)) fill(dc,r,color);
+      else { const LONG_PTR style=GetWindowLongPtrW(window,GWL_STYLE)&SS_TYPEMASK; label(window,dc,r,color,style==SS_RIGHT?DT_RIGHT:style==SS_CENTER?DT_CENTER:DT_LEFT); }
+    }
     BitBlt(output, 0, 0, r.right, r.bottom, dc, 0, 0, SRCCOPY);
     SelectObject(dc, previous); DeleteObject(bitmap); DeleteDC(dc);
     if (message == WM_PAINT) EndPaint(window, &paint);
@@ -126,6 +134,10 @@ BOOL CALLBACK apply(HWND window, LPARAM) {
   wchar_t name[64]{}; GetClassNameW(window, name, 64);
   if (wcscmp(name,L"Button") == 0) SetWindowSubclass(window, themed, 1, 0);
   else if (wcscmp(name,PROGRESS_CLASSW) == 0) SetWindowSubclass(window, themed, 2, 0);
+  else if (wcscmp(name,L"Static")==0) {
+    const LONG_PTR kind=GetWindowLongPtrW(window,GWL_STYLE)&SS_TYPEMASK;
+    if(kind==SS_LEFT || kind==SS_CENTER || kind==SS_RIGHT) SetWindowSubclass(window,themed,4,0);
+  }
   if (window == folderEdit) {
     SetWindowSubclass(window, themed, 3, 0);
     SetWindowLongPtrW(window,GWL_EXSTYLE,GetWindowLongPtrW(window,GWL_EXSTYLE) & ~WS_EX_CLIENTEDGE);

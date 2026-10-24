@@ -117,6 +117,9 @@ try {
  Click-Next
  if(-not $setup.WaitForExit(10000)){throw 'Installer did not finish'}
  if($setup.ExitCode -ne 0){throw 'Interactive installer failed'}
+ } catch {
+ Write-Host ('::error title=Native installer UI::'+$_.Exception.Message.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A'))
+ throw
 } finally {
  if(-not $setup.HasExited){$setup.Kill();$setup.WaitForExit()}
  $remove=Join-Path $install 'uninstall.exe'
