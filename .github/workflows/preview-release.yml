@@ -158,7 +158,7 @@ jobs:
             [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $script),[ref]$tokens,[ref]$parseErrors)
             if ($parseErrors.Count -gt 0) { throw ($parseErrors | Out-String) }
           }
-      - run: node --test tests/records-audio-storage-sync.test.mjs tests/records-release-source.test.mjs tests/records-preview-release.test.mjs
+      - run: node --test tests/records-desktop-entry.test.mjs tests/records-audio-storage-sync.test.mjs tests/records-release-source.test.mjs tests/records-preview-release.test.mjs
       - run: npm run build:web
       - run: node scripts/prepare-client-backend.mjs
       - name: Restore Windows Rust dependency cache

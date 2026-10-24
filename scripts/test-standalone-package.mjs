@@ -100,6 +100,10 @@ try {
   const evidence = { timestamp: new Date().toISOString(), packagedApp: Boolean(process.env.NATIVE_CLIENT_EXECUTABLE), independentBackend: true, developerBackendRequests: externalRequests, restartPersistence: true, stableWebviewProfile: Boolean(profile), parentOwnsBackend: true, localAccount: true, devAccountDisabled: true, node: state.node, sqlite: state.sqlite, realAudioDevicesOpened: false, realProvidersInvoked: false };
   if (process.argv[2]) { const target = resolve(process.argv[2]); await mkdir(dirname(target), { recursive: true }); await writeFile(target, JSON.stringify(evidence, null, 2) + '\n'); }
   console.log(JSON.stringify(evidence));
+} catch (error) {
+  const backendLog = await readFile(join(data, 'backend/runtime.log'), 'utf8').catch(() => '(runtime log unavailable)');
+  console.error('[isolated packaged backend]', backendLog.slice(-6000));
+  throw error;
 } finally {
   if (child && child.exitCode == null) { child.kill('SIGKILL'); }
   await new Promise(resolve => trap.close(resolve));
