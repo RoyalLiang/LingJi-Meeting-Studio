@@ -1,3 +1,4 @@
+import {flushAudioObject} from './audio-storage-sync.mjs';
 import {learningWorkAt} from '../../../packages/records/src/learning.mjs';
 import { cursorKey, deriveProjection, visibleSnapshot } from './projections.mjs';
 import { automaticMinutesAt } from '../../../packages/records/src/automation.mjs';
@@ -198,7 +199,7 @@ export async function createRepository(options = {}) {
           requireThat(original.equals(bytes), 'audio_object_corrupt', 500);
         }
       } finally { await rm(temporary, { force: true }); }
-      const dir = await open(directory, 'r'); try { await dir.sync(); } finally { await dir.close(); }
+      await flushAudioObject(file,directory);
       return { digest: hash, object: `${recordId}/${hash}` };
     },
     async readAudio(object) {
