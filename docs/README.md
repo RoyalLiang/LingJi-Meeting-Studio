@@ -1,6 +1,8 @@
-# v0.1.15 FunASR＋SenseVoice 接入准备（2026-10-24）
+# v0.1.15 FunASR＋SenseVoice 已发布（2026-10-24）
 
-新增可选本机/私有 FunASR 服务与 SenseVoice 转录、短包聚合和停止排空；保留原有转录与纪要模式。[配置说明](engineering/funasr.md)。当前尚在本地验证，实际发布以本版回执为准。
+新增可选本机/私有 FunASR＋SenseVoice 转录，保留原有模型链路及纪要溯源。后台三阶段构建发布成功，五附件、固定源码及隔离原生设置连接测试已核对。[发布回执与配置](evidence/preview-v0.1.15-2026-10-24.md)；[Release](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.15)。
+
+实体采音、长会议与持续双路吞吐尚未验收，验证范围详见回执。
 
 # v0.1.14 纪要内容与多场景阅读已发布（2026-10-23）
 
