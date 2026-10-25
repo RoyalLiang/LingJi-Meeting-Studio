@@ -6,6 +6,7 @@ mod local_backend;
 mod menu_status;
 mod proxy;
 mod resident;
+mod recording_widget;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod status_bar;
 mod update_gate;
@@ -20,6 +21,10 @@ struct Client {
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     menu_bar: status_bar::StatusBar,
     origin: String,
+    #[cfg(target_os = "macos")]
+    store_id: [u8; 16],
+    #[cfg(not(target_os = "macos"))]
+    profile: std::path::PathBuf,
     captures: Arc<audio::Captures>,
     resident: resident::Resident,
     _lock: std::fs::File,
@@ -152,6 +157,23 @@ fn client_probe(
         }
         return Ok(serde_json::json!({"visible":window.is_visible().map_err(|e|e.to_string())?,"nativeActive":state.captures.active()}));
     }
+    if let Some(action) = result.get("widgetAction").and_then(|value| value.as_str()) {
+        let widget = window.app_handle().get_webview_window("recording-widget");
+        if let Some(floating) = &widget {
+            let selector = match action {
+                "snapshot" => None,
+                "pause" => Some(".capsule-actions button:nth-child(1)"),
+                "finish" => Some(".capsule-actions button:nth-child(2)"),
+                "restore" => Some(".capsule-actions button:nth-child(3)"),
+                _ => return Err("unknown widget probe action".into()),
+            };
+            if let Some(selector) = selector {
+                floating.eval(&format!("document.querySelector({}).click()", serde_json::to_string(selector).unwrap())).map_err(|e| e.to_string())?;
+            }
+        }
+        let widget_state = window.state::<recording_widget::RecordingWidget>();
+        return Ok(serde_json::json!({"ready":widget_state.ready(), "widgetVisible":widget.as_ref().is_some_and(|w|w.is_visible().unwrap_or(false)), "mainVisible":window.is_visible().map_err(|e|e.to_string())?, "mainMinimized":window.is_minimized().map_err(|e|e.to_string())?}));
+    }
     if let Some(activity) = result.get("updateActivity") {
         state
             .updates
@@ -245,6 +267,7 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build());
     #[cfg(feature = "smoke-test")]
     let builder = builder.invoke_handler(tauri::generate_handler![
+        recording_widget::recording_widget_update, recording_widget::recording_widget_state, recording_widget::recording_widget_action,
         capture_start,
         capture_read,
         capture_stop,
@@ -261,6 +284,7 @@ fn main() {
     ]);
     #[cfg(not(feature = "smoke-test"))]
     let builder = builder.invoke_handler(tauri::generate_handler![
+        recording_widget::recording_widget_update, recording_widget::recording_widget_state, recording_widget::recording_widget_action,
         capture_start,
         capture_read,
         capture_stop,
@@ -301,13 +325,22 @@ fn main() {
             });
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             let menu_bar = status_bar::StatusBar::new(app.handle(), &menu_api_origin)?;
+            app.manage(recording_widget::RecordingWidget::default());
             app.manage(Client {
                 #[cfg(any(target_os = "macos", target_os = "windows"))]
-                menu_bar, origin: origin.clone(), captures: Arc::new(audio::Captures::default()), resident: resident::Resident::default(), _lock: binding._lock, _backend: backend, updates, api });
+                menu_bar,
+                #[cfg(target_os = "macos")]
+                store_id,
+                #[cfg(not(target_os = "macos"))]
+                profile: profile.clone(),
+                origin: origin.clone(), captures: Arc::new(audio::Captures::default()), resident: resident::Resident::default(), _lock: binding._lock, _backend: backend, updates, api });
             app.add_capability(CapabilityBuilder::new("local-capture").window("main").local(false).remote(format!("{origin}/*"))
                 .permission("allow-capture-start").permission("allow-capture-read").permission("allow-capture-stop").permission("allow-capture-inputs")
-                .permission("allow-client-close").permission("allow-client-ready").permission("allow-client-status").permission("allow-update-status").permission("allow-update-activity").permission("allow-update-check").permission("allow-update-download").permission("allow-update-install")
+                .permission("allow-recording-widget-update").permission("allow-client-close").permission("allow-client-ready").permission("allow-client-status").permission("allow-update-status").permission("allow-update-activity").permission("allow-update-check").permission("allow-update-download").permission("allow-update-install")
                 .permission("core:event:allow-listen").permission("core:event:allow-unlisten"))?;
+            app.add_capability(CapabilityBuilder::new("recording-widget").window("recording-widget").local(false).remote(format!("{origin}/*"))
+                .permission("allow-recording-widget-state").permission("allow-recording-widget-action")
+                .permission("core:event:allow-listen").permission("core:event:allow-unlisten").permission("core:window:allow-start-dragging"))?;
             #[cfg(feature = "smoke-test")]
             app.add_capability(CapabilityBuilder::new("probe-only").window("main").local(false).remote(format!("{origin}/*")).permission("allow-client-probe"))?;
             let client_origin = origin.clone(); let nav_handle = app.handle().clone();
@@ -349,13 +382,16 @@ fn main() {
                     } else if !case.is_empty() {
                         let script = format!("window.__updateCase={};{}", serde_json::to_string(&case).unwrap(), include_str!("update_probe.js"));
                         let _ = window.eval(&script);
-                    } else { let _ = window.eval(include_str!("probe.js")); }
+                    } else { let background_ms = std::env::var("TTS_NATIVE_BACKGROUND_MS").ok().and_then(|value| value.parse::<u64>().ok()).unwrap_or(9000).clamp(9000,600000);
+ let _ = window.eval(&format!("window.__nativeBackgroundMs={background_ms};{}", include_str!("probe.js"))); }
                 }
             });
             #[cfg(target_os = "macos")]
             let builder = builder.data_store_identifier(store_id);
             #[cfg(not(target_os = "macos"))]
             let builder = builder.data_directory(profile.clone());
+            #[cfg(target_os = "windows")]
+            let builder = builder.additional_browser_args("--disable-background-timer-throttling");
             let _ = (profile, store_id);
             builder.build()?;
             #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -374,6 +410,11 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if window.label()=="recording-widget" && matches!(event,tauri::WindowEvent::CloseRequested{..}) {
+                if let tauri::WindowEvent::CloseRequested{api,..}=event{api.prevent_close();}
+                resident::show(window.app_handle());
+            }
+
             if window.label() == "main" && matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event { api.prevent_close(); }
                 #[cfg(any(target_os = "macos", target_os = "windows"))]
