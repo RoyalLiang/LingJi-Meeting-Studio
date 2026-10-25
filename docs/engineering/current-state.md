@@ -1,8 +1,11 @@
+# v0.1.19 Windows 系统音频与模型选装已发布（2026-10-25）
+
+[发布回执](../evidence/preview-v0.1.19-2026-10-25.md)：[Release](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.19)、[Actions](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/40204022613) 与十个公开附件已核对；源码 `eaf3c0afe8fef55544ce7ca961afe31daca37df7`。修复可恢复缓冲波动误停；Windows 模型默认安装、可取消，原位置升级可保留已有模型。实际安装器和较旧注册版本夹具验证通过。
+
+实体 Windows 音频、长会议、干净机器与高 DPI 尚未验收；Windows 未签名、macOS 未公证。本机公开 DMG 完整性通过，但挂载权限被拒绝，未完成本机下载后 App 复测。v0.1.18 未发布附件，标签保留。
+
 # v0.1.17 内置离线转录与安装器已发布（2026-10-25）
 
-## v0.1.19 本轮改造（待后台构建与发布核验）
-
-修复 CPAL 可恢复缓冲波动误判为致命停止；Windows 安装器默认安装本地 SenseVoice、可取消，并在原位置覆盖升级时保留已有模型。无模型时须自行配置云端转录，不自动上传录音。详见 [v0.1.19 验证范围](../releases/v0.1.19-preview.md)。实体 Windows 音频和长会议仍待验收。
 
 Windows x64 与 macOS Apple Silicon 测试包已由后台构建并发布。包内携带原生 SenseVoiceSmall INT8 与 VAD，无需自行运行转录服务；纪要继续使用现有云端模型。确认稿三屏安装器、双平台实际包内推理、四项 CI、10 附件及 308 源码文件摘要已核验；下载后的 Mac 包也完成隔离复测。见[发布回执与下载](../evidence/preview-v0.1.17-2026-10-25.md)。真实设备、长会议、高 DPI 与系统信任验收仍独立保留。
 
