@@ -171,11 +171,11 @@ fn client_probe(
                 _ => return Err("unknown widget probe action".into()),
             };
             if let Some(selector) = selector {
-                floating.eval(&format!("document.querySelector({}).click()", serde_json::to_string(selector).unwrap())).map_err(|e| e.to_string())?;
+                floating.eval(&format!("(()=>{{let tries=0;const click=()=>{{const button=document.querySelector({});if(button&&!button.disabled)button.click();else if(++tries<100)setTimeout(click,50);}};click();}})()", serde_json::to_string(selector).unwrap())).map_err(|e| e.to_string())?;
             }
         }
         let widget_state = window.state::<recording_widget::RecordingWidget>();
-        return Ok(serde_json::json!({"ready":widget_state.ready(), "widgetVisible":widget.as_ref().is_some_and(|w|w.is_visible().unwrap_or(false)), "mainVisible":window.is_visible().map_err(|e|e.to_string())?, "mainMinimized":window.is_minimized().map_err(|e|e.to_string())?}));
+        return Ok(serde_json::json!({"ready":widget_state.ready(), "widgetDurationMs":widget_state.duration_ms(), "canResume":widget_state.can_resume(), "widgetVisible":widget.as_ref().is_some_and(|w|w.is_visible().unwrap_or(false)), "mainVisible":window.is_visible().map_err(|e|e.to_string())?, "mainMinimized":window.is_minimized().map_err(|e|e.to_string())?}));
     }
     if let Some(activity) = result.get("updateActivity") {
         state

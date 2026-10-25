@@ -8,6 +8,7 @@ use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindow};
 pub struct Report {
     pub recording: bool,
     pub paused: bool,
+    pub can_resume: bool,
     pub busy: bool,
     pub duration_ms: u64,
     pub rms: f64,
@@ -38,6 +39,15 @@ pub struct RecordingWidget(Mutex<Widget>);
 impl RecordingWidget {
     pub fn ready(&self) -> bool {
         self.0.lock().is_ok_and(|widget| widget.ready)
+    }
+    pub fn can_resume(&self) -> bool {
+        self.0.lock().is_ok_and(|widget| widget.report.can_resume)
+    }
+    pub fn duration_ms(&self) -> u64 {
+        self.0
+            .lock()
+            .map(|widget| widget.report.duration_ms)
+            .unwrap_or(0)
     }
 }
 
@@ -113,7 +123,7 @@ pub async fn recording_widget_update(
                 .pending_start = false;
         }
     }
-    if !report.recording && !report.paused {
+    if !report.recording && !report.paused && !report.busy {
         if let Some(floating) = app.get_webview_window("recording-widget") {
             if floating.is_visible().unwrap_or(false) {
                 resident::show(&app);
@@ -172,7 +182,7 @@ pub fn recording_widget_action(
     }
     let event = match action.as_str() {
         "pause" if report.recording => "status-pause",
-        "pause" if report.paused => "status-resume",
+        "pause" if report.paused && report.can_resume => "status-resume",
         "finish" if report.recording || report.paused => {
             resident::show(&app);
             "status-finish"
