@@ -26,7 +26,7 @@ const launch = () => spawn(resolve(process.env.NATIVE_CLIENT_EXECUTABLE || 'apps
     TTS_CLIENT_SYNTHETIC: '1', TTS_NATIVE_BACKGROUND_MS:String(backgroundMs), TTS_CLIENT_PROBE_OUTPUT: output, TTS_CLIENT_PROBE_AUTO_EXIT:'1',
   }, stdio: ['ignore', 'pipe', 'pipe'] });
   const waitProbe = async () => {
-    for (let n = 0; n < 450; n++) {
+    for (let n = 0; n < Math.ceil((backgroundMs+60000)/100); n++) {
       try { return JSON.parse(await readFile(output, 'utf8')); } catch { /* Wait for the isolated renderer. */ }
       if (child.exitCode != null) throw new Error(`Native client exited ${child.exitCode}: ${logs}`);
       await new Promise(resolve => setTimeout(resolve, 100));

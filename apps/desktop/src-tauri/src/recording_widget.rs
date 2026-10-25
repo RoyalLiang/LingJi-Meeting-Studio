@@ -91,6 +91,8 @@ pub async fn recording_widget_update(
                 let builder = builder.data_store_identifier(client.store_id);
                 #[cfg(not(target_os = "macos"))]
                 let builder = builder.data_directory(client.profile.clone());
+                #[cfg(target_os = "windows")]
+                let builder = builder.additional_browser_args(crate::RECORDING_BROWSER_ARGS);
                 builder
                     .build()
                     .map_err(|e| format!("recording window: {e}"))?

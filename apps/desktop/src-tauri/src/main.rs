@@ -17,6 +17,9 @@ use tauri::{
     Emitter, Manager, State, WebviewUrl, WebviewWindow,
 };
 
+#[cfg(target_os = "windows")]
+const RECORDING_BROWSER_ARGS: &str = "--disable-background-timer-throttling";
+
 struct Client {
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     menu_bar: status_bar::StatusBar,
@@ -391,7 +394,7 @@ fn main() {
             #[cfg(not(target_os = "macos"))]
             let builder = builder.data_directory(profile.clone());
             #[cfg(target_os = "windows")]
-            let builder = builder.additional_browser_args("--disable-background-timer-throttling");
+            let builder = builder.additional_browser_args(RECORDING_BROWSER_ARGS);
             let _ = (profile, store_id);
             builder.build()?;
             #[cfg(any(target_os = "macos", target_os = "windows"))]
