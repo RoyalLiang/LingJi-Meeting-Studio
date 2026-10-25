@@ -103,7 +103,7 @@ async function verifyNativeUiLanes(record, queued) {
     const residentCapture={hiddenWindow:true,continuedNativeCapture:true,continuedDurableQueue:true,recordingNotPaused:true,restoredWindow:true,hiddenMs:window.__nativeBackgroundMs||9000};
     await invoke('client_probe',{result:{widgetAction:'finish'}});
     await until(()=>document.querySelector('[role="dialog"]'));
-    document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+    document.querySelector('dialog').dispatchEvent(new Event('cancel',{cancelable:true}));
     await until(()=>!document.querySelector('[role="dialog"]'));
     await invoke('client_probe',{result:{widgetAction:'pause'}});
     const uiPaused = await until(async () => { const current = await json(`/records/${uiRecordId}`); return current.capture === 'paused' && current; });
