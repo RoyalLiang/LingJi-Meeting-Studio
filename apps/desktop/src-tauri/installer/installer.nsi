@@ -465,6 +465,7 @@ FunctionEnd
 {{/each}}
 
 Function .onInit
+  StrCpy $LingJiInstallModel 1
   ${GetOptions} $CMDLINE "/P" $PassiveMode
   ${IfNot} ${Errors}
     StrCpy $PassiveMode 1
@@ -648,7 +649,7 @@ Section Install
     CreateDirectory "$INSTDIR\\{{this}}"
   {{/each}}
   {{#each resources}}
-    File /a "/oname={{this.[1]}}" "{{no-escape @key}}"
+    !insertmacro LingJiResource "{{no-escape @key}}" "{{this.[1]}}"
   {{/each}}
 
   ; Copy external binaries

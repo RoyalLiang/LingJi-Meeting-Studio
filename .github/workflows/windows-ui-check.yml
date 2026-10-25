@@ -1,0 +1,40 @@
+name: Windows optional model UI check
+on:
+  push:
+    branches: [dev_windows-audio-options]
+permissions:
+  contents: read
+concurrency:
+  group: windows-ui-check-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  installer_ui:
+    runs-on: windows-2025
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Native default and opt-out UI checks
+        shell: pwsh
+        run: ./scripts/test-installer-theme.ps1
+      - name: Default screenshot evidence
+        if: always()
+        run: node scripts/expose-installer-screen.mjs welcome
+      - name: Default finish evidence
+        if: always()
+        run: node scripts/expose-installer-screen.mjs finish
+      - name: Opt-out screenshot evidence
+        if: always()
+        shell: pwsh
+        run: |
+          if(Test-Path .agent-runtime/installer-ui-cloud/welcome.jpg){Copy-Item .agent-runtime/installer-ui-cloud/welcome.jpg .agent-runtime/installer-ui/settings.jpg -Force}
+          node scripts/expose-installer-screen.mjs settings
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: always()
+        with:
+          name: native-installer-model-options
+          path: |
+            .agent-runtime/installer-ui/**
+            .agent-runtime/installer-ui-cloud/**
+          if-no-files-found: warn

@@ -243,7 +243,7 @@ function Workspace() {
     finally { stopping.current = false; setRecording(false); setBusy(false); setCapturePhase('idle'); if (mode === 'seal') capture.current = null; }
   }
   function captureAllowed() {
-    if (!boot?.providers.asr && !boot?.providers.fixture) { setError(boot?.providers.minutesMode === 'doubao-audio-only' ? '请先在设置中连接豆包音频模型。' : boot?.providers.asrProvider === 'sensevoice-local' ? '本地语音模型尚未就绪，请在设置与诊断中检查完整安装包。' : '请先在设置中连接转录服务。'); return false; }
+    if (!boot?.providers.asr && !boot?.providers.fixture) { setError(boot?.providers.minutesMode === 'doubao-audio-only' ? '请先在设置中连接豆包音频模型。' : boot?.providers.asrProvider === 'sensevoice-local' ? '本地模型未安装或尚未就绪。请选择云端转录服务，或重新安装并勾选本地模型。' : '请先在设置中连接转录服务。'); return false; }
     if (!capabilities().secure || !capabilities().worklet) { setError('当前环境不支持安全音频采集，请使用 HTTPS 的现代浏览器或导入文件。'); return false; }
     return true;
   }

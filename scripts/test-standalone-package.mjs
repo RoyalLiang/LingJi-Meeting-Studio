@@ -75,6 +75,14 @@ async function launch() {
     assert.equal(values.LOCAL_ASR_AVAILABLE,true);assert.equal(values.ASR_PROVIDER,'sensevoice-local');
     assert.equal('LINGJI_LOCAL_ASR_DIR' in values,false);
   }
+  if(process.env.TTS_VERIFY_BUNDLED_ASR==='0') {
+    const settings=await fetch(state.url+'/api/settings/providers',{headers});
+    assert.equal(settings.status,200);
+    const {values}=await settings.json();
+    assert.equal(values.LOCAL_ASR_AVAILABLE,false);
+    assert.notEqual(values.ASR_PROVIDER,'sensevoice-local');
+    assert.equal(boot.providers.asr,false,'a fresh cloud-only install requires user credentials');
+  }
   assert.equal((await fetch(state.url + '/api/development-account')).status, 404);
   assert.equal((await fetch(state.url + '/api/auth/register', { method: 'POST' })).status, 404);
   state.headers = headers;

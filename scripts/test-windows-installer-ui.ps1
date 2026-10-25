@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$Installer,[Parameter(Mandatory=$true)][string]$Root,[Parameter(Mandatory=$true)][string]$Screenshots)
+param([Parameter(Mandatory=$true)][string]$Installer,[Parameter(Mandatory=$true)][string]$Root,[Parameter(Mandatory=$true)][string]$Screenshots,[switch]$WithoutModel,[string]$ProbeScript) 
 if($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted'){throw 'Installer verification requires disposable GitHub-hosted Windows CI'}
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName UIAutomationClient
@@ -42,6 +42,23 @@ function Wait-Page([string]$text,[int]$seconds=30) {
  Write-Host ('::notice title=Installer last page::'+$names)
  try {Capture-Page 'unexpected'}catch{Write-Host ('::warning title=Installer capture::'+$_.Exception.Message)}
  throw "Installer page missing: $text"
+}
+function Uncheck-Checkbox([string]$name) {
+ $rootElement=[System.Windows.Automation.AutomationElement]::FromHandle($script:handle)
+ $condition=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty,$name)
+ $control=[IntPtr]::Zero
+ foreach($candidate in $rootElement.FindAll([System.Windows.Automation.TreeScope]::Descendants,$condition)){
+  $h=[IntPtr]$candidate.Current.NativeWindowHandle
+  if($h -ne [IntPtr]::Zero -and $candidate.Current.ClassName -eq 'Button' -and ([LingJiInstallerWindow]::GetWindowLongW($h,-16) -band 15) -eq 3){$control=$h;break}
+ }
+ if($control -eq [IntPtr]::Zero){throw "Installer native checkbox missing: $name"}
+ if([LingJiInstallerWindow]::SendMessageW($control,0x00f0,[IntPtr]::Zero,[IntPtr]::Zero).ToInt32() -ne 1){throw "Installer checkbox must default to checked: $name"}
+ if(-not [LingJiInstallerWindow]::PostMessage($control,0x00f5,[IntPtr]::Zero,[IntPtr]::Zero)){throw "Installer checkbox click failed: $name"}
+ for($i=0;$i -lt 20;$i++){
+  if([LingJiInstallerWindow]::SendMessageW($control,0x00f0,[IntPtr]::Zero,[IntPtr]::Zero).ToInt32() -eq 0){return}
+  Start-Sleep -Milliseconds 100
+ }
+ throw "Installer checkbox did not uncheck: $name"
 }
 function Click-Next {
  $button=[LingJiInstallerWindow]::GetDlgItem($script:handle,1)
@@ -94,6 +111,8 @@ function Capture-Page([string]$name) {
 }
 try {
  Wait-Page '安装聆记'
+ Wait-Page '安装本地 SenseVoice 离线转录模型（推荐）'
+ if($WithoutModel){Uncheck-Checkbox '安装本地 SenseVoice 离线转录模型（推荐）'}
  Capture-Page 'welcome'
  Capture-Page 'settings'
  Click-Next
@@ -103,29 +122,26 @@ try {
  if($null -ne $progressRoot.FindFirst([System.Windows.Automation.TreeScope]::Descendants,$progressCondition)){Capture-Page 'installing'}
  Wait-Page '聆记已准备就绪' 180
  Capture-Page 'finish'
- $rootElement=[System.Windows.Automation.AutomationElement]::FromHandle($script:handle)
- $condition=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty,'完成后启动聆记')
- # The dialog proxy can share its first control's accessible name. Select a
- # native BS_AUTOCHECKBOX handle, then verify the real click by reading state.
- $launchHandle=[IntPtr]::Zero
- foreach($candidate in $rootElement.FindAll([System.Windows.Automation.TreeScope]::Descendants,$condition)){
-  $candidateHandle=[IntPtr]$candidate.Current.NativeWindowHandle
-  if($candidateHandle -ne [IntPtr]::Zero -and $candidate.Current.ClassName -eq 'Button' -and ([LingJiInstallerWindow]::GetWindowLongW($candidateHandle,-16) -band 15) -eq 3){$launchHandle=$candidateHandle;break}
- }
- if($launchHandle -eq [IntPtr]::Zero){throw 'Installer native launch checkbox missing'}
- $checked=[LingJiInstallerWindow]::SendMessageW($launchHandle,0x00f0,[IntPtr]::Zero,[IntPtr]::Zero).ToInt32()
- if($checked -eq 1){
-  if(-not [LingJiInstallerWindow]::PostMessage($launchHandle,0x00f5,[IntPtr]::Zero,[IntPtr]::Zero)){throw 'Installer checkbox click could not be posted'}
-  for($i=0;$i -lt 20;$i++){
-   if([LingJiInstallerWindow]::SendMessageW($launchHandle,0x00f0,[IntPtr]::Zero,[IntPtr]::Zero).ToInt32() -eq 0){break}
-   Start-Sleep -Milliseconds 100
-  }
- }
- if([LingJiInstallerWindow]::SendMessageW($launchHandle,0x00f0,[IntPtr]::Zero,[IntPtr]::Zero).ToInt32() -ne 0){throw 'Installer launch checkbox did not uncheck'}
+ Uncheck-Checkbox '完成后启动聆记'
 
  Click-Next
  if(-not $setup.WaitForExit(10000)){throw 'Installer did not finish'}
  if($setup.ExitCode -ne 0){throw 'Interactive installer failed'}
+ $model=Join-Path $install 'client-backend/local-asr/manifest.json'
+ if($WithoutModel){
+  if(Test-Path $model){throw 'Opt-out still installed local model assets'}
+  $modelRoot=Split-Path $model -Parent
+  if((Test-Path $modelRoot) -and (Get-ChildItem -LiteralPath $modelRoot -File -Recurse | Select-Object -First 1)){throw 'Opt-out copied partial model files'}
+  if($ProbeScript){
+   $previous=$env:NATIVE_CLIENT_EXECUTABLE;$previousMode=$env:TTS_VERIFY_BUNDLED_ASR
+   try{
+    $env:NATIVE_CLIENT_EXECUTABLE=Join-Path $install 'tts-client.exe';$env:TTS_VERIFY_BUNDLED_ASR='0'
+    & node $ProbeScript (Join-Path $Root 'cloud-only-smoke.json')
+    if($LASTEXITCODE -ne 0){throw 'Cloud-only installed App probe failed'}
+   }finally{$env:NATIVE_CLIENT_EXECUTABLE=$previous;$env:TTS_VERIFY_BUNDLED_ASR=$previousMode}
+  }
+ }elseif(-not (Test-Path $model)){throw 'Default installation omitted the local model'}
+
  } catch {
  Write-Host ('::error title=Native installer UI::'+$_.Exception.Message.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A'))
  throw
