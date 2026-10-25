@@ -140,3 +140,17 @@ test('dual-platform publication rejects missing Windows files and mismatched sou
   await writeFile(join(options.directory,'release-windows-x64.json'),JSON.stringify(windows));
   await rm(join(options.directory,'INSTALL-windows-x64.md'));await assert.rejects(loadPreview(options.directory,options),/Unexpected or missing release files/);
 });
+
+test('desktop release versions match preview overrides and every workspace', async () => {
+  const {readFile}=await import('node:fs/promises');
+  const json=async path=>JSON.parse(await readFile(new URL('../'+path,import.meta.url),'utf8'));
+  const root=await json('package.json'),base=await json('apps/desktop/src-tauri/tauri.conf.json'),preview=await json('apps/desktop/src-tauri/tauri.preview.conf.json');
+  for(const path of ['package-lock.json','apps/desktop/package.json','apps/web/package.json'])assert.equal((await json(path)).version,root.version,path);
+  assert.equal(base.version,root.version,'base Tauri version');
+  assert.equal(preview.version,root.version,'preview Tauri version');
+  assert.equal(preview.bundle.macOS.bundleVersion,base.bundle.macOS.bundleVersion,'preview macOS build');
+  const cargo=await readFile(new URL('../apps/desktop/src-tauri/Cargo.toml',import.meta.url),'utf8');
+  assert.equal(cargo.match(/^version = "([^"]+)"/m)[1],root.version,'Cargo package');
+  const lock=await readFile(new URL('../apps/desktop/src-tauri/Cargo.lock',import.meta.url),'utf8');
+  assert.equal(lock.match(/name = "tts-client"\nversion = "([^"]+)"/)[1],root.version,'Cargo lock');
+});

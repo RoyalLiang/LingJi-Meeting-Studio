@@ -1,6 +1,6 @@
 [package]
 name = "tts-client"
-version = "0.1.20"
+version = "0.1.21"
 description = "TTS desktop client with native audio capture"
 edition = "2021"
 rust-version = "1.90"
