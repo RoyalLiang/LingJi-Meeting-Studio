@@ -64,7 +64,8 @@ Var LingJiThemeModule
 !macroend
 
 Function LingJiPrepare
-  ${If} $LingJiThemeModule != 0
+  ${If} $LingJiThemeModule != ""
+  ${AndIf} $LingJiThemeModule != 0
     Return
   ${EndIf}
   InitPluginsDir
