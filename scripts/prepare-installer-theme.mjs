@@ -3,7 +3,7 @@ import {mkdir,readdir,readFile,writeFile,realpath} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-if(process.platform==='win32' && process.argv[1] && await realpath(process.argv[1]).catch(()=>null)===fileURLToPath(import.meta.url)){await writeResourceHashes(fileURLToPath(new URL('../apps/desktop/src-tauri/resources',import.meta.url)),fileURLToPath(new URL('../apps/desktop/src-tauri/installer/generated/resource-hashes.nsh',import.meta.url)));execFileSync('pwsh.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',fileURLToPath(new URL('./build-installer-theme.ps1',import.meta.url))],{stdio:'inherit'});}
+if(process.platform==='win32' && process.argv[1] && await realpath(process.argv[1]).catch(()=>null)===await realpath(fileURLToPath(import.meta.url))){await writeResourceHashes(fileURLToPath(new URL('../apps/desktop/src-tauri/resources',import.meta.url)),fileURLToPath(new URL('../apps/desktop/src-tauri/installer/generated/resource-hashes.nsh',import.meta.url)));execFileSync('pwsh.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',fileURLToPath(new URL('./build-installer-theme.ps1',import.meta.url))],{stdio:'inherit'});}
 
 export async function writeResourceHashes(resources, output) {
   const entries=[];

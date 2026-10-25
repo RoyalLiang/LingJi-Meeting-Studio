@@ -10,6 +10,17 @@ try {
   if($LASTEXITCODE -ne 0 -or -not(Test-Path $dll)){throw 'Aliased installer entry did not prepare native resources'}
 } finally { if(Test-Path $alias){[System.IO.Directory]::Delete($alias)} }
 if($LASTEXITCODE -ne 0){throw 'Native painter build failed'}
+$entryRoot=Join-Path $env:TEMP ('LingJi entry alias '+[guid]::NewGuid().ToString('N'))
+try {
+  New-Item -ItemType Directory -Force (Join-Path $entryRoot 'scripts'),(Join-Path $entryRoot 'apps/desktop/src-tauri/resources/client-backend') | Out-Null
+  Copy-Item (Join-Path $Root 'scripts/prepare-installer-theme.mjs') (Join-Path $entryRoot 'scripts/prepare-installer-theme.mjs')
+  Set-Content -LiteralPath (Join-Path $entryRoot 'scripts/build-installer-theme.ps1') -Value 'Set-Content -LiteralPath (Join-Path (Split-Path $PSScriptRoot -Parent) "entry-ran") -Value "prepared"'
+  Set-Content -LiteralPath (Join-Path $entryRoot 'apps/desktop/src-tauri/resources/client-backend/fixture.txt') -Value 'fixture'
+  $shortRoot=(& cmd.exe /d /c "for %I in (`"$entryRoot`") do @echo %~sI").Trim()
+  if($shortRoot -notmatch '~'){throw '8.3 entry fixture did not resolve a short path'}
+  & node (Join-Path $shortRoot 'scripts/prepare-installer-theme.mjs')
+  if($LASTEXITCODE -ne 0 -or -not(Test-Path (Join-Path $entryRoot 'entry-ran')) -or -not(Test-Path (Join-Path $entryRoot 'apps/desktop/src-tauri/installer/generated/resource-hashes.nsh'))){throw '8.3 entry did not generate hashes and invoke the build'}
+} finally { if(Test-Path $entryRoot){Remove-Item -LiteralPath $entryRoot -Recurse -Force} }
 $compiler='C:\Program Files (x86)\NSIS\makensis.exe'
 if(-not (Test-Path $compiler)){
   & choco install nsis --version=3.11 --yes --no-progress
