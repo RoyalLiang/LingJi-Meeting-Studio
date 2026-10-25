@@ -5,7 +5,7 @@ export function setAudioTransport(value?: string) { binaryAudio = value === 'pcm
 let csrf = '';
 export const setCsrf = (token: string) => { csrf = token; };
 const messages: Record<string, string> = {
-  local_asr_assets_missing: '本地语音模型文件不完整，请重新安装完整安装包后重试。已保存的录音不受影响。',
+  local_asr_assets_missing: '本地模型未安装或资源缺失。请选择云端转录服务，或重新安装并勾选本地模型。已保存的录音不受影响。',
   local_asr_assets_invalid: '本地语音模型校验未通过，请重新安装完整安装包后重试。已保存的录音不受影响。',
   local_asr_unavailable: '本地转录引擎已中断，可重新处理。录音已保留，应用会自动重新启动引擎。',
   local_asr_timeout: '本地转录处理超时，可稍后重新处理。录音已保留。',

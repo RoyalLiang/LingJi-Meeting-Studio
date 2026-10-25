@@ -9,6 +9,8 @@ Var LingJiIconImage
 Var LingJiControl
 Var LingJiFolder
 Var LingJiBrowseButton
+Var LingJiModelControl
+Var LingJiInstallModel
 Var LingJiShortcutControl
 Var LingJiShortcut
 Var LingJiLaunch
@@ -67,6 +69,7 @@ Function LingJiInitialize
   StrCpy $LingJiInitialized 1
   SetAutoClose true
   StrCpy $LingJiShortcut 1
+  StrCpy $LingJiInstallModel 1
   InitPluginsDir
   File /oname=$PLUGINSDIR\lingji-background.bmp "${LINGJI_BACKGROUND}"
   File /oname=$PLUGINSDIR\lingji-ui.dll "${__FILEDIR__}\generated\lingji-ui.dll"
@@ -228,26 +231,33 @@ Function LingJiWelcome
   !insertmacro LingJiLabel 52 155 650 30 "会议录音与智能纪要，随时开始。" 0
   SetCtlColors $LingJiControl 718177 transparent
   System::Call 'user32::SetPropW(p $LingJiControl,w "LingJiTextColor",p 0x778171)'
-  !insertmacro LingJiLabel 52 191 650 28 "✓  本地转录模型已包含" 0
-  SetCtlColors $LingJiControl 276952 transparent
-  System::Call 'user32::SetPropW(p $LingJiControl,w "LingJiTextColor",p 0x526927)'
-  !insertmacro LingJiLabel 52 237 650 26 "安装位置" 0
+  ${NSD_CreateCheckbox} 0 0 0 0 "安装本地 SenseVoice 离线转录模型（推荐）"
+  Pop $LingJiModelControl
+  SendMessage $LingJiModelControl ${WM_SETFONT} $LingJiBodyFont 1
+  !insertmacro LingJiPlace $LingJiModelControl 52 191 696 27
+  ${If} $LingJiInstallModel == 1
+    ${NSD_Check} $LingJiModelControl
+  ${EndIf}
+  !insertmacro LingJiLabel 78 221 650 22 "约 260 MB · 不勾选则使用云端转录；已有模型保留。" 0
+  SetCtlColors $LingJiControl 718177 transparent
+  System::Call 'user32::SetPropW(p $LingJiControl,w "LingJiTextColor",p 0x778171)'
+  !insertmacro LingJiLabel 52 253 650 22 "安装位置" 0
   SetCtlColors $LingJiControl 718177 transparent
   System::Call 'user32::SetPropW(p $LingJiControl,w "LingJiTextColor",p 0x778171)'
   ${NSD_CreateDirRequest} 0 0 0 0 "$INSTDIR"
   Pop $LingJiFolder
   SendMessage $LingJiFolder ${WM_SETFONT} $LingJiPathFont 1
   SetCtlColors $LingJiFolder 273D35 FFFFFF
-  !insertmacro LingJiPlace $LingJiFolder 52 260 610 46
+  !insertmacro LingJiPlace $LingJiFolder 52 279 610 42
   ${NSD_CreateBrowseButton} 0 0 0 0 "更改"
   Pop $LingJiBrowseButton
   SendMessage $LingJiBrowseButton ${WM_SETFONT} $LingJiBodyFont 1
-  !insertmacro LingJiPlace $LingJiBrowseButton 662 260 86 46
+  !insertmacro LingJiPlace $LingJiBrowseButton 662 279 86 42
   ${NSD_OnClick} $LingJiBrowseButton LingJiBrowse
   ${NSD_CreateCheckbox} 0 0 0 0 "创建桌面快捷方式"
   Pop $LingJiShortcutControl
   SendMessage $LingJiShortcutControl ${WM_SETFONT} $LingJiBodyFont 1
-  !insertmacro LingJiPlace $LingJiShortcutControl 52 326 350 27
+  !insertmacro LingJiPlace $LingJiShortcutControl 52 342 350 27
   ${If} $LingJiShortcut == 1
     ${NSD_Check} $LingJiShortcutControl
   ${EndIf}
@@ -282,12 +292,22 @@ Function LingJiFinish
   GetDlgItem $0 $HWNDPARENT 2
   ShowWindow $0 0
   !insertmacro LingJiLabel 52 106 650 48 "聆记已准备就绪" 1
+  ${If} $LingJiInstallModel == 1
+  ${OrIf} ${FileExists} "$INSTDIR\client-backend\local-asr\manifest.json"
   !insertmacro LingJiLabel 52 155 650 30 "应用与本地转录模型已安装完成。" 0
   SetCtlColors $LingJiControl 718177 transparent
   System::Call 'user32::SetPropW(p $LingJiControl,w "LingJiTextColor",p 0x778171)'
   !insertmacro LingJiLabel 52 238 650 30 "✓  无需启动转录服务器，即可开始记录" 0
   SetCtlColors $LingJiControl 276952 transparent
   System::Call 'user32::SetPropW(p $LingJiControl,w "LingJiTextColor",p 0x526927)'
+  ${Else}
+  !insertmacro LingJiLabel 52 155 650 30 "应用已安装完成。" 0
+  SetCtlColors $LingJiControl 718177 transparent
+  System::Call 'user32::SetPropW(p $LingJiControl,w "LingJiTextColor",p 0x778171)'
+  !insertmacro LingJiLabel 52 238 650 30 "请在设置中配置云端转录与纪要服务。" 0
+  SetCtlColors $LingJiControl 718177 transparent
+  System::Call 'user32::SetPropW(p $LingJiControl,w "LingJiTextColor",p 0x778171)'
+  ${EndIf}
   ${NSD_CreateCheckbox} 0 0 0 0 "完成后启动聆记"
   Pop $LingJiLaunch
   SendMessage $LingJiLaunch ${WM_SETFONT} $LingJiBodyFont 1
@@ -432,6 +452,7 @@ Function LingJiDirectoryLeave
     Abort
   ${EndIf}
   ${NSD_GetState} $LingJiShortcutControl $LingJiShortcut
+  ${NSD_GetState} $LingJiModelControl $LingJiInstallModel
 FunctionEnd
 
 
@@ -467,3 +488,15 @@ FunctionEnd
   !insertmacro RestartManager_EndSession $R0
 !macroend
 
+
+; Opt-out skips only packaged model assets; existing installations are preserved.
+!macro LingJiResource source destination
+  Push $0
+  StrLen $0 "client-backend\local-asr\"
+  StrCpy $0 "${destination}" $0
+  ${If} $LingJiInstallModel != 0
+  ${OrIf} $0 != "client-backend\local-asr\"
+    File /a "/oname=${destination}" "${source}"
+  ${EndIf}
+  Pop $0
+!macroend

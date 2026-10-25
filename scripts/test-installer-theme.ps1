@@ -35,10 +35,23 @@ FunctionEnd
 Function RunMainBinary
 FunctionEnd
 Section
+  SetOutPath $INSTDIR
+  CreateDirectory "$INSTDIR\client-backend\local-asr"
+  !insertmacro LingJiResource "MODEL_FILE" "client-backend\local-asr\manifest.json"
+  !insertmacro LingJiResource "MODEL_FILE" "required-app-resource.txt"
   Sleep 2000
 SectionEnd
 '@
-[IO.File]::WriteAllText((Join-Path $stage 'theme-harness.nsi'),$source.Replace('THEME_PATH',$theme),(New-Object System.Text.UTF8Encoding($true)))
+[IO.File]::WriteAllText((Join-Path $stage 'theme-harness.nsi'),$source.Replace('THEME_PATH',$theme).Replace('MODEL_FILE',(Join-Path $stage 'model.json')),(New-Object System.Text.UTF8Encoding($true)))
+[IO.File]::WriteAllText((Join-Path $stage 'model.json'),'{}')
 Push-Location $stage
 try{& $compiler /V3 theme-harness.nsi;if($LASTEXITCODE -ne 0){throw 'NSIS UI harness compile failed'}}finally{Pop-Location}
-& (Join-Path $Root 'scripts/test-windows-installer-ui.ps1') -Installer (Join-Path $stage 'theme-harness.exe') -Root (Join-Path $stage 'probe') -Screenshots (Join-Path $Root '.agent-runtime/installer-ui')
+& pwsh -NoProfile -File (Join-Path $Root 'scripts/test-windows-installer-ui.ps1') -Installer (Join-Path $stage 'theme-harness.exe') -Root (Join-Path $stage 'probe') -Screenshots (Join-Path $Root '.agent-runtime/installer-ui')
+
+if($LASTEXITCODE -ne 0){throw 'Default model UI probe failed'}
+& pwsh -NoProfile -File (Join-Path $Root 'scripts/test-windows-installer-ui.ps1') -Installer (Join-Path $stage 'theme-harness.exe') -Root (Join-Path $stage 'cloud-probe') -Screenshots (Join-Path $Root '.agent-runtime/installer-ui-cloud') -WithoutModel
+if($LASTEXITCODE -ne 0){throw 'Cloud-only UI probe failed'}
+
+foreach($case in @('probe','cloud-probe')){
+ if(-not (Test-Path (Join-Path $stage "$case/Visual Install/required-app-resource.txt"))){throw 'Model opt-out skipped a required application resource'}
+}
