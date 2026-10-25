@@ -152,5 +152,5 @@ test('desktop release versions match preview overrides and every workspace', asy
   const cargo=await readFile(new URL('../apps/desktop/src-tauri/Cargo.toml',import.meta.url),'utf8');
   assert.equal(cargo.match(/^version = "([^"]+)"/m)[1],root.version,'Cargo package');
   const lock=await readFile(new URL('../apps/desktop/src-tauri/Cargo.lock',import.meta.url),'utf8');
-  assert.equal(lock.match(/name = "tts-client"\nversion = "([^"]+)"/)[1],root.version,'Cargo lock');
+  for(const content of [lock,lock.replace(/\r?\n/g,'\r\n')])assert.equal(content.match(/name = "tts-client"\r?\nversion = "([^"]+)"/)[1],root.version,'Cargo lock');
 });
