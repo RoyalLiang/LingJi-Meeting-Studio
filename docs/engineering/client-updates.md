@@ -62,11 +62,11 @@ node scripts/test-client-updater.mjs docs/evidence/client-brain-research/client-
 原生更新场景脚本当前在 macOS 执行，创建临时签名密钥、临时 API、独立 WebView 数据目录和替身 `.app`；结束后清理。它验证官方更新器实际替换替身应用，不更新已安装客户端，不打开真实音频设备，不访问真实模型。验证分层与结果见[更新验收证据](../evidence/client-brain-research/client-updater-validation-2026-10-13.md)。
 
 
-## Windows 同位置覆盖升级（v0.1.21）
+## Windows 同位置覆盖升级（v0.1.22）
 
 正常升级跳过维护页与旧版卸载窗口，在同一安装器中覆盖应用。资源按打包清单 SHA256 核对，未变的模型和运行资源不重写；变化资源重新复制。哈希读取失败会回退复制，避免误跳过。安装包仍完整下载，不包含二进制差分下载协议。不同目录、降级与旧 MSI 安装沿用原维护流程。
 
-开始前请结束录音并退出旧客户端；安装器不会强行终止会议。用户数据目录独立保留。安装器不会把同版本夹具测试等同于实体旧版升级，验证范围见[本轮回执](../evidence/preview-v0.1.21-2026-10-26.md)。
+开始前请结束录音并退出旧客户端；安装器不会强行终止会议。用户数据目录独立保留。安装器不会把同版本夹具测试等同于实体旧版升级，验证范围见[本轮回执](../evidence/preview-v0.1.22-2026-10-26.md)。
 
 
 Windows 主窗与胶囊复用同一私有 WebView profile，启动参数保持一致。主窗关闭后台计时器节流以维持音频读取与持久化；发布 CI 使用合成音频检查六分钟后台录制、排队与重启补传。该验证不等同于实体设备或长会议验收。参见 [Microsoft WebView2 参数说明](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/webview-features-flags)。
