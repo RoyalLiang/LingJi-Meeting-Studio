@@ -238,7 +238,7 @@ Function LingJiWelcome
   ${If} $LingJiInstallModel == 1
     ${NSD_Check} $LingJiModelControl
   ${EndIf}
-  !insertmacro LingJiLabel 78 221 650 22 "约 260 MB · 不勾选则使用云端转录；已有模型保留。" 0
+  !insertmacro LingJiLabel 78 221 650 22 "约 260 MB · 取消需配置云端；原位置升级保留已有模型。" 0
   SetCtlColors $LingJiControl 718177 transparent
   System::Call 'user32::SetPropW(p $LingJiControl,w "LingJiTextColor",p 0x778171)'
   !insertmacro LingJiLabel 52 253 650 22 "安装位置" 0
