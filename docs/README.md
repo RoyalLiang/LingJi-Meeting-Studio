@@ -1,167 +1,60 @@
-# v0.1.19 Windows 系统音频与模型选装已发布（2026-10-25）
+# 聆记文档导航
 
-[发布回执](evidence/preview-v0.1.19-2026-10-25.md)：[Release](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.19)、[Actions](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/40204022613) 与十个公开附件已核对；源码 `eaf3c0afe8fef55544ce7ca961afe31daca37df7`。修复可恢复缓冲波动误停；Windows 模型默认安装、可取消，原位置升级可保留已有模型。实际安装器和较旧注册版本夹具验证通过。
+[产品与快速开始](../README.md) · [下载预览版](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases) · [问题反馈](https://github.com/RoyalLiang/LingJi-Meeting-Studio/issues)
 
-实体 Windows 音频、长会议、干净机器与高 DPI 尚未验收；Windows 未签名、macOS 未公证。本机公开 DMG 完整性通过，但挂载权限被拒绝，未完成本机下载后 App 复测。v0.1.18 未发布附件，标签保留。
+按要完成的事情选择入口。已实现能力与待验证范围以[当前状态](engineering/current-state.md)和对应版本回执为准；设计稿与路线图表示目标，不自动代表已实现。
 
-# v0.1.17 内置离线转录与安装器已发布（2026-10-25）
+## 安装、配置与使用
 
-
-Windows x64 与 macOS Apple Silicon 测试包已由后台构建并发布。包内携带原生 SenseVoiceSmall INT8 与 VAD，无需自行运行转录服务；纪要继续使用现有云端模型。确认稿三屏安装器、双平台实际包内推理、四项 CI、10 附件及 308 源码文件摘要已核验；下载后的 Mac 包也完成隔离复测。见[发布回执与下载](evidence/preview-v0.1.17-2026-10-25.md)。真实设备、长会议、高 DPI 与系统信任验收仍独立保留。
-
-# v0.1.16 Windows 安装与双平台常驻已发布（2026-10-24）
-
-Windows x64 EXE、macOS Apple Silicon DMG 已由后台构建并发布，四个任务及十附件核验通过。关闭窗口后继续录音、补传与整理，显式退出保留未完成音频检查。见[发布回执与下载](evidence/preview-v0.1.16-2026-10-24.md)。真实设备、长会议和新电脑验收仍单独保留。
-
-# v0.1.15 FunASR＋SenseVoice 已发布（2026-10-24）
-
-新增可选本机/私有 FunASR＋SenseVoice 转录，保留原有模型链路及纪要溯源。后台三阶段构建发布成功，五附件、固定源码及隔离原生设置连接测试已核对。[发布回执与配置](evidence/preview-v0.1.15-2026-10-24.md)；[Release](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.15)。
-
-实体采音、长会议与持续双路吞吐尚未验收，验证范围详见回执。
-
-# v0.1.14 纪要内容与多场景阅读已发布（2026-10-23）
-
-后台 verify/build/publish 全部成功，五附件、231 个源码文件及独立包内启动核验通过。[Release](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.14)，[完整回执](evidence/preview-v0.1.14-2026-10-23.md)。
-
-新增重点速览、明确主题归属和短标签、可展开讨论细节、收拢的原文入口，以及有证据的时间线和业务数值图。项目、访谈和培训采用相应内容取舍；旧纪要兼容，人工版本受保护。见[本版说明](releases/v0.1.14-preview.md)、[设计与场景](design/minutes-reading.md)、[本地验证](evidence/minutes-quality-2026-10-23.md)及[发布状态](evidence/preview-v0.1.14-2026-10-23.md)。
-
-## v0.1.12 暂离补齐与紧凑波形播放（2026-10-23）
-
-已发布暂离补齐、故障提示关闭记忆和紧凑波形播放器。后台三步骤成功，五附件和 228 个源码摘要核对通过；原生界面因锁屏仍待验收。见[安装说明](releases/v0.1.12-preview.md)与[发布回执](evidence/preview-v0.1.12-2026-10-23.md)。
-
-## v0.1.11 C 波形回放与原生回归（2026-10-23）
-
-已发布用户确认的 C 波形播放器及采集缓冲修复；后台 verify/build/publish 全部通过，五附件和 227 个源码摘要已核对。见[安装说明](releases/v0.1.11-preview.md)和[发布回执](evidence/preview-v0.1.11-2026-10-23.md)。
-
-## v0.1.10 C 波形回放与采集连续性（2026-10-23）
-
-本轮 C 波形功能的本地验证通过，但 v0.1.10 原生 CI 因合成测试超时失败，未发布安装包；确定性测试修复后已由 v0.1.11 完成发布。见[失败版本记录](releases/v0.1.10-preview.md)。
-
-## C 波形回放设计复核（2026-10-23）
-
-用户已确认采用[波形版设计](design/recording-playback.md)，替代 A 单行进度条；[本地验证](evidence/playback-c-2026-10-23.md)与原生安装包验收分别记录。
-
-# v0.1.9 采集连续性与倍速控件（2026-10-23）
-
-保留已验证的原生磁盘缓冲与统一倍速控件；CI 串行运行全部原生断言并补充可读失败注释。v0.1.8 未发布、不移动旧标签。见[安装说明](releases/v0.1.9-preview.md)；后台发布状态待回执。
-
-# v0.1.8 采集连续性与倍速控件（2026-10-23）
-
-修复前端短暂积压填满八包原生输出队列后自动停止的问题，改用私有临时磁盘缓冲并保留停止排空与真实故障提示。倍速复用统一 Select。405 项 Node 和 27 项原生测试及两轴评审通过，见[安装说明](releases/v0.1.8-preview.md)；v0.1.8 后台原生检查失败，未发布安装包，后续由 v0.1.9 继续验证。历史暂停无错误原因，实体后台录制及视觉验收仍需独立验证。
-
-# v0.1.7 仅豆包音频模型模式（2026-10-23）
-
-新增同一方舟模型完成转录与原音纪要的可选模式，无需独立 ASR。继承快速记录与双音轨时长修复。403回归和真实合成音频链路通过，见[安装与配置](releases/v0.1.7-preview.md)；后台 verify/build/publish 均通过，五附件及 224 个源码文件核验完成，见[发布回执](evidence/preview-v0.1.7-2026-10-23.md)。
-
-# v0.1.6 快速记录、时长与语音提示修复（2026-10-23）
-
-修复音频纪要模式先填会议资料的问题，点击即可开始未命名记录；原音发送仍在整理设置独立授权。会议时长按平行音轨共同时间轴计算；语音配额超限明确提示。见[本版安装说明](releases/v0.1.6-preview.md)。已通过本地与后台验证并公开发布 v0.1.6；[Release](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.6)。
-
-[v0.1.4 发布回执](evidence/preview-v0.1.4-2026-10-22.md)：三个后台任务成功、五附件完整摘要与 221 个源码文件核对通过；新包签名完整性通过，Gatekeeper 仍拒绝未公证测试包。
-
-# v0.1.5 豆包音频纪要已发布（2026-10-22）
-
-豆包音频纪要 v0.1.5 已由后台 Actions 构建并发布，五附件完整性与源码核对通过。见[安装与模型配置](releases/v0.1.5-preview.md)及[发布回执](evidence/preview-v0.1.5-2026-10-22.md)。
-
-# v0.1.4 播放器与 macOS 安全提示说明（2026-10-22）
-
-已按用户选择实现 A 版完整单行控制；新增跳转、拖动与倍速。正式 Developer ID 签名与 Apple 公证仍受账号缺失阻塞。见[安装说明](releases/v0.1.4-preview.md)、[安全提示](releases/macos-trust.md)和[本地验证](evidence/playback-a-trust-2026-10-22.md)。远端发布以 Actions 与发布回执为准。
-
-# v0.1.2 长会议与恢复已发布（2026-10-22）
-
-本轮已将两小时限制移除、单路音源故障隔离及 C 版界面纳入同一测试安装包，发布使用后台 GitHub Actions。见[安装说明](releases/v0.1.2-preview.md)与[修复验证](evidence/recording-unlimited-recovery-2026-10-22.md)。下文“仅本地/尚未发布”描述保留其历史时点；本轮已由 tag push 自动触发后台 Actions，三个任务成功，五附件完整下载及摘要相符，见[发布回执](evidence/preview-v0.1.2-2026-10-22.md)。
-
-## 本地 Realtime 与长会议增量（2026-10-22）
-
-新增可选 OpenAI Realtime 原音理解与并行转录留证，保留旧 ASR＋LLM；移除两小时累计样本与导入时长上限。见[启用说明](engineering/openai-realtime.md)、[本地验证](evidence/openai-realtime-2026-10-22.md)和[proposed ADR 0016](adr/0016-openai-realtime-minutes.md)。本地验证不代表真实供应商或长录制验收，尚未发布。
-
-# 本地 C 版录音区增量（2026-10-22）
-
-用户已确认 C「一体会议头部」。气泡提示、单行录音区、图标工具栏、齿轮设置和跨音源队列优化已实现并通过本地验证，见[验证与截图](evidence/compact-recording-c-2026-10-22.md)。当前公开 v0.1.1 不含本轮增量，尚无新安装包。
-
-# 当前发布入口（2026-10-22）
-
-- [v0.1.1 Actions 后台构建与发布验证](evidence/preview-v0.1.1-2026-10-22.md)：四项修复、公开五附件与完整下载校验。
-- [产品首页与快速开始](../README.md)
-- [v0.1.1 macOS 测试安装说明](releases/v0.1.1-preview.md)
-- [会议收尾、提示条、创建时间排序和启动优化验证](evidence/meeting-lifecycle-startup-2026-10-22.md)
-- [转录优化、标注与离线评估](engineering/asr-quality.md)
-- [README 与 ASR 一手研究](research/readme-and-asr-quality-2026-10-21.md)
-- 历史首发：[v0.1.0 发布验证](evidence/first-public-preview-2026-10-21.md)及[安装说明](releases/v0.1.0-preview.md)。
-
-以下保留历史索引，带日期的历史验收结论仅对应当时版本。
-
-# 项目文档入口
-
-[Alpha 双任务学习与标注](engineering/alpha-learning.md)：Alpha 13 会后生成待标注结果，按会议和发言归组，人工确认后训练回测；尚无人工金标准，主转录未启用自动改写。
-
-- [跨系统客户端实现方式](research/cross-platform-client-implementation-2026-10-13.md)：已按长期轻量与原生采集优先选择 Tauri 2/Rust；[运行说明](engineering/native-client.md)、[proposed ADR](adr/0011-native-desktop-client.md)与[首轮验证](evidence/client-brain-research/native-client-validation-2026-10-13.md)。三系统实体采集和正式发行仍待验。
-- [GitHub 发版与客户端自动更新调研](research/git-release-and-client-updates-2026-10-13.md)：用户已选 GitHub Releases；已实现本地安全更新与四目标 draft/publish 工作流，见[客户端更新](engineering/client-updates.md)、[发版步骤](releases/github-client.md)和[本轮证据](evidence/client-brain-research/client-updater-validation-2026-10-13.md)；尚未远程发布或完成三系统正式安装验收。
-
-- [跨平台客户端、性能与最强大脑演进调研](research/client-brain-evolution-2026-10-12.md)：当前代码、合成基准、端云分工与分层更新路线；[架构提议](adr/0010-cross-platform-brain-evolution.md)仍为 proposed，已按用户指令实施其中的 P0/P1；其他阶段未实施。
-- [分阶段演进方案](design/evolution-plan-2026-10-12.md)：P0～P5 依赖、15 项本地任务、验收目标与迁移回退；首包为观测、投影、离线队列和分层终稿。
-
-本轮新增：[服务与分析边界 ADR](adr/0005-provider-and-analysis-boundaries.md)、[开发账户与配置运行手册](engineering/runbook.md)、[真实合成 ASR 与界面验收](engineering/acceptance.md)。
-
-更新日期：2026-10-12。产品目标：通用实时语音转录、会议 AI 总结与纪要；用户已确认**浏览器优先、尽量免安装**。全阶段工程首版已形成可运行闭环，环境退出门仍逐项保留。
-
-先看 [当前智能纪要与实时翻译](engineering/intelligent-minutes.md)、[运行手册](engineering/runbook.md)、[实际 API](engineering/api.md)、[全阶段验收表](engineering/acceptance.md) 和 [本轮实现决策](adr/0004-record-workbench-implementation.md)。视觉依据见 [已确认方向](design/visual-direction.md)。
-
-## 按这个顺序阅读
-
-1. [当前实现与验证边界](engineering/current-state.md)：先分清当前原型、实验和未实现能力。
-2. [DeepPage 一手研究](research/deeppage-analysis-2026-10-11.md)：设计动机、功能、价格与配额、隐私、实现公开程度及数据缺口。
-3. [产品设计](design/product.md)：首版用户流程、输入来源、范围与指标定义。
-4. [领域词汇表](../CONTEXT.md)：Meeting Record、Session、转录版本、纪要和行动的词义。
-5. [目标架构](design/architecture.md)：所有权、Web 采集、持久 ACK、停止屏障、版本与隐私。
-6. [最强大脑演练](design/brain-rehearsal.md)：三种独立接口、取舍与七种失败场景。
-7. [实现与验收实践](engineering/practices.md)：启动、CodeGraph、测试、质量、容量、成本与证据层级。
-8. [阶段路线图](design/roadmap.md)：以退出条件推进，不把时间表当成果。
-9. [ADR](adr/)：浏览器入口、可靠内容提交、版本化纪要，均标明提议状态。
-10. [目标协议切片](design/protocol.md)：目标接口与失败分类；本轮实际接口使用 `/api/records`，实现范围以 [当前状态](engineering/current-state.md) 为准。
-
-[P0/P1 本地实现与场景回归](evidence/client-brain-research/p0-p1-validation-2026-10-12.md)：EP-01～04、回退开关、合成基准与真实环境验证缺口。
-
-## 规则与工程技能配置
-
-- [项目 AGENTS](../AGENTS.md) 与 `.agents/`：项目工作规则和按需加载路由。
-- [任务跟踪](agents/issue-tracker.md)：GitHub Issues，仓库地址待提供，本轮没有外部写入。
-- [标签约定](agents/triage-labels.md) 与 [领域文档约定](agents/domain.md)：用户已确认。
-- `.agent-runtime/`：gitignored 本地状态和检查证据，不进入正式产品文档。
-- [本轮计划](../task_plan.md)、[发现](../findings.md)、[进展](../progress.md)：本次整理的过程记录，不是长期架构事实来源。
-
-- [说话人连续性](engineering/speaker-continuity.md)：持续连接、匿名编号复用、重连与未知身份边界。
-
-## 历史文档保留作背景
-
-| 文档 | 使用边界 |
+| 目标 | 文档 |
 | --- | --- |
-| [PRD v1](prd-v1.md)、[扩展 v2](prd-expansion-v2.md) | 早期桌面/语言工作台需求；新首版范围见 product |
-| [架构 v1](architecture-v1.md) | 含目标技术和 WebSocket 规划；现状以 current-state 为准 |
-| [90 天路线](roadmap-90d.md) | 早期时间假设；新阶段退出条件见 roadmap |
-| [前端运行时 ADR](frontend-runtime-adr-v1.md)、[Tauri 迁移计划](react-vite-tauri2-migration-plan-v1.md) | 旧桌面优先计划，不能作为当前已完成能力或 Web 首版选型批准 |
-| [迭代 3](iteration-3-adr.md)、[团队模型](team-operating-model-v1.md)、[团队交付](team-delivery-plan-v2.md) | 历史工作组织设想，需结合最新实现和资源重新评估 |
+| 安装桌面版、核对当前验证范围 | [v0.1.19 发布说明](releases/v0.1.19-preview.md) · [完整交付证据](evidence/preview-v0.1.19-2026-10-25.md) |
+| 处理 macOS 安装与系统信任提示 | [macOS 安装与信任](releases/macos-trust.md) |
+| 使用内置 SenseVoice、选择云端转录或外部 FunASR | [本地转录与高级配置](engineering/funasr.md) |
+| 配置豆包音频纪要 | [两种音频模式与权限](engineering/doubao-audio.md) |
+| 配置 OpenAI Realtime | [音频直接理解与并行留证](engineering/openai-realtime.md) |
+| 配置服务、部署、诊断与恢复 | [运行手册](engineering/runbook.md) |
+| 使用时间线、表格、图表和翻译 | [智能纪要](engineering/intelligent-minutes.md) |
+| 管理工作目录、历史记录与分析 | [工作目录](engineering/workspaces.md) |
+| 改善专有名词与转录质量 | [识别质量与标注](engineering/asr-quality.md) |
 
-不删除历史内容。本轮在历史文档顶部添加阅读边界，避免新旧方向混用；旧机器绝对路径链接已改为仓库相对链接，便于跨环境阅读。
+## 开发、设计与验收
 
-## 会中 AI 纪要（2026-10-12）
+| 目标 | 文档 |
+| --- | --- |
+| 了解已实现能力、限制及证据截止点 | [当前状态](engineering/current-state.md) |
+| 遵循实现、协议与验证约定 | [工程实践](engineering/practices.md) · [验收表](engineering/acceptance.md) |
+| 了解纪要输入、流式输出与主题处理 | [会中纪要实现](engineering/live-minutes.md) |
+| 了解设置、反馈与保存行为 | [设置质量](engineering/settings-quality.md) · [工作台反馈](engineering/workbench-feedback.md) |
+| 核对纪要阅读与录音播放器设计 | [纪要阅读](design/minutes-reading.md) · [录音播放](design/recording-playback.md) |
+| 了解会议入口与品牌设计 | [会议入口](engineering/meeting-entry-and-brand.md) |
+| 构建、测试安装包与发布 | [预览版 Actions](releases/actions-preview.md) · [客户端发布](releases/github-client.md) |
+| 查看更新机制及其约束 | [客户端更新](engineering/client-updates.md) |
+| 查阅架构决策与后续目标 | [ADR](adr/) · [路线图](design/roadmap.md) |
 
-- [飞书一手资料与方案](research/feishu-minutes-analysis-2026-10-12.md)
-- [Responses、自动纪要、流式与主题实现](engineering/live-minutes.md)
-- [增量纪要 ADR](adr/0006-live-minutes-and-protocols.md)
+## 发布与证据
 
-- [音源检测与智能纪要](engineering/capture-and-minutes.md)：双来源录音、静音提示、虚拟麦克风选择、主题树与发言人/决策视图。
-- [工作台交互反馈](engineering/workbench-feedback.md)：设置保存 toast、Responses 默认值、显式分享系统音频、阅读跟随与备份错误反馈。
-- [快速记录、暂停与结束会议](engineering/meeting-lifecycle.md)：可选标题、连续时间轴与紧凑音源摘要；主阅读区以当前智能纪要说明为准。
-- [会议启动、连续主题树与标识候选](engineering/meeting-entry-and-brand.md)：双路自动接入、缺失来源引导与本机验收证据。
+- [发布说明](releases/)：版本行为、安装方式和发布流程。
+- [验收证据](evidence/)：源码版本、构建、公开附件校验与原生界面记录。
+- [v0.1.19 回执](evidence/preview-v0.1.19-2026-10-25.md)：系统音频恢复通知、Windows 模型选装及升级保留；含未验证边界。
+- [v0.1.17 回执](evidence/preview-v0.1.17-2026-10-25.md)：应用内置原生 SenseVoice 与安装器。
+- [研究记录](research/)：方案依据与调研结论，不作为运行成功的证据。
 
-- [设置稳定性与转录术语验收](engineering/settings-quality.md)：地址原值、单层输入边框、显式关闭、无布局变化保存及本机登录恢复。
+## 项目规则与历史背景
 
-- [工作目录与历史会议分析](engineering/workspaces.md)：目录归档、统计口径、有来源的按需洞察、阅读控件与本地验收。
+工程规则从仓库 [AGENTS.md](../AGENTS.md) 开始，领域术语与决策约定见[领域文档约定](agents/domain.md)。
 
-- [智能纪要主阅读区与实时翻译](engineering/intelligent-minutes.md)：当前讨论、可查来源的总结表格与图表、自动跟随，以及专用豆包翻译配置和验证边界。
+早期 PRD、架构和团队方案保留用于理解背景；其中技术选型与时间计划应结合当前实现重新评估。
 
-## 豆包音频纪要本地接入
+| 材料 | 入口 |
+| --- | --- |
+| 早期产品需求 | [PRD v1](prd-v1.md) · [扩展需求](prd-expansion-v2.md) |
+| 早期架构与运行时方案 | [架构 v1](architecture-v1.md) · [前端运行时 ADR](frontend-runtime-adr-v1.md) |
+| 桌面迁移与迭代记录 | [Tauri 迁移计划](react-vite-tauri2-migration-plan-v1.md) · [迭代 3](iteration-3-adr.md) |
+| 团队组织与历史排期 | [团队模型](team-operating-model-v1.md) · [交付计划](team-delivery-plan-v2.md) · [早期 90 天计划](roadmap-90d.md) |
 
-- [App 配置与验证边界](engineering/doubao-audio.md)
-- [2026-10-22 真实接口与本地回归证据](evidence/doubao-audio-2026-10-22.md)
+## 维护这两份 README
+
+根 README 介绍当前产品、快速开始和使用入口；本页负责文档导航。新增版本写入 `docs/releases/`，验证结果写入 `docs/evidence/`，能力与限制更新到 `engineering/current-state.md`。更新最近发布链接和受影响说明，不在 README 顶部持续叠加发版流水。
+
+修改后运行 `npm run check:docs`；涉及命令、平台要求和模型方式时，同时核对当前源码、配置与发布附件。
