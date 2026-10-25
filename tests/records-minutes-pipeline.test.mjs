@@ -10,6 +10,42 @@ import {buildMinutesManifest,runMinutesPipeline} from '../services/records/src/m
 import {beginMinutesUsage,updateMinutesUsage} from '../packages/records/src/usage.mjs';
 import {generateMinutes} from '../services/records/src/providers.mjs';
 const config={LLM_MODEL:'fixture-model',LLM_API_URL:'http://fixture.invalid'};
+test('live partial budgets count validated windows when one frozen source is split',async()=>{
+  const f=await fixture(1);let claim,windows=0;
+  const transcript=Array.from({length:6000},(_,index)=>String.fromCodePoint(0x4e00+index)).join('');
+  const bounded={...config,RECORD_MINUTES_INPUT_BYTES:4096,RECORD_MINUTES_WINDOW_CONCURRENCY:1};
+  try{
+    await f.repo.change(f.record.id,record=>{
+      record.capture='recording';
+      Object.assign(record.segments[0],{text:transcript,startMs:0,endMs:30000});
+      const job=requestMinutes(record,{scope:'live',modelVersion:'fixture-model'});
+      job.status='running';job.fence=job.id;job.lease=Date.now()+300000;claim=structuredClone(job);
+    });
+    const manifest=buildMinutesManifest(claim,bounded);
+    assert.ok(manifest.windows.length>=7);
+    assert.equal(new Set(claim.snapshot.map(segment=>segment.id+':'+segment.revision)).size,1);
+    const result=await runMinutesPipeline(f.repo,f.record.id,claim,bounded,async job=>{
+      if(job.stage==='synthesis'){
+        const partial=(await f.repo.get(f.record.id)).jobs.find(entry=>entry.id===claim.id).partialMinutes;
+        assert.ok(partial.sections.length>20,'all validated leaf sections remain visible before synthesis');
+        return {title:'分窗汇总',sections:[{heading:'归并后的议题',items:job.summaries.flatMap(summary=>summary.sections.flatMap(section=>section.items))}],actions:[]};
+      }
+      windows++;
+      const source=job.snapshot.find(segment=>segment.contextOnly!==true);
+      const evidence=[{segmentId:source.id,revision:source.revision}];
+      const leaf={title:'分窗纪要',sections:Array.from({length:3},(_,index)=>({heading:'窗口'+windows+'议题'+index,items:[{text:'窗口'+windows+'要点'+index,evidence}]})),actions:[]};
+      validateMinutes(leaf,job.validationSnapshot,job.liveContext,{newEvidenceOnly:true});
+      return leaf;
+    });
+    assert.equal(windows,manifest.windows.length);
+    assert.equal(result.sections[0].items.length,windows*3);
+    await f.repo.change(f.record.id,record=>commitMinutes(record,claim.id,result,claim.fence));
+    const saved=await f.repo.get(f.record.id);
+    assert.equal(saved.jobs.find(job=>job.id===claim.id).status,'completed');
+    assert.equal(saved.liveMinutes.sections[0].items.length,windows*3);
+    assert.equal(saved.liveMinutes.evidenceSnapshot[0].text,transcript);
+  }finally{await f.close();}
+});
 test('synthesis includes original evidence within budget and explicitly marks omissions',async()=>{
   for(const synthesisBudget of [96000,4096]){
     const f=await fixture(8);let seen=false;
@@ -556,11 +592,22 @@ test('incremental project context survives long sessions and an edit to earlier 
 
 test('project memory is bounded while preserving stable identities and cumulative facts', async () => {
   const {minutesContext,mergeLiveMinutes}=await import('../packages/records/src/live-minutes.mjs');
-  const previous={title:'长会议',topics:Array.from({length:30},(_,i)=>({id:'项目'+String(i).padStart(2,'0')+'名'.repeat(70),title:'项目'+i+'名'.repeat(190),summary:'已确认'.repeat(100)})),sections:Array.from({length:20},(_,i)=>({heading:'分类'+i+'名'.repeat(190),items:[]}))};
-  const context=minutesContext(previous);
-  assert.ok(Buffer.byteLength(JSON.stringify(context))<=12000);
-  assert.deepEqual(context.topics.map(topic=>topic.id),previous.topics.map(topic=>topic.id));
   const evidence=[{segmentId:'s',revision:1}],snapshot=[{id:'s',revision:1,text:'安排'}];
+  const previous={title:'长会议',topics:Array.from({length:30},(_,i)=>({id:'项目'+String(i).padStart(2,'0')+'名'.repeat(70),title:'项目'+i+'名'.repeat(190),summary:'进展'+i+'已确认'.repeat(100)})),sections:Array.from({length:20},(_,i)=>({heading:'分类'+i+'名'.repeat(190),items:[]})),decisions:[{text:'旧项目的评审安排仍保留',evidence}]};
+  previous.sections[0].items=[{text:'旧会议事实仍保留',evidence}];
+  const original=structuredClone(previous),related=previous.topics[5],recent=previous.topics.at(-1);
+  const context=minutesContext(previous,[{id:'new',revision:1,text:related.title+'；'+recent.title+'：跟进评审安排。'}]);
+  assert.ok(Buffer.byteLength(JSON.stringify(context))<=12000);
+  assert.ok(context.topics.length>0&&context.topics.length<previous.topics.length);
+  const known=new Map(previous.topics.map(topic=>[topic.id,topic]));
+  for(const topic of context.topics){
+    assert.ok(known.has(topic.id),'retained identities are unchanged');
+    if(topic.summary!==undefined)assert.equal(topic.summary,known.get(topic.id).summary.slice(0,160));
+  }
+  assert.ok(context.topics.some(topic=>topic.id===related.id));
+  assert.ok(context.topics.some(topic=>topic.id===recent.id));
+  assert.ok(context.items.some(item=>item.text==='旧项目的评审安排仍保留'));
+  assert.deepEqual(previous,original,'prompt clipping must not discard or mutate stored facts');
   const base={title:'项目会',sections:[{heading:'安排',items:[{text:'排查相机',evidence}]}],actions:[{text:'排查相机',owner:'已确认负责人',due:'今天',evidence}],evidenceSnapshot:snapshot};
   const delta={title:'最新讨论',sections:[{heading:'安排',items:[{text:'排查相机',evidence}]}],actions:[{text:'排查相机',owner:null,due:null,evidence}]};
   const result=mergeLiveMinutes(base,delta,snapshot);
