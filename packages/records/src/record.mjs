@@ -25,7 +25,7 @@ export function createRecord(owner, input = {}) {
   const record = { id: randomUUID(), owner, kind: 'record', workspaceId: input.workspaceId || null, title: title.slice(0, 160) || '未命名会议', titleEdited:Boolean(title), ...(input.learningEnabled ? {learning:{enabled:true,status:'waiting'}} : {}),
     language: input.language || 'zh', createdAt: now, updatedAt: now, cursor: '0', events: [], generation: 1,
     capture: 'idle', transcription: 'idle', sessions: [], sources: [], chunks: [], segments: [], transcriptRevision: 0,
-    notes: '', notesRevision: 0, minutes: null, liveMinutes: null, realtimeAudioConsent: input.realtimeAudioConsent === true, autoMinutes: { enabled: input.autoMinutes === true, intervalSeconds: 30 }, minutesRevision: 0, minutesHistory: [], jobs: [], shares: [],
+    notes: '', notesRevision: 0, minutes: null, liveMinutes: null, realtimeAudioConsent: input.realtimeAudioConsent === true, autoMinutes: { enabled: input.autoMinutes === true, intervalSeconds: 120 }, minutesRevision: 0, minutesHistory: [], jobs: [], shares: [],
     retentionDays: days, retainAudio: input.retainAudio !== false, deleteAt: new Date(Date.now() + days * 86400000).toISOString(),
     usage: { samples: 0, sampleRate: 16000, llmTokens: 0 }, deleted: false };
   emit(record, 'record.created'); return record;
@@ -186,7 +186,12 @@ export function requestMinutes(record, input = {}) {
   const liveContext = minutesContext(liveBaseline(record));
   const manifestHash = digest(JSON.stringify({snapshot, liveBaseHash, liveContext}));
   const key = `${record.id}:${record.transcriptRevision}:${manifestHash}:${template}:v5:${record.notesRevision}:${input.modelVersion || 'default'}:${input.mode || 'model'}:${scope}`;
-  const existing = record.jobs.find(j => j.key === key && !['failed', 'stale', 'cancelled'].includes(j.status));
+  requireThat(input.retry === undefined || typeof input.retry === 'boolean', 'invalid_minutes_retry', 400);
+  requireThat(!input.retry || input.automatic !== true, 'invalid_minutes_retry', 400);
+  if (input.retry) for (const job of record.jobs) if (['queued', 'running'].includes(job.status)) {
+    job.status = 'cancelled'; job.fence = null; job.snapshot = []; delete job.preview; delete job.partialMinutes;
+  }
+  const existing = !input.retry && record.jobs.find(j => j.key === key && !['failed', 'stale', 'cancelled'].includes(j.status));
   if (existing) return existing;
   for(const job of record.jobs)if(['queued','running'].includes(job.status) && job.scope==='live' && (scope==='final' || job.status==='queued')){job.status='cancelled';job.fence=null;job.snapshot=[];delete job.preview; delete job.partialMinutes;}
   requireThat(record.jobs.filter(j => ['queued', 'running'].includes(j.status)).length < 3, 'job_limit', 429);

@@ -275,3 +275,14 @@ test('paused catch-up waits for the stop manifest tail to be durably acknowledge
   const checkpoint=queueAutomaticMinutes(r,'fixture',2000);
   assert.equal(checkpoint.scope,'live');assert.equal(checkpoint.pausedCheckpoint,true);assert.equal(r.capture,'paused');
 });
+
+test('default minutes interval is two minutes and explicit choices survive', () => {
+  const record = createRecord('interval-owner');
+  assert.equal(record.autoMinutes.intervalSeconds, 120);
+  setAutomation(record, {enabled:true,intervalSeconds:15});
+  setAutomation(record, {enabled:true});
+  assert.equal(record.autoMinutes.intervalSeconds, 15);
+  delete record.autoMinutes.intervalSeconds;
+  setAutomation(record, {enabled:true});
+  assert.equal(record.autoMinutes.intervalSeconds, 120);
+});

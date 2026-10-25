@@ -17,5 +17,5 @@ export function FeedbackNotice({ message, action, warning = true, open = true, d
     try { if (dismissalKey) globalThis.localStorage?.setItem(`lingji:notice:${dismissalKey}`, 'dismissed'); }
     catch { /* Storage may be unavailable; closing still works for this mounted notice. */ }
   }
-  return dismissed || !open ? null : <Toast message={message} warning={warning} persistent action={action} dismiss={dismiss}/>;
+  return dismissed || !open ? null : <Toast message={message} warning={warning} persistent inline action={action} dismiss={dismiss}/>;
 }

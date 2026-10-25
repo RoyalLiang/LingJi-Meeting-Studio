@@ -1,3 +1,4 @@
 LIBRARY lingji-ui
 EXPORTS
   LingJiTheme=_LingJiTheme@20
+  LingJiFileMatches=_LingJiFileMatches@8

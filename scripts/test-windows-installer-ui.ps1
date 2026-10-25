@@ -24,14 +24,21 @@ public class LingJiInstallerWindow {
 New-Item -ItemType Directory -Force $Root | Out-Null
 New-Item -ItemType Directory -Force $Screenshots | Out-Null
 $install=Join-Path $Root 'Visual Install'
-$previousModels=@{}
+$previousModels=@{};$previousModelTimes=@{};$changedResource=$null;$expectedChangedHash=$null
 if($Upgrade){
-  if(-not $WithoutModel){throw 'Upgrade probe must opt out of new model installation'}
   $seed=Start-Process -FilePath $Installer -ArgumentList "/S /D=$install" -Wait -PassThru
   if($seed.ExitCode -ne 0){throw 'Upgrade fixture install failed'}
   $modelRoot=Join-Path $install 'client-backend/local-asr'
   foreach($file in Get-ChildItem -LiteralPath $modelRoot -File -Recurse){$previousModels[$file.FullName]=(Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash}
   if($previousModels.Count -eq 0){throw 'Upgrade fixture has no model'}
+  foreach($path in $previousModels.Keys){
+    [IO.File]::SetLastWriteTimeUtc($path,[datetime]'2001-01-01T00:00:00Z')
+    $previousModelTimes[$path]=[IO.File]::GetLastWriteTimeUtc($path).Ticks
+  }
+  $changedResource=Join-Path $install 'client-backend/services/records/src/config.mjs'
+  $expectedChangedHash=(Get-FileHash -LiteralPath $changedResource -Algorithm SHA256).Hash
+  [IO.File]::AppendAllText($changedResource,"`n// obsolete upgrade-fixture content`n")
+
   $installedKeys=@(Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' | Where-Object {(Get-ItemProperty $_.PSPath).InstallLocation -eq ('"'+$install+'"')})
   if($installedKeys.Count -ne 1){throw 'Upgrade fixture registration missing or ambiguous'}
   # Exercise the real older-version branch, whose default would uninstall before copying.
@@ -133,6 +140,7 @@ function Capture-Page([string]$name) {
 }
 try {
  Wait-Page '安装聆记'
+ $initialWindow=$script:handle
  Wait-Page '安装本地 SenseVoice 离线转录模型（推荐）'
  if($WithoutModel){Uncheck-Checkbox '安装本地 SenseVoice 离线转录模型（推荐）'}
  Capture-Page 'welcome'
@@ -151,10 +159,13 @@ try {
  if($setup.ExitCode -ne 0){throw 'Interactive installer failed'}
  $model=Join-Path $install 'client-backend/local-asr/manifest.json'
  if($Upgrade){
+  if($script:handle -ne $initialWindow){throw 'Upgrade replaced the installation window'}
+  if((Get-FileHash -LiteralPath $changedResource -Algorithm SHA256).Hash -ne $expectedChangedHash){throw 'Upgrade failed to replace a changed backend resource'}
   foreach($path in $previousModels.Keys){
+   if([IO.File]::GetLastWriteTimeUtc($path).Ticks -ne $previousModelTimes[$path]){throw 'Upgrade rewrote an unchanged model file'}
    if(-not (Test-Path -LiteralPath $path) -or (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne $previousModels[$path]){throw 'Upgrade opt-out removed or replaced an existing model file'}
   }
-  [IO.File]::WriteAllText((Join-Path $Root 'upgrade-model-smoke.json'),(@{existingModelPreserved=$true;verifiedModelFiles=$previousModels.Count;olderVersionFixture=$true} | ConvertTo-Json))
+  [IO.File]::WriteAllText((Join-Path $Root 'upgrade-model-smoke.json'),(@{existingModelPreserved=$true;verifiedModelFiles=$previousModels.Count;olderVersionFixture=$true;unchangedModelsNotRewritten=$true;changedResourceUpdated=$true;singleInstallerWindow=$true} | ConvertTo-Json))
  }elseif($WithoutModel){
   if(Test-Path $model){throw 'Opt-out still installed local model assets'}
   $modelRoot=Split-Path $model -Parent

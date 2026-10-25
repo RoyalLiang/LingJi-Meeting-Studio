@@ -1,0 +1,33 @@
+name: Windows meeting polish diagnostic
+on:
+  push:
+    branches: [dev_meeting-polish]
+permissions:
+  contents: read
+concurrency:
+  group: windows-meeting-polish
+  cancel-in-progress: true
+jobs:
+  installer:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24.21.0'
+      - name: Native installer theme and file-hash checks
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference=$false
+          New-Item -ItemType Directory -Force .agent-runtime | Out-Null
+          & pwsh -NoProfile -File scripts/test-installer-theme.ps1 2>&1 | Tee-Object .agent-runtime/installer-diagnostic.log
+          $status=$LASTEXITCODE
+          if($status -ne 0){
+            $log=Get-Content .agent-runtime/installer-diagnostic.log -Raw
+            $tail=$log.Substring([Math]::Max(0,$log.Length-6000))
+            for($i=0;$i -lt $tail.Length;$i+=900){$part=$tail.Substring($i,[Math]::Min(900,$tail.Length-$i)).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A');Write-Host "::error title=Installer diagnostic::$part"}
+          }
+          exit $status
