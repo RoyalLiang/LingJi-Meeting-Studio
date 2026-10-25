@@ -1,4 +1,5 @@
 import { minutesTimeoutMs } from './minutes-deadline.mjs';
+import { MINUTES_PROMPT_VERSION } from './minutes-prompts.mjs';
 import { audioMinutesEnabled } from './config.mjs';
 import { liveBaseline, mergeLiveMinutes } from '../../../packages/records/src/live-minutes.mjs';
 import { telemetry } from './telemetry.mjs';
@@ -23,7 +24,7 @@ const refs = result => {
   visit(result);return [...found.values()];
 };
 export function buildMinutesManifest(job,config={},budget=inputBudget(config)){
-  const policy=hash({version:7,minutesMode:config.MINUTES_MODE,realtimeModel:config.OPENAI_REALTIME_MODEL,realtimeUrl:config.OPENAI_REALTIME_URL,windowMs:120000,budget,context:job.liveContext,model:job.modelVersion==='default'?config.LLM_MODEL:job.modelVersion,base:config.LLM_API_URL,protocol:config.LLM_PROTOCOL,template:job.template,scope:job.scope,mode:job.mode,notes:job.notes,notesRevision:job.notesRevision,generation:job.generation});
+  const policy=hash({version:MINUTES_PROMPT_VERSION,minutesMode:config.MINUTES_MODE,realtimeModel:config.OPENAI_REALTIME_MODEL,realtimeUrl:config.OPENAI_REALTIME_URL,windowMs:120000,budget,structuredOutputs:config.LLM_STRUCTURED_OUTPUTS,context:job.liveContext,model:job.modelVersion==='default'?config.LLM_MODEL:job.modelVersion,base:config.LLM_API_URL,protocol:config.LLM_PROTOCOL,template:job.template,scope:job.scope,mode:job.mode,notes:job.notes,notesRevision:job.notesRevision,generation:job.generation});
   const windows=[];let current=[];
   const flush=()=>{if(current.length){windows.push({key:hash({policy,snapshot:current}),snapshot:current});current=[];}};
   function add(segment){
@@ -33,7 +34,7 @@ export function buildMinutesManifest(job,config={},budget=inputBudget(config)){
     }
     if(current.length && size({transcript:[...current,segment],notes:job.notes,context:job.liveContext})>budget)flush();current.push(segment);
   }
-  const snapshot=job.snapshot.map(({id,revision,text,sourceId,speakerId,speaker,speakerName,startMs,endMs,contextOnly})=>({id,revision,text,sourceId,speakerId,speaker,speakerName,startMs,endMs,contextOnly}));
+  const snapshot=job.snapshot.map(({id,revision,text,sourceId,speakerId,speaker,speakerName,startMs,endMs,contextOnly})=>({id,revision,text,sourceId,speakerId,speaker,speakerName,startMs,endMs,contextOnly})).sort((a,b)=>(a.startMs||0)-(b.startMs||0)||(a.endMs||0)-(b.endMs||0));
   if (audioMinutesEnabled(config)) {
     // Group by source before timeline buckets: simultaneous tracks count as
     // separate audio. Split long ASR turns without inventing new transcript IDs.
@@ -54,6 +55,19 @@ export function buildMinutesManifest(job,config={},budget=inputBudget(config)){
     if(current.length && (timed ? next!==bucket || (audioMinutesEnabled(config) && current[0].sourceId !== segment.sourceId) : !single && (index+snapshotOffset)%24===0))flush();
     bucket=next;add(segment);
   });flush();
+  if(job.scope==='live'&&snapshot.some(segment=>segment.contextOnly!==true)){
+    for(let index=windows.length-1;index>=0;index--)if(windows[index].snapshot.every(segment=>segment.contextOnly===true))windows.splice(index,1);
+  }
+  const primaryWindows=windows.map(window=>[...window.snapshot]);
+  if(!audioMinutesEnabled(config))for(let index=0;index<windows.length;index++){
+    const window=windows[index], adjacent=[primaryWindows[index-1]?.at(-1),primaryWindows[index+1]?.[0]].filter(Boolean);
+    for(const neighbor of adjacent){
+      if(window.snapshot.some(segment=>segment.id===neighbor.id&&segment.revision===neighbor.revision))continue;
+      const candidate=[...window.snapshot,{...neighbor,contextOnly:true}].sort((a,b)=>(a.startMs||0)-(b.startMs||0));
+      if(size({transcript:candidate,notes:job.notes,context:job.liveContext})<=budget)window.snapshot=candidate;
+    }
+    window.key=hash({policy,snapshot:window.snapshot});
+  }
   requireThat(windows.length>0 && windows.length<=512,'minutes_window_limit',422);
   return {version:1,budget,synthesisBudget:synthesisBudget(config),policy,generation:job.generation,transcriptRevision:job.transcriptRevision,notesRevision:job.notesRevision,snapshotOffset,hash:job.manifestHash,windows};
 }
@@ -90,16 +104,16 @@ export async function runMinutesPipeline(repo,recordId,claim,config,generate,opt
   async function execute(key,input,stage,preview=false){
     await repo.change(recordId,record=>{const job=currentJob(record,claim);job.lease=Date.now()+(minutesTimeoutMs(claim)+60000);});
     let result=cache.get(key);
-    if(result){validateMinutes(result,claim.snapshot);reused++;}
+    if(result){validateMinutes(result,claim.snapshot,claim.liveContext,{newEvidenceOnly:true});reused++;}
     else if(inFlight.has(key)){result=await inFlight.get(key);reused++;}
     else{
       const pending=(async()=>{
       let first=false;
-      const allowed = new Set(input.snapshot.map(segment=>`${segment.id}:${segment.revision}`));
-      const validationSnapshot=claim.snapshot.filter(segment=>allowed.has(`${segment.id}:${segment.revision}`));
+      const allowed = new Map(input.snapshot.map(segment=>[`${segment.id}:${segment.revision}`,segment]));
+      const validationSnapshot=claim.snapshot.filter(segment=>allowed.has(`${segment.id}:${segment.revision}`)).map(segment=>({...segment,contextOnly:allowed.get(`${segment.id}:${segment.revision}`).contextOnly}));
       const result=await telemetry.measure('minutes.window',{recordId,jobId:claim.id},()=>meteredMinutesCall(repo,recordId,claim,generate,{...claim,...input,validationSnapshot},config,stage==='single'||preview?options:{onDelta:(delta,runtime)=>{if(!first){first=true;telemetry.event('minutes.first-text',{recordId,jobId:claim.id,durationMs:runtime?.firstTokenMs});}}}));
       telemetry.event('minutes.window-usage',{recordId,jobId:claim.id,tokens:result.usageTokens,firstTextMs:result.runtime?.firstTokenMs});
-      validateMinutes(result,validationSnapshot);validateMinutes(result,claim.snapshot);
+      validateMinutes(result,validationSnapshot,claim.liveContext,{newEvidenceOnly:true});validateMinutes(result,claim.snapshot,claim.liveContext,{newEvidenceOnly:true});
       tokens+=Number.isSafeInteger(result.usageTokens)&&result.usageTokens>=0?result.usageTokens:0;calls++;
       return result;
       })();
@@ -114,7 +128,7 @@ export async function runMinutesPipeline(repo,recordId,claim,config,generate,opt
           const ids = new Set(input.snapshot.map(segment=>`${segment.id}:${segment.revision}`));
           completedWindows.set(key, {result, snapshot:claim.snapshot.filter(segment=>ids.has(`${segment.id}:${segment.revision}`))});
           let partial = liveBaseline(record);
-          for (const window of completedWindows.values()) partial = mergeLiveMinutes(partial, window.result, window.snapshot);
+          for (const entry of manifest.windows) {const window=completedWindows.get(entry.key);if(window)partial = mergeLiveMinutes(partial, window.result, window.snapshot);}
           validateMinutes(partial, partial.evidenceSnapshot);
           job.partialMinutes = {...partial, transcriptRevision:claim.transcriptRevision, generatedAt:new Date().toISOString()};
         }
@@ -129,9 +143,19 @@ export async function runMinutesPipeline(repo,recordId,claim,config,generate,opt
     const groups=[];let group=[];
     const inputFor=items=>{
       const wanted=new Set(items.flatMap(node=>refs(node.result).map(ref=>`${ref.segmentId}:${ref.revision}`)));
-      return {snapshot:claim.snapshot.filter(s=>wanted.has(`${s.id}:${s.revision}`)).map(({id,revision,speakerId,speaker,speakerName,sourceId,startMs,endMs,contextOnly})=>({id,revision,speakerId,speaker,speakerName,sourceId,startMs,endMs,contextOnly})),summaries:items.map(node=>content(node.result)),stage:'synthesis'};
+      const sources=claim.snapshot.filter(s=>wanted.has(`${s.id}:${s.revision}`));
+      const input={snapshot:sources.map(({id,revision,speakerId,speaker,speakerName,sourceId,startMs,endMs,contextOnly})=>({id,revision,speakerId,speaker,speakerName,sourceId,startMs,endMs,contextOnly,textOmitted:true})),summaries:items.map(node=>content(node.result)),stage:'synthesis',omittedEvidence:0};
+      let remaining=Math.min(24000,Math.max(0,manifest.synthesisBudget-size({...input,notes:claim.notes,context:claim.liveContext})-1024));
+      const critical=new Set(items.flatMap(node=>refs({corrections:node.result.corrections,decisions:node.result.decisions,actions:node.result.actions})).map(ref=>`${ref.segmentId}:${ref.revision}`));
+      const order=sources.map((source,index)=>({source,index})).sort((a,b)=>Number(critical.has(`${b.source.id}:${b.source.revision}`))-Number(critical.has(`${a.source.id}:${a.source.revision}`))||(b.source.endMs||0)-(a.source.endMs||0));
+      for(const {index} of order){
+        const text=sources[index].text, bytes=size(text||'')+10;
+        if(typeof text==='string'&&bytes<=remaining){input.snapshot[index].text=text;delete input.snapshot[index].textOmitted;remaining-=bytes;}
+        else {input.snapshot[index].textOmitted=true;input.omittedEvidence++;}
+      }
+      return input;
     };
-    const payloadFor=input=>JSON.stringify({transcript:input.snapshot,notes:claim.notes,context:claim.liveContext,summaries:input.summaries,stage:input.stage});
+    const payloadFor=input=>JSON.stringify({transcript:input.snapshot,notes:claim.notes,context:claim.liveContext,summaries:input.summaries,stage:input.stage,omittedEvidence:input.omittedEvidence});
     for(const node of nodes){
       if(group.length && (group.length>=8 || Buffer.byteLength(payloadFor(inputFor([...group,node])))>manifest.synthesisBudget)){groups.push(group);group=[];}
       group.push(node);
@@ -140,7 +164,7 @@ export async function runMinutesPipeline(repo,recordId,claim,config,generate,opt
     nodes=await mapWindows(groups,async children=>{
       if(children.length===1)return children[0];
       const input=inputFor(children),payload=payloadFor(input);requireThat(payload.length<180000 && Buffer.byteLength(payload)<=manifest.synthesisBudget,'minutes_intermediate_too_large',422);
-      return execute(hash({policy:manifest.policy,children:children.map(node=>node.key)}),input,'synthesis',groups.length===1);
+      return execute(hash({policy:manifest.policy,children:children.map(node=>node.key),synthesisBudget:manifest.synthesisBudget}),input,'synthesis',groups.length===1);
     });
   }
   return {...nodes[0].result,usageTokens:tokens,usageRecorded:true,coverage:{manifestHash:manifest.hash,windows:manifest.windows.length,completed:manifest.windows.length,segments:new Set(claim.snapshot.map(s=>s.id)).size,calls,reused,levels:level},runtime:{...nodes[0].result.runtime,pipelineCalls:calls}};

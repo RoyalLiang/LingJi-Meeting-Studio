@@ -1,5 +1,7 @@
 # 聆记文档导航
 
+本轮纪要上下文优化待统一发版：见[迟到转录、上下文与纪要更正](engineering/minutes-context.md)。本轮未创建版本或发布。
+
 [产品与快速开始](../README.md) · [下载预览版](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases) · [问题反馈](https://github.com/RoyalLiang/LingJi-Meeting-Studio/issues)
 
 按要完成的事情选择入口。已实现能力与待验证范围以[当前状态](engineering/current-state.md)和对应版本回执为准；设计稿与路线图表示目标，不自动代表已实现。

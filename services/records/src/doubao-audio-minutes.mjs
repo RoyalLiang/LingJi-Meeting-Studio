@@ -2,7 +2,7 @@ import { groundSpeakerSummaries, orderMinutesTimelines } from '../../../packages
 import { minutesTimeoutMs } from './minutes-deadline.mjs';
 import { normalizeConfig, configured } from './config.mjs';
 import { completeModelJson } from './llm.mjs';
-import { audioMinutesInstructions } from './audio-minutes.mjs';
+import { minutesInstructions, minutesSchema, normalizeMinutesOutput } from './minutes-prompts.mjs';
 import { requireThat, validateMinutes } from '../../../packages/records/src/record.mjs';
 
 const MAX_SAMPLES = 16000 * 300;
@@ -59,14 +59,16 @@ export async function generateDoubaoAudioMinutes(repo, recordId, job, input, opt
   const chunks = job.stage === 'synthesis' ? [] : record.chunks.filter(chunk => !chunk.expired && chunk.sequence <= (record.sources.find(source => source.id === chunk.sourceId && source.epoch === chunk.epoch)?.watermark ?? -1) && refs.some(segment => segment.sourceId === chunk.sourceId && segment.startMs < sourceTime(record, chunk) + chunk.sampleCount / 16 && segment.endMs > sourceTime(record, chunk)));
   requireThat(job.stage === 'synthesis' || chunks.length > 0, 'audio_minutes_audio_unavailable', 409);
   const clips = await audioClips(repo, record, chunks);
-  const data = { transcript: refs, audio: clips.map(({ audio: _audio, ...mapping }) => mapping), notes: job.notes, context: job.liveContext, summaries: job.summaries, scope: job.scope, template: job.template, stage: job.stage };
+  const data = { transcript: refs, audio: clips.map(({ audio: _audio, ...mapping }) => mapping), notes: job.notes, context: job.liveContext, summaries: job.summaries, scope: job.scope, template: job.template, stage: job.stage, omittedEvidence:job.omittedEvidence };
   const result = await completeModelJson([
-    { role: 'system', content: audioMinutesInstructions },
+    { role: 'system', content: minutesInstructions(job,true) },
     { role: 'user', content: [...clips.flatMap(clip => [{ type: 'input_text', text: `音频 ${clip.clipId}，对应时间及来源见下方 audio 映射。` }, clip.audio]), { type: 'input_text', text: JSON.stringify(data) }] },
-  ], config, { ...options, timeoutMs: minutesTimeoutMs(job) });
-  groundSpeakerSummaries(result, job.validationSnapshot || refs);
-  orderMinutesTimelines(result, job.validationSnapshot || refs);
-  validateMinutes(result, job.validationSnapshot || refs);
+  ], config, { ...options, jsonSchema:minutesSchema, timeoutMs: minutesTimeoutMs(job) });
+  const validationSnapshot=job.validationSnapshot || refs;
+  normalizeMinutesOutput(result);
+  groundSpeakerSummaries(result,validationSnapshot);
+  orderMinutesTimelines(result,validationSnapshot);
+  validateMinutes(result,validationSnapshot,job.liveContext,{newEvidenceOnly:true});
   result.audioEvidence = clips.flatMap(clip => clip.chunks.map(chunk => ({ clipId: clip.clipId, ...chunk })));
   result.runtime = { ...result.runtime, inputMode: config.MINUTES_MODE, model: config.LLM_MODEL };
   return result;

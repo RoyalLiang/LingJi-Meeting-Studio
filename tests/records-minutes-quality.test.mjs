@@ -99,7 +99,7 @@ test('all audio and text modes share the content selection rules',()=>{
   for(const text of ['闲聊','不推测姓名','不重复','访谈','valueText','topicId'])assert.ok(minutesQualityInstructions.includes(text),text);
 });
 
-test('hierarchical synthesis validates charts against frozen raw evidence while prompt metadata stays compact',async()=>{
+test('hierarchical synthesis validates charts against frozen raw evidence and bounded prompt excerpts',async()=>{
   const root=await mkdtemp(join(tmpdir(),'minutes-quality-')),repo=await createRepository({root,databaseUrl:''});
   try{
     const record=createRecord('owner');Object.assign(record,{capture:'completed',transcription:'completed',transcriptRevision:1,segments:structuredClone(snapshot)});await repo.insert(record);
@@ -107,10 +107,10 @@ test('hierarchical synthesis validates charts against frozen raw evidence while 
     let syntheses=0;
     const result=await runMinutesPipeline(repo,record.id,claim,{LLM_MODEL:'fixture',LLM_API_URL:'http://fixture.invalid'},async job=>{
       if(job.stage==='synthesis'){
-        syntheses++;assert.ok(job.snapshot.every(s=>s.text===undefined));assert.ok(job.validationSnapshot.every(s=>typeof s.text==='string'));
+        syntheses++;assert.ok(job.snapshot.some(s=>typeof s.text==='string'));assert.ok(Buffer.byteLength(JSON.stringify(job.snapshot))<=96000);assert.ok(job.validationSnapshot.every(s=>typeof s.text==='string'));
         return {...fixture(),usageTokens:1};
       }
-      return {title:'窗口',sections:[{heading:'讨论',items:job.snapshot.map(s=>({text:s.text,evidence:[{segmentId:s.id,revision:s.revision}]}))}],actions:[],usageTokens:1};
+      return {title:'窗口',sections:[{heading:'讨论',items:job.snapshot.filter(s=>!s.contextOnly).map(s=>({text:s.text,evidence:[{segmentId:s.id,revision:s.revision}]}))}],actions:[],usageTokens:1};
     });
     assert.ok(syntheses>0);await repo.change(record.id,r=>commitMinutes(r,claim.id,result,claim.fence));
     assert.equal((await repo.get(record.id)).minutes.visuals.length,2);
@@ -166,9 +166,9 @@ test('a repeated object cannot fabricate a two-object numeric comparison',()=>{
 });
 
 
-test('explicit regeneration after upgrade queues the new content policy instead of reusing completed v4 minutes',()=>{
+test('explicit regeneration after upgrade queues the new content policy instead of reusing completed v5 minutes',()=>{
   const record=createRecord('synthetic',{autoMinutes:false});Object.assign(record,{capture:'completed',transcriptRevision:1,segments:structuredClone(snapshot)});
-  const legacy=requestMinutes(record,{mode:'model'});legacy.status='completed';legacy.key=legacy.key.replace(':v5:',':v4:');
+  const legacy=requestMinutes(record,{mode:'model'});legacy.status='completed';legacy.key=legacy.key.replace(':v6:',':v5:');
   record.minutes={...fixture(),edited:false};const oldMinutes=JSON.stringify(record.minutes);
   const next=requestMinutes(record,{mode:'model'});assert.notEqual(next.id,legacy.id);assert.equal(next.status,'queued');
   assert.equal(requestMinutes(record,{mode:'model'}).id,next.id);assert.equal(JSON.stringify(record.minutes),oldMinutes);
