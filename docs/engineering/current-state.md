@@ -1,3 +1,13 @@
+# v0.1.22 覆盖升级与录音胶囊已发布（2026-10-26）
+
+[完整回执](../evidence/preview-v0.1.22-2026-10-26.md)：[Release](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.22)、[正式 Actions](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/40228814842) 四项成功，十公开附件与 318 份源码指纹核对通过；源码 `b4a88e27b3ee9bb7a13e6c9a2b1f20f46ca61f7e`，macOS build 0.1.44。
+
+普通同位置 NSIS 升级保持一个窗口，按哈希跳过不变资源；37 份模型保留且不重写。新增录音胶囊暂停/继续/结束/恢复，播放时钟与间距改善，异常纪要可手动重试、提示可关闭，新会议默认两分钟。设置取消后可重开，焦点框和备份图标/悬浮提示统一。
+
+474 Node/32 Rust、本机原生与公开 Mac 包隔离复测、Windows 六分钟合成音频/排空/重启补传通过。实机 Windows 音频、长会议、多屏/高 DPI 与 Mac 人工视觉/物理按键仍未验；安装仍下载完整包，非差分下载。v20/v21 失败标签保留且未发布安装包。
+
+以下保留历史证据；最新验证边界以上方回执为准。
+
 # v0.1.19 Windows 系统音频与模型选装已发布（2026-10-25）
 
 [发布回执](../evidence/preview-v0.1.19-2026-10-25.md)：[Release](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.19)、[Actions](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/40204022613) 与十个公开附件已核对；源码 `eaf3c0afe8fef55544ce7ca961afe31daca37df7`。修复可恢复缓冲波动误停；Windows 模型默认安装、可取消，原位置升级可保留已有模型。实际安装器和较旧注册版本夹具验证通过。
