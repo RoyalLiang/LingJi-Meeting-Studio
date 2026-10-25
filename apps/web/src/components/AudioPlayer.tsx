@@ -48,6 +48,13 @@ function PlaybackControls({ sources }: Props) {
     setDuration(transport.duration);
     if (!scrub.active) setTime(transport.time);
   };
+  useEffect(() => {
+    if (!playing) return;
+    let frame = 0;
+    const update = () => { if (!scrub.active) setTime(transport.time); frame = requestAnimationFrame(update); };
+    frame = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(frame);
+  }, [playing, transport, scrub]);
   const run = async (action: () => Promise<unknown>) => {
     const current = ++operation.current;
     setStarting(true);

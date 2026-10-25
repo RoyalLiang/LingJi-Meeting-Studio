@@ -1,3 +1,4 @@
+!include "${__FILEDIR__}\generated\resource-hashes.nsh"
 ; Three approved pages; input and accessibility remain native Win32 controls.
 !include nsDialogs.nsh
 !define LINGJI_BACKGROUND "${__FILEDIR__}\background.bmp"
@@ -496,7 +497,15 @@ FunctionEnd
   StrCpy $0 "${destination}" $0
   ${If} $LingJiInstallModel != 0
   ${OrIf} $0 != "client-backend\local-asr\"
-    File /a "/oname=${destination}" "${source}"
+    !insertmacro LingJiExpectedHash "${destination}"
+    StrCpy $0 0
+    !if "${LINGJI_RESOURCE_SHA256}" != ""
+      System::Call '$PLUGINSDIR\lingji-ui.dll::LingJiFileMatches(w "$INSTDIR\${destination}",w "${LINGJI_RESOURCE_SHA256}")i.r0'
+    !endif
+    ${If} $0 != 1
+      File /a "/oname=${destination}" "${source}"
+    ${EndIf}
+    !undef LINGJI_RESOURCE_SHA256
   ${EndIf}
   Pop $0
 !macroend

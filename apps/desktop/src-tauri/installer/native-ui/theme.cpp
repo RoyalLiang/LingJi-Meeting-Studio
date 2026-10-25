@@ -1,6 +1,7 @@
 // Paint existing Win32 controls; preserve their input, automation and checkbox semantics.
 #include <windows.h>
 #include <commctrl.h>
+#include <bcrypt.h>
 #include <algorithm>
 #include <cwchar>
 
@@ -156,4 +157,31 @@ extern "C" void __stdcall LingJiTheme(HWND root, LPCWSTR bitmap, HWND edit, HWND
   rootWindow = root; folderEdit = edit; browseButton = browse; percentLabel = percent;
   if (!background) background = static_cast<HBITMAP>(LoadImageW(nullptr, bitmap, IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE | LR_CREATEDIBSECTION));
   EnumChildWindows(rootWindow, apply, 0);
+}
+
+// Compare installed bytes with the trusted build manifest; failures fall back to copying.
+extern "C" int __stdcall LingJiFileMatches(LPCWSTR path, LPCWSTR expected) {
+  if (!path || !expected || wcslen(expected) != 64) return 0;
+  HANDLE file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
+  if (file == INVALID_HANDLE_VALUE) return 0;
+  BCRYPT_ALG_HANDLE algorithm = nullptr; BCRYPT_HASH_HANDLE hash = nullptr;
+  bool ok = false;
+  if (BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA256_ALGORITHM, nullptr, 0) >= 0 &&
+      BCryptCreateHash(algorithm, &hash, nullptr, 0, nullptr, 0, 0) >= 0) {
+    unsigned char buffer[65536], digest[32]; DWORD read = 0;
+    ok = true;
+    while (ok) {
+      if (!ReadFile(file, buffer, static_cast<DWORD>(sizeof(buffer)), &read, nullptr)) { ok = false; break; }
+      if (!read) break;
+      ok = BCryptHashData(hash, buffer, read, 0) >= 0;
+    }
+    if (ok) ok = BCryptFinishHash(hash, digest, static_cast<ULONG>(sizeof(digest)), 0) >= 0;
+    constexpr wchar_t hex[] = L"0123456789abcdef";
+    if (ok) for (size_t i = 0; i < 32; ++i) {
+      if (expected[i*2] != hex[digest[i] >> 4] || expected[i*2+1] != hex[digest[i] & 15]) { ok = false; break; }
+    }
+  }
+  if (hash) BCryptDestroyHash(hash);
+  if (algorithm) BCryptCloseAlgorithmProvider(algorithm, 0);
+  CloseHandle(file); return ok ? 1 : 0;
 }
