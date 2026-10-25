@@ -150,6 +150,18 @@ where T: cpal::SizedSample, f32: FromSample<T> {
     }
 }
 
+fn handle_stream_error(event: cpal::Error, error: &Mutex<Option<String>>, stop: &AtomicBool, warned: &AtomicBool) {
+    // CPAL keeps the stream running for these notifications and still delivers audio.
+    if matches!(event.kind(), cpal::ErrorKind::Xrun | cpal::ErrorKind::DeviceChanged | cpal::ErrorKind::RealtimeDenied) {
+        if !warned.swap(true, Ordering::Relaxed) {
+            eprintln!("[lingji-audio-warning] {event}；采集继续，缓冲波动可能造成短暂音频缺口。");
+        }
+        return;
+    }
+    *error.lock().unwrap() = Some(format!("音频设备停止：{event}"));
+    stop.store(true, Ordering::Release);
+}
+
 fn input_stream<T>(
     device: &cpal::Device,
     config: &cpal::StreamConfig,
@@ -163,7 +175,8 @@ where
 {
     let failure = error.clone();
     let failed = stop.clone();
-    device.build_input_stream(*config, move |data: &[T], _| { queue_input(&sender, data, &error, &stop); }, move |e| { *failure.lock().unwrap() = Some(format!("音频设备停止：{e}")); failed.store(true, Ordering::Release); }, None)
+    let warned = AtomicBool::new(false);
+    device.build_input_stream(*config, move |data: &[T], _| { queue_input(&sender, data, &error, &stop); }, move |e| { handle_stream_error(e, &failure, &failed, &warned); }, None)
         .map_err(|e| e.to_string())
 }
 
@@ -429,6 +442,41 @@ impl Drop for Captures {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn recoverable_stream_warning_keeps_the_same_available_audio() {
+        for kind in [cpal::ErrorKind::Xrun, cpal::ErrorKind::DeviceChanged, cpal::ErrorKind::RealtimeDenied] {
+            let (sender, receiver) = raw_input_channel();
+            let stop = AtomicBool::new(false);
+            let warned = AtomicBool::new(false);
+            let error = Mutex::new(None);
+            // WASAPI reports a discontinuity before delivering the available buffer.
+            handle_stream_error(kind.into(), &error, &stop, &warned);
+            queue_input(&sender, &[0.25f32, -0.25], &error, &stop);
+            assert!(!stop.load(Ordering::Acquire), "recoverable {kind:?} must not disconnect system audio");
+            assert!(error.lock().unwrap().is_none());
+            assert_eq!(receiver.try_recv().unwrap(), vec![0.25, -0.25]);
+            assert!(warned.load(Ordering::Relaxed));
+        }
+    }
+
+    #[test]
+    fn fatal_stream_errors_still_stop_and_do_not_accept_more_audio() {
+        for kind in [cpal::ErrorKind::DeviceNotAvailable, cpal::ErrorKind::PermissionDenied, cpal::ErrorKind::StreamInvalidated, cpal::ErrorKind::BackendError] {
+            let (sender, receiver) = raw_input_channel();
+            let stop = AtomicBool::new(false);
+            let warned = AtomicBool::new(false);
+            let error = Mutex::new(None);
+            handle_stream_error(kind.into(), &error, &stop, &warned);
+            queue_input(&sender, &[0.25f32], &error, &stop);
+            assert!(stop.load(Ordering::Acquire));
+            assert!(error.lock().unwrap().as_ref().unwrap().starts_with("音频设备停止："));
+            assert!(receiver.try_recv().is_err());
+            handle_stream_error(cpal::ErrorKind::Xrun.into(), &error, &stop, &warned);
+            assert!(stop.load(Ordering::Acquire), "a warning must not restart a failed device");
+            assert!(error.lock().unwrap().is_some());
+        }
+    }
+
     #[test]
     fn short_input_stall_retains_ordered_audio_without_stopping_capture() {
         let (sender, receiver) = raw_input_channel();
