@@ -476,7 +476,7 @@ FunctionEnd
 
 Function .onInit
   StrCpy $LingJiInstallModel 1
-  Call LingJiInitialize
+  Call LingJiPrepare
   ${GetOptions} $CMDLINE "/P" $PassiveMode
   ${IfNot} ${Errors}
     StrCpy $PassiveMode 1

@@ -63,16 +63,11 @@ Var LingJiThemeModule
   !insertmacro LingJiPlace $LingJiControl ${x} ${y} ${width} ${height}
 !macroend
 
-Function LingJiInitialize
-  ${If} $LingJiInitialized == 1
+Function LingJiPrepare
+  ${If} $LingJiThemeModule != 0
     Return
   ${EndIf}
-  StrCpy $LingJiInitialized 1
-  SetAutoClose true
-  StrCpy $LingJiShortcut 1
-  StrCpy $LingJiInstallModel 1
   InitPluginsDir
-  File /oname=$PLUGINSDIR\lingji-background.bmp "${LINGJI_BACKGROUND}"
   File /oname=$PLUGINSDIR\lingji-ui.dll "${__FILEDIR__}\generated\lingji-ui.dll"
   ; Keep the module loaded while its window-subclass callbacks are registered.
   System::Call 'kernel32::LoadLibraryW(w "$PLUGINSDIR\lingji-ui.dll")p.s'
@@ -81,6 +76,18 @@ Function LingJiInitialize
     MessageBox MB_OK|MB_ICONSTOP "安装界面无法初始化，请重新下载安装包。"
     Quit
   ${EndIf}
+FunctionEnd
+
+Function LingJiInitialize
+  ${If} $LingJiInitialized == 1
+    Return
+  ${EndIf}
+  StrCpy $LingJiInitialized 1
+  SetAutoClose true
+  StrCpy $LingJiShortcut 1
+  StrCpy $LingJiInstallModel 1
+  Call LingJiPrepare
+  File /oname=$PLUGINSDIR\lingji-background.bmp "${LINGJI_BACKGROUND}"
   File /oname=$PLUGINSDIR\lingji-ui-regular.ttf "${__FILEDIR__}\fonts\lingji-ui-regular.ttf"
   File /oname=$PLUGINSDIR\lingji-ui-semibold.ttf "${__FILEDIR__}\fonts\lingji-ui-semibold.ttf"
   File /oname=$PLUGINSDIR\OFL.txt "${__FILEDIR__}\fonts\OFL.txt"

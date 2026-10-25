@@ -1,7 +1,14 @@
 param([string]$Root = (Split-Path $PSScriptRoot -Parent))
 $ErrorActionPreference='Stop'
 if($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted'){throw 'Use disposable Windows CI for this UI-only harness'}
-& node (Join-Path $Root 'scripts/prepare-installer-theme.mjs')
+$alias=Join-Path $env:RUNNER_TEMP ('lingji-theme-alias-'+[guid]::NewGuid().ToString('N'))
+New-Item -ItemType Junction -Path $alias -Target $Root | Out-Null
+try {
+  $dll=Join-Path $Root 'apps/desktop/src-tauri/installer/generated/lingji-ui.dll'
+  if(Test-Path $dll){Remove-Item $dll -Force}
+  & node (Join-Path $alias 'scripts/prepare-installer-theme.mjs')
+  if($LASTEXITCODE -ne 0 -or -not(Test-Path $dll)){throw 'Aliased installer entry did not prepare native resources'}
+} finally { if(Test-Path $alias){[System.IO.Directory]::Delete($alias)} }
 if($LASTEXITCODE -ne 0){throw 'Native painter build failed'}
 $compiler='C:\Program Files (x86)\NSIS\makensis.exe'
 if(-not (Test-Path $compiler)){
