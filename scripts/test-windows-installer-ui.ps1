@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$Installer,[Parameter(Mandatory=$true)][string]$Root,[Parameter(Mandatory=$true)][string]$Screenshots,[switch]$WithoutModel,[string]$ProbeScript) 
+param([Parameter(Mandatory=$true)][string]$Installer,[Parameter(Mandatory=$true)][string]$Root,[Parameter(Mandatory=$true)][string]$Screenshots,[switch]$WithoutModel,[string]$ProbeScript,[switch]$Upgrade)
 if($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted'){throw 'Installer verification requires disposable GitHub-hosted Windows CI'}
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName UIAutomationClient
@@ -24,6 +24,19 @@ public class LingJiInstallerWindow {
 New-Item -ItemType Directory -Force $Root | Out-Null
 New-Item -ItemType Directory -Force $Screenshots | Out-Null
 $install=Join-Path $Root 'Visual Install'
+$previousModels=@{}
+if($Upgrade){
+  if(-not $WithoutModel){throw 'Upgrade probe must opt out of new model installation'}
+  $seed=Start-Process -FilePath $Installer -ArgumentList "/S /D=$install" -Wait -PassThru
+  if($seed.ExitCode -ne 0){throw 'Upgrade fixture install failed'}
+  $modelRoot=Join-Path $install 'client-backend/local-asr'
+  foreach($file in Get-ChildItem -LiteralPath $modelRoot -File -Recurse){$previousModels[$file.FullName]=(Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash}
+  if($previousModels.Count -eq 0){throw 'Upgrade fixture has no model'}
+  $installedKeys=@(Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' | Where-Object {(Get-ItemProperty $_.PSPath).InstallLocation -eq ('"'+$install+'"')})
+  if($installedKeys.Count -ne 1){throw 'Upgrade fixture registration missing or ambiguous'}
+  # Exercise the real older-version branch, whose default would uninstall before copying.
+  Set-ItemProperty -LiteralPath $installedKeys[0].PSPath -Name DisplayVersion -Value '0.0.0'
+}
 $setup=Start-Process -FilePath $Installer -ArgumentList "/D=$install" -PassThru
 $script:handle=[IntPtr]::Zero
 function Wait-Page([string]$text,[int]$seconds=30) {
@@ -128,7 +141,12 @@ try {
  if(-not $setup.WaitForExit(10000)){throw 'Installer did not finish'}
  if($setup.ExitCode -ne 0){throw 'Interactive installer failed'}
  $model=Join-Path $install 'client-backend/local-asr/manifest.json'
- if($WithoutModel){
+ if($Upgrade){
+  foreach($path in $previousModels.Keys){
+   if(-not (Test-Path -LiteralPath $path) -or (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne $previousModels[$path]){throw 'Upgrade opt-out removed or replaced an existing model file'}
+  }
+  [IO.File]::WriteAllText((Join-Path $Root 'upgrade-model-smoke.json'),(@{existingModelPreserved=$true;verifiedModelFiles=$previousModels.Count;olderVersionFixture=$true} | ConvertTo-Json))
+ }elseif($WithoutModel){
   if(Test-Path $model){throw 'Opt-out still installed local model assets'}
   $modelRoot=Split-Path $model -Parent
   if((Test-Path $modelRoot) -and (Get-ChildItem -LiteralPath $modelRoot -File -Recurse | Select-Object -First 1)){throw 'Opt-out copied partial model files'}
