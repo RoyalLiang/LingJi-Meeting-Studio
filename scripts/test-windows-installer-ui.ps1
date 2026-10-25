@@ -40,19 +40,28 @@ if($Upgrade){
 $setup=Start-Process -FilePath $Installer -ArgumentList "/D=$install" -PassThru
 $script:handle=[IntPtr]::Zero
 function Wait-Page([string]$text,[int]$seconds=30) {
+ $names=@();$lastReadError=$null
  for($i=0;$i -lt $seconds*5;$i++) {
   $setup.Refresh()
   if($setup.HasExited){throw "Installer exited before $text ($($setup.ExitCode))"}
   if($setup.MainWindowHandle -ne [IntPtr]::Zero){$script:handle=$setup.MainWindowHandle}
   if($script:handle -ne [IntPtr]::Zero){
-   $rootElement=[System.Windows.Automation.AutomationElement]::FromHandle($script:handle)
-   $elements=$rootElement.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)
-   foreach($element in $elements){if($element.Current.Name -eq $text){return}}
+   $names=@();$elements=@()
+   try {
+    $rootElement=[System.Windows.Automation.AutomationElement]::FromHandle($script:handle)
+    $elements=$rootElement.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)
+    $names=@($elements | ForEach-Object {$_.Current.Name})
+   } catch {
+    # A native window can be replaced between getting its handle and reading it.
+    $lastReadError=$_.Exception.Message
+    $names=@();$elements=@()
+   }
+   if($names -contains $text){return}
   }
   Start-Sleep -Milliseconds 200
  }
- $names=@($elements | ForEach-Object {$_.Current.Name} | Where-Object {$_} | Select-Object -First 25) -join ' | '
- Write-Host ('::notice title=Installer last page::'+$names)
+ Write-Host ('::notice title=Installer last page::'+(($names | Where-Object {$_} | Select-Object -First 25) -join ' | '))
+ if($lastReadError){Write-Host ('::notice title=Installer last UI read::'+$lastReadError)}
  try {Capture-Page 'unexpected'}catch{Write-Host ('::warning title=Installer capture::'+$_.Exception.Message)}
  throw "Installer page missing: $text"
 }
