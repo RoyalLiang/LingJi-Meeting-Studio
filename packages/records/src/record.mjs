@@ -1,4 +1,4 @@
-import { liveBaseline, liveInput, minutesContext, mergeLiveMinutes } from './live-minutes.mjs';
+import { liveBaseline, liveInput, minutesContext, mergeLiveMinutes, chronologicalSegments } from './live-minutes.mjs';
 import {queueLearningReview, publicLearning} from './learning.mjs';
 import { validateMinutesStructure } from './minutes-structure.mjs';
 import { automaticRecordTitle } from './record-title.mjs';
@@ -176,16 +176,21 @@ export function requestMinutes(record, input = {}) {
   requireThat(scope === 'live' || record.capture === 'completed', 'record_not_finalized');
   requireThat(record.segments.length > 0, 'empty_transcript');
   const template = input.template || 'meeting'; requireThat(templates.includes(template), 'unknown_template', 400);
-  const selected = scope === 'live' ? liveInput(record, template) : record.segments;
+  let selected = scope === 'live' ? liveInput(record, template) : chronologicalSegments(record.segments);
+  const liveContext = minutesContext(scope==='live'?liveBaseline(record):null,selected);
+  if(liveContext?.items?.length){
+    const refs=new Set(liveContext.items.flatMap(item=>item.evidence.map(ref=>`${ref.segmentId}:${ref.revision}`)));
+    const selectedIds=new Set(selected.map(s=>s.id));
+    selected=chronologicalSegments([...selected,...record.segments.filter(s=>!selectedIds.has(s.id)&&refs.has(`${s.id}:${s.revision}`))]);
+  }
   const snapshotOffset = record.segments.indexOf(selected[0]);
   const baseline = scope === 'live' ? liveBaseline(record) : null;
   const covered = new Set((baseline?.template === template ? baseline.evidenceSnapshot : []).map(s=>`${s.id}:${s.revision}`));
   const snapshot = selected.map(({versions, ...s}) => ({ ...s, ...(scope === 'live' ? {contextOnly:covered.has(`${s.id}:${s.revision}`)} : {}) }));
   const liveBaseHash = scope === 'live' ? digest(JSON.stringify(record.liveMinutes || null)) : undefined;
   const liveIncremental = Boolean(liveBaseline(record)?.template === template);
-  const liveContext = minutesContext(liveBaseline(record));
   const manifestHash = digest(JSON.stringify({snapshot, liveBaseHash, liveContext}));
-  const key = `${record.id}:${record.transcriptRevision}:${manifestHash}:${template}:v5:${record.notesRevision}:${input.modelVersion || 'default'}:${input.mode || 'model'}:${scope}`;
+  const key = `${record.id}:${record.transcriptRevision}:${manifestHash}:${template}:v6:${record.notesRevision}:${input.modelVersion || 'default'}:${input.mode || 'model'}:${scope}`;
   const existing = record.jobs.find(j => j.key === key && !['failed', 'stale', 'cancelled'].includes(j.status));
   if (existing) return existing;
   for(const job of record.jobs)if(['queued','running'].includes(job.status) && job.scope==='live' && (scope==='final' || job.status==='queued')){job.status='cancelled';job.fence=null;job.snapshot=[];delete job.preview; delete job.partialMinutes;}
@@ -195,7 +200,18 @@ export function requestMinutes(record, input = {}) {
     createdAt: new Date().toISOString(), attempts: 0 };
   record.jobs.push(job); emit(record, 'minutes.queued', { jobId: job.id }); return job;
 }
-export function validateMinutes(result, snapshot) {
+export function validateMinutes(result, snapshot, context, {newEvidenceOnly=false}={}) {
+  requireThat(result&&typeof result==='object'&&!Array.isArray(result),'invalid_minutes',422);
+  if(result.corrections!==undefined){
+    requireThat(Array.isArray(result.corrections)&&result.corrections.length<=40,'invalid_minutes_corrections',422);
+    const targets=new Set();
+    for(const correction of result.corrections){
+      requireThat(correction&&typeof correction.targetId==='string'&&!targets.has(correction.targetId)&&['pending','corrected','withdrawn'].includes(correction.status)&&typeof correction.text==='string'&&correction.text.trim()&&correction.text.length<=2000&&Array.isArray(correction.evidence)&&correction.evidence.length>0&&correction.evidence.length<=20&&correction.evidence.every(ref=>ref&&snapshot.some(s=>s.id===ref.segmentId&&s.revision===ref.revision)),'invalid_minutes_corrections',422);
+      requireThat(context?.items?.some(item=>item.id===correction.targetId),'invalid_minutes_correction_target',422);
+      targets.add(correction.targetId);
+      requireThat(correction.evidence.some(ref=>snapshot.some(s=>s.id===ref.segmentId&&s.revision===ref.revision&&s.contextOnly!==true)),'minutes_correction_without_new_evidence',422);
+    }
+  }
   validateMinutesStructure(result || {}, snapshot, requireThat);
   requireThat(result && typeof result.title === 'string' && result.title.trim() && result.title.length <= 300 && Array.isArray(result.sections) && result.sections.length <= 20, 'invalid_minutes_schema', 422);
   requireThat(result.sections.length > 0, 'empty_minutes', 422);
@@ -226,12 +242,19 @@ export function validateMinutes(result, snapshot) {
       identities.add(key);
     }
   }
+  if(newEvidenceOnly){
+    const fresh=new Set(snapshot.filter(segment=>segment.contextOnly!==true).map(segment=>`${segment.id}:${segment.revision}`));
+    const facts=[...result.sections.flatMap(section=>section.items),...(result.actions || []),...(result.decisions || []),...(result.currentDiscussion || []),...(result.highlights || []),...(result.visuals || []).flatMap(visual=>visual.entries)];
+    requireThat(facts.every(item=>item.id===undefined&&item.correctionOf===undefined&&item.stateThroughMs===undefined&&item.relatedTo===undefined),'invalid_minutes_item_identity',422);
+    const items=[...facts,...(result.topics || []),...(result.speakerSummaries || []),...(result.tables || []).flatMap(table=>table.rows)];
+    if(snapshot.some(segment=>segment.contextOnly===true))requireThat(items.every(item=>item.evidence.some(ref=>fresh.has(`${ref.segmentId}:${ref.revision}`))),'minutes_without_new_evidence',422);
+  }
   return result;
 }
 export function commitMinutes(record, jobId, result, fence) {
   const job = record.jobs.find(j => j.id === jobId);
   requireThat(job && !record.deleted && job.generation === record.generation && job.fence === fence, 'stale_job', 410);
-  validateMinutes(result, job.snapshot);
+  validateMinutes(result, job.snapshot, job.liveContext,{newEvidenceOnly:true});
   const usageRecorded=result.usageRecorded;result={...result};delete result.usageRecorded;
   job.runtime = result.runtime || job.runtime;
   const transcriptChanged = job.scope === 'live' ? (job.liveIncremental && !liveBaseline(record)) || job.snapshot.some(s => !record.segments.some(current => current.id === s.id && current.revision === s.revision)) : job.transcriptRevision !== record.transcriptRevision;

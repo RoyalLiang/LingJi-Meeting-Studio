@@ -1,6 +1,7 @@
 import { processFunasrAudio } from './funasr-transcription.mjs';
 import { processDoubaoModelAudio } from './doubao-model-transcription.mjs';
 import { doubaoAudioEnabled } from './config.mjs';
+import { chronologicalSegments, minutesContext, liveBaseline } from '../../../packages/records/src/live-minutes.mjs';
 import { audioMinutesEnabled } from './config.mjs';
 import { generateDoubaoAudioMinutes } from './doubao-audio-minutes.mjs';
 import {runLearningCycle} from './learning-worker.mjs';
@@ -115,12 +116,13 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
       await repo.change(candidate.id, r => {
         if (r.deleted || r.insights?.transcriptRevision === r.transcriptRevision || (r.intentLease || 0) > Date.now()) return;
         r.intentLease = Date.now() + 180000;
-        claim = { snapshot: r.segments.slice(-120).map(({id, revision, text}) => ({id, revision, text})), revision: r.transcriptRevision, generation: r.generation };
+        const snapshot=chronologicalSegments(r.segments.slice(-120)).map(({id, revision, text, startMs, endMs, speakerId, speaker, sourceId}) => ({id, revision, text, startMs, endMs, speakerId, speaker, sourceId}));
+        claim = { snapshot, context:minutesContext(liveBaseline(r),snapshot), revision: r.transcriptRevision, generation: r.generation };
       });
       if (claim) {
         try {
-          const model = updated.analysisConsent === true && providerStatus(config).textMinutes && JSON.stringify(claim.snapshot).length <= 180000;
-          const result = model ? await (providers.intents || analyzeIntents)(claim.snapshot, config) : ruleIntents(claim.snapshot);
+          const model = updated.analysisConsent === true && providerStatus(config).textMinutes && JSON.stringify({transcript:claim.snapshot,context:claim.context}).length <= 180000;
+          const result = model ? await (providers.intents || analyzeIntents)(claim.snapshot, config, claim.context) : ruleIntents(claim.snapshot);
           await repo.change(candidate.id, r => { if (r.generation !== claim.generation) return; commitIntents(r, claim.snapshot, result, model ? 'model' : 'rules', claim.revision, claim.generation); delete r.intentLease; delete r.intentRetryAt; });
         } catch (error) {
           await repo.change(candidate.id, r => { if (r.generation !== claim.generation) return; r.intentError = error.code || 'intent_analysis_failed'; r.intentRetryAt = Date.now() + 60000; delete r.intentLease; emit(r, 'intents.blocked'); });

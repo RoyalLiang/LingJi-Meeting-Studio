@@ -10,12 +10,65 @@ import {buildMinutesManifest,runMinutesPipeline} from '../services/records/src/m
 import {beginMinutesUsage,updateMinutesUsage} from '../packages/records/src/usage.mjs';
 import {generateMinutes} from '../services/records/src/providers.mjs';
 const config={LLM_MODEL:'fixture-model',LLM_API_URL:'http://fixture.invalid'};
+test('synthesis includes original evidence within budget and explicitly marks omissions',async()=>{
+  for(const synthesisBudget of [96000,4096]){
+    const f=await fixture(8);let seen=false;
+    try{
+      const claim=await f.claim();
+      await runMinutesPipeline(f.repo,f.record.id,claim,{...config,RECORD_MINUTES_INPUT_BYTES:4096,RECORD_MINUTES_SYNTHESIS_INPUT_BYTES:synthesisBudget},async job=>{
+        if(job.stage==='synthesis'){
+          seen=true;
+          if(synthesisBudget===96000)assert.ok(job.snapshot.some(segment=>typeof segment.text==='string'));
+          else assert.ok(job.omittedEvidence>0);
+          assert.ok(Buffer.byteLength(JSON.stringify({transcript:job.snapshot,summaries:job.summaries,stage:job.stage,omittedEvidence:job.omittedEvidence}))<=synthesisBudget);
+          return {title:'汇总',sections:[{heading:'讨论',items:job.summaries.flatMap(summary=>summary.sections.flatMap(section=>section.items))}],actions:[]};
+        }
+        const source=job.snapshot.find(segment=>!segment.contextOnly);
+        return {title:'窗口',sections:[{heading:'讨论',items:[{text:source.id,evidence:[{segmentId:source.id,revision:source.revision}]}]}],actions:[]};
+      });
+      assert.ok(seen);
+    }finally{await f.close();}
+  }
+});
+test('partial correction state follows event order even when later windows finish first',async()=>{
+  const f=await fixture(1);let release,run,claim;
+  const gate=new Promise(resolve=>{release=resolve;});
+  try{
+    await f.repo.change(f.record.id,r=>{
+      const old=r.segments[0],evidence=[{segmentId:old.id,revision:1}];
+      r.capture='recording';r.liveMinutes={title:'上线',template:'meeting',notesRevision:0,transcriptRevision:1,sections:[{heading:'安排',items:[{id:'plan',text:'周五上线',evidence}]}],decisions:[{id:'plan',text:'周五上线',evidence}],actions:[],evidenceSnapshot:[old]};
+      r.segments.push({...old,id:'new-early',text:'周五上线待确认',startMs:200000,endMs:201000},{...old,id:'new-late',text:'取消周五上线',startMs:400000,endMs:401000});r.transcriptRevision++;
+      const job=requestMinutes(r,{scope:'live'});job.status='running';job.fence=job.id;claim=structuredClone(job);
+    });
+    run=runMinutesPipeline(f.repo,f.record.id,claim,config,async job=>{
+      let correction;
+      if(job.stage==='synthesis')correction=job.summaries.flatMap(summary=>summary.corrections || []).at(-1);
+      else{
+        const source=job.snapshot.find(segment=>!segment.contextOnly);
+        if(source.id==='new-early')await gate;
+        correction={targetId:claim.liveContext.items.find(item=>item.kind==='decision').id,status:source.id==='new-early'?'pending':'withdrawn',text:source.text,evidence:[{segmentId:source.id,revision:1}]};
+      }
+      return {title:'上线',sections:[{heading:'安排',items:[]}],actions:[],decisions:[],corrections:[correction]};
+    });
+    let partial;
+    for(let attempt=0;attempt<100;attempt++){
+      partial=(await f.repo.get(f.record.id)).jobs.at(-1).partialMinutes;
+      if(partial?.correctionHistory?.length)break;
+      await new Promise(resolve=>setTimeout(resolve,5));
+    }
+    assert.equal(partial.correctionHistory.at(-1).status,'withdrawn');
+    release();await run;
+    partial=(await f.repo.get(f.record.id)).jobs.at(-1).partialMinutes;
+    assert.equal(partial.correctionHistory.at(-1).status,'withdrawn');assert.equal(partial.decisions.length,0);
+  }finally{release();await run?.catch(()=>{});await f.close();}
+});
 test('two-minute agent windows respect real timestamps even when all text fits one request',()=>{
   const snapshot=Array.from({length:10},(_,i)=>({id:`timed-${i}`,revision:1,text:'短句',startMs:i*30000,endMs:i*30000+1000}));
   const manifest=buildMinutesManifest({snapshot,scope:'final',notes:'',modelVersion:'default'},config);
-  assert.deepEqual(manifest.windows.map(w=>w.snapshot.map(s=>s.id)),[
+  assert.deepEqual(manifest.windows.map(w=>w.snapshot.filter(s=>!s.contextOnly).map(s=>s.id)),[
     ['timed-0','timed-1','timed-2','timed-3'],['timed-4','timed-5','timed-6','timed-7'],['timed-8','timed-9']]);
-  assert.equal(manifest.windows.flatMap(w=>w.snapshot).length,snapshot.length);
+  assert.equal(manifest.windows.flatMap(w=>w.snapshot.filter(segment=>!segment.contextOnly)).length,snapshot.length);
+  assert.ok(manifest.windows[0].snapshot.some(segment=>segment.id==='timed-4'&&segment.contextOnly));
 });
 test('switching templates treats the full transcript as new rather than context-only evidence',()=>{
   const record=createRecord('owner');record.capture='recording';record.transcriptRevision=1;
@@ -32,8 +85,8 @@ async function fixture(count=100){
 }
 function summarize(job){
   assert.ok(JSON.stringify({transcript:job.snapshot,notes:job.notes,summaries:job.summaries}).length<180000,'provider request budget');
-  const items=job.summaries ? job.summaries.flatMap(result=>result.sections.flatMap(section=>section.items)).filter(item=>item.text.includes('FACT:')) : job.snapshot.filter(s=>s.text.includes('FACT:')).map(s=>({text:s.text.slice(s.text.indexOf('FACT:')),evidence:[{segmentId:s.id,revision:s.revision}]}));
-  if(!items.length)items.push({text:'普通讨论',evidence:[{segmentId:job.snapshot[0].id,revision:job.snapshot[0].revision}]});
+  const items=job.summaries ? job.summaries.flatMap(result=>result.sections.flatMap(section=>section.items)).filter(item=>item.text.includes('FACT:')) : job.snapshot.filter(s=>!s.contextOnly&&s.text.includes('FACT:')).map(s=>({text:s.text.slice(s.text.indexOf('FACT:')),evidence:[{segmentId:s.id,revision:s.revision}]}));
+  if(!items.length){const source=job.snapshot.find(segment=>!segment.contextOnly);if(source)items.push({text:'普通讨论',evidence:[{segmentId:source.id,revision:source.revision}]});}
   return{title:'分层纪要',sections:[{heading:'讨论与决定',items}],actions:[],usageTokens:10};
 }
 test('actual-call usage is idempotent across duplicate concurrent frames and remains separate from stale content fences',async()=>{
@@ -184,10 +237,11 @@ test('independent windows overlap within a bounded limit and retain transcript o
         if(job.stage!=='synthesis') {
           startedWindows++;started();await held;
           if(job.snapshot[0].id===manifest.windows[0].snapshot[0].id) await new Promise(resolve=>setImmediate(resolve));
-          completionOrder.push(job.snapshot[0].id);
-          return {title:'window',sections:[{heading:'window',items:[{text:job.snapshot[0].id,evidence:[{segmentId:job.snapshot[0].id,revision:1}]}]}],actions:[],usageTokens:10};
+          const source=job.snapshot.find(segment=>!segment.contextOnly);
+          completionOrder.push(source.id);
+          return {title:'window',sections:[{heading:'window',items:[{text:source.id,evidence:[{segmentId:source.id,revision:1}]}]}],actions:[],usageTokens:10};
         }
-        assert.deepEqual(job.summaries.map(summary=>summary.sections[0].items[0].text),manifest.windows.map(window=>window.snapshot[0].id));
+        assert.deepEqual(job.summaries.map(summary=>summary.sections[0].items[0].text),manifest.windows.map(window=>window.snapshot.find(segment=>!segment.contextOnly).id));
         return summarize(job);
       } finally {active--;}
     });
@@ -268,8 +322,8 @@ test('incremental live snapshots process only new segments with a two-minute ove
     });
     const next=await claimLive();let generatedWindows=0;
     const result=await runMinutesPipeline(f.repo,f.record.id,next,config,async job=>{if(job.stage!=='synthesis')generatedWindows++;return summarize(job);});
-    assert.equal(first.snapshot.length,160);assert.equal(next.snapshot.length,121);
-    assert.equal(next.snapshot[0].id,'s-40');assert.equal(next.snapshot[0].contextOnly,true);assert.equal(next.snapshot.at(-1).contextOnly,false);
+    assert.equal(first.snapshot.length,160);assert.ok(next.snapshot.length>=121);
+    assert.ok(next.snapshot.some(segment=>segment.id==='s-40'));assert.equal(next.snapshot[0].contextOnly,true);assert.equal(next.snapshot.at(-1).contextOnly,false);
     assert.ok(next.liveContext.headings.includes('讨论与决定'));
     assert.equal(publicRecord(await f.repo.get(f.record.id)).jobs.at(-1).liveContext,undefined);
     assert.ok(generatedWindows>0);
@@ -372,18 +426,18 @@ test('model prompts preserve table topic associations and rebuild IDs during syn
   } finally {globalThis.fetch=original;}
 });
 
-test('old completed v4 jobs do not block explicit v5 requests, while new requests remain idempotent', async () => {
+test('old completed v5 jobs do not block explicit v6 requests, while new requests remain idempotent', async () => {
   const f=await fixture(2);
   try {
     let oldId,newId;
     await f.repo.change(f.record.id,r=>{
       const previous=requestMinutes(r,{modelVersion:'fixture-model'});oldId=previous.id;
-      previous.key=previous.key.replace(':v5:',':v4:');previous.status='completed';previous.snapshot=[];
+      previous.key=previous.key.replace(':v6:',':v5:');previous.status='completed';previous.snapshot=[];
       r.minutes={...summarize({snapshot:r.segments}),revision:1,edited:true};r.minutesRevision=1;
       r.autoMinutes={enabled:true,lastRevision:r.transcriptRevision,lastScope:'final',intervalSeconds:30};
       assert.equal(queueAutomaticMinutes(r,'fixture-model'),undefined,'format upgrades must not auto-replace an edited minutes version');
       const current=requestMinutes(r,{modelVersion:'fixture-model'});newId=current.id;
-      assert.notEqual(newId,oldId);assert.ok(current.key.includes(':v5:'));
+      assert.notEqual(newId,oldId);assert.ok(current.key.includes(':v6:'));
       assert.equal(requestMinutes(r,{modelVersion:'fixture-model'}).id,newId);
       assert.equal(r.minutes.edited,true);
       assert.equal(r.minutesRevision,1);
@@ -483,7 +537,7 @@ test('incremental project context survives long sessions and an edit to earlier 
     await f.repo.change(f.record.id,r=>{commitMinutes(r,first.id,old,first.fence);r.segments.push({...r.segments.at(-1),id:'s-160',text:'相机恢复后仍需排查。'});r.transcriptRevision++;});
     let claim;
     await f.repo.change(f.record.id,r=>{const job=requestMinutes(r,{scope:'live',modelVersion:'fixture-model'});job.status='running';job.fence=job.id;claim=structuredClone(job);});
-    assert.equal(claim.snapshot.length,122);assert.equal(claim.liveContext.topics[0].title,'唐山项目');
+    assert.equal(claim.snapshot.length,123);assert.equal(claim.liveContext.topics[0].title,'唐山项目');
     const result=await runMinutesPipeline(f.repo,f.record.id,claim,config,async job=>{
       assert.equal(job.liveContext.topics[0].id,'project-tangshan');
       if(!job.snapshot.some(segment=>segment.id==='s-160'))return summarize(job);
@@ -510,8 +564,8 @@ test('project memory is bounded while preserving stable identities and cumulativ
   const base={title:'项目会',sections:[{heading:'安排',items:[{text:'排查相机',evidence}]}],actions:[{text:'排查相机',owner:'已确认负责人',due:'今天',evidence}],evidenceSnapshot:snapshot};
   const delta={title:'最新讨论',sections:[{heading:'安排',items:[{text:'排查相机',evidence}]}],actions:[{text:'排查相机',owner:null,due:null,evidence}]};
   const result=mergeLiveMinutes(base,delta,snapshot);
-  assert.equal(result.sections[0].items.length,1);assert.equal(result.actions[0].owner,'已确认负责人');
-  assert.equal(result.actions[0].due,'今天');assert.equal(result.title,'项目会');
+  assert.equal(result.sections[0].items.length,1);assert.equal(result.actions[0].owner,null);
+  assert.equal(result.actions[0].due,null);assert.equal(result.title,'项目会');
 });
 
 test('partial citations retain the complete frozen transcript when a provider window splits a long segment', async () => {

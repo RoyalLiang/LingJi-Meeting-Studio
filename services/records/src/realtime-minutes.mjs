@@ -1,6 +1,6 @@
 import { groundSpeakerSummaries, orderMinutesTimelines } from '../../../packages/records/src/minutes-quality.mjs';
 import { minutesTimeoutMs } from './minutes-deadline.mjs';
-import { audioMinutesInstructions as instructions } from './audio-minutes.mjs';
+import { minutesInstructions, normalizeMinutesOutput } from './minutes-prompts.mjs';
 import { createHash } from 'node:crypto';
 import { openRealtime } from './openai-realtime.mjs';
 import { configured, normalizeConfig } from './config.mjs';
@@ -111,13 +111,15 @@ export async function generateRealtimeMinutes(repo, recordId, job, input, option
       await entry.client.ready;
       await feed(repo, record, entry, chunks.sort((a,b) => sourceTime(record,a) - sourceTime(record,b) || a.sequence - b.sequence));
       const audio = chunks.map(chunk => ({ ...entry.audio.get(chunk.key), chunkKey: chunk.key }));
-      const data = { transcript: refs, audio, notes: job.notes, context: job.liveContext, summaries: job.summaries, scope: job.scope, template: job.template, stage: job.stage };
+      const data = { transcript: refs, audio, notes: job.notes, context: job.liveContext, summaries: job.summaries, scope: job.scope, template: job.template, stage: job.stage, omittedEvidence:job.omittedEvidence };
       const inputItems = [...new Set(audio.map(item => item.itemId))].map(id => ({ type: 'item_reference', id }));
       inputItems.push({ type: 'message', role: 'user', content: [{ type: 'input_text', text: JSON.stringify(data) }] });
-      const result = await entry.client.respond(inputItems, instructions, { ...options, timeoutMs: minutesTimeoutMs(job) });
-      groundSpeakerSummaries(result, job.validationSnapshot || refs);
-  orderMinutesTimelines(result, job.validationSnapshot || refs);
-  validateMinutes(result, job.validationSnapshot || refs);
+      const result = await entry.client.respond(inputItems, minutesInstructions(job,true), { ...options, timeoutMs: minutesTimeoutMs(job) });
+      const validationSnapshot=job.validationSnapshot || refs;
+      normalizeMinutesOutput(result);
+      groundSpeakerSummaries(result,validationSnapshot);
+      orderMinutesTimelines(result,validationSnapshot);
+      validateMinutes(result,validationSnapshot,job.liveContext,{newEvidenceOnly:true});
       // Preserve the provider/item ↔ durable audio ↔ frozen transcript chain.
       result.audioEvidence = audio.map(({ itemId, sourceId, epoch, sequence, startMs, endMs, chunkKey }) => ({ itemId, sourceId, epoch, sequence, startMs, endMs, chunkKey }));
       return result;

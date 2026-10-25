@@ -57,6 +57,7 @@ export async function saveConfig(root, input, env = process.env) {
   requireThat(['doubao', 'doubao-ast', 'deepgram', 'openai-compatible', 'funasr', 'sensevoice-local'].includes(next.ASR_PROVIDER), 'invalid_asr_provider', 400);
   requireThat(next.ASR_PROVIDER !== 'sensevoice-local' || localAsrConfigured(next), 'local_asr_assets_missing', 503);
   requireThat(['chat-completions', 'responses'].includes(next.LLM_PROTOCOL), 'invalid_llm_protocol', 400);
+  if(next.LLM_STRUCTURED_OUTPUTS!==undefined)requireThat(['true','false'].includes(next.LLM_STRUCTURED_OUTPUTS),'invalid_structured_outputs',400);
   requireThat(['asr-llm', 'openai-realtime', 'doubao-audio', 'doubao-audio-only'].includes(next.MINUTES_MODE), 'invalid_minutes_mode', 400);
   requireThat(!doubaoAudioEnabled(next) || next.LLM_PROTOCOL === 'responses', 'doubao_audio_requires_responses', 400);
   parseAsrHotwords(next.DOUBAO_ASR_HOTWORDS);
