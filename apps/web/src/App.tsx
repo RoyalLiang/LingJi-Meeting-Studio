@@ -1,4 +1,5 @@
 import { useRecordingWidget } from './useRecordingWidget';
+import { capturedDurationMs } from './audio/signal';
 import {LearningReview} from './components/LearningReview';
 import { TranscriptionNotice } from './components/TranscriptionNotice';
 import { FeedbackNotice } from './components/FeedbackNotice';
@@ -130,7 +131,7 @@ function Workspace() {
     finish: () => { setError(''); setModal('finish'); },
     settings: () => { setModal('settings'); void api<{deletions: typeof deletions}>('/deletions').then(d => setDeletions(d.deletions)).catch(e => setError(messageOf(e))); }
   });
-  useRecordingWidget({recording,paused:!recording && record?.capture==='paused',busy:busy || stopping.current,durationMs:record?.durationMs || 0,rms:Math.max(0,...signals.map(signal=>Math.min(1,signal.rms)))},setError);
+  useRecordingWidget({recording,paused:!recording && record?.capture==='paused',canResume:!!record && record.sources.every(source=>source.watermark===source.lastSequence),busy:busy || stopping.current,durationMs:capturedDurationMs(record?.durationMs||0,record?.sources||[],signals),rms:Math.max(0,...signals.map(signal=>Math.min(1,signal.rms)))},setError,record?.id||'');
   const updates = useClientUpdates({ authenticated: authReady, recording, paused: record?.capture === 'paused', busy: busy || stopping.current });
   const bootRequest = useRef<Promise<boolean> | null>(null);
   const loadBoot = useCallback(() => {

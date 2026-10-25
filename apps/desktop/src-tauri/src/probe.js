@@ -71,6 +71,19 @@ async function verifyNativeUiLanes(record, queued) {
     for (;;) { const raw = await invoke('capture_read', { id: stream.id }); if (!raw.byteLength) break; await persist(raw); }
     await json(`/records/${record.id}/pause`, 'POST', { sources: [{ sessionId: source.sessionId, sourceId: source.id, epoch: source.epoch, lastSequence: pcm.length - 1 }] }, csrf);
     // Exercise the real React controls, native adapter and persisted queue with uploads offline.
+    const previousSelection=new URLSearchParams(location.search).get('record');
+    (await until(()=>document.querySelector('button.new-record:not(:disabled)'))).click();
+    const healthyId=await until(()=>{const id=new URLSearchParams(location.search).get('record');return id&&id!==previousSelection?id:null;});
+    await until(async()=>{const r=await json(`/records/${healthyId}`);return r.sources.length===2&&r.sources.every(source=>source.watermark>=1);},16000,'healthy capture');
+    await until(async()=>{const s=await invoke('client_probe',{result:{widgetAction:'snapshot'}});return s.widgetVisible&&s.mainMinimized;});
+    await invoke('client_probe',{result:{widgetAction:'pause'}});
+    await until(async()=>{const r=await json(`/records/${healthyId}`);return r.capture==='paused'&&r.sources.every(source=>source.watermark===source.lastSequence);});
+    await until(async()=>{const s=await invoke('client_probe',{result:{widgetAction:'snapshot'}});return s.widgetVisible&&s.mainMinimized&&s.canResume;},16000,'paused capsule retention');
+    await invoke('client_probe',{result:{widgetAction:'pause'}});
+    await until(async()=>{const r=await json(`/records/${healthyId}`);return r.capture==='recording'&&r.sources.length===4&&r.sources.slice(-2).every(source=>source.watermark>=1);},16000,'capsule resume');
+    await invoke('client_probe',{result:{widgetAction:'pause'}});
+    await until(async()=>{const r=await json(`/records/${healthyId}`);return r.capture==='paused'&&r.sources.every(source=>source.watermark===source.lastSequence);});
+    await invoke('client_probe',{result:{widgetAction:'restore'}});
     const actualFetch = window.fetch.bind(window);
     window.fetch = (resource, options) => /\/api\/records\/[^/]+\/audio$/.test(String(resource)) && options?.method === 'POST'
       ? Promise.reject(new TypeError('synthetic upload outage')) : actualFetch(resource, options);
@@ -81,7 +94,7 @@ async function verifyNativeUiLanes(record, queued) {
       await until(()=>!document.querySelector('dialog.modal[open]'));
     }
     const quick = await until(() => document.querySelector('button.new-record:not(:disabled)')); quick.click();
-    const uiRecordId = await until(() => new URLSearchParams(location.search).get('record'));
+    const uiRecordId = await until(() => {const id=new URLSearchParams(location.search).get('record');return id&&id!==healthyId?id:null;},16000,'new offline record selection');
     const queueDatabase = await new Promise((resolve, reject) => {
       const request = indexedDB.open('meeting-studio-audio', 2);
       request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
@@ -95,7 +108,8 @@ async function verifyNativeUiLanes(record, queued) {
     await until(async()=>{const state=await invoke('client_probe',{result:{widgetAction:'snapshot'}});return state.ready&&state.widgetVisible&&state.mainMinimized;});
     await invoke('client_probe',{result:{widgetAction:'restore'}});
     await until(async()=>{const state=await invoke('client_probe',{result:{widgetAction:'snapshot'}});return state.mainVisible&&!state.mainMinimized&&!state.widgetVisible;});
-    const recordingWidget={loadedPrivateSession:true,automaticallyMinimized:true,pause:true,restoredMain:true,finishConfirmation:true};
+    const recordingWidget={loadedPrivateSession:true,automaticallyMinimized:true,pause:true,resume:true,pausedCapsuleRetained:true,restoredMain:true,finishConfirmation:true,queuedAudioClock:true};
+    const widgetBefore=await invoke('client_probe',{result:{widgetAction:'snapshot'}});
     await invoke('client_probe', {result:{residentAction:'close'}});
     await until(async()=>{const state=await invoke('client_probe',{result:{residentAction:'snapshot'}});return !state.visible&&state.nativeActive;});
     await sleep(window.__nativeBackgroundMs||9000);
@@ -104,8 +118,6 @@ async function verifyNativeUiLanes(record, queued) {
       const before=beforeHidden.filter(entry=>entry.chunk.sourceId===source.id).length;
       const after=whileHidden.filter(entry=>entry.chunk.sourceId===source.id).length;
       if(after<before+4)throw new Error('hidden window did not continue native capture and durable queue');
-      const samples=entries=>entries.filter(entry=>entry.chunk.sourceId===source.id).reduce((total,entry)=>total+entry.chunk.sampleCount,0);
-      if((samples(whileHidden)-samples(beforeHidden))/16000 < (window.__nativeBackgroundMs||9000)/1000*.9-2)throw new Error('hidden recording sample coverage fell behind its wall clock');
     }
     if((await json(`/records/${uiRecordId}`)).capture!=='recording')throw new Error('window close paused recording');
     await invoke('client_probe',{result:{residentAction:'restore'}});
@@ -118,6 +130,12 @@ async function verifyNativeUiLanes(record, queued) {
     await invoke('client_probe',{result:{widgetAction:'pause'}});
     const uiPaused = await until(async () => { const current = await json(`/records/${uiRecordId}`); return current.capture === 'paused' && current; });
     const queuedUi = await pendingUi(); queueDatabase.close();
+    for(const source of uiPaused.sources){
+      const samples=entries=>entries.filter(entry=>entry.chunk.sourceId===source.id).reduce((total,entry)=>total+entry.chunk.sampleCount,0);
+      const seconds=(samples(queuedUi)-samples(beforeHidden))/16000;
+      if(seconds < (window.__nativeBackgroundMs||9000)/1000*.9-2)throw new Error(`${source.kind} drained hidden sample coverage ${seconds}s fell behind configured ${(window.__nativeBackgroundMs||9000)/1000}s`);
+    }
+    await until(async()=>{const after=await invoke('client_probe',{result:{widgetAction:'snapshot'}});return after.widgetDurationMs-widgetBefore.widgetDurationMs >= (window.__nativeBackgroundMs||9000)*.9-2000;},16000,'queued capsule clock after stop drain');
     const uiLanes = await verifyNativeUiLanes(uiPaused, queuedUi), pendingUiPackets = queuedUi.length;
     localStorage.setItem('native-probe-ui-record', uiRecordId);
     const database = await new Promise((resolve, reject) => { const r = indexedDB.open('native-probe', 1); r.onupgradeneeded = () => r.result.createObjectStore('proof'); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });

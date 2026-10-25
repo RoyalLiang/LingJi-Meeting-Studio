@@ -1,9 +1,13 @@
 import { useEffect, useRef } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
-export type RecordingWidgetState = {recording:boolean;paused:boolean;busy:boolean;durationMs:number;rms:number};
-export function useRecordingWidget(report:RecordingWidgetState, onError:(message:string)=>void) {
+export type RecordingWidgetState = {recording:boolean;paused:boolean;canResume:boolean;busy:boolean;durationMs:number;rms:number};
+export function useRecordingWidget(report:RecordingWidgetState, onError:(message:string)=>void, recordId:string) {
   const latest=useRef(report), warned=useRef(false);
-  useEffect(()=>{latest.current=report;},[report]);
+  const currentRecord=useRef(recordId);
+  useEffect(()=>{
+    latest.current={...report,durationMs:currentRecord.current===recordId?Math.max(latest.current.durationMs,report.durationMs):report.durationMs};
+    currentRecord.current=recordId;
+  },[report,recordId]);
   useEffect(()=>{
     if(!isTauri())return;
     let active=true;
@@ -13,5 +17,5 @@ export function useRecordingWidget(report:RecordingWidgetState, onError:(message
     if(!report.recording)warned.current=false;
     update();const timer=setInterval(update,1000);
     return()=>{active=false;clearInterval(timer);};
-  },[report.recording,report.paused,report.busy,onError]);
+  },[report.recording,report.paused,report.canResume,report.busy,onError]);
 }
