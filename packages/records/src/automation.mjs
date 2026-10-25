@@ -25,7 +25,7 @@ export function automaticMinutesAt(record, now = Date.now()) {
   const paused = record.capture === 'paused';
   // A pause remains resumable; catch up only after the saved audio tail has drained.
   if (paused && (record.sources.some(source => !source.stopped || source.watermark !== source.lastSequence) || record.chunks.some(chunk => chunk.state !== 'done'))) return Infinity;
-  if (scope === 'final' || paused) {
+  if (scope === 'final' || paused || (auto.lastRevision === record.transcriptRevision && auto.lastScope === scope)) {
     const latest = checkpointJob(record, scope);
     if (!latest) return now;
     const attempt = latest.retryAttempt || 1;
@@ -33,14 +33,13 @@ export function automaticMinutesAt(record, now = Date.now()) {
     const failedAt = latest.failedAt ?? (latest.automatic ? auto.lastRequestedAt : undefined) ?? Date.parse(latest.createdAt);
     return failedAt + 15000 * 2 ** (attempt - 1);
   }
-  if (auto.lastRevision === record.transcriptRevision && auto.lastScope === scope) return Infinity;
   return Math.max(auto.enabledAt || Date.parse(record.createdAt), auto.lastRequestedAt || 0) + auto.intervalSeconds * 1000;
 }
 
 export function queueAutomaticMinutes(record, modelVersion, now = Date.now()) {
   if (automaticMinutesAt(record, now) > now) return;
   const scope = record.capture === 'completed' ? 'final' : 'live';
-  const previous = scope === 'final' || record.capture === 'paused' ? checkpointJob(record, scope) : undefined;
+  const previous = checkpointJob(record, scope);
   const job = requestMinutes(record, { mode: 'model', scope, automatic: true, modelVersion, ...(previous?.status === 'failed' ? {template: previous.template} : {}) });
   if (record.capture === 'paused') job.pausedCheckpoint = true;
   if (previous?.status === 'failed' && previous.modelVersion === job.modelVersion) {

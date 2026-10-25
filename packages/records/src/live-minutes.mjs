@@ -43,25 +43,30 @@ export function liveInput(record, template) {
 }
 export function minutesContext(previous, snapshot=[]) {
   if (!previous) return undefined;
-  const budget = 12000, bytes = value => Buffer.byteLength(JSON.stringify(value));
+  const budget = 12000, outlineBudget = 6000, bytes = value => Buffer.byteLength(JSON.stringify(value));
+  const freshText=snapshot.filter(segment=>segment.contextOnly!==true).map(segment=>segment.text).join('\n');
   const context = { title: previous.title.slice(0, 100), topics: (previous.topics || []).map(({ id, title }) => ({ id, title })), headings: [], items:[], recentPoints:[] };
+  const summaries=new Map(context.topics.map((topic,index)=>[topic,previous.topics[index].summary]));
   // Stable IDs survive even when unusually long display titles need shortening.
-  while (bytes(context) > budget) {
+  while (bytes(context) > outlineBudget) {
     const longest = context.topics.filter(topic => topic.title.length > 24).sort((a, b) => b.title.length - a.title.length)[0];
     if (!longest) break;
     longest.title = longest.title.slice(0, Math.max(24, longest.title.length - 16));
   }
+  while(bytes(context)>outlineBudget&&context.topics.length){
+    const unrelated=context.topics.findIndex(topic=>!freshText.includes(topic.title));
+    context.topics.splice(unrelated<0?0:unrelated,1);
+  }
   for (const heading of new Set(previous.sections.map(section => section.heading))) {
     context.headings.push(heading);
-    if (bytes(context) > budget) context.headings.pop();
+    if (bytes(context) > outlineBudget) context.headings.pop();
   }
   for (let index = 0; index < context.topics.length; index++) {
-    context.topics[index].summary = (previous.topics[index].summary || '').slice(0, 160);
-    if (bytes(context) > budget) delete context.topics[index].summary;
+    context.topics[index].summary = (summaries.get(context.topics[index]) || '').slice(0, 160);
+    if (bytes(context) > outlineBudget) delete context.topics[index].summary;
   }
   const entries=[...(previous.decisions || []).map(item=>({...item,kind:'decision'})),...(previous.actions || []).map(item=>({...item,kind:'action'})),...(previous.highlights || []).map(item=>({...item,kind:'item',heading:'关键结论'})),...previous.sections.flatMap(section=>section.items.map(item=>({...item,kind:'item',heading:section.heading})))];
   const relevant=new Set(snapshot.map(identity)), seen=new Set();
-  const freshText=snapshot.filter(segment=>segment.contextOnly!==true).map(segment=>segment.text).join('\n');
   const related=new Set((previous.topics || []).filter(topic=>freshText.includes(topic.title)).flatMap(topic=>(topic.evidence || []).map(identity)));
   const score=item=>Number(item.evidence.some(ref=>related.has(identity(ref))))*10+Number(item.evidence.some(ref=>relevant.has(identity(ref))));
   entries.sort((a,b)=>score(b)-score(a));
@@ -128,14 +133,17 @@ export function mergeLiveMinutes(previous, incoming, snapshot) {
   }
   const corrections=[...applied].map(([root,correction])=>({correctionOf:root,stateThroughMs:time(correction,freshEvidence),text:`${{withdrawn:'已撤回',corrected:'已更正',pending:'待确认'}[correction.status]}：${correction.text}`,evidence:correction.evidence}));
   incoming={...incoming,sections:[...incoming.sections,...(corrections.length||related.length?[{heading:'更正与待确认',items:[...corrections,...related]}]:[])]};
-  const headings = new Map();
-  for (const section of [...base.sections, ...incoming.sections]) headings.set(section.heading, mergeItems(headings.get(section.heading), section.items));
-  const sections = [...headings].flatMap(([heading, items]) => Array.from({ length: Math.ceil(items.length / 100) }, (_, index) => ({ heading, items: items.slice(index * 100, (index + 1) * 100) })));
-  if(!sections.length)sections.push({heading:incoming.sections[0]?.heading || '待确认',items:[]});
   const topics = base.topics?.map(topic => ({ ...topic })) || [], aliases = new Map();
   for (const topic of incoming.topics || []) {
-    const index = topics.findIndex(old => (topic.id && old.id === topic.id) || textKey(old.title) === textKey(topic.title));
-    if (index < 0) topics.push({ ...topic });
+    const index = topics.findIndex(old => textKey(old.title) === textKey(topic.title));
+    if (index < 0) {
+      let id=topic.id;
+      if(id&&topics.some(old=>old.id===id)){
+        id=`topic-${createHash('sha256').update(JSON.stringify([topic.title,topic.evidence.map(identity)])).digest('hex').slice(0,20)}`;
+        aliases.set(topic.id,id);
+      }
+      topics.push({...topic,...(id?{id}:{} )});
+    }
     else {
       const old = topics[index]; if (topic.id && old.id) aliases.set(topic.id, old.id);
       topics[index] = { ...old, summary: topic.summary || old.summary, evidence: uniqueRefs([...old.evidence, ...topic.evidence]) };
@@ -143,6 +151,11 @@ export function mergeLiveMinutes(previous, incoming, snapshot) {
   }
   // Tables and speaker digests are compact views; prose retains the accumulated facts.
   const remapItem = item => item.topicId && aliases.has(item.topicId) ? { ...item, topicId: aliases.get(item.topicId) } : item;
+  const retained=new Set(related),headings=new Map();
+  for(const section of base.sections)headings.set(section.heading,mergeItems(headings.get(section.heading),section.items));
+  for(const section of incoming.sections)headings.set(section.heading,mergeItems(headings.get(section.heading),section.items.map(item=>retained.has(item)?item:remapItem(item))));
+  const sections=[...headings].flatMap(([heading,items])=>Array.from({length:Math.ceil(items.length/100)},(_,index)=>({heading,items:items.slice(index*100,(index+1)*100)})));
+  if(!sections.length)sections.push({heading:incoming.sections[0]?.heading || '待确认',items:[]});
   const tables = new Map(base.tables?.map(table => [`${table.topicId}:${table.title}`, table]) || []);
   for (const table of incoming.tables || []) {
     const next = { ...table, topicId: aliases.get(table.topicId) || table.topicId };
@@ -163,10 +176,11 @@ export function mergeLiveMinutes(previous, incoming, snapshot) {
   const speakers = new Map(base.speakerSummaries?.map(speaker => [speaker.speakerId || speaker.speaker, speaker]) || []);
   for (const speaker of incoming.speakerSummaries || []) speakers.set(speaker.speakerId || speaker.speaker, speaker);
   return orderMinutesTimelines({
-    ...incoming, title: previous?.title || incoming.title, sections: sections.map(section => ({ ...section, items: section.items.map(remapItem) })), topics,
-    actions: mergeItems(base.actions, incoming.actions).map(remapItem), decisions: mergeItems(base.decisions, incoming.decisions).map(remapItem),
+    ...incoming, title: previous?.title || incoming.title, sections, topics,
+    actions: mergeItems(base.actions, (incoming.actions || []).map(remapItem)), decisions: mergeItems(base.decisions, (incoming.decisions || []).map(remapItem)),
     speakerSummaries: [...speakers.values()], tables: [...tables.values()].slice(-6),
-    highlights: mergeItems(incoming.highlights, base.highlights).slice(0, 6), visuals: [...visuals.values()].slice(-4),
+    highlights: mergeItems(incoming.highlights?.map(remapItem), base.highlights).slice(0, 6), visuals: [...visuals.values()].slice(-4),
+    ...(incoming.currentDiscussion ? {currentDiscussion:incoming.currentDiscussion.map(remapItem)} : {}),
     evidenceSnapshot: uniqueRefs([...base.evidenceSnapshot, ...snapshot]),
     correctionHistory:history.slice(-100), corrections:[]
   }, uniqueRefs([...base.evidenceSnapshot, ...snapshot]));

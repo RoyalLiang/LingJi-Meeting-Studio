@@ -200,7 +200,7 @@ export function requestMinutes(record, input = {}) {
     createdAt: new Date().toISOString(), attempts: 0 };
   record.jobs.push(job); emit(record, 'minutes.queued', { jobId: job.id }); return job;
 }
-export function validateMinutes(result, snapshot, context, {newEvidenceOnly=false}={}) {
+export function validateMinutes(result, snapshot, context, {newEvidenceOnly=false,aggregate=false,aggregateParts=1}={}) {
   requireThat(result&&typeof result==='object'&&!Array.isArray(result),'invalid_minutes',422);
   if(result.corrections!==undefined){
     requireThat(Array.isArray(result.corrections)&&result.corrections.length<=40,'invalid_minutes_corrections',422);
@@ -212,33 +212,37 @@ export function validateMinutes(result, snapshot, context, {newEvidenceOnly=fals
       requireThat(correction.evidence.some(ref=>snapshot.some(s=>s.id===ref.segmentId&&s.revision===ref.revision&&s.contextOnly!==true)),'minutes_correction_without_new_evidence',422);
     }
   }
-  validateMinutesStructure(result || {}, snapshot, requireThat);
-  requireThat(result && typeof result.title === 'string' && result.title.trim() && result.title.length <= 300 && Array.isArray(result.sections) && result.sections.length <= 20, 'invalid_minutes_schema', 422);
+  requireThat((!aggregate||!newEvidenceOnly)&&Number.isInteger(aggregateParts)&&aggregateParts>0&&(aggregate||aggregateParts===1),'invalid_minutes_validation_mode',422);
+  const sources=new Map(snapshot.map(segment=>[`${segment.id}:${segment.revision}`,segment]));
+  const cited=ref=>ref&&typeof ref.segmentId==='string'&&Number.isInteger(ref.revision)&&sources.has(`${ref.segmentId}:${ref.revision}`);
+  const count=aggregate?Math.max(aggregateParts,sources.size):1, evidenceLimit=aggregate?Math.max(500,sources.size):500;
+  validateMinutesStructure(result || {}, snapshot, requireThat,{aggregate,aggregateParts});
+  requireThat(result && typeof result.title === 'string' && result.title.trim() && result.title.length <= 300 && Array.isArray(result.sections) && result.sections.length <= 20*count, 'invalid_minutes_schema', 422);
   requireThat(result.sections.length > 0, 'empty_minutes', 422);
   for (const section of result.sections) {
     requireThat(typeof section.heading === 'string' && section.heading.length <= 200 && Array.isArray(section.items) && section.items.length <= 100, 'invalid_minutes_section', 422);
     for (const item of section.items) {
       requireThat(typeof item.text === 'string' && item.text.trim() && item.text.length < 8000 && Array.isArray(item.evidence) && item.evidence.length > 0, 'missing_evidence', 422);
-      for (const ref of item.evidence) requireThat(snapshot.some(s => s.id === ref.segmentId && s.revision === ref.revision), 'unknown_evidence', 422);
+      for (const ref of item.evidence) requireThat(cited(ref), 'unknown_evidence', 422);
     }
   }
   if (result.topics !== undefined) {
-    requireThat(Array.isArray(result.topics) && result.topics.length <= 30, 'invalid_minutes_topics', 422);
-    for (const topic of result.topics) requireThat(typeof topic.title === 'string' && topic.title.trim() && topic.title.length <= 200 && typeof topic.summary === 'string' && topic.summary.length <= 4000 && Array.isArray(topic.evidence) && topic.evidence.length > 0 && topic.evidence.length <= 500 && topic.evidence.every(ref => snapshot.some(s => s.id === ref.segmentId && s.revision === ref.revision)), 'invalid_minutes_topics', 422);
+    requireThat(Array.isArray(result.topics) && result.topics.length <= 30*count, 'invalid_minutes_topics', 422);
+    for (const topic of result.topics) requireThat(typeof topic.title === 'string' && topic.title.trim() && topic.title.length <= 200 && typeof topic.summary === 'string' && topic.summary.length <= 4000 && Array.isArray(topic.evidence) && topic.evidence.length > 0 && topic.evidence.length <= evidenceLimit && topic.evidence.every(ref => cited(ref)), 'invalid_minutes_topics', 422);
   }
-  requireThat(!result.actions || (Array.isArray(result.actions) && result.actions.length <= 100 && result.actions.every(a => typeof a.text === 'string' && a.text.trim() && a.text.length <= 8000 && (a.owner == null || (typeof a.owner === 'string' && a.owner.length <= 100)) && (a.due == null || (typeof a.due === 'string' && a.due.length <= 100))
-    && Array.isArray(a.evidence) && a.evidence.length && a.evidence.every(ref => snapshot.some(s => s.id === ref.segmentId && s.revision === ref.revision)))), 'invalid_actions', 422);
+  requireThat(!result.actions || (Array.isArray(result.actions) && result.actions.length <= 100*count && result.actions.every(a => typeof a.text === 'string' && a.text.trim() && a.text.length <= 8000 && (a.owner == null || (typeof a.owner === 'string' && a.owner.length <= 100)) && (a.due == null || (typeof a.due === 'string' && a.due.length <= 100))
+    && Array.isArray(a.evidence) && a.evidence.length && a.evidence.every(ref => cited(ref)))), 'invalid_actions', 422);
 
-  const validEvidence = evidence => Array.isArray(evidence) && evidence.length > 0 && evidence.length <= 500 && evidence.every(ref => ref && snapshot.some(segment => segment.id === ref.segmentId && segment.revision === ref.revision));
-  if (result.decisions !== undefined) requireThat(Array.isArray(result.decisions) && result.decisions.length <= 100 && result.decisions.every(item => item && typeof item.text === 'string' && item.text.trim() && item.text.length <= 8000 && validEvidence(item.evidence)), 'invalid_minutes_decisions', 422);
+  const validEvidence = evidence => Array.isArray(evidence) && evidence.length > 0 && evidence.length <= evidenceLimit && evidence.every(ref => ref && cited(ref));
+  if (result.decisions !== undefined) requireThat(Array.isArray(result.decisions) && result.decisions.length <= 100*count && result.decisions.every(item => item && typeof item.text === 'string' && item.text.trim() && item.text.length <= 8000 && validEvidence(item.evidence)), 'invalid_minutes_decisions', 422);
   if (result.speakerSummaries !== undefined) {
-    requireThat(Array.isArray(result.speakerSummaries) && result.speakerSummaries.length <= 20, 'invalid_speaker_summaries', 422);
+    requireThat(Array.isArray(result.speakerSummaries) && result.speakerSummaries.length <= 20*count, 'invalid_speaker_summaries', 422);
     const identities = new Set();
     for (const summary of result.speakerSummaries) {
       requireThat(summary && typeof summary === 'object', 'invalid_speaker_summaries', 422);
       const key = summary.speakerId || `label:${summary.speaker}`;
       requireThat((summary.speakerId == null || typeof summary.speakerId === 'string') && typeof summary.speaker === 'string' && summary.speaker.trim() && summary.speaker.length <= 80 && typeof summary.summary === 'string' && summary.summary.trim() && summary.summary.length <= 8000 && !identities.has(key) && validEvidence(summary.evidence), 'invalid_speaker_summaries', 422);
-      requireThat(summary.evidence.every(ref => snapshot.some(segment => segment.id === ref.segmentId && segment.revision === ref.revision && segment.speaker === summary.speaker && (summary.speakerId ? segment.speakerId === summary.speakerId : !segment.speakerId))), 'speaker_evidence_mismatch', 422);
+      requireThat(summary.evidence.every(ref => (sources.get(`${ref.segmentId}:${ref.revision}`)?.speaker === summary.speaker && (summary.speakerId ? sources.get(`${ref.segmentId}:${ref.revision}`).speakerId === summary.speakerId : !sources.get(`${ref.segmentId}:${ref.revision}`).speakerId))), 'speaker_evidence_mismatch', 422);
       identities.add(key);
     }
   }
@@ -264,7 +268,7 @@ export function commitMinutes(record, jobId, result, fence) {
   if (job.scope === 'live') {
     const baseline = liveBaseline(record);
     const merged = mergeLiveMinutes(baseline?.template === job.template ? baseline : null, result, job.snapshot);
-    validateMinutes(merged, merged.evidenceSnapshot);
+    validateMinutes(merged, merged.evidenceSnapshot,undefined,{aggregate:true});
     record.liveMinutes = { ...merged, notesRevision: job.notesRevision, template: job.template, transcriptRevision: job.transcriptRevision, generatedAt: new Date().toISOString() };
     job.status = 'completed'; job.snapshot = []; delete job.preview; delete job.partialMinutes;
     if(!usageRecorded)record.usage.llmTokens += Number.isSafeInteger(result.usageTokens) && result.usageTokens >= 0 ? result.usageTokens : 0;

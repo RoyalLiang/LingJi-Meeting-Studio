@@ -302,7 +302,7 @@ export async function createRecordServer(options = {}) {
       }
       else if (action === 'minutes' && req.method === 'PATCH') result = await changeOwned(id, user, r => {
         requireThat(r.minutes && body.revision === r.minutesRevision, 'minutes_revision_conflict');
-        validateMinutes(body.minutes, r.minutes.evidenceSnapshot);
+        validateMinutes(body.minutes, r.minutes.evidenceSnapshot,undefined,{aggregate:true});
         r.minutesHistory = [...(r.minutesHistory || []), r.minutes].slice(-10);
         r.minutesRevision++;
           const previous = { ...r.minutes };

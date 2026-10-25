@@ -128,8 +128,9 @@ export async function runMinutesPipeline(repo,recordId,claim,config,generate,opt
           const ids = new Set(input.snapshot.map(segment=>`${segment.id}:${segment.revision}`));
           completedWindows.set(key, {result, snapshot:claim.snapshot.filter(segment=>ids.has(`${segment.id}:${segment.revision}`))});
           let partial = liveBaseline(record);
+      const baselineParts = new Set((partial?.evidenceSnapshot || []).map(segment=>`${segment.id}:${segment.revision}`)).size;
           for (const entry of manifest.windows) {const window=completedWindows.get(entry.key);if(window)partial = mergeLiveMinutes(partial, window.result, window.snapshot);}
-          validateMinutes(partial, partial.evidenceSnapshot);
+      validateMinutes(partial, partial.evidenceSnapshot,undefined,{aggregate:true,aggregateParts:baselineParts+completedWindows.size});
           job.partialMinutes = {...partial, transcriptRevision:claim.transcriptRevision, generatedAt:new Date().toISOString()};
         }
       }
