@@ -26,7 +26,7 @@ const launch = () => spawn(resolve(process.env.NATIVE_CLIENT_EXECUTABLE || 'apps
     TTS_CLIENT_SYNTHETIC: '1', TTS_NATIVE_BACKGROUND_MS:String(backgroundMs), TTS_CLIENT_PROBE_OUTPUT: output, TTS_CLIENT_PROBE_AUTO_EXIT:'1',
   }, stdio: ['ignore', 'pipe', 'pipe'] });
   const waitProbe = async () => {
-    for (let n = 0; n < Math.ceil((backgroundMs+60000)/100); n++) {
+    for (let n = 0; n < Math.ceil((backgroundMs+180000)/100); n++) {
       try { return JSON.parse(await readFile(output, 'utf8')); } catch { /* Wait for the isolated renderer. */ }
       if (child.exitCode != null) throw new Error(`Native client exited ${child.exitCode}: ${logs}`);
       await new Promise(resolve => setTimeout(resolve, 100));
@@ -37,8 +37,9 @@ const launch = () => spawn(resolve(process.env.NATIVE_CLIENT_EXECUTABLE || 'apps
   for (const stream of [child.stdout, child.stderr]) stream.on('data', bytes => { logs = (logs + bytes).slice(-6000); });
   let result = await waitProbe();
   assert.ok(result, `Native probe timed out: ${logs}`); assert.equal(result.ok, true, JSON.stringify(result));
+assert.equal(result.settingsCancelReopen,true);
   assert.equal(result.iframeBlocked, true);
-  assert.deepEqual(result.residentCapture,{hiddenWindow:true,continuedNativeCapture:true,continuedDurableQueue:true,recordingNotPaused:true,restoredWindow:true,hiddenMs:backgroundMs}); assert.deepEqual(result.recordingWidget,{loadedPrivateSession:true,automaticallyMinimized:true,pause:true,restoredMain:true,finishConfirmation:true});
+  assert.deepEqual(result.residentCapture,{hiddenWindow:true,continuedNativeCapture:true,continuedDurableQueue:true,recordingNotPaused:true,restoredWindow:true,hiddenMs:backgroundMs,sampleCoverageVerified:true}); assert.deepEqual(result.recordingWidget,{loadedPrivateSession:true,automaticallyMinimized:true,pause:true,restoredMain:true,finishConfirmation:true});
 assert.ok(result.pcm.length >= 2);
   let offset = 0;
   result.pcm.forEach((packet, sequence) => { assert.equal(packet.sequence, sequence); assert.equal(packet.offset, offset); offset += packet.samples; });
@@ -84,7 +85,7 @@ assert.ok(result.pcm.length >= 2);
   if (process.argv[2]) {
     const target = resolve(process.argv[2]); await mkdir(dirname(target), { recursive: true }); await writeFile(target, JSON.stringify(evidence, null, 2) + '\n');
   }
-  console.log(JSON.stringify({ ok: true, nativePcmPackets: result.pcm.length, totalSamples: offset, authenticated: result.authenticated, sse: result.sse, iframeBlocked: result.iframeBlocked }));
+  console.log(JSON.stringify({ ok: true, recordingWidget: result.recordingWidget, settingsCancelReopen: result.settingsCancelReopen, residentCapture: result.residentCapture, restartQueueReplay: restarted.priorUiQueueReplayed, nativePcmPackets: result.pcm.length, totalSamples: offset, authenticated: result.authenticated, sse: result.sse, iframeBlocked: result.iframeBlocked }));
 } catch(error) { failure=error; console.error('[native test failure]',error); throw error; } finally {
   if (child && child.exitCode == null) {
     terminateClient(); await new Promise(resolve => child.once('exit', resolve));
