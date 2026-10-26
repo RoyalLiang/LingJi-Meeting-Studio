@@ -21,7 +21,7 @@ function clock(value: number) {
 
 const SavedWaveform=memo(function SavedWaveform({peaks}:{peaks:number[]}) {
   const bars=peaks.map((peak,index)=><rect key={index} x={index*4} y={24-Math.max(2,Math.sqrt(peak)*42)/2} width="2" height={Math.max(2,Math.sqrt(peak)*42)} rx="1"/>);
-  return <><svg className="player-waveform" viewBox="0 0 768 48" preserveAspectRatio="none" aria-hidden="true">{bars}</svg><svg className="player-waveform player-waveform-played" viewBox="0 0 768 48" preserveAspectRatio="none" aria-hidden="true">{bars}</svg></>;
+  return <><svg className="player-waveform" viewBox="0 0 768 48" preserveAspectRatio="none" aria-hidden="true">{bars}</svg><span className="player-wave-fill"><span className="player-wave-reveal"><svg className="player-waveform player-waveform-played" viewBox="0 0 768 48" preserveAspectRatio="none" aria-hidden="true">{bars}</svg></span></span></>;
 });
 
 export function AudioPlayer(props: Props) {
@@ -98,7 +98,7 @@ function PlaybackControls({ sources }: Props) {
     {sources.map((source, index) => <audio key={source.id} ref={element => { audio.current[index] = element; }}
       preload="metadata" src={source.src} aria-label={source.label}
       onLoadedMetadata={() => { sync(); setError(''); }} onDurationChange={sync}
-      onTimeUpdate={sync} onPlay={event=>mediaState(event.currentTarget,true)} onPlaying={event=>mediaState(event.currentTarget,true)}
+      onTimeUpdate={sync} onPlay={event=>mediaState(event.currentTarget,false)} onPlaying={event=>mediaState(event.currentTarget,true)}
       onWaiting={event=>mediaState(event.currentTarget,false)} onSeeking={event=>mediaState(event.currentTarget,false,true)}
       onSeeked={event=>mediaState(event.currentTarget,transport.playing,true)} onPause={event=>mediaState(event.currentTarget,false)} onEnded={event=>mediaState(event.currentTarget,false,true)}
       onError={() => { pause(); setError('原音加载失败，请检查网络与留存状态后重试。'); }}/>) }
@@ -109,7 +109,7 @@ function PlaybackControls({ sources }: Props) {
       <div className="player-wave-track" data-waveform-state={waveState}>
         {peaks.length > 0 ? <SavedWaveform peaks={peaks}/> : <span className="player-wave-status" role="status">{waveState === 'error' ? '波形暂不可用，仍可定位播放' : '正在读取录音波形…'}</span>}
         <span className="player-wave-progress" aria-hidden="true"><span className="player-wave-cursor"/></span>
-        <span className="player-wave-position" aria-hidden="true">{clock(time)}</span>
+        <span className="player-wave-position" aria-hidden="true"><span>{clock(time)}</span></span>
     <input className="player-seek" type="range" min={0} max={duration || 1} step={0.1} value={Math.min(time, duration || 0)} disabled={!duration}
       aria-label="录音进度" aria-valuetext={duration ? `${clock(time)}，共 ${clock(duration)}` : '正在读取录音时长'}
       onPointerDown={event => { if (!event.isPrimary || event.button !== 0) return; event.preventDefault(); event.currentTarget.focus({preventScroll:true}); event.currentTarget.setPointerCapture(event.pointerId); beginScrub(); previewPointer(event); }}

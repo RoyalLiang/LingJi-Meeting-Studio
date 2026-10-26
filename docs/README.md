@@ -1,6 +1,6 @@
 # 聆记文档导航
 
-[v0.1.26 纪要回显、首字与设置优化](releases/v0.1.26-preview.md) 已发布；[核验回执](evidence/preview-v0.1.26-2026-10-27.md) 记录四项 CI、十附件校验与真实供应商验证边界。
+[v0.1.27 推理强度、回放与状态优化](releases/v0.1.27-preview.md) 已完成本地验证，后台发布与附件待核验；上一版证据见 [v0.1.26 回执](evidence/preview-v0.1.26-2026-10-27.md)。
 
 [产品与快速开始](../README.md) · [下载预览版](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases) · [问题反馈](https://github.com/RoyalLiang/LingJi-Meeting-Studio/issues)
 
