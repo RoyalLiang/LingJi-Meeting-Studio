@@ -1,8 +1,13 @@
+# v0.1.23 纪要上下文与持续整理已发布（2026-10-26）
+
+[完整回执](../evidence/preview-v0.1.23-2026-10-26.md)：[Release](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.23) 与 [Actions 40251719525](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/40251719525) 四项成功，十公开附件完整下载核验，321 份源码指纹与固定标签一致；源码 `7a92739`，macOS build 0.1.45。
+
+合并纪要上下文、更正和 SenseVoice 持续纪要修复；累计纪要不再误用单次输出上限，临时错误有限重试，旧决定保留更正目标。保留主线手动重试和两分钟默认整理。504 项本地回归通过；Mac 包公开中英/静音样例的原生 SenseVoice 推理、Windows 持续合成采集与安装器验证通过。真实会议和云端 LLM 质量仍未验收。
+
+以下保留上一版本的历史记录。
+
 # v0.1.22 覆盖升级与录音胶囊已发布（2026-10-26）
 
-v0.1.23 发布候选：合并纪要上下文优化与 SenseVoice 持续纪要修复，并保留 v0.1.22 主线功能。当前仅完成源代码合并，发布尚未完成；见[发布证据](../evidence/preview-v0.1.23-2026-10-26.md)。
-
-以下为上一发布基线 v0.1.22 的验证记录。
 
 [完整回执](../evidence/preview-v0.1.22-2026-10-26.md)：[Release](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.22)、[正式 Actions](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/40228814842) 四项成功，十公开附件与 318 份源码指纹核对通过；源码 `b4a88e27b3ee9bb7a13e6c9a2b1f20f46ca61f7e`，macOS build 0.1.44。
 
