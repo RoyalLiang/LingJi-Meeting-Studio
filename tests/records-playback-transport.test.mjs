@@ -19,7 +19,7 @@ test('visible playback advances smoothly between coarse media samples without ch
  assert.ok(clock.read(.3,2016,true)>.3);
  assert.equal(clock.read(.3,3000,false),.3);
  assert.equal(clock.read(.3,4000,true,2),.3);assert.ok(Math.abs(clock.read(.3,4016,true,2)-.332)<1e-9);
- assert.ok(clock.read(.3,7000,true,2)<=.8);
+ assert.ok(clock.read(.3,7000,true,2)<=1.8);
 });
 
 function track(duration) {
@@ -33,6 +33,19 @@ function track(duration) {
     pause() { this.paused = true; },
   };
 }
+
+test('visible cursor stays continuous with 500ms media quantization and tiny backward jitter',()=>{
+  const clock=new PlaybackClock();let previous=clock.read(0,0,true),stalls=0;
+  for(let now=16;now<3000;now+=16){
+    const actual=Math.max(0,Math.floor((now-200)/500)*.5-(now%48===0?.001:0));
+    const shown=clock.read(actual,now,true);
+    assert.ok(shown>=previous,'sample jitter must not move the cursor backward');
+    assert.ok(shown-previous<.04,'coarse media samples must not jump the visible cursor');
+    if(shown===previous)stalls++;
+    previous=shown;
+  }
+  assert.equal(stalls,0,'a playing cursor must not freeze between 500ms samples');
+});
 
 test('15 second jumps clamp to the timeline and keep paused recordings paused', async () => {
   const mic = track(90), meeting = track(60), transport = new PlaybackTransport(() => [mic, meeting]);

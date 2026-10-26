@@ -44,6 +44,7 @@ async function verifyNativeUiLanes(record, queued) {
       const dialog=await until(()=>document.querySelector('dialog.modal[open]'),16000,'settings opened');
       if(['浏览器能力检测','删除清理','使用与诊断'].some(text=>dialog.textContent.includes(text)))throw new Error('unused settings modules remain');
       if(!dialog.querySelector('input,select,button'))throw new Error('settings controls missing');
+      await until(()=>dialog.querySelector('input[name=LLM_REASONING_EFFORT]'),16000,'reasoning setting');
       dialog.querySelector('.modal-close').click();await until(()=>!document.querySelector('dialog.modal[open]'),16000,'settings closed');
     };
     await openSettings();await openSettings();

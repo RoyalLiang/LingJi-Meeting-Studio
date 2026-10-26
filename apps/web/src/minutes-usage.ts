@@ -1,12 +1,12 @@
 import type { Job, RecordDetail } from './model';
 
-export function minutesUsageView(record: Pick<RecordDetail,'usage'>,job?: Pick<Job,'status'>) {
+export function minutesUsageView(record: Pick<RecordDetail,'usage'> & Partial<Pick<RecordDetail,'durationMs'>>,job?: Pick<Job,'status'>) {
  const count=(value:unknown):value is number=>Number.isSafeInteger(value) && typeof value==='number' && value>=0;
  const usage=record.usage && typeof record.usage==='object' && !Array.isArray(record.usage) ? record.usage : undefined;
  const raw=usage?.minutesMeter;
  const meter=raw && typeof raw==='object' && !Array.isArray(raw) && count(raw.requests) && count(raw.reportedRequests) && raw.reportedRequests<=raw.requests ? raw : undefined;
  const running=['queued','running'].includes(job?.status || '');
- const seconds=count(usage?.samples) ? Math.floor(usage.samples/16000) : null;
+ const seconds=typeof record.durationMs==='number' && Number.isFinite(record.durationMs) && record.durationMs>=0 ? Math.floor(record.durationMs/1000) : null;
  const audio=seconds===null ? '—' : `${Math.floor(seconds/60).toString().padStart(2,'0')}:${(seconds%60).toString().padStart(2,'0')}`;
  const supplied=(value:unknown,reports:unknown)=>Boolean(meter && count(value) && count(reports) && reports>0 && reports<=meter.reportedRequests);
  const knownTotal=supplied(meter?.totalTokens,meter?.totalTokensRequests),knownInput=supplied(meter?.inputTokens,meter?.inputTokensRequests),knownOutput=supplied(meter?.outputTokens,meter?.outputTokensRequests);

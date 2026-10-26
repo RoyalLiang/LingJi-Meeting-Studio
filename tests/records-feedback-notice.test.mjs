@@ -13,6 +13,13 @@ function notice(storage){
   return props=>{cursor=0;return sandbox.module.exports.FeedbackNotice(props);};
 }
 
+test('a floating processing failure keeps its action without reserving document space',()=>{
+  const run=()=>{},shown=notice()({message:'整理未完成',inline:false,action:{label:'重新整理',run}});
+  assert.equal(shown.props.inline,false);
+  assert.equal(shown.props.persistent,true);
+  assert.equal(shown.props.action.run,run);
+});
+
 test('dismissing a warning survives refresh and transient processing states until a new notice identity',()=>{
   const render=notice(),props={message:'语音处理暂时受阻。',open:true};
   const shown=render(props);assert.equal(shown.props.persistent,true);assert.equal(shown.props.warning,true);

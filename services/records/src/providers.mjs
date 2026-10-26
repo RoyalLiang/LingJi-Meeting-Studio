@@ -83,7 +83,7 @@ export async function generateMinutes(job, env = process.env, options = {}) {
   if (providerStatus(env).fixture) return { title: '开发测试纪要', sections: [{ heading: '测试摘要', items: job.summaries ? job.summaries.flatMap(summary=>summary.sections.flatMap(section=>section.items)).slice(0,8) : job.snapshot.filter(s=>!s.contextOnly).slice(0, 8).map(s => ({ text: s.text, evidence: [{ segmentId: s.id, revision: s.revision }] })) }], actions: [] };
   requireThat(JSON.stringify({transcript:job.snapshot,notes:job.notes,context:job.liveContext,summaries:job.summaries}).length < 180000, 'transcript_exceeds_model_budget', 422);
   const modelOptions={...options,timeoutMs:minutesTimeoutMs(job),jsonSchema:minutesSchema};
-  if(/^kimi-k3[.-]1-pro(?:-|$)/i.test(env.LLM_MODEL)){modelOptions.maxOutputTokens=16384;if(job.scope==='live')modelOptions.reasoningEffort='low';}
+  if(/^kimi-k3[.-]1-pro(?:-|$)/i.test(env.LLM_MODEL)){modelOptions.maxOutputTokens=16384;if(job.scope==='live'&&(!env.LLM_REASONING_EFFORT||env.LLM_REASONING_EFFORT==='auto'))modelOptions.reasoningEffort='low';}
   const result=await completeJson([{ role: 'system', content: minutesInstructions(job) }, { role: 'user', content: JSON.stringify({ transcript: job.snapshot, notes: job.notes, context: job.liveContext, summaries: job.summaries, stage: job.stage, omittedEvidence:job.omittedEvidence }) }], env, modelOptions);
   const validationSnapshot=job.validationSnapshot || job.snapshot;
   normalizeMinutesOutput(result);

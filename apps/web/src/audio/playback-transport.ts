@@ -97,16 +97,18 @@ export class PlaybackClock {
   }
 
   read(time: number, now: number, playing: boolean, rate = 1) {
-    if (!playing || !this.playing || !Number.isFinite(this.sample) || time < this.sample || time - this.sample > .5 || rate !== this.rate) {
+    if (!playing || !this.playing || !Number.isFinite(this.sample) || time < this.sample-.05 || time - this.sample > rate || rate !== this.rate) {
       this.reset(time, now);
     }
     this.playing = playing; this.rate = rate;
+    // Cover coarse 500ms samples plus output-device startup latency.
+    const lead = .75 * rate;
     let predicted = this.anchor + Math.max(0, now - this.started) / 1000 * rate;
-    if (time !== this.sample && Math.abs(time - predicted) > .25) {
+    if (time !== this.sample && Math.abs(time - predicted) > lead) {
       this.reset(time, now); predicted = time;
     }
     this.sample = time;
-    this.shown = playing ? Math.max(this.shown, Math.min(predicted, time + .25 * rate)) : time;
+    this.shown = playing ? Math.max(this.shown, Math.min(predicted, time + lead)) : time;
     return this.shown;
   }
 }

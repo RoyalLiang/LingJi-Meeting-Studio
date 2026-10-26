@@ -23,8 +23,13 @@ const usageSource=stripTypeScriptTypes(await readFile(new URL('../apps/web/src/m
 vm.runInNewContext(usageSource+'\nObject.assign(exports,{minutesUsageView});',sandbox);
 const {minutesUsageView}=sandbox.exports;
 
-test('minutes usage distinguishes unknown tokens from a provider zero and labels parallel audio as accumulated tracks',()=>{
- const record={usage:{samples:16000*123,llmTokens:0}};
+test('meeting audio display uses the shared timeline rather than summing parallel tracks',()=>{
+ const record={durationMs:281000,usage:{samples:16000*562,llmTokens:0}};
+ assert.equal(minutesUsageView(record).audio,'04:41');
+});
+
+test('minutes usage distinguishes unknown tokens from a provider zero and uses the shared recording timeline',()=>{
+ const record={durationMs:123000,usage:{samples:16000*246,llmTokens:0}};
  let usage=minutesUsageView(record,{status:'running'});assert.equal(usage.audio,'02:03');assert.equal(usage.tokens,'待回传');assert.equal(usage.showBreakdown,false);
  usage=minutesUsageView(record);assert.equal(usage.tokens,'未提供');
  record.usage.minutesMeter={requests:1,reportedRequests:1,totalTokens:0,totalTokensRequests:1,inputTokens:0,inputTokensRequests:1,outputTokens:0,outputTokensRequests:1};
@@ -36,7 +41,7 @@ test('incomplete historical usage snapshots stay unknown without crashing or man
  for(const usage of [undefined,null,'old-format',[],{}, {samples:-1}, {samples:'16000'}, {samples:Infinity}, {samples:NaN}, {minutesMeter:42}, {minutesMeter:{requests:1,reportedRequests:1,totalTokensRequests:1,totalTokens:'0',inputTokensRequests:1,inputTokens:-1}}]) {
   const view=minutesUsageView({usage});assert.equal(view.audio,'—');assert.equal(view.tokens,'未提供');assert.equal(view.showBreakdown,false);
  }
- const current=minutesUsageView({usage:{samples:0,llmTokens:0,minutesMeter:{requests:1,reportedRequests:1,totalTokens:0,totalTokensRequests:1}}});
+ const current=minutesUsageView({durationMs:0,usage:{samples:0,llmTokens:0,minutesMeter:{requests:1,reportedRequests:1,totalTokens:0,totalTokensRequests:1}}});
  assert.equal(current.audio,'00:00');assert.equal(current.tokens,'0 token');
 });
 

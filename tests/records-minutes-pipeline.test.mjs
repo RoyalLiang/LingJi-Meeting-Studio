@@ -657,3 +657,17 @@ test('a legacy in-flight live job cannot overwrite a newer cumulative result aft
     });
   } finally {await f.close();}
 });
+
+test('changing reasoning strength invalidates cached windows on identical-transcript retries',async()=>{
+ const f=await fixture(1);
+ try{
+  const first=await f.claim();
+  await runMinutesPipeline(f.repo,f.record.id,first,{...config,LLM_REASONING_EFFORT:'low'},async job=>summarize(job));
+  await f.repo.change(f.record.id,r=>{r.jobs.find(job=>job.id===first.id).status='failed';});
+  const next=await f.claim();let calls=0;
+  const result=await runMinutesPipeline(f.repo,f.record.id,next,{...config,LLM_REASONING_EFFORT:'high'},async job=>{calls++;return summarize(job);});
+  assert.ok(calls>0,'new reasoning strength must reach the provider');assert.equal(result.coverage.reused,0);
+  const policies=['auto','default','low','high','max'].map(effort=>buildMinutesManifest(next,{...config,LLM_REASONING_EFFORT:effort}).policy);
+  assert.equal(new Set(policies).size,policies.length);
+ }finally{await f.close();}
+});

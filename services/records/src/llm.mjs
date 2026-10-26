@@ -1,4 +1,4 @@
-import { normalizeConfig, configured } from './config.mjs';
+import { normalizeConfig, configured, reasoningEfforts } from './config.mjs';
 import { DomainError, requireThat } from '../../../packages/records/src/record.mjs';
 import { tokenUsage as readTokenUsage } from '../../../packages/records/src/usage.mjs';
 
@@ -14,7 +14,9 @@ export async function completeModelJson(messages, input = process.env, { onDelta
   const body = responses
     ? { model: env.LLM_MODEL, input: messages, store: false, text: { format: { type: 'json_object' } }, stream: streaming }
     : { model: env.LLM_MODEL, messages, response_format: { type: 'json_object' }, stream: streaming, ...(streaming ? { stream_options: { include_usage: true } } : {}) };
-  if(reasoningEffort==='low'){if(responses)body.reasoning={effort:'low'};else body.reasoning_effort='low';}
+  const effort=reasoningEffort ?? env.LLM_REASONING_EFFORT;
+  requireThat(reasoningEfforts.includes(effort),'invalid_llm_reasoning_effort',400);
+  if(!['auto','default'].includes(effort)){if(responses)body.reasoning={effort};else body.reasoning_effort=effort;}
   if(maxOutputTokens!==undefined){requireThat(Number.isSafeInteger(maxOutputTokens)&&maxOutputTokens>0&&maxOutputTokens<=131072,'invalid_llm_token_budget',500);body[responses?'max_output_tokens':'max_completion_tokens']=maxOutputTokens;}
   if(jsonSchema && env.LLM_STRUCTURED_OUTPUTS === 'true'){
     const format={type:'json_schema',name:'meeting_minutes',schema:jsonSchema,strict:true};
