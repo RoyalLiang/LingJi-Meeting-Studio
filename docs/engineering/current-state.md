@@ -1,6 +1,10 @@
-# v0.1.24 小窗、纪要与播放修复待发布（2026-10-26）
+# v0.1.24 小窗、纪要与播放修复已发布（2026-10-26）
 
-[本轮说明](../releases/v0.1.24-preview.md)：本地已修复透明紧凑胶囊、主窗互斥与迟到恢复、SSE 终止读取、耗尽任务清理及播放进度平滑。Node 510/510、纪要专项 52/52、浏览器交互通过；macOS 原生隔离冒烟与 Rust 胶囊状态 3/3 通过；后台构建与 Windows 安装包尚待验证。
+[完整回执](../evidence/preview-v0.1.24-2026-10-26.md)：[Release](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.24) 与 [Actions 40332984046](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/40332984046) 四项成功，十附件完整下载核验，322 份源码指纹与固定标签一致；源码 `0a86d63`，macOS build 0.1.46。
+
+修复透明紧凑胶囊、主窗互斥及迟到恢复、SSE 完成仍等待 EOF、耗尽任务清理与播放进度平滑。Node 510/510、纪要专项 52/52、本机原生与浏览器验证通过；Windows 六分钟隐藏合成录音、安装器和包内后台验证通过。两平台包内 SenseVoice 固定公开样本原生推理通过，真实会议及真实 LLM 仍未验收。仓库全状态 Issues 为 0，无可评论关闭条目。
+
+以下保留历史记录。
 
 # v0.1.23 纪要上下文与持续整理已发布（2026-10-26）
 
