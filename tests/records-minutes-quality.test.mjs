@@ -36,7 +36,7 @@ test('the first streamed minutes are visible without opening advanced settings a
  record.jobs=[{id:'streaming',scope:'live',status:'running',transcriptRevision:1,preview:[{kind:'item',text:'先排查依赖，再确认上线时间。'}]}];
  const props={record,busy:false,onClose(){},generate:async()=>{},edit:async()=>true,cite(){},automate:async()=>{},inline:true};
  const html=renderToStaticMarkup(React.createElement(panel.exports.MinutesPanel,props));
- assert.match(html,/先排查依赖，再确认上线时间/);assert.match(html,/实时草稿/);assert.match(html,/引用将在完整结果校验后显示/);
+ assert.match(html,/先排查依赖，再确认上线时间/);assert.match(html,/实时草稿/);assert.match(html,/引用将在完整结果校验后显示/);assert.doesNotMatch(html,/class="empty"/,"first draft must replace the large empty placeholder");
  record.minutes={...fixture(),edited:true};
  const protectedHtml=renderToStaticMarkup(React.createElement(panel.exports.MinutesPanel,props));
  assert.doesNotMatch(protectedHtml,/先排查依赖，再确认上线时间/);

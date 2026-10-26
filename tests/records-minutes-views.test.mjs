@@ -133,3 +133,9 @@ test('configured model request generates and commits new views with the frozen t
   assert.equal(record.minutes.topics[0].id,'release');
   assert.equal(record.minutes.tables[0].topicId,'release');
 });
+
+test('a failed latest request stays visible while later transcript chunks arrive',()=>{
+ const failed={id:'failed-request',status:'failed',scope:'live',transcriptRevision:7,error:'llm_timeout'};
+ const record={capture:'recording',transcriptRevision:558,jobs:[failed]};
+ assert.equal(currentMinutesJob(record)?.id,failed.id);
+});

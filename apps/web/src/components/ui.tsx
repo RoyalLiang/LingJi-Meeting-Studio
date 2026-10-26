@@ -7,7 +7,29 @@ import './CloseButton.css';
 import { isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 export function Button({ children, variant = 'secondary', className = '', title, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'ghost' | 'danger' }) {
-  return <button className={`button ${variant} ${className}`} data-tooltip={title || props['aria-label']} {...props}>{children}</button>;
+  const button=useRef<HTMLButtonElement>(null),tip=useRef<HTMLSpanElement>(null),id=useId();
+  const label=title || props['aria-label'];
+  useEffect(()=>{
+    const anchor=button.current,popup=tip.current;if(!anchor||!popup)return;
+    let timer:number|undefined;
+    const hide=()=>{clearTimeout(timer);if(popup.matches(':popover-open'))popup.hidePopover();removeEventListener('scroll',hide,true);removeEventListener('resize',hide);document.removeEventListener('keydown',key,true);};
+    const show=()=>{
+      clearTimeout(timer);if(!anchor.isConnected)return;
+      document.querySelectorAll<HTMLElement>('.button-tooltip:popover-open').forEach(other=>{if(other!==popup)other.hidePopover();});
+      if(!popup.matches(':popover-open'))popup.showPopover();const a=anchor.getBoundingClientRect(),p=popup.getBoundingClientRect();
+      const top=a.top-p.height-8;
+      popup.style.left=`${Math.max(8,Math.min(innerWidth-p.width-8,a.left+(a.width-p.width)/2))}px`;
+      popup.style.top=`${Math.max(8,Math.min(innerHeight-p.height-8,top>=8?top:a.bottom+8))}px`;
+      addEventListener('scroll',hide,true);addEventListener('resize',hide);document.addEventListener('keydown',key,true);
+      };
+    const enter=()=>{timer=window.setTimeout(show,300);},key=(e:KeyboardEvent)=>{if(e.key==='Escape'&&popup.matches(':popover-open')){hide();e.preventDefault();e.stopPropagation();}};
+    const toggled=()=>{if(!popup.matches(':popover-open'))hide();};
+    popup.addEventListener('toggle',toggled);
+    anchor.addEventListener('pointerenter',enter);anchor.addEventListener('pointerleave',hide);
+    anchor.addEventListener('focus',show);anchor.addEventListener('blur',hide);anchor.addEventListener('click',hide);
+    return()=>{hide();popup.removeEventListener('toggle',toggled);anchor.removeEventListener('pointerenter',enter);anchor.removeEventListener('pointerleave',hide);anchor.removeEventListener('focus',show);anchor.removeEventListener('blur',hide);anchor.removeEventListener('click',hide);};
+  },[label]);
+  return <button className={`button ${variant} ${className}`} data-tooltip={label} {...props} ref={button} aria-describedby={[props['aria-describedby'],label?id:undefined].filter(Boolean).join(' ')||undefined}>{children}{label&&<span ref={tip} id={id} role="tooltip" popover="manual" className="button-tooltip">{label}</span>}</button>;
 }
 export function CloseButton({ label = '关闭', className = '', ...props }: Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> & { label?: string }) {
   return <Button type="button" variant="ghost" className={`close-button ${className}`} aria-label={label} title={label} {...props}>

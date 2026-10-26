@@ -33,7 +33,8 @@ export function automaticMinutesAt(record, now = Date.now()) {
     const failedAt = latest.failedAt ?? (latest.automatic ? auto.lastRequestedAt : undefined) ?? Date.parse(latest.createdAt);
     return failedAt + 15000 * 2 ** (attempt - 1);
   }
-  return Math.max(auto.enabledAt || Date.parse(record.createdAt), auto.lastRequestedAt || 0) + auto.intervalSeconds * 1000;
+  const interval=auto.lastRequestedAt==null ? Math.min(auto.intervalSeconds,30) : auto.intervalSeconds;
+  return Math.max(auto.enabledAt || Date.parse(record.createdAt), auto.lastRequestedAt || 0) + interval * 1000;
 }
 
 export function queueAutomaticMinutes(record, modelVersion, now = Date.now()) {

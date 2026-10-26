@@ -81,7 +81,7 @@ function currentJob(record,claim){
   return job;
 }
 export async function runMinutesPipeline(repo,recordId,claim,config,generate,options={}){
-  const manifest=buildMinutesManifest(claim,config),cache=new Map(),inFlight=new Map(), completedWindows=new Map();let tokens=0,calls=0,reused=0;
+  const manifest=buildMinutesManifest(claim,config),cache=new Map(),inFlight=new Map(), completedWindows=new Map();let tokens=0,calls=0,reused=0,previewKey;
   async function mapWindows(items,execute){
     const results=new Array(items.length);let next=0,failure,failed=false;
     // Keep input order, stop scheduling on failure, and drain every in-flight call
@@ -111,7 +111,7 @@ export async function runMinutesPipeline(repo,recordId,claim,config,generate,opt
       let first=false;
       const allowed = new Map(input.snapshot.map(segment=>[`${segment.id}:${segment.revision}`,segment]));
       const validationSnapshot=claim.snapshot.filter(segment=>allowed.has(`${segment.id}:${segment.revision}`)).map(segment=>({...segment,contextOnly:allowed.get(`${segment.id}:${segment.revision}`).contextOnly}));
-      const result=await telemetry.measure('minutes.window',{recordId,jobId:claim.id},()=>meteredMinutesCall(repo,recordId,claim,generate,{...claim,...input,validationSnapshot},config,stage==='single'||preview?options:{onDelta:(delta,runtime)=>{if(!first){first=true;telemetry.event('minutes.first-text',{recordId,jobId:claim.id,durationMs:runtime?.firstTokenMs});}}}));
+      const result=await telemetry.measure('minutes.window',{recordId,jobId:claim.id},()=>meteredMinutesCall(repo,recordId,claim,generate,{...claim,...input,validationSnapshot},config,stage==='single'||preview?options:{onDelta:(delta,runtime)=>{if(!first){first=true;telemetry.event('minutes.first-text',{recordId,jobId:claim.id,durationMs:runtime?.firstTokenMs});}if(claim.scope==='live' && stage==='window' && (previewKey===undefined || previewKey===key)){previewKey=key;return options.onDelta?.(delta,runtime,key);}}}));
       telemetry.event('minutes.window-usage',{recordId,jobId:claim.id,tokens:result.usageTokens,firstTextMs:result.runtime?.firstTokenMs});
       validateMinutes(result,validationSnapshot,claim.liveContext,{newEvidenceOnly:true});validateMinutes(result,claim.snapshot,claim.liveContext,{newEvidenceOnly:true});
       tokens+=Number.isSafeInteger(result.usageTokens)&&result.usageTokens>=0?result.usageTokens:0;calls++;
