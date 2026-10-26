@@ -15,6 +15,20 @@ async function endpoint(handler, run) {
   finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 }
 const credentials = { LLM_MODEL: 'fixture-model', LLM_API_KEY: 'fixture-key' };
+for(const protocol of ['responses','chat-completions'])test(`${protocol} terminal frame completes minutes even when the provider keeps SSE open`,async()=>{
+ const usage={input_tokens:2,output_tokens:1,total_tokens:3};
+ await endpoint((_req,res)=>{
+  res.writeHead(200,{'Content-Type':'text/event-stream'});
+  const frames=protocol==='responses'
+   ? [{type:'response.output_text.delta',delta:'{"ok":true}'},{type:'response.completed',response:{status:'completed',usage}}]
+   : [{choices:[{delta:{content:'{"ok":true}'},finish_reason:'stop'}]},{choices:[],usage},'[DONE]'];
+  for(const frame of frames)res.write(`data: ${typeof frame==='string'?frame:JSON.stringify(frame)}\n\n`);
+  // The terminal marker is the contract; this fixture intentionally leaves HTTP open.
+ },async base=>{
+  const result=await completeJson([],{...credentials,LLM_API_URL:base,LLM_PROTOCOL:protocol},{onDelta:()=>{},timeoutMs:200});
+  assert.equal(result.ok,true);assert.equal(result.usageTokens,3);
+ });
+});
 test('provider token counters remain unknown when absent and preserve an explicitly reported zero', async () => {
  for(const usage of [undefined,{total_tokens:0,input_tokens:0,output_tokens:0},{total_tokens:-1,input_tokens:'12',output_tokens:1.5}]) {
   const reports=[];

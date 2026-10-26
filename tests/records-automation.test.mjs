@@ -13,6 +13,21 @@ import { publicRecord } from '../packages/records/src/record.mjs';
 const segment = {id:'s1',revision:1,text:'决定周五评审',startMs:0,endMs:1000,speaker:'',sourceId:'text-import'};
 const result = {title:'评审',topics:[{title:'评审安排',summary:'确定评审时间',evidence:[{segmentId:'s1',revision:1}]}],sections:[{heading:'决定',items:[{text:'周五评审',evidence:[{segmentId:'s1',revision:1}]}]}],actions:[]};
 function record() { const r=createRecord('fixture');r.segments=[{...segment}];r.transcriptRevision=1;r.capture='recording';return r; }
+test('an exhausted interrupted minutes job reaches failure instead of staying running forever',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'tts-expired-minutes-')),repo=await createRepository({root,databaseUrl:''});
+ try{
+  for(const [status,lease] of [['running',Date.now()-1],['running',undefined],['queued',undefined]]){
+   const r=record();r.capture='completed';
+   const job=requestMinutes(r,{scope:'final',modelVersion:'fixture'});
+   Object.assign(job,{status,lease,attempts:3,fence:'obsolete-worker',preview:[{kind:'item',text:'待核验'}],partialMinutes:result});
+   await repo.insert(r);
+   await runCycle(repo,{minutes:async()=>{assert.fail('attempt budget must stay bounded');}},{lane:'minutes'});
+   const saved=await repo.get(r.id),failed=saved.jobs.find(j=>j.id===job.id);
+   assert.equal(failed.status,'failed');assert.equal(failed.error,'minutes_request_failed');
+   assert.equal(failed.fence,null);assert.deepEqual(failed.snapshot,[]);assert.equal(failed.preview,undefined);assert.equal(failed.partialMinutes,undefined);
+  }
+ }finally{await repo.close();await rm(root,{recursive:true,force:true});}
+});
 test('automatic minutes debounce live updates, deduplicate and finalize after drain', () => {
  const r=record();setAutomation(r,{enabled:true,intervalSeconds:30},1000);
  assert.equal(automaticMinutesAt(r,1001),31000);assert.equal(queueAutomaticMinutes(r,'fixture',30999),undefined);
@@ -137,7 +152,7 @@ for(const pipelineOff of [false,true])for(const humanEdit of [false,true])test(`
   res.writeHead(200,{'content-type':'text/event-stream'});res.flushHeaders();
   const usage={prompt_tokens:5,completion_tokens:2,total_tokens:7};
   res.write(`data: ${JSON.stringify({usage})}\n\ndata: ${JSON.stringify({usage})}\n\n`);started();await blocked;
-  res.end(`data: ${JSON.stringify({choices:[{delta:{content:JSON.stringify({...result,tokens:999999,usageTokens:999999,tokenUsage:{totalTokens:999999}})},finish_reason:'stop'}]})}\n\ndata: [DONE]\n\n`);
+  res.write(`data: ${JSON.stringify({choices:[{delta:{content:JSON.stringify({...result,tokens:999999,usageTokens:999999,tokenUsage:{totalTokens:999999}})},finish_reason:'stop'}]})}\n\ndata: [DONE]\n\n`);
  });
  let work;
  try {

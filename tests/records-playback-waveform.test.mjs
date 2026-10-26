@@ -6,7 +6,7 @@ import { recordingWaveform } from '../services/records/src/waveform.mjs';
 
 const load = async path => import(`data:text/javascript;base64,${Buffer.from(stripTypeScriptTypes(await readFile(new URL(path, import.meta.url), 'utf8'), {mode:'transform'})).toString('base64')}`);
 const { mergeWaveforms, parsePlaybackTime, waveformTicks, waveformSeekTime } = await load('../apps/web/src/audio/playback-waveform.ts');
-const { PlaybackTransport, PlaybackScrub } = await load('../apps/web/src/audio/playback-transport.ts');
+const { PlaybackTransport, PlaybackScrub, PlaybackClock } = await load('../apps/web/src/audio/playback-transport.ts');
 
 function pcm(values) { const bytes = Buffer.alloc(values.length * 2); values.forEach((value,index) => bytes.writeInt16LE(value,index * 2)); return bytes; }
 
@@ -51,7 +51,7 @@ async function playerFixture(failWaveform=false) {
   const makeTrack=duration=>({duration,currentTime:0,paused:true,ended:false,error:null,playbackRate:1,preservesPitch:true,seeks:[],
     async play(){this.paused=false;},pause(){this.paused=true;},load(){}});
   const tracks=[makeTrack(90),makeTrack(60)];
-  const icon=()=>null, sandbox={module:{exports:{}},AbortController,PlaybackTransport,PlaybackScrub,mergeWaveforms,parsePlaybackTime,waveformTicks,waveformSeekTime,
+  const icon=()=>null, sandbox={module:{exports:{}},AbortController,performance,PlaybackTransport,PlaybackScrub,PlaybackClock,memo:fn=>fn,mergeWaveforms,parsePlaybackTime,waveformTicks,waveformSeekTime,
     useId:()=> 'c-player',useRef:value=>refs[refCursor++]??={current:value},
     useState(initial){const index=cursor++;if(!(index in states))states[index]=typeof initial==='function'?initial():initial;return[states[index],next=>{states[index]=next;}];},
     useEffect(fn,next){const i=effectCursor++;if(JSON.stringify(next)!==deps[i]){deps[i]=JSON.stringify(next);effects.push(()=>{cleanups[i]?.();cleanups[i]=fn();});}},

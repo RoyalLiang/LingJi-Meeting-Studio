@@ -10,9 +10,11 @@
 .player-timeline { width:100%; min-width:0; padding-top:14px; }
 .player-wave-track { position:relative; width:100%; height:48px; }
 .player-waveform { display:block; width:100%; height:40px; position:absolute; top:4px; fill:var(--border); }
-.player-waveform-played { fill:var(--accent); }
-.player-wave-cursor { position:absolute; left:var(--played); top:0; bottom:0; width:1px; background:var(--accent); pointer-events:none; }
-.player-wave-position { position:absolute; bottom:100%; transform:translateX(-50%); padding:2px 6px; border:1px solid var(--border); border-radius:5px; background:var(--accent-soft); color:var(--accent); font:10px var(--mono); white-space:nowrap; pointer-events:none; }
+.player-waveform-played { fill:var(--accent); clip-path:inset(0 calc(100% - var(--played, 0%)) 0 0); }
+.player-wave-progress { position:absolute; inset:0; overflow:hidden; pointer-events:none; }
+.player-wave-cursor { position:absolute; inset:0; transform:translate3d(min(var(--played, 0%),calc(100% - 1px)),0,0); will-change:transform; }
+.player-wave-cursor::before { content:""; position:absolute; top:0; bottom:0; left:0; width:1px; background:var(--accent); }
+.player-wave-position { position:absolute; left:clamp(30px,var(--played, 0%),calc(100% - 30px)); bottom:100%; transform:translateX(-50%); padding:2px 6px; border:1px solid var(--border); border-radius:5px; background:var(--accent-soft); color:var(--accent); font:10px var(--mono); white-space:nowrap; pointer-events:none; }
 .player-wave-status { position:absolute; inset:0; display:grid; place-items:center; color:var(--ink-3); font-size:11px; background:var(--panel-2); border-radius:6px; pointer-events:none; }
 .audio-player .player-seek { position:absolute; inset:0; z-index:2; width:100%; height:100%; min-width:0; min-height:0; margin:0; padding:0; border:0; opacity:0; cursor:ew-resize; touch-action:none; }
 .player-wave-track:has(.player-seek:focus-visible) { outline:1px solid var(--focus-ring); outline-offset:4px; border-radius:4px; }

@@ -1,6 +1,6 @@
 # 聆记文档导航
 
-纪要上下文与 SenseVoice 持续纪要修复已随 [v0.1.23](releases/v0.1.23-preview.md) 发布，十附件与来源核验见[发布回执](evidence/preview-v0.1.23-2026-10-26.md)。
+[v0.1.24 小窗、纪要与播放修复](releases/v0.1.24-preview.md) 已完成本地验证，正在准备后台构建。上一版 v0.1.23 的十附件与来源核验见[发布回执](evidence/preview-v0.1.23-2026-10-26.md)。
 
 [产品与快速开始](../README.md) · [下载预览版](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases) · [问题反馈](https://github.com/RoyalLiang/LingJi-Meeting-Studio/issues)
 
@@ -10,7 +10,7 @@
 
 | 目标 | 文档 |
 | --- | --- |
-| 安装桌面版、核对当前验证范围 | [v0.1.23 发布说明](releases/v0.1.23-preview.md) · [完整交付证据](evidence/preview-v0.1.23-2026-10-26.md) |
+| 安装桌面版、核对当前验证范围 | [v0.1.24 发布说明](releases/v0.1.24-preview.md) · [v0.1.23 交付证据](evidence/preview-v0.1.23-2026-10-26.md) |
 | 处理 macOS 安装与系统信任提示 | [macOS 安装与信任](releases/macos-trust.md) |
 | 使用内置 SenseVoice、选择云端转录或外部 FunASR | [本地转录与高级配置](engineering/funasr.md) |
 | 配置豆包音频纪要 | [两种音频模式与权限](engineering/doubao-audio.md) |
