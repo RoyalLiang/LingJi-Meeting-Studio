@@ -81,7 +81,7 @@ dialog.modal:has(.learning-review) {
   border-color: var(--accent, #568267);
 }
 .learning-case:focus-visible {
-  outline: 2px solid var(--accent, #568267);
+  outline: 1px solid var(--focus-ring);
   outline-offset: 2px;
 }
 .learning-detail {

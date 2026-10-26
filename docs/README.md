@@ -1,6 +1,6 @@
 # 聆记文档导航
 
-本轮纪要上下文优化待统一发版：见[迟到转录、上下文与纪要更正](engineering/minutes-context.md)。本轮未创建版本或发布。
+纪要上下文与 SenseVoice 持续纪要修复纳入 [v0.1.23 发布候选](releases/v0.1.23-preview.md)；当前发布状态见[证据记录](evidence/preview-v0.1.23-2026-10-26.md)。
 
 [产品与快速开始](../README.md) · [下载预览版](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases) · [问题反馈](https://github.com/RoyalLiang/LingJi-Meeting-Studio/issues)
 
@@ -10,7 +10,7 @@
 
 | 目标 | 文档 |
 | --- | --- |
-| 安装桌面版、核对当前验证范围 | [v0.1.19 发布说明](releases/v0.1.19-preview.md) · [完整交付证据](evidence/preview-v0.1.19-2026-10-25.md) |
+| 安装桌面版、核对当前验证范围 | [v0.1.22 发布说明](releases/v0.1.22-preview.md) · [完整交付证据](evidence/preview-v0.1.22-2026-10-26.md) |
 | 处理 macOS 安装与系统信任提示 | [macOS 安装与信任](releases/macos-trust.md) |
 | 使用内置 SenseVoice、选择云端转录或外部 FunASR | [本地转录与高级配置](engineering/funasr.md) |
 | 配置豆包音频纪要 | [两种音频模式与权限](engineering/doubao-audio.md) |
@@ -38,7 +38,7 @@
 
 - [发布说明](releases/)：版本行为、安装方式和发布流程。
 - [验收证据](evidence/)：源码版本、构建、公开附件校验与原生界面记录。
-- [v0.1.19 回执](evidence/preview-v0.1.19-2026-10-25.md)：系统音频恢复通知、Windows 模型选装及升级保留；含未验证边界。
+- [v0.1.22 回执](evidence/preview-v0.1.22-2026-10-26.md)：单窗口覆盖、胶囊暂停/继续、两分钟整理和异常重试；含十附件、原生与安装器证据及未验边界。
 - [v0.1.17 回执](evidence/preview-v0.1.17-2026-10-25.md)：应用内置原生 SenseVoice 与安装器。
 - [研究记录](research/)：方案依据与调研结论，不作为运行成功的证据。
 

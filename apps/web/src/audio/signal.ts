@@ -1,4 +1,4 @@
-import type { SourceKind } from '../model';
+import type { Source, SourceKind } from '../model';
 export interface CaptureSignal {
   sourceId: string; kind: SourceKind; label: string; rms: number; seconds: number;
   status: 'checking' | 'audible' | 'quiet' | 'silent' | 'muted' | 'suspended' | 'ended'; message: string;
@@ -19,4 +19,11 @@ export function signalMessage(signal: CaptureSignal, quietSeconds: number, muted
     : '连续 5 秒没有收到声音；请说一句话，检查系统麦克风权限，或结束录音后切换输入设备' };
   if (signal.rms >= 0.0005) return { status: 'audible' as const, message: '已采到声音' };
   return { status: signal.seconds > 0 ? 'quiet' as const : 'checking' as const, message: signal.seconds > 0 ? '等待声音' : '正在检查音频信号' };
+}
+
+export function capturedDurationMs(savedMs:number,sources:Pick<Source,'id'|'timelineOffsetMs'>[],signals:Pick<CaptureSignal,'sourceId'|'seconds'>[]) {
+  return Math.round(Math.max(savedMs,...signals.map(signal=>{
+    const source=sources.find(source=>source.id===signal.sourceId);
+    return source ? (source.timelineOffsetMs||0)+signal.seconds*1000 : 0;
+  })));
 }

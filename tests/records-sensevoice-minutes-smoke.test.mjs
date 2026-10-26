@@ -109,7 +109,8 @@ test('SenseVoice durable batches keep AI minutes advancing past the first few mi
   try{
     await saveConfig(root,{ASR_PROVIDER:'sensevoice-local',MINUTES_MODE:'asr-llm',LLM_PROTOCOL:'responses',LLM_API_URL:'https://fixture.invalid/responses',LLM_API_KEY:'fixture-local-key',LLM_MODEL:'fixture-model'},{LINGJI_LOCAL_ASR_DIR:root});
     const config=await readConfig(root);
-    const record=createRecord('owner',{language:'zh',autoMinutes:true}),source=addSource(record,{kind:'microphone'});await repo.insert(record);
+    const record=createRecord('owner',{language:'zh',autoMinutes:true}),source=addSource(record,{kind:'microphone'});
+    setAutomation(record,{enabled:true,intervalSeconds:30});await repo.insert(record);
     const pcm=Buffer.alloc(15*32000);for(let at=0;at<pcm.length;at+=2)pcm.writeInt16LE(5000,at);
     const object=await repo.putAudio(record.id,pcm);
     for(let round=0;round<24;round++){

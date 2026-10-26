@@ -14,6 +14,8 @@
 .toast.feedback-toast.is-warning { background:var(--glass-strong); border-color:color-mix(in srgb,var(--warn) 22%,var(--border)); }
 .toast.feedback-toast.is-warning > svg { color:var(--warn); }
 .toast.feedback-toast .toast-dismiss { min-width: 44px; min-height: 44px; border-radius: 12px; }
-.toast.feedback-toast .toast-dismiss:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.toast.feedback-toast .toast-dismiss:focus-visible { outline: 1px solid var(--focus-ring); outline-offset: -2px; }
 @keyframes toast-arrive { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .toast.feedback-toast { animation: none; } }
+
+.toast.feedback-toast.is-inline{position:relative;inset:auto;transform:none;display:flex;width:100%;max-width:none;margin:12px 0 18px;z-index:auto;box-sizing:border-box;}

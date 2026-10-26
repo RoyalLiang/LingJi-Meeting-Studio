@@ -1,6 +1,6 @@
 [package]
 name = "tts-client"
-version = "0.1.19"
+version = "0.1.23"
 description = "TTS desktop client with native audio capture"
 edition = "2021"
 rust-version = "1.90"
@@ -10,7 +10,7 @@ tauri-build = { version = "=2.7.2", features = [] }
 
 [dependencies]
 tempfile = "=3.23.0"
-tauri = { version = "=2.12.3", features = [] }
+tauri = { version = "=2.12.3", features = ["macos-private-api"] }
 tauri-plugin-dialog = "=2.8.2"
 tauri-plugin-updater = "=2.13.3"
 cpal = "=0.18.2"
