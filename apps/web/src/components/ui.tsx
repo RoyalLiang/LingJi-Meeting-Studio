@@ -6,8 +6,8 @@ import { Toast } from './Toast';
 import './CloseButton.css';
 import { isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-export function Button({ children, variant = 'secondary', className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'ghost' | 'danger' }) {
-  return <button className={`button ${variant} ${className}`} {...props}>{children}</button>;
+export function Button({ children, variant = 'secondary', className = '', title, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'ghost' | 'danger' }) {
+  return <button className={`button ${variant} ${className}`} data-tooltip={title || props['aria-label']} {...props}>{children}</button>;
 }
 export function CloseButton({ label = '关闭', className = '', ...props }: Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> & { label?: string }) {
   return <Button type="button" variant="ghost" className={`close-button ${className}`} aria-label={label} title={label} {...props}>
@@ -44,7 +44,7 @@ export function Empty({ icon, title, children }: { icon: ReactNode; title: strin
   return <div className="empty"><div className="empty-icon">{icon}</div><h3>{title}</h3><p>{children}</p></div>;
 }
 export function Status({ children, tone = '' }: { children: ReactNode; tone?: string }) { return <span className={`status ${tone}`}>{children}</span>; }
-export function Download({ href, children }: { href: string; children: ReactNode }) {
+export function Download({ href, children, iconLabel, disabled = false }: { href: string; children: ReactNode; iconLabel?: string; disabled?: boolean }) {
   const [busy,setBusy] = useState(false), [error,setError] = useState(''), [notice,setNotice] = useState('');
   const [prepared,setPrepared] = useState<{url:string;filename:string}|null>(null), request = useRef<AbortController|null>(null);
   const dismiss = useCallback(() => { setNotice(''); setError(''); }, []);
@@ -81,7 +81,7 @@ export function Download({ href, children }: { href: string; children: ReactNode
     } catch (error) { if (!controller.signal.aborted) setError(messageOf(error)); }
     finally { if (request.current === controller) request.current=null; if (!controller.signal.aborted && !downloadUrl.current) setBusy(false); }
   }
-  return <span className="download-control"><Button disabled={busy || !downloadReady} onClick={() => void download()}>{busy ? '正在准备…' : children}</Button>
+  return <span className="download-control"><Button variant={iconLabel ? 'ghost' : 'secondary'} aria-label={iconLabel} aria-busy={busy} disabled={disabled || busy || !downloadReady} onClick={() => void download()}>{iconLabel ? children : busy ? '正在准备…' : children}</Button>
     {prepared && !busy && <a className="download-retry" href={prepared.url} download={prepared.filename} onClick={()=>beginSave(prepared.url)}>重新下载</a>}
     <Toast message={error || notice} error={Boolean(error)} dismiss={dismiss}/>
   </span>;

@@ -234,13 +234,11 @@ Function PageReinstall
   nsis_tauri_utils::SemverCompare "${VERSION}" $R0
   Pop $R0
 
- ; Overlay existing NSIS installs so opting out cannot invoke an old model-deleting uninstaller.
+ ; Same-directory upgrades overlay in this window; keep the old uninstaller out of the path.
  ${If} $WixMode != 1
- ${AndIf} $LingJiInstallModel = 0
  ${AndIf} $R0 != -1
    ReadRegStr $R1 SHCTX "${MANUPRODUCTKEY}" ""
    ${If} $INSTDIR == $R1
-   ${AndIf} ${FileExists} "$INSTDIR\client-backend\local-asr\manifest.json"
      Abort
    ${EndIf}
  ${EndIf}
@@ -478,6 +476,7 @@ FunctionEnd
 
 Function .onInit
   StrCpy $LingJiInstallModel 1
+  Call LingJiPrepare
   ${GetOptions} $CMDLINE "/P" $PassiveMode
   ${IfNot} ${Errors}
     StrCpy $PassiveMode 1

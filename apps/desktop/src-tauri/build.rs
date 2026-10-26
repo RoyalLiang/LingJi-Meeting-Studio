@@ -3,6 +3,9 @@ fn main() {
     println!("cargo:rerun-if-env-changed=TTS_UPDATER_PUBLIC_KEY");
     const COMMANDS: &[&str] = &[
         "capture_start",
+        "recording_widget_update",
+        "recording_widget_state",
+        "recording_widget_action",
         "capture_read",
         "capture_stop",
         "capture_inputs",
@@ -17,6 +20,9 @@ fn main() {
     ];
     const PROBE_COMMANDS: &[&str] = &[
         "capture_start",
+        "recording_widget_update",
+        "recording_widget_state",
+        "recording_widget_action",
         "capture_read",
         "capture_stop",
         "capture_inputs",

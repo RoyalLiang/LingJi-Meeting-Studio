@@ -44,3 +44,24 @@ test('desktop backend starts through a directory alias and stops on parent EOF',
     await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });
+
+test('installer resource hashes follow packaged bytes with safe deterministic destinations', async () => {
+  const {mkdtemp,mkdir,writeFile,readFile,rm}=await import('node:fs/promises');
+  const {tmpdir}=await import('node:os');const {join}=await import('node:path');
+  const {writeResourceHashes}=await import('../scripts/prepare-installer-theme.mjs');
+  const root=await mkdtemp(join(tmpdir(),'lingji-resource-hashes-'));
+  try {
+    await mkdir(join(root,'resources/client-backend/local-asr'),{recursive:true});
+    await writeFile(join(root,'resources/client-backend/local-asr/model.bin'),'abc');
+    const output=join(root,'generated/hashes.nsh');
+    assert.equal(await writeResourceHashes(join(root,'resources'),output),1);
+    const original=await readFile(output,'utf8');
+    assert.ok(original.includes('client-backend\\local-asr\\model.bin'));
+    assert.ok(original.includes('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'));
+    await writeResourceHashes(join(root,'resources'),output);assert.equal(await readFile(output,'utf8'),original);
+    await writeFile(join(root,'resources/client-backend/local-asr/model.bin'),'changed');
+    await writeResourceHashes(join(root,'resources'),output);assert.notEqual(await readFile(output,'utf8'),original);
+    await writeFile(join(root,'resources/client-backend/$unsafe'),'bad');
+    await assert.rejects(writeResourceHashes(join(root,'resources'),output),/Unsafe installer resource path/);
+  } finally {await rm(root,{recursive:true,force:true});}
+});

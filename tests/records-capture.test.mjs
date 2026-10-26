@@ -497,3 +497,16 @@ for (const minutesMode of ['doubao-audio', 'openai-realtime', 'doubao-audio-only
   assert.equal(h.state.created.autoMinutes, false, 'audio upload needs separate per-meeting consent');
   assert.equal(h.state.created.realtimeAudioConsent, false, 'quick capture cannot grant undisclosed audio upload consent');
 });
+
+test('capsule clock uses queued PCM per source without double counting tracks or resumed sessions', async () => {
+  const source=stripTypeScriptTypes(await readFile(new URL('../apps/web/src/audio/signal.ts',import.meta.url),'utf8')).replace(/^import .*$/gm,'').replace(/export /g,'');
+  const sandbox={exports:{}};vm.runInNewContext(source+'\nexports.clock=capturedDurationMs;',sandbox);
+  const clock=sandbox.exports.clock;
+  const sources=[{id:'mic',timelineOffsetMs:90000},{id:'display',timelineOffsetMs:90000}];
+  assert.equal(clock(110000,sources,[{sourceId:'mic',seconds:30},{sourceId:'display',seconds:32}]),122000);
+  assert.equal(clock(122000,sources,[]),122000);
+  assert.equal(clock(7000,sources,[{sourceId:'other-record',seconds:500}]),7000);
+  assert.equal(clock(0,[{id:'mic'}],[{sourceId:'mic',seconds:1.234567}]),1235);
+  assert.equal(clock(0,[{id:'mic',timelineOffsetMs:.5}],[{sourceId:'mic',seconds:1.234567}]),1235);
+  assert.equal(clock(1234.6,[],[]),1235);
+});
