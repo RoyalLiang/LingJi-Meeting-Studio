@@ -1,3 +1,7 @@
+# v0.1.25 纪要回显、首字与设置优化待发布（2026-10-27）
+
+[本轮说明](../releases/v0.1.25-preview.md)：修复多窗口首字未回显、失败状态被追加转录隐藏、顶部提示裁切；首轮调度最多30秒，明确Kimi模型的会中低思考策略及16K预算，设置底部精简。本地518/518、独立87/87、浏览器与隔离原生验证通过；后台两平台构建与公开附件待核验。未调用真实Kimi，不把本地链路通过描述为真实供应商速度或原会议质量已验收。
+
 # v0.1.24 小窗、纪要与播放修复已发布（2026-10-26）
 
 [完整回执](../evidence/preview-v0.1.24-2026-10-26.md)：[Release](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.24) 与 [Actions 40332984046](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/40332984046) 四项成功，十附件完整下载核验，322 份源码指纹与固定标签一致；源码 `0a86d63`，macOS build 0.1.46。

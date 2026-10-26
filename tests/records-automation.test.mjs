@@ -28,6 +28,34 @@ test('an exhausted interrupted minutes job reaches failure instead of staying ru
   }
  }finally{await repo.close();await rm(root,{recursive:true,force:true});}
 });
+test('live worker exposes first-window draft while other windows wait and keeps it through transcript appends',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'tts-live-visible-')),repo=await createRepository({root,databaseUrl:''});let release,work,started=0,ready;
+ const gate=new Promise(resolve=>{release=resolve;}),waiting=new Promise(resolve=>{ready=resolve;});
+ try{
+  await saveConfig(root,{LLM_API_URL:'http://fixture.invalid/chat/completions',LLM_API_KEY:'fixture',LLM_MODEL:'fixture-model'},{});
+  const r=record();r.segments=Array.from({length:12},(_,i)=>({...segment,id:'s'+i,startMs:i*1000,endMs:(i+1)*1000,text:'核对接口依赖与发布准备。'.repeat(100)}));
+  setAutomation(r,{enabled:true,intervalSeconds:120},Date.now()-31000);await repo.insert(r);
+  work=runCycle(repo,{minutes:async(job,env,options)=>{
+   if(job.stage==='synthesis')return {title:'汇总',sections:[{heading:'讨论',items:job.summaries.flatMap(s=>s.sections.flatMap(s=>s.items))}],actions:[]};
+   const source=job.snapshot.find(s=>!s.contextOnly);
+   await options.onDelta?.(JSON.stringify({title:'首窗实时草稿'+source.id,sections:[{heading:'当前讨论',items:[{text:'先核对接口依赖'+source.id}]}]}),{firstTokenMs:5});
+   if(++started===2)ready();await gate;
+   return {title:'纪要',sections:[{heading:'讨论',items:[{text:'核对接口依赖',evidence:[{segmentId:source.id,revision:source.revision}]}]}],actions:[]};
+  }},{lane:'minutes'});
+  await waiting;let current;
+  for(let i=0;i<100;i++){current=await repo.get(r.id);if(current.jobs.at(-1).preview?.length)break;await new Promise(resolve=>setTimeout(resolve,5));}
+  assert.equal(current.liveMinutes,null);assert.equal(current.jobs.at(-1).status,'running');assert.ok(current.jobs.at(-1).preview.some(b=>b.text.startsWith('先核对接口依赖')));assert.equal(current.jobs.at(-1).preview.filter(b=>b.kind==='text').length,1,'concurrent windows must not interleave preview JSON');
+  await repo.change(r.id,value=>{value.segments.push({...segment,id:'later'});value.transcriptRevision++;});
+  release();await work;const saved=await repo.get(r.id);assert.equal(saved.jobs.at(-1).status,'completed');assert.ok(saved.liveMinutes.sections.length>0);assert.ok(saved.liveMinutes.transcriptRevision<saved.transcriptRevision);
+ }finally{release();await work;await repo.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('first live minutes starts within thirty seconds while later refreshes keep the configured interval',()=>{
+ const r=record();setAutomation(r,{enabled:true,intervalSeconds:120},1000);
+ assert.equal(automaticMinutesAt(r,1001),31000);assert.equal(queueAutomaticMinutes(r,'fixture',30999),undefined);
+ const job=queueAutomaticMinutes(r,'fixture',31000);assert.ok(job);job.status='completed';r.transcriptRevision++;
+ assert.equal(automaticMinutesAt(r,31001),151000);assert.equal(r.autoMinutes.intervalSeconds,120);
+});
 test('automatic minutes debounce live updates, deduplicate and finalize after drain', () => {
  const r=record();setAutomation(r,{enabled:true,intervalSeconds:30},1000);
  assert.equal(automaticMinutesAt(r,1001),31000);assert.equal(queueAutomaticMinutes(r,'fixture',30999),undefined);

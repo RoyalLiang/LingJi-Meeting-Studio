@@ -543,6 +543,19 @@ test('summaries beyond the synthesis hard cap fail finitely without truncation o
   } finally {await f.close();}
 });
 
+test('multi-window live minutes forward the first visible text before any window completes',async()=>{
+ const f=await fixture(30);let release,started,work;
+ const gate=new Promise(resolve=>{release=resolve;}),ready=new Promise(resolve=>{started=resolve;});const deltas=[];
+ try{
+  await f.repo.change(f.record.id,r=>{r.capture='recording';const j=requestMinutes(r,{scope:'live',modelVersion:'fixture-model'});j.status='running';j.fence=j.id;});
+  const claim=(await f.repo.get(f.record.id)).jobs.at(-1);assert.ok(buildMinutesManifest(claim,config).windows.length>1);
+  work=runMinutesPipeline(f.repo,f.record.id,claim,config,async(job,env,options)=>{
+   await options.onDelta?.('{"title":"已经开始整理"',{firstTokenMs:15});started();await gate;return summarize(job);
+  },{onDelta:delta=>{deltas.push(delta);}});
+  await ready;assert.ok(deltas.some(delta=>delta.includes('已经开始整理')),'first visible text must not wait for whole window completion');
+ }finally{release();await work;await f.close();}
+});
+
 test('validated window minutes appear before slower windows and final synthesis finish', async () => {
   const f=await fixture(30); let release, started;
   const gate=new Promise(resolve=>{release=resolve;}), ready=new Promise(resolve=>{started=resolve;});

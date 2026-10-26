@@ -39,6 +39,14 @@ async function verifyNativeUiLanes(record, queued) {
     }
     if (!initial.ok) throw new Error(`bootstrap:${initial.status}`);
     const boot = await initial.json(); const csrf = boot.csrf;
+    const openSettings=async()=>{
+      (await until(()=>document.querySelector('button[aria-label="设置与诊断"]'))).click();
+      const dialog=await until(()=>document.querySelector('dialog.modal[open]'));
+      if(['浏览器能力检测','删除清理','使用与诊断'].some(text=>dialog.textContent.includes(text)))throw new Error('unused settings modules remain');
+      if(!dialog.querySelector('input,select,button'))throw new Error('settings controls missing');
+      dialog.querySelector('.modal-close').click();await until(()=>!document.querySelector('dialog.modal[open]'));
+    };
+    await openSettings();await openSettings();
     const priorUiId = localStorage.getItem('native-probe-ui-record');
     let priorUiQueueReplayed = false;
     if (priorUiId) {
@@ -82,6 +90,14 @@ async function verifyNativeUiLanes(record, queued) {
       if(s.ready||s.widgetVisible||!s.mainVisible)throw new Error('unready capsule became visible or hid main');
       await sleep(100);
     }
+    const hoverButton=await until(()=>document.querySelector('.meeting-header .meeting-actions button[data-tooltip]'));
+    hoverButton.dispatchEvent(new PointerEvent('pointerenter'));
+    const tooltip=await until(()=>{const t=document.getElementById(hoverButton.getAttribute('aria-describedby'));return t?.matches(':popover-open')?t:null;});
+    const tooltipRect=tooltip.getBoundingClientRect();
+    if(tooltipRect.width<=0||tooltipRect.left<0||tooltipRect.top<0||tooltipRect.right>innerWidth||tooltipRect.bottom>innerHeight)throw new Error('toolbar tooltip clipped or outside viewport');
+    document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
+    if(tooltip.matches(':popover-open'))throw new Error('unfocused toolbar tooltip ignored Escape');
+    hoverButton.dispatchEvent(new PointerEvent('pointerleave'));
     await invoke('client_probe',{result:{widgetAction:'release-ready'}});
     const readyCapsule=await invoke('client_probe',{result:{widgetAction:'snapshot'}});
     if(!readyCapsule.widgetVisible||readyCapsule.mainVisible||Math.abs(readyCapsule.widgetLogicalHeight-42)>1)throw new Error('ready capsule handoff or compact height failed');
@@ -172,6 +188,6 @@ async function verifyNativeUiLanes(record, queued) {
     const frame = document.createElement('iframe'); frame.src = '/index.html'; document.body.append(frame); await sleep(150);
     const iframeBlocked = !frame.contentDocument?.querySelector('#root'); frame.remove();
     localStorage.setItem('native-probe-retained', 'yes');
-    await invoke('client_probe', { result: { ok: true, residentCapture, origin: location.origin, renderer: navigator.userAgent, reactMounted: true, settingsCancelReopen:true, uiRecordId, uiLanes, recordingWidget, pendingUiPackets, priorUiQueueReplayed, actualQueueUsed: true, nativeIpc: true, authenticated: true, csrfRejected: true, recordId: record.id, pcm, sse, indexedDbWritten: true, indexedDbRetained: retained, reloginRequired: sessionStorage.getItem('native-probe-relogin') === 'yes', iframeBlocked, kind: 'synthetic-only' } });
+    await invoke('client_probe', { result: { ok: true, residentCapture, origin: location.origin, renderer: navigator.userAgent, reactMounted: true, settingsCancelReopen:true, settingsSimplified:true, toolbarTooltip:true, uiRecordId, uiLanes, recordingWidget, pendingUiPackets, priorUiQueueReplayed, actualQueueUsed: true, nativeIpc: true, authenticated: true, csrfRejected: true, recordId: record.id, pcm, sse, indexedDbWritten: true, indexedDbRetained: retained, reloginRequired: sessionStorage.getItem('native-probe-relogin') === 'yes', iframeBlocked, kind: 'synthetic-only' } });
   } catch (error) { await invoke('client_probe', { result: { ok: false, error: String(error), phase: sessionStorage.getItem('native-probe-phase') } }); }
 })();

@@ -6,7 +6,7 @@ const outputText = response => response.output_text || (response.output || []).f
 
 // One interface hides Chat Completions / Responses and buffered / SSE transports.
 // Deltas are provisional; only the returned JSON may enter domain validation.
-export async function completeModelJson(messages, input = process.env, { onDelta, onUsage, onRequest, signal, jsonSchema, timeoutMs = 120000 } = {}) {
+export async function completeModelJson(messages, input = process.env, { onDelta, onUsage, onRequest, signal, jsonSchema, reasoningEffort, maxOutputTokens, timeoutMs = 120000 } = {}) {
   const env = normalizeConfig(input), responses = env.LLM_PROTOCOL === 'responses';
   requireThat(configured(env.LLM_API_KEY) && env.LLM_MODEL, 'minutes_not_configured', 503);
   const streaming = typeof onDelta === 'function', started = Date.now();
@@ -14,6 +14,8 @@ export async function completeModelJson(messages, input = process.env, { onDelta
   const body = responses
     ? { model: env.LLM_MODEL, input: messages, store: false, text: { format: { type: 'json_object' } }, stream: streaming }
     : { model: env.LLM_MODEL, messages, response_format: { type: 'json_object' }, stream: streaming, ...(streaming ? { stream_options: { include_usage: true } } : {}) };
+  if(reasoningEffort==='low'){if(responses)body.reasoning={effort:'low'};else body.reasoning_effort='low';}
+  if(maxOutputTokens!==undefined){requireThat(Number.isSafeInteger(maxOutputTokens)&&maxOutputTokens>0&&maxOutputTokens<=131072,'invalid_llm_token_budget',500);body[responses?'max_output_tokens':'max_completion_tokens']=maxOutputTokens;}
   if(jsonSchema && env.LLM_STRUCTURED_OUTPUTS === 'true'){
     const format={type:'json_schema',name:'meeting_minutes',schema:jsonSchema,strict:true};
     if(responses)body.text.format=format;else body.response_format={type:'json_schema',json_schema:{name:format.name,schema:jsonSchema,strict:true}};
