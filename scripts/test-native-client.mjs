@@ -39,7 +39,7 @@ const launch = () => spawn(resolve(process.env.NATIVE_CLIENT_EXECUTABLE || 'apps
   assert.ok(result, `Native probe timed out: ${logs}`); assert.equal(result.ok, true, JSON.stringify(result));
 assert.equal(result.settingsCancelReopen,true);
   assert.equal(result.iframeBlocked, true);
-  assert.deepEqual(result.residentCapture,{hiddenWindow:true,continuedNativeCapture:true,continuedDurableQueue:true,recordingNotPaused:true,restoredWindow:true,hiddenMs:backgroundMs,sampleCoverageVerified:true}); assert.deepEqual(result.recordingWidget,{loadedPrivateSession:true,automaticallyMinimized:true,pause:true,resume:true,pausedCapsuleRetained:true,restoredMain:true,finishConfirmation:true,queuedAudioClock:true});
+  assert.deepEqual(result.residentCapture,{hiddenWindow:true,continuedNativeCapture:true,continuedDurableQueue:true,recordingNotPaused:true,restoredWindow:true,hiddenMs:backgroundMs,sampleCoverageVerified:true}); assert.deepEqual(result.recordingWidget,{loadedPrivateSession:true,automaticallyMinimized:true,pause:true,resume:true,pausedCapsuleRetained:true,restoredMain:true,finishConfirmation:true,queuedAudioClock:true,coldReadyExclusive:true,nativeRestore:true,compactHeight:true,lateReadyCancelled:true});
 assert.ok(result.pcm.length >= 2);
   let offset = 0;
   result.pcm.forEach((packet, sequence) => { assert.equal(packet.sequence, sequence); assert.equal(packet.offset, offset); offset += packet.samples; });
@@ -86,7 +86,7 @@ assert.ok(result.pcm.length >= 2);
     const target = resolve(process.argv[2]); await mkdir(dirname(target), { recursive: true }); await writeFile(target, JSON.stringify(evidence, null, 2) + '\n');
   }
   console.log(JSON.stringify({ ok: true, recordingWidget: result.recordingWidget, settingsCancelReopen: result.settingsCancelReopen, residentCapture: result.residentCapture, restartQueueReplay: restarted.priorUiQueueReplayed, nativePcmPackets: result.pcm.length, totalSamples: offset, authenticated: result.authenticated, sse: result.sse, iframeBlocked: result.iframeBlocked }));
-} catch(error) { failure=error; console.error('[native test failure]',error); throw error; } finally {
+} catch(error) { failure=error; console.error('[native test failure]',error); console.error('[native client]',logs); throw error; } finally {
   if (child && child.exitCode == null) {
     terminateClient(); await new Promise(resolve => child.once('exit', resolve));
   }

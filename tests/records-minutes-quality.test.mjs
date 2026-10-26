@@ -28,6 +28,19 @@ const compiled = await build({entryPoints:['apps/web/src/components/MinutesViews
 const module = {exports:{}};
 vm.runInNewContext(compiled.outputFiles[0].text,{module,exports:module.exports,require:createRequire(resolve('package.json')),console});
 const render = minutes => renderToStaticMarkup(React.createElement(module.exports.MinutesTree,{minutes,cite:()=>{}}));
+test('the first streamed minutes are visible without opening advanced settings and remain marked provisional',async()=>{
+ const compiledPanel=await build({entryPoints:['apps/web/src/components/Minutes.tsx'],bundle:true,write:false,platform:'node',format:'cjs',jsx:'automatic',loader:{'.css':'empty'},external:['react','react/jsx-runtime','react-dom']});
+ const panel={exports:{}};
+ vm.runInNewContext(compiledPanel.outputFiles[0].text,{module:panel,exports:panel.exports,require:createRequire(resolve('package.json')),console,matchMedia:()=>({matches:false})});
+ const record=createRecord('fixture');record.capture='recording';record.transcriptRevision=1;
+ record.jobs=[{id:'streaming',scope:'live',status:'running',transcriptRevision:1,preview:[{kind:'item',text:'先排查依赖，再确认上线时间。'}]}];
+ const props={record,busy:false,onClose(){},generate:async()=>{},edit:async()=>true,cite(){},automate:async()=>{},inline:true};
+ const html=renderToStaticMarkup(React.createElement(panel.exports.MinutesPanel,props));
+ assert.match(html,/先排查依赖，再确认上线时间/);assert.match(html,/实时草稿/);assert.match(html,/引用将在完整结果校验后显示/);
+ record.minutes={...fixture(),edited:true};
+ const protectedHtml=renderToStaticMarkup(React.createElement(panel.exports.MinutesPanel,props));
+ assert.doesNotMatch(protectedHtml,/先排查依赖，再确认上线时间/);
+});
 
 test('project minutes render sourced highlights, timeline and actual same-unit numbers',()=>{
   const value=fixture();assert.equal(validateMinutes(value,snapshot),value);

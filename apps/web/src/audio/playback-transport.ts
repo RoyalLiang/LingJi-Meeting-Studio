@@ -15,11 +15,11 @@ export class PlaybackTransport {
     const durations = this.tracks().map(finiteDuration);
     return durations.every(duration => duration > 0) ? Math.max(0, ...durations) : 0;
   }
-  get time() {
-    const leader = this.tracks().reduce<PlaybackMedia | undefined>((longest, media) =>
+  get leader() {
+    return this.tracks().reduce<PlaybackMedia | undefined>((longest, media) =>
       !longest || finiteDuration(media) > finiteDuration(longest) ? media : longest, undefined);
-    return leader?.currentTime || 0;
   }
+  get time() { return this.leader?.currentTime || 0; }
   get playing() { return this.requested && this.tracks().some(media => !media.paused && !media.ended); }
 
   setRate(rate: number) {
@@ -79,6 +79,35 @@ export class PlaybackTransport {
       if (duration) media.currentTime = Math.min(duration, position);
     });
     return position;
+  }
+}
+
+/** Interpolate the visible cursor; transport and seeks keep the actual media time. */
+export class PlaybackClock {
+  private sample = NaN;
+  private anchor = 0;
+  private started = 0;
+  private shown = 0;
+  private playing = false;
+  private rate = 1;
+
+  reset(time: number, now: number) {
+    this.sample = this.anchor = this.shown = time;
+    this.started = now;
+  }
+
+  read(time: number, now: number, playing: boolean, rate = 1) {
+    if (!playing || !this.playing || !Number.isFinite(this.sample) || time < this.sample || time - this.sample > .5 || rate !== this.rate) {
+      this.reset(time, now);
+    }
+    this.playing = playing; this.rate = rate;
+    let predicted = this.anchor + Math.max(0, now - this.started) / 1000 * rate;
+    if (time !== this.sample && Math.abs(time - predicted) > .25) {
+      this.reset(time, now); predicted = time;
+    }
+    this.sample = time;
+    this.shown = playing ? Math.max(this.shown, Math.min(predicted, time + .25 * rate)) : time;
+    return this.shown;
   }
 }
 

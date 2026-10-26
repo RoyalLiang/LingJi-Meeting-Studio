@@ -14,6 +14,22 @@ function packet(sequence, offset, count = 320) {
   return raw;
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));
+test('widget initial snapshot cannot overwrite a newer recording event',async()=>{
+ const {transform}=await import('esbuild');
+ const source=await readFile(new URL('../apps/web/src/components/RecordingWidget.tsx',import.meta.url),'utf8');
+ const code=(await transform(source.replace(/^import .*$/gm,''),{loader:'tsx',format:'cjs'})).code;
+ const states=[],effects=[],layouts=[],calls=[];let cursor=0,receive,resolveSnapshot;
+ const snapshot=new Promise(resolve=>{resolveSnapshot=resolve;}),icon=()=>null;
+ const sandbox={module:{exports:{}},useState(initial){const i=cursor++;if(!(i in states))states[i]=initial;return[states[i],value=>{states[i]=value;}];},useEffect:fn=>effects.push(fn),useLayoutEffect:fn=>layouts.push(fn),
+  listen:async(_name,handler)=>{receive=handler;return()=>{};},invoke:async name=>{calls.push(name);return name==='recording_widget_state'?snapshot:undefined;},Pause:icon,Play:icon,Stop:icon,ArrowsOutSimple:icon};
+ sandbox.React={createElement:(tag,props,...children)=>({tag,props,children})};
+ vm.runInNewContext(code,sandbox);sandbox.module.exports.RecordingWidget();effects[0]();await tick();
+ receive({payload:{recording:true,paused:false,canResume:false,busy:false,durationMs:2000,rms:.1}});
+ resolveSnapshot({recording:false,paused:false,canResume:false,busy:false,durationMs:0,rms:0});await tick();
+ assert.equal(states[0].recording,true);assert.equal(states[0].durationMs,2000);
+ cursor=0;sandbox.module.exports.RecordingWidget();layouts.forEach(fn=>fn());await tick();
+ assert.ok(calls.includes('recording_widget_ready'));
+});
 
 test('native packets enforce sequence, offset, sample count and binary length', () => {
   const decoded = decodeNativePacket(packet(0, 0), 0, 0);

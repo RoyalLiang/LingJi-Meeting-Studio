@@ -27,7 +27,7 @@ impl Resident {
 }
 
 pub fn show(app: &AppHandle) {
-    if let Some(window)=app.get_webview_window("recording-widget"){let _=window.hide();}
+    crate::recording_widget::main_shown(app);
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
         let _ = window.show();

@@ -72,18 +72,45 @@ async function verifyNativeUiLanes(record, queued) {
     await json(`/records/${record.id}/pause`, 'POST', { sources: [{ sessionId: source.sessionId, sourceId: source.id, epoch: source.epoch, lastSequence: pcm.length - 1 }] }, csrf);
     // Exercise the real React controls, native adapter and persisted queue with uploads offline.
     const previousSelection=new URLSearchParams(location.search).get('record');
+    await invoke('client_probe',{result:{widgetAction:'hold-ready'}});
     (await until(()=>document.querySelector('button.new-record:not(:disabled)'))).click();
     const healthyId=await until(()=>{const id=new URLSearchParams(location.search).get('record');return id&&id!==previousSelection?id:null;});
     await until(async()=>{const r=await json(`/records/${healthyId}`);return r.sources.length===2&&r.sources.every(source=>source.watermark>=1);},16000,'healthy capture');
-    await until(async()=>{const s=await invoke('client_probe',{result:{widgetAction:'snapshot'}});return s.widgetVisible&&s.mainMinimized;});
+    await until(async()=>(await invoke('client_probe',{result:{widgetAction:'snapshot'}})).widgetRecording);
+    for(let i=0;i<3;i++){
+      const s=await invoke('client_probe',{result:{widgetAction:'snapshot'}});
+      if(s.ready||s.widgetVisible||!s.mainVisible)throw new Error('unready capsule became visible or hid main');
+      await sleep(100);
+    }
+    await invoke('client_probe',{result:{widgetAction:'release-ready'}});
+    const readyCapsule=await invoke('client_probe',{result:{widgetAction:'snapshot'}});
+    if(!readyCapsule.widgetVisible||readyCapsule.mainVisible||Math.abs(readyCapsule.widgetLogicalHeight-42)>1)throw new Error('ready capsule handoff or compact height failed');
+    await until(async()=>{const s=await invoke('client_probe',{result:{widgetAction:'snapshot'}});return s.widgetVisible&&(!s.mainVisible||s.mainMinimized);});
     await invoke('client_probe',{result:{widgetAction:'pause'}});
     await until(async()=>{const r=await json(`/records/${healthyId}`);return r.capture==='paused'&&r.sources.every(source=>source.watermark===source.lastSequence);});
-    await until(async()=>{const s=await invoke('client_probe',{result:{widgetAction:'snapshot'}});return s.widgetVisible&&s.mainMinimized&&s.canResume;},16000,'paused capsule retention');
+    await until(async()=>{const s=await invoke('client_probe',{result:{widgetAction:'snapshot'}});return s.widgetVisible&&(!s.mainVisible||s.mainMinimized)&&s.canResume;},16000,'paused capsule retention');
     await invoke('client_probe',{result:{widgetAction:'pause'}});
     await until(async()=>{const r=await json(`/records/${healthyId}`);return r.capture==='recording'&&r.sources.length===4&&r.sources.slice(-2).every(source=>source.watermark>=1);},16000,'capsule resume');
     await invoke('client_probe',{result:{widgetAction:'pause'}});
     await until(async()=>{const r=await json(`/records/${healthyId}`);return r.capture==='paused'&&r.sources.every(source=>source.watermark===source.lastSequence);});
-    await invoke('client_probe',{result:{widgetAction:'restore'}});
+    await invoke('client_probe',{result:{widgetAction:'native-restore'}});
+    await until(async()=>{const s=await invoke('client_probe',{result:{widgetAction:'snapshot'}});return s.mainVisible&&!s.mainMinimized&&!s.widgetVisible;});
+    await sleep(1200);
+    if((await invoke('client_probe',{result:{widgetAction:'snapshot'}})).widgetVisible)throw new Error('capsule reappeared after native main restore');
+    await invoke('client_probe',{result:{widgetAction:'hold-ready'}});
+    await invoke('client_probe',{result:{widgetAction:'pause'}});
+    await until(async()=>{const r=await json(`/records/${healthyId}`);return r.capture==='recording';});
+    await until(async()=>(await invoke('client_probe',{result:{widgetAction:'snapshot'}})).widgetRecording);
+    await invoke('client_probe',{result:{widgetAction:'native-minimize'}});
+    await until(async()=>(await invoke('client_probe',{result:{widgetAction:'snapshot'}})).mainMinimized);
+    await invoke('client_probe',{result:{widgetAction:'native-restore'}});
+    await until(async()=>{const s=await invoke('client_probe',{result:{widgetAction:'snapshot'}});return s.mainVisible&&!s.mainMinimized;});
+    await sleep(200);
+    await invoke('client_probe',{result:{widgetAction:'release-ready'}});
+    const lateReady=await invoke('client_probe',{result:{widgetAction:'snapshot'}});
+    if(!lateReady.mainVisible||lateReady.widgetVisible)throw new Error('late ready overrode native main restore');
+    await invoke('client_probe',{result:{widgetAction:'pause'}});
+    await until(async()=>{const r=await json(`/records/${healthyId}`);return r.capture==='paused'&&r.sources.every(source=>source.watermark===source.lastSequence);});
     const actualFetch = window.fetch.bind(window);
     window.fetch = (resource, options) => /\/api\/records\/[^/]+\/audio$/.test(String(resource)) && options?.method === 'POST'
       ? Promise.reject(new TypeError('synthetic upload outage')) : actualFetch(resource, options);
@@ -105,10 +132,10 @@ async function verifyNativeUiLanes(record, queued) {
     });
     await until(async () => { const queued = await pendingUi(), counts = new Map(); for (const entry of queued) counts.set(entry.chunk.sourceId, (counts.get(entry.chunk.sourceId) || 0) + 1); return counts.size === 2 && [...counts.values()].every(count => count >= 2); });
     const beforeHidden = await pendingUi();
-    await until(async()=>{const state=await invoke('client_probe',{result:{widgetAction:'snapshot'}});return state.ready&&state.widgetVisible&&state.mainMinimized;});
+    await until(async()=>{const state=await invoke('client_probe',{result:{widgetAction:'snapshot'}});return state.ready&&state.widgetVisible&&(!state.mainVisible||state.mainMinimized);});
     await invoke('client_probe',{result:{widgetAction:'restore'}});
     await until(async()=>{const state=await invoke('client_probe',{result:{widgetAction:'snapshot'}});return state.mainVisible&&!state.mainMinimized&&!state.widgetVisible;});
-    const recordingWidget={loadedPrivateSession:true,automaticallyMinimized:true,pause:true,resume:true,pausedCapsuleRetained:true,restoredMain:true,finishConfirmation:true,queuedAudioClock:true};
+    const recordingWidget={loadedPrivateSession:true,automaticallyMinimized:true,pause:true,resume:true,pausedCapsuleRetained:true,restoredMain:true,finishConfirmation:true,queuedAudioClock:true,coldReadyExclusive:true,nativeRestore:true,compactHeight:true,lateReadyCancelled:true};
     const widgetBefore=await invoke('client_probe',{result:{widgetAction:'snapshot'}});
     await invoke('client_probe', {result:{residentAction:'close'}});
     await until(async()=>{const state=await invoke('client_probe',{result:{residentAction:'snapshot'}});return !state.visible&&state.nativeActive;});

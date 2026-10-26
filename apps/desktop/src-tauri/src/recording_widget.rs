@@ -18,6 +18,9 @@ struct Widget {
     report: Report,
     pending_start: bool,
     ready: bool,
+    creating: bool,
+    #[cfg(feature = "smoke-test")]
+    hold_ready: bool,
 }
 impl Widget {
     fn update(&mut self, report: Report) -> bool {
@@ -27,9 +30,12 @@ impl Widget {
         if !report.recording {
             self.pending_start = false;
         }
-        let open = self.pending_start && !report.busy;
+        let open = self.pending_start && self.ready && !report.busy;
         self.report = report;
         open
+    }
+    fn restored(&mut self) {
+        self.pending_start = false;
     }
 }
 #[derive(Default)]
@@ -37,6 +43,17 @@ pub struct RecordingWidget(Mutex<Widget>);
 
 #[cfg(feature = "smoke-test")]
 impl RecordingWidget {
+    pub fn hold_ready(&self) {
+        if let Ok(mut widget) = self.0.lock() {
+            widget.hold_ready = true;
+            widget.ready = false;
+        }
+    }
+    pub fn recording(&self) -> bool {
+        self.0
+            .lock()
+            .is_ok_and(|widget| widget.report.recording && !widget.report.busy)
+    }
     pub fn ready(&self) -> bool {
         self.0.lock().is_ok_and(|widget| widget.ready)
     }
@@ -71,57 +88,13 @@ pub async fn recording_widget_update(
         .lock()
         .map_err(|_| "recording status unavailable")?
         .update(report.clone());
+    if report.recording || report.paused || report.busy {
+        prepare(&app, &client)?;
+    }
+    app.emit_to("recording-widget", "recording-widget-state", report.clone())
+        .map_err(|e| e.to_string())?;
     if open {
-        let floating = match app.get_webview_window("recording-widget") {
-            Some(window) => window,
-            None => {
-                let builder = tauri::WebviewWindowBuilder::new(
-                    &app,
-                    "recording-widget",
-                    WebviewUrl::External(
-                        format!("{}#recording-widget", client.api.startup_url())
-                            .parse()
-                            .map_err(|_| "invalid client origin")?,
-                    ),
-                )
-                .title("聆记 · 正在记录")
-                .inner_size(416.0, 84.0)
-                .resizable(false)
-                .decorations(false)
-                .transparent(true)
-                .always_on_top(true)
-                .skip_taskbar(true)
-                .focused(false)
-                .on_navigation({
-                    let origin = client.origin.clone();
-                    move |url| url.origin().ascii_serialization() == origin
-                })
-                .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny);
-                #[cfg(target_os = "macos")]
-                let builder = builder.data_store_identifier(client.store_id);
-                #[cfg(not(target_os = "macos"))]
-                let builder = builder.data_directory(client.profile.clone());
-                #[cfg(target_os = "windows")]
-                let builder = builder.additional_browser_args(crate::RECORDING_BROWSER_ARGS);
-                builder
-                    .build()
-                    .map_err(|e| format!("recording window: {e}"))?
-            }
-        };
-        floating.show().map_err(|e| e.to_string())?;
-        let ready = widget
-            .0
-            .lock()
-            .map_err(|_| "recording status unavailable")?
-            .ready;
-        if ready {
-            window.minimize().map_err(|e| e.to_string())?;
-            widget
-                .0
-                .lock()
-                .map_err(|_| "recording status unavailable")?
-                .pending_start = false;
-        }
+        show_when_ready(&app).await?;
     }
     if !report.recording && !report.paused && !report.busy {
         if let Some(floating) = app.get_webview_window("recording-widget") {
@@ -130,9 +103,129 @@ pub async fn recording_widget_update(
             }
         }
     }
-    app.emit_to("recording-widget", "recording-widget-state", report)
-        .map_err(|e| e.to_string())
+    Ok(())
 }
+pub fn prepare(app: &AppHandle, client: &Client) -> Result<(), String> {
+    if app.get_webview_window("recording-widget").is_some() {
+        return Ok(());
+    }
+    let state = app.state::<RecordingWidget>();
+    {
+        let mut widget = state.0.lock().map_err(|_| "recording status unavailable")?;
+        if widget.creating {
+            return Ok(());
+        }
+        widget.creating = true;
+        widget.ready = false;
+    }
+    let result = (|| {
+        let builder = tauri::WebviewWindowBuilder::new(
+            app,
+            "recording-widget",
+            WebviewUrl::External(
+                format!("{}#recording-widget", client.api.startup_url())
+                    .parse()
+                    .map_err(|_| "invalid client origin")?,
+            ),
+        )
+        .title("聆记 · 正在记录")
+        .inner_size(416.0, 42.0)
+        .visible(false)
+        .resizable(false)
+        .decorations(false)
+        .transparent(true)
+        .shadow(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .focused(false)
+        .on_navigation({
+            let origin = client.origin.clone();
+            move |url| url.origin().ascii_serialization() == origin
+        })
+        .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny);
+        #[cfg(target_os = "macos")]
+        let builder = builder.data_store_identifier(client.store_id);
+        #[cfg(not(target_os = "macos"))]
+        let builder = builder.data_directory(client.profile.clone());
+        #[cfg(target_os = "windows")]
+        let builder = builder.additional_browser_args(crate::RECORDING_BROWSER_ARGS);
+        builder
+            .build()
+            .map(|_| ())
+            .map_err(|e| format!("recording window: {e}"))
+    })();
+    state
+        .0
+        .lock()
+        .map_err(|_| "recording status unavailable")?
+        .creating = false;
+    result
+}
+
+async fn show_when_ready(app: &AppHandle) -> Result<(), String> {
+    let handle = app.clone();
+    let (send, receive) = tokio::sync::oneshot::channel();
+    app.run_on_main_thread(move || {
+        let result = (|| {
+            let state = handle.state::<RecordingWidget>();
+            {
+                let widget = state.0.lock().map_err(|_| "recording status unavailable")?;
+                if !widget.pending_start
+                    || !widget.ready
+                    || !widget.report.recording
+                    || widget.report.busy
+                {
+                    return Ok(());
+                }
+            }
+            let main = handle
+                .get_webview_window("main")
+                .ok_or("main window unavailable")?;
+            let floating = handle
+                .get_webview_window("recording-widget")
+                .ok_or("recording window unavailable")?;
+            main.hide().map_err(|e| e.to_string())?;
+            if let Err(error) = floating.show() {
+                let _ = main.show();
+                return Err(error.to_string());
+            }
+            state
+                .0
+                .lock()
+                .map_err(|_| "recording status unavailable")?
+                .pending_start = false;
+            Ok(())
+        })();
+        let _ = send.send(result);
+    })
+    .map_err(|e| e.to_string())?;
+    receive
+        .await
+        .map_err(|_| "recording window unavailable".to_string())?
+}
+
+pub fn main_shown(app: &AppHandle) {
+    if let Some(state) = app.try_state::<RecordingWidget>() {
+        if let Ok(mut widget) = state.0.lock() {
+            widget.restored();
+        }
+    }
+    if let Some(floating) = app.get_webview_window("recording-widget") {
+        let _ = floating.hide();
+    }
+}
+
+#[cfg(feature = "smoke-test")]
+pub async fn release_held_ready(app: &AppHandle) -> Result<(), String> {
+    {
+        let state = app.state::<RecordingWidget>();
+        let mut widget = state.0.lock().map_err(|_| "recording status unavailable")?;
+        widget.hold_ready = false;
+        widget.ready = true;
+    }
+    show_when_ready(app).await
+}
+
 fn authorize_widget(window: &WebviewWindow, client: &Client) -> Result<(), String> {
     if window.label() != "recording-widget"
         || window
@@ -151,12 +244,32 @@ pub fn recording_widget_state(
     widget: State<'_, RecordingWidget>,
 ) -> Result<Report, String> {
     authorize_widget(&window, &client)?;
-    let mut widget = widget
+    let widget = widget
         .0
         .lock()
         .map_err(|_| "recording status unavailable")?;
-    widget.ready = true;
     Ok(widget.report.clone())
+}
+#[tauri::command]
+pub async fn recording_widget_ready(
+    app: AppHandle,
+    window: WebviewWindow,
+    client: State<'_, Client>,
+    widget: State<'_, RecordingWidget>,
+) -> Result<(), String> {
+    authorize_widget(&window, &client)?;
+    {
+        let mut widget = widget
+            .0
+            .lock()
+            .map_err(|_| "recording status unavailable")?;
+        #[cfg(feature = "smoke-test")]
+        if widget.hold_ready {
+            return Ok(());
+        }
+        widget.ready = true;
+    }
+    show_when_ready(&app).await
 }
 #[tauri::command]
 pub fn recording_widget_action(
@@ -196,8 +309,47 @@ pub fn recording_widget_action(
 mod tests {
     use super::*;
     #[test]
-    fn minimize_once_after_capture_is_ready_and_again_on_resume() {
+    fn cold_window_waits_for_renderer_before_requesting_display() {
         let mut widget = Widget::default();
+        assert!(!widget.update(Report {
+            recording: true,
+            ..Report::default()
+        }));
+        assert!(widget.pending_start);
+        widget.ready = true;
+        assert!(widget.update(Report {
+            recording: true,
+            ..Report::default()
+        }));
+    }
+    #[test]
+    fn restoring_main_cancels_a_late_ready_transition() {
+        let mut widget = Widget::default();
+        assert!(!widget.update(Report {
+            recording: true,
+            ..Report::default()
+        }));
+        widget.restored();
+        widget.ready = true;
+        assert!(!widget.update(Report {
+            recording: true,
+            ..Report::default()
+        }));
+        assert!(!widget.update(Report {
+            paused: true,
+            ..Report::default()
+        }));
+        assert!(widget.update(Report {
+            recording: true,
+            ..Report::default()
+        }));
+    }
+    #[test]
+    fn minimize_once_after_capture_is_ready_and_again_on_resume() {
+        let mut widget = Widget {
+            ready: true,
+            ..Widget::default()
+        };
         assert!(!widget.update(Report {
             recording: true,
             busy: true,

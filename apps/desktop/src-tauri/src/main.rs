@@ -137,15 +137,17 @@ fn menu_has_pending(state: &Client) -> bool {
 }
 
 #[tauri::command]
-fn client_ready(window: WebviewWindow, state: State<'_, Client>) -> Result<(), String> {
+async fn client_ready(window: WebviewWindow, state: State<'_, Client>) -> Result<(), String> {
     authorize(&window, &state)?;
     state.resident.ready();
+    // A failed prewarm is retried before a recording can hide the main window.
+    let _=recording_widget::prepare(window.app_handle(), &state);
     Ok(())
 }
 
 #[cfg(feature = "smoke-test")]
 #[tauri::command]
-fn client_probe(
+async fn client_probe(
     window: WebviewWindow,
     state: State<'_, Client>,
     result: serde_json::Value,
@@ -161,10 +163,17 @@ fn client_probe(
         return Ok(serde_json::json!({"visible":window.is_visible().map_err(|e|e.to_string())?,"nativeActive":state.captures.active()}));
     }
     if let Some(action) = result.get("widgetAction").and_then(|value| value.as_str()) {
+        match action {
+            "hold-ready" => window.state::<recording_widget::RecordingWidget>().hold_ready(),
+            "release-ready" => recording_widget::release_held_ready(window.app_handle()).await?,
+            "native-minimize" => window.minimize().map_err(|e|e.to_string())?,
+            "native-restore" => {window.unminimize().map_err(|e|e.to_string())?;window.show().map_err(|e|e.to_string())?;window.set_focus().map_err(|e|e.to_string())?;},
+            _ => {},
+        }
         let widget = window.app_handle().get_webview_window("recording-widget");
         if let Some(floating) = &widget {
             let selector = match action {
-                "snapshot" => None,
+                "snapshot" | "hold-ready" | "release-ready" | "native-restore" | "native-minimize" => None,
                 "pause" => Some(".capsule-actions button:nth-child(1)"),
                 "finish" => Some(".capsule-actions button:nth-child(2)"),
                 "restore" => Some(".capsule-actions button:nth-child(3)"),
@@ -175,7 +184,7 @@ fn client_probe(
             }
         }
         let widget_state = window.state::<recording_widget::RecordingWidget>();
-        return Ok(serde_json::json!({"ready":widget_state.ready(), "widgetDurationMs":widget_state.duration_ms(), "canResume":widget_state.can_resume(), "widgetVisible":widget.as_ref().is_some_and(|w|w.is_visible().unwrap_or(false)), "mainVisible":window.is_visible().map_err(|e|e.to_string())?, "mainMinimized":window.is_minimized().map_err(|e|e.to_string())?}));
+        return Ok(serde_json::json!({"ready":widget_state.ready(),"widgetRecording":widget_state.recording(), "widgetLogicalHeight":widget.as_ref().and_then(|w|Some(w.inner_size().ok()?.height as f64/w.scale_factor().ok()?)), "widgetDurationMs":widget_state.duration_ms(), "canResume":widget_state.can_resume(), "widgetVisible":widget.as_ref().is_some_and(|w|w.is_visible().unwrap_or(false)), "mainVisible":window.is_visible().map_err(|e|e.to_string())?, "mainMinimized":window.is_minimized().map_err(|e|e.to_string())?}));
     }
     if let Some(activity) = result.get("updateActivity") {
         state
@@ -270,7 +279,7 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build());
     #[cfg(feature = "smoke-test")]
     let builder = builder.invoke_handler(tauri::generate_handler![
-        recording_widget::recording_widget_update, recording_widget::recording_widget_state, recording_widget::recording_widget_action,
+        recording_widget::recording_widget_update, recording_widget::recording_widget_state, recording_widget::recording_widget_ready, recording_widget::recording_widget_action,
         capture_start,
         capture_read,
         capture_stop,
@@ -287,7 +296,7 @@ fn main() {
     ]);
     #[cfg(not(feature = "smoke-test"))]
     let builder = builder.invoke_handler(tauri::generate_handler![
-        recording_widget::recording_widget_update, recording_widget::recording_widget_state, recording_widget::recording_widget_action,
+        recording_widget::recording_widget_update, recording_widget::recording_widget_state, recording_widget::recording_widget_ready, recording_widget::recording_widget_action,
         capture_start,
         capture_read,
         capture_stop,
@@ -342,7 +351,7 @@ fn main() {
                 .permission("allow-recording-widget-update").permission("allow-client-close").permission("allow-client-ready").permission("allow-client-status").permission("allow-update-status").permission("allow-update-activity").permission("allow-update-check").permission("allow-update-download").permission("allow-update-install")
                 .permission("core:event:allow-listen").permission("core:event:allow-unlisten"))?;
             app.add_capability(CapabilityBuilder::new("recording-widget").window("recording-widget").local(false).remote(format!("{origin}/*"))
-                .permission("allow-recording-widget-state").permission("allow-recording-widget-action")
+                .permission("allow-recording-widget-state").permission("allow-recording-widget-ready").permission("allow-recording-widget-action")
                 .permission("core:event:allow-listen").permission("core:event:allow-unlisten").permission("core:window:allow-start-dragging"))?;
             #[cfg(feature = "smoke-test")]
             app.add_capability(CapabilityBuilder::new("probe-only").window("main").local(false).remote(format!("{origin}/*")).permission("allow-client-probe"))?;
@@ -413,6 +422,13 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if window.label()=="main" && window.is_visible().unwrap_or(false) {
+                let focused=matches!(event,tauri::WindowEvent::Focused(true));
+                let resized=matches!(event,tauri::WindowEvent::Resized(_));
+                if focused || (resized && !window.is_minimized().unwrap_or(false)) {
+                    recording_widget::main_shown(window.app_handle());
+                }
+            }
             if window.label()=="recording-widget" && matches!(event,tauri::WindowEvent::CloseRequested{..}) {
                 if let tauri::WindowEvent::CloseRequested{api,..}=event{api.prevent_close();}
                 resident::show(window.app_handle());

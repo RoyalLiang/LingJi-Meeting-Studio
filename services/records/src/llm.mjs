@@ -75,13 +75,13 @@ export async function completeModelJson(messages, input = process.env, { onDelta
         }
       }
       try {
-        while (true) {
+        while (!completed) {
           const next = await reader.read(); if (next.done) break;
           bytesRead += next.value.length; requireThat(bytesRead <= 4000000, 'llm_response_too_large', 502);
           buffer = (buffer + decoder.decode(next.value, { stream: true })).replace(/\r\n/g, '\n');
-          let boundary; while ((boundary = buffer.indexOf('\n\n')) >= 0) { const value = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 2); await frame(value); }
+          let boundary; while ((boundary = buffer.indexOf('\n\n')) >= 0) { const value = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 2); await frame(value); if(completed)break; }
         }
-        buffer += decoder.decode(); if (buffer.trim()) await frame(buffer);
+        if(!completed){buffer += decoder.decode(); if (buffer.trim()) await frame(buffer);}
       } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
       requireThat(completed && finishReason !== 'length' && finishReason !== 'content_filter', 'llm_stream_incomplete', 502);
     }

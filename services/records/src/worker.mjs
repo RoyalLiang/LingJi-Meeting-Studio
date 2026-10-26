@@ -133,10 +133,15 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
     if (lane === 'all' || lane === 'minutes') {
     if (providerStatus(config).minutes) await repo.change(candidate.id, r => { if (!audioMinutesEnabled(config) || r.realtimeAudioConsent) queueAutomaticMinutes(r, minutesModelVersion(config)); });
     const minutesCandidate = await repo.get(candidate.id);
-    if (minutesCandidate.jobs.some(j => j.status === 'queued' || (j.status === 'running' && j.lease < Date.now()))) await repo.change(candidate.id, r => {
+    const now=Date.now(), reclaimable=job=>job.status==='queued'||(job.status==='running'&&(!Number.isFinite(job.lease)||job.lease<=now));
+    if (minutesCandidate.jobs.some(reclaimable)) await repo.change(candidate.id, r => {
       if (r.deleted) return;
+      for(const job of r.jobs)if(reclaimable(job)&&job.attempts>=3){
+        job.status='failed';job.error='minutes_request_failed';job.failedAt=now;job.fence=null;job.snapshot=[];
+        delete job.lease;delete job.preview;delete job.partialMinutes;emit(r,'minutes.failed',{jobId:job.id,error:job.error});
+      }
       if(r.jobs.some(j=>j.status==='running' && j.lease>Date.now()))return;
-      const job = r.jobs.filter(j => (j.status === 'queued' || (j.status === 'running' && j.lease < Date.now())) && j.attempts < 3).sort((a,b)=>(a.scope==='live')-(b.scope==='live'))[0];
+      const job = r.jobs.filter(j => reclaimable(j) && j.attempts < 3).sort((a,b)=>(a.scope==='live')-(b.scope==='live'))[0];
       if (!job) return;
       job.status = 'running'; job.attempts++; job.fence = randomUUID(); job.lease = Date.now() + minutesTimeoutMs(job) + 60000;
       jobClaim = structuredClone(job); emit(r, 'minutes.running', { jobId: job.id });

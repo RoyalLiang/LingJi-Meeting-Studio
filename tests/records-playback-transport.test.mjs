@@ -5,7 +5,22 @@ import { stripTypeScriptTypes } from 'node:module';
 
 const source = await readFile(new URL('../apps/web/src/audio/playback-transport.ts', import.meta.url), 'utf8');
 const outputText = stripTypeScriptTypes(source, { mode: 'transform' });
-const { PlaybackTransport, PlaybackScrub } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`);
+const { PlaybackTransport, PlaybackScrub, PlaybackClock } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`);
+
+test('visible playback advances smoothly between coarse media samples without changing seek time',()=>{
+ const clock=new PlaybackClock();let previous=clock.read(0,0,true);
+ for(let now=16;now<=1600;now+=16){
+  const actual=Math.floor(now/100)/10,shown=clock.read(actual,now,true);
+  assert.ok(shown>=previous);assert.ok(shown-previous<.04);assert.ok(Math.abs(shown-actual)<=.25);
+  previous=shown;
+ }
+ assert.equal(clock.read(1.6,1700,false),1.6);assert.equal(clock.read(1.6,1900,false),1.6);
+ clock.reset(.3,2000);assert.equal(clock.read(.3,2000,true),.3);
+ assert.ok(clock.read(.3,2016,true)>.3);
+ assert.equal(clock.read(.3,3000,false),.3);
+ assert.equal(clock.read(.3,4000,true,2),.3);assert.ok(Math.abs(clock.read(.3,4016,true,2)-.332)<1e-9);
+ assert.ok(clock.read(.3,7000,true,2)<=.8);
+});
 
 function track(duration) {
   let currentTime = 0;
@@ -195,9 +210,9 @@ test('player speed uses the shared selector and changes both tracks without paus
   const code = (await transform(source.replace(/^import .*$/gm, ''), { loader:'tsx',format:'cjs' })).code;
   const states=[], refs=[]; let cursor=0,refCursor=0,selection;
   const tracks=[track(30),track(45)]; tracks.forEach(media=>{media.paused=false;});
-  const icon=()=>null, sandbox={module:{exports:{}},useEffect(){},useId:()=> 'wave-fixture',waveformTicks:()=>[],useRef(value){return refs[refCursor++]??={current:value};},
+  const icon=()=>null, sandbox={module:{exports:{}},useEffect(){},memo:component=>component,useId:()=> 'wave-fixture',waveformTicks:()=>[],useRef(value){return refs[refCursor++]??={current:value};},
     useState(initial){const index=cursor++;if(!(index in states))states[index]=typeof initial==='function'?initial():initial;return [states[index],next=>{states[index]=next;}];},
-    PlaybackTransport,PlaybackScrub,Button:icon,Toast:icon,Play:icon,Pause:icon,ArrowCounterClockwise:icon,ArrowClockwise:icon,Waveform:icon,Timer:icon,ArrowRight:icon,Gauge:icon,
+    PlaybackTransport,PlaybackScrub,PlaybackClock,Button:icon,Toast:icon,Play:icon,Pause:icon,ArrowCounterClockwise:icon,ArrowClockwise:icon,Waveform:icon,Timer:icon,ArrowRight:icon,Gauge:icon,
     Select:props=>{selection=props;return null;}};
   sandbox.React={createElement:(tag,props,...children)=>typeof tag==='function'?tag({...props,children}):({tag,props,children})};
   vm.runInNewContext(code,sandbox);
