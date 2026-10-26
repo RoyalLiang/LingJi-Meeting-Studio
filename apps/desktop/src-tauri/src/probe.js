@@ -25,7 +25,7 @@ async function verifyNativeUiLanes(record, queued) {
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   const until = async (check, budgetMs=16000, label='frontend') => { const deadline=performance.now()+budgetMs; while(performance.now()<deadline) { const result=await check(); if(result)return result; await sleep(100); } throw new Error(`${label} probe timeout`); };
   try {
-    await until(() => document.querySelector('#root')?.textContent?.length > 50);
+    await until(() => document.querySelector('#root')?.textContent?.length > 50,16000,'React mounted');
     const json = async (path, method = 'GET', body, csrf) => {
       const response = await fetch(`/api${path}`, { method, headers: { 'Content-Type': 'application/json', ...(csrf ? { 'x-csrf-token': csrf } : {}) }, body: body ? JSON.stringify(body) : undefined });
       if (!response.ok) throw new Error(`${path}:${response.status}`); return response.json();
@@ -40,11 +40,11 @@ async function verifyNativeUiLanes(record, queued) {
     if (!initial.ok) throw new Error(`bootstrap:${initial.status}`);
     const boot = await initial.json(); const csrf = boot.csrf;
     const openSettings=async()=>{
-      (await until(()=>document.querySelector('button[aria-label="设置与诊断"]'))).click();
-      const dialog=await until(()=>document.querySelector('dialog.modal[open]'));
+      (await until(()=>document.querySelector('button[aria-label="设置与诊断"]'),16000,'settings opener')).click();
+      const dialog=await until(()=>document.querySelector('dialog.modal[open]'),16000,'settings opened');
       if(['浏览器能力检测','删除清理','使用与诊断'].some(text=>dialog.textContent.includes(text)))throw new Error('unused settings modules remain');
       if(!dialog.querySelector('input,select,button'))throw new Error('settings controls missing');
-      dialog.querySelector('.modal-close').click();await until(()=>!document.querySelector('dialog.modal[open]'));
+      dialog.querySelector('.modal-close').click();await until(()=>!document.querySelector('dialog.modal[open]'),16000,'settings closed');
     };
     await openSettings();await openSettings();
     const priorUiId = localStorage.getItem('native-probe-ui-record');
@@ -91,13 +91,17 @@ async function verifyNativeUiLanes(record, queued) {
       await sleep(100);
     }
     const hoverButton=await until(()=>document.querySelector('.meeting-header .meeting-actions button[data-tooltip]'));
+    // Number-label styles must not affect the shared hint.
+    hoverButton.classList.add('player-jump');
     hoverButton.dispatchEvent(new PointerEvent('pointerenter'));
-    const tooltip=await until(()=>{const t=document.getElementById(hoverButton.getAttribute('aria-describedby'));return t?.matches(':popover-open')?t:null;});
+    const tooltip=await until(()=>{const t=document.getElementById(hoverButton.getAttribute('aria-describedby'));return t?.matches(':popover-open')?t:null;},16000,'toolbar tooltip shown');
     const tooltipRect=tooltip.getBoundingClientRect();
+    if(parseFloat(getComputedStyle(tooltip).fontSize)<12)throw new Error('player styles shrank toolbar hint');
     if(tooltipRect.width<=0||tooltipRect.left<0||tooltipRect.top<0||tooltipRect.right>innerWidth||tooltipRect.bottom>innerHeight)throw new Error('toolbar tooltip clipped or outside viewport');
     document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
     if(tooltip.matches(':popover-open'))throw new Error('unfocused toolbar tooltip ignored Escape');
     hoverButton.dispatchEvent(new PointerEvent('pointerleave'));
+    hoverButton.classList.remove('player-jump');
     await invoke('client_probe',{result:{widgetAction:'release-ready'}});
     const readyCapsule=await invoke('client_probe',{result:{widgetAction:'snapshot'}});
     if(!readyCapsule.widgetVisible||readyCapsule.mainVisible||Math.abs(readyCapsule.widgetLogicalHeight-42)>1)throw new Error('ready capsule handoff or compact height failed');
@@ -132,7 +136,7 @@ async function verifyNativeUiLanes(record, queued) {
       ? Promise.reject(new TypeError('synthetic upload outage')) : actualFetch(resource, options);
     for(let attempt=0;attempt<2;attempt++) {
       const settings=await until(()=>document.querySelector('button[aria-label="设置与诊断"]:not(:disabled)'));settings.click();
-      const dialog=await until(()=>document.querySelector('dialog.modal[open]'));
+      const dialog=await until(()=>document.querySelector('dialog.modal[open]'),16000,'settings opened');
       dialog.dispatchEvent(new Event('cancel',{cancelable:true}));
       await until(()=>!document.querySelector('dialog.modal[open]'));
     }

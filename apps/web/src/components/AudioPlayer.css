@@ -27,7 +27,7 @@
 .audio-player .player-toggle.button:hover { background:var(--accent-hover); }
 .player-jump.button { position:relative; border-color:transparent; background:transparent; color:var(--ink-2); }
 .player-jump.button:hover:not(:disabled) { background:var(--accent-soft); color:var(--accent); }
-.player-jump > span { position:absolute; left:0; right:0; top:17px; text-align:center; font-size:8px; font-weight:700; line-height:10px; }
+.player-jump > span:not([popover]) { position:absolute; left:0; right:0; top:17px; text-align:center; font-size:8px; font-weight:700; line-height:10px; }
 .player-rate { grid-column:3; justify-self:start; margin-left:12px; width:auto; }
 .player-rate .select { width:auto; min-width:0; }
 .player-rate .select.select-enhanced .select-trigger { min-height:32px; height:32px; padding:0 7px; border-radius:8px; border-color:transparent; background:transparent; color:var(--ink-2); font:500 11px var(--sans); font-variant-numeric:tabular-nums; }
