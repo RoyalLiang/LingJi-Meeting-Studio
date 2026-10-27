@@ -213,3 +213,11 @@ test('desktop release versions match preview overrides and every workspace', asy
   const lock=await readFile(new URL('../apps/desktop/src-tauri/Cargo.lock',import.meta.url),'utf8');
   for(const content of [lock,lock.replace(/\r?\n/g,'\r\n')])assert.equal(content.match(/name = "tts-client"\r?\nversion = "([^"]+)"/)[1],root.version,'Cargo lock');
 });
+
+test('current preview guide contains changes accepted by the real publisher', async t => {
+  const {options,metadata}=await fixture(t);
+  const {version}=JSON.parse(await readFile(new URL('../apps/desktop/package.json',import.meta.url),'utf8'));
+  const guide=await readFile(new URL(`../docs/releases/v${version}-preview.md`,import.meta.url),'utf8');
+  const notes=previewNotes({...options,tag:`v${version}`,metadata:{...metadata,version,artifact:`Lingji-${version}-macos-arm64.dmg`},runUrl:'https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/1',guide});
+  assert.match(notes,/## 版本改动与修复\n[\s\S]+\n## 下载与安装/);
+});
