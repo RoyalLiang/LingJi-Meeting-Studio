@@ -11,6 +11,7 @@ mod recording_widget;
 mod status_bar;
 mod update_gate;
 mod updates;
+mod preview_updates;
 use std::sync::Arc;
 use tauri::{
     ipc::{CapabilityBuilder, Response},
@@ -329,7 +330,7 @@ fn main() {
             let startup_url = proxy.startup_url();
             let api = proxy.clone();
             let cache = directory.join("updates"); std::fs::create_dir_all(&cache)?;
-            let updates = updates::Updates::new(app.package_info().version.to_string(), cache);
+            let updates = updates::Updates::new(app.package_info().version.to_string(), cache, app.config().product_name.as_deref() == Some("聆记 Preview"));
             let listener = binding.listener;
             tauri::async_runtime::spawn(async move {
                 let listener = tokio::net::TcpListener::from_std(listener).expect("client loopback listener");

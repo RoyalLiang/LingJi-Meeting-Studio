@@ -1,4 +1,4 @@
-export type UpdateStatus = { phase: string; currentVersion: string; version?: string | null; notes?: string | null; downloaded: number; total?: number | null; error?: string | null };
+export type UpdateStatus = { phase: string; currentVersion: string; version?: string | null; notes?: string | null; downloaded: number; total?: number | null; error?: string | null; installer?: boolean };
 export type UpdatePreferences = { autoCheck: boolean; autoDownload: boolean; autoInstall: false };
 export type UpdatePolicy = 'manual' | 'check' | 'background';
 export type UpdateActivity = { authenticated: boolean; recording: boolean; paused: boolean; busy: boolean; queueBusy: boolean; pendingBytes: number; pendingCount: number };
@@ -34,7 +34,7 @@ type Dependencies = {
 export class ClientUpdates {
   status: UpdateStatus = { phase: 'idle', currentVersion: '', downloaded: 0 };
   private dependencies: Dependencies;
-  private operating = false; private nextCheck = 0;
+  private operating = false; private nextCheck = 0; private nextDownload = 0;
   constructor(dependencies: Dependencies) { this.dependencies = dependencies; }
   apply(status: UpdateStatus) { this.status = status; this.dependencies.changed(status); }
   async initialize() { this.apply(await this.dependencies.invoke('update_status') as UpdateStatus); }
@@ -48,6 +48,7 @@ export class ClientUpdates {
     } finally { this.operating = false; }
   }
   async check() { if (this.status.phase !== 'disabled') await this.request('update_check'); }
+  async preferencesChanged(now: number) { this.nextCheck = 0; this.nextDownload = 0; await this.tick(now); }
   async download() { if (this.status.phase === 'available') await this.request('update_download'); }
   async menuAction(action: string) {
     if (this.operating || this.status.phase === 'disabled' || ['checking', 'downloading', 'preparing', 'installing'].includes(this.status.phase)) return;
@@ -89,6 +90,9 @@ export class ClientUpdates {
       this.nextCheck = now + 6 * 60 * 60 * 1000; await this.check();
       if (this.status.error) this.nextCheck = now + 15 * 60 * 1000;
     }
-    if (preferences.autoDownload && this.status.phase === 'available' && !this.status.error) await this.download();
+    if (preferences.autoDownload && this.status.phase === 'available' && now >= this.nextDownload) {
+      this.nextDownload = now + 15 * 60 * 1000;
+      await this.download();
+    }
   }
 }

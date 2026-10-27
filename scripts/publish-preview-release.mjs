@@ -104,7 +104,7 @@ export function previewNotes({tag,commit,workflowSha,metadata,runUrl,guide='',wi
     (windows?'**未进行 Windows 代码签名。** ':'')+`详细操作见[本版安装说明](${guideUrl})。\n\n`+
     `## SHA-256\n下载后使用 macOS 的 \`shasum -a 256 <文件>\`、Linux 的 \`sha256sum <文件>\` 或 PowerShell 的 \`Get-FileHash <文件> -Algorithm SHA256\` 核对：\n\n\`\`\`text\n${checksums}\n\`\`\`\n\n`+
     `## 源码与验证\nSource code (zip / tar.gz) 由 GitHub 按标签提供。源码 SHA：\`${commit}\`；工作流 SHA：\`${workflowSha}\`。\n\n`+
-    `由 [GitHub Actions](${runUrl}) 构建，校验来源、安装包摘要和启动/重启结果后发布；验证报告、源码清单和安装文档保留在 Actions artifacts，Release 附件仅含成品安装包。\n\n`+
+    `由 [GitHub Actions](${runUrl}) 构建，校验来源、安装包摘要和启动/重启结果后发布；验证报告、源码清单和安装文档保留在 Actions artifacts，Release 附件包含成品安装包与自动下载校验清单。\n\n`+
     `## 已知边界\n真实设备长会议、真实 ASR/LLM 质量、全新电脑交互安装、PG/S3 和 Linux 实机采音尚未验证。Linux PipeWire 系统音频、麦克风与文件导入需在目标设备验收；Linux 关闭窗口进入退出确认流程，不提供 macOS/Windows 的托盘常驻行为。测试包不替代正式签名发行。\n`;
 }
 
@@ -118,6 +118,9 @@ async function sourceCommit(api,base,tag) {
 export async function publishPreview(options) {
   const {api,tag,commit,workflowSha,repository}=options;
   const {metadata,files,runUrl,guide,windows,linux}=await loadPreview(options.directory,options);
+  const body=previewNotes({tag,commit,workflowSha,metadata,runUrl,guide,windows,linux});
+  const updateBytes=Buffer.from(JSON.stringify({tag_name:tag,draft:false,body,sourceRevision:commit,assets:files.map(file=>({name:file.name,state:'uploaded',size:file.size,digest:file.digest,browser_download_url:`https://github.com/${repository}/releases/download/${tag}/${file.name}`}))},null,2)+'\n');
+  files.push({name:'preview-update.json',bytes:updateBytes,size:updateBytes.length,digest:'sha256:'+hash(updateBytes)});
   const base=`/repos/${repository}`;
   assert.equal(await sourceCommit(api,base,tag),commit,'Source tag moved');
   const candidates=[];
@@ -135,7 +138,7 @@ export async function publishPreview(options) {
     assert.ok(release.body?.includes(commit),'Existing draft source differs');
     verifyInventory(release.assets,files);
   }
-  const body=previewNotes({tag,commit,workflowSha,metadata,runUrl,guide,windows,linux});
+
   const payload={tag_name:tag,target_commitish:commit,name:title(tag),body,draft:true,prerelease:true,make_latest:'false'};
   if(!release)release=await api('POST',`${base}/releases`,payload);
   else {

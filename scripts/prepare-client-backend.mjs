@@ -46,13 +46,13 @@ export async function prepareClientBackend({ root = project, cacheRoot = join(pr
   const runtimeBinary = join(runtime, process.platform === 'win32' ? 'node.exe' : 'node');
   await copyFile(binary, runtimeBinary); await chmod(runtimeBinary, 0o755);
   await copyFile(join(extracted, 'LICENSE'), join(runtime, 'LICENSE'));
-  for (const path of ['services/records/src', 'packages/records/src', 'scripts/alpha-learning', 'services/session-gateway/src/providers/doubao-ast-codec.mjs', 'services/session-gateway/src/providers/doubao-ast/protos']) {
+  for (const path of ['services/records/src', 'packages/records/src', 'scripts/alpha-learning']) {
     await cp(join(root, path), join(backend, path), { recursive: true, filter: path => !path.endsWith('.DS_Store') });
   }
   await mkdir(join(backend,'tools/neohorse'),{recursive:true});
   for(const file of ['learning_data.py','build_learning_round.py','predict_learning.py','score_learning.py','finalize_learning_round.py','train_lora.py','intent_inputs.py','build_dataset.py','intent_policy.json','quantized_runtime.py','train_head.py'])await copyFile(join(root,'tools/neohorse',file),join(backend,'tools/neohorse',file));
   const lock = JSON.parse(await readFile(join(root, 'package-lock.json'), 'utf8'));
-  const modules = new Map(), pending = ['ws', 'protobufjs'];
+  const modules = new Map(), pending = ['ws'];
   while (pending.length) {
     const name = pending.shift();
     if (modules.has(name)) continue;

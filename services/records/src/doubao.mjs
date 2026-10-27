@@ -1,51 +1,8 @@
 import WebSocket from 'ws';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { randomUUID } from 'node:crypto';
-import { createDoubaoAstCodec } from '../../session-gateway/src/providers/doubao-ast-codec.mjs';
 import { DomainError, requireThat } from '../../../packages/records/src/record.mjs';
 import { doubaoRecognitionForLanguage, doubaoAudioConfig } from './asr-terms.mjs';
-
-let codecPromise;
-// Durable chunks are independent bounded AST sessions. Only SessionFinished commits text.
-export async function transcribeDoubao(bytes, language, config, options = {}) {
-  requireThat(['zh', 'en', 'ja', 'id', 'es', 'pt', 'de', 'fr', 'zhen'].includes(language), 'unsupported_doubao_language', 422);
-  const codec = options.codec || await (codecPromise ||= createDoubaoAstCodec());
-  const sessionId = randomUUID(), connectionId = randomUUID();
-  const meta = { Endpoint: config.DOUBAO_AST_ENDPOINT, AppKey: config.DOUBAO_AST_APP_KEY, AppID: config.DOUBAO_AST_APP_ID || undefined, ResourceID: config.DOUBAO_AST_RESOURCE_ID, ConnectionID: connectionId, SessionID: sessionId, Sequence: 0 };
-  const socket = new WebSocket(config.DOUBAO_AST_BASE_URL, { headers: { 'X-Api-App-Key': config.DOUBAO_AST_APP_KEY, 'X-Api-Access-Key': config.DOUBAO_AST_ACCESS_KEY, 'X-Api-Resource-Id': config.DOUBAO_AST_RESOURCE_ID, 'X-Api-Connect-Id': connectionId, ...(config.DOUBAO_AST_APP_ID ? { 'X-Api-App-Id': config.DOUBAO_AST_APP_ID } : {}) }, handshakeTimeout: 10000, maxPayload: 2000000 });
-  return new Promise((resolve, reject) => {
-    let settled = false, started = false, partial = '';
-    const finals = new Map();
-    const finish = (error, text) => {
-      if (settled) return; settled = true; clearTimeout(timer);
-      socket.removeAllListeners(); socket.on('error', () => {});
-      if (socket.readyState === WebSocket.OPEN) socket.close(); else socket.terminate();
-      if (error) reject(error); else resolve(text);
-    };
-    const timer = setTimeout(() => finish(new DomainError('doubao_completion_timeout', 502)), options.timeout || 45000);
-    socket.once('error', () => finish(new DomainError('doubao_connection_failed', 502)));
-    socket.once('unexpected-response', (_request, response) => { response.resume(); finish(new DomainError(`doubao_http_${response.statusCode}`, 502)); });
-    socket.once('close', () => finish(new DomainError('doubao_incomplete_session', 502)));
-    socket.once('open', () => socket.send(codec.encodeStartSession({ requestMeta: meta, user: { uid: sessionId }, sourceAudio: { format: 'raw', rate: 16000, channel: 1, bits: 16 }, request: { mode: 's2t', sourceLanguage: language === 'zhen' ? 'zh' : language, targetLanguage: language === 'en' ? 'zh' : 'en', corpus: { correcting: true } } })));
-    socket.on('message', frame => {
-      try {
-        const result = codec.decodeMessage(frame), event = Number(result.event);
-        if (event === 153 || Number(result.responseMeta?.StatusCode || 0) !== 0) { finish(new DomainError('doubao_session_failed', 502)); return; }
-        if (event === 150 && !started) {
-          started = true;
-          for (let offset = 0; offset < bytes.length; offset += 6400) {
-            meta.Sequence++;
-            socket.send(codec.encodeTaskRequest({ requestMeta: { ...meta }, sourceAudio: { format: 'raw', rate: 16000, channel: 1, bits: 16, binaryData: bytes.subarray(offset, offset + 6400) } }));
-          }
-          socket.send(codec.encodeFinishSession({ requestMeta: { ...meta } }));
-        }
-        if (event === 651) partial = result.text || '';
-        if (event === 652) { finals.set(`${result.startTime || 0}:${result.endTime || 0}`, result.text || partial); partial = ''; }
-        if (event === 152) finish(null, [...finals.values(), partial].filter(Boolean).join(''));
-      } catch { finish(new DomainError('doubao_invalid_response', 502)); }
-    });
-  });
-}
 
 // OpenSpeech ASR v3 framing: header, optional sequence, length, gzip payload.
 export function encodeAsrFrame(type, flags, payload, json = false) {

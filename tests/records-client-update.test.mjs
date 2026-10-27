@@ -106,6 +106,20 @@ test('automatic check does not imply automatic download/install and backoff avoi
   h.activity(idle); await h.engine.tick(63_000); assert.equal(h.calls.filter(([name]) => name === 'update_install').length, 0);
 });
 
+test('failed automatic downloads retry after backoff without waiting six hours', async () => {
+  let now = 0, attempts = 0;
+  const h = engineFixture(); h.preferences(preferencesForPolicy('background'));
+  h.engine.apply({ phase: 'available', currentVersion: '1.0.0', downloaded: 0, error: 'network interrupted' });
+  await h.engine.tick(now);
+  attempts = h.calls.filter(([name]) => name === 'update_download').length;
+  assert.equal(attempts, 1);
+  h.engine.apply({ ...h.engine.status, phase: 'available', error: 'network interrupted' });
+  await h.engine.tick(now += 1000);
+  assert.equal(h.calls.filter(([name]) => name === 'update_download').length, 1);
+  await h.engine.tick(now += 15 * 60 * 1000);
+  assert.equal(h.calls.filter(([name]) => name === 'update_download').length, 2);
+});
+
 test('native update menu shares check, background preference and explicit safe installation actions', async () => {
   const h = engineFixture();
   h.preferences(preferencesForPolicy('manual'));

@@ -39,10 +39,10 @@ export function useClientUpdates(activity: Omit<UpdateActivity, 'queueBusy' | 'p
     const activityTimer = window.setInterval(() => { void report(); }, 1000);
     const initial = window.setTimeout(() => { void engine.tick(Date.now()); }, 10_000);
     const timer = window.setInterval(() => { void engine.tick(Date.now()); }, 30_000);
-    const online = () => { void engine.tick(Date.now()); }; addEventListener('online', online);
+    const online = () => { void engine.preferencesChanged(Date.now()); }; addEventListener('online', online);
     return () => { live = false; listeners.forEach(stop => stop()); clearInterval(activityTimer); clearTimeout(initial); clearInterval(timer); removeEventListener('online', online); controller.current = null; document.getElementById('root')?.removeAttribute('inert'); };
   }, []);
   useEffect(() => { void controller.current?.activityChanged().then(setInstallReason).catch(() => setInstallReason('无法确认录音与补传状态，请稍后重试')); }, [activity.authenticated, activity.recording, activity.paused, activity.busy, settings]);
-  function saveSettings(next: UpdatePreferences) { const normalized = normalizeUpdatePreferences(next); settingsRef.current = normalized; setSettings(normalized); try { localStorage.setItem(preferenceKey, JSON.stringify(normalized)); } catch { /* Preferences still apply to this window. */ } }
+  function saveSettings(next: UpdatePreferences) { const normalized = normalizeUpdatePreferences(next); settingsRef.current = normalized; setSettings(normalized); void controller.current?.preferencesChanged(Date.now()); try { localStorage.setItem(preferenceKey, JSON.stringify(normalized)); } catch { /* Preferences still apply to this window. */ } }
   return { native: isTauri(), status, settings, installReason, saveSettings, check: () => controller.current?.check(), download: () => controller.current?.download(), install: () => controller.current?.install() };
 }

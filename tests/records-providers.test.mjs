@@ -48,10 +48,13 @@ test('new model base addresses default to Responses and explicit Chat endpoints 
   assert.equal(legacy.LLM_PROTOCOL,'chat-completions');
   assert.equal(normalizeConfig({LLM_API_URL:'https://models.example/v1',LLM_PROTOCOL:'chat-completions'}).LLM_PROTOCOL,'chat-completions');
 });
-test('legacy Doubao credentials enable the workbench; persisted settings hot reload and never return keys', async () => temporary(async root => {
+test('removed AST credentials cannot enable recognition; persisted settings never return keys', async () => temporary(async root => {
   const legacy = {DOUBAO_AST_SECRET:'valid-app',DOUBAO_AST_ACCESS_TOKEN:'valid-token'};
-  assert.equal(providerStatus(legacy).asr,true);
-  assert.equal(providerStatus(legacy).asrProvider,'doubao-ast');
+  assert.equal(providerStatus(legacy).asr,false);
+  assert.equal(providerStatus(legacy).asrProvider,'doubao');
+  assert.equal(providerStatus({...legacy,ASR_PROVIDER:'doubao-ast'}).asr,false);
+  assert.equal(providerStatus({...legacy,ASR_PROVIDER:'doubao-ast'}).asrProvider,'doubao');
+  await assert.rejects(saveConfig(root,{ASR_PROVIDER:'doubao-ast'},{}),/invalid_asr_provider/);
   assert.equal(providerStatus({}).asrProvider,'doubao');
   assert.equal(providerStatus({DOUBAO_API_KEY:'your-key'}).asr,false);
   await saveConfig(root,{DOUBAO_API_KEY:'voice-secret',LLM_API_KEY:'model-secret',DOUBAO_ASR_URL:'wss://speech.example.test/asr'},{});

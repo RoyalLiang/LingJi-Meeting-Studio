@@ -946,3 +946,25 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 .sync-connection-label>span { overflow:hidden;text-overflow:ellipsis; }
 .sync-queue { position:absolute; top:100%; right:0; height:12px; white-space:nowrap; font:10px/12px var(--mono); color:var(--ink-3); }
 .sync-queue[aria-hidden=true] { visibility:hidden; }
+
+/* Settings keep actions visible while only fields scroll. */
+.settings-modal[open] { display:flex; flex-direction:column; overflow:hidden; padding:0; }
+.settings-modal>.modal-header { position:static; flex:none; margin:0; padding:18px 24px; }
+.settings-modal>.modal-body { min-height:0; overflow:auto; overscroll-behavior:contain; padding:0 24px; }
+.settings-modal>.modal-footer { flex:none; display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:8px; padding:14px 24px; border-top:1px solid var(--border); background:var(--bg); }
+.settings-modal .actions { justify-content:flex-end; flex-wrap:wrap; gap:8px; }
+.settings-modal .settings-tools { padding-top:0; }
+.settings-inline,.device-settings { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.settings-inline h3,.device-settings h3 { margin:0; white-space:nowrap; }
+.settings-inline>.select,.device-settings>.select { flex:1; min-width:100px; width:auto; }
+.settings-inline .section-title,.device-settings .section-title { flex:none; margin:0; }
+.device-settings .microphone-test { margin:0; }
+.device-settings .microphone-test p { max-width:240px; }
+.settings-modal .update-notes { margin:12px 0; font-size:13px; }
+@media(max-width:480px) {
+  .settings-modal>.modal-header,.settings-modal>.modal-footer { padding:14px 16px; }
+  .settings-modal>.modal-body { padding:0 16px; }
+  .device-settings>.microphone-test { width:100%; }
+}
+
+.settings-modal>.modal-footer>div,.settings-modal>.modal-footer>div>.actions { display:contents; }

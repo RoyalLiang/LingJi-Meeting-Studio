@@ -9,9 +9,9 @@ export function DeviceSettings({ disabled = false, compact = false }: { disabled
   const refresh = useCallback(async () => { try { setDevices(await inputDevices()); } catch (e) { setError(messageOf(e)); } }, []);
   useEffect(() => { void refresh(); navigator.mediaDevices?.addEventListener('devicechange', refresh); return () => navigator.mediaDevices?.removeEventListener('devicechange', refresh); }, [refresh]);
   const missing = selected !== 'default' && !devices.some(d => d.id === selected);
-  return <div className={compact ? 'device-compact' : 'settings-section'}>{!compact && <div className="section-title"><Microphone size={19}/><h3>音频输入设备</h3></div>}
+  return <div className={compact ? 'device-compact' : 'settings-section device-settings'}>{!compact && <div className="section-title"><Microphone size={19}/><h3>音频设置</h3></div>}
     <Select label="录音麦克风" disabled={disabled} value={missing ? 'default' : selected} onChange={id => { setPreferredDevice(id); setSelected(id); }} options={[{value:'default',label:'自动 · 优先真实麦克风'},...devices.map(d => ({value:d.id,label:d.label}))]}/>
-    {!compact && <><p className="fine-print">自动模式优先跟随系统默认麦克风；默认输入是 System Audio 等虚拟回环且能找到明确麦克风时，自动改用麦克风。手动指定的可用设备会保留。实际设备名会显示在录音来源中。屏幕共享的音轨由浏览器选择器决定。</p><MicrophoneTest disabled={disabled} refresh={refresh}/></>}
+    {!compact && <MicrophoneTest disabled={disabled} refresh={refresh}/>}
     {error && <p className="inline-error" role="alert">{error}</p>}
   </div>;
 }
