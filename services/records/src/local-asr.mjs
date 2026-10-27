@@ -22,7 +22,7 @@ export async function verifyLocalAsrAssets(directory) {
   const required = ['sensevoice/model.int8.onnx', 'sensevoice/tokens.txt', 'silero_vad.onnx'];
   requireThat(required.every(name => manifest.files.some(file => file.path === name)), 'local_asr_assets_invalid', 503);
   for (const path of manifest.nativeFiles) {
-    requireThat(typeof path === 'string' && /^node_modules\/sherpa-onnx-[a-z0-9-]+\/[^/\\]+\.(node|dylib|dll)$/.test(path), 'local_asr_assets_invalid', 503);
+    requireThat(typeof path === 'string' && /^node_modules\/sherpa-onnx-[a-z0-9-]+\/[^/\\]+\.(node|dylib|dll|so(?:\.\d+)*)$/.test(path), 'local_asr_assets_invalid', 503);
     try { requireThat((await lstat(join(directory, path))).isFile(), 'local_asr_assets_invalid', 503); }
     catch { throw failure('local_asr_assets_missing'); }
   }

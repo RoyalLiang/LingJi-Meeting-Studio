@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const title=tag=>tag==='v0.1.0'?`聆记 ${tag} · 首次公开测试版 / First Public Preview`:`聆记 ${tag} · 公开测试版 / Public Preview`;
 const sha=value=>typeof value==='string' && /^[a-f0-9]{40}$/.test(value);
-export async function loadPreview(directory,{tag,commit,repository,workflowSha,runId,requireWindows=false}) {
+export async function loadPreview(directory,{tag,commit,repository,workflowSha,runId,requireWindows=false,requireLinux=false}) {
   assert.match(tag,/^v\d+\.\d+\.\d+$/);
   assert.ok(sha(commit) && sha(workflowSha),'Full source and workflow SHAs required');
   assert.match(repository,/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/);
@@ -28,6 +28,8 @@ export async function loadPreview(directory,{tag,commit,repository,workflowSha,r
     assert.deepEqual(windows.metadata.source,metadata.source,'Platform source manifests differ');
     names.push(...windows.names);
   }
+  const linux=requireLinux?await loadLinuxPreview(directory,{tag,commit,repository,workflowSha,runId}):undefined;
+  if(linux){assert.deepEqual(linux.metadata.source,metadata.source,'Platform source manifests differ');names.push(...linux.names);}
   assert.deepEqual((await readdir(directory)).sort(),[...names].sort(),'Unexpected or missing release files');
   const files=await Promise.all(names.map(async name=>{const bytes=await readFile(join(directory,name));assert.ok(bytes.length>0);return {name,bytes,size:bytes.length,digest:'sha256:'+hash(bytes)};}));
   assert.equal(files[0].digest,'sha256:'+metadata.sha256);
@@ -36,7 +38,7 @@ export async function loadPreview(directory,{tag,commit,repository,workflowSha,r
   for(const key of ['packagedApp','independentBackend','restartPersistence','stableWebviewProfile','parentOwnsBackend','localAccount','devAccountDisabled'])assert.equal(smoke[key],true);
   assert.equal(smoke.developerBackendRequests,0);
   assert.equal(smoke.realAudioDevicesOpened,false);assert.equal(smoke.realProvidersInvoked,false);
-  return {metadata,files,runUrl,guide:files[3].bytes.toString('utf8'),windows:windows?.metadata};
+  return {metadata,files:files.filter(file=>[artifact,windows?.metadata.artifact,linux?.metadata.artifact].includes(file.name)),runUrl,guide:files[3].bytes.toString('utf8'),windows:windows?.metadata,linux:linux?.metadata};
 }
 export async function loadWindowsPreview(directory,{tag,commit,repository,workflowSha,runId}) {
   const metadata=JSON.parse(await readFile(join(directory,'release-windows-x64.json'),'utf8'));
@@ -56,6 +58,24 @@ export async function loadWindowsPreview(directory,{tag,commit,repository,workfl
   return {metadata,names:[artifact,'SHA256SUMS-windows-x64.txt','release-windows-x64.json','INSTALL-windows-x64.md','package-smoke-windows-x64.json']};
 }
 
+export async function loadLinuxPreview(directory,{tag,commit,repository,workflowSha,runId}) {
+  const metadata=JSON.parse(await readFile(join(directory,'release-linux-x64.json'),'utf8'));
+  const artifact=`Lingji-${tag.slice(1)}-linux-amd64.deb`;
+  assert.deepEqual([metadata.version,metadata.channel,metadata.platform,metadata.architecture,metadata.artifact,metadata.sourceRevision,metadata.sourceDirty,metadata.signing,metadata.frozenSourceBuild],
+    [tag.slice(1),'preview','linux','x64',artifact,commit,false,'unsigned',true]);
+  const runUrl=`https://github.com/${repository}/actions/runs/${runId}`;
+  assert.deepEqual(metadata.ci,{repository,runId,runUrl,workflowSha,sourceRevision:commit});
+  assert.match(metadata.source?.sha256,/^[a-f0-9]{64}$/);assert.ok(metadata.source.files.length>0);
+  for(const key of ['debVerified','installedAppProbe','resourcesVerified','uninstallVerified','productionSmoke','bundledAsrTested'])assert.equal(metadata.validation?.[key],true,key);
+  for(const key of ['realAudioDevicesTested','realProvidersTested','freshMachineTested'])assert.equal(metadata.validation?.[key],false,key);
+  assert.equal(hash(await readFile(join(directory,artifact))),metadata.sha256,'Linux installer hash differs');
+  assert.equal((await readFile(join(directory,'SHA256SUMS-linux-x64.txt'),'utf8')).trim(),`${metadata.sha256}  ${artifact}`);
+  const smoke=JSON.parse(await readFile(join(directory,'package-smoke-linux-x64.json'),'utf8'));
+  for(const key of ['packagedApp','independentBackend','restartPersistence','stableWebviewProfile','parentOwnsBackend','localAccount','devAccountDisabled','bundledAsrConfigured'])assert.equal(smoke[key],true,key);
+  assert.equal(smoke.developerBackendRequests,0);assert.equal(smoke.realAudioDevicesOpened,false);assert.equal(smoke.realProvidersInvoked,false);
+  return {metadata,names:[artifact,'SHA256SUMS-linux-x64.txt','release-linux-x64.json','package-smoke-linux-x64.json']};
+}
+
 export function verifyInventory(assets,files,{complete=false}={}) {
   assert.ok(Array.isArray(assets));
   const seen=new Set();
@@ -67,20 +87,27 @@ export function verifyInventory(assets,files,{complete=false}={}) {
   }
   if(complete)assert.equal(seen.size,files.length,'Incomplete release inventory');
 }
-export function previewNotes({tag,commit,workflowSha,metadata,runUrl,guide='',windows}) {
-  const changes=guide.replace(/\r\n/g,'\n').split('\n## 本版变化\n')[1]?.split('\n## ')[0].trim()
-    || '本版变更请参阅随包 INSTALL-macos-arm64.md。';
-  return `公开测试版：源码 + macOS Apple Silicon${windows?' + Windows x64':''} 测试安装包。\n\n`+
-    `### 下载与安装\nmacOS 14.6+、Apple Silicon（M 系列）。下载 ${metadata.artifact}，按 INSTALL-macos-arm64.md 安装，并用 SHA256SUMS.txt 校验。内置 Node 24 后台，无需另装运行时。\n\n`+
-    `**ad-hoc 签名，未进行 Developer ID 签名及 Apple 公证。** Preview 与 Alpha 使用相同应用标识；先结束录制、等待补传、退出并备份，勿同时运行。\n\n`+
-    (windows?`### Windows 下载与安装\nWindows 10/11 x64：下载 ${windows.artifact}，按 INSTALL-windows-x64.md 安装，用 SHA256SUMS-windows-x64.txt 校验。当前用户安装，内置 Node 24 与 WebView2 离线安装组件。**未进行 Windows 代码签名。** 关闭窗口后常驻托盘；升级或卸载前请先结束录音并从托盘退出。\nWindows SHA-256：\`${windows.sha256}\`\n\n`:'')+
-    `### 本版变化\n${changes}\n\n`+
-    `### Actions 构建与验证\n由 [GitHub Actions](${runUrl}) 在 macOS ARM runner${windows?' 与 Windows x64 runner':''} 构建。构建阶段运行 Node/Rust 回归、ESLint、类型与文档检查；DMG、arm64、签名结构、包内后台及隔离启动/重启检查通过。${windows?'Windows 静默安装、安装资源哈希、x64 主程序、包内独立后台、隔离启动/重启及卸载检查通过。':''}实际执行记录以该 run 为准。\n\n`+
-    `源码 SHA：\`${commit}\`\n工作流 SHA：\`${workflowSha}\`\nDMG SHA-256：\`${metadata.sha256}\`\n\n`+
-    `### 已知边界\n尚未验证真实设备长会议、真实 ASR/LLM 质量、全新 Mac 首次安装、完整 App 冷启动、PG/S3${windows?' 或全新 Windows 电脑交互安装、Linux 安装':' 或 Windows/Linux 安装'}。此测试包不替代正式签名发版。\n\n`+
-    `### English\nPublic preview ${tag}: source code and a macOS Apple Silicon test installer (macOS 14.6+)${windows?' plus a Windows x64 installer (Windows 10/11)':''}, built and published by GitHub Actions. See INSTALL-macos-arm64.md${windows?' and INSTALL-windows-x64.md':''} for this version's changes.\n\n`+
-    `**Ad-hoc signed; not Developer ID signed or notarized.** Back up existing data and do not run Preview and Alpha concurrently. Real-meeting quality, full native cold startup and fresh-machine acceptance remain unverified.\n`;
+export function previewNotes({tag,commit,workflowSha,metadata,runUrl,guide='',windows,linux}) {
+  const changes=('\n'+guide.replace(/\r\n/g,'\n')).match(/\n## (?:本版变化|本版行为|修复与设置|版本改动与修复)[ \t]*\n([\s\S]*?)(?=\n## |$)/)?.[1].trim();
+  assert.ok(changes,'Version changes and fixes are required before publication');
+  const repository=runUrl.split('/actions/runs/')[0];
+  const guideUrl=`${repository}/blob/${commit}/docs/releases/${tag}-preview.md`;
+  const installers=[metadata,windows,linux].filter(Boolean);
+  const downloads=installers.map(item=>`| ${item.platform} ${item.architecture} | [${item.artifact}](${repository}/releases/download/${tag}/${item.artifact}) |`).join('\n');
+  const checksums=installers.map(item=>`${item.sha256}  ${item.artifact}`).join('\n');
+  return `## 版本改动与修复\n${changes}\n\n`+
+    `## 下载与安装\n| 系统 | 安装包 |\n| --- | --- |\n${downloads}\n\n`+
+    `macOS 14.6+ Apple Silicon：打开 DMG，将应用拖入 Applications。Windows 10/11 x64：运行 EXE，选择安装位置、快捷方式和本地模型（默认勾选）。`+
+    (linux?`Linux x64：本版在 Ubuntu 24.04 构建及验证，下载后运行 \`sudo apt install ./`+linux.artifact+`\`，由 apt 安装系统依赖。其他发行版与旧版系统兼容性尚未验证。`:'')+
+    `各安装包内置 Node 24 和离线转录资源，无需另装 Node 或 Python。\n\n`+
+    `升级前结束录音、完成补传、退出应用并备份数据。macOS 使用 ad-hoc 签名，未进行 Developer ID 签名及 Apple 公证；`+
+    (windows?'**未进行 Windows 代码签名。** ':'')+`详细操作见[本版安装说明](${guideUrl})。\n\n`+
+    `## SHA-256\n下载后使用 macOS 的 \`shasum -a 256 <文件>\`、Linux 的 \`sha256sum <文件>\` 或 PowerShell 的 \`Get-FileHash <文件> -Algorithm SHA256\` 核对：\n\n\`\`\`text\n${checksums}\n\`\`\`\n\n`+
+    `## 源码与验证\nSource code (zip / tar.gz) 由 GitHub 按标签提供。源码 SHA：\`${commit}\`；工作流 SHA：\`${workflowSha}\`。\n\n`+
+    `由 [GitHub Actions](${runUrl}) 构建，校验来源、安装包摘要和启动/重启结果后发布；验证报告、源码清单和安装文档保留在 Actions artifacts，Release 附件仅含成品安装包。\n\n`+
+    `## 已知边界\n真实设备长会议、真实 ASR/LLM 质量、全新电脑交互安装、PG/S3 和 Linux 实机采音尚未验证。Linux PipeWire 系统音频、麦克风与文件导入需在目标设备验收；Linux 关闭窗口进入退出确认流程，不提供 macOS/Windows 的托盘常驻行为。测试包不替代正式签名发行。\n`;
 }
+
 async function sourceCommit(api,base,tag) {
   let object=(await api('GET',`${base}/git/ref/tags/${tag}`)).object;
   for(let i=0;object?.type==='tag' && i<5;i++) {
@@ -90,7 +117,7 @@ async function sourceCommit(api,base,tag) {
 }
 export async function publishPreview(options) {
   const {api,tag,commit,workflowSha,repository}=options;
-  const {metadata,files,runUrl,guide,windows}=await loadPreview(options.directory,options);
+  const {metadata,files,runUrl,guide,windows,linux}=await loadPreview(options.directory,options);
   const base=`/repos/${repository}`;
   assert.equal(await sourceCommit(api,base,tag),commit,'Source tag moved');
   const candidates=[];
@@ -108,7 +135,7 @@ export async function publishPreview(options) {
     assert.ok(release.body?.includes(commit),'Existing draft source differs');
     verifyInventory(release.assets,files);
   }
-  const body=previewNotes({tag,commit,workflowSha,metadata,runUrl,guide,windows});
+  const body=previewNotes({tag,commit,workflowSha,metadata,runUrl,guide,windows,linux});
   const payload={tag_name:tag,target_commitish:commit,name:title(tag),body,draft:true,prerelease:true,make_latest:'false'};
   if(!release)release=await api('POST',`${base}/releases`,payload);
   else {
@@ -159,7 +186,7 @@ async function main() {
     return response.json();
   };
   const result=await publishPreview({api,repository,tag:process.env.RELEASE_TAG,commit:process.env.RELEASE_SHA,workflowSha:process.env.RELEASE_WORKFLOW_SHA,
-    requireWindows:true,runId:process.env.GITHUB_RUN_ID,directory:resolve(process.argv[2]||'preview-artifacts')});
+    requireWindows:true,requireLinux:true,runId:process.env.GITHUB_RUN_ID,directory:resolve(process.argv[2]||'preview-artifacts')});
   await writeFile('preview-publication-receipt.json',JSON.stringify(result,null,2)+'\n');console.log(JSON.stringify(result));
 }
 if(process.argv[1] && import.meta.url===pathToFileURL(resolve(process.argv[1])).href)main().catch(error=>{console.error(error.message);process.exitCode=1;});

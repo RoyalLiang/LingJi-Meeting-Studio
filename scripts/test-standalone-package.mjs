@@ -38,6 +38,7 @@ async function launch() {
   assert.ok(executable, 'Set NATIVE_CLIENT_EXECUTABLE or CLIENT_NODE_EXECUTABLE');
   logs = '';
   child = spawn(executable, args, { env: {
+    ...(process.platform==='linux'?{DISPLAY:process.env.DISPLAY,XAUTHORITY:process.env.XAUTHORITY,LIBGL_ALWAYS_SOFTWARE:'1',WEBKIT_DISABLE_DMABUF_RENDERER:'1'}:{}),
     PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: process.env.HOME, TMPDIR: process.env.TMPDIR,
       ...(process.platform==='win32'?{SystemRoot:process.env.SystemRoot,USERPROFILE:process.env.USERPROFILE,LOCALAPPDATA:process.env.LOCALAPPDATA,APPDATA:process.env.APPDATA,TEMP:process.env.TEMP,TMP:process.env.TMP}:{}),
     TTS_CLIENT_DATA_DIR: data, TTS_RECORD_API_URL: `http://127.0.0.1:${trap.address().port}`,
