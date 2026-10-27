@@ -9,7 +9,7 @@ on:
       tag:
         description: Existing vX.Y.Z source tag (published tags are never moved)
         required: true
-        default: v0.1.29
+        default: v0.1.30
         type: string
       source_sha:
         description: Expected full source commit; reject a moved tag
@@ -278,8 +278,51 @@ jobs:
           path: preview-artifacts/*
           if-no-files-found: error
           retention-days: 14
+  build_linux:
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.21.0'
+          cache: npm
+      - name: Install Linux build and test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev librsvg2-dev libasound2-dev libpipewire-0.3-dev libspa-0.2-dev xvfb xauth
+      - run: rustup toolchain install 1.92.0 --profile minimal && rustup default 1.92.0
+      - run: npm ci
+      - run: node --test tests/records-preview-release.test.mjs tests/records-local-asr.test.mjs tests/records-release-source.test.mjs
+      - run: npm run build:web && node scripts/prepare-client-backend.mjs
+      - name: Linux native regression
+        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --features smoke-test -- --test-threads=1
+      - name: Build, install, verify and uninstall DEB
+        env:
+          TTS_RELEASE_SOURCE_REF: ${{ needs.verify.outputs.sha }}
+        run: npm run release:linux:preview
+      - name: Collect Linux release files
+        env:
+          RELEASE_VERSION: ${{ needs.verify.outputs.version }}
+          SOURCE_SHA: ${{ needs.verify.outputs.sha }}
+          WORKFLOW_SHA: ${{ needs.verify.outputs.controller_sha }}
+        run: node scripts/collect-preview-artifacts.mjs linux
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: preview-linux-x64-${{ needs.verify.outputs.sha }}
+          path: preview-artifacts/*
+          if-no-files-found: error
+          retention-days: 14
   publish:
-    needs: [verify, build, build_windows]
+    needs: [verify, build, build_windows, build_linux]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:

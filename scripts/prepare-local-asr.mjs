@@ -61,7 +61,7 @@ export async function prepareLocalAsr({ destination, cacheRoot, platform = proce
     const files = [], nativeFiles = [];
     for (const path of await filesAt(stage)) {
       const full = join(stage, path);
-      if (/\.(node|dylib|dll)$/i.test(path)) { nativeFiles.push(path); continue; }
+      if (/\.(node|dylib|dll|so(?:\.\d+)*)$/i.test(path)) { nativeFiles.push(path); continue; }
       files.push({ path, bytes: (await stat(full)).size, sha256: await digest(full) });
     }
     // macOS re-signs native libraries during bundling. Verify model/data/JS
