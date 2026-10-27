@@ -44,7 +44,7 @@ export function addSource(record, input) {
     const timelineOffsetMs = recordingDurationMs(record);
     session = { id: randomUUID(), status: 'recording', timelineOffsetMs, startedAt: new Date().toISOString() }; record.sessions.push(session);
   }
-  const source = { id: randomUUID(), sessionId: session.id, timelineOffsetMs: session.timelineOffsetMs || 0, epoch: randomUUID(), kind: input.kind, label: String(input.label || input.kind).slice(0, 80),
+  const source = { id: randomUUID(), sessionId: session.id, timelineOffsetMs: Math.max(session.timelineOffsetMs || 0, recordingDurationMs(record)), epoch: randomUUID(), kind: input.kind, label: String(input.label || input.kind).slice(0, 80),
     lastSequence: null, watermark: -1, stopped: false };
   record.sources.push(source); record.capture = 'recording'; record.transcription = 'queued';
   emit(record, 'source.started', { sourceId: source.id }); return source;

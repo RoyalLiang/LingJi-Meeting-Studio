@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { Play, Pause, ArrowCounterClockwise, ArrowClockwise, Waveform, Gauge } from '@phosphor-icons/react';
+import { Play, Pause, ArrowCounterClockwise, ArrowClockwise, Gauge } from '@phosphor-icons/react';
 import { Button } from './ui';
 import { Select } from './Select';
 import { Toast } from './Toast';
@@ -8,8 +8,8 @@ import { api } from '../api';
 import { mergeWaveforms, waveformSeekTime, waveformTicks, type RecordingWaveform } from '../audio/playback-waveform';
 import './AudioPlayer.css';
 
-type Track = { id: string; src: string; label: string };
-type Props = { sources: Track[] };
+type Track = { id: string; src: string; label: string; startMs?: number };
+type Props = { sources: Track[]; durationMs?: number };
 const rates = [0.75, 1, 1.25, 1.5, 2];
 const seekKeys = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown']);
 function clock(value: number) {
@@ -28,11 +28,12 @@ export function AudioPlayer(props: Props) {
   return <PlaybackControls key={props.sources.map(source => source.src).join('|')} {...props}/>;
 }
 
-function PlaybackControls({ sources }: Props) {
+function PlaybackControls({ sources, durationMs = 0 }: Props) {
   const audio = useRef<(HTMLAudioElement | null)[]>([]), operation = useRef(0);
-  const [transport] = useState(() => new PlaybackTransport(() => audio.current.filter((media): media is HTMLAudioElement => Boolean(media))));
+  const [transport] = useState(() => new PlaybackTransport(() => audio.current.filter((media): media is HTMLAudioElement => Boolean(media)), durationMs / 1000,
+    media => (sources[audio.current.findIndex(element => element === media)]?.startMs || 0) / 1000));
   const [playing, setPlaying] = useState(false), [starting, setStarting] = useState(false), [error, setError] = useState('');
-  const [time, setTime] = useState(0), [duration, setDuration] = useState(0), [rate, setRate] = useState(1);
+  const [time, setTime] = useState(0), [duration, setDuration] = useState(durationMs / 1000), [rate, setRate] = useState(1);
   const [peaks, setPeaks] = useState<number[]>([]), [waveState, setWaveState] = useState('loading');
   const timeline=useRef<HTMLDivElement>(null), advancing=useRef(false);
   const [progressClock]=useState(()=>new PlaybackClock());
@@ -54,6 +55,7 @@ function PlaybackControls({ sources }: Props) {
   }, [sourceUrls]);
 
   const sync = () => {
+    transport.syncLevels();
     setPlaying(transport.playing);
     setDuration(transport.duration);
     if (!scrub.active) { setTime(transport.time); paint(); }
@@ -96,15 +98,12 @@ function PlaybackControls({ sources }: Props) {
 
   return <div className="audio-player" role="group" aria-label="原音播放">
     {sources.map((source, index) => <audio key={source.id} ref={element => { audio.current[index] = element; }}
-      preload="metadata" src={source.src} aria-label={source.label}
+      preload="none" src={source.src} aria-label={source.label}
       onLoadedMetadata={() => { sync(); setError(''); }} onDurationChange={sync}
       onTimeUpdate={sync} onPlay={event=>mediaState(event.currentTarget,false)} onPlaying={event=>mediaState(event.currentTarget,true)}
       onWaiting={event=>mediaState(event.currentTarget,false)} onSeeking={event=>mediaState(event.currentTarget,false,true)}
       onSeeked={event=>mediaState(event.currentTarget,transport.playing,true)} onPause={event=>mediaState(event.currentTarget,false)} onEnded={event=>mediaState(event.currentTarget,false,true)}
       onError={() => { pause(); setError('原音加载失败，请检查网络与留存状态后重试。'); }}/>) }
-    <div className="player-topline">
-      <span className="player-label"><Waveform size={19} aria-hidden="true"/><span>会议录音</span>{sources.length > 1 && <span className="player-track-label">双音轨同步</span>}</span>
-    </div>
     <div className="player-timeline" ref={timeline}>
       <div className="player-wave-track" data-waveform-state={waveState}>
         {peaks.length > 0 ? <SavedWaveform peaks={peaks}/> : <span className="player-wave-status" role="status">{waveState === 'error' ? '波形暂不可用，仍可定位播放' : '正在读取录音波形…'}</span>}

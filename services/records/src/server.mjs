@@ -183,12 +183,16 @@ export async function createRecordServer(options = {}) {
           const contiguous = chunk.sequence === index && chunk.sampleOffset === sampleOffset;
           sampleOffset += chunk.sampleCount; return contiguous;
         }), 'audio_unavailable', 404);
+        const leadingSamples = Math.round((source.timelineOffsetMs || 0) * 16);
+        requireThat(Number.isSafeInteger(leadingSamples) && leadingSamples >= 0, 'audio_unavailable', 404);
         if (url.searchParams.get('waveform') === '1') {
-          const waveform = await recordingWaveform(chunks, object => repo.readAudio(object), () => res.destroyed || res.writableEnded);
+          const waveform = await recordingWaveform(chunks, object => repo.readAudio(object), () => res.destroyed || res.writableEnded, leadingSamples);
           if (waveform) send(res, 200, waveform);
           return;
         }
-        const length = chunks.reduce((n, c) => n + c.sampleCount * 2, 0), total = length + 44;
+        const leadingBytes = leadingSamples * 2;
+        const length = leadingBytes + chunks.reduce((n, c) => n + c.sampleCount * 2, 0), total = length + 44;
+        requireThat(length <= 0xffffffff - 36, 'audio_unavailable', 413);
         const range = req.headers.range?.match(/^bytes=(\d+)-(\d*)$/);
         const start = range ? Number(range[1]) : 0, end = range && range[2] ? Math.min(Number(range[2]), total - 1) : total - 1;
         requireThat(start <= end && start < total, 'range_not_satisfiable', 416);
@@ -196,22 +200,32 @@ export async function createRecordServer(options = {}) {
           ...(url.searchParams.get('download') === '1' ? { 'Content-Disposition': attachmentHeader(`${record.title}-${source.label || source.kind}-${source.id.slice(0,8)}`, 'wav') } : {}),
           'Content-Length': end - start + 1, ...(range ? { 'Content-Range': `bytes ${start}-${end}/${total}` } : {}) });
         res.once('error', () => res.destroy());
+        const write = async bytes => {
+          if (!res.write(bytes)) await new Promise(resolve => {
+            const done = () => { res.off('drain', done); res.off('close', done); resolve(); };
+            res.once('drain', done); res.once('close', done);
+            if (res.destroyed || res.writableEnded) done();
+          });
+        };
         let offset = 0;
-        for (let i = -1; i < chunks.length; i++) {
+        for (let i = -2; i < chunks.length; i++) {
           if (res.destroyed || res.writableEnded) break;
-          const size=i<0?44:chunks[i].sampleCount*2;
+          const size=i===-2?44:i===-1?leadingBytes:chunks[i].sampleCount*2;
           if(offset+size<=start){offset+=size;continue;}
-          const bytes = i < 0 ? waveHeader(length) : await repo.readAudio(chunks[i].object);
-          if (res.destroyed || res.writableEnded) break;
-          if (offset <= end && offset + bytes.length > start) {
-            const slice = bytes.subarray(Math.max(0, start - offset), Math.min(bytes.length, end - offset + 1));
-            if (!res.write(slice)) await new Promise(resolve => {
-              const done = () => { res.off('drain', done); res.off('close', done); resolve(); };
-              res.once('drain', done); res.once('close', done);
-              if (res.destroyed || res.writableEnded) done();
-            });
+          const from = Math.max(0, start - offset), until = Math.min(size, end - offset + 1);
+          if (i === -1) {
+            // Virtual silence aligns resumed sources without copying or changing stored PCM.
+            let remaining = until - from;
+            const silence = Buffer.alloc(Math.min(65536, remaining));
+            while (remaining > 0 && !res.destroyed && !res.writableEnded) {
+              const count = Math.min(remaining, silence.length); await write(silence.subarray(0,count)); remaining -= count;
+            }
+          } else {
+            const bytes = i === -2 ? waveHeader(length) : await repo.readAudio(chunks[i].object);
+            if (res.destroyed || res.writableEnded) break;
+            await write(bytes.subarray(from,until));
           }
-          offset += bytes.length; if (offset > end) break;
+          offset += size; if (offset > end) break;
         }
         if (!res.destroyed && !res.writableEnded) res.end(); return;
       }

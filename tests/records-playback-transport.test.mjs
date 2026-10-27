@@ -19,7 +19,7 @@ test('visible playback advances smoothly between coarse media samples without ch
  assert.ok(clock.read(.3,2016,true)>.3);
  assert.equal(clock.read(.3,3000,false),.3);
  assert.equal(clock.read(.3,4000,true,2),.3);assert.ok(Math.abs(clock.read(.3,4016,true,2)-.332)<1e-9);
- assert.ok(clock.read(.3,7000,true,2)<=1.8);
+ assert.ok(clock.read(.3,7000,true,2)<=2.8);
 });
 
 function track(duration) {
@@ -260,4 +260,55 @@ test('shared speed menu fits a narrow trigger, stays in view and supports keyboa
   const key=key=>({key,preventDefault(){},stopPropagation(){}});
   tree.props.onKeyDown(key('ArrowDown'));tree=render();tree.props.onKeyDown(key('Enter'));
   assert.deepEqual(choices,['1.25']);tree=render();assert.equal(tree.children[1].props['aria-expanded'],false);assert.ok(focused>=2);
+});
+
+test('visible cursor never stalls or jumps when media time arrives only once per second',()=>{
+ for(const rate of [.75,1,1.25,1.5,2]){const clock=new PlaybackClock();let previous=clock.read(0,0,true,rate);
+ for(let now=16;now<=8000;now+=16){
+  const shown=clock.read(Math.max(0,Math.floor((now-200)*rate/1000)),now,true,rate);
+  assert.ok(shown>previous,'a progressing media clock must advance each frame');
+  assert.ok(shown-previous<.04,'one-second samples must not jump the visible cursor');previous=shown;
+ }}
+});
+
+test('dual-track playback aligns before starting and leaves mixing headroom at any speed',async()=>{
+ const mic=track(90),meeting=track(90);mic.currentTime=20;meeting.currentTime=19.88;
+ const starts=[];for(const media of [mic,meeting]){const play=media.play.bind(media);media.play=async()=>{starts.push(media.currentTime);await play();};media.webkitPreservesPitch=false;}
+ const transport=new PlaybackTransport(()=>[mic,meeting]);transport.setRate(2);await transport.play();
+ assert.deepEqual(starts,[20,20],'align before audible playback instead of correcting after playback starts');
+ for(const media of [mic,meeting]){assert.equal(media.volume,.5);assert.equal(media.preservesPitch,true);assert.equal(media.webkitPreservesPitch,true);assert.equal(media.playbackRate,2);}
+ const single=track(90);await new PlaybackTransport(()=>[single]).play();assert.equal(single.volume,1);
+});
+
+
+test('persisted timeline enables seeking before lazy audio metadata has loaded',()=>{
+ const mic=track(NaN),meeting=track(NaN),transport=new PlaybackTransport(()=>[mic,meeting],120);
+ assert.equal(transport.duration,120);assert.equal(transport.seek(67),67);assert.equal(mic.currentTime,67);assert.equal(meeting.currentTime,67);
+});
+
+test('sequential resumed clips retain full level while overlapping sources share headroom',async()=>{
+ const first=track(1),second=track(1.5),transport=new PlaybackTransport(()=>[first,second],1.5,media=>media===second?1:0);
+ await transport.play();assert.equal(first.volume,1);assert.equal(second.volume,1);
+});
+
+function unloadedTrack(duration) {
+ const media=track(NaN),events=new EventTarget();
+ media.addEventListener=events.addEventListener.bind(events);media.removeEventListener=events.removeEventListener.bind(events);
+ media.load=()=>{media.currentTime=0;};media.ready=()=>{media.duration=duration;events.dispatchEvent(new Event('loadedmetadata'));};return media;
+}
+
+test('lazy metadata resolves before filtering an ended short source at a shared seek target',async()=>{
+ const short=unloadedTrack(2),long=unloadedTrack(6),transport=new PlaybackTransport(()=>[short,long],6);
+ transport.seek(4);const playing=transport.play();assert.equal(transport.time,4);assert.equal(short.starts+long.starts,0);
+ short.ready();assert.equal(transport.time,4,'metadata must not reset the visible seek target');long.ready();await playing;
+ assert.equal(short.starts,0);assert.equal(long.starts,1);assert.equal(long.currentTime,4);assert.equal(transport.playing,true);
+});
+
+test('pause cancels metadata listeners and prevents a late cold load from starting playback',async()=>{
+ const media=unloadedTrack(6),transport=new PlaybackTransport(()=>[media],6);transport.seek(4);
+ const playing=transport.play();transport.pause();await playing;media.ready();await Promise.resolve();assert.equal(media.starts,0);assert.equal(transport.playing,false);assert.equal(transport.time,4);
+});
+
+test('retrying an errored retained audio load preserves the chosen seek target',async()=>{
+ const media=track(60),transport=new PlaybackTransport(()=>[media],60);media.error={code:4};media.load=()=>{media.error=null;media.currentTime=0;};transport.seek(20);await transport.play();assert.equal(media.currentTime,20);assert.equal(media.paused,false);
 });

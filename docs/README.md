@@ -1,5 +1,7 @@
 # 聆记文档导航
 
+[v0.1.31 回放与计时优化](releases/v0.1.31-preview.md)正在验证与准备后台发布。
+
 [v0.1.30 会议修复与三平台安装包](releases/v0.1.30-preview.md)已发布；[发布核验](evidence/preview-v0.1.30-2026-10-27.md)记录五项 CI、三安装包与源码归档核对，[会议修复回执](evidence/minutes-fixes-v0.1.30-2026-10-27.md)记录十一项调整及验证边界。
 
 [v0.1.28](releases/v0.1.28-preview.md) 与 v0.1.29 的失败标签保留，相关修正已随 v0.1.30 交付。
