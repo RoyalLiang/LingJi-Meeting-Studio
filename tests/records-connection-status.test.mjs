@@ -10,7 +10,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 const code=(await transform(await readFile(new URL('../apps/web/src/components/ConnectionStatus.tsx',import.meta.url),'utf8'),{loader:'tsx',jsx:'automatic',format:'cjs'})).code;
 const module={exports:{}};vm.runInNewContext(code,{module,exports:module.exports,require:name=>name==='@phosphor-icons/react'?{CloudCheck:()=>null,CloudSlash:()=>null}:createRequire(import.meta.url)(name)});
 const render=props=>renderToStaticMarkup(createElement(module.exports.ConnectionStatus,props));
-const label=html=>html.match(/class="sync-connection-label">([^<]+)/)[1];
+const label=html=>html.match(/class="sync-connection-label"><span>([^<]+)/)[1];
 
 test('queue churn preserves the connection label and keeps pending audio visible separately',()=>{
  const props={state:'connected',localBackend:true,online:true};

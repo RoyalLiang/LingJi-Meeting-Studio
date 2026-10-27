@@ -319,13 +319,37 @@ test('paused catch-up waits for the stop manifest tail to be durably acknowledge
   assert.equal(checkpoint.scope,'live');assert.equal(checkpoint.pausedCheckpoint,true);assert.equal(r.capture,'paused');
 });
 
-test('default minutes interval is two minutes and explicit choices survive', () => {
+test('default minutes interval is one minute and explicit choices survive', () => {
   const record = createRecord('interval-owner');
-  assert.equal(record.autoMinutes.intervalSeconds, 120);
+  assert.equal(record.autoMinutes.intervalSeconds, 60);
   setAutomation(record, {enabled:true,intervalSeconds:15});
   setAutomation(record, {enabled:true});
   assert.equal(record.autoMinutes.intervalSeconds, 15);
   delete record.autoMinutes.intervalSeconds;
   setAutomation(record, {enabled:true});
-  assert.equal(record.autoMinutes.intervalSeconds, 120);
+  assert.equal(record.autoMinutes.intervalSeconds, 60);
+});
+
+
+test('received minutes text is flushed while the model pauses, and a cancelled job rejects late flushes',async()=>{
+ for(const cancel of [false,true]){
+  const root=await mkdtemp(join(tmpdir(),'tts-preview-tail-')),repo=await createRepository({root,databaseUrl:''});let release,ready,work;
+  const gate=new Promise(resolve=>{release=resolve;}),received=new Promise(resolve=>{ready=resolve;});
+  try{
+   const r=record();requestMinutes(r,{scope:'live',modelVersion:'fixture'});await repo.insert(r);
+   work=runCycle(repo,{minutes:async(job,env,options)=>{
+    const text=JSON.stringify(result),cut=text.indexOf(':')+1;
+    await options.onDelta(text.slice(0,cut),{firstTokenMs:1});
+    await options.onDelta(text.slice(cut),{firstTokenMs:1});ready();await gate;return result;
+   }},{lane:'minutes'});
+   await received;
+   if(cancel)await repo.change(r.id,value=>{const job=value.jobs.at(-1);job.status='cancelled';job.fence=null;delete job.preview;});
+   await new Promise(resolve=>setTimeout(resolve,300));
+   const saved=await repo.get(r.id),job=saved.jobs.at(-1);
+   if(cancel){assert.equal(job.preview,undefined);assert.equal(job.status,'cancelled');}
+   else{assert.equal(job.status,'running');assert.ok(job.preview.some(block=>block.text==='周五评审'),'received body must appear before the model completes');assert.equal(saved.liveMinutes,null);}
+   release();await work;
+   assert.equal((await repo.get(r.id)).jobs.at(-1).status,cancel?'cancelled':'completed');
+  }finally{release();await work;await repo.close();await rm(root,{recursive:true,force:true});}
+ }
 });

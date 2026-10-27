@@ -28,7 +28,7 @@ const compiled = await build({entryPoints:['apps/web/src/components/MinutesViews
 const module = {exports:{}};
 vm.runInNewContext(compiled.outputFiles[0].text,{module,exports:module.exports,require:createRequire(resolve('package.json')),console});
 const render = minutes => renderToStaticMarkup(React.createElement(module.exports.MinutesTree,{minutes,cite:()=>{}}));
-test('the first streamed minutes are visible without opening advanced settings and remain marked provisional',async()=>{
+test('validated partial minutes remain visible by default while unchecked generation stays hidden',async()=>{
  const compiledPanel=await build({entryPoints:['apps/web/src/components/Minutes.tsx'],bundle:true,write:false,platform:'node',format:'cjs',jsx:'automatic',loader:{'.css':'empty'},external:['react','react/jsx-runtime','react-dom']});
  const panel={exports:{}};
  vm.runInNewContext(compiledPanel.outputFiles[0].text,{module:panel,exports:panel.exports,require:createRequire(resolve('package.json')),console,matchMedia:()=>({matches:false})});
@@ -36,7 +36,9 @@ test('the first streamed minutes are visible without opening advanced settings a
  record.jobs=[{id:'streaming',scope:'live',status:'running',transcriptRevision:1,preview:[{kind:'item',text:'先排查依赖，再确认上线时间。'}]}];
  const props={record,busy:false,onClose(){},generate:async()=>{},edit:async()=>true,cite(){},automate:async()=>{},inline:true};
  const html=renderToStaticMarkup(React.createElement(panel.exports.MinutesPanel,props));
- assert.match(html,/先排查依赖，再确认上线时间/);assert.match(html,/实时草稿/);assert.match(html,/引用将在完整结果校验后显示/);assert.doesNotMatch(html,/class="empty"/,"first draft must replace the large empty placeholder");
+ assert.doesNotMatch(html,/先排查依赖，再确认上线时间|实时草稿/);
+ record.jobs[0].partialMinutes=fixture();
+ const partial=renderToStaticMarkup(React.createElement(panel.exports.MinutesPanel,props));assert.match(partial,/方案评审/);assert.doesNotMatch(partial,/class="empty"/,"validated partial replaces the empty placeholder");
  record.minutes={...fixture(),edited:true};
  const protectedHtml=renderToStaticMarkup(React.createElement(panel.exports.MinutesPanel,props));
  assert.doesNotMatch(protectedHtml,/先排查依赖，再确认上线时间/);
@@ -91,7 +93,7 @@ test('explicit topic membership separates facts sharing the same transcript and 
   m.sections[0].items.push({text:'预算仍有缺口',kind:'risk',label:'预算风险',topicId:'budget',evidence:[ref(0)]});
   const html=render(m),branches=html.split('class="minutes-branch"');
   assert.doesNotMatch(branches[1],/预算仍有缺口/);assert.match(branches[2],/预算仍有缺口/);
-  assert.match(branches[1],/<details class="branch-detail"><summary>展开 3 条讨论细节/);
+  for(let i=0;i<5;i++)assert.match(branches[1],new RegExp(`讨论细节${i}`));assert.doesNotMatch(branches[1],/<details class="branch-detail"/);
   assert.doesNotMatch(branches[2],/<details/);
 });
 

@@ -199,6 +199,8 @@ export async function createRecordServer(options = {}) {
         let offset = 0;
         for (let i = -1; i < chunks.length; i++) {
           if (res.destroyed || res.writableEnded) break;
+          const size=i<0?44:chunks[i].sampleCount*2;
+          if(offset+size<=start){offset+=size;continue;}
           const bytes = i < 0 ? waveHeader(length) : await repo.readAudio(chunks[i].object);
           if (res.destroyed || res.writableEnded) break;
           if (offset <= end && offset + bytes.length > start) {

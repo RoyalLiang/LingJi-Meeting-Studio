@@ -19,7 +19,7 @@ async function harness() {
   };
   vm.runInNewContext(code + '\nexports.useNativeMenuBar=useNativeMenuBar;', sandbox);
   const state = { authenticated: true, recordTitle: '会议', capture: 'recording', recording: true, busy: false, connection: 'connected' };
-  const callbacks = Object.fromEntries(['pause', 'resume', 'finish', 'settings'].map(name => [name, () => actions.push(name)]));
+  const callbacks = Object.fromEntries(['pause', 'resume', 'finish', 'settings', 'microphone'].map(name => [name, () => actions.push(name)]));
   sandbox.exports.useNativeMenuBar(state, callbacks);
   await new Promise(resolve => setImmediate(resolve));
   return { calls, actions, refs, state, callbacks, timers, event: payload => handler({ payload }), cleanup: () => cleanup(), removed: () => removed };
@@ -89,4 +89,12 @@ test('native updater menu listener shares dropdown preferences and rechecks the 
   cleanups.forEach(cleanup => cleanup?.()); const count = calls.length;
   timers[0](); event({ payload: 'status-update-check' }); await new Promise(resolve => setImmediate(resolve));
   assert.equal(calls.length, count); assert.deepEqual(removed.sort(), ['client-menu-action', 'client-update-state']);
+});
+
+test('widget microphone action uses the current recording guard and shared microphone callback', async () => {
+ const h=await harness();h.event('status-microphone');assert.deepEqual(h.actions,['microphone']);
+ for(const state of [{...h.state,busy:true},{...h.state,authenticated:false},{...h.state,recording:false,capture:'completed'}]){
+  h.refs[0].current={state,actions:h.callbacks};h.event('status-microphone');
+ }
+ assert.deepEqual(h.actions,['microphone']);h.cleanup();
 });

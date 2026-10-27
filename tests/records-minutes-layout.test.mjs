@@ -186,3 +186,25 @@ test('large citation groups keep a compact initial view with an explicit disclos
   assert.equal((first.match(/class="citation-entry"/g) || []).length, 1);
   assert.match(first, /aria-expanded="false">原文 · 20/);
 });
+
+
+test('all topic details stay visible and each paragraph shows only its frozen speakers', () => {
+ const value=minutes();value.topics=[];value.tables=[];
+ value.sections=[{heading:'完整讨论',items:Array.from({length:5},(_,i)=>({text:`讨论详情${i+1}`,evidence:[ref(i===4?'unmarked':'release')]}))}];
+ value.evidenceSnapshot=[{id:'release',revision:1,speaker:'张工'},{id:'release',revision:2,speaker:'错误的新修订姓名'},{id:'unmarked',revision:1,speaker:''}];
+ const html=render({liveMinutes:value});
+ assert.doesNotMatch(html,/展开 .*条讨论细节|class="branch-detail"/);
+ for(let i=1;i<=5;i++)assert.match(html,new RegExp(`讨论详情${i}`));
+ assert.equal((html.match(/class="minute-speakers"/g)||[]).length,5);
+ assert.match(html,/张工/);assert.match(html,/说话人未标注/);assert.doesNotMatch(html,/错误的新修订姓名/);
+});
+
+
+test('minutes default to no generation preview and omit redundant in-progress captions',()=>{
+ const job={status:'running',scope:'live',preview:[{kind:'text',text:'默认隐藏的生成过程'}],progress:{completed:1,total:2},partialMinutes:minutes()};
+ const empty=render({liveMinutes:null,jobs:[{...job,partialMinutes:null}]});
+ assert.doesNotMatch(empty,/默认隐藏的生成过程|class="streaming-minutes/);
+ const partial=render({jobs:[job]});
+ assert.doesNotMatch(partial,/正在更新 ·|AI 会中速记随讨论更新|minutes-stage-note/);
+ assert.match(partial,/按主题整理的纪要/);
+});

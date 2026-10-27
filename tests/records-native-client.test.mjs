@@ -18,17 +18,21 @@ test('widget initial snapshot cannot overwrite a newer recording event',async()=
  const {transform}=await import('esbuild');
  const source=await readFile(new URL('../apps/web/src/components/RecordingWidget.tsx',import.meta.url),'utf8');
  const code=(await transform(source.replace(/^import .*$/gm,''),{loader:'tsx',format:'cjs'})).code;
- const states=[],effects=[],layouts=[],calls=[];let cursor=0,receive,resolveSnapshot;
+ const states=[],effects=[],layouts=[],calls=[],actionInputs=[];let cursor=0,receive,resolveSnapshot;
  const snapshot=new Promise(resolve=>{resolveSnapshot=resolve;}),icon=()=>null;
  const sandbox={module:{exports:{}},useState(initial){const i=cursor++;if(!(i in states))states[i]=initial;return[states[i],value=>{states[i]=value;}];},useEffect:fn=>effects.push(fn),useLayoutEffect:fn=>layouts.push(fn),
-  listen:async(_name,handler)=>{receive=handler;return()=>{};},invoke:async name=>{calls.push(name);return name==='recording_widget_state'?snapshot:undefined;},Pause:icon,Play:icon,Stop:icon,ArrowsOutSimple:icon};
+  listen:async(_name,handler)=>{receive=handler;return()=>{};},invoke:async(name,input)=>{calls.push(name);if(name==='recording_widget_action')actionInputs.push(input);return name==='recording_widget_state'?snapshot:undefined;},Pause:icon,Play:icon,Stop:icon,ArrowsOutSimple:icon,Microphone:icon,MicrophoneSlash:icon};
  sandbox.React={createElement:(tag,props,...children)=>({tag,props,children})};
  vm.runInNewContext(code,sandbox);sandbox.module.exports.RecordingWidget();effects[0]();await tick();
- receive({payload:{recording:true,paused:false,canResume:false,busy:false,durationMs:2000,rms:.1}});
+ receive({payload:{recording:true,microphoneOn:true,paused:false,canResume:false,busy:false,durationMs:2000,rms:.1}});
  resolveSnapshot({recording:false,paused:false,canResume:false,busy:false,durationMs:0,rms:0});await tick();
  assert.equal(states[0].recording,true);assert.equal(states[0].durationMs,2000);
- cursor=0;sandbox.module.exports.RecordingWidget();layouts.forEach(fn=>fn());await tick();
+ cursor=0;const tree=sandbox.module.exports.RecordingWidget();layouts.forEach(fn=>fn());await tick();
  assert.ok(calls.includes('recording_widget_ready'));
+ const nodes=value=>value&&typeof value==='object'?[value,...(value.children||[]).flat(Infinity).flatMap(nodes)]:[];
+ const microphone=nodes(tree).find(node=>node.props?.['aria-label']==='关闭麦克风');
+ assert.ok(microphone);assert.equal(microphone.props['aria-pressed'],true);assert.equal(microphone.props.disabled,false);
+ microphone.props.onClick();await tick();assert.equal(actionInputs.at(-1).action,'microphone');
 });
 
 test('native packets enforce sequence, offset, sample count and binary length', () => {
