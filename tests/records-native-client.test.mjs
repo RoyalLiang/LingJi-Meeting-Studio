@@ -35,11 +35,12 @@ test('widget initial snapshot cannot overwrite a newer recording event',async()=
  microphone.props.onClick();await tick();assert.equal(actionInputs.at(-1).action,'microphone');
  const native=await readFile(new URL('../apps/desktop/src-tauri/src/main.rs',import.meta.url),'utf8');
  for(const action of ['pause','finish','restore']){
-  assert.ok(native.includes(`button[data-action=${action}]`),'native probe must target a stable widget action');
-  const button=nodes(tree).find(node=>node.props?.['data-action']===action);assert.ok(button,action);
+  const selector=native.match(new RegExp('"'+action+'" => Some\\((.*?)\\),'))?.[1]||'';
+  const labels=[...selector.matchAll(/\[aria-label="([^"]+)"\]/g)].map(match=>match[1]);
+  const button=nodes(tree).find(node=>labels.includes(node.props?.['aria-label']));
+  assert.ok(button,`Native ${action} probe must target the rendered accessible button`);
   button.props.onClick();await tick();assert.equal(actionInputs.at(-1).action,action);
  }
-
 });
 
 test('native packets enforce sequence, offset, sample count and binary length', () => {
