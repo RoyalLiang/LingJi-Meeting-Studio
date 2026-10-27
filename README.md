@@ -21,7 +21,7 @@
 
 聆记是一个会议记录工作台，把录音、转录、AI 纪要和行动候选放在同一条可回溯的记录中。可以在浏览器中使用，也可以安装 Windows、macOS 或 Linux 客户端，接入麦克风与系统音频。
 
-当前提供预览版。最近一次已验证发布为 [v0.1.31](docs/evidence/playback-timing-v0.1.31-2026-10-27.md)；下载、正文校验值及各版本验证范围以 [Releases](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases) 为准。
+当前提供预览版。最近一次已验证发布为 [v0.1.32](docs/evidence/preview-v0.1.32-2026-10-27.md)；下载、正文校验值及各版本验证范围以 [Releases](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases) 为准。
 
 ## 主要能力
 
@@ -37,7 +37,7 @@
 
 ![主题纪要、时间线与原文引用](docs/evidence/minutes-quality-2026-10-23/native-timeline-dark.png)
 
-原生客户端截图，使用合成会议数据展示纪要阅读和来源引用。安装界面历史示例见 [v0.1.23 回执](docs/evidence/preview-v0.1.23-2026-10-26.md)，当前安装验证见 [v0.1.31 回执](docs/evidence/playback-timing-v0.1.31-2026-10-27.md)。
+原生客户端截图，使用合成会议数据展示纪要阅读和来源引用。安装界面历史示例见 [v0.1.23 回执](docs/evidence/preview-v0.1.23-2026-10-26.md)，当前安装验证见 [v0.1.32 回执](docs/evidence/preview-v0.1.32-2026-10-27.md)。
 
 ## 快速开始
 
