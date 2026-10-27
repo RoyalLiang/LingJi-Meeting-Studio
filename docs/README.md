@@ -1,6 +1,6 @@
 # 聆记文档导航
 
-[v0.1.29 发布整理与 Linux DEB](releases/v0.1.29-preview.md) 正在准备后台发布。
+[v0.1.30 发布整理与 Linux DEB](releases/v0.1.30-preview.md) 正在准备后台发布；v0.1.29 验证未通过，未公开安装包。
 
 [v0.1.28 纪要保留与紧凑阅读](releases/v0.1.28-preview.md) 正在完成发布前验证。
 

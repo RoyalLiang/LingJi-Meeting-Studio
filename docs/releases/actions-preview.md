@@ -4,11 +4,11 @@
 
 ## 后台触发
 
-推荐使用 Git 推送版本标签自动触发，全程不需要访问发布页面、上传附件或提供本地 PAT。核对远端 main 是本轮提交的祖先，再创建从未使用的 `vX.Y.Z` 标签，优先原子推送 main 与标签。例如发布 0.1.29：
+推荐使用 Git 推送版本标签自动触发，全程不需要访问发布页面、上传附件或提供本地 PAT。核对远端 main 是本轮提交的祖先，再创建从未使用的 `vX.Y.Z` 标签，优先原子推送 main 与标签。例如发布 0.1.30：
 
 ```bash
-git tag -a v0.1.29 <已核对的完整源码提交> -m 'Lingji v0.1.29 public preview'
-git push --atomic origin HEAD:refs/heads/main refs/tags/v0.1.29
+git tag -a v0.1.30 <已核对的完整源码提交> -m 'Lingji v0.1.30 public preview'
+git push --atomic origin HEAD:refs/heads/main refs/tags/v0.1.30
 ```
 
 标签版本必须与该源码的 `tauri.preview.conf.json` 一致；对应提交必须是远端 main 的祖先。不要复用、移动或强推已发布标签。校验 job 将 GitHub push SHA 解析为 commit 后，与实际标签提交比较；tag push 的控制器和源码必须同一提交。
