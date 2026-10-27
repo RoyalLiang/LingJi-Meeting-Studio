@@ -99,5 +99,9 @@ test('audio-only settings render the shared model fields and omit independent AS
  const sandbox={exports:{},React:{Fragment:'fragment',createElement:(tag,attributes,...children)=>({tag:typeof tag==='string'?tag:'component',attributes,children})},useState:()=>[states[cursor++],()=>{}],useRef:value=>({current:value}),useEffect(){},useCallback:fn=>fn,Button(){},Status(){},Select(){},Toast(){},CloudCheck(){},GearSix(){},Plug(){}};
  vm.runInNewContext(code,sandbox);const result=JSON.stringify(sandbox.exports.render({saved:async()=>{}}));
  assert.match(result,/doubao-audio-only/);assert.match(result,/LLM_API_KEY/);assert.doesNotMatch(result,/DOUBAO_API_KEY|name":"ASR_PROVIDER/);
- assert.match(result,/15 秒短批次/);
+ assert.doesNotMatch(result,/fine-print|15 秒短批次/);
+ const nodes=value=>value && typeof value==='object'?[value,...Object.values(value).flatMap(nodes)]:[];
+ const effort=nodes(JSON.parse(result)).find(node=>node.attributes?.name==='LLM_REASONING_EFFORT');
+ assert.deepEqual(effort.attributes.options.map(option=>option.label),['自动','低','中','高','更高']);
+ assert.doesNotMatch(source,/DOUBAO_AST_|旧版双密钥/);
 });

@@ -4,7 +4,7 @@ import {execFileSync} from 'node:child_process';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import {dirname,join} from 'node:path';
 
-const paths=['package.json','package-lock.json','apps/web','apps/desktop/package.json','apps/desktop/src-tauri','apps/desktop/assets','scripts','tools/neohorse','services/records/src','packages/records/src','services/session-gateway/src/providers/doubao-ast-codec.mjs','services/session-gateway/src/providers/doubao-ast/protos','docs/releases'];
+const paths=['package.json','package-lock.json','apps/web','apps/desktop/package.json','apps/desktop/src-tauri','apps/desktop/assets','scripts','tools/neohorse','services/records/src','packages/records/src','docs/releases'];
 export const releaseHash=bytes=>createHash('sha256').update(bytes).digest('hex');
 export async function readReleaseSource(root,ref,path){
   if(ref){assert.match(ref,/^[a-f0-9]{40}$/);return execFileSync('git',['show',`${ref}:${path}`],{cwd:root,maxBuffer:8*1024*1024});}

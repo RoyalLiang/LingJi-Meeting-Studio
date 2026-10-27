@@ -61,10 +61,16 @@ test('preview publication verifies bytes, provenance and exact file set before m
   await writeFile(join(options.directory,metadata.artifact),'changed');
   const server=remote(options);await assert.rejects(publishPreview({...options,api:server.api}));assert.equal(server.writes.length,0);
 });
-test('preview publication uploads only the verified installer and only then publishes',async t=>{
+test('preview publication uploads verified installer and update manifest before publishing',async t=>{
   const {options}=await fixture(t),server=remote(options);const result=await publishPreview({...options,api:server.api});
-  assert.equal(result.published,true);assert.equal(result.assets.length,1);assert.equal(server.release.prerelease,true);
-  assert.equal(server.writes.filter(w=>w.upload).length,1);assert.equal(server.writes.at(-1).data.draft,false);
+  assert.equal(result.published,true);assert.equal(result.assets.length,2);assert.equal(server.release.prerelease,true);
+  assert.equal(server.writes.filter(w=>w.upload).length,2);assert.equal(server.writes.at(-1).data.draft,false);
+  const upload=server.writes.find(w=>w.upload && w.path.includes('preview-update.json'));
+  const manifest=JSON.parse(upload.data);
+  assert.equal(manifest.tag_name,options.tag);assert.equal(manifest.sourceRevision,options.commit);assert.equal(manifest.draft,false);
+  const installer=server.release.assets.find(asset=>asset.name!== 'preview-update.json');
+  assert.equal(manifest.assets[0].digest,installer.digest);assert.equal(manifest.assets[0].size,installer.size);
+  assert.equal(manifest.assets[0].browser_download_url,`https://github.com/${options.repository}/releases/download/${options.tag}/${installer.name}`);
   const after=server.writes.length;await assert.rejects(publishPreview({...options,api:server.api}),/Published release/);assert.equal(server.writes.length,after);
 });
 test('preview publication adopts matching saved draft and resumes identical partial upload',async t=>{
@@ -73,7 +79,7 @@ test('preview publication adopts matching saved draft and resumes identical part
     assets:[{name:file.name,size:file.size,digest:file.digest,state:'uploaded'}]};
   const server=remote(options,draft);await publishPreview({...options,api:server.api});
   assert.equal(server.writes[0].method,'PATCH');assert.equal(server.writes[0].path,'/repos/owner/repo/releases/8');
-  assert.equal(server.writes.filter(w=>w.upload).length,0);assert.equal(server.release.tag_name,options.tag);
+  assert.equal(server.writes.filter(w=>w.upload).length,1);assert.match(server.writes.find(w=>w.upload).path,/preview-update.json/);assert.equal(server.release.tag_name,options.tag);
 });
 test('preview publication refuses conflicting draft assets and tags that move during upload',async t=>{
   const {options}=await fixture(t),loaded=await loadPreview(options.directory,options);
@@ -132,7 +138,7 @@ test('dual-platform publication verifies diagnostics but publishes only installe
   const {options,metadata}=await fixture(t);const windows=await windowsFixture(options,metadata);
   const loaded=await loadPreview(options.directory,options);assert.equal(loaded.files.length,2);assert.equal(loaded.windows.sha256,windows.sha256);
   const server=remote(options);const result=await publishPreview({...options,api:server.api});
-  assert.equal(result.assets.length,2);assert.ok(server.release.body.includes(windows.artifact));assert.match(server.release.body,/未进行 Windows 代码签名/);
+  assert.equal(result.assets.length,3);assert.ok(server.release.body.includes(windows.artifact));assert.match(server.release.body,/未进行 Windows 代码签名/);
 });
 test('dual-platform publication rejects missing Windows files and mismatched source, checksum or validation',async t=>{
   const {options,metadata}=await fixture(t);const windows=await windowsFixture(options,metadata);
@@ -153,7 +159,7 @@ test('three-platform publication keeps diagnostics in CI and publishes exactly t
   for(const [name,data] of [[artifact,bytes],['SHA256SUMS-linux-x64.txt',linux.sha256+'  '+artifact+'\n'],['release-linux-x64.json',JSON.stringify(linux)],['package-smoke-linux-x64.json',JSON.stringify(smoke)]])await writeFile(join(options.directory,name),data);
   options.requireLinux=true;
   const server=remote(options);const result=await publishPreview({...options,api:server.api});
-  assert.deepEqual(result.assets.map(asset=>asset.name).sort(),[metadata.artifact,'Lingji-0.1.0-windows-x64-setup.exe',artifact].sort());
+  assert.deepEqual(result.assets.map(asset=>asset.name).sort(),[metadata.artifact,'Lingji-0.1.0-windows-x64-setup.exe',artifact,'preview-update.json'].sort());
   assert.match(server.release.body,/sudo apt install.*linux-amd64\.deb/);
   assert.ok(server.release.body.includes(linux.sha256));
   assert.match(server.release.body,/Source code \(zip \/ tar.gz\)/);

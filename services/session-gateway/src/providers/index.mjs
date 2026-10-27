@@ -1,4 +1,3 @@
-import { createDoubaoAstProvider } from "./doubao-ast-provider.mjs";
 import { createDeepgramAsrProvider } from "./deepgram-asr-provider.mjs";
 import { createMockAsrProvider } from "./mock-asr-provider.mjs";
 
@@ -36,8 +35,6 @@ async function createProviderByName(providerName, options = {}) {
       return createMockAsrProvider();
     case "deepgram":
       return createDeepgramAsrProvider(options);
-    case "doubao-ast":
-      return createDoubaoAstProvider(options);
     default:
       throw unsupportedAsrProviderError(providerName);
   }
@@ -159,6 +156,9 @@ function createResilientProvider(options) {
 export async function createAsrProvider(options = {}) {
   const providerName = providerNameFromOptions(options);
   const fallbackProviderName = fallbackProviderNameFromOptions(options);
+  for (const name of [providerName, fallbackProviderName]) {
+    if (name && !["mock", "deepgram"].includes(name)) throw unsupportedAsrProviderError(name);
+  }
 
   if (!fallbackProviderName || fallbackProviderName === providerName) {
     return createProviderByName(providerName, options);

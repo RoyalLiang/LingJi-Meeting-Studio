@@ -132,6 +132,19 @@ impl StatusBar {
                 _ => {}
             })
             .build(app)?;
+        #[cfg(target_os = "macos")]
+        tray.with_inner_tray_icon(|inner| {
+            let Some(mtm) = objc2::MainThreadMarker::new() else { return; };
+            if let Some(image) = inner.ns_status_item().and_then(|item| item.button(mtm)).and_then(|button| button.image()) {
+                // tray-icon defaults to 18 pt; 22 pt keeps this padded mark legible beside system icons.
+                let mut size = image.size();
+                size.width *= 22.0 / size.height;
+                size.height = 22.0;
+                image.setSize(size);
+                #[cfg(feature = "smoke-test")]
+                assert_eq!(image.size().height, 22.0);
+            }
+        })?;
         Ok(Self {
             tray,
             menu,
@@ -183,6 +196,7 @@ impl StatusBar {
     }
     fn apply_update_presentation(&self, updates: &UpdatePresentation) -> tauri::Result<()> {
         self.update_check.set_text(&updates.check_label)?;
+        self.update_install.set_text(&updates.install_label)?;
         self.update_check.set_enabled(updates.check)?;
         self.update_background.set_enabled(updates.background)?;
         self.update_background.set_checked(updates.auto_download)?;
