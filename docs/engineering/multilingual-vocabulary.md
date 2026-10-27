@@ -43,6 +43,6 @@ Redis Sentinel | Redis 森提诺
 
 ## 已验证与待验收
 
-2026-10-28 本地验证：Node 561 项通过；内置固定模型对五类合成语音返回对应语种，中英拼接保留双语原文；真实已配置文字模型完成虚构混语短文英译和词表校对请求；浏览器确认保存、逐项纠错、原文保留与窄屏底栏。
+2026-10-28 本地验证：集成 Node 566 项通过；内置固定模型对五类合成语音返回对应语种，中英拼接保留双语原文；真实已配置文字模型完成虚构混语短文英译和词表校对请求；浏览器确认保存、逐项纠错、原文保留与窄屏底栏。
 
 这些证据不代表真实会议准确率、通用 50+ 语种、实体采音、长期双路吞吐或人工翻译质量验收。新增语言范围需按具体供应商和模型验收。实现依据来自[研究方案](../research/multilingual-auto-translation-2026-10-27.md)、[SenseVoice 同款模型说明](https://k2-fsa.github.io/sherpa/onnx/sense-voice/pretrained.html)、[Deepgram 多语种](https://developers.deepgram.com/docs/nova-3-language-prompting)、[Deepgram keyterm](https://developers.deepgram.com/docs/keyterm)与[兼容转录提示](https://developers.openai.com/api/docs/guides/speech-to-text)。

@@ -1,8 +1,9 @@
 # 聆记文档导航
 
+[多语种与词表纠错](engineering/multilingual-vocabulary.md)已随 v0.1.34 发布；[补充验证与回执](evidence/multilingual-vocabulary-2026-10-28.md)记录五语种、真实翻译闭环与人工修订保护。
+
 [v0.1.34 波形与渲染优化](releases/v0.1.34-preview.md)已发布；[核验回执](evidence/preview-v0.1.34-2026-10-28.md)记录 565 项 Node、37 项 Rust、五项 CI 与四个公开附件。
 
-[多语种与词表纠错](engineering/multilingual-vocabulary.md)已实现并完成本地验证；[v0.1.33 发布说明](releases/v0.1.33-preview.md)记录本轮范围，后台测试包发布结果待回执。
 
 [v0.1.31 回放与计时优化](releases/v0.1.31-preview.md)已发布；[核验回执](evidence/playback-timing-v0.1.31-2026-10-27.md)记录五项CI、三个安装包及源码归档核对。
 
