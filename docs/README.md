@@ -1,8 +1,8 @@
 # 聆记文档导航
 
-[v0.1.30 会议修复与三平台安装包](releases/v0.1.30-preview.md)已发布；[本轮回执](evidence/minutes-fixes-v0.1.30-2026-10-27.md)记录五项CI、三个安装器及验证边界。v0.1.29失败标签保留。
+[v0.1.30 会议修复与三平台安装包](releases/v0.1.30-preview.md)已发布；[发布核验](evidence/preview-v0.1.30-2026-10-27.md)记录五项 CI、三安装包与源码归档核对，[会议修复回执](evidence/minutes-fixes-v0.1.30-2026-10-27.md)记录十一项调整及验证边界。
 
-[v0.1.28](releases/v0.1.28-preview.md)未发布安装包，修正已随v0.1.30交付。
+[v0.1.28](releases/v0.1.28-preview.md) 与 v0.1.29 的失败标签保留，相关修正已随 v0.1.30 交付。
 
 [v0.1.27 推理强度、回放与状态优化](releases/v0.1.27-preview.md) 已发布；[核验回执](evidence/preview-v0.1.27-2026-10-27.md) 记录四项 CI、十附件与来源验证，以及真实模型和硬件边界。
 
@@ -14,7 +14,7 @@
 
 | 目标 | 文档 |
 | --- | --- |
-| 安装桌面版、核对当前验证范围 | [v0.1.26 发布说明](releases/v0.1.26-preview.md) · [v0.1.24 交付证据](evidence/preview-v0.1.24-2026-10-26.md) |
+| 安装桌面版、核对当前验证范围 | [v0.1.30 安装说明](releases/v0.1.30-preview.md) |
 | 处理 macOS 安装与系统信任提示 | [macOS 安装与信任](releases/macos-trust.md) |
 | 使用内置 SenseVoice、选择云端转录或外部 FunASR | [本地转录与高级配置](engineering/funasr.md) |
 | 配置豆包音频纪要 | [两种音频模式与权限](engineering/doubao-audio.md) |
