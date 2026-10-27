@@ -1,0 +1,59 @@
+{
+  "tag": "v0.1.31",
+  "sourceRevision": "234495e1677f912c9eef1232dbd7fcd10f7d4140",
+  "workflowSha": "234495e1677f912c9eef1232dbd7fcd10f7d4140",
+  "runId": "40516041265",
+  "runUrl": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/40516041265",
+  "releaseUrl": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.31",
+  "verifiedAt": "2026-10-27T14:43:20.605Z",
+  "sourceFiles": 333,
+  "sourceManifestSha256": "4d5fb47c412af69c5f058a330e39e1b715a0660f6b2139121f66f2232c1518e7",
+  "sourceArchiveFiles": 780,
+  "sourceArchiveSha256": "0c599d78d72c506dfa59db49837739f9fbefbf12d4eaba792734e09ce7abe60e",
+  "assets": [
+    {
+      "name": "Lingji-0.1.31-linux-amd64.deb",
+      "size": 222654900,
+      "digest": "sha256:559d7c8636df5d7a7212a06000e3feaa7742605e8c498df3a2d3b690eff4d84b"
+    },
+    {
+      "name": "Lingji-0.1.31-macos-arm64.dmg",
+      "size": 219564357,
+      "digest": "sha256:b8921423aa103d21e4f66637c3319eedac6f84cf1c44fb24b43c39b8dcae22ef"
+    },
+    {
+      "name": "Lingji-0.1.31-windows-x64-setup.exe",
+      "size": 407715136,
+      "digest": "sha256:18ac122424a6b3401a67c335ffeec33a888aedc604fdad039c69e90a1ced0f18"
+    }
+  ],
+  "evidenceKind": "derived from unauthenticated public GitHub Release HTML and installer HEAD responses",
+  "jobs": [
+    {
+      "name": "verify",
+      "conclusion": "success",
+      "html_url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/40516041265/job/122230116673"
+    },
+    {
+      "name": "build",
+      "conclusion": "success",
+      "html_url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/40516041265/job/122230253009"
+    },
+    {
+      "name": "build_windows",
+      "conclusion": "success",
+      "html_url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/40516041265/job/122230252991"
+    },
+    {
+      "name": "build_linux",
+      "conclusion": "success",
+      "html_url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/40516041265/job/122230253012"
+    },
+    {
+      "name": "publish",
+      "conclusion": "success",
+      "html_url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/40516041265/job/122251988404"
+    }
+  ],
+  "reportScope": "Public installers and Release body independently verified; platform provenance and raw reports checked by the successful publish job, retained in Actions artifacts."
+}

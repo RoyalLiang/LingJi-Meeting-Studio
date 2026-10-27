@@ -1,12 +1,6 @@
 # 聆记文档导航
 
-[v0.1.31 回放与计时优化](releases/v0.1.31-preview.md)正在验证与准备后台发布。
-
-[v0.1.30 会议修复与三平台安装包](releases/v0.1.30-preview.md)已发布；[发布核验](evidence/preview-v0.1.30-2026-10-27.md)记录五项 CI、三安装包与源码归档核对，[会议修复回执](evidence/minutes-fixes-v0.1.30-2026-10-27.md)记录十一项调整及验证边界。
-
-[v0.1.28](releases/v0.1.28-preview.md) 与 v0.1.29 的失败标签保留，相关修正已随 v0.1.30 交付。
-
-[v0.1.27 推理强度、回放与状态优化](releases/v0.1.27-preview.md) 已发布；[核验回执](evidence/preview-v0.1.27-2026-10-27.md) 记录四项 CI、十附件与来源验证，以及真实模型和硬件边界。
+[v0.1.31 回放与计时优化](releases/v0.1.31-preview.md)已发布；[核验回执](evidence/playback-timing-v0.1.31-2026-10-27.md)记录五项CI、三个安装包及源码归档核对。
 
 [产品与快速开始](../README.md) · [下载预览版](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases) · [问题反馈](https://github.com/RoyalLiang/LingJi-Meeting-Studio/issues)
 
@@ -41,6 +35,8 @@
 | 查阅架构决策与后续目标 | [ADR](adr/) · [路线图](design/roadmap.md) |
 
 ## 发布与证据
+
+- [v0.1.30会议修复](evidence/minutes-fixes-v0.1.30-2026-10-27.md) · [三平台发布核验](evidence/preview-v0.1.30-2026-10-27.md) · [v0.1.27回执](evidence/preview-v0.1.27-2026-10-27.md)。v0.1.28/v0.1.29失败标签保留，相关修正已包含在后续版本。
 
 - [发布说明](releases/)：版本行为、安装方式和发布流程。
 - [验收证据](evidence/)：源码版本、构建、公开附件校验与原生界面记录。
