@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
-export type RecordingWidgetState = {recording:boolean;paused:boolean;canResume:boolean;busy:boolean;durationMs:number;rms:number};
+export type RecordingWidgetState = {recording:boolean;microphoneOn:boolean;paused:boolean;canResume:boolean;busy:boolean;durationMs:number;rms:number};
 export function useRecordingWidget(report:RecordingWidgetState, onError:(message:string)=>void, recordId:string) {
   const latest=useRef(report), warned=useRef(false);
   const currentRecord=useRef(recordId);
@@ -17,5 +17,5 @@ export function useRecordingWidget(report:RecordingWidgetState, onError:(message
     if(!report.recording)warned.current=false;
     update();const timer=setInterval(update,1000);
     return()=>{active=false;clearInterval(timer);};
-  },[report.recording,report.paused,report.canResume,report.busy,onError]);
+  },[report.recording,report.paused,report.canResume,report.microphoneOn,report.busy,onError]);
 }

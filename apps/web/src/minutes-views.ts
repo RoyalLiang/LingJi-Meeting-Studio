@@ -1,4 +1,4 @@
-import type { Evidence, Minutes, MinutesItem, RecordDetail, SpeakerSummary, SummaryTable, Topic } from './model';
+import type { Evidence, Minutes, MinutesItem, RecordDetail, SpeakerSummary, SummaryTable, Topic, Segment } from './model';
 
 export function currentMinutesJob(record: Pick<RecordDetail,'capture'|'jobs'|'transcriptRevision'>) {
   const ended=record.capture==='completed' || record.capture==='sealed';
@@ -112,4 +112,8 @@ export function speakerViews(minutes: Minutes): (SpeakerSummary & { method: 'sum
 
 export function decisionItems(minutes: Minutes): MinutesItem[] {
   return minutes.decisions || minutes.sections.filter(section => /决定|决策|共识/.test(section.heading)).flatMap(section => section.items);
+}
+
+export function speakerLabels(snapshot: Segment[]) {
+  return new Map(snapshot.map(segment=>[`${segment.id}:${segment.revision}`,segment.speaker?.trim() || '说话人未标注']));
 }

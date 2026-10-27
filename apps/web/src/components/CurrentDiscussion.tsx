@@ -52,7 +52,7 @@ export function CurrentDiscussion({ record, minutes, job, modelReady, audioOnly 
   const activity = [record.capture, record.usage?.samples ?? 0, record.transcriptRevision, minutes?.revision ?? 0, job?.id || '', job?.progress?.completed ?? 0, status].join(':');
   const captureState = record.capture === 'recording' ? '正在记录' : record.capture === 'paused' ? '已暂停' : record.capture === 'completed' ? '已完成' : record.capture === 'sealed' ? '整理中' : '待开始';
   return <section className="current-discussion discussion-dock" aria-label={live ? '当前正在聊' : '本场纪要'}>
-    <header><div><ChatCircleDots size={18}/><h3>{live ? '当前正在聊' : '本场纪要'}</h3></div><span className="discussion-capture-state">{captureState}</span></header>
-    <div className="discussion-status-row"><DiscussionPulse activity={activity} active={active}/><span className="discussion-status" role="status" aria-live="polite" aria-atomic="true">{status}</span></div>
+    <ChatCircleDots size={18} aria-hidden="true"/><span className="discussion-capture-state">{captureState}</span>
+    <div className="discussion-status-row"><DiscussionPulse activity={activity} active={active}/><span className="discussion-status" title={status} role="status" aria-live="polite" aria-atomic="true">{status}</span></div>
   </section>;
 }

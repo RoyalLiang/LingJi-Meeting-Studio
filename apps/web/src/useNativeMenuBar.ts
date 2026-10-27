@@ -4,7 +4,7 @@ import { listen } from '@tauri-apps/api/event';
 import { pendingCount } from './audio/queue';
 
 type MenuState = { authenticated: boolean; recordTitle: string; capture: string; recording: boolean; busy: boolean; connection: string };
-type Actions = { pause: () => void; resume: () => void; finish: () => void; settings: () => void };
+type Actions = { pause: () => void; resume: () => void; finish: () => void; settings: () => void; microphone: () => void };
 
 export function useNativeMenuBar(state: MenuState, actions: Actions) {
   const latest = useRef({ state, actions }); latest.current = { state, actions };
@@ -25,6 +25,7 @@ export function useNativeMenuBar(state: MenuState, actions: Actions) {
       const { state, actions } = latest.current;
       if (state.busy || !state.authenticated) return;
       if (event.payload === 'status-settings') { actions.settings(); return; }
+      if (event.payload === 'status-microphone' && (state.recording || state.capture === 'paused')) actions.microphone();
       if (event.payload === 'status-pause' && state.recording) actions.pause();
       if (event.payload === 'status-resume' && !state.recording && state.capture === 'paused') actions.resume();
       if (event.payload === 'status-finish' && (state.recording || state.capture === 'paused')) actions.finish();

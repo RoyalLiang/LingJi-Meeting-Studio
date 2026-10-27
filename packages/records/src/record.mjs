@@ -25,7 +25,7 @@ export function createRecord(owner, input = {}) {
   const record = { id: randomUUID(), owner, kind: 'record', workspaceId: input.workspaceId || null, title: title.slice(0, 160) || '未命名会议', titleEdited:Boolean(title), ...(input.learningEnabled ? {learning:{enabled:true,status:'waiting'}} : {}),
     language: input.language || 'zh', createdAt: now, updatedAt: now, cursor: '0', events: [], generation: 1,
     capture: 'idle', transcription: 'idle', sessions: [], sources: [], chunks: [], segments: [], transcriptRevision: 0,
-    notes: '', notesRevision: 0, minutes: null, liveMinutes: null, realtimeAudioConsent: input.realtimeAudioConsent === true, autoMinutes: { enabled: input.autoMinutes === true, intervalSeconds: 120 }, minutesRevision: 0, minutesHistory: [], jobs: [], shares: [],
+    notes: '', notesRevision: 0, minutes: null, liveMinutes: null, realtimeAudioConsent: input.realtimeAudioConsent === true, autoMinutes: { enabled: input.autoMinutes === true, intervalSeconds: 60 }, minutesRevision: 0, minutesHistory: [], jobs: [], shares: [],
     retentionDays: days, retainAudio: input.retainAudio !== false, deleteAt: new Date(Date.now() + days * 86400000).toISOString(),
     usage: { samples: 0, sampleRate: 16000, llmTokens: 0 }, deleted: false };
   emit(record, 'record.created'); return record;
@@ -111,6 +111,19 @@ export function pause(record, manifest) {
 export function seal(record, manifest) {
   stopSources(record, manifest);
   if (record.capture === 'completed') return;
+  const job=record.jobs.filter(job=>job.scope==='live' && job.status==='running' && job.partialMinutes).at(-1);
+  if(job && !record.minutes?.edited && job.generation===record.generation && job.notesRevision===record.notesRevision && job.baseMinutesRevision===record.minutesRevision
+    && (!job.liveBaseHash || job.liveBaseHash===digest(JSON.stringify(record.liveMinutes || null)))
+    && Array.isArray(job.partialMinutes.evidenceSnapshot) && job.partialMinutes.evidenceSnapshot.every(segment=>record.segments.some(current=>current.id===segment.id && current.revision===segment.revision))){
+    // Preserve validated windows before final scheduling cancels their in-flight live job.
+    const partial=job.partialMinutes;
+    const baselineParts=new Set((liveBaseline(record)?.evidenceSnapshot || []).map(segment=>`${segment.id}:${segment.revision}`)).size;
+    validateMinutes(partial,partial.evidenceSnapshot,undefined,{aggregate:true,aggregateParts:Math.max(1,baselineParts+(job.progress?.completed || 0))});
+    record.liveMinutes={...structuredClone(partial),notesRevision:job.notesRevision,template:job.template};
+    job.status='cancelled';job.fence=null;job.snapshot=[];delete job.preview;delete job.partialMinutes;
+    if(job.mode==='model')autoNameRecord(record,partial.title);
+    emit(record,'minutes.live',{transcriptRevision:job.transcriptRevision});
+  }
   record.capture = 'sealed'; emit(record, 'capture.sealed'); finalize(record);
 }
 export function finalize(record) {

@@ -148,17 +148,25 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
     });
     if (jobClaim) {
       try {
-        let json = '', lastPublished = 0, previewStream;
+        let json = '', lastPublished = 0, previewStream, previewTimer, previewRuntime;
+        let publishing=Promise.resolve();
+        const publishPreview=()=>{
+          clearTimeout(previewTimer);previewTimer=undefined;lastPublished=Date.now();
+          const text=json,runtime=previewRuntime;
+          publishing=publishing.then(()=>repo.change(candidate.id,r=>updateMinutesPreview(r,jobClaim.id,jobClaim.fence,text,runtime)));
+          return publishing;
+        };
         const generate=providers.minutes || (realtimeEnabled(config) && jobClaim.mode !== 'extractive' ? (job,env,opts)=>generateRealtimeMinutes(repo,candidate.id,job,env,opts,providers.realtimeFactory) : doubaoAudioEnabled(config) && jobClaim.mode !== 'extractive' ? (job,env,opts)=>generateDoubaoAudioMinutes(repo,candidate.id,job,env,opts) : generateMinutes);
         const processMinutes=config.RECORD_MINUTES_PIPELINE_ENABLED==='false' ? async(job,env,opts)=>({...await meteredMinutesCall(repo,candidate.id,job,generate,job,env,opts),usageRecorded:true}) : (job,env,opts)=>runMinutesPipeline(repo,candidate.id,job,env,generate,opts);
-        const result = await telemetry.measure('minutes.complete', {recordId:candidate.id, jobId:jobClaim.id, revision:jobClaim.transcriptRevision, queueMs:Date.now()-Date.parse(jobClaim.createdAt)}, () => processMinutes(jobClaim, config,{ onDelta: async (delta, runtime, stream) => {
-          if(stream!==previewStream){json='';lastPublished=0;previewStream=stream;}
+        let result;
+        try { result = await telemetry.measure('minutes.complete', {recordId:candidate.id, jobId:jobClaim.id, revision:jobClaim.transcriptRevision, queueMs:Date.now()-Date.parse(jobClaim.createdAt)}, () => processMinutes(jobClaim, config,{ onDelta: async (delta, runtime, stream) => {
+          if(stream!==previewStream){clearTimeout(previewTimer);previewTimer=undefined;json='';lastPublished=0;previewStream=stream;}
           if(!json)telemetry.event('minutes.first-text',{recordId:candidate.id,jobId:jobClaim.id,durationMs:runtime?.firstTokenMs});
-          json += delta;
-          if (Date.now() - lastPublished < 200) return;
-          lastPublished = Date.now();
-          await repo.change(candidate.id, r => updateMinutesPreview(r, jobClaim.id, jobClaim.fence, json, runtime));
-        } }));
+          json += delta;previewRuntime=runtime;
+          const remaining=200-(Date.now()-lastPublished);
+          if(remaining<=0)await publishPreview();
+          else if(!previewTimer)previewTimer=setTimeout(()=>{void publishPreview().catch(()=>{});},remaining);
+        } })); } finally {clearTimeout(previewTimer);await publishing;}
         telemetry.event('minutes.usage', {recordId:candidate.id, jobId:jobClaim.id, tokens:result.usageTokens, firstTextMs:result.runtime?.firstTokenMs});
         const committed=await telemetry.measure('minutes.commit',{recordId:candidate.id,jobId:jobClaim.id},()=>repo.change(candidate.id,r=>{commitMinutes(r,jobClaim.id,result,jobClaim.fence);return r.jobs.find(j=>j.id===jobClaim.id).status==='completed';}));
         if(committed)telemetry.event('minutes.committed',{recordId:candidate.id,jobId:jobClaim.id,revision:jobClaim.transcriptRevision});

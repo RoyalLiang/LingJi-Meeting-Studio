@@ -183,3 +183,31 @@ test('meeting duration includes resumed audio once while parallel and empty sour
   for (let sequence = 0; sequence < 4; sequence++) acknowledge(record, { sessionId: resumed.sessionId, sourceId: resumed.id, epoch: resumed.epoch, sequence, sampleOffset: sequence * 240000, sampleCount: 240000, sampleRate: 16000, digest: `resumed-${sequence}`, object: 'fixture' });
   assert.match(await renderAudioDuration(publicRecord(record)), /^23:00 音频/);
 });
+
+test('ending a meeting keeps original audio unloaded until the user opens playback',async()=>{
+ const {build}=await import('esbuild'),{createRequire}=await import('node:module'),React=await import('react'),{renderToStaticMarkup}=await import('react-dom/server');
+ const compiled=await build({entryPoints:['apps/web/src/components/RecordingPlayback.tsx'],bundle:true,write:false,platform:'node',format:'cjs',jsx:'automatic',loader:{'.css':'empty'},external:['react','react/jsx-runtime','react-dom']});
+ const module={exports:{}};vm.runInNewContext(compiled.outputFiles[0].text,{module,exports:module.exports,require:createRequire(import.meta.url),console});
+ const html=renderToStaticMarkup(React.createElement(module.exports.RecordingPlayback,{record:{...record,id:'fixture'}}));
+ assert.match(html,/打开原音回放/);assert.doesNotMatch(html,/<audio|正在读取录音波形/);
+});
+
+
+test('tail byte ranges read only intersecting original audio chunks',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'tts-range-tail-')),app=await createRecordServer({root,databaseUrl:'',port:0});
+ try{
+ const addr=await app.start(),base=`http://127.0.0.1:${addr.port}/api`;
+ const registration=await fetch(base+'/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'synthetic-audio@example.test',password:'synthetic-test-password'})});
+ const user=await registration.json(),headers={Cookie:registration.headers.get('set-cookie').split(';')[0],'X-CSRF-Token':user.csrf,'Content-Type':'application/json'};
+ const post=async(path,body)=>{const res=await fetch(base+path,{method:'POST',headers,body:JSON.stringify(body)});assert.ok(res.ok,`${path}:${res.status}`);return res.json();};
+ const r=await post('/records',{retainAudio:true}),s=await post(`/records/${r.id}/sources`,{kind:'microphone'}),pcm=Buffer.alloc(3200,5),count=20;
+ for(let sequence=0;sequence<count;sequence++)await post(`/records/${r.id}/audio`,{sessionId:s.sessionId,sourceId:s.id,epoch:s.epoch,sequence,sampleOffset:sequence*1600,sampleCount:1600,sampleRate:16000,digest:digest(pcm),pcm:pcm.toString('base64')});
+ await post(`/records/${r.id}/seal`,{sources:[{sessionId:s.sessionId,sourceId:s.id,epoch:s.epoch,lastSequence:count-1}]});
+ const read=app.repo.readAudio.bind(app.repo);let calls=0;app.repo.readAudio=async object=>{calls++;return read(object);};
+ const url=base+`/records/${r.id}/audio/${s.id}`,last=44+count*pcm.length-1;
+ const range=await fetch(url,{headers:{...headers,Range:`bytes=${last-1}-${last}`}});assert.equal(range.status,206);assert.equal((await range.arrayBuffer()).byteLength,2);const rangeReads=calls;
+ calls=0;const wave=await fetch(url+'?waveform=1',{headers});assert.equal(wave.status,200);await wave.json();
+
+ assert.equal(rangeReads,1,'tail seeking must not read preceding PCM chunks');
+ }finally{await app.stop();await rm(root,{recursive:true,force:true});}
+});

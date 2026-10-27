@@ -7,6 +7,7 @@ use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindow};
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Report {
     pub recording: bool,
+    pub microphone_on: bool,
     pub paused: bool,
     pub can_resume: bool,
     pub busy: bool,
@@ -129,7 +130,7 @@ pub fn prepare(app: &AppHandle, client: &Client) -> Result<(), String> {
             ),
         )
         .title("聆记 · 正在记录")
-        .inner_size(416.0, 42.0)
+        .inner_size(448.0, 42.0)
         .visible(false)
         .resizable(false)
         .decorations(false)
@@ -294,6 +295,7 @@ pub fn recording_widget_action(
         return Err("recording operation in progress".into());
     }
     let event = match action.as_str() {
+        "microphone" if report.recording || (report.paused && report.can_resume) => "status-microphone",
         "pause" if report.recording => "status-pause",
         "pause" if report.paused && report.can_resume => "status-resume",
         "finish" if report.recording || report.paused => {
