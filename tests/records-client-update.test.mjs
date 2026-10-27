@@ -204,3 +204,18 @@ test('authenticated update barrier exposes only owner stop and ACK metadata acro
     assert.deepEqual(await request('/client/update-barrier'), { protocol: 1, records: [] });
   } finally { await api.stop(); await rm(root, { recursive: true, force: true }); }
 });
+
+test('one explicit update action checks, downloads and installs once through the existing safety barrier',async()=>{
+ const h=engineFixture();h.engine.apply({phase:'idle',currentVersion:'1.0.0',downloaded:0});await Promise.all([h.engine.downloadAndInstall(),h.engine.downloadAndInstall()]);
+ assert.equal(h.calls.filter(([name])=>name==='update_check').length,1);assert.equal(h.calls.filter(([name])=>name==='update_download').length,1);assert.equal(h.calls.filter(([name])=>name==='update_install').length,1);assert.deepEqual(h.freezes,[true,false]);
+ const unsafe=engineFixture();unsafe.activity({...idle,recording:true});await unsafe.engine.downloadAndInstall();assert.equal(unsafe.calls.some(([name])=>name==='update_install'),false);
+});
+
+test('settings update action follows automatic-download readiness and keeps recording blockers',async()=>{
+ const {transform}=await import('esbuild');const source=await readFile(new URL('../apps/web/src/components/ClientUpdates.tsx',import.meta.url),'utf8');const code=(await transform(source.replace(/^import .*$/gm,''),{loader:'tsx',format:'cjs'})).code;
+ const box={module:{exports:{}},updatePolicy,preferencesForPolicy,DownloadSimple:()=>null,Select:()=>null,Button:props=>({tag:'button',props})};box.React={createElement:(tag,props,...children)=>typeof tag==='function'?tag({...props,children}):({tag,props,children})};vm.runInNewContext(code,box);
+ for(const [background,phase,reason,disabled,label] of [[false,'available','',false,'下载并更新'],[true,'available','',true,'立即更新'],[true,'downloading','',true,'立即更新'],[true,'ready','',false,'立即更新'],[true,'ready','正在录音',true,'立即更新']]){
+  let clicked=0;const tree=box.module.exports.ClientUpdateActions({updates:{native:true,status:{phase,currentVersion:'1'},settings:preferencesForPolicy(background?'background':'check'),installReason:reason,update:()=>{clicked++;}}});
+  const button=tree.children.flat().find(x=>x?.tag==='button');assert.equal(button.props.disabled,disabled);assert.ok(button.props.children.includes(label));if(!disabled){button.props.onClick();assert.equal(clicked,1);}
+ }
+});

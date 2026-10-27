@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { memo, useEffect, useRef, useState, type RefObject, type PointerEvent as ReactPointerEvent } from 'react';
 import { Play, Pause, ArrowCounterClockwise, ArrowClockwise, Gauge } from '@phosphor-icons/react';
 import { Button } from './ui';
 import { Select } from './Select';
@@ -19,9 +19,10 @@ function clock(value: number) {
     : `${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
-const SavedWaveform=memo(function SavedWaveform({peaks}:{peaks:number[]}) {
-  const bars=peaks.map((peak,index)=><rect key={index} x={index*4} y={24-Math.max(2,Math.sqrt(peak)*42)/2} width="2" height={Math.max(2,Math.sqrt(peak)*42)} rx="1"/>);
-  return <><svg className="player-waveform" viewBox="0 0 768 48" preserveAspectRatio="none" aria-hidden="true">{bars}</svg><span className="player-wave-fill"><span className="player-wave-reveal"><svg className="player-waveform player-waveform-played" viewBox="0 0 768 48" preserveAspectRatio="none" aria-hidden="true">{bars}</svg></span></span></>;
+const SavedWaveform=memo(function SavedWaveform({peaks,reveal,played}:{peaks:number[];reveal:RefObject<HTMLSpanElement|null>;played:RefObject<SVGSVGElement|null>}) {
+  const path=peaks.map((peak,index)=>{const height=Math.max(2,Math.sqrt(peak)*42);return `M${index*4+1} ${25-height/2}v${height-2}`;}).join('');
+  const bars=<path d={path} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>;
+  return <><svg className="player-waveform" viewBox="0 0 768 48" preserveAspectRatio="none" aria-hidden="true">{bars}</svg><span className="player-wave-fill"><span className="player-wave-reveal" ref={reveal}><svg className="player-waveform player-waveform-played" ref={played} viewBox="0 0 768 48" preserveAspectRatio="none" aria-hidden="true">{bars}</svg></span></span></>;
 });
 
 export function AudioPlayer(props: Props) {
@@ -35,11 +36,16 @@ function PlaybackControls({ sources, durationMs = 0 }: Props) {
   const [playing, setPlaying] = useState(false), [starting, setStarting] = useState(false), [error, setError] = useState('');
   const [time, setTime] = useState(0), [duration, setDuration] = useState(durationMs / 1000), [rate, setRate] = useState(1);
   const [peaks, setPeaks] = useState<number[]>([]), [waveState, setWaveState] = useState('loading');
-  const timeline=useRef<HTMLDivElement>(null), advancing=useRef(false);
+  const reveal=useRef<HTMLSpanElement>(null), played=useRef<SVGSVGElement>(null), cursor=useRef<HTMLSpanElement>(null), positionLabel=useRef<HTMLSpanElement>(null), advancing=useRef(false);
+  const [progressing,setProgressing]=useState(false), [scrubbing,setScrubbing]=useState(false);
   const [progressClock]=useState(()=>new PlaybackClock());
   function paint(position=progressClock.read(transport.time,performance.now(),advancing.current&&transport.playing,transport.leader?.playbackRate || 1)) {
     const length=transport.duration;
-    timeline.current?.style.setProperty('--played',`${length ? Math.max(0,Math.min(100,position/length*100)) : 0}%`);
+    const percent=length ? Math.max(0,Math.min(100,position/length*100)) : 0;
+    if(reveal.current)reveal.current.style.transform=`translateX(${percent-100}%)`;
+    if(played.current)played.current.style.transform=`translateX(${100-percent}%)`;
+    if(cursor.current)cursor.current.style.transform=`translateX(min(${percent}%,calc(100% - 1px)))`;
+    if(positionLabel.current)positionLabel.current.style.transform=`translateX(clamp(0px,calc(${percent}% - 30px),calc(100% - 60px)))`;
   }
   const [scrub] = useState(() => new PlaybackScrub(transport, position=>{progressClock.reset(position,performance.now());paint(position);setTime(position);}));
 
@@ -53,6 +59,7 @@ function PlaybackControls({ sources, durationMs = 0 }: Props) {
       .catch(() => { if (!abort.signal.aborted) setWaveState('error'); });
     return () => abort.abort();
   }, [sourceUrls]);
+  useEffect(()=>{paint();},[peaks]);
 
   const sync = () => {
     transport.syncLevels();
@@ -61,14 +68,15 @@ function PlaybackControls({ sources, durationMs = 0 }: Props) {
     if (!scrub.active) { setTime(transport.time); paint(); }
   };
   useEffect(() => {
-    if (!playing) return;
+    if (!playing || !progressing) return;
     let frame = 0;
     const update = () => { if (!scrub.active) paint(); frame = requestAnimationFrame(update); };
     frame = requestAnimationFrame(update);
     return () => cancelAnimationFrame(frame);
-  }, [playing, transport, scrub]);
+  }, [playing, progressing, transport, scrub]);
   const mediaState=(media:HTMLAudioElement, progressing:boolean, seek=false)=>{
-    if(media===transport.leader){advancing.current=progressing;if(seek)progressClock.reset(transport.time,performance.now());}
+    progressing=progressing && !media.paused && !media.ended && media.readyState>=media.HAVE_FUTURE_DATA;
+    if(media===transport.leader){advancing.current=progressing;setProgressing(progressing);if(seek)progressClock.reset(transport.time,performance.now());}
     sync();
   };
   const run = async (action: () => Promise<unknown>) => {
@@ -86,9 +94,11 @@ function PlaybackControls({ sources, durationMs = 0 }: Props) {
     await transport.play();
   });
   const pause = () => { operation.current++; transport.pause(); setStarting(false); sync(); };
-  const beginScrub = () => { operation.current++; setStarting(false); scrub.begin(); sync(); };
+  const beginScrub = () => { operation.current++; setStarting(false); scrub.begin(); setScrubbing(scrub.active); sync(); };
   const finishScrub = (commit = true) => {
-    if (scrub.finish(commit)) void run(() => transport.play());
+    const resume=scrub.finish(commit);
+    setScrubbing(false);
+    if (resume) void run(() => transport.play());
     else sync();
   };
   const previewPointer = (event: ReactPointerEvent<HTMLInputElement>) => {
@@ -96,7 +106,7 @@ function PlaybackControls({ sources, durationMs = 0 }: Props) {
     scrub.move(waveformSeekTime(event.clientX, rect.left, rect.width, duration)); sync();
   };
 
-  return <div className="audio-player" role="group" aria-label="原音播放">
+  return <div className="audio-player" data-animating={playing && progressing || scrubbing} role="group" aria-label="原音播放">
     {sources.map((source, index) => <audio key={source.id} ref={element => { audio.current[index] = element; }}
       preload="none" src={source.src} aria-label={source.label}
       onLoadedMetadata={() => { sync(); setError(''); }} onDurationChange={sync}
@@ -104,11 +114,11 @@ function PlaybackControls({ sources, durationMs = 0 }: Props) {
       onWaiting={event=>mediaState(event.currentTarget,false)} onSeeking={event=>mediaState(event.currentTarget,false,true)}
       onSeeked={event=>mediaState(event.currentTarget,transport.playing,true)} onPause={event=>mediaState(event.currentTarget,false)} onEnded={event=>mediaState(event.currentTarget,false,true)}
       onError={() => { pause(); setError('原音加载失败，请检查网络与留存状态后重试。'); }}/>) }
-    <div className="player-timeline" ref={timeline}>
+    <div className="player-timeline">
       <div className="player-wave-track" data-waveform-state={waveState}>
-        {peaks.length > 0 ? <SavedWaveform peaks={peaks}/> : <span className="player-wave-status" role="status">{waveState === 'error' ? '波形暂不可用，仍可定位播放' : '正在读取录音波形…'}</span>}
-        <span className="player-wave-progress" aria-hidden="true"><span className="player-wave-cursor"/></span>
-        <span className="player-wave-position" aria-hidden="true"><span>{clock(time)}</span></span>
+        {peaks.length > 0 ? <SavedWaveform peaks={peaks} reveal={reveal} played={played}/> : <span className="player-wave-status" role="status">{waveState === 'error' ? '波形暂不可用，仍可定位播放' : '正在读取录音波形…'}</span>}
+        <span className="player-wave-progress" aria-hidden="true"><span className="player-wave-cursor" ref={cursor}/></span>
+        <span className="player-wave-position" ref={positionLabel} aria-hidden="true"><span>{clock(time)}</span></span>
     <input className="player-seek" type="range" min={0} max={duration || 1} step={0.1} value={Math.min(time, duration || 0)} disabled={!duration}
       aria-label="录音进度" aria-valuetext={duration ? `${clock(time)}，共 ${clock(duration)}` : '正在读取录音时长'}
       onPointerDown={event => { if (!event.isPrimary || event.button !== 0) return; event.preventDefault(); event.currentTarget.focus({preventScroll:true}); event.currentTarget.setPointerCapture(event.pointerId); beginScrub(); previewPointer(event); }}

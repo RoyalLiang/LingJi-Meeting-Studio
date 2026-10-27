@@ -258,3 +258,27 @@ test('resumed and late sources expose global WAV and waveform positions with bou
  }
  }finally{await app.stop();await rm(root,{recursive:true,force:true});}
 });
+
+test('waveform cache survives restart, stays private, invalidates by source and clears on deletion',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'tts-wave-cache-'));let app=await createRecordServer({root,databaseUrl:'',port:0});
+ try{
+ let addr=await app.start(),base=`http://127.0.0.1:${addr.port}/api`;
+ const credentials={email:'wave-cache@example.test',password:'synthetic-test-password'};
+ const authorize=async(action)=>{const res=await fetch(base+'/auth/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(credentials)});assert.equal(res.status,200);const user=await res.json();return {Cookie:res.headers.get('set-cookie').split(';')[0],'X-CSRF-Token':user.csrf,'Content-Type':'application/json'};};
+ let headers=await authorize('register');
+ const post=async(path,body)=>{const res=await fetch(base+path,{method:'POST',headers,body:JSON.stringify(body)});assert.ok(res.ok);return res.json();};
+ const r=await post('/records',{retainAudio:true}),source=await post(`/records/${r.id}/sources`,{kind:'microphone'}),pcm=Buffer.alloc(3200,5);
+ for(let sequence=0;sequence<20;sequence++)await post(`/records/${r.id}/audio`,{sessionId:source.sessionId,sourceId:source.id,epoch:source.epoch,sequence,sampleOffset:sequence*1600,sampleCount:1600,sampleRate:16000,digest:digest(pcm),pcm:pcm.toString('base64')});
+ await post(`/records/${r.id}/seal`,{sources:[{sourceId:source.id,epoch:source.epoch,lastSequence:19}]});
+ let reads=0;const read=app.repo.readAudio.bind(app.repo);app.repo.readAudio=async object=>{reads++;return read(object);};
+ const wave=async()=>{const res=await fetch(base+`/records/${r.id}/audio/${source.id}?waveform=1`,{headers});assert.equal(res.status,200);return res.json();};
+ const before=publicRecord(await app.repo.get(r.id));const first=await wave();assert.equal(reads,20);reads=0;assert.deepEqual(await wave(),first);assert.equal(reads,0);
+ const view=await(await fetch(base+`/records/${r.id}`,{headers})).json();assert.equal('waveforms' in view,false);assert.equal(view.cursor,before.cursor);
+ await app.stop();app=await createRecordServer({root,databaseUrl:'',port:0});addr=await app.start();base=`http://127.0.0.1:${addr.port}/api`;headers=await authorize('login');
+ const afterRead=app.repo.readAudio.bind(app.repo);app.repo.readAudio=async object=>{reads++;return afterRead(object);};assert.deepEqual(await wave(),first);assert.equal(reads,0,'warm cache must not read PCM after restart');
+ await app.repo.change(r.id,record=>{record.waveforms[source.id].value.peaks[0]='corrupt';});await wave();assert.equal(reads,20,'invalid cached values must be rebuilt');reads=0;
+ await app.repo.change(r.id,record=>{record.sources[0].timelineOffsetMs=1000;});assert.equal((await wave()).samples,48000);assert.equal(reads,20,'changed source timing must invalidate cache');
+ const removed=await fetch(base+`/records/${r.id}`,{method:'DELETE',headers});assert.equal(removed.status,200);assert.equal((await app.repo.get(r.id)).waveforms,undefined);
+ assert.equal((await fetch(base+`/records/${r.id}/audio/${source.id}?waveform=1`,{headers})).status,410);
+ }finally{await app.stop();await rm(root,{recursive:true,force:true});}
+});

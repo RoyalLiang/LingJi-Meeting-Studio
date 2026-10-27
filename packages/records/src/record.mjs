@@ -314,7 +314,7 @@ export function recordingDurationMs(record) {
   return duration;
 }
 export function publicRecord(record) {
-  const { owner, events, chunks, shares, jobs, minutesHistory, learning, ...rest } = record;
+  const { owner, events, chunks, shares, jobs, minutesHistory, learning, waveforms, ...rest } = record;
   const errorCodes = [...new Set([...record.sources.filter(source => source.asr?.state === 'failed').map(source => source.asr.error), ...chunks.filter(chunk => chunk.state !== 'done').map(chunk => chunk.error)].filter(Boolean))].sort();
   const transcriptionIssue = errorCodes.length ? {code: errorCodes[0], identity: digest(JSON.stringify([record.generation, record.transcriptionRetryVersion || 0, errorCodes]))} : undefined;
   return { ...rest, ...(transcriptionIssue ? {transcriptionIssue} : {}), durationMs: recordingDurationMs(record),

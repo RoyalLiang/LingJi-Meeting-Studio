@@ -44,5 +44,5 @@ export function useClientUpdates(activity: Omit<UpdateActivity, 'queueBusy' | 'p
   }, []);
   useEffect(() => { void controller.current?.activityChanged().then(setInstallReason).catch(() => setInstallReason('无法确认录音与补传状态，请稍后重试')); }, [activity.authenticated, activity.recording, activity.paused, activity.busy, settings]);
   function saveSettings(next: UpdatePreferences) { const normalized = normalizeUpdatePreferences(next); settingsRef.current = normalized; setSettings(normalized); void controller.current?.preferencesChanged(Date.now()); try { localStorage.setItem(preferenceKey, JSON.stringify(normalized)); } catch { /* Preferences still apply to this window. */ } }
-  return { native: isTauri(), status, settings, installReason, saveSettings, check: () => controller.current?.check(), download: () => controller.current?.download(), install: () => controller.current?.install() };
+  return { native: isTauri(), status, settings, installReason, saveSettings, check: () => controller.current?.check(), download: () => controller.current?.download(), install: () => controller.current?.install(), update: () => controller.current?.downloadAndInstall() };
 }

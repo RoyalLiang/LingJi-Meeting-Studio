@@ -104,3 +104,12 @@ test('waveform failure stays explicit and leaves playback/seek available', async
     assert.ok(fixture.find(node=>node.props['aria-label']==='播放原音'));
   } finally {fixture.dispose();}
 });
+
+test('parallel waveform scans keep exact bins, offsets and an eight-buffer read limit',async()=>{
+ let seed=71;const random=()=>{seed=(seed*1664525+1013904223)>>>0;return seed;};
+ const chunks=[],objects=[];let offset=0;
+ for(let i=0;i<31;i++){const count=1+random()%1234,data=Buffer.alloc(count*2);for(let n=0;n<count;n++)data.writeInt16LE((random()%65536)-32768,n*2);chunks.push({object:i,sampleOffset:offset,sampleCount:count});objects.push(data);offset+=count;}
+ const leading=333,samples=leading+offset,expected=Array(192).fill(0);for(const c of chunks)for(let i=0;i<c.sampleCount;i++){const bin=Math.floor((leading+c.sampleOffset+i)*192/samples);expected[bin]=Math.max(expected[bin],Math.abs(objects[c.object].readInt16LE(i*2))/32768);}
+ let active=0,max=0;const actual=await recordingWaveform(chunks,async object=>{active++;max=Math.max(max,active);await new Promise(r=>setImmediate(r));active--;return objects[object];},()=>false,leading);
+ assert.deepEqual(actual.peaks,expected);assert.equal(actual.samples,samples);assert.equal(max,8);
+});

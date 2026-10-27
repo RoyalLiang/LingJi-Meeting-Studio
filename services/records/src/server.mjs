@@ -1,5 +1,5 @@
 import { manualMinutesContent } from '../../../packages/records/src/minutes-quality.mjs';
-import { recordingWaveform } from './waveform.mjs';
+import { recordingWaveform, waveformKey, validWaveform } from './waveform.mjs';
 import { doubaoAudioEnabled } from './config.mjs';
 import { audioMinutesEnabled } from './config.mjs';
 import { testDoubaoAudio } from './doubao-audio-minutes.mjs';
@@ -194,8 +194,18 @@ export async function createRecordServer(options = {}) {
         const leadingSamples = Math.round((source.timelineOffsetMs || 0) * 16);
         requireThat(Number.isSafeInteger(leadingSamples) && leadingSamples >= 0, 'audio_unavailable', 404);
         if (url.searchParams.get('waveform') === '1') {
+          const key = waveformKey(chunks,leadingSamples), samples = leadingSamples + sampleOffset;
+          const cached = record.waveforms?.[source.id];
+          if (cached?.key === key && validWaveform(cached.value,samples)) { send(res,200,cached.value); return; }
           const waveform = await recordingWaveform(chunks, object => repo.readAudio(object), () => res.destroyed || res.writableEnded, leadingSamples);
-          if (waveform) send(res, 200, waveform);
+          if (waveform) {
+            await changeOwned(id,user,r=>{
+              const currentSource = r.sources.find(s=>s.id===source.id), currentChunks = r.chunks.filter(c=>c.sourceId===source.id).sort((a,b)=>a.sequence-b.sequence);
+              requireThat(!r.deleted && r.retainAudio && !r.audioPurged && !r.audioCleanup && Date.parse(r.deleteAt)>Date.now() && currentSource?.stopped && currentSource.watermark===currentSource.lastSequence && waveformKey(currentChunks,Math.round((currentSource.timelineOffsetMs||0)*16))===key,'audio_unavailable',404);
+              r.waveforms ||= {}; r.waveforms[source.id] = {key,value:waveform}; return true;
+            });
+            if (!res.destroyed && !res.writableEnded) send(res, 200, waveform);
+          }
           return;
         }
         const leadingBytes = leadingSamples * 2;
@@ -353,7 +363,7 @@ export async function createRecordServer(options = {}) {
         emit(r, 'record.updated'); return publicRecord(r);
       });
       else if (action === '' && req.method === 'DELETE') result = await changeOwned(id, user, r => {
-        r.deleted = true; r.generation++; r.title = '已删除'; r.segments = []; r.notes = ''; r.minutes = null; r.liveMinutes = null; r.minutesHistory = []; r.insights = null; r.jobs = []; r.shares = []; r.cleanup = 'pending';
+        r.deleted = true; delete r.waveforms; r.generation++; r.title = '已删除'; r.segments = []; r.notes = ''; r.minutes = null; r.liveMinutes = null; r.minutesHistory = []; r.insights = null; r.jobs = []; r.shares = []; r.cleanup = 'pending';
         emit(r, 'record.deleted'); return { deleted: true, cleanup: r.cleanup };
       });
       else if (action === 'shares' && req.method === 'POST') {
