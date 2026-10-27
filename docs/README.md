@@ -1,10 +1,8 @@
 # 聆记文档导航
 
-[v0.1.30 纪要保留与紧凑阅读](releases/v0.1.30-preview.md)正在合并验证，包含另一会话的Linux及发布流程更新；v0.1.28原生冒烟失败且未发布安装包。
+[v0.1.30 会议修复与三平台安装包](releases/v0.1.30-preview.md)已发布；[本轮回执](evidence/minutes-fixes-v0.1.30-2026-10-27.md)记录五项CI、三个安装器及验证边界。v0.1.29失败标签保留。
 
-[v0.1.29 发布整理与 Linux DEB](releases/v0.1.29-preview.md) 正在准备后台发布。
-
-[v0.1.28](releases/v0.1.28-preview.md)失败标签保留，本轮修正见v0.1.30。
+[v0.1.28](releases/v0.1.28-preview.md)未发布安装包，修正已随v0.1.30交付。
 
 [v0.1.27 推理强度、回放与状态优化](releases/v0.1.27-preview.md) 已发布；[核验回执](evidence/preview-v0.1.27-2026-10-27.md) 记录四项 CI、十附件与来源验证，以及真实模型和硬件边界。
 

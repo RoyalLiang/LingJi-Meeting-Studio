@@ -298,7 +298,7 @@ jobs:
       - name: Install Linux build and test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev librsvg2-dev libasound2-dev libpipewire-0.3-dev libspa-0.2-dev xvfb xauth
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev libpipewire-0.3-dev libspa-0.2-dev xvfb xauth
       - run: rustup toolchain install 1.92.0 --profile minimal && rustup default 1.92.0
       - run: npm ci
       - run: node --test tests/records-preview-release.test.mjs tests/records-local-asr.test.mjs tests/records-release-source.test.mjs
