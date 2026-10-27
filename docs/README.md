@@ -1,8 +1,8 @@
 # 聆记文档导航
 
-[v0.1.30 发布整理与 Linux DEB](releases/v0.1.30-preview.md) 正在准备后台发布；v0.1.29 验证未通过，未公开安装包。
+[v0.1.30 发布整理与 Linux DEB](releases/v0.1.30-preview.md) 已发布；[核验回执](evidence/preview-v0.1.30-2026-10-27.md)记录五项 CI、三安装包、五个下载入口与源码核对。
 
-[v0.1.28 纪要保留与紧凑阅读](releases/v0.1.28-preview.md) 正在完成发布前验证。
+v0.1.28 与 v0.1.29 的失败标签保留，相关主线改动与发布修复由 v0.1.30 的五项 CI 验证。
 
 [v0.1.27 推理强度、回放与状态优化](releases/v0.1.27-preview.md) 已发布；[核验回执](evidence/preview-v0.1.27-2026-10-27.md) 记录四项 CI、十附件与来源验证，以及真实模型和硬件边界。
 
@@ -14,7 +14,7 @@
 
 | 目标 | 文档 |
 | --- | --- |
-| 安装桌面版、核对当前验证范围 | [v0.1.26 发布说明](releases/v0.1.26-preview.md) · [v0.1.24 交付证据](evidence/preview-v0.1.24-2026-10-26.md) |
+| 安装桌面版、核对当前验证范围 | [v0.1.30 安装说明](releases/v0.1.30-preview.md) |
 | 处理 macOS 安装与系统信任提示 | [macOS 安装与信任](releases/macos-trust.md) |
 | 使用内置 SenseVoice、选择云端转录或外部 FunASR | [本地转录与高级配置](engineering/funasr.md) |
 | 配置豆包音频纪要 | [两种音频模式与权限](engineering/doubao-audio.md) |

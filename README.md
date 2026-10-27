@@ -19,9 +19,9 @@
   <a href="https://github.com/RoyalLiang/LingJi-Meeting-Studio/issues">问题反馈</a>
 </p>
 
-聆记是一个会议记录工作台，把录音、转录、AI 纪要和行动候选放在同一条可回溯的记录中。可以在浏览器中使用，也可以安装 Windows 或 macOS 客户端，接入麦克风与系统音频。
+聆记是一个会议记录工作台，把录音、转录、AI 纪要和行动候选放在同一条可回溯的记录中。可以在浏览器中使用，也可以安装 Windows、macOS 或 Linux 客户端，接入麦克风与系统音频。
 
-当前提供预览版。最近一次已验证发布为 [v0.1.23](docs/evidence/preview-v0.1.23-2026-10-26.md)；下载、校验文件及各版本验证范围以 [Releases](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases) 为准。
+当前提供预览版。最近一次已验证发布为 [v0.1.30](docs/evidence/preview-v0.1.30-2026-10-27.md)；下载、正文校验值及各版本验证范围以 [Releases](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases) 为准。
 
 ## 主要能力
 
@@ -37,28 +37,29 @@
 
 ![主题纪要、时间线与原文引用](docs/evidence/minutes-quality-2026-10-23/native-timeline-dark.png)
 
-原生客户端截图，使用合成会议数据展示纪要阅读和来源引用。安装界面见[当前发布回执](docs/evidence/preview-v0.1.23-2026-10-26.md)。
+原生客户端截图，使用合成会议数据展示纪要阅读和来源引用。安装界面历史示例见 [v0.1.23 回执](docs/evidence/preview-v0.1.23-2026-10-26.md)，当前安装验证见 [v0.1.30 回执](docs/evidence/preview-v0.1.30-2026-10-27.md)。
 
 ## 快速开始
 
 ### 安装桌面测试版
 
-在 [Releases](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases) 选择同一版本的安装包、安装说明和校验文件。
+在 [Releases](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases) 选择同一版本的成品安装包。版本改动、安装步骤和 SHA-256 在发布正文中；Source code (zip / tar.gz) 为该标签源码。验证报告保留在 Actions，附件不再混入测试 JSON、校验文件或安装文档。
 
-| 平台 | 系统要求 | 安装文件 | 校验文件 |
-| --- | --- | --- | --- |
-| Windows x64 | Windows 10 / 11、WebView2 | `Lingji-版本-windows-x64-setup.exe` | `SHA256SUMS-windows-x64.txt` |
-| macOS Apple Silicon | macOS 14.6 或更新版本 | `Lingji-版本-macos-arm64.dmg` | `SHA256SUMS.txt` |
+| 平台 | 系统要求 | 安装文件 |
+| --- | --- | --- |
+| Windows x64 | Windows 10 / 11、WebView2 | `Lingji-版本-windows-x64-setup.exe` |
+| macOS Apple Silicon | macOS 14.6 或更新版本 | `Lingji-版本-macos-arm64.dmg` |
+| Linux x64 | 已验证 Ubuntu 24.04，其他发行版待验 | `Lingji-版本-linux-amd64.deb` |
 
-1. 核对 SHA256 后运行安装器，或打开 DMG 将应用拖入“应用程序”。
-2. Windows 默认勾选“安装本地 SenseVoice 离线转录模型”，可取消；macOS 包含本地转录模型。
+1. 按 Release 正文核对 SHA-256；Windows 运行 EXE，macOS 打开 DMG 并拖入“应用程序”，Linux 在下载目录运行 `sudo apt install ./Lingji-版本-linux-amd64.deb`。
+2. Windows 默认勾选“安装本地 SenseVoice 离线转录模型”，可取消；macOS 和 Linux 包含本地转录模型。
 3. 首次打开后进入**设置 → 模型与转录服务**，保存并测试所需服务配置。
 4. 点击**快速记录**，选择音源并完成采集授权，即可开始。
 
 本地模型负责离线转录；AI 纪要使用所配置的纪要模型。Windows 取消模型后，若没有旧模型，需配置云端转录；原位置升级可保留已有模型。取消勾选只减少安装后的模型文件，完整安装包的下载大小不变。详见[本地转录与高级服务配置](docs/engineering/funasr.md)。
 
 > [!IMPORTANT]
-> 当前 Windows 包未签名，macOS 包为临时签名且未公证。安装前请核对发布页的校验文件；macOS 的系统提示处理方式见[安装与信任说明](docs/releases/macos-trust.md)。实体 Windows 声卡、长会议与干净机器的验收范围见对应版本回执。
+> 当前 Windows 包未签名，macOS 包为临时签名且未公证。安装前请核对发布正文的 SHA-256；macOS 的系统提示处理方式见[安装与信任说明](docs/releases/macos-trust.md)。实体设备、长会议与干净机器的验收范围见对应版本回执。Linux PipeWire 系统音频与实体采音仍需目标设备验收，关闭窗口进入退出确认流程，不提供托盘常驻。
 
 ### 在本机启动浏览器工作台
 
