@@ -18,12 +18,13 @@ export function emit(record, type, payload = {}) {
   record.events = record.events.slice(-1000);
 }
 export function createRecord(owner, input = {}) {
+  requireThat(input.language === undefined || (typeof input.language === 'string' && /^(?:auto|[a-z]{2,3}(?:-[A-Za-z]{2,8})?)$/u.test(input.language)), 'invalid_recognition_language', 400);
   const days = Number(input.retentionDays ?? 30);
   requireThat([1, 7, 30, 90].includes(days), 'invalid_retention', 400);
   const now = new Date().toISOString();
   const title=String(input.title || '').trim();
   const record = { id: randomUUID(), owner, kind: 'record', workspaceId: input.workspaceId || null, title: title.slice(0, 160) || '未命名会议', titleEdited:Boolean(title), ...(input.learningEnabled ? {learning:{enabled:true,status:'waiting'}} : {}),
-    language: input.language || 'zh', createdAt: now, updatedAt: now, cursor: '0', events: [], generation: 1,
+    language: input.language || 'auto', createdAt: now, updatedAt: now, cursor: '0', events: [], generation: 1,
     capture: 'idle', transcription: 'idle', sessions: [], sources: [], chunks: [], segments: [], transcriptRevision: 0,
     notes: '', notesRevision: 0, minutes: null, liveMinutes: null, realtimeAudioConsent: input.realtimeAudioConsent === true, autoMinutes: { enabled: input.autoMinutes === true, intervalSeconds: 60 }, minutesRevision: 0, minutesHistory: [], jobs: [], shares: [],
     retentionDays: days, retainAudio: input.retainAudio !== false, deleteAt: new Date(Date.now() + days * 86400000).toISOString(),
@@ -159,7 +160,8 @@ export function commitTranscriptBatch(record, keys, text, generation, model, met
   const source=record.sources.find(s=>s.id===chunks[0].sourceId && s.epoch===chunks[0].epoch);
   requireThat(source && chunks.at(-1).sequence <= source.watermark && typeof text === 'string' && text.length <= 8000, 'invalid_audio_batch', 409);
   if (text.trim()) record.segments.push({id:randomUUID(),revision:1,sourceId:source.id,chunkKey:keys[0],chunkKeys:[...keys],startMs:(source.timelineOffsetMs||0)+chunks[0].sampleOffset/16,
-    endMs:(source.timelineOffsetMs||0)+(chunks.at(-1).sampleOffset+chunks.at(-1).sampleCount)/16,text:text.trim(),speaker:'',translation:null,edited:false,transcriptProvider:metadata.provider || 'doubao-audio-only',modelVersion:model});
+    endMs:(source.timelineOffsetMs||0)+(chunks.at(-1).sampleOffset+chunks.at(-1).sampleCount)/16,text:text.trim(),speaker:'',translation:null,edited:false,transcriptProvider:metadata.provider || 'doubao-audio-only',modelVersion:model,
+    ...(['zh','en','ja','ko','yue'].includes(metadata.language) ? { languageDetection:{language:metadata.language,scope:'audio-batch',provider:metadata.provider,modelVersion:model,revision:1} } : {})});
   for (const chunk of chunks) { chunk.state='done'; delete chunk.error; delete chunk.lease; delete chunk.batchWaiting; delete chunk.retryAt; }
   record.transcriptRevision+=chunks.length;record.transcription='processing';
   emit(record,'transcript.committed',{transcriptRevision:record.transcriptRevision});finalize(record);
@@ -171,6 +173,7 @@ export function editSegment(record, id, input) {
   requireThat(typeof input.text === 'string' && input.text.trim() && input.text.length <= 8000, 'invalid_segment_text', 400);
   const { versions, ...previous } = segment;
   segment.versions = [...(versions || []), previous].slice(-20);
+  segment.recognitionText ??= segment.text;
   segment.text = input.text.trim(); segment.speaker = String(input.speaker ?? segment.speaker).slice(0, 80);
   if (input.speaker != null) {
     // Keep the acoustic replay anchor separate from a human attribution correction.

@@ -18,7 +18,7 @@ for await(const line of createInterface({input:process.stdin})){
  if(code===99)process.exit(7);
  if(code===98){await new Promise(()=>{});continue;}
  if(code===97){process.stdout.write(JSON.stringify({id:request.id,text:17})+'\\n');continue;}
- const b=Buffer.from(JSON.stringify({id:request.id,text:'会议结果：'+process.pid})+'\\n');
+ const b=Buffer.from(JSON.stringify({id:request.id,text:'会议结果：'+process.pid,...(code===3?{language:'ja'}:code===96?{language:'unknown'}:{})})+'\\n');
  const at=b.indexOf(Buffer.from('会'))+1;process.stdout.write(b.subarray(0,at));
  await new Promise(done=>setTimeout(done,10));process.stdout.write(b.subarray(at));
 }
@@ -100,3 +100,10 @@ test('shutdown rejects a delayed registry entry before creating another child', 
   openLocalAsr();
   await assert.rejects(transcribeLocalAsr(Buffer.alloc(32000), {}), { code: 'local_asr_assets_missing' });
 });
+
+test('native IPC preserves optional detected language while keeping legacy text callers compatible', async () => fixture(async client => {
+  const result = await client.transcribe(request(3), {metadata:true});
+  assert.match(result.text, /^会议结果：/); assert.equal(result.language, 'ja');
+  assert.equal((await client.transcribe(request(1), {metadata:true})).language, undefined);
+  await assert.rejects(client.transcribe(request(96), {metadata:true}), {code:'local_asr_invalid_response'});
+}));

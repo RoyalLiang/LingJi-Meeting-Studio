@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { commitMinutes, commitTranscript, emit, needsMinutesAudio } from '../../../packages/records/src/record.mjs';
 import { createRepository } from './repository.mjs';
 import { readConfig } from './config.mjs';
+import { recordAsrConfig } from './vocabulary.mjs';
 import { commitIntents, ruleIntents } from '../../../packages/records/src/intents.mjs';
 import { providerStatus, analyzeIntents, generateMinutes, minutesTimeoutMs, transcribe, translateText } from './providers.mjs';
 
@@ -49,7 +50,8 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
       await repo.cleanAudio(candidate.id, new Set(candidate.chunks.filter(c => !expired.some(e => e.key === c.key)).map(c => c.object)));
     }
     const realtimeWork = lane === 'all' ? processRealtimeAudio(repo, candidate, config, providers.realtimeFactory) : Promise.resolve();
-    const speakerMode=!providers.transcribe && providerStatus(config).asrProvider==='doubao' && providerStatus(config).asr && !providerStatus(config).fixture && ['zh','en','zhen'].includes(candidate.language);
+    const audioConfig = await recordAsrConfig(repo, candidate, config);
+    const speakerMode=!providers.transcribe && providerStatus(config).asrProvider==='doubao' && providerStatus(config).asr && !providerStatus(config).fixture && ['auto','zh','en','zhen'].includes(candidate.language);
     const funasrMode=!providers.transcribe && ['funasr','sensevoice-local'].includes(config.ASR_PROVIDER) && config.MINUTES_MODE!=='doubao-audio-only' && !providerStatus(config).fixture;
     async function processAudio() {
       if (funasrMode || speakerMode || (config.MINUTES_MODE === 'doubao-audio-only' && !providerStatus(config).fixture)) return;
@@ -66,7 +68,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
     if (claimed) {
       const { record, chunk } = claimed;
       try {
-        const text = await telemetry.measure('asr.confirmed', {recordId:record.id, sourceId:chunk.sourceId, sequence:chunk.sequence, traceId:chunk.traceId, queueMs:Date.now()-chunk.acceptedAt}, async () => (providers.transcribe || transcribe)(await repo.readAudio(chunk.object), record, chunk, config));
+        const text = await telemetry.measure('asr.confirmed', {recordId:record.id, sourceId:chunk.sourceId, sequence:chunk.sequence, traceId:chunk.traceId, queueMs:Date.now()-chunk.acceptedAt}, async () => (providers.transcribe || transcribe)(await repo.readAudio(chunk.object), record, chunk, audioConfig));
         await repo.change(record.id, r => {
           if (r.chunks.find(c => c.key === chunk.key)?.fence !== chunk.fence) return;
           commitTranscript(r, chunk.key, text, record.generation);
@@ -84,7 +86,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
     }
     if (funasrMode) { closeSpeakerStreams(repo,candidate.id); await processFunasrAudio(repo,candidate,config); }
     if (config.MINUTES_MODE === 'doubao-audio-only' && !providerStatus(config).fixture) { closeSpeakerStreams(repo,candidate.id); await processDoubaoModelAudio(repo,candidate,config); }
-    if (speakerMode) await processSpeakerSources(repo,candidate,config);
+    if (speakerMode) await processSpeakerSources(repo,candidate,audioConfig);
     // Two independent sources can progress together; a source remains strictly ordered.
     await Promise.all([processAudio(), processAudio(), realtimeWork]);
     }

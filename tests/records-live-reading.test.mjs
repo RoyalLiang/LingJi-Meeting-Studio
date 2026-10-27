@@ -68,7 +68,7 @@ test('Doubao translation uses Responses translation_options, with a dedicated mo
   };
   try {
     const url = 'https://fixture.example/translation/responses';
-    const result = await translateText('甲已准备就绪。', 'en', { LLM_API_URL: url, LLM_PROTOCOL: 'responses', LLM_API_KEY: 'fixture-key', LLM_MODEL: 'minutes-model' });
+    const result = await translateText('甲已准备就绪。', 'en', { TRANSLATION_PROVIDER:'doubao-seed', LLM_API_URL: url, LLM_PROTOCOL: 'responses', LLM_API_KEY: 'fixture-key', LLM_MODEL: 'minutes-model' });
     assert.equal(result, 'Alpha is ready.'); assert.equal(requested, url);
     assert.equal(body.model, 'doubao-seed-translation-250915');
     assert.equal(body.input[0].content[0].text, '甲已准备就绪。');

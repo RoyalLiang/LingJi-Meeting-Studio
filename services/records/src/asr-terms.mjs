@@ -11,6 +11,11 @@ export function parseAsrHotwords(value = '') {
 
 export function doubaoRecognitionRequest(config, { secondPass = true } = {}) {
   const hotwords = parseAsrHotwords(config.DOUBAO_ASR_HOTWORDS);
+  let size = hotwords.reduce((n, {word}) => n + [...word].length, 0);
+  for (const word of config.ASR_VOCABULARY_HINTS || []) {
+    if (hotwords.some(h => h.word === word) || size + [...word].length > 100) continue;
+    hotwords.push({word}); size += [...word].length;
+  }
   const context = parseAsrContext(config.DOUBAO_ASR_CONTEXT);
   requireThat(!context || secondPass, 'asr_context_requires_second_pass', 400);
   return {
@@ -31,11 +36,11 @@ export function parseAsrContext(value = '') {
 // Scene context applies only to the supported Chinese/English second pass.
 // Keep other language recordings working when a global scene hint is saved.
 export function doubaoRecognitionForLanguage(config, language) {
-  const secondPass=['zh','en','zhen'].includes(language) && new URL(config.DOUBAO_ASR_URL).pathname.endsWith('/bigmodel_async');
+  const secondPass=['auto','zh','en','zhen'].includes(language) && new URL(config.DOUBAO_ASR_URL).pathname.endsWith('/bigmodel_async');
   return doubaoRecognitionRequest(secondPass?config:{...config,DOUBAO_ASR_CONTEXT:''},{secondPass});
 }
 export function doubaoAudioConfig(config, language) {
   const supportsLanguage=new URL(config.DOUBAO_ASR_URL).pathname.endsWith('/bigmodel_nostream');
   return {format:'pcm',codec:'raw',rate:16000,bits:16,channel:1,
-    ...(supportsLanguage ? {language:({zh:'zh-CN',en:'en-US',ja:'ja-JP'}[language]||language)} : {})};
+    ...(supportsLanguage && language !== 'auto' ? {language:({zh:'zh-CN',en:'en-US',ja:'ja-JP'}[language]||language)} : {})};
 }

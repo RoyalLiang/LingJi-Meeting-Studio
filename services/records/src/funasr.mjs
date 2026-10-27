@@ -5,8 +5,8 @@ import { transcribeLocalAsr } from './local-asr.mjs';
 export const funasrConfigured = config => Boolean(config.FUNASR_API_URL && config.FUNASR_MODEL);
 
 // FunASR's OpenAI-compatible endpoint, not SenseVoice api.py's /api/v1/asr.
-export async function transcribeFunasr(bytes, record, config) {
-  if (config.ASR_PROVIDER === 'sensevoice-local') return transcribeLocalAsr(bytes, config);
+export async function transcribeFunasr(bytes, record, config, options = {}) {
+  if (config.ASR_PROVIDER === 'sensevoice-local') return transcribeLocalAsr(bytes, config, options);
   requireThat(funasrConfigured(config), 'funasr_not_configured', 503);
   requireThat(bytes.length > 0 && bytes.length <= 960000 && bytes.length % 2 === 0, 'invalid_funasr_audio', 422);
   const form = new FormData();
@@ -35,5 +35,6 @@ export async function transcribeFunasr(bytes, record, config) {
   } finally { await reader.cancel().catch(() => {}); }
   let result; try { result = JSON.parse(text); } catch { throw new DomainError('invalid_funasr_response', 502); }
   requireThat(typeof result?.text === 'string' && result.text.length <= 8000, 'invalid_funasr_response', 502);
-  return result.text.replace(/<\|[^|]*\|>/g, '').trim();
+  const output = { text: result.text.replace(/<\|[^|]*\|>/g, '').trim(), ...(['zh', 'en', 'ja', 'ko', 'yue'].includes(result.language) ? { language: result.language } : {}) };
+  return options.metadata ? output : output.text;
 }

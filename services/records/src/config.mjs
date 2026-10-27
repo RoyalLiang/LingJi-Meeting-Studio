@@ -18,8 +18,9 @@ export const defaults = {
   LLM_PROTOCOL: 'responses',
   LLM_REASONING_EFFORT: 'auto',
   DOUBAO_TRANSLATION_MODEL: 'doubao-seed-translation-250915',
+  TRANSLATION_PROVIDER: 'auto',
 };
-const fields = ['FUNASR_API_URL', 'FUNASR_MODEL', 'FUNASR_API_KEY', 'MINUTES_MODE', 'OPENAI_REALTIME_URL', 'OPENAI_REALTIME_MODEL', 'OPENAI_REALTIME_API_KEY', 'DOUBAO_TRANSLATION_API_URL', 'DOUBAO_TRANSLATION_API_KEY', 'DOUBAO_TRANSLATION_MODEL', 'DOUBAO_ASR_HOTWORDS', 'DOUBAO_ASR_CONTEXT', 'ASR_PROVIDER', 'DOUBAO_API_KEY', 'DOUBAO_ASR_URL', 'DOUBAO_ASR_RESOURCE_ID', 'ASR_API_URL', 'ASR_API_KEY', 'ASR_MODEL', 'DEEPGRAM_API_KEY', 'LLM_API_URL', 'LLM_API_KEY', 'LLM_MODEL', 'LLM_PROTOCOL', 'LLM_REASONING_EFFORT'];
+const fields = ['TRANSLATION_PROVIDER', 'FUNASR_API_URL', 'FUNASR_MODEL', 'FUNASR_API_KEY', 'MINUTES_MODE', 'OPENAI_REALTIME_URL', 'OPENAI_REALTIME_MODEL', 'OPENAI_REALTIME_API_KEY', 'DOUBAO_TRANSLATION_API_URL', 'DOUBAO_TRANSLATION_API_KEY', 'DOUBAO_TRANSLATION_MODEL', 'DOUBAO_ASR_HOTWORDS', 'DOUBAO_ASR_CONTEXT', 'ASR_PROVIDER', 'DOUBAO_API_KEY', 'DOUBAO_ASR_URL', 'DOUBAO_ASR_RESOURCE_ID', 'ASR_API_URL', 'ASR_API_KEY', 'ASR_MODEL', 'DEEPGRAM_API_KEY', 'LLM_API_URL', 'LLM_API_KEY', 'LLM_MODEL', 'LLM_PROTOCOL', 'LLM_REASONING_EFFORT'];
 const secretFields = new Set(['FUNASR_API_KEY', 'OPENAI_REALTIME_API_KEY', 'DOUBAO_TRANSLATION_API_KEY', 'DOUBAO_API_KEY', 'ASR_API_KEY', 'DEEPGRAM_API_KEY', 'LLM_API_KEY']);
 export const configured = value => Boolean(value && !/^(your[-_]|replace|mock|<|xxx)/i.test(value));
 export const reasoningEfforts = ['auto', 'default', 'low', 'medium', 'high', 'xhigh', 'max'];
@@ -54,6 +55,7 @@ export async function saveConfig(root, input, env = process.env) {
   requireThat(['doubao', 'deepgram', 'openai-compatible', 'funasr', 'sensevoice-local'].includes(next.ASR_PROVIDER), 'invalid_asr_provider', 400);
   requireThat(next.ASR_PROVIDER !== 'sensevoice-local' || localAsrConfigured(next), 'local_asr_assets_missing', 503);
   requireThat(['chat-completions', 'responses'].includes(next.LLM_PROTOCOL), 'invalid_llm_protocol', 400);
+  requireThat(['auto','text-model','doubao-seed'].includes(next.TRANSLATION_PROVIDER), 'invalid_translation_provider', 400);
   requireThat(reasoningEfforts.includes(next.LLM_REASONING_EFFORT), 'invalid_llm_reasoning_effort', 400);
   if(next.LLM_STRUCTURED_OUTPUTS!==undefined)requireThat(['true','false'].includes(next.LLM_STRUCTURED_OUTPUTS),'invalid_structured_outputs',400);
   requireThat(['asr-llm', 'openai-realtime', 'doubao-audio', 'doubao-audio-only'].includes(next.MINUTES_MODE), 'invalid_minutes_mode', 400);
