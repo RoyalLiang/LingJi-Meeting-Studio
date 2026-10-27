@@ -27,3 +27,18 @@ export function capturedDurationMs(savedMs:number,sources:Pick<Source,'id'|'time
     return source ? (source.timelineOffsetMs||0)+signal.seconds*1000 : 0;
   })));
 }
+
+/** Uploads and native PCM arrive in batches; an active display uses monotonic time. */
+export class RecordingClock {
+  private id = '';
+  private active = false;
+  private base = 0;
+  private started = 0;
+
+  read(id: string, savedMs: number, active: boolean, now: number) {
+    if (id !== this.id || active !== this.active || !active) {
+      this.id = id; this.active = active; this.base = savedMs; this.started = now;
+    }
+    return this.base + (active ? Math.max(0, now - this.started) : 0);
+  }
+}

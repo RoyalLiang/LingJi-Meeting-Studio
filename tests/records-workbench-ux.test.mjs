@@ -84,3 +84,27 @@ test('common requests normalize WebKit pattern and malformed JSON failures while
   const rejected = harness(async()=>({ok:false,status:409,json:async()=>({error:'segment_revision_conflict'})}));
   await assert.rejects(rejected.api('/records/example','PATCH',{}), error => error.status === 409 && error.code === 'segment_revision_conflict');
 });
+
+test('background minutes requests never disable or release unrelated blocking actions',async()=>{
+ const app=await readFile(new URL('../apps/web/src/App.tsx',import.meta.url),'utf8');
+ const mutation=app.slice(app.indexOf('  async function mutate('),app.indexOf('  async function create('));
+ const busy=[];let resolve;
+ const sandbox={exports:{},setBusy:value=>busy.push(value),setError(){},api:async()=>new Promise(r=>{resolve=r;}),refresh:async()=>{},loadList:async()=>{},showToast(){},activeId:{current:'record'},messageOf:e=>e.message,Promise};
+ vm.runInNewContext(stripTypeScriptTypes(mutation,{mode:'transform'})+'\nexports.mutate=mutate;',sandbox);
+ const background=sandbox.exports.mutate('/records/record/minutes','POST',{},false);assert.deepEqual(busy,[]);resolve();await background;assert.deepEqual(busy,[]);
+ const blocking=sandbox.exports.mutate('/records/record','PATCH',{});assert.deepEqual(busy,[true]);resolve();await blocking;assert.deepEqual(busy,[true,false]);
+ const generation=app.slice(app.indexOf('generate={async (template,mode)'),app.indexOf(' edit={async minutes'));
+ assert.match(generation,/mutate\([\s\S]*?}, false\)/,'the actual regenerate caller must use nonblocking mutation');
+});
+
+test('regeneration guards double clicks locally and always releases its own loading state',async()=>{
+ const source=await readFile(new URL('../apps/web/src/components/Minutes.tsx',import.meta.url),'utf8');
+ const start=source.indexOf('  async function regenerate()'),end=source.indexOf('\n  }',start)+4;
+ assert.equal((source.match(/generate\(template,mode\)/g)||[]).length,1,'all retry entry points must share the guarded regenerate action');
+ assert.match(source,/label:'重新整理',run:\(\)=>void regenerate\(\),disabled:busy \|\| generating/);
+ const states=[];let calls=0,resolve;
+ const sandbox={exports:{},submitting:{current:false},setGenerating:value=>states.push(value),template:'meeting',mode:'model',generate:async()=>{calls++;await new Promise(r=>{resolve=r;});}};
+ vm.runInNewContext(source.slice(start,end)+'\nexports.regenerate=regenerate;',sandbox);
+ const request=sandbox.exports.regenerate();await sandbox.exports.regenerate();assert.equal(calls,1);assert.deepEqual(states,[true]);resolve();await request;assert.deepEqual(states,[true,false]);
+ sandbox.generate=async()=>{throw Error('fixture failure');};await assert.rejects(sandbox.exports.regenerate(),/fixture failure/);assert.equal(sandbox.submitting.current,false);assert.deepEqual(states,[true,false,true,false]);
+});

@@ -159,10 +159,10 @@ test('retained recordings serve complete WAV and byte ranges while temporary or 
 
 async function renderAudioDuration(record) {
   const source = await readFile(new URL('../apps/web/src/App.tsx', import.meta.url), 'utf8');
-  const span = source.match(/<span>\{timecode\([^\n]+? 音频 · 转录 v\{record.transcriptRevision\}<\/span>/)?.[0];
+  const span = source.match(/<time className="record-duration"[^>]*>\{timecode\(displayDurationMs\)\}<\/time>/)?.[0];
   assert.ok(span, 'use the actual meeting header');
   const code = (await transform(`exports.render = () => (${span});`, { loader: 'tsx' })).code;
-  const sandbox = { exports: {}, record, React: { createElement: (_tag, _props, ...children) => children.join('') }, timecode: ms => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000 % 60)).padStart(2, '0')}` };
+  const sandbox = { exports: {}, record, displayDurationMs: record.durationMs, React: { createElement: (_tag, _props, ...children) => children.join('') }, timecode: ms => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000 % 60)).padStart(2, '0')}` };
   vm.runInNewContext(code, sandbox);
   return sandbox.exports.render();
 }
@@ -174,22 +174,22 @@ function timedRecording() {
 test('meeting header shows a 22-minute dual-source timeline instead of 40 track-minutes', async () => {
   const record = timedRecording(), detail = publicRecord(record);
   assert.equal(record.usage.samples / 16000, 40 * 60, 'aggregate usage still counts both tracks');
-  assert.match(await renderAudioDuration(detail), /^22:00 音频/);
+  assert.match(await renderAudioDuration(detail), /^22:00$/);
 });
 test('meeting duration includes resumed audio once while parallel and empty sources do not inflate it', async () => {
   const record = timedRecording();
   pause(record, record.sources.map(s => ({ sourceId: s.id, epoch: s.epoch, lastSequence: s.watermark })));
   const resumed = addSource(record, { kind: 'microphone' }); addSource(record, { kind: 'display' });
   for (let sequence = 0; sequence < 4; sequence++) acknowledge(record, { sessionId: resumed.sessionId, sourceId: resumed.id, epoch: resumed.epoch, sequence, sampleOffset: sequence * 240000, sampleCount: 240000, sampleRate: 16000, digest: `resumed-${sequence}`, object: 'fixture' });
-  assert.match(await renderAudioDuration(publicRecord(record)), /^23:00 音频/);
+  assert.match(await renderAudioDuration(publicRecord(record)), /^23:00$/);
 });
 
-test('ending a meeting keeps original audio unloaded until the user opens playback',async()=>{
+test('ending a meeting exposes playback immediately without preloading original audio',async()=>{
  const {build}=await import('esbuild'),{createRequire}=await import('node:module'),React=await import('react'),{renderToStaticMarkup}=await import('react-dom/server');
  const compiled=await build({entryPoints:['apps/web/src/components/RecordingPlayback.tsx'],bundle:true,write:false,platform:'node',format:'cjs',jsx:'automatic',loader:{'.css':'empty'},external:['react','react/jsx-runtime','react-dom']});
- const module={exports:{}};vm.runInNewContext(compiled.outputFiles[0].text,{module,exports:module.exports,require:createRequire(import.meta.url),console});
+ const module={exports:{}};vm.runInNewContext(compiled.outputFiles[0].text,{module,exports:module.exports,require:name=>name==='react-dom'?{createPortal:children=>children}:createRequire(import.meta.url)(name),console,document:{body:{},documentElement:{lang:'zh-CN'}}});
  const html=renderToStaticMarkup(React.createElement(module.exports.RecordingPlayback,{record:{...record,id:'fixture'}}));
- assert.match(html,/打开原音回放/);assert.doesNotMatch(html,/<audio|正在读取录音波形/);
+ assert.match(html,/aria-label="播放原音"/);assert.match(html,/<audio[^>]*preload="none"/);assert.doesNotMatch(html,/打开原音回放|点击加载回放|会议录音<|双音轨同步/);
 });
 
 
@@ -209,5 +209,52 @@ test('tail byte ranges read only intersecting original audio chunks',async()=>{
  calls=0;const wave=await fetch(url+'?waveform=1',{headers});assert.equal(wave.status,200);await wave.json();
 
  assert.equal(rangeReads,1,'tail seeking must not read preceding PCM chunks');
+ }finally{await app.stop();await rm(root,{recursive:true,force:true});}
+});
+
+
+test('active recording time ignores batched audio receipts, freezes on pause and resets by record',async()=>{
+ const source=stripTypeScriptTypes(await readFile(new URL('../apps/web/src/audio/signal.ts',import.meta.url),'utf8'));
+ const {RecordingClock}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
+ const clock=new RecordingClock();
+ assert.equal(clock.read('first',120000,true,100),120000);
+ for(const [now,receipt] of [[600,120000],[1100,121900],[1600,120800],[2100,124500],[4100,122000]])assert.equal(clock.read('first',receipt,true,now),120000+now-100);
+ assert.equal(clock.read('first',124000,false,4200),124000);assert.equal(clock.read('first',124000,false,14200),124000);
+ assert.equal(clock.read('first',124000,true,15000),124000);assert.equal(clock.read('first',124000,true,16000),125000);
+ assert.equal(clock.read('second',0,true,17000),0);assert.equal(clock.read('second',0,true,18000),1000);
+ assert.equal(clock.read('second',1200,false,19000),1200,'completed time follows real saved PCM');
+});
+
+test('late microphone starts at the received meeting timeline without changing stream identities',()=>{
+ const r=createRecord('late-source'),display=addSource(r,{kind:'display'});
+ acknowledge(r,{sessionId:display.sessionId,sourceId:display.id,epoch:display.epoch,sequence:0,sampleOffset:0,sampleCount:16000,sampleRate:16000,digest:'first',object:'first'});
+ const mic=addSource(r,{kind:'microphone'});assert.equal(mic.sessionId,display.sessionId);assert.equal(mic.timelineOffsetMs,1000);
+ const chunk={sessionId:mic.sessionId,sourceId:mic.id,epoch:mic.epoch,sequence:0,sampleOffset:0,sampleCount:8000,sampleRate:16000,digest:'second',object:'second'};
+ acknowledge(r,chunk);acknowledge(r,chunk);assert.equal(publicRecord(r).durationMs,1500);assert.equal(r.usage.samples,24000);
+});
+
+test('resumed and late sources expose global WAV and waveform positions with bounded Range reads',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'tts-global-playback-')),app=await createRecordServer({root,databaseUrl:'',port:0});
+ try{
+ const addr=await app.start(),base=`http://127.0.0.1:${addr.port}/api`;
+ const registration=await fetch(base+'/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'global-audio@example.test',password:'synthetic-test-password'})});
+ const user=await registration.json(),headers={Cookie:registration.headers.get('set-cookie').split(';')[0],'X-CSRF-Token':user.csrf,'Content-Type':'application/json'};
+ const post=async(path,body)=>{const res=await fetch(base+path,{method:'POST',headers,body:JSON.stringify(body)});assert.ok(res.ok,`${path}:${res.status}`);return res.json();};
+ const originalRead=app.repo.readAudio.bind(app.repo);let reads=0;app.repo.readAudio=async object=>{reads++;return originalRead(object);};
+ for(const resume of [false,true]){
+  const r=await post('/records',{retainAudio:true});
+  const add=async(kind,count,value)=>{const s=await post(`/records/${r.id}/sources`,{kind}),pcm=Buffer.alloc(count*2,value);await post(`/records/${r.id}/audio`,{sessionId:s.sessionId,sourceId:s.id,epoch:s.epoch,sequence:0,sampleOffset:0,sampleCount:count,sampleRate:16000,digest:digest(pcm),pcm:pcm.toString('base64')});return s;};
+  const first=await add('display',16000,5);
+  if(resume)await post(`/records/${r.id}/pause`,{sources:[{sourceId:first.id,epoch:first.epoch,lastSequence:0}]});
+  const second=await add('microphone',8000,9);assert.equal(second.timelineOffsetMs,1000);
+  await post(`/records/${r.id}/seal`,{sources:[first,second].map(s=>({sourceId:s.id,epoch:s.epoch,lastSequence:0}))});
+  const url=base+`/records/${r.id}/audio/${second.id}`,wav=Buffer.from(await(await fetch(url,{headers})).arrayBuffer());
+  assert.equal(wav.readUInt32LE(40),48000);assert.ok(wav.subarray(44,32044).every(v=>v===0));assert.deepEqual(wav.subarray(32044),Buffer.alloc(16000,9));
+  const wave=await(await fetch(url+'?waveform=1',{headers})).json();assert.equal(wave.samples,24000);assert.ok(wave.peaks.slice(0,128).every(v=>v===0));assert.ok(wave.peaks.slice(128).every(v=>v>0));
+  for(const [range,expected,count] of [['bytes=0-43',wav.subarray(0,44),0],['bytes=44-53',Buffer.alloc(10),0],['bytes=32042-32045',Buffer.from([0,0,9,9]),1],['bytes=48042-48043',Buffer.from([9,9]),1]]){
+   reads=0;const res=await fetch(url,{headers:{...headers,Range:range}});assert.equal(res.status,206);assert.deepEqual(Buffer.from(await res.arrayBuffer()),expected);assert.equal(reads,count,range);
+  }
+  const detail=await(await fetch(base+`/records/${r.id}`,{headers})).json();assert.equal(detail.durationMs,1500);assert.equal(detail.usage.samples,24000);
+ }
  }finally{await app.stop();await rm(root,{recursive:true,force:true});}
 });

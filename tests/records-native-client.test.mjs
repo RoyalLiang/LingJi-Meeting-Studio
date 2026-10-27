@@ -20,7 +20,7 @@ test('widget initial snapshot cannot overwrite a newer recording event',async()=
  const code=(await transform(source.replace(/^import .*$/gm,''),{loader:'tsx',format:'cjs'})).code;
  const states=[],effects=[],layouts=[],calls=[],actionInputs=[];let cursor=0,receive,resolveSnapshot;
  const snapshot=new Promise(resolve=>{resolveSnapshot=resolve;}),icon=()=>null;
- const sandbox={module:{exports:{}},useState(initial){const i=cursor++;if(!(i in states))states[i]=initial;return[states[i],value=>{states[i]=value;}];},useEffect:fn=>effects.push(fn),useLayoutEffect:fn=>layouts.push(fn),
+ const sandbox={useRecordingDuration:(_id,savedMs)=>savedMs,module:{exports:{}},useState(initial){const i=cursor++;if(!(i in states))states[i]=initial;return[states[i],value=>{states[i]=value;}];},useEffect:fn=>effects.push(fn),useLayoutEffect:fn=>layouts.push(fn),
   listen:async(_name,handler)=>{receive=handler;return()=>{};},invoke:async(name,input)=>{calls.push(name);if(name==='recording_widget_action')actionInputs.push(input);return name==='recording_widget_state'?snapshot:undefined;},Pause:icon,Play:icon,Stop:icon,ArrowsOutSimple:icon,Microphone:icon,MicrophoneSlash:icon};
  sandbox.React={createElement:(tag,props,...children)=>({tag,props,children})};
  vm.runInNewContext(code,sandbox);sandbox.module.exports.RecordingWidget();effects[0]();await tick();
