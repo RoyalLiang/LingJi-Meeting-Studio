@@ -9,6 +9,8 @@ import { clientUpdateBarrier } from './client-update.mjs';
 import { performance } from 'node:perf_hooks';
 import { setTranslationTarget } from '../../../packages/records/src/translation.mjs';
 import { workspaceRoutes, requireWorkspace } from './workspace-routes.mjs';
+import { loadVocabulary, correctionCandidates } from './vocabulary.mjs';
+import { acceptVocabularyCorrection } from '../../../packages/records/src/vocabulary.mjs';
 import { setAutomation } from '../../../packages/records/src/automation.mjs';
 import http from 'node:http';
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -168,6 +170,12 @@ export async function createRecordServer(options = {}) {
         send(res, 202, {queued:true}); return;
       }
       if (action === '' && req.method === 'GET') { send(res, 200, publicRecord(record)); return; }
+      if (action === 'corrections' && req.method === 'GET') { send(res, 200, await correctionCandidates(repo, record)); return; }
+      if (action === 'corrections/model' && req.method === 'POST') {
+        const config = await readConfig(repo.root);
+        requireThat(providerStatus(config).textMinutes, 'minutes_not_configured', 503);
+        send(res, 200, await correctionCandidates(repo, record, {model:true,config})); return;
+      }
       if (action.startsWith('minutes/versions/') && req.method === 'GET') {
         const revision = Number(action.slice('minutes/versions/'.length));
         const minutes = [...(record.minutesHistory || []), record.minutes].find(m => m?.revision === revision);
@@ -292,7 +300,15 @@ export async function createRecordServer(options = {}) {
       if (action === 'shares' && req.method === 'GET') { send(res, 200, { shares: record.shares.map(({ hash, ...s }) => s) }); return; }
       const body = await readBody(req, 600000);
       let result;
-      if (action === 'sources' && req.method === 'POST') result = await changeOwned(id, user, r => addSource(r, body));
+      if (action === 'corrections' && req.method === 'POST') {
+        const vocabulary = await loadVocabulary(repo, user.id, record.workspaceId || 'inbox');
+        requireThat(body.fingerprint === vocabulary.fingerprint, 'vocabulary_revision_conflict', 409);
+        result = await changeOwned(id, user, r => {
+          requireThat(r.workspaceId === record.workspaceId, 'vocabulary_revision_conflict', 409);
+          acceptVocabularyCorrection(r, body, vocabulary.entries); return publicRecord(r);
+        });
+      }
+      else if (action === 'sources' && req.method === 'POST') result = await changeOwned(id, user, r => addSource(r, body));
       else if (action === 'seal' && req.method === 'POST') result = await changeOwned(id, user, r => { seal(r, body.sources); return publicRecord(r); });
       else if (action === 'pause' && req.method === 'POST') result = await changeOwned(id, user, r => { pause(r, body.sources); return publicRecord(r); });
       else if (action === 'retry' && req.method === 'POST') result = await changeOwned(id, user, r => {
@@ -326,6 +342,11 @@ export async function createRecordServer(options = {}) {
           r.minutes = { ...previous, ...manualMinutesContent(body.minutes), revision: r.minutesRevision, edited: true }; autoNameRecord(r,r.minutes.title); emit(r, 'minutes.edited'); return publicRecord(r);
       });
       else if (action === '' && req.method === 'PATCH') result = await changeOwned(id, user, r => {
+        if (body.language !== undefined) {
+          requireThat(typeof body.language === 'string' && /^(?:auto|[a-z]{2,3}(?:-[A-Za-z]{2,8})?)$/u.test(body.language), 'invalid_recognition_language', 400);
+          requireThat(!['recording','sealed'].includes(r.capture) && r.chunks.every(c => c.state === 'done'), 'recognition_language_busy', 409);
+          r.language = body.language;
+        }
         if (body.title !== undefined) { requireThat(typeof body.title === 'string' && body.title.trim(), 'invalid_title', 400); r.title = body.title.trim().slice(0, 160); r.titleEdited = true; }
         if (body.notes !== undefined) { requireThat(body.notesRevision === r.notesRevision, 'notes_revision_conflict'); requireThat(typeof body.notes === 'string' && body.notes.length < 20000, 'invalid_notes', 400); r.notes = body.notes; r.notesRevision++; }
         if (body.translationTarget !== undefined) setTranslationTarget(r, body.translationTarget, requireThat);

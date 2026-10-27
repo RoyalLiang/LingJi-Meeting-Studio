@@ -1,8 +1,11 @@
 import { DomainError, requireThat } from '../../../packages/records/src/record.mjs';
 
 export function translationConnection(config) {
+  const dedicated = config.DOUBAO_TRANSLATION_API_URL || config.DOUBAO_TRANSLATION_API_KEY || (config.DOUBAO_TRANSLATION_MODEL && config.DOUBAO_TRANSLATION_MODEL !== 'doubao-seed-translation-250915');
+  const seed = config.TRANSLATION_PROVIDER === 'doubao-seed' || ((!config.TRANSLATION_PROVIDER || config.TRANSLATION_PROVIDER === 'auto') && (dedicated || /^https:\/\/ark\.[a-z0-9-]+\.volces\.com\//u.test(config.LLM_API_URL || '')));
+  if (!seed) return { provider:'text-model', url:config.LLM_API_URL, key:config.LLM_API_KEY, model:config.LLM_MODEL };
   const url = config.DOUBAO_TRANSLATION_API_URL || config.LLM_API_URL;
-  return { url, key: config.DOUBAO_TRANSLATION_API_KEY || (url === config.LLM_API_URL ? config.LLM_API_KEY : ''), model: config.DOUBAO_TRANSLATION_MODEL || 'doubao-seed-translation-250915' };
+  return { provider:'doubao-seed', url, key: config.DOUBAO_TRANSLATION_API_KEY || (url === config.LLM_API_URL ? config.LLM_API_KEY : ''), model: config.DOUBAO_TRANSLATION_MODEL || 'doubao-seed-translation-250915' };
 }
 
 // Bound by UTF-8 bytes rather than guessing tokens; never truncate the source.
@@ -24,7 +27,7 @@ export function translationChunks(text, limit = 768) {
 }
 
 export async function translateSeedText(text, target, config) {
-  const { url, key, model } = translationConnection(config);
+  const { url, key, model } = translationConnection({...config,TRANSLATION_PROVIDER:'doubao-seed'});
   requireThat(url && key && !/^(your[-_]|replace|mock|<|xxx)/i.test(key), 'translation_not_configured', 503);
   requireThat(['zh', 'en', 'ja', 'es', 'fr', 'de'].includes(target), 'invalid_translation_target', 400);
   requireThat(typeof text === 'string' && text.trim() && text.length <= 8000, 'invalid_translation_text', 422);

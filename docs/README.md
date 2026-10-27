@@ -1,8 +1,6 @@
-## v0.1.32：更新、设置与状态栏
-
-[版本说明](releases/v0.1.32-preview.md)；[发布回执](evidence/preview-v0.1.32-2026-10-27.md)；[多语种与词表研究](research/multilingual-auto-translation-2026-10-27.md)。三平台 CI 与发布成功，真实原生自动下载校验通过。旧 Preview 需手动安装一次。
-
 # 聆记文档导航
+
+[多语种与词表纠错](engineering/multilingual-vocabulary.md)已实现并完成本地验证；[v0.1.33 发布说明](releases/v0.1.33-preview.md)记录本轮范围，后台测试包发布结果待回执。
 
 [v0.1.31 回放与计时优化](releases/v0.1.31-preview.md)已发布；[核验回执](evidence/playback-timing-v0.1.31-2026-10-27.md)记录五项CI、三个安装包及源码归档核对。
 
@@ -14,7 +12,7 @@
 
 | 目标 | 文档 |
 | --- | --- |
-| 安装桌面版、核对当前验证范围 | [v0.1.30 安装说明](releases/v0.1.30-preview.md) |
+| 安装桌面版、核对当前验证范围 | [v0.1.33 安装说明](releases/v0.1.33-preview.md) |
 | 处理 macOS 安装与系统信任提示 | [macOS 安装与信任](releases/macos-trust.md) |
 | 使用内置 SenseVoice、选择云端转录或外部 FunASR | [本地转录与高级配置](engineering/funasr.md) |
 | 配置豆包音频纪要 | [两种音频模式与权限](engineering/doubao-audio.md) |

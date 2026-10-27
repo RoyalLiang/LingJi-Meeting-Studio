@@ -105,12 +105,13 @@ export async function processFunasrAudio(repo, candidate, config, transcriber = 
       // Recheck the durable claim immediately before sending audio to the service.
       const current = await repo.get(candidate.id);
       if (!owns(current)) return;
-      const text = await transcriber(Buffer.concat(parts.slice(0,end)), {language:claim.language}, config);
+      const result = await transcriber(Buffer.concat(parts.slice(0,end)), {language:claim.language}, config, {metadata:true});
+      const text = typeof result === 'string' ? result : result.text;
       const afterConfig = await readConfig(repo.root);
       await repo.change(candidate.id, r => {
         if (!owns(r)) return;
         if (!sameService(config,afterConfig)) { release(r); return; }
-        commitTranscriptBatch(r, selected.map(c=>c.key), text, claim.generation, config.ASR_PROVIDER === 'sensevoice-local' ? LOCAL_ASR_MODEL : config.FUNASR_MODEL, {provider:config.ASR_PROVIDER});
+        commitTranscriptBatch(r, selected.map(c=>c.key), text, claim.generation, config.ASR_PROVIDER === 'sensevoice-local' ? LOCAL_ASR_MODEL : config.FUNASR_MODEL, {provider:config.ASR_PROVIDER, language:result.language});
         release(r);
         const source = r.sources.find(s=>s.id===claim.sourceId && s.epoch===claim.epoch);
         source.asr = {provider:config.ASR_PROVIDER,state:source.stopped && r.chunks.filter(c=>c.sourceId===source.id).every(c=>c.state==='done') ? 'completed' : 'queued'};

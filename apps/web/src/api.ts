@@ -5,6 +5,9 @@ export function setAudioTransport(value?: string) { binaryAudio = value === 'pcm
 let csrf = '';
 export const setCsrf = (token: string) => { csrf = token; };
 const messages: Record<string, string> = {
+  invalid_translation_provider: '请选择自动、当前文字模型或豆包 Seed 翻译。',
+  invalid_vocabulary: '词表格式无效：每集最多 12000 字符，两集合计最多 200 条，每项最多 50 字、8 个别名。', vocabulary_revision_conflict: '词表已变更，请重新打开设置或检查纠错后重试。', invalid_correction: '纠错候选与当前词表或原文不一致，请重新检查。', invalid_corrections: '模型返回的候选不符合原文或词表，未修改转录。', invalid_recognition_language: '识别语言无效，请重新选择。', recognition_language_busy: '请暂停录音并等待当前音频处理完成后切换识别语言。',
+
   invalid_llm_reasoning_effort: '推理强度无效，请在模型设置中重新选择。',
   local_asr_assets_missing: '本地模型未安装或资源缺失。请选择云端转录服务，或重新安装并勾选本地模型。已保存的录音不受影响。',
   local_asr_assets_invalid: '本地语音模型校验未通过，请重新安装完整安装包后重试。已保存的录音不受影响。',
@@ -23,7 +26,7 @@ const messages: Record<string, string> = {
   doubao_asr_45000292: '豆包语音识别配额超限，请在语音服务控制台检查额度后重试（45000292）。',
   service_unavailable: '记录服务暂时不可用，正在尝试恢复连接。',
   invalid_response: '记录服务返回不完整，操作结果尚未确认，请恢复连接后检查。',
-  translation_not_configured: '请在设置中配置豆包翻译模型与服务连接。',
+  translation_not_configured: '请在设置中配置文字模型或豆包翻译连接。',
   translation_connection_failed: '翻译连接失败，请检查翻译服务地址后重试。',
   translation_credentials_rejected: '翻译密钥被拒绝，请核对对应服务。',
   translation_incomplete: '翻译未完整返回，原文已保留，可重试。',

@@ -968,3 +968,15 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 }
 
 .settings-modal>.modal-footer>div,.settings-modal>.modal-footer>div>.actions { display:contents; }
+
+.vocabulary-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; margin-top:16px; }
+.vocabulary-fields textarea { resize:vertical; min-height:120px; line-height:1.6; }
+.transcript-disclosure { margin:24px 0; border-top:1px solid var(--border); }
+.transcript-disclosure>summary { padding:16px 0; cursor:pointer; font-weight:550; }
+.correction-review { padding:12px 0; border-bottom:1px solid var(--border); }
+.correction-review>p { color:var(--ink-2); font-size:12px; }
+.correction-candidate { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:14px 0; border-top:1px solid var(--border); }
+.correction-candidate>div:first-child { min-width:0; overflow-wrap:anywhere; }
+.correction-candidate p { margin:6px 0 0; }
+.correction-candidate .actions { flex-shrink:0; }
+@media(max-width:700px) { .vocabulary-fields { grid-template-columns:1fr; } .correction-candidate { align-items:flex-start; flex-direction:column; gap:8px; } }

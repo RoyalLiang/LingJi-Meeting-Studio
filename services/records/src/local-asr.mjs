@@ -94,10 +94,10 @@ export class LocalAsrClient {
             }
             const pending = this.#pending.get(message.id);
             if (!pending) return abort('local_asr_invalid_response');
-            if (!message.error && (typeof message.text !== 'string' || message.text.length > 8000)) return abort('local_asr_invalid_response');
+            if (!message.error && (typeof message.text !== 'string' || message.text.length > 8000 || (message.language !== undefined && !['zh', 'en', 'ja', 'ko', 'yue'].includes(message.language)))) return abort('local_asr_invalid_response');
             this.#pending.delete(message.id); clearTimeout(pending.timer);
             if (message.error) pending.reject(failure('local_asr_inference_failed'));
-            else pending.resolve(message.text);
+            else pending.resolve({ text: message.text, ...(message.language ? { language: message.language } : {}) });
           }
         });
       });
@@ -105,7 +105,7 @@ export class LocalAsrClient {
     try { return await this.#starting; }
     finally { this.#starting = undefined; }
   }
-  transcribe(bytes) {
+  transcribe(bytes, { metadata = false } = {}) {
     requireThat(Buffer.isBuffer(bytes) && bytes.length > 0 && bytes.length <= 960000 && bytes.length % 2 === 0, 'invalid_funasr_audio', 422);
     if (this.#stopped) return Promise.reject(failure('local_asr_shutdown'));
     clearTimeout(this.#idle); this.#queued++;
@@ -125,7 +125,7 @@ export class LocalAsrClient {
       });
     });
     this.#queue = result.catch(() => {});
-    return result.finally(() => {
+    return result.then(value => metadata ? value : value.text).finally(() => {
       this.#queued--;
       if (!this.#queued && !this.#stopped) {
         this.#idle = setTimeout(() => { const child = this.#child; this.#child = undefined; child?.kill(); }, this.idleMs); this.#idle.unref();
@@ -147,12 +147,12 @@ export class LocalAsrClient {
 let accepting = true;
 // Reopened only by a newly started desktop backend.
 export function openLocalAsr() { accepting = true; }
-export async function transcribeLocalAsr(bytes, config) {
+export async function transcribeLocalAsr(bytes, config, options) {
   requireThat(accepting, 'local_asr_shutdown', 503);
   requireThat(localAsrConfigured(config), 'local_asr_assets_missing', 503);
   const directory = resolve(config.LINGJI_LOCAL_ASR_DIR);
   if (!clients.has(directory)) clients.set(directory, new LocalAsrClient(directory));
-  return clients.get(directory).transcribe(bytes);
+  return clients.get(directory).transcribe(bytes, options);
 }
 export async function closeLocalAsr() {
   accepting = false;

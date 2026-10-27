@@ -10,7 +10,7 @@ const require = createRequire(join(directory, 'package.json'));
 const sherpa = require('sherpa-onnx-node');
 const recognizer = new sherpa.OfflineRecognizer({
   featConfig: { sampleRate: 16000, featureDim: 80 },
-  modelConfig: { senseVoice: { model: join(directory, 'sensevoice/model.int8.onnx'), useInverseTextNormalization: 1 }, tokens: join(directory, 'sensevoice/tokens.txt'), numThreads: 4, provider: 'cpu', debug: 0 },
+  modelConfig: { senseVoice: { model: join(directory, 'sensevoice/model.int8.onnx'), language: 'auto', useInverseTextNormalization: 1 }, tokens: join(directory, 'sensevoice/tokens.txt'), numThreads: 4, provider: 'cpu', debug: 0 },
 });
 const vad = new sherpa.Vad({ sileroVad: { model: join(directory, 'silero_vad.onnx'), threshold: .5, minSilenceDuration: .35, minSpeechDuration: .1, windowSize: 512, maxSpeechDuration: 30 }, sampleRate: 16000, numThreads: 1, provider: 'cpu', debug: 0 }, 35);
 const send = value => process.stdout.write(JSON.stringify(value) + '\n');
@@ -32,13 +32,16 @@ for await (const line of createInterface({ input: process.stdin, crlfDelay: Infi
     vad.flush();
     // VAD filters silent windows. Keep the original utterance context: directly
     // cropping its boundaries was observed to alter initial words in real probes.
-    let text = '';
+    let text = '', language;
     if (!vad.isEmpty()) {
       const stream = recognizer.createStream();
       stream.acceptWaveform({ sampleRate: 16000, samples }); recognizer.decode(stream);
-      text = recognizer.getResult(stream).text.replace(/<\|[^|]*\|>/g, '').trim();
+      const result = recognizer.getResult(stream);
+      text = result.text.replace(/<\|[^|]*\|>/g, '').trim();
+      const detected = typeof result.lang === 'string' ? result.lang.replace(/^<\|(zh|en|ja|ko|yue)\|>$/u, '$1') : '';
+      if (text && ['zh', 'en', 'ja', 'ko', 'yue'].includes(detected)) language = detected;
     }
-    send({ id: request.id, text });
+    send({ id: request.id, text, ...(language ? { language } : {}) });
   } catch {
     if (!request?.id) process.exit(1);
     send({ id: request.id, error: 'inference_failed' });
