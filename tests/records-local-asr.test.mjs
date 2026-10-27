@@ -63,7 +63,7 @@ test('bundled resource validation detects missing/corrupt data and rejects paths
       files.push({ path: name, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') });
     }
     const prefix = `node_modules/sherpa-onnx-${process.platform === 'win32' ? 'win' : process.platform}-${process.arch}/`;
-    const nativeFiles = ['sherpa-onnx.node', 'a.dylib', 'b.dylib'].map(name => prefix + name);
+    const nativeFiles = ['sherpa-onnx.node', 'a.dylib', 'b.dylib', 'libsherpa.so', 'libonnxruntime.so.1'].map(name => prefix + name);
     for (const name of nativeFiles) { await mkdir(dirname(join(root, name)), { recursive: true }); await writeFile(join(root, name), 'native test resource'); }
     const manifest = { model: LOCAL_ASR_MODEL, runtime: '1.13.8', platform: process.platform, arch: process.arch, files, nativeFiles };
     const save = () => writeFile(join(root, 'manifest.json'), JSON.stringify(manifest));
