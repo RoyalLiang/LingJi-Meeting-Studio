@@ -1,3 +1,7 @@
+## v0.1.32：更新、设置与状态栏
+
+[版本说明](releases/v0.1.32-preview.md)；[发布回执](evidence/preview-v0.1.32-2026-10-27.md)；[多语种与词表研究](research/multilingual-auto-translation-2026-10-27.md)。三平台 CI 与发布成功，真实原生自动下载校验通过。旧 Preview 需手动安装一次。
+
 # 聆记文档导航
 
 [v0.1.31 回放与计时优化](releases/v0.1.31-preview.md)已发布；[核验回执](evidence/playback-timing-v0.1.31-2026-10-27.md)记录五项CI、三个安装包及源码归档核对。
