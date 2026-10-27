@@ -2,6 +2,8 @@
 
 [多语种与词表纠错](engineering/multilingual-vocabulary.md)已实现并完成本地验证；[v0.1.33 发布说明](releases/v0.1.33-preview.md)记录本轮范围，后台测试包发布结果待回执。
 
+[v0.1.34 波形与渲染优化](releases/v0.1.34-preview.md)已实现；[本地验证](evidence/waveform-settings-v0.1.34-2026-10-28.md)记录速度、设置和动画边界，后台发布待回执。
+
 [v0.1.31 回放与计时优化](releases/v0.1.31-preview.md)已发布；[核验回执](evidence/playback-timing-v0.1.31-2026-10-27.md)记录五项CI、三个安装包及源码归档核对。
 
 [产品与快速开始](../README.md) · [下载预览版](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases) · [问题反馈](https://github.com/RoyalLiang/LingJi-Meeting-Studio/issues)
@@ -12,7 +14,7 @@
 
 | 目标 | 文档 |
 | --- | --- |
-| 安装桌面版、核对当前验证范围 | [v0.1.33 安装说明](releases/v0.1.33-preview.md) |
+| 安装桌面版、核对当前验证范围 | [v0.1.34 安装说明](releases/v0.1.34-preview.md) |
 | 处理 macOS 安装与系统信任提示 | [macOS 安装与信任](releases/macos-trust.md) |
 | 使用内置 SenseVoice、选择云端转录或外部 FunASR | [本地转录与高级配置](engineering/funasr.md) |
 | 配置豆包音频纪要 | [两种音频模式与权限](engineering/doubao-audio.md) |

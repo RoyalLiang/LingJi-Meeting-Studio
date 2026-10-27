@@ -1,4 +1,4 @@
-import { DownloadSimple, ArrowsClockwise } from '@phosphor-icons/react';
+import { DownloadSimple } from '@phosphor-icons/react';
 import type { useClientUpdates } from '../useClientUpdates';
 import { Button } from './ui';
 import { Select } from './Select';
@@ -16,18 +16,18 @@ export function ClientUpdatesPanel({ updates }: { updates: ReturnType<typeof use
     {status.phase === 'downloading' && <progress aria-label="更新下载进度" value={status.total ? status.downloaded : undefined} max={status.total || 1}/>}
     {status.error && <p className="inline-error" role="alert">{status.error}</p>}
     {status.notes && <details className="update-notes"><summary>版本更新内容</summary><p style={{ whiteSpace: 'pre-line' }}>{status.notes}</p></details>}
-    <div className="field"><span>更新策略</span><Select label="更新策略" value={updatePolicy(settings)} disabled={busy} onChange={value => saveSettings(preferencesForPolicy(value))} options={[
+    <div className="field client-update-policy"><span>更新策略</span><Select label="更新策略" value={updatePolicy(settings)} disabled={busy} onChange={value => saveSettings(preferencesForPolicy(value))} options={[
       { value: 'manual', label: '手动检查' }, { value: 'check', label: '自动检查' }, { value: 'background', label: '自动检查并后台下载' },
-    ]}/></div>
+    ]}/><ClientUpdateActions updates={updates}/></div>
     {status.phase === 'ready' && installReason && <p className="fine-print" role="status">{installReason}</p>}
   </section>;
 }
 
 export function ClientUpdateActions({ updates }: { updates: ReturnType<typeof useClientUpdates> }) {
   if (!updates.native) return null;
-  const { status, installReason } = updates;
+  const { status, settings, installReason } = updates;
   const busy = ['checking', 'downloading', 'preparing', 'installing'].includes(status.phase);
-  return <div className="actions"><Button disabled={busy || status.phase === 'disabled'} onClick={() => void updates.check()}><ArrowsClockwise size={17}/>检查更新</Button>
-      {status.phase === 'available' && <Button disabled={busy} onClick={() => void updates.download()}><DownloadSimple size={17}/>下载更新</Button>}
-      <Button variant="primary" disabled={busy || status.phase !== 'ready' || Boolean(installReason)} title={status.phase === 'ready' ? installReason || (status.installer ? '打开已校验安装包，由系统安装器继续' : '安装已验签更新并重新启动') : status.phase === 'disabled' ? '此安装包未配置更新源' : (status.installer ? '下载并完成完整性校验后可打开安装包' : '更新下载并验签后可重启安装')} onClick={() => void updates.install()}>{status.installer ? '打开安装包' : '重启更新'}</Button></div>;
+  const ready = status.phase === 'ready', background = updatePolicy(settings) === 'background';
+  return <div className="actions"><Button disabled={busy || status.phase === 'disabled' || (background && !ready) || (ready && Boolean(installReason))}
+    title={ready ? installReason || '使用已校验的更新安装包' : background ? '下载并校验完成后可更新' : '检查并下载更新，校验完成后继续安装'} onClick={() => void updates.update()}><DownloadSimple size={17}/>{ready || background ? '立即更新' : '下载并更新'}</Button></div>;
 }

@@ -980,3 +980,19 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 .correction-candidate p { margin:6px 0 0; }
 .correction-candidate .actions { flex-shrink:0; }
 @media(max-width:700px) { .vocabulary-fields { grid-template-columns:1fr; } .correction-candidate { align-items:flex-start; flex-direction:column; gap:8px; } }
+.settings-modal>.modal-header { justify-content:flex-start; gap:8px; }
+.settings-modal>.modal-header>.modal-close { margin-left:auto; }
+.settings-diagnostics.button { min-width:36px; width:36px; min-height:36px; padding:7px; }
+.settings-modal .provider-form>label { grid-template-columns:minmax(104px,min(190px,34%)) minmax(0,1fr); align-items:center; gap:8px 12px; }
+.settings-field-label { display:flex; align-items:center; gap:5px; min-width:0; }
+.settings-field-label>span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.settings-field-label>.status { flex:none; font-size:9px; padding:1px 4px; }
+.settings-modal .provider-form>label>input,.settings-modal .provider-form>label>.select { grid-column:2; min-width:0; }
+.settings-modal .client-update-policy { display:grid; grid-template-columns:72px minmax(0,1fr) auto; align-items:center; gap:8px; }
+.settings-modal .client-update-policy .button { white-space:nowrap; }
+
+/* Opaque surfaces avoid full-window backdrop textures in native WebView2. */
+.webview2 .glass { backdrop-filter:none; -webkit-backdrop-filter:none; background:var(--bg); }
+.webview2 :is(.rail-footer,.minutes-follow,.select-options.select-portal),.webview2 .modal::backdrop { backdrop-filter:none; -webkit-backdrop-filter:none; }
+
+.settings-modal>.modal-footer button[form="provider-settings"] { order:1; }

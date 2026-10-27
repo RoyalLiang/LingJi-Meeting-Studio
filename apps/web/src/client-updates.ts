@@ -50,6 +50,12 @@ export class ClientUpdates {
   async check() { if (this.status.phase !== 'disabled') await this.request('update_check'); }
   async preferencesChanged(now: number) { this.nextCheck = 0; this.nextDownload = 0; await this.tick(now); }
   async download() { if (this.status.phase === 'available') await this.request('update_download'); }
+  async downloadAndInstall() {
+    if (this.operating) return;
+    if (!['available','ready'].includes(this.status.phase)) await this.check();
+    if (this.status.phase === 'available') await this.download();
+    if (this.status.phase === 'ready') await this.install();
+  }
   async menuAction(action: string) {
     if (this.operating || this.status.phase === 'disabled' || ['checking', 'downloading', 'preparing', 'installing'].includes(this.status.phase)) return;
     if (action === 'status-update-check') {

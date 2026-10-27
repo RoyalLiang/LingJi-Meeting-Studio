@@ -5,15 +5,15 @@
 .audio-player audio { display:none; }
 .player-timeline { width:100%; min-width:0; padding-top:14px; }
 .player-wave-track { position:relative; width:100%; height:28px; }
-.player-waveform { display:block; width:100%; height:24px; position:absolute; top:2px; fill:var(--border); }
+.player-waveform { display:block; width:100%; height:24px; position:absolute; top:2px; fill:none; color:var(--border); }
 /* Translate a clipped layer and countertranslate its bars; only the reveal edge moves. */
 .player-wave-fill { position:absolute; inset:0; overflow:hidden; pointer-events:none; contain:paint; }
-.player-wave-reveal { position:absolute; inset:0; overflow:hidden; transform:translate3d(calc(var(--played, 0%) - 100%),0,0); will-change:transform; }
-.player-waveform-played { fill:var(--accent); transform-box:border-box; transform:translate3d(calc(100% - var(--played, 0%)),0,0); will-change:transform; }
+.player-wave-reveal { position:absolute; inset:0; overflow:hidden; transform:translateX(-100%); }
+.player-waveform-played { color:var(--accent); transform-box:border-box; transform:translateX(100%); }
 .player-wave-progress { position:absolute; inset:0; overflow:hidden; pointer-events:none; }
-.player-wave-cursor { position:absolute; inset:0; transform:translate3d(min(var(--played, 0%),calc(100% - 1px)),0,0); will-change:transform; }
+.player-wave-cursor { position:absolute; inset:0; transform:translateX(0); }
 .player-wave-cursor::before { content:""; position:absolute; top:0; bottom:0; left:0; width:1px; background:var(--accent); }
-.player-wave-position { position:absolute; left:0; width:100%; bottom:100%; transform:translate3d(clamp(0px,calc(var(--played, 0%) - 30px),calc(100% - 60px)),0,0); will-change:transform; pointer-events:none; }
+.player-wave-position { position:absolute; left:0; width:100%; bottom:100%; transform:translateX(0); pointer-events:none; }
 .player-wave-position > span { display:inline-block; width:60px; box-sizing:border-box; padding:2px 6px; border:1px solid var(--border); border-radius:5px; background:var(--accent-soft); color:var(--accent); font:10px var(--mono); text-align:center; white-space:nowrap; }
 .player-wave-status { position:absolute; inset:0; display:grid; place-items:center; color:var(--ink-3); font-size:11px; background:var(--panel-2); border-radius:6px; pointer-events:none; }
 .audio-player .player-seek { position:absolute; inset:-8px 0; z-index:2; width:100%; height:44px; min-width:0; min-height:0; margin:0; padding:0; border:0; opacity:0; cursor:ew-resize; touch-action:none; }
@@ -39,3 +39,5 @@
 @container player (max-width:600px) { .player-buttons { gap:0; } }
 @container player (max-width:320px) { .player-rate { margin-left:4px; } .player-rate-value { display:none; } .player-wave-ticks { font-size:9px; } }
 @media (pointer:coarse) { .player-rate .select.select-enhanced .select-trigger { min-height:44px; height:44px; } }
+
+.audio-player[data-animating=true] :is(.player-wave-reveal,.player-waveform-played,.player-wave-cursor,.player-wave-position) { will-change:transform; }

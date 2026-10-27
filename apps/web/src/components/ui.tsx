@@ -37,7 +37,7 @@ export function CloseButton({ label = '关闭', className = '', ...props }: Omit
     <X className="close-symbol" size={20} weight="bold" aria-hidden="true"/>
   </Button>;
 }
-export function Modal({ title, children, onClose, wide = false, explicitCloseOnly = false, initialFocus = 'heading', footer, className = '' }: { title: string; children: ReactNode; onClose: () => void; wide?: boolean; explicitCloseOnly?: boolean; initialFocus?: 'heading' | 'field'; footer?: ReactNode; className?: string }) {
+export function Modal({ title, children, onClose, wide = false, explicitCloseOnly = false, initialFocus = 'heading', footer, headerActions, className = '' }: { title: string; children: ReactNode; onClose: () => void; wide?: boolean; explicitCloseOnly?: boolean; initialFocus?: 'heading' | 'field'; footer?: ReactNode; headerActions?: ReactNode; className?: string }) {
   const ref = useRef<HTMLDialogElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const titleId = useId();
@@ -59,7 +59,7 @@ export function Modal({ title, children, onClose, wide = false, explicitCloseOnl
       const startedOnBackdrop = backdropDown.current; backdropDown.current = false;
       if (!explicitCloseOnly && startedOnBackdrop && event.target === event.currentTarget) onClose();
     }} aria-labelledby={titleId}>
-    <header className="modal-header"><h2 id={titleId} ref={heading} tabIndex={-1}>{title}</h2><CloseButton className="modal-close" onClick={onClose}/></header><div className="modal-body">{children}</div>{footer && <footer className="modal-footer">{footer}</footer>}
+    <header className="modal-header"><h2 id={titleId} ref={heading} tabIndex={-1}>{title}</h2>{headerActions}<CloseButton className="modal-close" onClick={onClose}/></header><div className="modal-body">{children}</div>{footer && <footer className="modal-footer">{footer}</footer>}
   </dialog>;
 }
 export function Empty({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {

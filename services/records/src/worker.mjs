@@ -36,17 +36,17 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
     if (candidate.deleted || Date.parse(candidate.deleteAt) < Date.now()) {
       closeSpeakerStreams(repo,candidate.id);closeRealtime(repo,candidate.id);
       await repo.change(candidate.id, r => {
-        if (!r.deleted) { r.deleted = true; r.generation++; r.title = '已删除'; r.segments = []; r.notes = ''; r.minutes = null; r.liveMinutes = null;
+        if (!r.deleted) { r.deleted = true; delete r.waveforms; r.generation++; r.title = '已删除'; r.segments = []; r.notes = ''; r.minutes = null; r.liveMinutes = null;
           r.jobs = []; r.shares = []; r.minutesHistory = []; r.insights = null; emit(r, 'record.deleted'); }
         r.cleanup = 'pending';
       });
-      await repo.cleanAudio(candidate.id); await repo.change(candidate.id, r => { r.chunks = []; r.cleanup = 'completed'; r.cleanupAt = Date.now(); }); return;
+      await repo.cleanAudio(candidate.id); await repo.change(candidate.id, r => { r.chunks = []; delete r.waveforms; r.cleanup = 'completed'; r.cleanupAt = Date.now(); }); return;
     }
     if (lane === 'realtime') { await processRealtimeAudio(repo, candidate, config, providers.realtimeFactory); return; }
     if (lane === 'all' || lane === 'audio') {
     const expired = candidate.chunks.filter(c => !c.expired && !candidate.retainAudio && Date.now() - (c.acceptedAt || Date.parse(candidate.createdAt)) > 86400000);
     if (expired.length) {
-      await repo.change(candidate.id, r => { for (const c of r.chunks) if (expired.some(e => e.key === c.key)) { c.expired = true; if (c.state !== 'done') { c.attempts = 5; c.error = 'temporary_audio_expired'; r.transcription = 'failed'; delete c.lease; } } emit(r, 'audio.expired'); });
+      await repo.change(candidate.id, r => { delete r.waveforms; for (const c of r.chunks) if (expired.some(e => e.key === c.key)) { c.expired = true; if (c.state !== 'done') { c.attempts = 5; c.error = 'temporary_audio_expired'; r.transcription = 'failed'; delete c.lease; } } emit(r, 'audio.expired'); });
       await repo.cleanAudio(candidate.id, new Set(candidate.chunks.filter(c => !expired.some(e => e.key === c.key)).map(c => c.object)));
     }
     const realtimeWork = lane === 'all' ? processRealtimeAudio(repo, candidate, config, providers.realtimeFactory) : Promise.resolve();
@@ -185,8 +185,8 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
     const latest = await repo.get(candidate.id);
     if (!latest.audioPurged && !latest.retainAudio && latest.capture === 'completed' && latest.chunks.every(c => c.state === 'done') && !needsMinutesAudio(latest)) {
       let purge = false;
-      await repo.change(latest.id, r => { if (r.capture === 'completed' && !r.retainAudio && !needsMinutesAudio(r)) { r.audioCleanup = true; purge = true; } });
-      if (purge) { await repo.cleanAudio(latest.id); await repo.change(latest.id, r => { r.audioPurged = true; r.audioCleanup = false; }); }
+      await repo.change(latest.id, r => { if (r.capture === 'completed' && !r.retainAudio && !needsMinutesAudio(r)) { delete r.waveforms; r.audioCleanup = true; purge = true; } });
+      if (purge) { await repo.cleanAudio(latest.id); await repo.change(latest.id, r => { delete r.waveforms; r.audioPurged = true; r.audioCleanup = false; }); }
     } else {
       // Objects written before a failed metadata transaction are removed after a one-hour grace period.
       if (Date.now() - (latest.gcAt || 0) > 3600000) {
