@@ -174,9 +174,9 @@ async fn client_probe(
         if let Some(floating) = &widget {
             let selector = match action {
                 "snapshot" | "hold-ready" | "release-ready" | "native-restore" | "native-minimize" => None,
-                "pause" => Some(".capsule-actions button:nth-child(1)"),
-                "finish" => Some(".capsule-actions button:nth-child(2)"),
-                "restore" => Some(".capsule-actions button:nth-child(3)"),
+                "pause" => Some(r#".capsule-actions button[aria-label="暂停录音"], .capsule-actions button[aria-label="继续录音"]"#),
+                "finish" => Some(r#".capsule-actions button[aria-label="结束并整理"]"#),
+                "restore" => Some(r#".capsule-actions button[aria-label="返回主窗口"]"#),
                 _ => return Err("unknown widget probe action".into()),
             };
             if let Some(selector) = selector {
