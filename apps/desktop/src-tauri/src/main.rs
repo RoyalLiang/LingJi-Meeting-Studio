@@ -174,9 +174,9 @@ async fn client_probe(
         if let Some(floating) = &widget {
             let selector = match action {
                 "snapshot" | "hold-ready" | "release-ready" | "native-restore" | "native-minimize" => None,
-                "pause" => Some(".capsule-actions button:nth-child(1)"),
-                "finish" => Some(".capsule-actions button:nth-child(2)"),
-                "restore" => Some(".capsule-actions button:nth-child(3)"),
+                "pause" => Some(".capsule-actions button[data-action=pause]"),
+                "finish" => Some(".capsule-actions button[data-action=finish]"),
+                "restore" => Some(".capsule-actions button[data-action=restore]"),
                 _ => return Err("unknown widget probe action".into()),
             };
             if let Some(selector) = selector {
