@@ -304,19 +304,72 @@ pub async fn download(
         .map_err(|error| error.to_string())?;
     Ok(path)
 }
-pub fn open(path: &Path) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    let result = std::process::Command::new("/usr/bin/open")
-        .arg(path)
-        .spawn();
-    #[cfg(target_os = "windows")]
-    let result = std::process::Command::new(path).spawn();
-    #[cfg(target_os = "linux")]
-    let result = std::process::Command::new("xdg-open").arg(path).spawn();
-    result
-        .map(|_| ())
-        .map_err(|error| format!("无法打开安装包：{error}"))
+pub struct InstallerHandoff {
+    helper: std::process::Child,
+    stage: Option<std::path::PathBuf>,
 }
+impl InstallerHandoff {
+    pub fn cancel(mut self) {
+        let _=self.helper.kill();
+        if self.helper.wait().is_ok() {if let Some(stage)=self.stage {let _=std::fs::remove_dir_all(stage);}}
+    }
+}
+
+pub fn open(app: &tauri::AppHandle, path: &Path, version: &str, validate: impl FnOnce() -> Result<(), String>) -> Result<InstallerHandoff, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let executable = std::env::current_exe().map_err(|e| e.to_string())?;
+        let target = executable.ancestors().find(|path| path.extension().is_some_and(|ext| ext == "app")).ok_or("请从已安装的客户端执行更新")?;
+        let parent = target.parent().ok_or("应用安装目录无效")?;
+        let stage = tempfile::Builder::new().prefix(".lingji-update-").tempdir_in(parent).map_err(|e| format!("无法写入安装目录，请使用手动安装包：{e}"))?;
+        let mount = tempfile::tempdir().map_err(|e| e.to_string())?;
+        let next = stage.path().join("next.app");
+        let prepared = (|| -> Result<(), String> {
+            let attached = std::process::Command::new("/usr/bin/hdiutil").args(["attach","-readonly","-nobrowse","-mountpoint"]).arg(mount.path()).arg(path).output().map_err(|e| e.to_string())?;
+            if !attached.status.success() { return Err("更新镜像无法挂载，当前应用未关闭".into()); }
+            let bundles: Vec<_> = std::fs::read_dir(mount.path()).map_err(|e| e.to_string())?.filter_map(Result::ok).map(|entry|entry.path()).filter(|path|path.extension().is_some_and(|ext|ext=="app")).collect();
+            if bundles.len()!=1 { return Err("更新镜像中的应用不唯一".into()); }
+            let plist = bundles[0].join("Contents/Info.plist");
+            for (field, expected) in [("CFBundleIdentifier", app.config().identifier.as_str()),("CFBundleShortVersionString",version)] {
+                let value=std::process::Command::new("/usr/libexec/PlistBuddy").args(["-c",&format!("Print :{field}")]).arg(&plist).output().map_err(|e|e.to_string())?;
+                if !value.status.success() || String::from_utf8_lossy(&value.stdout).trim()!=expected {return Err("更新应用的身份或版本不匹配".into());}
+            }
+            if !std::process::Command::new("/usr/bin/ditto").arg(&bundles[0]).arg(&next).status().map_err(|e|e.to_string())?.success() {return Err("更新应用复制失败，当前应用未关闭".into());}
+            if !std::process::Command::new("/usr/bin/codesign").args(["--verify","--deep","--strict"]).arg(&next).status().map_err(|e|e.to_string())?.success() {return Err("更新应用校验失败，当前应用未关闭".into());}
+            Ok(())
+        })();
+        let _=std::process::Command::new("/usr/bin/hdiutil").arg("detach").arg(mount.path()).output();
+        prepared?;
+        validate()?;
+        std::fs::write(stage.path().join("handoff.json"), serde_json::to_vec(&serde_json::json!({"target":target,"version":version})).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;
+        let log=std::fs::File::create(stage.path().join("handoff.log")).map_err(|e|e.to_string())?;
+        let mut helper=std::process::Command::new("/bin/sh").args(["-c",include_str!("macos_preview_handoff.sh"),"lingji-update"]).arg(std::process::id().to_string()).arg(target).arg(&next).arg("/usr/bin/open").stdin(std::process::Stdio::null()).stdout(log.try_clone().map_err(|e|e.to_string())?).stderr(log).spawn().map_err(|e|format!("无法启动安装：{e}"))?;
+        let ready=stage.path().join("helper-ready");
+        for _ in 0..40 {
+            if ready.is_file() {return Ok(InstallerHandoff{helper,stage:Some(stage.keep())});}
+            if helper.try_wait().map_err(|e|e.to_string())?.is_some() {return Err("安装助手未就绪，当前应用未关闭".into());}
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        let _=helper.kill();let _=helper.wait();
+        return Err("安装助手启动超时，当前应用未关闭".into());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        validate()?;
+        let script=format!("$p=Get-Process -Id {} -ErrorAction SilentlyContinue; if($p -and !$p.WaitForExit(120000)){{exit 3}}; Start-Process -FilePath '{}'",std::process::id(),path.to_string_lossy().replace('\'',"''"));
+        let helper=std::process::Command::new("powershell.exe").args(["-NoProfile","-NonInteractive","-WindowStyle","Hidden","-Command",&script]).creation_flags(0x08000000).spawn().map_err(|e|format!("无法启动安装：{e}"))?;
+        return Ok(InstallerHandoff{helper,stage:None});
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _=(app,version);
+        validate()?;
+        let helper=std::process::Command::new("/bin/sh").args(["-c","i=0; while kill -0 \"$1\" 2>/dev/null; do i=$((i+1)); [ \"$i\" -lt 600 ] || exit 3; sleep 0.2; done; exec xdg-open \"$2\"","lingji-update"]).arg(std::process::id().to_string()).arg(path).spawn().map_err(|e|format!("无法启动安装：{e}"))?;
+        Ok(InstallerHandoff{helper,stage:None})
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -409,4 +462,17 @@ mod tests {
         std::fs::write(&path, b"short").unwrap();
         assert!(verify(&path, 8, &hash).is_err());
     }
+}
+
+#[cfg(target_os="macos")]
+pub fn finish_handoff(app: &tauri::AppHandle) {
+    let args:Vec<_>=std::env::args_os().collect();
+    let Some(index)=args.iter().position(|arg|arg=="--update-handoff") else{return;};
+    let Some(stage)=args.get(index+1).and_then(|arg|std::fs::canonicalize(arg).ok()) else{return;};
+    let Ok(executable)=std::env::current_exe() else{return;};
+    let Some(target)=executable.ancestors().find(|path|path.extension().is_some_and(|ext|ext=="app")) else{return;};
+    if stage.parent()!=target.parent() || !stage.file_name().is_some_and(|name|name.to_string_lossy().starts_with(".lingji-update-")) {return;}
+    let Some(marker)=std::fs::read(stage.join("handoff.json")).ok().and_then(|bytes|serde_json::from_slice::<serde_json::Value>(&bytes).ok()) else{return;};
+    if marker["target"].as_str()!=target.to_str() || marker["version"].as_str()!=Some(app.package_info().version.to_string().as_str()) {return;}
+    if let Err(error)=std::fs::remove_dir_all(&stage) {eprintln!("update backup cleanup: {error}");}
 }

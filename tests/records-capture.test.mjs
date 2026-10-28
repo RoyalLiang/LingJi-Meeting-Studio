@@ -101,7 +101,7 @@ test('enable microphone starts directly and a successful explicit recovery close
   assert.deepEqual(off.state.disconnects,['microphone']);assert.equal(off.state.modal,null);
 });
 
-async function captureHarness({ noDisplayAudio = false, micFailure = false, displayDenied = false, displayUnsupported = false, recordId = 'record', chunkWait, displayVideo = false, enqueueFailure = false } = {}) {
+async function captureHarness({ noDisplayAudio = false, micFailure = false, displayDenied = false, displayUnsupported = false, recordId = 'record', chunkWait, displayVideo = false, enqueueFailure = false, capacityFailure = false } = {}) {
   let source = await readFile(new URL('../apps/web/src/audio/capture.ts', import.meta.url), 'utf8');
   source = stripTypeScriptTypes(source, { mode: 'transform' }).replace(/^import .*$/gm, '').replace(/export /g, '');
   const signalSource = stripTypeScriptTypes(await readFile(new URL('../apps/web/src/audio/signal.ts', import.meta.url), 'utf8')).replace(/^import .*$/gm, '').replace(/export /g, '');
@@ -124,7 +124,7 @@ async function captureHarness({ noDisplayAudio = false, micFailure = false, disp
       getUserMedia: async () => { calls.push('microphone'); if (micFailure) throw new Error('麦克风权限被拒绝'); return calls.filter(call => call === 'microphone').length === 1 ? mic : stream('测试麦克风'); },
       getDisplayMedia: displayUnsupported ? undefined : async options => { calls.push({ display: options }); if (displayDenied) throw new DOMException('Permission denied', 'NotAllowedError'); return display; },
     } },
-    preferredDevice: () => 'default', inputDevices: async () => [], microphoneConstraints: () => ({}),
+    ensureAudioCapacity: async () => { if(capacityFailure) throw new Error('本机录音缓存空间不足，尚未开始录音'); }, preferredDevice: () => 'default', inputDevices: async () => [], microphoneConstraints: () => ({}),
     api: async (_url, _method, input) => ({ id: `source-${input.kind}-${++sourceNumber}`, sessionId: 'session', epoch: 'epoch', ...input }),
     makeChunk: async (...args) => { await chunkWait; return { sourceId: args[0], sequence: args[2], sampleOffset: args[3], buffer: args[4] }; }, enqueue: async (_id, chunk) => { if(enqueueFailure) throw new Error("本机存储空间不足"); uploads.push(chunk); }, drainQueue: async () => {},
   };
@@ -509,4 +509,13 @@ test('capsule clock uses queued PCM per source without double counting tracks or
   assert.equal(clock(0,[{id:'mic'}],[{sourceId:'mic',seconds:1.234567}]),1235);
   assert.equal(clock(0,[{id:'mic',timelineOffsetMs:.5}],[{sourceId:'mic',seconds:1.234567}]),1235);
   assert.equal(clock(1234.6,[],[]),1235);
+});
+
+
+test('full cache stops browser setup before a source or worklet exists and releases permissions',async()=>{
+ const h=await captureHarness({capacityFailure:true});const issues=await h.controller.startMeeting();
+ assert.equal(issues.length,2);assert.equal(h.controller.active,false);assert.equal(h.controller.sources.length,0);
+ assert.equal(h.nodes.length,0);assert.equal(h.contexts.length,0);
+ assert.equal(h.display.audioTrack.readyState,'ended');assert.equal(h.mic.audioTrack.readyState,'ended');
+ assert.equal(h.errors.length,0);
 });

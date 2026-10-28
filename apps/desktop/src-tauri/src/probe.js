@@ -71,6 +71,7 @@ async function verifyNativeUiLanes(record, queued) {
       const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', buffer)), b => b.toString(16).padStart(2, '0')).join('');
       await json(`/records/${record.id}/audio`, 'POST', { sessionId: source.sessionId, sourceId: source.id, epoch: source.epoch,
         sequence, sampleOffset: offset, sampleCount: samples, sampleRate: 16000, digest, pcm: btoa(String.fromCharCode(...new Uint8Array(buffer))) }, csrf);
+      await invoke('capture_ack', { id:stream.id,sequence,sampleOffset:offset,sampleCount:samples });
       pcm.push({ sequence, offset, samples, nonzero: new Int16Array(buffer).some(x => x !== 0) });
     };
     for (let n = 0; n < 2; n++) {
@@ -130,6 +131,13 @@ async function verifyNativeUiLanes(record, queued) {
     await invoke('client_probe',{result:{widgetAction:'release-ready'}});
     const lateReady=await invoke('client_probe',{result:{widgetAction:'snapshot'}});
     if(!lateReady.mainVisible||lateReady.widgetVisible)throw new Error('late ready overrode native main restore');
+    for(const action of ['native-minimize','native-close']) {
+      await invoke('client_probe',{result:{widgetAction:action}});
+      await until(async()=>{const s=await invoke('client_probe',{result:{widgetAction:'snapshot'}});return s.widgetVisible&&(!s.mainVisible||s.mainMinimized);},16000,'repeated capsule '+action);
+      await invoke('client_probe',{result:{widgetAction:'restore'}});
+      await until(async()=>{const s=await invoke('client_probe',{result:{widgetAction:'snapshot'}});return s.mainVisible&&!s.mainMinimized&&!s.widgetVisible;},16000,'repeated capsule restore');
+    }
+
     await invoke('client_probe',{result:{widgetAction:'pause'}});
     await until(async()=>{const r=await json(`/records/${healthyId}`);return r.capture==='paused'&&r.sources.every(source=>source.watermark===source.lastSequence);});
     const actualFetch = window.fetch.bind(window);

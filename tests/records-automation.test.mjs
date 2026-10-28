@@ -344,7 +344,7 @@ test('received minutes text is flushed while the model pauses, and a cancelled j
    }},{lane:'minutes'});
    await received;
    if(cancel)await repo.change(r.id,value=>{const job=value.jobs.at(-1);job.status='cancelled';job.fence=null;delete job.preview;});
-   await new Promise(resolve=>setTimeout(resolve,300));
+   await new Promise(resolve=>setTimeout(resolve,1150));
    const saved=await repo.get(r.id),job=saved.jobs.at(-1);
    if(cancel){assert.equal(job.preview,undefined);assert.equal(job.status,'cancelled');}
    else{assert.equal(job.status,'running');assert.ok(job.preview.some(block=>block.text==='周五评审'),'received body must appear before the model completes');assert.equal(saved.liveMinutes,null);}
@@ -352,4 +352,38 @@ test('received minutes text is flushed while the model pauses, and a cancelled j
    assert.equal((await repo.get(r.id)).jobs.at(-1).status,cancel?'cancelled':'completed');
   }finally{release();await work;await repo.close();await rm(root,{recursive:true,force:true});}
  }
+});
+
+test('slow draft persistence never blocks reading the minutes stream and final commit drains it',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'tts-preview-isolated-')),repo=await createRepository({root,databaseUrl:''});
+ let releaseWrite,releaseModel,writing,advanced,work,held=false;
+ const writeGate=new Promise(r=>{releaseWrite=r;}),modelGate=new Promise(r=>{releaseModel=r;});
+ const blocked=new Promise(r=>{writing=r;}),readAhead=new Promise(r=>{advanced=r;});
+ const slow=Object.create(repo);
+ slow.change=async(id,mutate,options)=>{
+   let previewChanged=false;
+   const response=await repo.change(id,value=>{
+     const before=JSON.stringify(value.jobs.at(-1)?.preview),result=mutate(value);
+     previewChanged=JSON.stringify(value.jobs.at(-1)?.preview)!==before;
+     return result;
+   },options);
+   if(!held&&previewChanged){held=true;writing();await writeGate;}
+   return response;
+ };
+ try{
+   const r=record();requestMinutes(r,{scope:'live',modelVersion:'fixture'});await repo.insert(r);
+   work=runCycle(slow,{minutes:async(job,env,options)=>{await options.onDelta(JSON.stringify(result),{firstTokenMs:1});advanced();await modelGate;return result;}},{lane:'minutes'});
+   await blocked;
+   assert.equal(await Promise.race([readAhead.then(()=>true),new Promise(r=>setTimeout(()=>r(false),50))]),true,'preview storage must not backpressure provider output');
+ }finally{releaseWrite();releaseModel();if(work)await work;await repo.close();await rm(root,{recursive:true,force:true});}
+});
+
+
+test('new meeting without accepted speech never queues automatic minutes across repeated recovery polls',()=>{
+ const r=createRecord('fixture');setAutomation(r,{enabled:true},1000);
+ for(const capture of ['idle','recording','paused','completed']){
+  r.capture=capture;
+  for(const now of [1000,31000,61000,3600000])assert.equal(queueAutomaticMinutes(r,'fixture',now),undefined);
+ }
+ assert.equal(r.jobs.length,0);
 });

@@ -17,8 +17,8 @@ const ref = index => ({ segmentId:snapshot[index].id, revision:snapshot[index].r
 const base = () => ({ title:'发布准备', sections:[{heading:'讨论重点',items:[{text:'周五发布第一版。',evidence:[ref(0)]},{text:'回归测试由说话人 2 负责。',evidence:[ref(1)]}]}], actions:[], evidenceSnapshot:structuredClone(snapshot) });
 const source = stripTypeScriptTypes(await readFile(new URL('../apps/web/src/minutes-views.ts', import.meta.url),'utf8')).replace(/^import .*$/gm,'').replace(/export /g,'');
 const sandbox = {exports:{}};
-vm.runInNewContext(source + '\nObject.assign(exports,{topicBranches,speakerViews,decisionItems,currentMinutesJob});', sandbox);
-const {topicBranches,speakerViews,decisionItems,currentMinutesJob} = sandbox.exports;
+vm.runInNewContext(source + '\nObject.assign(exports,{topicBranches,speakerViews,decisionItems,currentMinutesJob,speakerLabels});', sandbox);
+const {topicBranches,speakerViews,decisionItems,currentMinutesJob,speakerLabels} = sandbox.exports;
 const usageSource=stripTypeScriptTypes(await readFile(new URL('../apps/web/src/minutes-usage.ts',import.meta.url),'utf8')).replace(/^import .*$/gm,'').replace(/export /g,'');
 vm.runInNewContext(usageSource+'\nObject.assign(exports,{minutesUsageView});',sandbox);
 const {minutesUsageView}=sandbox.exports;
@@ -143,4 +143,11 @@ test('a failed latest request stays visible while later transcript chunks arrive
  const failed={id:'failed-request',status:'failed',scope:'live',transcriptRevision:7,error:'llm_timeout'};
  const record={capture:'recording',transcriptRevision:558,jobs:[failed]};
  assert.equal(currentMinutesJob(record)?.id,failed.id);
+});
+
+
+test('known speaker identities use the meeting registry while frozen names and revisions remain authoritative',()=>{
+ const parts=[{id:'a',revision:1,speaker:'',speakerId:'person-b'},{id:'b',revision:1,speaker:'旧姓名',speakerId:'person-a'},{id:'c',revision:1,speaker:''}];
+ const labels=speakerLabels(parts,[{id:'person-a',label:'说话人 1'},{id:'person-b',label:'说话人 2'}],[{id:'c',revision:2,speaker:'新修订错误归属'}]);
+ assert.equal(labels.get('a:1'),'说话人 2');assert.equal(labels.get('b:1'),'旧姓名');assert.equal(labels.get('c:1'),'未区分说话人');
 });

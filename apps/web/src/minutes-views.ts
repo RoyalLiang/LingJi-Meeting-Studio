@@ -114,6 +114,12 @@ export function decisionItems(minutes: Minutes): MinutesItem[] {
   return minutes.decisions || minutes.sections.filter(section => /决定|决策|共识/.test(section.heading)).flatMap(section => section.items);
 }
 
-export function speakerLabels(snapshot: Segment[]) {
-  return new Map(snapshot.map(segment=>[`${segment.id}:${segment.revision}`,segment.speaker?.trim() || '说话人未标注']));
+export function speakerLabels(snapshot: Segment[], registry: {id:string;hash?:string;label:string}[] = [], current: Segment[] = []) {
+  const names = new Map(registry.flatMap(speaker => [[speaker.id, speaker.label], ...(speaker.hash ? [[speaker.hash, speaker.label]] : [])] as [string,string][]));
+  const exact = new Map(current.map(segment => [`${segment.id}:${segment.revision}`, segment]));
+  return new Map(snapshot.map(segment => {
+    const key = `${segment.id}:${segment.revision}`, latest = exact.get(key);
+    const identity = segment.speakerId || segment.speakerHash || latest?.speakerId || latest?.speakerHash;
+    return [key, segment.speaker?.trim() || latest?.speaker?.trim() || (identity && names.get(identity)) || '未区分说话人'];
+  }));
 }

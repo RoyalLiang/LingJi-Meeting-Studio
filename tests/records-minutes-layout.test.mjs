@@ -184,7 +184,8 @@ test('large citation groups keep a compact initial view with an explicit disclos
   const html = render({ liveMinutes: value });
   const first = html.split('class="minutes-branch"')[1];
   assert.equal((first.match(/class="citation-entry"/g) || []).length, 1);
-  assert.match(first, /aria-expanded="false">原文 · 20/);
+  assert.match(first, /aria-label="查看 20 处引用原文"/);
+  assert.doesNotMatch(first, />原文 · 20/);
 });
 
 
@@ -196,7 +197,7 @@ test('all topic details stay visible and each paragraph shows only its frozen sp
  assert.doesNotMatch(html,/展开 .*条讨论细节|class="branch-detail"/);
  for(let i=1;i<=5;i++)assert.match(html,new RegExp(`讨论详情${i}`));
  assert.equal((html.match(/class="minute-speakers"/g)||[]).length,5);
- assert.match(html,/张工/);assert.match(html,/说话人未标注/);assert.doesNotMatch(html,/错误的新修订姓名/);
+ assert.match(html,/张工/);assert.match(html,/未区分说话人/);assert.doesNotMatch(html,/错误的新修订姓名/);
 });
 
 

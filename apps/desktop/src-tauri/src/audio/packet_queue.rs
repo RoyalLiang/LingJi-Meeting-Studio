@@ -25,6 +25,7 @@ struct State {
     written: u64,
     closed: bool,
     discarded: bool,
+    last_ack: Option<(u32, u32, u32)>,
 }
 
 fn io_failure(error: std::io::Error) -> String {
@@ -44,6 +45,7 @@ impl PacketQueue {
                 written: 0,
                 closed: false,
                 discarded: false,
+                last_ack: None,
             }),
             available: Condvar::new(),
         }
@@ -77,7 +79,7 @@ impl PacketQueue {
         Ok(())
     }
 
-    pub fn read(&self) -> Result<Option<Vec<u8>>, String> {
+    pub fn pending(&self) -> Result<Option<Vec<u8>>, String> {
         let mut state = self.state.lock().unwrap();
         while state.read == state.written && !state.closed {
             state = self.available.wait(state).unwrap();
@@ -95,6 +97,22 @@ impl PacketQueue {
         }
         let mut packet = vec![0; count];
         state.file.read_exact(&mut packet).map_err(io_failure)?;
+        Ok(Some(packet))
+    }
+
+    pub fn acknowledge(&self, sequence: u32, offset: u32, samples: u32) -> Result<(), String> {
+        let mut state = self.state.lock().unwrap();
+        if samples == 0 || samples > 16_000 { return Err("本地音频确认长度无效".into()); }
+        let identity = (sequence, offset, samples);
+        if state.last_ack == Some(identity) { return Ok(()); }
+        if state.discarded || state.read == state.written { return Err("没有待确认的本地音频包".into()); }
+        let read = state.read;
+        state.file.seek(SeekFrom::Start(read)).map_err(io_failure)?;
+        let mut header = [0u8; 16];
+        state.file.read_exact(&mut header).map_err(io_failure)?;
+        let count = u32::from_le_bytes(header[..4].try_into().unwrap()) as usize;
+        let actual = (u32::from_le_bytes(header[4..8].try_into().unwrap()), u32::from_le_bytes(header[8..12].try_into().unwrap()), u32::from_le_bytes(header[12..16].try_into().unwrap()));
+        if count > MAX_PACKET_BYTES || read + 4 + count as u64 > state.written || count != 12 + samples as usize * 2 || actual != identity { return Err("本地音频确认与待保存包不一致".into()); }
         state.read += 4 + count as u64;
         // Reclaiming consumed space must not suppress the packet just read.
         // If truncation fails, append safely at the existing end; data writes
@@ -103,7 +121,8 @@ impl PacketQueue {
             state.read = 0;
             state.written = 0;
         }
-        Ok(Some(packet))
+        state.last_ack = Some(identity);
+        Ok(())
     }
 
     #[cfg(test)]
@@ -132,108 +151,59 @@ mod tests {
     use super::*;
     use std::sync::Arc;
     use std::thread;
-
+    fn packet(sequence: u32, samples: u32) -> Vec<u8> {
+        [sequence.to_le_bytes().as_slice(), (sequence * 16000).to_le_bytes().as_slice(), samples.to_le_bytes().as_slice(), &vec![42; samples as usize * 2]].concat()
+    }
+    fn consume(queue: &PacketQueue, sequence: u32, samples: u32) {
+        assert_eq!(queue.pending().unwrap().unwrap(), packet(sequence, samples));
+        queue.acknowledge(sequence, sequence * 16000, samples).unwrap();
+    }
+    #[test]
+    fn persistence_failure_keeps_head_and_tail_and_ack_is_idempotent() {
+        let queue = PacketQueue::new().unwrap();
+        for i in 0..3 { queue.push(&packet(i, 16000)).unwrap(); }
+        queue.close();
+        assert_eq!(queue.pending().unwrap(), queue.pending().unwrap());
+        assert!(queue.acknowledge(1, 16000, 16000).is_err());
+        consume(&queue, 0, 16000);
+        queue.acknowledge(0, 0, 16000).unwrap();
+        consume(&queue, 1, 16000); consume(&queue, 2, 16000);
+        assert!(queue.pending().unwrap().is_none());
+        assert_eq!(queue.buffered_bytes(), 0);
+    }
     #[test]
     fn delayed_reader_retains_three_minutes_and_tail_in_order() {
         let queue = PacketQueue::new().unwrap();
-        for i in 0..181u32 {
-            let mut packet = vec![i as u8; if i == 180 { 172 } else { MAX_PACKET_BYTES }];
-            packet[..4].copy_from_slice(&i.to_le_bytes());
-            queue.push(&packet).unwrap();
-        }
+        for i in 0..181 { queue.push(&packet(i, if i==180 {80} else {16000})).unwrap(); }
         queue.close();
-        for i in 0..181u32 {
-            let packet = queue.read().unwrap().unwrap();
-            assert_eq!(u32::from_le_bytes(packet[..4].try_into().unwrap()), i);
-            assert_eq!(packet.len(), if i == 180 { 172 } else { MAX_PACKET_BYTES });
-            assert!(packet[4..].iter().all(|&value| value == i as u8));
-        }
-        assert!(queue.read().unwrap().is_none());
-        assert!(queue.push(&[1]).is_err());
+        for i in 0..181 { consume(&queue, i, if i==180 {80} else {16000}); }
+        assert!(queue.pending().unwrap().is_none());
+        assert!(queue.push(&packet(182, 1)).is_err());
     }
-
     #[test]
     fn independent_lanes_wake_readers_and_reclaim_consumed_disk_space() {
-        let lanes: Vec<_> = (0..2)
-            .map(|_| Arc::new(PacketQueue::new().unwrap()))
-            .collect();
-        let readers: Vec<_> = lanes
-            .iter()
-            .enumerate()
-            .map(|(lane, queue)| {
-                let queue = queue.clone();
-                thread::spawn(move || {
-                    for i in 0..500u32 {
-                        assert_eq!(
-                            queue.read().unwrap().unwrap(),
-                            [i.to_le_bytes().as_slice(), &[lane as u8]].concat()
-                        );
-                    }
-                    assert!(queue.read().unwrap().is_none());
-                })
-            })
-            .collect();
-        for i in 0..500u32 {
-            for (lane, queue) in lanes.iter().enumerate() {
-                queue
-                    .push(&[i.to_le_bytes().as_slice(), &[lane as u8]].concat())
-                    .unwrap();
-            }
-        }
-        for queue in &lanes {
-            queue.close();
-        }
-        for reader in readers {
-            reader.join().unwrap();
-        }
-        for queue in &lanes {
-            assert_eq!(
-                queue.state.lock().unwrap().file.metadata().unwrap().len(),
-                0
-            );
-        }
+        let lanes: Vec<_>=(0..2).map(|_|Arc::new(PacketQueue::new().unwrap())).collect();
+        let readers: Vec<_>=lanes.iter().map(|queue|{let queue=queue.clone();thread::spawn(move||{for i in 0..500 {consume(&queue,i,1);}assert!(queue.pending().unwrap().is_none());})}).collect();
+        for i in 0..500 {for queue in &lanes {queue.push(&packet(i,1)).unwrap();}}
+        for queue in &lanes {queue.close();}for reader in readers {reader.join().unwrap();}
+        for queue in &lanes {assert_eq!(queue.state.lock().unwrap().file.metadata().unwrap().len(),0);}
     }
-
     #[test]
     fn discard_unblocks_idle_reader_and_rejects_more_audio() {
-        let queue = Arc::new(PacketQueue::new().unwrap());
-        let reader = {
-            let queue = queue.clone();
-            thread::spawn(move || queue.read().unwrap())
-        };
-        queue.cancel();
-        assert!(reader.join().unwrap().is_none());
-        assert!(queue.push(&[1]).is_err());
-        let queued = PacketQueue::new().unwrap();
-        queued.push(&[1]).unwrap();
-        queued.cancel();
-        assert!(queued.read().unwrap().is_none());
+        let queue=Arc::new(PacketQueue::new().unwrap());
+        let reader={let queue=queue.clone();thread::spawn(move||queue.pending().unwrap())};
+        queue.cancel();assert!(reader.join().unwrap().is_none());assert!(queue.push(&packet(0,1)).is_err());
+        let queued=PacketQueue::new().unwrap();queued.push(&packet(0,1)).unwrap();queued.cancel();assert!(queued.pending().unwrap().is_none());
     }
-
     #[test]
     fn producer_unwind_closes_queue_and_releases_waiting_reader() {
-        let queue = Arc::new(PacketQueue::new().unwrap());
-        let worker = {
-            let queue = queue.clone();
-            thread::spawn(move || {
-                let _writer = queue.writer();
-                queue.push(&[42]).unwrap();
-                panic!("synthetic producer failure");
-            })
-        };
-        assert!(worker.join().is_err());
-        assert_eq!(queue.read().unwrap(), Some(vec![42]));
-        assert!(queue.read().unwrap().is_none());
+        let queue=Arc::new(PacketQueue::new().unwrap());
+        let worker={let queue=queue.clone();thread::spawn(move||{let _writer=queue.writer();queue.push(&packet(0,1)).unwrap();panic!("synthetic producer failure");})};
+        assert!(worker.join().is_err());consume(&queue,0,1);assert!(queue.pending().unwrap().is_none());
     }
-
     #[test]
     fn io_failure_is_reported_without_publishing_a_partial_packet() {
-        let file = tempfile::NamedTempFile::new().unwrap();
-        let queue = PacketQueue::with_file(File::open(file.path()).unwrap());
-        let error = queue.push(&[1; 32]).unwrap_err();
-        assert!(error.contains("读写失败"));
-        assert_eq!(queue.state.lock().unwrap().written, 0);
-        queue.close();
-        assert!(queue.read().unwrap().is_none());
+        let file=tempfile::NamedTempFile::new().unwrap();let queue=PacketQueue::with_file(File::open(file.path()).unwrap());
+        assert!(queue.push(&packet(0,1)).unwrap_err().contains("读写失败"));assert_eq!(queue.state.lock().unwrap().written,0);queue.close();assert!(queue.pending().unwrap().is_none());
     }
 }

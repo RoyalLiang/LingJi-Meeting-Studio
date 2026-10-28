@@ -31,31 +31,34 @@ export function createToastTimer(duration: number, dismiss: () => void) {
 }
 
 let toastStack: HTMLDivElement[] = [];
+const toastPriority = new WeakMap<HTMLDivElement,number>();
+function promoteToast(element: HTMLDivElement, priority: number) {
+  const previous=toastStack.at(-1);
+  toastPriority.set(element,priority);
+  toastStack=toastStack.filter(item=>item!==element && item.isConnected);
+  toastStack.push(element);
+  toastStack.sort((a,b)=>(toastPriority.get(a)||0)-(toastPriority.get(b)||0));
+  const top=toastStack.at(-1)!;
+  if(previous!==top && previous?.matches(':popover-open')) previous.hidePopover();
+  if(!top.matches(':popover-open')) top.showPopover();
+}
+
 type ToastProps = { message: string; error?: boolean; warning?: boolean; persistent?: boolean; inline?: boolean; messageKey?: string | number; dismiss: () => void;
   action?: { label: string; run: () => void; disabled?: boolean; busy?: boolean } };
 export function Toast({ message, error = false, warning = false, persistent = false, inline = false, messageKey, dismiss, action }: ToastProps) {
   const ref = useRef<HTMLDivElement>(null), timer = useRef<ReturnType<typeof createToastTimer> | null>(null), dismissRef = useRef(dismiss);
   useLayoutEffect(() => { dismissRef.current = dismiss; }, [dismiss]);
   useLayoutEffect(() => {
-    const element = ref.current; if (inline || !message || !element?.showPopover) return;
-    const previous = toastStack.at(-1);
-    if (previous?.matches(':popover-open')) previous.hidePopover();
-    toastStack.push(element); element.showPopover();
+    const element=ref.current;
+    if(inline || !message || !element?.showPopover) return;
+    promoteToast(element,error?3:warning?2:1);
     return () => {
-      const wasVisible = toastStack.at(-1) === element;
-      toastStack = toastStack.filter(item => item !== element && item.isConnected);
-      if (element.isConnected && element.matches(':popover-open')) element.hidePopover();
-      if (wasVisible) toastStack.at(-1)?.showPopover();
+      const wasVisible=toastStack.at(-1)===element;
+      toastStack=toastStack.filter(item=>item!==element && item.isConnected);
+      if(element.isConnected && element.matches(':popover-open')) element.hidePopover();
+      if(wasVisible) toastStack.at(-1)?.showPopover();
     };
-  }, [message, inline]);
-  useLayoutEffect(() => {
-    const element = ref.current;
-    if (inline || !message || !element?.showPopover || toastStack.at(-1) === element) return;
-    const previous = toastStack.at(-1);
-    if (previous?.matches(':popover-open')) previous.hidePopover();
-    toastStack = toastStack.filter(item => item !== element && item.isConnected);
-    toastStack.push(element); element.showPopover();
-  }, [message, messageKey, inline]);
+  },[message,messageKey,inline,error,warning]);
   useEffect(() => {
     if (!message || error || persistent) return;
     const countdown = createToastTimer(getToastDuration(), () => dismissRef.current());

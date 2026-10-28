@@ -21,24 +21,24 @@ export function signalMessage(signal: CaptureSignal, quietSeconds: number, muted
   return { status: signal.seconds > 0 ? 'quiet' as const : 'checking' as const, message: signal.seconds > 0 ? '等待声音' : '正在检查音频信号' };
 }
 
-export function capturedDurationMs(savedMs:number,sources:Pick<Source,'id'|'timelineOffsetMs'>[],signals:Pick<CaptureSignal,'sourceId'|'seconds'>[]) {
-  return Math.round(Math.max(savedMs,...signals.map(signal=>{
-    const source=sources.find(source=>source.id===signal.sourceId);
-    return source ? (source.timelineOffsetMs||0)+signal.seconds*1000 : 0;
-  })));
+export function capturedDurationMs(savedMs:number,sources:(Pick<Source,'id'|'timelineOffsetMs'> & {epoch?:string})[],signals:Pick<CaptureSignal,'sourceId'|'seconds'>[],local:{sourceId:string;epoch:string;sampleEnd?:number}[] = []) {
+  const starts=new Map(sources.map(source=>[source.id,source]));
+  let duration=savedMs;
+  for(const signal of signals) {const source=starts.get(signal.sourceId);if(source)duration=Math.max(duration,(source.timelineOffsetMs || 0)+signal.seconds*1000);}
+  for(const manifest of local) {
+    const source=starts.get(manifest.sourceId);
+    if(source && (!source.epoch || source.epoch===manifest.epoch)) duration=Math.max(duration,(source.timelineOffsetMs || 0)+(manifest.sampleEnd || 0)/16);
+  }
+  return Math.round(duration);
 }
 
 /** Uploads and native PCM arrive in batches; an active display uses monotonic time. */
 export class RecordingClock {
-  private id = '';
-  private active = false;
-  private base = 0;
-  private started = 0;
-
-  read(id: string, savedMs: number, active: boolean, now: number) {
-    if (id !== this.id || active !== this.active || !active) {
-      this.id = id; this.active = active; this.base = savedMs; this.started = now;
-    }
-    return this.base + (active ? Math.max(0, now - this.started) : 0);
+  private id=''; private active=false; private base=0; private started=0; private confirmed=0;
+  read(id:string,savedMs:number,active:boolean,now:number) {
+    if(id!==this.id || active!==this.active || !active) { this.id=id;this.active=active;this.base=savedMs;this.confirmed=savedMs;this.started=now; }
+    else if(savedMs>this.confirmed) { this.base=Math.max(this.base,savedMs);this.confirmed=savedMs;this.started=now; }
+    // Interpolate only one audio packet; a stalled source must not become fictitious recording time.
+    return active ? Math.max(savedMs,this.base+Math.min(1000,Math.max(0,now-this.started))) : savedMs;
   }
 }

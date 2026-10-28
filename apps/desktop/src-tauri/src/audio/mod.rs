@@ -394,7 +394,7 @@ impl Captures {
             .cloned()
             .ok_or("采集已结束")?;
         // WASAPI/PipeWire may provide no packets while the output is idle. An idle output is not a failed device.
-        let result = session.receiver.read();
+        let result = session.receiver.pending();
         match result {
             Ok(Some(bytes)) => Ok(bytes),
             result => {
@@ -409,6 +409,11 @@ impl Captures {
                 }
             }
         }
+    }
+
+    pub fn acknowledge(&self, id: &str, sequence: u32, sample_offset: u32, sample_count: u32) -> Result<(), String> {
+        let session = self.sessions.lock().unwrap().get(id).cloned().ok_or("采集已结束")?;
+        session.receiver.acknowledge(sequence, sample_offset, sample_count)
     }
 
     pub fn stop(&self, id: &str, discard: bool) -> Result<(), String> {
@@ -512,13 +517,14 @@ mod tests {
     #[test]
     fn frontend_delay_preserves_all_audio_instead_of_stopping_at_ninth_packet() {
         let packets = PacketQueue::new().unwrap();
-        let expected: Vec<Vec<u8>> = (0..180).map(|i| vec![i; 32_012]).collect();
+        let expected: Vec<Vec<u8>> = (0..180u32).map(|i| [i.to_le_bytes().as_slice(), (i*16000).to_le_bytes().as_slice(), 16000u32.to_le_bytes().as_slice(), &vec![42;32000]].concat()).collect();
         send_packets(&packets, expected.clone()).unwrap();
         packets.close();
         for packet in expected {
-            assert_eq!(packets.read().unwrap(), Some(packet));
+            assert_eq!(packets.pending().unwrap(), Some(packet.clone()));
+            packets.acknowledge(u32::from_le_bytes(packet[..4].try_into().unwrap()), u32::from_le_bytes(packet[4..8].try_into().unwrap()), 16000).unwrap();
         }
-        assert!(packets.read().unwrap().is_none());
+        assert!(packets.pending().unwrap().is_none());
     }
     #[cfg(feature = "smoke-test")]
     #[test]
@@ -532,6 +538,7 @@ mod tests {
         assert!(session.error.lock().unwrap().is_none());
         assert!(session.receiver.buffered_bytes() > 10 * (32_000 + 12), "finite producer must accumulate beyond the old queue before any read");
         captures.stop(&started.id, false).unwrap();
+        assert!(captures.active(), "unacknowledged native audio must still block installation");
         let (mut sequence, mut offset) = (0u32, 0u32);
         loop {
             let packet = captures.read(&started.id).unwrap();
@@ -540,6 +547,7 @@ mod tests {
             assert_eq!(field(0), sequence);
             assert_eq!(field(4), offset);
             assert_eq!(packet.len(), 12 + field(8) as usize * 2);
+            captures.acknowledge(&started.id, sequence, offset, field(8)).unwrap();
             sequence += 1;
             offset += field(8);
         }

@@ -89,10 +89,12 @@ async function request<T>(path: string, method: string, body: BodyInit | undefin
 }
 export const messageOf = (error: unknown) => error instanceof Error ? error.message : '操作失败，请重试。';
 
-export async function serviceFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  try { return await fetch(input, init); }
+export async function serviceFetch(input: RequestInfo | URL, init?: RequestInit, timeoutMs = 30000): Promise<Response> {
+  const deadline = timeoutMs > 0 ? AbortSignal.timeout(timeoutMs) : undefined;
+  const signal = deadline && init?.signal ? AbortSignal.any([init.signal, deadline]) : deadline || init?.signal;
+  try { return await fetch(input, { ...init, signal }); }
   catch (error) {
-    if ((error as { name?: string })?.name === 'AbortError') throw error;
+    if (init?.signal?.aborted || ((error as Error)?.name === 'AbortError' && !deadline?.aborted)) throw error;
     throw new ApiError('service_unavailable', 0);
   }
 }
@@ -102,5 +104,5 @@ export async function readServiceJson<T>(response: Response): Promise<T> {
     if (!data || typeof data !== 'object') throw new Error('invalid_json_shape');
     return data as T;
   }
-  catch { throw new ApiError(response.status >= 500 ? 'service_unavailable' : 'invalid_response', response.status); }
+  catch (error) { throw new ApiError(response.status >= 500 || ['AbortError','TimeoutError'].includes((error as Error)?.name) ? 'service_unavailable' : 'invalid_response', response.status); }
 }

@@ -28,12 +28,16 @@ impl Widget {
         if report.recording && !self.report.recording {
             self.pending_start = true;
         }
-        if !report.recording {
+        if !report.recording && !report.paused {
             self.pending_start = false;
         }
         let open = self.pending_start && self.ready && !report.busy;
         self.report = report;
         open
+    }
+    fn hidden(&mut self) -> bool {
+        self.pending_start = self.report.recording || self.report.paused;
+        self.pending_start
     }
     fn restored(&mut self) {
         self.pending_start = false;
@@ -173,7 +177,7 @@ async fn show_when_ready(app: &AppHandle) -> Result<(), String> {
                 let widget = state.0.lock().map_err(|_| "recording status unavailable")?;
                 if !widget.pending_start
                     || !widget.ready
-                    || !widget.report.recording
+                    || !(widget.report.recording || widget.report.paused)
                     || widget.report.busy
                 {
                     return Ok(());
@@ -203,6 +207,16 @@ async fn show_when_ready(app: &AppHandle) -> Result<(), String> {
     receive
         .await
         .map_err(|_| "recording window unavailable".to_string())?
+}
+
+pub fn main_hidden(app: &AppHandle) -> bool {
+    let Some(state) = app.try_state::<RecordingWidget>() else { return false; };
+    let requested = state.0.lock().map(|mut widget| widget.hidden()).unwrap_or(false);
+    if requested {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move { if let Err(error) = show_when_ready(&app).await { eprintln!("recording window: {error}"); } });
+    }
+    requested
 }
 
 pub fn main_shown(app: &AppHandle) {
@@ -345,6 +359,17 @@ mod tests {
             recording: true,
             ..Report::default()
         }));
+    }
+    #[test]
+    fn repeated_hiding_restores_the_widget_without_a_new_recording() {
+        let mut widget = Widget { ready:true, ..Widget::default() };
+        assert!(!widget.hidden());
+        widget.update(Report {recording:true, ..Report::default()});
+        widget.restored(); assert!(!widget.pending_start);
+        assert!(widget.hidden()); assert!(widget.pending_start);
+        widget.restored(); assert!(widget.hidden());
+        widget.update(Report {paused:true, ..Report::default()}); assert!(widget.hidden());
+        widget.update(Report::default()); assert!(!widget.hidden());
     }
     #[test]
     fn minimize_once_after_capture_is_ready_and_again_on_resume() {

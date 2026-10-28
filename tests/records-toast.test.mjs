@@ -188,16 +188,6 @@ test('errors and explicitly persistent messages stay until dismissed', () => {
   }
 });
 
-test('a newer success toast restores the mounted persistent error when it closes', () => {
-  const h = groupHarness(); let errorDismissed = 0;
-  h.render('error', { message: '保存失败，请重试', error: true, dismiss: () => errorDismissed++ });
-  h.render('success', { message: '已复制', dismiss: () => h.unmount('success') });
-  assert.equal(h.open('error'), false); assert.equal(h.open('success'), true);
-  h.tick(5000); assert.equal(h.open('error'), true); assert.equal(h.open('success'), false);
-  h.tick(20000); assert.equal(errorDismissed, 0);
-  h.unmount('error'); assert.equal(h.timers, 0); assert.equal(h.listeners, 0);
-});
-
 test('a covered success resumes its remaining time after the newer toast closes', () => {
   const h = groupHarness(); let firstDismissed = 0;
   h.render('first', { message: '已保存', dismiss: () => { firstDismissed++; h.unmount('first'); } });
@@ -226,4 +216,13 @@ test('retriggering a covered toast with the same message makes it latest and res
   h.tick(1999); assert.equal(firstDismissed, 0); h.tick(1); assert.equal(firstDismissed, 1);
   assert.equal(h.open('second'), true); h.tick(1499); assert.equal(secondDismissed, 0);
   h.tick(1); assert.equal(secondDismissed, 1); assert.equal(h.timers, 0); assert.equal(h.listeners, 0);
+});
+
+test('a routine confirmation never covers an unresolved error and keeps its reading time',()=>{
+ const h=groupHarness();let dismissed=0;
+ h.render('critical',{message:'音频未保存',error:true,dismiss:()=>{}});
+ h.render('routine',{message:'设置已保存',messageKey:1,dismiss:()=>{dismissed++;h.unmount('routine');}});
+ assert.equal(h.open('critical'),true);assert.equal(h.open('routine'),false);
+ h.tick(5000);assert.equal(dismissed,0);
+ h.unmount('critical');assert.equal(h.open('routine'),true);h.tick(2000);assert.equal(dismissed,1);
 });

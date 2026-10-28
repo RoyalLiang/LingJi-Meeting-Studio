@@ -213,12 +213,12 @@ test('tail byte ranges read only intersecting original audio chunks',async()=>{
 });
 
 
-test('active recording time ignores batched audio receipts, freezes on pause and resets by record',async()=>{
+test('recording time interpolates at most one packet and freezes when PCM stalls',async()=>{
  const source=stripTypeScriptTypes(await readFile(new URL('../apps/web/src/audio/signal.ts',import.meta.url),'utf8'));
  const {RecordingClock}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
  const clock=new RecordingClock();
  assert.equal(clock.read('first',120000,true,100),120000);
- for(const [now,receipt] of [[600,120000],[1100,121900],[1600,120800],[2100,124500],[4100,122000]])assert.equal(clock.read('first',receipt,true,now),120000+now-100);
+ for(const [now,receipt,expected] of [[600,120000,120500],[1100,121900,121900],[1600,120800,122400],[2100,124500,124500],[4100,122000,125500]])assert.equal(clock.read('first',receipt,true,now),expected);
  assert.equal(clock.read('first',124000,false,4200),124000);assert.equal(clock.read('first',124000,false,14200),124000);
  assert.equal(clock.read('first',124000,true,15000),124000);assert.equal(clock.read('first',124000,true,16000),125000);
  assert.equal(clock.read('second',0,true,17000),0);assert.equal(clock.read('second',0,true,18000),1000);
@@ -281,4 +281,13 @@ test('waveform cache survives restart, stays private, invalidates by source and 
  const removed=await fetch(base+`/records/${r.id}`,{method:'DELETE',headers});assert.equal(removed.status,200);assert.equal((await app.repo.get(r.id)).waveforms,undefined);
  assert.equal((await fetch(base+`/records/${r.id}/audio/${source.id}?waveform=1`,{headers})).status,410);
  }finally{await app.stop();await rm(root,{recursive:true,force:true});}
+});
+
+test('local pending PCM remains in the displayed recording duration after capture signals are cleared',async()=>{
+ const source=stripTypeScriptTypes(await readFile(new URL('../apps/web/src/audio/signal.ts',import.meta.url),'utf8'));
+ const {capturedDurationMs}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
+ const sources=[{id:'display',epoch:'current',timelineOffsetMs:0}];
+ const manifests=[{sourceId:'display',epoch:'current',sampleEnd:70*60*16000}];
+ assert.equal(capturedDurationMs(48*60000,sources,[],manifests),70*60000);
+ assert.equal(capturedDurationMs(48*60000,sources,[],[{...manifests[0],epoch:'stale'}]),48*60000);
 });
