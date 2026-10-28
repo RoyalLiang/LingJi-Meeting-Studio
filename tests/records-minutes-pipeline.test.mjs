@@ -98,14 +98,16 @@ test('partial correction state follows event order even when later windows finis
     assert.equal(partial.correctionHistory.at(-1).status,'withdrawn');assert.equal(partial.decisions.length,0);
   }finally{release();await run?.catch(()=>{});await f.close();}
 });
-test('two-minute agent windows respect real timestamps even when all text fits one request',()=>{
-  const snapshot=Array.from({length:10},(_,i)=>({id:`timed-${i}`,revision:1,text:'短句',startMs:i*30000,endMs:i*30000+1000}));
-  const manifest=buildMinutesManifest({snapshot,scope:'final',notes:'',modelVersion:'default'},config);
-  assert.deepEqual(manifest.windows.map(w=>w.snapshot.filter(s=>!s.contextOnly).map(s=>s.id)),[
-    ['timed-0','timed-1','timed-2','timed-3'],['timed-4','timed-5','timed-6','timed-7'],['timed-8','timed-9']]);
-  assert.equal(manifest.windows.flatMap(w=>w.snapshot.filter(segment=>!segment.contextOnly)).length,snapshot.length);
-  assert.ok(manifest.windows[0].snapshot.some(segment=>segment.id==='timed-4'&&segment.contextOnly));
+test('text windows batch five minutes while audio windows keep their two-minute cap',()=>{
+ const snapshot=Array.from({length:20},(_,i)=>({id:`timed-${i}`,sourceId:'mic',revision:1,text:'短句',startMs:i*30000,endMs:i*30000+1000}));
+ const job={snapshot,scope:'final',notes:'',modelVersion:'default'};
+ const manifest=buildMinutesManifest(job,config),audio=buildMinutesManifest(job,{...config,MINUTES_MODE:'doubao-audio'});
+ assert.deepEqual(manifest.windows.map(w=>w.snapshot.filter(s=>!s.contextOnly).map(s=>s.id)),[snapshot.slice(0,10).map(s=>s.id),snapshot.slice(10).map(s=>s.id)]);
+ assert.equal(audio.windows.length,5);
+ assert.equal(manifest.windows.flatMap(w=>w.snapshot.filter(segment=>!segment.contextOnly)).length,snapshot.length);
+ assert.ok(manifest.windows[0].snapshot.some(segment=>segment.id==='timed-10'&&segment.contextOnly));
 });
+
 test('switching templates treats the full transcript as new rather than context-only evidence',()=>{
   const record=createRecord('owner');record.capture='recording';record.transcriptRevision=1;
   record.segments=[{id:'earlier',revision:1,text:'项目讨论',startMs:0,endMs:1000}];
@@ -456,7 +458,7 @@ test('model prompts preserve table topic associations and rebuild IDs during syn
       assert.ok(prompt.includes('沿用 context.topics'));
       assert.ok(prompt.includes('不能仅因都提到相机就合并不同项目'));
       assert.ok(prompt.includes('每张表必须完整归属一个主题'));
-      assert.ok(prompt.includes('每行仍须引用给定原始片段 ID 与 revision'));
+      assert.ok(prompt.includes('每行仍须引用给定片段整数索引（服务端还原ID与revision）'));
       if(stage)assert.ok(prompt.includes('重新分配唯一主题 id'));
     }
   } finally {globalThis.fetch=original;}
@@ -669,5 +671,16 @@ test('changing reasoning strength invalidates cached windows on identical-transc
   assert.ok(calls>0,'new reasoning strength must reach the provider');assert.equal(result.coverage.reused,0);
   const policies=['auto','default','low','high','max'].map(effort=>buildMinutesManifest(next,{...config,LLM_REASONING_EFFORT:effort}).policy);
   assert.equal(new Set(policies).size,policies.length);
+ }finally{await f.close();}
+});
+
+test('live windows retain semantic consolidation and final evidence',async()=>{
+ const f=await fixture(18);try{
+  let claim;await f.repo.change(f.record.id,r=>{r.capture='recording';r.segments.at(-1).text+=' FACT:最后日期待确认';const job=requestMinutes(r,{scope:'live',modelVersion:'fixture-model'});job.status='running';job.fence='live-efficiency';job.lease=Date.now()+300000;claim=structuredClone(job);});
+  const calls=[];const result=await runMinutesPipeline(f.repo,f.record.id,claim,{},async job=>{calls.push(job);return summarize(job);});
+  assert.ok(result.coverage.windows>1);assert.ok(calls.length>result.coverage.windows);
+  assert.ok(calls.some(job=>job.summaries));
+  const refs=result.sections.flatMap(section=>section.items.flatMap(item=>item.evidence));
+  assert.ok(refs.some(ref=>ref.segmentId==='s-0'));assert.ok(refs.some(ref=>ref.segmentId==='s-17'));
  }finally{await f.close();}
 });

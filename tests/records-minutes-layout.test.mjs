@@ -29,8 +29,8 @@ test('paused discussion stays inactive while a queued or running minutes job rem
   for (const status of ['queued','running']) {
     const job={id:'unfinished-job',status,progress:{completed:1,total:4}};
     const html=renderToStaticMarkup(React.createElement(CurrentDiscussion,{record,minutes:null,job,modelReady:true}));
-    assert.match(html,/已暂停/);
-    assert.match(html,/正在整理 AI 纪要/,'processing remains visible independently from paused capture');
+    assert.match(html,/正在处理AI纪要/);
+    assert.equal((html.match(/正在处理AI纪要/g)||[]).length,1,'processing is shown once even while capture is paused');
     assert.match(html,/class="discussion-activity"/);
     assert.doesNotMatch(html,/discussion-activity is-active/);
     const resumed=renderToStaticMarkup(React.createElement(CurrentDiscussion,{record:{...record,capture:'recording'},minutes:null,job,modelReady:true}));
@@ -214,4 +214,14 @@ test('opening a meeting keeps failed minutes recovery inside its panel', () => {
   assert.match(html,/整理未完成/);
   assert.match(html,/toast feedback-toast glass is-inline/);
   assert.match(html,/重新整理/);
+});
+
+test('AI processing is announced once in the dock capture label',()=>{
+ const record={capture:'recording',transcription:'completed',sources:[],pendingChunks:0,transcriptRevision:1,usage:{samples:16000},autoMinutes:{enabled:true}};
+ const html=renderToStaticMarkup(React.createElement(CurrentDiscussion,{record,minutes:null,job:{status:'running',progress:{completed:1,total:3}},modelReady:true}));
+ assert.match(html,/class="discussion-capture-state"[^>]*>正在处理AI纪要/);
+ assert.equal((html.match(/正在处理AI纪要/g)||[]).length,1);
+ assert.doesNotMatch(html,/class="discussion-status"/);
+ const issue=renderToStaticMarkup(React.createElement(CurrentDiscussion,{record:{...record,transcription:'failed'},minutes:null,job:{status:'running'},modelReady:true}));
+ assert.match(issue,/class="discussion-status"/,'ASR failures must remain visible while minutes run');
 });
