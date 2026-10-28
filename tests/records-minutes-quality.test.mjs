@@ -47,7 +47,7 @@ test('validated partial minutes remain visible by default while unchecked genera
 test('project minutes render sourced highlights, timeline and actual same-unit numbers',()=>{
   const value=fixture();assert.equal(validateMinutes(value,snapshot),value);
   const html=render(value);
-  for(const text of ['重点速览','推进顺序','周五','下周一','方案预算','单位：','100','80','原文 · '])assert.ok(html.includes(text),text);
+  for(const text of ['重点速览','推进顺序','周五','下周一','方案预算','单位：','100','80','引用原文'])assert.ok(html.includes(text),text);
   assert.equal(html.split('class="minutes-visual is-timeline"').length-1,1);
   assert.equal(html.split('class="minutes-visual is-bar"').length-1,1);
   assert.doesNotMatch(html,/纪要条目分布|主题引用覆盖|2026/);

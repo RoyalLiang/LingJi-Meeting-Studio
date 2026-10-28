@@ -2,13 +2,28 @@ import { uploadAudio, ApiError } from '../api';
 import { trace, traceEnabled } from '../telemetry';
 import type { AudioChunk } from '../model';
 interface Pending { key: string; recordId: string; chunk: AudioChunk; bytes: number; createdAt: number }
-interface Manifest { key: string; recordId: string; sourceId: string; epoch: string; lastSequence: number }
+interface Manifest { key: string; recordId: string; sourceId: string; epoch: string; lastSequence: number; sampleEnd?: number }
 let saving = 0;
 let localBackend = false;
 export function setLocalQueueBackend(local: boolean) { localBackend = local; }
 const canUpload = () => navigator.onLine || localBackend;
-const MAX_BYTES = 48 * 1024 * 1024;
+const MAX_BYTES = 512 * 1024 * 1024;
+let capacity: Promise<number> | undefined;
+function queueCapacity() {
+  return capacity ||= (async () => {
+    const estimate = await navigator.storage?.estimate?.().catch(() => undefined);
+    if (!estimate?.quota || estimate.usage === undefined) return MAX_BYTES;
+    const { bytes } = await queueStats();
+    // Reserve room for other data and for IndexedDB's encoded PCM representation.
+    return Math.min(MAX_BYTES, bytes + Math.max(0, estimate.quota - estimate.usage - Math.min(64 * 1024 * 1024, estimate.quota / 10)) / 2);
+  })().catch(error => { capacity = undefined; throw error; });
+}
 let database: Promise<IDBDatabase> | undefined;
+export async function ensureAudioCapacity() {
+  capacity = undefined;
+  const [limit, stats] = await Promise.all([queueCapacity(), queueStats()]);
+  if (stats.bytes + 15 * 32000 > limit) throw new Error('本机录音缓存空间不足，尚未开始录音。请先补传已有会议或释放磁盘空间后重试。');
+}
 let permittedRecords = new Set<string>(), uploading = false;
 let draining: Promise<void> | undefined;
 let wakeDrain: (() => void) | undefined;
@@ -34,7 +49,14 @@ function db() {
 }
 function result<T>(request:IDBRequest<T>):Promise<T>{return new Promise((resolve,reject)=>{request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});}
 export async function localManifests(recordId:string):Promise<Manifest[]>{
-  const connection=await db();return result(connection.transaction('manifests').objectStore('manifests').index('recordId').getAll(recordId));
+  const connection=await db();
+  const manifests:Manifest[]=await result(connection.transaction('manifests').objectStore('manifests').index('recordId').getAll(recordId));
+  return Promise.all(manifests.map(async manifest=>{
+    if(manifest.sampleEnd!==undefined)return manifest;
+    const entry:Pending|undefined=await result(connection.transaction('chunks').objectStore('chunks').get(`${recordId}:${manifest.sourceId}:${manifest.epoch}:${manifest.lastSequence}`));
+    // Old v2 queues remain readable without rewriting a concurrently advancing manifest.
+    return entry ? {...manifest,sampleEnd:entry.chunk.sampleOffset+entry.chunk.sampleCount} : manifest;
+  }));
 }
 export async function pendingCount(recordId?:string){
   const connection=await db(),store=connection.transaction('chunks').objectStore('chunks').index('recordId');
@@ -47,7 +69,7 @@ export async function queueStats(){
 export async function enqueue(recordId:string,chunk:AudioChunk){
   saving++; try {
 
-  const connection=await db(), started=performance.now();
+  const connection=await db(), limit=await queueCapacity(), started=performance.now();
   await new Promise<void>((resolve,reject)=>{
     const tx=connection.transaction(['chunks','manifests','stats'],'readwrite'),chunks=tx.objectStore('chunks'),manifests=tx.objectStore('manifests'),stats=tx.objectStore('stats');
     const key=`${recordId}:${chunk.sourceId}:${chunk.epoch}:${chunk.sequence}`,manifestKey=`${recordId}:${chunk.sourceId}`;
@@ -56,15 +78,16 @@ export async function enqueue(recordId:string,chunk:AudioChunk){
       if(++ready!==3)return;
       const bytes=chunk.sampleCount*2,old=previous.result as Pending|undefined;
       if(old && (old.chunk.digest!==chunk.digest || old.chunk.sampleOffset!==chunk.sampleOffset || old.chunk.sampleCount!==chunk.sampleCount))failure=new Error('本地音频标识冲突，原片段已保留。');
-      else if((total.result?.bytes||0)-(old?.bytes||0)+bytes>MAX_BYTES)failure=new Error('本地待传音频超过 48 MB；最后一个片段未能保存，录音已暂停。请恢复网络后继续。');
-      if(failure){tx.abort();return;}
+      else if(!old && (total.result?.bytes||0)+bytes>limit)failure=new Error('本机录音缓存空间不足，采集已暂停。已保存音频会自动补传，请恢复记录服务或释放磁盘空间后重试。');
+      if(failure){capacity=undefined;tx.abort();return;}
       chunks.put({key,recordId,chunk,bytes,createdAt:old?.createdAt||Date.now()});
       stats.put({key:'total',bytes:(total.result?.bytes||0)-(old?.bytes||0)+bytes});
-      manifests.put({key:manifestKey,recordId,sourceId:chunk.sourceId,epoch:chunk.epoch,lastSequence:Math.max(chunk.sequence,manifest.result?.epoch===chunk.epoch?manifest.result.lastSequence:-1)});
+      manifests.put({key:manifestKey,recordId,sourceId:chunk.sourceId,epoch:chunk.epoch,lastSequence:Math.max(chunk.sequence,manifest.result?.epoch===chunk.epoch?manifest.result.lastSequence:-1),sampleEnd:Math.max(chunk.sampleOffset+chunk.sampleCount,manifest.result?.epoch===chunk.epoch?manifest.result.sampleEnd||0:0)});
     };
     previous.onsuccess=total.onsuccess=manifest.onsuccess=save;
     tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(failure||tx.error||new Error('音频未能保存到浏览器。'));
   });
+  wakeDrain?.();
   if(traceEnabled()){const depth=await queueStats();trace('audio.queue',{bytes:depth.bytes,count:depth.count});}
   trace('audio.local-save',{recordId,sourceId:chunk.sourceId,sequence:chunk.sequence,bytes:chunk.sampleCount*2,durationMs:performance.now()-started});
 
@@ -151,11 +174,19 @@ export async function clearRecordAudio(recordId:string){
   });
 }
 export async function downloadPendingAudio(recordId:string){
-  const connection=await db();const entries:Pending[]=await result(connection.transaction('chunks').objectStore('chunks').index('recordId').getAll(recordId));
-  if(!entries.length)throw new Error('本机没有这条记录的待传音频。');
-  const blob=new Blob([JSON.stringify({format:'meeting-audio-backup/v1',recordId,manifests:await localManifests(recordId),chunks:entries.map(entry=>entry.chunk)})],{type:'application/json'});
+  const connection=await db();
+  let count=0;
+  let blob=new Blob([JSON.stringify({format:'meeting-audio-backup/v1',recordId,manifests:await localManifests(recordId)}).slice(0,-1)+',"chunks":['],{type:'application/json'});
+  await new Promise<void>((resolve,reject)=>{
+    const tx=connection.transaction('chunks'),request=tx.objectStore('chunks').index('recordId').openCursor(recordId);
+    request.onsuccess=()=>{const cursor=request.result;if(!cursor)return;blob=new Blob([blob,count++?',':'',JSON.stringify(cursor.value.chunk)],{type:'application/json'});cursor.continue();};
+    tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);
+  });
+  if(!count)throw new Error('本机没有这条记录的待传音频。');
+  blob=new Blob([blob,']}'],{type:'application/json'});
   const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=`pending-audio-${recordId}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
+
 export async function makeChunk(sourceId: string, epoch: string, sequence: number, sampleOffset: number, buffer: ArrayBuffer, sessionId: string): Promise<AudioChunk> {
   const started=performance.now();
   const bytes = new Uint8Array(buffer); const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', buffer));

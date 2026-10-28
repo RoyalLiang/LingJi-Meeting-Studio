@@ -90,6 +90,12 @@ async fn capture_read(
 }
 
 #[tauri::command]
+fn capture_ack(window: WebviewWindow, state: State<'_, Client>, id: String, sequence: u32, sample_offset: u32, sample_count: u32) -> Result<(), String> {
+    authorize(&window, &state)?;
+    state.captures.acknowledge(&id, sequence, sample_offset, sample_count)
+}
+
+#[tauri::command]
 fn capture_stop(
     window: WebviewWindow,
     state: State<'_, Client>,
@@ -141,6 +147,8 @@ fn menu_has_pending(state: &Client) -> bool {
 async fn client_ready(window: WebviewWindow, state: State<'_, Client>) -> Result<(), String> {
     authorize(&window, &state)?;
     state.resident.ready();
+    #[cfg(target_os="macos")]
+    preview_updates::finish_handoff(window.app_handle());
     // A failed prewarm is retried before a recording can hide the main window.
     let _=recording_widget::prepare(window.app_handle(), &state);
     Ok(())
@@ -167,6 +175,7 @@ async fn client_probe(
         match action {
             "hold-ready" => window.state::<recording_widget::RecordingWidget>().hold_ready(),
             "release-ready" => recording_widget::release_held_ready(window.app_handle()).await?,
+            "native-close" => window.close().map_err(|e|e.to_string())?,
             "native-minimize" => window.minimize().map_err(|e|e.to_string())?,
             "native-restore" => {window.unminimize().map_err(|e|e.to_string())?;window.show().map_err(|e|e.to_string())?;window.set_focus().map_err(|e|e.to_string())?;},
             _ => {},
@@ -174,7 +183,7 @@ async fn client_probe(
         let widget = window.app_handle().get_webview_window("recording-widget");
         if let Some(floating) = &widget {
             let selector = match action {
-                "snapshot" | "hold-ready" | "release-ready" | "native-restore" | "native-minimize" => None,
+                "snapshot" | "hold-ready" | "release-ready" | "native-restore" | "native-minimize" | "native-close" => None,
                 "pause" => Some(r#".capsule-actions button[aria-label="暂停录音"], .capsule-actions button[aria-label="继续录音"]"#),
                 "finish" => Some(r#".capsule-actions button[aria-label="结束并整理"]"#),
                 "restore" => Some(r#".capsule-actions button[aria-label="返回主窗口"]"#),
@@ -283,6 +292,7 @@ fn main() {
         recording_widget::recording_widget_update, recording_widget::recording_widget_state, recording_widget::recording_widget_ready, recording_widget::recording_widget_action,
         capture_start,
         capture_read,
+        capture_ack,
         capture_stop,
         capture_inputs,
         client_ready,
@@ -300,6 +310,7 @@ fn main() {
         recording_widget::recording_widget_update, recording_widget::recording_widget_state, recording_widget::recording_widget_ready, recording_widget::recording_widget_action,
         capture_start,
         capture_read,
+        capture_ack,
         capture_stop,
         capture_inputs,
         client_ready,
@@ -348,7 +359,7 @@ fn main() {
                 profile: profile.clone(),
                 origin: origin.clone(), captures: Arc::new(audio::Captures::default()), resident: resident::Resident::default(), _lock: binding._lock, _backend: backend, updates, api });
             app.add_capability(CapabilityBuilder::new("local-capture").window("main").local(false).remote(format!("{origin}/*"))
-                .permission("allow-capture-start").permission("allow-capture-read").permission("allow-capture-stop").permission("allow-capture-inputs")
+                .permission("allow-capture-start").permission("allow-capture-read").permission("allow-capture-ack").permission("allow-capture-stop").permission("allow-capture-inputs")
                 .permission("allow-recording-widget-update").permission("allow-client-close").permission("allow-client-ready").permission("allow-client-status").permission("allow-update-status").permission("allow-update-activity").permission("allow-update-check").permission("allow-update-download").permission("allow-update-install")
                 .permission("core:event:allow-listen").permission("core:event:allow-unlisten"))?;
             app.add_capability(CapabilityBuilder::new("recording-widget").window("recording-widget").local(false).remote(format!("{origin}/*"))
@@ -423,6 +434,9 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if window.label()=="main" && window.is_minimized().unwrap_or(false) && matches!(event, tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Focused(false)) {
+                recording_widget::main_hidden(window.app_handle());
+            }
             if window.label()=="main" && window.is_visible().unwrap_or(false) {
                 let focused=matches!(event,tauri::WindowEvent::Focused(true));
                 let resized=matches!(event,tauri::WindowEvent::Resized(_));
@@ -437,10 +451,11 @@ fn main() {
 
             if window.label() == "main" && matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event { api.prevent_close(); }
+                let _recording_hidden=recording_widget::main_hidden(window.app_handle());
                 #[cfg(any(target_os = "macos", target_os = "windows"))]
                 { let _ = window.hide(); }
                 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-                resident::request_quit(window.app_handle());
+                { if _recording_hidden {let _=window.hide();} else {resident::request_quit(window.app_handle());} }
             }
         })
         .build(client_context()).expect("TTS desktop runtime")

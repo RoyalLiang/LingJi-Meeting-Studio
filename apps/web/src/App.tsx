@@ -16,6 +16,7 @@ import { api, messageOf, setCsrf, setAudioTransport, ApiError } from './api';
 import { applyRecordDelta, subscribeToRecord, type ConnectionState } from './record-subscription';
 import type { Bootstrap, RecordDetail, RecordListItem, Segment, Evidence } from './model';
 import { timecode } from './model';
+import { ProcessingProgress } from './components/ProcessingProgress';
 import type { WorkspaceDirectory } from './workspace-model';
 import { WorkspaceHome } from './components/WorkspaceHome';
 import { WorkspaceEditor, ArchiveRecords } from './components/WorkspaceDialogs';
@@ -97,6 +98,9 @@ export default function App() {
 function Workspace() {
   const [boot, setBoot] = useState<Bootstrap | null>(null), [authReady, setAuthReady] = useState(false), [loading, setLoading] = useState(true);
   const [records, setRecords] = useState<RecordListItem[]>([]), [query, setQuery] = useState(''), [id, setId] = useState(new URLSearchParams(location.search).get('record') || ''), [record, setRecord] = useState<RecordDetail | null>(null);
+  const [uploadIssue, setUploadIssue] = useState('');
+  const [localAudio, setLocalAudio] = useState<{recordId:string;manifests:Awaited<ReturnType<typeof localManifests>>}>({recordId:'',manifests:[]});
+  const uploadingNow = useRef(false);
   const [error, setError] = useState(''), [busy, setBusy] = useState(false), [translationOpen, setTranslationOpen] = useState(false);
   const [capturePhase, setCapturePhase] = useState<'idle' | 'starting' | 'stopping'>('idle');
   const [minutesSettingsOpen, setMinutesSettingsOpen] = useState(false), [noticeVersion, setNoticeVersion] = useState(0);
@@ -136,7 +140,8 @@ function Workspace() {
     settings: () => { setModal('settings'); },
     microphone: () => { void toggleMicrophone(); }
   });
-  const displayDurationMs = useRecordingDuration(record?.id || '',capturedDurationMs(record?.durationMs||0,record?.sources||[],signals),recording);
+  const audioDurationMs = capturedDurationMs(record?.durationMs||0,record?.sources||[],signals,localAudio.recordId===record?.id?localAudio.manifests:[]);
+  const displayDurationMs = useRecordingDuration(record?.id || '',audioDurationMs,recording);
   useRecordingWidget({recording,microphoneOn:signals.some(signal=>signal.kind==='microphone'),paused:!recording && record?.capture==='paused',canResume:!!record && record.sources.every(source=>source.watermark===source.lastSequence),busy:busy || stopping.current,durationMs:displayDurationMs,rms:Math.max(0,...signals.map(signal=>Math.min(1,signal.rms)))},setError,record?.id||'');
   const updates = useClientUpdates({ authenticated: authReady, recording, paused: record?.capture === 'paused', busy: busy || stopping.current });
   const bootRequest = useRef<Promise<boolean> | null>(null);
@@ -196,8 +201,21 @@ function Workspace() {
     void probe(); const timer = setInterval(() => void probe(), 15000);
     return () => { controller.abort(); clearInterval(timer); };
   }, [authReady, id, online, retryVersion]);
-  const upload = useCallback(async () => { try { await drainQueue(() => { void pendingCount(activeId.current).then(setPending); }); setPending(await pendingCount(activeId.current)); }
-    catch (e) { if (navigator.onLine || localBackend) setError(messageOf(e)); } }, []);
+  const refreshLocalAudio = useCallback(async () => {
+    const recordId=activeId.current;
+    const [count,manifests]=await Promise.all([pendingCount(recordId),localManifests(recordId)]);
+    if(activeId.current===recordId) {setPending(count);setLocalAudio({recordId,manifests});}
+  },[]);
+  const upload = useCallback(async () => {
+    if(uploadingNow.current) return;
+    uploadingNow.current=true;
+    try { await drainQueue(()=>{void refreshLocalAudio();}); await refreshLocalAudio();setUploadIssue(''); }
+    catch(e) {
+      if(e instanceof ApiError && (e.code==='service_unavailable'||e.status>=500)) setUploadIssue('记录服务连接中断，音频正缓存在本机，将自动重试保存。请保持应用开启。');
+      else if(navigator.onLine||localBackend) setError(messageOf(e));
+    } finally {uploadingNow.current=false;}
+  },[localBackend,refreshLocalAudio]);
+  useEffect(()=>{if(authReady&&id)void refreshLocalAudio().catch(e=>setError(messageOf(e)));},[id,authReady,refreshLocalAudio]);
   useEffect(() => {
     if (!authReady) return; const network = () => { setOnline(navigator.onLine); if (navigator.onLine || localBackend) void upload(); };
     addEventListener('online', network); addEventListener('offline', network); const timer = setInterval(upload, 2500); void upload();
@@ -265,7 +283,7 @@ function Workspace() {
       if (continuing) { setRecording(controller.active); setError(messageOf(error)); return; }
       setRecording(false);
       void stopCapture('pause', '', true).finally(() => { if (capture.current === controller) setError(messageOf(error)); });
-    }, () => { void upload(); }, () => {
+    }, () => { void refreshLocalAudio().catch(e=>setError(messageOf(e))); void upload(); }, () => {
       if (capture.current === controller) void stopCapture('pause');
     }, setSignals);
     return controller;
@@ -367,13 +385,15 @@ function Workspace() {
     </aside>
     <main id="workspace" className={`workspace ${translationOpen ? 'with-translation' : ''}`}><header className="topbar glass"><div className="workspace-breadcrumb"><button className="breadcrumb" disabled={recording||busy} onClick={()=>chooseScope(scope)}>{directoryName}</button><CaretRight size={14}/><span>{record ? '记录详情' : '目录概览'}</span></div><div className="search-box topbar-search"><MagnifyingGlass size={18}/><input type="search" aria-label="搜索当前目录会议内容" placeholder="搜索当前目录的会议、纪要与内容" value={query} onChange={e => setQuery(e.target.value)}/></div><div className="sync-state" title="页面与记录服务的连接状态；与语音、AI 模型服务连接无关" data-connection-state={connectionState}><ConnectionStatus state={connectionState} localBackend={localBackend} online={online} pending={pending}/><ScrollToTop root={scrollRoot}/></div></header>
       <div className="workspace-body"><div ref={scrollRoot} className="workspace-scroll" tabIndex={0} aria-label="会议内容滚动区">
-      {id && connectionState==='reconnecting' && <FeedbackNotice key="connection-retry" message="实时更新暂时中断，正在重连记录服务。"/>}
+      {uploadIssue && !error && <FeedbackNotice key="audio-upload-retry" message={uploadIssue} action={{label:'立即重试',run:()=>void upload()}}/>}
+      {id && !uploadIssue && connectionState==='reconnecting' && <FeedbackNotice key="connection-retry" message="实时更新暂时中断，正在重连记录服务。"/>}
       {id && record && connectionState==='unavailable' && <FeedbackNotice key="connection-unavailable" message="记录服务暂时不可用，正在自动重试。" action={{label: '重新连接', run: () => setRetryVersion(v=>v+1)}}/>}
       {boot.providers.fixture && <div className="fixture-notice">开发测试模式 · 识别与纪要为测试数据</div>}
       {!id ? <WorkspaceHome key={`${scope}:${homeVersion}`} scope={scope} records={records} query={query} modelReady={boot.providers.textMinutes ?? boot.providers.minutes} disabled={recording||busy} open={selectRecord} archive={openArchive} create={newDirectory} edit={()=>{setEditingDirectory(directories.find(w=>w.id===scope));setModal('directory');}} quick={()=>void quickRecord()}/> : !record ? <div className="empty" role="status">{connectionState==='unavailable' ? <><p>记录服务暂时不可用，正在自动重试。</p><Button onClick={()=>setRetryVersion(v=>v+1)}>重新连接</Button></> : connectionState==='inaccessible' ? '当前记录不可访问，请选择其他记录。' : '正在读取记录…'}</div> : <><section className="meeting-header glass" aria-label="会议头部"><div className="record-heading"><div className="record-heading-main">
-          <RecordTitle key={record.id} title={record.title} save={async title => { const saved = await mutate(`/records/${id}`, 'PATCH', {title}); if (saved) { await loadList(); showToast('会议标题已保存。'); } return saved; }}/></div><div className="record-heading-toolbar"><div className="record-meta" title={`${new Date(records.find(r=>r.id===id)?.createdAt || Date.now()).toLocaleDateString('zh-CN')} · 转录 v${record.transcriptRevision} · ${record.retentionDays} 天留存 · ${new Date(record.deleteAt).toLocaleDateString('zh-CN')} 到期 · ${directories.find(w=>w.id===record.workspaceId)?.name || '未归档'}`}><Status tone={recording ? 'live' : ''}>{recording ? '正在记录' : record.capture === 'completed' ? '已完成' : record.capture === 'sealed' ? '整理中' : record.capture === 'paused' ? '已暂停' : '待开始'}</Status>{['blocked','failed'].includes(record.transcription) && <Button className="record-warning" variant="ghost" aria-label="查看语音处理提示" title="查看语音处理提示" onClick={()=>setNoticeVersion(value=>value+1)}><WarningCircle size={15}/></Button>}<time className="record-duration" aria-label="会议录音时长">{timecode(displayDurationMs)}</time></div>
+          <RecordTitle key={record.id} title={record.title} save={async title => { const saved = await mutate(`/records/${id}`, 'PATCH', {title}); if (saved) { await loadList(); showToast('会议标题已保存。'); } return saved; }}/></div><div className="record-heading-toolbar"><div className="record-meta" title={`${new Date(records.find(r=>r.id===id)?.createdAt || Date.now()).toLocaleDateString('zh-CN')} · 转录 v${record.transcriptRevision} · ${record.retentionDays} 天留存 · ${new Date(record.deleteAt).toLocaleDateString('zh-CN')} 到期 · ${directories.find(w=>w.id===record.workspaceId)?.name || '未归档'}`}><Status tone={recording ? 'live' : ''}>{recording ? '正在记录' : record.capture === 'completed' ? '已完成' : record.capture === 'sealed' ? '整理中' : record.capture === 'paused' ? '已暂停' : '待开始'}</Status>{['blocked','failed'].includes(record.transcription) && <Button className="record-warning" variant="ghost" aria-label="查看语音处理提示" title="查看语音处理提示" onClick={()=>setNoticeVersion(value=>value+1)}><WarningCircle size={15}/></Button>}<time className="record-duration" aria-label="录音进度，含本机待保存音频">{timecode(displayDurationMs)}</time></div>
           <div className="actions meeting-actions">{boot.learning?.enabled && <Button className="meeting-icon" aria-label="学习评审" title={record.learning?.status==='ready' ? `学习评审 · ${record.learning.groups}` : record.learning?.status==='running' || record.learning?.status==='queued' ? '待标注准备中' : '学习评审'} disabled={busy || record.capture!=='completed'} onClick={()=>setModal('learning')}><Sparkle size={17}/></Button>}<Button className="meeting-icon" aria-label="导出" title="导出" disabled={busy} onClick={()=>setModal('export')}><ArrowDown size={17}/></Button><Button className="meeting-icon" aria-label="分享" title="分享" disabled={busy} onClick={()=>setModal('share')}><ShareNetwork size={17}/></Button><Button className="meeting-icon" aria-label="实时翻译" title="实时翻译" aria-expanded={translationOpen} onClick={()=>setTranslationOpen(!translationOpen)}><Translate size={17}/>{record.translationTarget && <span className="live-dot"/>}</Button><Button className="meeting-icon" aria-label="归档" title={recording ? '录音结束后可归档' : '归档'} disabled={recording||busy} onClick={()=>openArchive([id])}><Archive size={17}/></Button><Button className="meeting-icon" aria-label="整理设置" title="整理设置" aria-expanded={minutesSettingsOpen} aria-controls="minutes-settings" onClick={()=>setMinutesSettingsOpen(!minutesSettingsOpen)}><GearSix size={17}/></Button><Button className="meeting-icon" variant="danger" aria-label="删除本次记录" disabled={recording||busy} onClick={() => setModal('delete')}><Trash size={18}/></Button></div></div></div>
         <RecordingPlayback key={record.id} record={record}/>
+        <ProcessingProgress record={record} localDurationMs={audioDurationMs} pending={pending}/>
         <MeetingControls record={record} recording={recording} busy={busy} phase={capturePhase} ready={sourceReady} signals={signals} progress={importProgress !== null ? `正在导入音频 ${Math.round(importProgress * 100)}%` : undefined}
       start={kind => void startCapture(kind)} quick={() => void quickRecord()} sources={() => setModal('capture')}
         microphone={() => void toggleMicrophone()}

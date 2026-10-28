@@ -8,6 +8,7 @@ use std::{
 };
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_updater::{Update, UpdaterExt};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
 const MAX_DOWNLOAD: u64 = 256 * 1024 * 1024;
 #[derive(Clone, Serialize)]
@@ -388,6 +389,15 @@ impl Updates {
     ) -> Result<(), String> {
         let _operation = self.operation()?;
         let permit = self.gate.install(captures.active())?;
+        #[cfg(feature="smoke-test")]
+        let fixture = !self.preview_channel && std::env::var_os("TTS_UPDATE_TEST_EXECUTABLE").is_some();
+        #[cfg(not(feature="smoke-test"))]
+        let fixture = false;
+        let confirmation=app.clone();
+        let accepted=fixture || tauri::async_runtime::spawn_blocking(move || confirmation.dialog().message("退出聆记并安装更新？已保存的录音和会议数据将保留。安装期间请勿关机。")
+            .title("安装版本更新").buttons(MessageDialogButtons::OkCancelCustom("退出并安装".into(),"暂不安装".into())).blocking_show()).await.map_err(|e|e.to_string())?;
+        if !accepted {self.phase(app,"ready",None);return Ok(());}
+
         if self.preview_channel {
             let (path, digest, bytes) = {
                 let state = self.state.lock().unwrap();
@@ -398,10 +408,13 @@ impl Updates {
                 proxy.update_barrier().await?;
                 crate::preview_updates::verify(&path, bytes, &digest)?;
                 permit.validate(captures.active())?;
-                crate::preview_updates::open(&path)
+                let handoff=crate::preview_updates::open(app, &path, self.status().version.as_deref().unwrap_or(""), || permit.validate(captures.active()))?;
+                self.phase(app,"installing",None);
+                if let Err(error)=crate::resident::finish_update(app) {handoff.cancel();return Err(error);}
+                Ok(())
             }
             .await;
-            self.phase(app, "ready", result.as_ref().err().cloned());
+            if result.is_err() {self.phase(app, "ready", result.as_ref().err().cloned());}
             return result;
         }
         #[cfg(target_os = "linux")]

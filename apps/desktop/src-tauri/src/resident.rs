@@ -42,6 +42,12 @@ fn finish(app: &AppHandle) {
     app.exit(0);
 }
 
+pub fn finish_update(app: &AppHandle) -> Result<(),String> {
+    let state=app.state::<Client>();
+    if let Some(backend)=&state._backend {backend.stop()?;}
+    finish(app);Ok(())
+}
+
 #[cfg(feature = "smoke-test")]
 pub fn probe_exit(app: &AppHandle) { finish(app); }
 

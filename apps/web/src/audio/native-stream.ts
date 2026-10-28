@@ -12,7 +12,7 @@ export function decodeNativePacket(raw: ArrayBuffer, sequence: number, offset: n
 }
 
 export async function openNativeStream(invoke: NativeInvoke, kind: 'display' | 'microphone', deviceId: string,
-  onPacket: (packet: NativePacket) => Promise<void>, onError: (error: Error) => void): Promise<NativeStream> {
+  onPacket: (packet: NativePacket) => Promise<void>, onError: (error: Error, retaining?: boolean) => void): Promise<NativeStream> {
   const started = await invoke('capture_start', { kind, deviceId }) as { id: string; label: string };
   let stopping: Promise<void> | undefined, discard = false, stopRequested = false, sequence = 0, offset = 0;
   const done = (async () => {
@@ -23,11 +23,29 @@ export async function openNativeStream(invoke: NativeInvoke, kind: 'display' | '
           if (!stopRequested) throw new Error('音频采集意外停止，已保留本地录音。请恢复录制并检查音频设备。');
           break;
         }
-        const packet = decodeNativePacket(raw, sequence, offset); sequence++; offset += packet.buffer.byteLength / 2;
-        if (!discard) await onPacket(packet); // Persist before requesting another native packet.
+        const packet = decodeNativePacket(raw, sequence, offset);
+        let saved = false, reported = false;
+        while (!discard) {
+          try {
+            if (!saved) { await onPacket(packet); saved = true; }
+            if (discard) break;
+            await invoke('capture_ack', { id: started.id, sequence, sampleOffset: offset, sampleCount: packet.buffer.byteLength / 2 });
+            break;
+          } catch (reason) {
+            if (discard) break;
+            // Stop production, retaining this head and the disk-backed tail until local persistence recovers.
+            stopRequested = true;
+            stopping ??= invoke('capture_stop', { id: started.id, discard: false }).then(() => {});
+            await stopping;
+            if (!reported) { reported = true; onError(new Error(`${reason instanceof Error ? reason.message : String(reason)}。未确认音频仍在本机等待保存，请保持应用开启。`), true); }
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+        }
+        if (discard) break;
+        sequence++; offset += packet.buffer.byteLength / 2;
       }
     } catch (reason) {
-      await invoke('capture_stop', { id: started.id, discard: true }).catch(() => {});
+      await invoke('capture_stop', { id: started.id, discard }).catch(() => {});
       if (!discard) {
         const error = reason instanceof Error ? reason : new Error(String(reason)); onError(error); throw error;
       }
@@ -36,7 +54,7 @@ export async function openNativeStream(invoke: NativeInvoke, kind: 'display' | '
   void done.catch(() => {});
   return { ...started, done, stop: async (drop = false) => {
     stopRequested = true; discard ||= drop;
-    stopping ??= invoke('capture_stop', { id: started.id, discard }).then(() => {});
+    if (!stopping || drop) stopping = invoke('capture_stop', { id: started.id, discard }).then(() => {});
     await stopping; await done;
   } };
 }
