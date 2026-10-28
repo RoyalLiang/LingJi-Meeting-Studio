@@ -33,6 +33,8 @@
 
 ## 开发、设计与验收
 
+[Beta 体检与实施计划（2026-10-28）](design/beta-plan-2026-10-28.md)：固定 v0.1.38 源码的多维检查、Cloudflare 官网与共享快照建议、通用字符集待确认范围；计划与 [ADR 0017](adr/0017-beta-public-sharing.md) 均待评审，尚未实施或部署。
+
 | 目标 | 文档 |
 | --- | --- |
 | 了解已实现能力、限制及证据截止点 | [当前状态](engineering/current-state.md) |
