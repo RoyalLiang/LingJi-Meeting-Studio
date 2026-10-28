@@ -197,7 +197,7 @@ test('all topic details stay visible and each paragraph shows only its frozen sp
  assert.doesNotMatch(html,/展开 .*条讨论细节|class="branch-detail"/);
  for(let i=1;i<=5;i++)assert.match(html,new RegExp(`讨论详情${i}`));
  assert.equal((html.match(/class="minute-speakers"/g)||[]).length,5);
- assert.match(html,/张工/);assert.match(html,/未区分说话人/);assert.doesNotMatch(html,/错误的新修订姓名/);
+  assert.match(html,/说话人1/);assert.match(html,/未区分说话人/);assert.doesNotMatch(html,/张工|错误的新修订姓名/);
 });
 
 

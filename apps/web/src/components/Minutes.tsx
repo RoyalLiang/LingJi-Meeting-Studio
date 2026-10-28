@@ -48,8 +48,9 @@ export function MinutesPanel({ record, busy, onClose, generate, edit, cite, auto
     submitting.current = true; setGenerating(true);
     try { await generate(template,mode); } finally { submitting.current = false; setGenerating(false); }
   }
-  const job = currentMinutesJob(record), running = ['queued', 'running'].includes(job?.status || ''); const partial = running && job?.scope === 'live' && !record.minutes?.edited ? job.partialMinutes : null;
-  const minutes = historical || partial || (record.capture === 'completed' ? record.minutes || record.liveMinutes : record.liveMinutes || record.minutes);
+  const job = currentMinutesJob(record), running = ['queued', 'running'].includes(job?.status || ''); const complete = record.minutes?.edited ? record.minutes : record.capture === 'completed' ? record.minutes || record.liveMinutes : record.liveMinutes || record.minutes;
+  const partial = !complete && running && job?.scope === 'live' ? job.partialMinutes : null;
+  const minutes = historical || complete || partial;
   const speakers=useMemo(()=>speakerLabels(minutes?.evidenceSnapshot || [], record.speakers, record.segments),[minutes,record.speakers,record.segments]);
   const showPreview = previewOpen && running && !historical && !draft && !record.minutes?.edited && view === 'ai';
   const formal = minutes === record.minutes && Boolean(minutes); const runtime = running ? job?.runtime : minutes?.runtime;
@@ -68,8 +69,8 @@ export function MinutesPanel({ record, busy, onClose, generate, edit, cite, auto
           <div className="minutes-tabs" role="tablist" aria-label="纪要视图">{[{id:'ai',label:'AI 视图'},{id:'tables',label:'表格与图表'},{id:'speakers',label:'发言人总结'},{id:'decisions',label:'关键决策'},{id:'document',label:'正文'}].map(tab=><button key={tab.id} id={`minutes-tab-${tab.id}`} role="tab" aria-selected={view===tab.id || (view==='topics' && tab.id==='ai')} aria-controls="minutes-view" tabIndex={view===tab.id || (view==='topics' && tab.id==='ai') ? 0 : -1} onClick={()=>setView(tab.id)} onKeyDown={event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const ids=['ai','tables','speakers','decisions','document'];const index=ids.indexOf(tab.id),next=event.key==='Home'?0:event.key==='End'?4:(index+(event.key==='ArrowRight'?1:4))%5;setView(ids[next]);document.getElementById(`minutes-tab-${ids[next]}`)?.focus();}}>{tab.label}</button>)}</div>
           <div id="minutes-view" className="minutes-view" role="tabpanel" aria-labelledby={`minutes-tab-${view==='topics'?'ai':view}`}>
           {view==='ai' && <MinutesTree speakerMap={speakers} minutes={minutes} cite={ref=>cite(ref,minutes.evidenceSnapshot,minutes.transcriptRevision)}/>}
-          {view==='tables' && <><SummaryTables minutes={minutes} cite={ref=>cite(ref,minutes.evidenceSnapshot,minutes.transcriptRevision)}/><SummaryCharts minutes={minutes} cite={ref=>cite(ref,minutes.evidenceSnapshot,minutes.transcriptRevision)}/></>}
-          {view==='speakers' && <SpeakerMinutes minutes={minutes} cite={ref=>cite(ref,minutes.evidenceSnapshot,minutes.transcriptRevision)}/>}
+          {view==='tables' && <><SummaryTables minutes={minutes} speakerMap={speakers} cite={ref=>cite(ref,minutes.evidenceSnapshot,minutes.transcriptRevision)}/><SummaryCharts minutes={minutes} cite={ref=>cite(ref,minutes.evidenceSnapshot,minutes.transcriptRevision)}/></>}
+          {view==='speakers' && <SpeakerMinutes minutes={minutes} speakerMap={speakers} cite={ref=>cite(ref,minutes.evidenceSnapshot,minutes.transcriptRevision)}/>}
           {view==='decisions' && <DecisionMinutes speakerMap={speakers} minutes={minutes} cite={ref=>cite(ref,minutes.evidenceSnapshot,minutes.transcriptRevision)}/>}
           {view==='topics' && <TopicMap minutes={minutes}/>}
           {view==='document' && (draft || minutes).sections.map((section, sectionIndex) => <section className="minutes-section" key={sectionIndex}><h4>{section.heading}</h4>{section.items.map((item, itemIndex) => <div className="minute-item" key={itemIndex}>

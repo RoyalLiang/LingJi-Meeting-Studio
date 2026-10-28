@@ -82,7 +82,7 @@ test('topic trees preserve uncovered information without repeating the same minu
   const branches=topicBranches(minutes);
   assert.equal(branches[0].items.length,0);
   assert.equal(branches[1].items.length,0);
-  assert.equal(branches[2].title,'补充要点');
+  assert.equal(branches[2].title,'讨论重点');
   assert.equal(branches[2].items.length,2);
   assert.equal(branches[2].items[1].evidence[0].segmentId,'s2');
 });
@@ -149,5 +149,11 @@ test('a failed latest request stays visible while later transcript chunks arrive
 test('known speaker identities use the meeting registry while frozen names and revisions remain authoritative',()=>{
  const parts=[{id:'a',revision:1,speaker:'',speakerId:'person-b'},{id:'b',revision:1,speaker:'旧姓名',speakerId:'person-a'},{id:'c',revision:1,speaker:''}];
  const labels=speakerLabels(parts,[{id:'person-a',label:'说话人 1'},{id:'person-b',label:'说话人 2'}],[{id:'c',revision:2,speaker:'新修订错误归属'}]);
- assert.equal(labels.get('a:1'),'说话人 2');assert.equal(labels.get('b:1'),'旧姓名');assert.equal(labels.get('c:1'),'未区分说话人');
+ assert.equal(labels.get('a:1'),'说话人2');assert.equal(labels.get('b:1'),'说话人1');assert.equal(labels.get('c:1'),'未区分说话人');
+});
+
+test('minutes annotations show stable speaker numbers rather than names',()=>{
+ const parts=[{id:'a',revision:1,speaker:'李工',speakerId:'b'},{id:'b',revision:1,speaker:'张工',speakerId:'a'},{id:'c',revision:1,speaker:'王工',speakerId:'c'},{id:'unknown',revision:1,speaker:''}];
+ const labels=speakerLabels(parts,[{id:'a',label:'张工'},{id:'b',label:'李工'},{id:'c',label:'王工'}],[{id:'b',revision:2,speakerId:'c',speaker:'王工'}]);
+ assert.equal(labels.get('a:1'),'说话人2');assert.equal(labels.get('b:1'),'说话人1');assert.equal(labels.get('c:1'),'说话人3');assert.equal(labels.get('unknown:1'),'未区分说话人');
 });

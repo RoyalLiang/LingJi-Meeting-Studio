@@ -2,6 +2,7 @@ import { minutesTimeoutMs } from './minutes-deadline.mjs';
 import { MINUTES_PROMPT_VERSION } from './minutes-prompts.mjs';
 import { audioMinutesEnabled } from './config.mjs';
 import { liveBaseline, mergeLiveMinutes } from '../../../packages/records/src/live-minutes.mjs';
+import { ruleIntents } from '../../../packages/records/src/intents.mjs';
 import { telemetry } from './telemetry.mjs';
 import { createHash } from 'node:crypto';
 import {compactMinutesPayload} from './minutes-wire.mjs';
@@ -73,6 +74,41 @@ export function buildMinutesManifest(job,config={},budget=inputBudget(config)){
   requireThat(windows.length>0 && windows.length<=512,'minutes_window_limit',422);
   return {version:1,budget,synthesisBudget:synthesisBudget(config),policy,generation:job.generation,transcriptRevision:job.transcriptRevision,notesRevision:job.notesRevision,snapshotOffset,hash:job.manifestHash,windows};
 }
+function discussionItems(minutes){
+  return [
+    ...minutes.sections.flatMap(section=>section.items.map(item=>({heading:section.heading,...item,text:item.label?`${item.label}：${item.text}`:item.text}))),
+    ...(minutes.topics||[]).filter(topic=>topic.summary.trim()).map(topic=>({heading:topic.title,text:topic.summary,evidence:topic.evidence})),
+    ...(minutes.decisions||[]).map(item=>({heading:'决定的讨论',...item})),
+    ...(minutes.actions||[]).map(item=>({heading:'行动的讨论',...item,text:[item.text,item.owner&&`负责人：${item.owner}`,item.due&&`时间：${item.due}`].filter(Boolean).join('；')})),
+    ...(minutes.highlights||[]).map(item=>({heading:'阶段要点',...item})),
+    ...(minutes.currentDiscussion||[]).map(item=>({heading:'当时讨论',...item})),
+    ...(minutes.speakerSummaries||[]).map(item=>({heading:'发言记录',text:item.summary,evidence:item.evidence})),
+    ...(minutes.tables||[]).flatMap(table=>table.rows.map(row=>({heading:table.title,text:row.cells.map((cell,index)=>`${table.columns[index]}：${cell}`).join('；'),evidence:row.evidence}))),
+    ...(minutes.visuals||[]).flatMap(visual=>visual.entries.map(entry=>({heading:visual.title,text:`${entry.label}：${entry.text||entry.quote||entry.valueText}`,evidence:entry.evidence})))
+  ];
+}
+
+function keepWindowDiscussion(result,leaves,snapshot,windows){
+  const itemKey=item=>JSON.stringify([item.heading,item.text.trim().replace(/\s+/g,' '),item.evidence.map(ref=>`${ref.segmentId}:${ref.revision}`).sort()]);
+  const known=new Set(discussionItems(result).map(itemKey)),groups=new Map();
+  for(const leaf of leaves)for(const item of discussionItems(leaf.result)){
+    const key=itemKey(item);if(known.has(key))continue;known.add(key);
+    const heading=`讨论过程 · ${item.heading}`.slice(0,200),items=groups.get(heading)||[];
+    // Historical proposals remain readable without becoming current decisions.
+    for(let start=0;start<item.text.length;start+=7900)items.push({text:item.text.slice(start,start+7900),evidence:item.evidence,kind:'fact',label:'过程记录'});groups.set(heading,items);
+  }
+  const sections=[...result.sections],corrections=new Map(),windowSources=new Map(windows.map(window=>[window.key,window.snapshot]));
+  for(const source of [...leaves.map(leaf=>({minutes:leaf.result,snapshot:windowSources.get(leaf.key)})),{minutes:result,snapshot}]){
+    const ends=new Map(source.snapshot.filter(segment=>!segment.contextOnly).map(segment=>[`${segment.id}:${segment.revision}`,segment.endMs||0]));
+    for(const correction of source.minutes.corrections||[]){
+      const time=Math.max(0,...correction.evidence.map(ref=>ends.get(`${ref.segmentId}:${ref.revision}`)||0)),old=corrections.get(correction.targetId);
+      if(!old||time>=old.time)corrections.set(correction.targetId,{time,correction});
+    }
+  }
+  for(const [heading,items] of groups)for(let i=0;i<items.length;i+=100)sections.push({heading,items:items.slice(i,i+100)});
+  return {...result,sections,decisions:result.decisions||[],actions:result.actions||[],corrections:[...corrections.values()].map(entry=>entry.correction)};
+}
+
 function currentJob(record,claim){
   const job=record.jobs.find(j=>j.id===claim.id);
   requireThat(job && !record.deleted && record.generation===claim.generation && job.fence===claim.fence && job.status==='running','stale_job',410);
@@ -132,7 +168,7 @@ export async function runMinutesPipeline(repo,recordId,claim,config,generate,opt
           let partial = liveBaseline(record);
       const baselineParts = new Set((partial?.evidenceSnapshot || []).map(segment=>`${segment.id}:${segment.revision}`)).size;
           for (const entry of manifest.windows) {const window=completedWindows.get(entry.key);if(window)partial = mergeLiveMinutes(partial, window.result, window.snapshot);}
-      validateMinutes(partial, partial.evidenceSnapshot,undefined,{aggregate:true,aggregateParts:baselineParts+completedWindows.size});
+      validateMinutes(partial, partial.evidenceSnapshot,undefined,{aggregate:true,aggregateParts:baselineParts+completedWindows.size,maxSections:Math.min(25650,(liveBaseline(record)?.sections.length||0)+20*manifest.windows.length+1)});
           job.partialMinutes = {...partial, transcriptRevision:claim.transcriptRevision, generatedAt:new Date().toISOString()};
         }
       }
@@ -141,6 +177,8 @@ export async function runMinutesPipeline(repo,recordId,claim,config,generate,opt
     cache.set(key,result);return {key,result};
   }
   let nodes=await mapWindows(manifest.windows,window=>execute(window.key,{snapshot:window.snapshot},manifest.windows.length===1?'single':'window'));
+  const leaves=nodes;
+  if(claim.mode==='extractive'&&leaves.length>1)nodes=[{key:manifest.hash,result:{title:'本地提取纪要',method:'extractive',sections:leaves.flatMap(node=>node.result.sections),actions:ruleIntents(claim.snapshot.filter(segment=>!segment.contextOnly)).items.filter(item=>item.kind==='action').map(({text,evidence})=>({text,evidence,owner:null,due:null}))}}];
   let level=0;
   while(nodes.length>1){
     const groups=[];let group=[];
@@ -170,5 +208,7 @@ export async function runMinutesPipeline(repo,recordId,claim,config,generate,opt
       return execute(hash({policy:manifest.policy,children:children.map(node=>node.key),synthesisBudget:manifest.synthesisBudget}),input,'synthesis',groups.length===1);
     });
   }
-  return {...nodes[0].result,usageTokens:tokens,usageRecorded:true,coverage:{manifestHash:manifest.hash,windows:manifest.windows.length,completed:manifest.windows.length,segments:new Set(claim.snapshot.map(s=>s.id)).size,calls,reused,levels:level},runtime:{...nodes[0].result.runtime,pipelineCalls:calls}};
+  const result=manifest.windows.length>1&&claim.mode!=='extractive'?keepWindowDiscussion(nodes[0].result,leaves,claim.snapshot,manifest.windows):nodes[0].result;
+  validateMinutes(result,claim.snapshot,claim.liveContext,{newEvidenceOnly:true,maxSections:manifest.windows.length>1?50*(manifest.windows.length+1):undefined});
+  return {...result,usageTokens:tokens,usageRecorded:true,coverage:{manifestHash:manifest.hash,windows:manifest.windows.length,completed:manifest.windows.length,segments:new Set(claim.snapshot.map(s=>s.id)).size,calls,reused,levels:level},runtime:{...result.runtime,pipelineCalls:calls}};
 }

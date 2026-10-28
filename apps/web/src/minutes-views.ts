@@ -10,7 +10,7 @@ export function topicBranches(minutes: Minutes): (Topic & { items: MinutesItem[]
   const items = minutes.sections.flatMap(section => section.items);
   if (!minutes.topics?.length) return minutes.sections.map(section => ({ title: section.heading, summary: '', evidence: section.items.flatMap(item => item.evidence), items: section.items }));
   const key = (ref: Evidence) => `${ref.segmentId}:${ref.revision}`;
-  const topics = minutes.topics, groups = topics.map(() => [] as MinutesItem[]), other: MinutesItem[] = [];
+  const topics = minutes.topics, groups = topics.map(() => [] as MinutesItem[]), other = new Map<string, MinutesItem[]>();
   const sources = topics.map(topic => new Set(topic.evidence.map(key)));
   for (const section of minutes.sections) for (const item of section.items) {
     let candidates: number[] = [];
@@ -23,7 +23,7 @@ export function topicBranches(minutes: Minutes): (Topic & { items: MinutesItem[]
         candidates = max ? scores.flatMap((score, index) => score === max ? [index] : []) : [];
       }
     }
-    if (candidates.length === 1) groups[candidates[0]].push(item); else other.push(item);
+    if (candidates.length === 1) groups[candidates[0]].push(item); else other.set(section.heading, [...(other.get(section.heading) || []), item]);
   }
   const normalize = (text: string) => text.trim().replace(/\s+/g, ' ');
   const union = (refs: Evidence[]) => [...new Map(refs.map(ref => [key(ref), ref])).values()];
@@ -38,7 +38,7 @@ export function topicBranches(minutes: Minutes): (Topic & { items: MinutesItem[]
     }
     return { ...topic, evidence, items: [...unique.values()] };
   });
-  if (other.length) branches.push({ title: '补充要点', summary: '', evidence: other.flatMap(item => item.evidence), items: other });
+  for(const [title,items] of other) branches.push({ title, summary: '', evidence: union(items.flatMap(item => item.evidence)), items });
   return branches;
 }
 
@@ -115,11 +115,26 @@ export function decisionItems(minutes: Minutes): MinutesItem[] {
 }
 
 export function speakerLabels(snapshot: Segment[], registry: {id:string;hash?:string;label:string}[] = [], current: Segment[] = []) {
-  const names = new Map(registry.flatMap(speaker => [[speaker.id, speaker.label], ...(speaker.hash ? [[speaker.hash, speaker.label]] : [])] as [string,string][]));
-  const exact = new Map(current.map(segment => [`${segment.id}:${segment.revision}`, segment]));
-  return new Map(snapshot.map(segment => {
-    const key = `${segment.id}:${segment.revision}`, latest = exact.get(key);
-    const identity = segment.speakerId || segment.speakerHash || latest?.speakerId || latest?.speakerHash;
-    return [key, segment.speaker?.trim() || latest?.speaker?.trim() || (identity && names.get(identity)) || '未区分说话人'];
+  const labels=new Map<string,string>(),used=new Set<number>();
+  const numbered=(label:string)=>Number(label.match(/^(?:说话人|发言人|speaker)\s*(\d+)$/i)?.[1])||0;
+  const assign=(identity:string,label='',preferred=0)=>{
+    const existing=labels.get(identity);if(existing)return existing;
+    let number=preferred||numbered(label);if(!number||used.has(number)){number=1;while(used.has(number))number++;}
+    used.add(number);const display=`说话人${number}`;labels.set(identity,display);return display;
+  };
+  registry.forEach((speaker,index)=>{
+    const display=assign(speaker.id,speaker.label,numbered(speaker.label)||index+1);
+    if(speaker.hash)labels.set(speaker.hash,display);labels.set(`label:${speaker.label}`,display);
+  });
+  const identity=(segment:Segment)=>{const label=segment.speaker?.trim()||'';return segment.speakerId||segment.speakerHash||(label&&!/^(?:(?:说话人|发言人|speaker)\s*)?(?:未标注|未识别|未知|未区分|unknown|unlabeled)(?:说话人)?$/i.test(label)?`label:${label}`:'');};
+  for(const segment of [...current,...snapshot].sort((a,b)=>(a.startMs||0)-(b.startMs||0))){
+    const id=identity(segment);if(!id)continue;
+    const display=labels.get(id)||labels.get(`label:${segment.speaker?.trim()}`)||assign(id,segment.speaker||'');
+    labels.set(id,display);if(segment.speakerHash)labels.set(segment.speakerHash,display);
+  }
+  const exact=new Map(current.map(segment=>[`${segment.id}:${segment.revision}`,segment]));
+  return new Map(snapshot.map(segment=>{
+    const key=`${segment.id}:${segment.revision}`,id=identity(segment)||identity(exact.get(key)||segment);
+    return [key,labels.get(id)||'未区分说话人'];
   }));
 }

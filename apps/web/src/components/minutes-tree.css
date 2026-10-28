@@ -12,12 +12,12 @@
 
 /* Keep source access in the metadata corner instead of a separate text row. */
 .minutes-tree .branch-node { position: relative; }
-.minutes-tree .branch-node .minute-speakers { padding-right: 30px; }
-.minutes-tree .branch-node .citations.is-compact { position: absolute; top: 8px; right: 10px; margin: 0; }
+.minutes-tree .branch-node > .minute-speakers { padding-right: 30px; }
+.minutes-tree .branch-node > .citations.is-compact { position: absolute; top: 8px; right: 10px; margin: 0; }
 .citations.is-compact .citation-entry { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; min-height: 26px; padding: 4px; border-radius: 6px; }
 .citations.is-compact:has([aria-expanded="true"]) { z-index: 2; padding: 4px; border-radius: 8px; background: var(--glass-strong); box-shadow: 0 4px 18px color-mix(in srgb, var(--ink-1) 12%, transparent); }
 @media (pointer: coarse) {
   .citations.is-compact .citation-entry { min-width:44px; min-height:44px; }
-  .minutes-tree .branch-node .minute-speakers { min-height:32px; padding-top:8px; padding-right:44px; }
+  .minutes-tree .branch-node > .minute-speakers { min-height:32px; padding-top:8px; padding-right:44px; }
 }
 .citations.is-compact:has([aria-expanded="true"]) { display:flex; flex-wrap:wrap; align-items:center; gap:4px; max-width:min(300px,calc(100vw - 64px)); max-height:240px; overflow-y:auto; }

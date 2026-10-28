@@ -117,13 +117,19 @@ export function seal(record, manifest) {
     && (!job.liveBaseHash || job.liveBaseHash===digest(JSON.stringify(record.liveMinutes || null)))
     && Array.isArray(job.partialMinutes.evidenceSnapshot) && job.partialMinutes.evidenceSnapshot.every(segment=>record.segments.some(current=>current.id===segment.id && current.revision===segment.revision))){
     // Preserve validated windows before final scheduling cancels their in-flight live job.
-    const partial=job.partialMinutes;
-    const baselineParts=new Set((liveBaseline(record)?.evidenceSnapshot || []).map(segment=>`${segment.id}:${segment.revision}`)).size;
-    validateMinutes(partial,partial.evidenceSnapshot,undefined,{aggregate:true,aggregateParts:Math.max(1,baselineParts+(job.progress?.completed || 0))});
-    record.liveMinutes={...structuredClone(partial),notesRevision:job.notesRevision,template:job.template};
+    const partial=job.partialMinutes,complete=record.liveMinutes||record.minutes,baseline=liveBaseline(record);
+    // Matching citations do not prove that a regenerated partial kept the complete content.
+    const preservesComplete=!complete||Boolean(baseline&&job.liveIncremental);
+    const baselineParts=new Set((baseline?.evidenceSnapshot || []).map(segment=>`${segment.id}:${segment.revision}`)).size;
+    if(preservesComplete){
+      validateMinutes(partial,partial.evidenceSnapshot,undefined,{aggregate:true,aggregateParts:Math.max(1,baselineParts+(job.progress?.completed || 0)),maxSections:Math.min(25650,(baseline?.sections.length||0)+20*(job.manifest?.windows.length||1)+1)});
+      record.liveMinutes={...structuredClone(partial),notesRevision:job.notesRevision,template:job.template};
+    }
     job.status='cancelled';job.fence=null;job.snapshot=[];delete job.preview;delete job.partialMinutes;
-    if(job.mode==='model')autoNameRecord(record,partial.title);
-    emit(record,'minutes.live',{transcriptRevision:job.transcriptRevision});
+    if(preservesComplete){
+      if(job.mode==='model')autoNameRecord(record,partial.title);
+      emit(record,'minutes.live',{transcriptRevision:job.transcriptRevision});
+    }
   }
   record.capture = 'sealed'; emit(record, 'capture.sealed'); finalize(record);
 }
@@ -221,7 +227,7 @@ export function requestMinutes(record, input = {}) {
     createdAt: new Date().toISOString(), attempts: 0 };
   record.jobs.push(job); emit(record, 'minutes.queued', { jobId: job.id }); return job;
 }
-export function validateMinutes(result, snapshot, context, {newEvidenceOnly=false,aggregate=false,aggregateParts=1}={}) {
+export function validateMinutes(result, snapshot, context, {newEvidenceOnly=false,aggregate=false,aggregateParts=1,maxSections}={}) {
   requireThat(result&&typeof result==='object'&&!Array.isArray(result),'invalid_minutes',422);
   if(result.corrections!==undefined){
     requireThat(Array.isArray(result.corrections)&&result.corrections.length<=40,'invalid_minutes_corrections',422);
@@ -237,8 +243,9 @@ export function validateMinutes(result, snapshot, context, {newEvidenceOnly=fals
   const sources=new Map(snapshot.map(segment=>[`${segment.id}:${segment.revision}`,segment]));
   const cited=ref=>ref&&typeof ref.segmentId==='string'&&Number.isInteger(ref.revision)&&sources.has(`${ref.segmentId}:${ref.revision}`);
   const count=aggregate?Math.max(aggregateParts,sources.size):1, evidenceLimit=aggregate?Math.max(500,sources.size):500;
+  requireThat(maxSections===undefined||(Number.isSafeInteger(maxSections)&&maxSections>0&&maxSections<=25650),'invalid_minutes_validation_mode',422);
   validateMinutesStructure(result || {}, snapshot, requireThat,{aggregate,aggregateParts});
-  requireThat(result && typeof result.title === 'string' && result.title.trim() && result.title.length <= 300 && Array.isArray(result.sections) && result.sections.length <= 20*count, 'invalid_minutes_schema', 422);
+  requireThat(result && typeof result.title === 'string' && result.title.trim() && result.title.length <= 300 && Array.isArray(result.sections) && result.sections.length <= (maxSections ?? 20*count), 'invalid_minutes_schema', 422);
   requireThat(result.sections.length > 0, 'empty_minutes', 422);
   for (const section of result.sections) {
     requireThat(typeof section.heading === 'string' && section.heading.length <= 200 && Array.isArray(section.items) && section.items.length <= 100, 'invalid_minutes_section', 422);
@@ -279,7 +286,8 @@ export function validateMinutes(result, snapshot, context, {newEvidenceOnly=fals
 export function commitMinutes(record, jobId, result, fence) {
   const job = record.jobs.find(j => j.id === jobId);
   requireThat(job && !record.deleted && job.generation === record.generation && job.fence === fence, 'stale_job', 410);
-  validateMinutes(result, job.snapshot, job.liveContext,{newEvidenceOnly:true});
+  const windows=job.manifest?.windows.length||1;
+  validateMinutes(result, job.snapshot, job.liveContext,{newEvidenceOnly:true,maxSections:windows>1?50*(windows+1):undefined});
   const usageRecorded=result.usageRecorded;result={...result};delete result.usageRecorded;
   job.runtime = result.runtime || job.runtime;
   const transcriptChanged = job.scope === 'live' ? (job.liveIncremental && !liveBaseline(record)) || job.snapshot.some(s => !record.segments.some(current => current.id === s.id && current.revision === s.revision)) : job.transcriptRevision !== record.transcriptRevision;
@@ -289,7 +297,7 @@ export function commitMinutes(record, jobId, result, fence) {
   if (job.scope === 'live') {
     const baseline = liveBaseline(record);
     const merged = mergeLiveMinutes(baseline?.template === job.template ? baseline : null, result, job.snapshot);
-    validateMinutes(merged, merged.evidenceSnapshot,undefined,{aggregate:true});
+    validateMinutes(merged, merged.evidenceSnapshot,undefined,{aggregate:true,maxSections:Math.min(25650,(baseline?.sections.length||0)+result.sections.length+1)});
     record.liveMinutes = { ...merged, notesRevision: job.notesRevision, template: job.template, transcriptRevision: job.transcriptRevision, generatedAt: new Date().toISOString() };
     job.status = 'completed'; job.snapshot = []; delete job.preview; delete job.partialMinutes;
     if(!usageRecorded)record.usage.llmTokens += Number.isSafeInteger(result.usageTokens) && result.usageTokens >= 0 ? result.usageTokens : 0;
