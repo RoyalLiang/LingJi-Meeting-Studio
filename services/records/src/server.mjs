@@ -344,7 +344,8 @@ export async function createRecordServer(options = {}) {
       }
       else if (action === 'minutes' && req.method === 'PATCH') result = await changeOwned(id, user, r => {
         requireThat(r.minutes && body.revision === r.minutesRevision, 'minutes_revision_conflict');
-        validateMinutes(body.minutes, r.minutes.evidenceSnapshot,undefined,{aggregate:true});
+        const sourceCount=new Set(r.minutes.evidenceSnapshot.map(segment=>`${segment.id}:${segment.revision}`)).size;
+        validateMinutes(body.minutes, r.minutes.evidenceSnapshot,undefined,{aggregate:true,maxSections:r.minutes.sections.length>20*Math.max(1,sourceCount)?r.minutes.sections.length:undefined});
         r.minutesHistory = [...(r.minutesHistory || []), r.minutes].slice(-10);
         r.minutesRevision++;
           const previous = { ...r.minutes };
