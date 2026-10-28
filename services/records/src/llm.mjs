@@ -62,6 +62,7 @@ export async function completeModelJson(messages, input = process.env, { onDelta
       const result = JSON.parse(source);
       await reportUsage(result.usage);
       requireThat(!responses || !result.status || result.status === 'completed', 'llm_stream_incomplete', 502);
+      requireThat(responses || !['length','content_filter'].includes(result.choices?.[0]?.finish_reason), 'llm_stream_incomplete', 502);
       await append(responses ? outputText(result) : result.choices?.[0]?.message?.content);
       completed = true;
     } else {

@@ -10,6 +10,53 @@ import {buildMinutesManifest,runMinutesPipeline} from '../services/records/src/m
 import {beginMinutesUsage,updateMinutesUsage} from '../packages/records/src/usage.mjs';
 import {generateMinutes} from '../services/records/src/providers.mjs';
 const config={LLM_MODEL:'fixture-model',LLM_API_URL:'http://fixture.invalid'};
+
+test('final synthesis retains the latest validated withdrawal and honors a root correction at the same time',async()=>{
+  for(const rootStatus of [undefined,'corrected']){
+    const f=await fixture(1);let claim;
+    try{
+      await f.repo.change(f.record.id,record=>{
+        const old=record.segments[0],evidence=[{segmentId:old.id,revision:1}];
+        record.capture='recording';record.liveMinutes={title:'上线安排',template:'meeting',notesRevision:0,transcriptRevision:1,sections:[{heading:'安排',items:[{id:'plan',text:'周五上线',evidence}]}],decisions:[{id:'plan',text:'周五上线',evidence}],actions:[],evidenceSnapshot:[old]};
+        record.segments.push({...old,id:'new-early',text:'周五上线待确认',startMs:200000,endMs:201000},{...old,id:'new-late',text:'取消周五上线，改为周一上线',startMs:400000,endMs:401000});record.transcriptRevision++;
+        const job=requestMinutes(record,{scope:'live'});job.status='running';job.fence=job.id;claim=structuredClone(job);
+      });
+      const result=await runMinutesPipeline(f.repo,f.record.id,claim,config,async job=>{
+        const targetId=claim.liveContext.items.find(item=>item.kind==='decision').id;
+        if(job.summaries){
+          const evidence=[{segmentId:'new-late',revision:1}];
+          return {title:'最终安排',sections:[{heading:'讨论',items:[{text:'上线时间已有调整。',evidence}]}],actions:[],decisions:[],...(rootStatus?{corrections:[{targetId,status:rootStatus,text:'改为周一上线',evidence}]}:{})};
+        }
+        const source=job.snapshot.find(segment=>!segment.contextOnly),evidence=[{segmentId:source.id,revision:source.revision}];
+        return {title:'讨论',sections:[{heading:'安排',items:[]}],actions:[],decisions:[],corrections:[{targetId,status:source.id==='new-early'?'pending':'withdrawn',text:source.text,evidence}]};
+      });
+      assert.equal(result.corrections.length,1);
+      assert.equal(result.corrections[0].status,rootStatus||'withdrawn');
+      await f.repo.change(f.record.id,record=>{commitMinutes(record,claim.id,result,claim.fence);});
+      const saved=(await f.repo.get(f.record.id)).liveMinutes;
+      assert.ok(!saved.decisions.some(item=>item.text==='周五上线'&&item.status!=='withdrawn'&&item.status!=='corrected'));
+    }finally{await f.close();}
+  }
+});
+test('context-only references cannot outrank a newer withdrawal in final synthesis',async()=>{
+  const f=await fixture(1);let claim;
+  const a={id:'a',revision:1,sourceId:'mic',startMs:600000,endMs:601000,text:'仍按周五计划推进。'},context={id:'context',revision:1,sourceId:'other',startMs:850000,endMs:1000000,text:'旧上下文中的较长讨论。',contextOnly:true},b={id:'b',revision:1,sourceId:'mic',startMs:950000,endMs:951000,text:'最新决定撤回周五计划。'};
+  const ref=source=>({segmentId:source.id,revision:source.revision});
+  try{
+    await f.repo.change(f.record.id,record=>{
+      record.capture='recording';record.segments=[a,context,b];record.transcriptRevision=1;
+      record.liveMinutes={title:'原周五计划',template:'meeting',notesRevision:record.notesRevision,transcriptRevision:0,sections:[{heading:'原安排',items:[{text:'原周五计划',evidence:[ref(context)]}]}],actions:[],evidenceSnapshot:[context]};
+      const job=requestMinutes(record,{scope:'live'});job.status='running';job.fence=job.id;job.liveContext={items:[{id:'target',text:'原周五计划',evidence:[ref(a)]}]};claim=structuredClone(job);
+    });
+    const result=await runMinutesPipeline(f.repo,f.record.id,claim,config,async job=>{
+      if(job.summaries)return {title:'最终',sections:[{heading:'安排',items:[{text:b.text,evidence:[ref(b)]}]}],actions:[],decisions:[],corrections:[{targetId:'target',status:'withdrawn',text:b.text,evidence:[ref(b)]}]};
+      const source=job.snapshot.find(segment=>!segment.contextOnly);
+      return {title:'分段',sections:[{heading:'安排',items:[{text:source.text,evidence:[ref(source)]}]}],actions:[],decisions:[],corrections:source.id==='a'?[{targetId:'target',status:'corrected',text:a.text,evidence:[ref(a),ref(context)]}]:[]};
+    });
+    assert.equal(result.corrections[0].status,'withdrawn');
+  }finally{await f.close();}
+});
+
 test('live partial budgets count validated windows when one frozen source is split',async()=>{
   const f=await fixture(1);let claim,windows=0;
   const transcript=Array.from({length:6000},(_,index)=>String.fromCodePoint(0x4e00+index)).join('');

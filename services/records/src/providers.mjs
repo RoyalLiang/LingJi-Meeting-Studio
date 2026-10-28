@@ -75,7 +75,9 @@ export async function generateMinutes(job, env = process.env, options = {}) {
       const items = hints.items.filter(i => i.kind === kind).map(({text,evidence}) => ({text,evidence}));
       if (items.length) sections.push({heading,items});
     }
-    if (!sections.length) sections.push({heading:'讨论摘录',items:job.snapshot.filter(segment=>!segment.contextOnly).slice(0,12).map(s=>({text:s.text,evidence:[{segmentId:s.id,revision:s.revision}]}))});
+    const represented=new Set(sections.flatMap(section=>section.items.flatMap(item=>item.evidence.filter(ref=>job.snapshot.some(source=>source.id===ref.segmentId&&source.revision===ref.revision&&source.text.trim()===item.text.trim())).map(ref=>`${ref.segmentId}:${ref.revision}`))));
+    const items=job.snapshot.filter(segment=>!segment.contextOnly&&!represented.has(`${segment.id}:${segment.revision}`)).flatMap(source=>Array.from({length:Math.ceil(source.text.length/7900)},(_,index)=>({text:source.text.slice(index*7900,(index+1)*7900),evidence:[{segmentId:source.id,revision:source.revision}]})));
+    for(let i=0;i<items.length;i+=100)sections.push({heading:'讨论摘录',items:items.slice(i,i+100)});
     return {title:'本地提取纪要',method:'extractive',sections,actions:hints.items.filter(i=>i.kind==='action').map(({text,evidence})=>({text,evidence,owner:null,due:null})),usageTokens:0};
   }
   if (job.modelVersion && job.modelVersion !== 'default') env = {...env,LLM_MODEL:job.modelVersion};
