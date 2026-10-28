@@ -23,14 +23,14 @@ test('manual editing accepts cumulative minutes using only the server frozen evi
   const login=await fetch(`${base}/api/auth/register`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:'long-password'})}),session=await login.json();
   assert.equal(login.status,200);
   const headers={'Content-Type':'application/json',Cookie:login.headers.get('set-cookie').split(';')[0],'X-CSRF-Token':session.csrf};
-  const record=createRecord(`user:${digest(email)}`),snapshot=[segment('s1'),segment('s2',1000)],evidence=[ref(snapshot[0])];
+    const record=createRecord(`user:${digest(email)}`),snapshot=[segment('s1')],evidence=[ref(snapshot[0])];
   const minutes={...empty(),sections:Array.from({length:21},(_,i)=>({heading:`议题${i}`,items:[{text:`要点${i}`,evidence}]}))};
   record.minutesRevision=1;record.minutes={...minutes,revision:1,evidenceSnapshot:snapshot};await app.repo.insert(record);
   const save=body=>fetch(`${base}/api/records/${record.id}/minutes`,{method:'PATCH',headers,body:JSON.stringify(body)});
   const response=await save({revision:1,minutes});assert.equal(response.status,200,await response.text());
   assert.equal((await app.repo.get(record.id)).minutes.edited,true);
   await app.repo.change(record.id,r=>{r.minutes.evidenceSnapshot=[snapshot[0]];});
-  const forged=await save({revision:2,minutes:{...minutes,evidenceSnapshot:snapshot,aggregateParts:100}});
+    const forged=await save({revision:2,minutes:{...minutes,sections:[...minutes.sections,{heading:'伪造超额容量',items:[{text:'额外内容',evidence}]}],evidenceSnapshot:snapshot,aggregateParts:100}});
   assert.equal(forged.status,422);
  }finally{await app.stop();await rm(root,{recursive:true,force:true});}
 });

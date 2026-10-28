@@ -1,5 +1,7 @@
 # 聆记文档导航
 
+[v0.1.41 纪要完整性与人工修订兼容](releases/v0.1.41-preview.md)已完成本地实现，三平台发布核验进行中。[补充验证](evidence/minutes-completeness-v0.1.41-2026-10-29.md)。
+
 [v0.1.40 纪要完整性与编号显示修复](releases/v0.1.40-preview.md)已发布，五项CI与四个公开附件核验通过；[发布回执](evidence/preview-v0.1.40-2026-10-29.md)。[修复说明](engineering/minutes-completeness.md)、[本地证据](evidence/minutes-completeness-v0.1.40-2026-10-29.md)。此前纪要样式与内容修复未获用户验收，本轮以具体失败路径重新验证。
 
 [v0.1.39 录音与处理链路优化](releases/v0.1.39-preview.md)已发布，五项CI与公开附件核验通过；[发布回执](evidence/preview-v0.1.39-2026-10-28.md)；[恢复与进度说明](engineering/capture-reliability.md)、[本地证据](evidence/capture-reliability-v0.1.39-2026-10-28.md)、[自动起止研究](research/meeting-lifecycle-signals-2026-10-28.md)。
