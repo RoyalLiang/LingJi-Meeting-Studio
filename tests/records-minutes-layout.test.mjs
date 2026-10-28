@@ -208,3 +208,10 @@ test('minutes default to no generation preview and omit redundant in-progress ca
  assert.doesNotMatch(partial,/正在更新 ·|AI 会中速记随讨论更新|minutes-stage-note/);
  assert.match(partial,/按主题整理的纪要/);
 });
+
+test('opening a meeting keeps failed minutes recovery inside its panel', () => {
+  const html=render({segments:[],jobs:[{id:'failed-job',status:'failed',transcriptRevision:3,error:'minutes_request_failed'}]});
+  assert.match(html,/整理未完成/);
+  assert.match(html,/toast feedback-toast glass is-inline/);
+  assert.match(html,/重新整理/);
+});

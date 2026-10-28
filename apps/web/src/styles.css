@@ -960,7 +960,27 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 .settings-inline .section-title,.device-settings .section-title { flex:none; margin:0; }
 .device-settings .microphone-test { margin:0; }
 .device-settings .microphone-test p { max-width:240px; }
-.settings-modal .update-notes { margin:12px 0; font-size:13px; }
+.client-update-heading,.settings-heading-row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.client-update-heading .section-title,.settings-heading-row .section-title { flex:none; margin:0; }
+.client-update-heading h3,.settings-heading-row h3 { margin:0; }
+.client-update-version { color:var(--ink-2); font-size:12px; font-variant-numeric:tabular-nums; }
+.settings-heading-row>.select { flex:1; min-width:min(160px,100%); }
+.settings-heading-row:has(.settings-subheading) { border-top:1px solid var(--border); margin-top:6px; padding-top:20px; }
+.settings-heading-row .settings-subheading { flex:none; margin:0; padding:0; border:0; }
+.client-update-status { color:var(--ink-2); font-size:12px; }
+.settings-modal .update-notes { margin:18px 0 0; font-size:13px; line-height:1.7; }
+.update-notes h4 { margin:0 0 8px; font-size:12px; font-weight:550; color:var(--ink-2); }
+.update-notes ul { margin:0; padding-left:18px; }
+.update-notes li { padding-left:2px; overflow-wrap:anywhere; }
+.update-notes li+li { margin-top:6px; }
+.update-notes li::marker { color:var(--ink-3); }
+.update-download { margin:16px 0; }
+.update-download-meta { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:8px; font-size:12px; color:var(--ink-2); font-variant-numeric:tabular-nums; }
+.update-download-track { height:8px; width:100%; overflow:hidden; border-radius:999px; background:var(--border); }
+.update-download-track>span { display:block; height:100%; border-radius:inherit; background:var(--accent); transition:width 160ms linear; }
+.update-download-track.is-indeterminate>span { animation:update-download-pending 1.8s ease-in-out infinite; }
+@keyframes update-download-pending { from { transform:translateX(-100%); } to { transform:translateX(334%); } }
+@media(prefers-reduced-motion:reduce) { .update-download-track>span { transition:none; } .update-download-track.is-indeterminate>span { animation:none; transform:translateX(117%); } }
 @media(max-width:480px) {
   .settings-modal>.modal-header,.settings-modal>.modal-footer { padding:14px 16px; }
   .settings-modal>.modal-body { padding:0 16px; }
@@ -972,7 +992,10 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 .vocabulary-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; margin-top:16px; }
 .vocabulary-fields textarea { resize:vertical; min-height:120px; line-height:1.6; }
 .transcript-disclosure { margin:24px 0; border-top:1px solid var(--border); }
-.transcript-disclosure>summary { padding:16px 0; cursor:pointer; font-weight:550; }
+.transcript-disclosure>summary { display:flex; align-items:center; justify-content:center; width:40px; height:40px; margin:12px 0; padding:0; list-style:none; border:1px solid var(--border); border-radius:12px; color:var(--accent); cursor:pointer; }
+.transcript-disclosure>summary::-webkit-details-marker { display:none; }
+.transcript-disclosure>summary:hover,.transcript-disclosure[open]>summary { background:var(--panel-2); }
+.transcript-disclosure>summary:focus-visible { outline:2px solid var(--focus-ring); outline-offset:3px; }
 .correction-review { padding:12px 0; border-bottom:1px solid var(--border); }
 .correction-review>p { color:var(--ink-2); font-size:12px; }
 .correction-candidate { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:14px 0; border-top:1px solid var(--border); }
@@ -988,7 +1011,8 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 .settings-field-label>span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .settings-field-label>.status { flex:none; font-size:9px; padding:1px 4px; }
 .settings-modal .provider-form>label>input,.settings-modal .provider-form>label>.select { grid-column:2; min-width:0; }
-.settings-modal .client-update-policy { display:grid; grid-template-columns:72px minmax(0,1fr) auto; align-items:center; gap:8px; }
+.settings-modal .client-update-policy { display:flex; flex:1; min-width:min(300px,100%); align-items:center; gap:8px; }
+.client-update-policy>.select { flex:1; min-width:0; }
 .settings-modal .client-update-policy .button { white-space:nowrap; }
 
 /* Opaque surfaces avoid full-window backdrop textures in native WebView2. */

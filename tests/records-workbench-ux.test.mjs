@@ -87,9 +87,9 @@ test('common requests normalize WebKit pattern and malformed JSON failures while
 
 test('background minutes requests never disable or release unrelated blocking actions',async()=>{
  const app=await readFile(new URL('../apps/web/src/App.tsx',import.meta.url),'utf8');
- const mutation=app.slice(app.indexOf('  async function mutate('),app.indexOf('  async function create('));
+ const mutation=app.slice(app.indexOf('  const mutate = useCallback('),app.indexOf('  const saveTranscript ='));
  const busy=[];let resolve;
- const sandbox={exports:{},setBusy:value=>busy.push(value),setError(){},api:async()=>new Promise(r=>{resolve=r;}),refresh:async()=>{},loadList:async()=>{},showToast(){},activeId:{current:'record'},messageOf:e=>e.message,Promise};
+ const sandbox={useCallback:fn=>fn,exports:{},setBusy:value=>busy.push(value),setError(){},api:async()=>new Promise(r=>{resolve=r;}),refresh:async()=>{},loadList:async()=>{},showToast(){},activeId:{current:'record'},messageOf:e=>e.message,Promise};
  vm.runInNewContext(stripTypeScriptTypes(mutation,{mode:'transform'})+'\nexports.mutate=mutate;',sandbox);
  const background=sandbox.exports.mutate('/records/record/minutes','POST',{},false);assert.deepEqual(busy,[]);resolve();await background;assert.deepEqual(busy,[]);
  const blocking=sandbox.exports.mutate('/records/record','PATCH',{});assert.deepEqual(busy,[true]);resolve();await blocking;assert.deepEqual(busy,[true,false]);

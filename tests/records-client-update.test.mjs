@@ -55,7 +55,7 @@ test('release tag grammar rejects shell/path/version ambiguity and remote publis
 });
 
 const engineSource = stripTypeScriptTypes(await readFile(new URL('../apps/web/src/client-updates.ts', import.meta.url), 'utf8'));
-const { ClientUpdates, defaultUpdatePreferences, normalizeUpdatePreferences, preferencesForPolicy, updatePolicy } = await import(`data:text/javascript;base64,${Buffer.from(engineSource).toString('base64')}`);
+const { ClientUpdates, defaultUpdatePreferences, normalizeUpdatePreferences, preferencesForPolicy, updatePolicy, updateReleaseItems, updateDownloadProgress } = await import(`data:text/javascript;base64,${Buffer.from(engineSource).toString('base64')}`);
 const idle = { authenticated: true, recording: false, paused: false, busy: false };
 function engineFixture() {
   let activity = { ...idle }, queue = { pendingBytes: 0, pendingCount: 0, queueBusy: false }, preferences = { ...defaultUpdatePreferences };
@@ -218,4 +218,54 @@ test('settings update action follows automatic-download readiness and keeps reco
   let clicked=0;const tree=box.module.exports.ClientUpdateActions({updates:{native:true,status:{phase,currentVersion:'1'},settings:preferencesForPolicy(background?'background':'check'),installReason:reason,update:()=>{clicked++;}}});
   const button=tree.children.flat().find(x=>x?.tag==='button');assert.equal(button.props.disabled,disabled);assert.ok(button.props.children.includes(label));if(!disabled){button.props.onClick();assert.equal(clicked,1);}
  }
+});
+
+
+test('release display keeps only change items and removes Markdown destinations and release metadata', () => {
+  const notes = '# Preview v1.2.0\r\n\r\n## 版本改动与修复\r\n- 修复 **自动下载** 与 `离线转录`。\r\n  保留录音。\r\n- 优化 [设置页面](https://example.test/settings)。\r\n\r\n## 下载与安装\r\n[安装包](https://example.test/private-installer)\r\n## SHA-256\r\ndeadbeef\r\n## 构建来源与验证\r\nsource-secret';
+  assert.deepEqual(updateReleaseItems(notes), ['修复 自动下载 与 离线转录。 保留录音。', '优化 设置页面。']);
+  assert.deepEqual(updateReleaseItems('## 下载与安装\nDo not display this section'), []);
+  assert.deepEqual(updateReleaseItems('## Changes\n- Keep names.\n## Checksums\nDo not display'), ['Keep names.']);
+  assert.deepEqual(updateReleaseItems('- 修复下载。\n- 保留音频。'), ['修复下载。', '保留音频。']);
+  assert.deepEqual(updateReleaseItems(null), []);
+});
+
+test('current real publisher body displays changes without install instructions, hashes or CI links', async () => {
+  const {previewNotes}=await import('../scripts/publish-preview-release.mjs');
+  const {version}=JSON.parse(await readFile(new URL('../apps/desktop/package.json',import.meta.url),'utf8'));
+  const guide=await readFile(new URL(`../docs/releases/v${version}-preview.md`,import.meta.url),'utf8');
+  const body=previewNotes({tag:`v${version}`,commit:'a'.repeat(40),workflowSha:'b'.repeat(40),runUrl:'https://github.com/example/test/actions/runs/1',guide,metadata:{platform:'macos',architecture:'arm64',artifact:`Lingji-${version}-macos-arm64.dmg`,sha256:'c'.repeat(64)}});
+  const items=updateReleaseItems(body);assert.ok(items.length>0);
+  assert.ok(!items.join(' ').includes('下载与安装'));assert.ok(!items.join(' ').includes('SHA-256\n'));
+  assert.ok(!items.join(' ').includes('c'.repeat(64)));assert.ok(!items.join(' ').includes('/actions/runs/'));
+});
+
+test('download display preserves unknown totals, byte counts and verification boundary', () => {
+  const unit=1024*1024;
+  assert.deepEqual(updateDownloadProgress({downloaded:50*unit,total:100*unit}),{percent:50,complete:false,size:'50.0 MB / 100.0 MB'});
+  assert.equal(updateDownloadProgress({downloaded:999,total:1000}).percent,99);
+  assert.equal(updateDownloadProgress({downloaded:999,total:1000}).complete,false);
+  assert.deepEqual(updateDownloadProgress({downloaded:101*unit,total:100*unit}),{percent:100,complete:true,size:'100.0 MB / 100.0 MB'});
+  for(const total of [null,undefined,0,-1,NaN,Infinity]){
+    const progress=updateDownloadProgress({downloaded:1024,total});assert.equal(progress.percent,null);assert.equal(progress.complete,false);assert.equal(progress.size,'已下载 1.0 KB');
+  }
+  assert.equal(updateDownloadProgress({downloaded:-1,total:100}).percent,0);
+  assert.equal(updateDownloadProgress({downloaded:NaN,total:100}).size,'0 B / 100 B');
+});
+
+test('update panel distinguishes download, indeterminate and verification states with accessible progress', async () => {
+  const {transform}=await import('esbuild'), source=await readFile(new URL('../apps/web/src/components/ClientUpdates.tsx',import.meta.url),'utf8');
+  const code=(await transform(source.replace(/^import .*$/gm,''),{loader:'tsx',format:'cjs'})).code;
+  const box={module:{exports:{}},updatePolicy,preferencesForPolicy,updateReleaseItems,updateDownloadProgress,DownloadSimple:()=>null,ArrowsClockwise:()=>null,Select:props=>({tag:'select',props,children:[]}),Button:()=>null};
+  box.React={createElement:(tag,props,...children)=>typeof tag==='function'?tag({...props,children}):({tag,props,children})};vm.runInNewContext(code,box);
+  const render=(downloaded,total)=>box.module.exports.ClientUpdatesPanel({updates:{native:true,status:{phase:'downloading',currentVersion:'1',downloaded,total,notes:'## 版本改动与修复\n- 修复下载。\n## SHA-256\nNOT-A-CHANGE'},settings:defaultUpdatePreferences,installReason:'',saveSettings(){}}});
+  const nodes=tree=>[tree,...(tree?.children||[]).flat(Infinity).filter(x=>x&&typeof x==='object').flatMap(nodes)];
+  const known=nodes(render(50,100)), unknown=nodes(render(50,null)), complete=nodes(render(100,100));
+  assert.equal(known.find(n=>n.props?.role==='progressbar').props['aria-valuenow'],50);
+  assert.equal(unknown.find(n=>n.props?.role==='progressbar').props['aria-valuenow'],undefined);
+  assert.match(JSON.stringify(complete),/下载完成，正在校验更新/);assert.ok(!JSON.stringify(complete).includes('完整性校验'));
+  assert.ok(!JSON.stringify(known).includes('NOT-A-CHANGE'));
+  const select=known.find(n=>n.tag==='select'), background=select.props.options.find(o=>o.label==='自动检查并后台下载');
+  assert.equal(preferencesForPolicy(background.value).autoDownload,true);
+  assert.equal(select.props.label,'更新策略');
 });

@@ -2,8 +2,8 @@ import { useEffect, useLayoutEffect, useRef } from 'react';
 import { CheckCircle, WarningCircle, X } from '@phosphor-icons/react';
 import './Toast.css';
 
-export function getToastDuration(message: string) {
-  return Math.min(10000, 5000 + Math.max(0, Array.from(message).length - 40) * 75);
+export function getToastDuration() {
+  return 2000;
 }
 
 export function createToastTimer(duration: number, dismiss: () => void) {
@@ -58,7 +58,7 @@ export function Toast({ message, error = false, warning = false, persistent = fa
   }, [message, messageKey, inline]);
   useEffect(() => {
     if (!message || error || persistent) return;
-    const countdown = createToastTimer(getToastDuration(message), () => dismissRef.current());
+    const countdown = createToastTimer(getToastDuration(), () => dismissRef.current());
     timer.current = countdown;
     countdown.setPaused('hover', Boolean(ref.current?.matches(':hover')));
     countdown.setPaused('focus', Boolean(ref.current?.contains(document.activeElement)));

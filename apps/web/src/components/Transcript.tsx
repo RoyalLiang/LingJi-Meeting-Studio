@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
+import { CorrectionSuggestions } from './CorrectionSuggestions';
 import { ArrowDown, Check, PencilSimple, TextAlignLeft, X } from '@phosphor-icons/react';
 import { Button, Empty } from './ui';
 import { Select } from './Select';
@@ -7,7 +8,16 @@ import type { RecordDetail, Segment } from '../model';
 import { timecode } from '../model';
 import { useTranscriptFollow } from './useTranscriptFollow';
 import { cleanSpeechDisplay } from '../../../../packages/records/src/learning-display.mjs';
-export function Transcript({ record, highlighted, save }: { record: RecordDetail; highlighted: string; save: (s: Segment, text: string, speaker: string) => Promise<boolean> }) {
+type TranscriptProps = { record: RecordDetail; highlighted: string; save: (s: Segment, text: string, speaker: string) => Promise<boolean> };
+export const TranscriptHistory = memo(function TranscriptHistory({record, save, changed}: Pick<TranscriptProps,'record'|'save'> & {changed:()=>void}) {
+  const [loaded,setLoaded]=useState(false);
+  // Keep mounted after the first opening so collapsing never discards an edit draft.
+  return <details className="transcript-disclosure" onToggle={event=>{if(event.currentTarget.open)setLoaded(true);}}>
+    <summary role="button" tabIndex={0} aria-label={`逐字记录与纠错 · ${record.segments.length} 段`} title={`逐字记录与纠错 · ${record.segments.length} 段`}><TextAlignLeft size={18}/></summary>
+    {loaded && <><CorrectionSuggestions record={record} changed={changed}/><Transcript record={record} highlighted="" save={save}/></>}
+  </details>;
+});
+export function Transcript({ record, highlighted, save }: TranscriptProps) {
   const [query, setQuery] = useState(''), [editing, setEditing] = useState<Segment | null>(null);
   const [concise, setConcise] = useState(true);
   const [text, setText] = useState(''), [speaker, setSpeaker] = useState(''), [busy, setBusy] = useState(false);
