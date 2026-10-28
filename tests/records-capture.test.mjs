@@ -519,3 +519,15 @@ test('full cache stops browser setup before a source or worklet exists and relea
  assert.equal(h.display.audioTrack.readyState,'ended');assert.equal(h.mic.audioTrack.readyState,'ended');
  assert.equal(h.errors.length,0);
 });
+
+test('persistence failure is visible while stop is still waiting for retained audio',async()=>{
+ const app=await readFile(new URL('../apps/web/src/App.tsx',import.meta.url),'utf8');
+ const code=(await transform(app.slice(app.indexOf('  function controllerFor('),app.indexOf('  async function quickRecord('))+'\nexports.factory=controllerFor;',{loader:'ts'})).code;
+ let release;const held=new Promise(resolve=>{release=resolve;});const state={error:'',recording:true};
+ class Controller{constructor(...args){this.args=args;this.active=true;}}
+ const sandbox={exports:{},CaptureController:Controller,capture:{current:null},setRecording:v=>state.recording=v,setError:v=>state.error=v,messageOf:e=>e.message,
+  stopCapture:()=>{state.error='';return held;},upload(){},setSignals(){}};
+ vm.runInNewContext(code,sandbox);const controller=sandbox.exports.factory('r');sandbox.capture.current=controller;
+ try{controller.args[2](new Error('本机缓存已满，正在保留未确认音频'));assert.equal(state.recording,false);assert.match(state.error,/本机缓存已满/);}
+ finally{release();await new Promise(resolve=>setImmediate(resolve));}
+});

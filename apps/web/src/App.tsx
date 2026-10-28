@@ -283,6 +283,7 @@ function Workspace() {
       if (continuing) { setRecording(controller.active); setError(messageOf(error)); return; }
       setRecording(false);
       void stopCapture('pause', '', true).finally(() => { if (capture.current === controller) setError(messageOf(error)); });
+      setError(messageOf(error));
     }, () => { void refreshLocalAudio().catch(e=>setError(messageOf(e))); void upload(); }, () => {
       if (capture.current === controller) void stopCapture('pause');
     }, setSignals);
