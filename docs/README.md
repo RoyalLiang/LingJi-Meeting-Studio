@@ -1,6 +1,6 @@
 # 聆记文档导航
 
-[v0.1.36 纪要效率与界面修复](releases/v0.1.36-preview.md)已完成本地实现，等待后台发布；[配置与用量说明](engineering/minutes-efficiency.md)、[验证记录](evidence/minutes-efficiency-v0.1.36-2026-10-28.md)。
+[v0.1.36 纪要效率与界面修复](releases/v0.1.36-preview.md)已发布，五项 CI 与公开附件核验通过；[发布回执](evidence/preview-v0.1.36-2026-10-28.md)；[配置与用量说明](engineering/minutes-efficiency.md)、[验证记录](evidence/minutes-efficiency-v0.1.36-2026-10-28.md)。
 
 [v0.1.35 设置与转录界面优化](releases/v0.1.35-preview.md)已发布，五项 CI 与公开附件核验通过；[发布回执](evidence/preview-v0.1.35-2026-10-28.md)、[验证边界](evidence/settings-update-v0.1.35-2026-10-28.md)、[网络/离线词库研究](research/network-offline-vocabulary-2026-10-28.md)。
 
@@ -19,7 +19,7 @@
 
 | 目标 | 文档 |
 | --- | --- |
-| 安装桌面版、核对当前验证范围 | [v0.1.35 安装说明](releases/v0.1.35-preview.md) |
+| 安装桌面版、核对当前验证范围 | [v0.1.36 安装说明](releases/v0.1.36-preview.md) |
 | 处理 macOS 安装与系统信任提示 | [macOS 安装与信任](releases/macos-trust.md) |
 | 使用内置 SenseVoice、选择云端转录或外部 FunASR | [本地转录与高级配置](engineering/funasr.md) |
 | 配置豆包音频纪要 | [两种音频模式与权限](engineering/doubao-audio.md) |
