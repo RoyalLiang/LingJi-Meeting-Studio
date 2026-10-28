@@ -25,9 +25,15 @@ export async function prepareClientBackend({ root = project, cacheRoot = join(pr
   await mkdir(cache, { recursive: true });
   try { await access(tar); } catch (error) {
     if (error.code !== 'ENOENT') throw error;
-    const response = await fetch(`https://nodejs.org/dist/v${version}/${archive}`, { signal: AbortSignal.timeout(180000) });
-    assert.ok(response.ok, `Official Node download failed: ${response.status}`);
-    await writeFile(tar, Buffer.from(await response.arrayBuffer()), { flag: 'wx' });
+    let bytes;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const response = await fetch(`https://nodejs.org/dist/v${version}/${archive}`, { signal: AbortSignal.timeout(180000) });
+        assert.ok(response.ok, `Official Node download failed: ${response.status}`);
+        bytes = Buffer.from(await response.arrayBuffer()); break;
+      } catch (error) { if (attempt) throw error; }
+    }
+    await writeFile(tar, bytes, { flag: 'wx' });
   }
   assert.equal(createHash('sha256').update(await readFile(tar)).digest('hex'), expected, 'Official runtime checksum mismatch.');
   const extracted = join(cache, `node-v${version}-${target}`);

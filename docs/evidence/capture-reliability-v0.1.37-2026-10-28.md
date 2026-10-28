@@ -15,6 +15,8 @@
 
 ## 界面证据
 
+以下是早期独立组件夹具，完整页面样式以[v0.1.39补充验证](capture-reliability-v0.1.39-2026-10-28.md)为准。
+
 下图全部为虚构会议，无用户原文。
 
 ![桌面纪要与处理进度](assets/capture-reliability-v0.1.37/minutes-desktop-final.png)

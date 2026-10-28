@@ -54,3 +54,31 @@ test('completed progress uses the final minutes snapshot instead of an older liv
  const html=renderToStaticMarkup(React.createElement(module.exports.ProcessingProgress,{record,localDurationMs:70*60000,pending:0}));
  assert.match(html,/纪要依据 <time>70:00<\/time>/);assert.doesNotMatch(html,/48:00/);
 });
+
+import {parse} from '@babel/parser';
+test('meeting sibling panes have distinct keys so repeated refresh cannot duplicate minutes',async()=>{
+ const text=await readFile(new URL('../apps/web/src/App.tsx',import.meta.url),'utf8');
+ const ast=parse(text,{sourceType:'module',plugins:['jsx','typescript']});
+ let owners=0;
+ function visit(node){
+  if(node.type==='JSXFragment'||node.type==='JSXElement'){
+   const keys=node.children.flatMap(child=>{
+    const opening=child.type==='JSXElement'?child.openingElement:null;
+    const attr=opening?.attributes.find(a=>a.type==='JSXAttribute'&&a.name.name==='key');
+    return attr?.value?[text.slice(attr.value.start,attr.value.end)]:[];
+   });
+   if(keys.length>1){owners++;assert.equal(new Set(keys).size,keys.length,`duplicate sibling keys: ${keys.join(', ')}`);}
+  }
+  for(const value of Object.values(node))if(Array.isArray(value))value.forEach(item=>{if(item&&typeof item==='object')visit(item);});else if(value&&typeof value==='object')visit(value);
+ }
+ visit(ast);assert.ok(owners>0);
+});
+
+import {prepareClientBackend} from '../scripts/prepare-client-backend.mjs';
+test('runtime preparation retries a transient fetch but still rejects invalid archive content',async()=>{
+ const {mkdtemp,rm}=await import('node:fs/promises'),{tmpdir}=await import('node:os'),{join}=await import('node:path');
+ const root=await mkdtemp(join(tmpdir(),'lingji-runtime-retry-')),previous=globalThis.fetch;let calls=0;
+ globalThis.fetch=async()=>{if(++calls===1)throw new DOMException('fixture timeout','TimeoutError');return new Response('invalid archive');};
+ try{await assert.rejects(prepareClientBackend({root,cacheRoot:join(root,'cache')}),/checksum mismatch/);assert.equal(calls,2);}
+ finally{globalThis.fetch=previous;await rm(root,{recursive:true,force:true});}
+});
