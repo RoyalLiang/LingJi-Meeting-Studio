@@ -2,3 +2,10 @@
 
 .minutes-tree.is-compact .minutes-branch>h4{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:15px;padding:8px 0}.minutes-branch>h4>small{font:11px var(--mono);color:var(--ink-3)}
 .minute-speakers{display:block;width:fit-content;max-width:100%;margin:0 0 4px auto;text-align:right;color:var(--ink-3);font-size:11px;line-height:1.5;overflow-wrap:anywhere}
+
+/* Begin the trunk below the heading so wrapped titles never cross it. */
+.minutes-tree.is-compact .minutes-branch{border-left:0}
+.minutes-tree.is-compact .branch-children{border-left:2px solid var(--branch-line);margin-top:4px}
+.minutes-tree.is-compact .minutes-branch>h4{width:auto;max-width:100%;margin:0;padding:8px 0;line-height:1.6}
+.minutes-branch>h4>span{min-width:0;overflow-wrap:anywhere}
+.minutes-branch>h4>small{flex:none;white-space:nowrap}

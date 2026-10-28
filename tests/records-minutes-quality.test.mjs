@@ -117,7 +117,7 @@ test('all audio and text modes share the content selection rules',()=>{
 test('hierarchical synthesis validates charts against frozen raw evidence and bounded prompt excerpts',async()=>{
   const root=await mkdtemp(join(tmpdir(),'minutes-quality-')),repo=await createRepository({root,databaseUrl:''});
   try{
-    const record=createRecord('owner');Object.assign(record,{capture:'completed',transcription:'completed',transcriptRevision:1,segments:structuredClone(snapshot)});await repo.insert(record);
+    const record=createRecord('owner');Object.assign(record,{capture:'completed',transcription:'completed',transcriptRevision:1,segments:structuredClone(snapshot)});record.segments[1].startMs+=300000;record.segments[1].endMs+=300000;await repo.insert(record);
     let claim;await repo.change(record.id,r=>{const job=requestMinutes(r,{scope:'final',mode:'model'});job.status='running';job.fence='quality-fence';job.lease=Date.now()+300000;claim=structuredClone(job);});
     let syntheses=0;
     const result=await runMinutesPipeline(repo,record.id,claim,{LLM_MODEL:'fixture',LLM_API_URL:'http://fixture.invalid'},async job=>{

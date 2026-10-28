@@ -16,5 +16,6 @@ export function minutesUsageView(record: Pick<RecordDetail,'usage'> & Partial<Pi
  const output=knownOutput ? number(meter?.outputTokens || 0) : '未提供';
  const missing=Boolean(meter?.requests && (!knownTotal || meter.requests>(meter.totalTokensRequests || 0) || Boolean(knownInput && meter.requests>(meter.inputTokensRequests || 0)) || Boolean(knownOutput && meter.requests>(meter.outputTokensRequests || 0))));
  const status=running ? meter?.requests && !missing ? '用量持续更新' : '本轮用量待供应商回传' : missing ? '部分请求未提供完整用量' : knownTotal ? '供应商已回传' : '供应商未提供 token';
- return {audio,tokens,input,output,showBreakdown:knownInput || knownOutput,status};
+ const details=[supplied(meter?.cachedInputTokens,meter?.cachedInputTokensRequests)?`缓存输入 ${number(meter?.cachedInputTokens || 0)}`:'',supplied(meter?.reasoningTokens,meter?.reasoningTokensRequests)?`推理输出 ${number(meter?.reasoningTokens || 0)}`:''].filter(Boolean).join(' · ');
+ return {audio,tokens,input,output,showBreakdown:knownInput || knownOutput,status,...(details?{details}:{})};
 }

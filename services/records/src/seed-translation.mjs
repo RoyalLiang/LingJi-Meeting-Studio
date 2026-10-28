@@ -1,3 +1,4 @@
+import {modelEndpoint} from './llm.mjs';
 import { DomainError, requireThat } from '../../../packages/records/src/record.mjs';
 
 export function translationConnection(config) {
@@ -35,7 +36,7 @@ export async function translateSeedText(text, target, config) {
   for (const chunk of translationChunks(text)) {
     let response;
     try {
-      response = await fetch(url, { method: 'POST', signal: AbortSignal.any([deadline, AbortSignal.timeout(60000)]), headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      response = await fetch(modelEndpoint(url,'responses'), { method: 'POST', signal: AbortSignal.any([deadline, AbortSignal.timeout(60000)]), headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ model, input: [{ role: 'user', content: [{ type: 'input_text', text: chunk, translation_options: { target_language: target } }] }], store: false, stream: false }) });
     } catch { throw new DomainError('translation_connection_failed', 502); }
     if (!response.ok) throw new DomainError(response.status === 401 ? 'translation_credentials_rejected' : response.status === 429 ? 'provider_rate_limited' : `translation_http_${response.status}`, 502);

@@ -6,6 +6,15 @@ const outputText = response => response.output_text || (response.output || []).f
 
 // One interface hides Chat Completions / Responses and buffered / SSE transports.
 // Deltas are provisional; only the returned JSON may enter domain validation.
+export function modelEndpoint(address, protocol) {
+ try {
+  const url=new URL(address);
+  if(url.search||!/^\/v\d+\/?$/.test(url.pathname))return address;
+  url.pathname=url.pathname.replace(/\/$/,'')+(protocol==='responses'?'/responses':'/chat/completions');
+  return url.href;
+ } catch { return address; }
+}
+
 export async function completeModelJson(messages, input = process.env, { onDelta, onUsage, onRequest, signal, jsonSchema, reasoningEffort, maxOutputTokens, timeoutMs = 120000 } = {}) {
   const env = normalizeConfig(input), responses = env.LLM_PROTOCOL === 'responses';
   requireThat(configured(env.LLM_API_KEY) && env.LLM_MODEL, 'minutes_not_configured', 503);
@@ -30,7 +39,7 @@ export async function completeModelJson(messages, input = process.env, { onDelta
   };
   let response;
   if(onRequest)await onRequest();
-  try { response = await fetch(env.LLM_API_URL, { method: 'POST', signal: requestSignal, headers: { Authorization: `Bearer ${env.LLM_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); }
+  try { response = await fetch(modelEndpoint(env.LLM_API_URL,env.LLM_PROTOCOL), { method: 'POST', signal: requestSignal, headers: { Authorization: `Bearer ${env.LLM_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); }
   catch { throw new DomainError(requestSignal.reason?.name === 'TimeoutError' ? 'llm_timeout' : 'llm_connection_failed', 502); }
   if (!response.ok) {
     let result; try { result=await response.json(); } catch { /* Upstream bodies may contain sensitive details. */ }

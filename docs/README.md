@@ -1,5 +1,7 @@
 # 聆记文档导航
 
+[v0.1.36 纪要效率与界面修复](releases/v0.1.36-preview.md)已完成本地实现，等待后台发布；[配置与用量说明](engineering/minutes-efficiency.md)、[验证记录](evidence/minutes-efficiency-v0.1.36-2026-10-28.md)。
+
 [v0.1.35 设置与转录界面优化](releases/v0.1.35-preview.md)已发布，五项 CI 与公开附件核验通过；[发布回执](evidence/preview-v0.1.35-2026-10-28.md)、[验证边界](evidence/settings-update-v0.1.35-2026-10-28.md)、[网络/离线词库研究](research/network-offline-vocabulary-2026-10-28.md)。
 
 [多语种与词表纠错](engineering/multilingual-vocabulary.md)已随 v0.1.34 发布；[补充验证与回执](evidence/multilingual-vocabulary-2026-10-28.md)记录五语种、真实翻译闭环与人工修订保护。

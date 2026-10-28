@@ -4,6 +4,7 @@ import { audioMinutesEnabled } from './config.mjs';
 import { liveBaseline, mergeLiveMinutes } from '../../../packages/records/src/live-minutes.mjs';
 import { telemetry } from './telemetry.mjs';
 import { createHash } from 'node:crypto';
+import {compactMinutesPayload} from './minutes-wire.mjs';
 import { requireThat, validateMinutes, emit } from '../../../packages/records/src/record.mjs';
 import { meteredMinutesCall } from './minutes-usage.mjs';
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -24,7 +25,8 @@ const refs = result => {
   visit(result);return [...found.values()];
 };
 export function buildMinutesManifest(job,config={},budget=inputBudget(config)){
-  const policy=hash({version:MINUTES_PROMPT_VERSION,minutesMode:config.MINUTES_MODE,realtimeModel:config.OPENAI_REALTIME_MODEL,realtimeUrl:config.OPENAI_REALTIME_URL,windowMs:120000,budget,structuredOutputs:config.LLM_STRUCTURED_OUTPUTS,reasoningEffort:config.LLM_REASONING_EFFORT||'auto',context:job.liveContext,model:job.modelVersion==='default'?config.LLM_MODEL:job.modelVersion,base:config.LLM_API_URL,protocol:config.LLM_PROTOCOL,template:job.template,scope:job.scope,mode:job.mode,notes:job.notes,notesRevision:job.notesRevision,generation:job.generation});
+  const windowMs=audioMinutesEnabled(config)?120000:300000;
+  const policy=hash({version:MINUTES_PROMPT_VERSION,minutesMode:config.MINUTES_MODE,realtimeModel:config.OPENAI_REALTIME_MODEL,realtimeUrl:config.OPENAI_REALTIME_URL,windowMs,budget,structuredOutputs:config.LLM_STRUCTURED_OUTPUTS,reasoningEffort:config.LLM_REASONING_EFFORT||'auto',context:job.liveContext,model:job.modelVersion==='default'?config.LLM_MODEL:job.modelVersion,base:config.LLM_API_URL,protocol:config.LLM_PROTOCOL,template:job.template,scope:job.scope,mode:job.mode,notes:job.notes,notesRevision:job.notesRevision,generation:job.generation});
   const windows=[];let current=[];
   const flush=()=>{if(current.length){windows.push({key:hash({policy,snapshot:current}),snapshot:current});current=[];}};
   function add(segment){
@@ -51,7 +53,7 @@ export function buildMinutesManifest(job,config={},budget=inputBudget(config)){
   let bucket;
   snapshot.forEach((segment,index)=>{
     const timed=Number.isFinite(segment.startMs)&&Number.isFinite(segment.endMs)&&segment.endMs>segment.startMs;
-    const next=timed?Math.floor(segment.startMs/120000):undefined;
+    const next=timed?Math.floor(segment.startMs/windowMs):undefined;
     if(current.length && (timed ? next!==bucket || (audioMinutesEnabled(config) && current[0].sourceId !== segment.sourceId) : !single && (index+snapshotOffset)%24===0))flush();
     bucket=next;add(segment);
   });flush();
@@ -146,7 +148,7 @@ export async function runMinutesPipeline(repo,recordId,claim,config,generate,opt
       const wanted=new Set(items.flatMap(node=>refs(node.result).map(ref=>`${ref.segmentId}:${ref.revision}`)));
       const sources=claim.snapshot.filter(s=>wanted.has(`${s.id}:${s.revision}`));
       const input={snapshot:sources.map(({id,revision,speakerId,speaker,speakerName,sourceId,startMs,endMs,contextOnly})=>({id,revision,speakerId,speaker,speakerName,sourceId,startMs,endMs,contextOnly,textOmitted:true})),summaries:items.map(node=>content(node.result)),stage:'synthesis',omittedEvidence:0};
-      let remaining=Math.min(24000,Math.max(0,manifest.synthesisBudget-size({...input,notes:claim.notes,context:claim.liveContext})-1024));
+      let remaining=Math.min(24000,Math.max(0,manifest.synthesisBudget-Buffer.byteLength(payloadFor(input))-1024));
       const critical=new Set(items.flatMap(node=>refs({corrections:node.result.corrections,decisions:node.result.decisions,actions:node.result.actions})).map(ref=>`${ref.segmentId}:${ref.revision}`));
       const order=sources.map((source,index)=>({source,index})).sort((a,b)=>Number(critical.has(`${b.source.id}:${b.source.revision}`))-Number(critical.has(`${a.source.id}:${a.source.revision}`))||(b.source.endMs||0)-(a.source.endMs||0));
       for(const {index} of order){
@@ -156,7 +158,7 @@ export async function runMinutesPipeline(repo,recordId,claim,config,generate,opt
       }
       return input;
     };
-    const payloadFor=input=>JSON.stringify({transcript:input.snapshot,notes:claim.notes,context:claim.liveContext,summaries:input.summaries,stage:input.stage,omittedEvidence:input.omittedEvidence});
+    const payloadFor=input=>JSON.stringify(audioMinutesEnabled(config)||claim.mode==='extractive'?{transcript:input.snapshot,notes:claim.notes,context:claim.liveContext,summaries:input.summaries,stage:input.stage,omittedEvidence:input.omittedEvidence}:compactMinutesPayload({...claim,...input}).payload);
     for(const node of nodes){
       if(group.length && (group.length>=8 || Buffer.byteLength(payloadFor(inputFor([...group,node])))>manifest.synthesisBudget)){groups.push(group);group=[];}
       group.push(node);
