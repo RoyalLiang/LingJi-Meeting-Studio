@@ -7,7 +7,7 @@ mod menu_status;
 mod proxy;
 mod resident;
 mod recording_widget;
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 mod status_bar;
 mod update_gate;
 mod updates;
@@ -22,7 +22,7 @@ use tauri::{
 const RECORDING_BROWSER_ARGS: &str = "--disable-background-timer-throttling";
 
 struct Client {
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     menu_bar: status_bar::StatusBar,
     origin: String,
     #[cfg(target_os = "macos")]
@@ -118,19 +118,19 @@ fn client_status(
     report: menu_status::Report,
 ) -> Result<(), String> {
     authorize(&window, &state)?;
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     state.menu_bar.report(report);
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     let _ = report;
     Ok(())
 }
 
 fn menu_has_pending(state: &Client) -> bool {
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     {
         state.menu_bar.has_pending()
     }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
         let _ = state;
         false
@@ -324,7 +324,7 @@ fn main() {
             let handle = app.handle().clone();
             let assets = Arc::new(move |path: &str| handle.asset_resolver().get(if path == "/" { "/index.html" } else { path }.to_string())
                 .map(|asset| (asset.bytes, asset.mime_type)));
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             let menu_api_origin = api_url.clone();
             let proxy = proxy::Proxy::new_with_session(api_url, origin.clone(), assets, backend.as_ref().map(|local| local.cookie.as_str()))?;
             let startup_url = proxy.startup_url();
@@ -336,11 +336,11 @@ fn main() {
                 let listener = tokio::net::TcpListener::from_std(listener).expect("client loopback listener");
                 if let Err(e) = axum::serve(listener, proxy.router()).await { eprintln!("client proxy stopped: {e}"); }
             });
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             let menu_bar = status_bar::StatusBar::new(app.handle(), &menu_api_origin)?;
             app.manage(recording_widget::RecordingWidget::default());
             app.manage(Client {
-                #[cfg(any(target_os = "macos", target_os = "windows"))]
+                #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
                 menu_bar,
                 #[cfg(target_os = "macos")]
                 store_id,
@@ -407,7 +407,7 @@ fn main() {
             let builder = builder.additional_browser_args(RECORDING_BROWSER_ARGS);
             let _ = (profile, store_id);
             builder.build()?;
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             {
                 let handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {

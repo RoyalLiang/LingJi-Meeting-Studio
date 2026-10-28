@@ -94,11 +94,11 @@ impl StatusBar {
             ],
         )?;
         let tray = TrayIconBuilder::with_id("lingji-status")
-            .icon(if cfg!(target_os = "macos") { tauri::include_image!("icons/menu-bar.png") } else { tauri::include_image!("icons/icon.png") })
+            .icon(if cfg!(target_os = "macos") { tauri::include_image!("icons/menu-bar.png") } else { tauri::include_image!("icons/tray.png") })
             .icon_as_template(cfg!(target_os = "macos"))
             .tooltip("聆记 · 打开会议或右键查看状态")
             .menu(&menu)
-            .show_menu_on_left_click(false)
+            .show_menu_on_left_click(cfg!(target_os = "linux"))
             .on_tray_icon_event(|tray, event| {
                 if let TrayIconEvent::Click {
                     button: MouseButton::Left,

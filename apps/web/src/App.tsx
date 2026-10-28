@@ -32,8 +32,7 @@ import { SharedMeeting, type SharedMeetingData } from './components/SharedMeetin
 import { currentMinutesJob } from './minutes-views';
 import { ProviderSettings } from './components/ProviderSettings';
 import { VocabularySettings } from './components/VocabularySettings';
-import { Transcript } from './components/Transcript';
-import { CorrectionSuggestions } from './components/CorrectionSuggestions';
+import { TranscriptHistory } from './components/Transcript';
 import { TranslationSettings } from './components/TranslationSettings';
 import { DeviceSettings } from './components/DeviceSettings';
 import { MeetingControls } from './components/MeetingControls';
@@ -216,10 +215,13 @@ function Workspace() {
     });
   }, [record?.id, record?.title, record?.capture, record?.minutesRevision, record?.liveMinutes]);
   useEffect(() => { if (!authReady) dismissToast(); }, [authReady, dismissToast]);
-  async function mutate(path: string, method: string, body?: unknown, blocking = true) {
+  const mutate = useCallback(async (path: string, method: string, body?: unknown, blocking = true) => {
     if (blocking) setBusy(true); setError(''); try { await api(path, method, body); try { await Promise.all([method === 'DELETE' && path === `/records/${activeId.current}` ? Promise.resolve() : refresh(), loadList()]); } catch { showToast('修改已保存，页面更新暂时失败；连接恢复后将自动刷新。'); } return true; }
     catch (e) { setError(messageOf(e)); return false; } finally { if (blocking) setBusy(false); }
-  }
+  }, [refresh,loadList,showToast]);
+  const saveTranscript = useCallback((segment: Segment,text: string,speaker: string) => mutate(`/records/${id}/segments/${segment.id}`, 'PATCH', {revision:segment.revision,text,speaker}), [id,mutate]);
+  const refreshTranscript = useCallback(() => void refresh().catch(e => setError(messageOf(e))), [refresh]);
+
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = new FormData(event.currentTarget); setBusy(true); setError('');
     try { const r = await api<RecordDetail>('/records', 'POST', { workspaceId: scope==='all'?null:scope, title: form.get('title'), language: form.get('language'), retentionDays: Number(form.get('retentionDays')), retainAudio: true, autoMinutes: form.has('autoMinutes'), realtimeAudioConsent: form.has('autoMinutes') && ['openai-realtime', 'doubao-audio', 'doubao-audio-only'].includes(boot?.providers.minutesMode || '') });
@@ -385,7 +387,7 @@ function Workspace() {
         </div>}
       </div>
         {record.capture === 'completed' && record.usage.samples > 0 && record.pendingChunks === 0 && record.segments.length === 0 && <FeedbackNotice key={`empty:${id}:${record.transcriptRevision}`} message="音频已处理完成，但未识别出可用语音。请检查麦克风输入、系统权限或共享音轨，再开始一段试录。"/>}<MinutesPanel key={record.id} audioOnly={boot.providers.minutesMode === 'doubao-audio-only'} inline settingsOpen={minutesSettingsOpen} closeSettings={() => setMinutesSettingsOpen(false)} modelReady={boot.providers.minutes} realtimeMode={['openai-realtime', 'doubao-audio', 'doubao-audio-only'].includes(boot.providers.minutesMode || '')} automate={async (enabled, intervalSeconds) => { await mutate(`/records/${id}/automation`, 'PATCH', {enabled,intervalSeconds,realtimeAudioConsent: enabled && ['openai-realtime', 'doubao-audio', 'doubao-audio-only'].includes(boot.providers.minutesMode || '')}); }} record={record} busy={busy} onClose={()=>{}} cite={cite} generate={async (template,mode) => { await mutate(`/records/${id}/minutes`, 'POST', { template,mode,scope: record.capture === 'completed' ? 'final' : 'live',retry:true,realtimeAudioConsent: mode === 'model' && ['openai-realtime', 'doubao-audio', 'doubao-audio-only'].includes(boot.providers.minutesMode || '') }, false); }} edit={async minutes => { return mutate(`/records/${id}/minutes`, 'PATCH', { revision: minutes.revision, minutes }); }}/>
-        <details className="transcript-disclosure"><summary>逐字记录与纠错 · {record.segments.length} 段</summary><CorrectionSuggestions key={record.id} record={record} changed={() => void refresh().catch(e => setError(messageOf(e)))}/><Transcript key={record.id} record={record} highlighted="" save={async (segment,text,speaker) => mutate(`/records/${id}/segments/${segment.id}`,"PATCH",{revision:segment.revision,text,speaker})}/></details>
+        <TranscriptHistory key={record.id} record={record} changed={refreshTranscript} save={saveTranscript}/>
           <Notes key={`notes:${record.id}`} record={record} save={async (notes, notesRevision) => { return mutate(`/records/${id}`, 'PATCH', { notes, notesRevision }); }}/>
 
       </>}

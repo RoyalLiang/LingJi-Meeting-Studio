@@ -1,4 +1,7 @@
 .toast.feedback-toast {
+  inset: calc(20px + env(safe-area-inset-top, 0px)) 16px auto;
+  width: fit-content;
+  margin-inline: auto;
   align-items: flex-start;
   padding: 10px 10px 10px 16px;
   max-width: min(460px, calc(100vw - 32px));
