@@ -1,3 +1,4 @@
+import { minutesDiscussionItems as discussionItems, minutesTextChunks } from '../../../packages/records/src/minutes-quality.mjs';
 import { minutesTimeoutMs } from './minutes-deadline.mjs';
 import { MINUTES_PROMPT_VERSION } from './minutes-prompts.mjs';
 import { audioMinutesEnabled } from './config.mjs';
@@ -33,7 +34,7 @@ export function buildMinutesManifest(job,config={},budget=inputBudget(config)){
   function add(segment){
     if(size({transcript:[segment],notes:job.notes,context:job.liveContext})>budget){
       requireThat(segment.text?.length>1,'minutes_input_metadata_too_large',422);
-      const middle=Math.ceil(segment.text.length/2);add({...segment,text:segment.text.slice(0,middle)});add({...segment,text:segment.text.slice(middle)});return;
+      const first=minutesTextChunks(segment.text,Math.ceil(segment.text.length/2))[0];add({...segment,text:first});add({...segment,text:segment.text.slice(first.length)});return;
     }
     if(current.length && size({transcript:[...current,segment],notes:job.notes,context:job.liveContext})>budget)flush();current.push(segment);
   }
@@ -74,28 +75,16 @@ export function buildMinutesManifest(job,config={},budget=inputBudget(config)){
   requireThat(windows.length>0 && windows.length<=512,'minutes_window_limit',422);
   return {version:1,budget,synthesisBudget:synthesisBudget(config),policy,generation:job.generation,transcriptRevision:job.transcriptRevision,notesRevision:job.notesRevision,snapshotOffset,hash:job.manifestHash,windows};
 }
-function discussionItems(minutes){
-  return [
-    ...minutes.sections.flatMap(section=>section.items.map(item=>({heading:section.heading,...item,text:item.label?`${item.label}：${item.text}`:item.text}))),
-    ...(minutes.topics||[]).filter(topic=>topic.summary.trim()).map(topic=>({heading:topic.title,text:topic.summary,evidence:topic.evidence})),
-    ...(minutes.decisions||[]).map(item=>({heading:'决定的讨论',...item})),
-    ...(minutes.actions||[]).map(item=>({heading:'行动的讨论',...item,text:[item.text,item.owner&&`负责人：${item.owner}`,item.due&&`时间：${item.due}`].filter(Boolean).join('；')})),
-    ...(minutes.highlights||[]).map(item=>({heading:'阶段要点',...item})),
-    ...(minutes.currentDiscussion||[]).map(item=>({heading:'当时讨论',...item})),
-    ...(minutes.speakerSummaries||[]).map(item=>({heading:'发言记录',text:item.summary,evidence:item.evidence})),
-    ...(minutes.tables||[]).flatMap(table=>table.rows.map(row=>({heading:table.title,text:row.cells.map((cell,index)=>`${table.columns[index]}：${cell}`).join('；'),evidence:row.evidence}))),
-    ...(minutes.visuals||[]).flatMap(visual=>visual.entries.map(entry=>({heading:visual.title,text:`${entry.label}：${entry.text||entry.quote||entry.valueText}`,evidence:entry.evidence})))
-  ];
-}
 
 function keepWindowDiscussion(result,leaves,snapshot,windows){
   const itemKey=item=>JSON.stringify([item.heading,item.text.trim().replace(/\s+/g,' '),item.evidence.map(ref=>`${ref.segmentId}:${ref.revision}`).sort()]);
   const known=new Set(discussionItems(result).map(itemKey)),groups=new Map();
   for(const leaf of leaves)for(const item of discussionItems(leaf.result)){
     const key=itemKey(item);if(known.has(key))continue;known.add(key);
-    const heading=`讨论过程 · ${item.heading}`.slice(0,200),items=groups.get(heading)||[];
+    const title=`讨论过程 · ${item.heading}`,heading=minutesTextChunks(title,200)[0],items=groups.get(heading)||[];
+    const context=title.length>200?`${item.heading}：`:'',step=7900-context.length;
     // Historical proposals remain readable without becoming current decisions.
-    for(let start=0;start<item.text.length;start+=7900)items.push({text:item.text.slice(start,start+7900),evidence:item.evidence,kind:'fact',label:'过程记录'});groups.set(heading,items);
+    for(const text of minutesTextChunks(item.text,step))items.push({text:context+text,evidence:item.evidence,kind:'fact',label:'过程记录'});groups.set(heading,items);
   }
   const sections=[...result.sections],corrections=new Map(),windowSources=new Map(windows.map(window=>[window.key,window.snapshot]));
   for(const source of [...leaves.map(leaf=>({minutes:leaf.result,snapshot:windowSources.get(leaf.key)})),{minutes:result,snapshot}]){

@@ -2,7 +2,7 @@ import { funasrConfigured, transcribeFunasr } from './funasr.mjs';
 import { localAsrConfigured } from './local-asr.mjs';
 import { waveHeader } from './audio-wav.mjs';
 export { waveHeader } from './audio-wav.mjs';
-import { groundSpeakerSummaries, orderMinutesTimelines } from '../../../packages/records/src/minutes-quality.mjs';
+import { groundSpeakerSummaries, orderMinutesTimelines, minutesTextChunks } from '../../../packages/records/src/minutes-quality.mjs';
 import { minutesTimeoutMs } from './minutes-deadline.mjs';
 import { transcribeDoubaoModelAudio } from './doubao-model-transcription.mjs';
 import { doubaoAudioEnabled } from './config.mjs';
@@ -76,7 +76,7 @@ export async function generateMinutes(job, env = process.env, options = {}) {
       if (items.length) sections.push({heading,items});
     }
     const represented=new Set(sections.flatMap(section=>section.items.flatMap(item=>item.evidence.filter(ref=>job.snapshot.some(source=>source.id===ref.segmentId&&source.revision===ref.revision&&source.text.trim()===item.text.trim())).map(ref=>`${ref.segmentId}:${ref.revision}`))));
-    const items=job.snapshot.filter(segment=>!segment.contextOnly&&!represented.has(`${segment.id}:${segment.revision}`)).flatMap(source=>Array.from({length:Math.ceil(source.text.length/7900)},(_,index)=>({text:source.text.slice(index*7900,(index+1)*7900),evidence:[{segmentId:source.id,revision:source.revision}]})));
+    const items=job.snapshot.filter(segment=>!segment.contextOnly&&!represented.has(`${segment.id}:${segment.revision}`)).flatMap(source=>minutesTextChunks(source.text).map(text=>({text,evidence:[{segmentId:source.id,revision:source.revision}]})));
     for(let i=0;i<items.length;i+=100)sections.push({heading:'讨论摘录',items:items.slice(i,i+100)});
     return {title:'本地提取纪要',method:'extractive',sections,actions:hints.items.filter(i=>i.kind==='action').map(({text,evidence})=>({text,evidence,owner:null,due:null})),usageTokens:0};
   }

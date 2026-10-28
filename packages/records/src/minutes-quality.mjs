@@ -11,11 +11,11 @@ export const minutesQualityInstructions = `
 highlights、items 和每个 visual entry 均引用真实片段与版本；visual.topicId 必须存在。没有依据的增强字段省略或给空数组，不输出占位图表。
 增量整理时 context 是历史去重提示而非新证据；仅重复确认而无新信息时不增加一条。复用已有主题 id；状态变化明确写变化及依据，不重复铺陈背景。汇总阶段重新按议题归并，删除重复和闲聊，并完整保留仍有效的决策、行动、数字、风险及其证据。`;
 
-export function validateMinutesQuality(result, snapshot, requireThat, topicIds, validEvidence) {
+export function validateMinutesQuality(result, snapshot, requireThat, topicIds, validEvidence, {aggregate=false}={}) {
   const text = (value, max) => typeof value === 'string' && value.trim() && value.length <= max;
   const topic = value => value === undefined || (typeof value === 'string' && topicIds.has(value));
   const items = [...(Array.isArray(result.sections) ? result.sections.flatMap(section => Array.isArray(section?.items) ? section.items : []) : []), ...(Array.isArray(result.actions) ? result.actions : []), ...(Array.isArray(result.decisions) ? result.decisions : [])];
-  for (const item of items.filter(item => item && typeof item === 'object')) requireThat(topic(item.topicId) && (item.label === undefined || text(item.label, 30)) && (item.kind === undefined || ['fact','decision','action','risk','question'].includes(item.kind)), 'invalid_minutes_structure', 422);
+  for (const item of items.filter(item => item && typeof item === 'object')) requireThat(topic(item.topicId) && (item.label === undefined || text(item.label, aggregate&&result.actions?.includes(item)?240:30)) && (item.kind === undefined || ['fact','decision','action','risk','question'].includes(item.kind)), 'invalid_minutes_structure', 422);
   if (result.highlights !== undefined) requireThat(Array.isArray(result.highlights) && result.highlights.length <= 6 && result.highlights.every(item => item && text(item.text, 300) && validEvidence(item.evidence)), 'invalid_minutes_structure', 422);
   if (result.visuals === undefined) return;
   requireThat(Array.isArray(result.visuals) && result.visuals.length <= 4, 'invalid_minutes_visuals', 422);
@@ -42,8 +42,62 @@ export function groundSpeakerSummaries(result, snapshot) {
   return result;
 }
 
+export function minutesTextChunks(text,limit=7900){
+  if(!Number.isSafeInteger(limit)||limit<2)throw new Error('invalid_minutes_text_limit');
+  const chunks=[];
+  for(let start=0;start<text.length;){
+    let end=Math.min(text.length,start+limit);
+    if(end<text.length&&text.charCodeAt(end-1)>=0xd800&&text.charCodeAt(end-1)<=0xdbff&&text.charCodeAt(end)>=0xdc00&&text.charCodeAt(end)<=0xdfff)end--;
+    chunks.push(text.slice(start,end));start=end;
+  }
+  return chunks;
+}
+export const minutesKindLabels=Object.freeze({fact:'要点',decision:'已明确',action:'下一步',risk:'风险',question:'待确认'});
+export function minutesStateLabel(item){
+  return item.status==='withdrawn'?'已撤回':item.status==='corrected'?'已更正':item.status==='pending'?'待确认':undefined;
+}
+export function minutesItemText(item){
+  const state=minutesStateLabel(item),label=item.label||(!state&&item.kind!=='fact'&&Object.hasOwn(minutesKindLabels,item.kind)?minutesKindLabels[item.kind]:undefined);
+  return [state&&`状态：${state}`,label?`${label}：${item.text}`:item.text].filter(Boolean).join('；');
+}
+
+function minutesActionLabel(item,topics=[]) {
+  return [...new Set([item.topicId&&topics.find(topic=>topic.id===item.topicId)?.title,item.label].filter(Boolean))].join(' · ')||undefined;
+}
+export function minutesActionText(item,topics=[]) {
+  const label=minutesActionLabel(item,topics),kind=label&&['decision','risk','question'].includes(item.kind)&&!minutesStateLabel(item)?minutesKindLabels[item.kind]:undefined;
+  return [kind,minutesItemText({...item,label})].filter(Boolean).join(' · ');
+}
+export function minutesDiscussionItems(minutes){
+  return [
+    ...minutes.sections.flatMap(section=>section.items.map(item=>({heading:section.heading,...item,text:minutesItemText(item)}))),
+    ...(minutes.topics||[]).map(topic=>({heading:topic.title,text:typeof topic.summary==='string'&&topic.summary.trim()?topic.summary:topic.title,evidence:topic.evidence})),
+    ...(minutes.decisions||[]).map(item=>({heading:'决定的讨论',...item,text:minutesItemText(item)})),
+    ...(minutes.actions||[]).map(item=>({heading:'行动的讨论',...item,text:[minutesActionText(item,minutes.topics),item.owner&&`负责人：${item.owner}`,item.due&&`时间：${item.due}`].filter(Boolean).join('；')})),
+    ...(minutes.corrections||[]).map(item=>({heading:'修订记录',text:minutesItemText(item),evidence:item.evidence})),
+    ...(minutes.highlights||[]).map(item=>({heading:'阶段要点',...item,text:minutesItemText(item)})),
+    ...(minutes.currentDiscussion||[]).map(item=>({heading:'当时讨论',...item,text:minutesItemText(item)})),
+    ...(minutes.speakerSummaries||[]).map(item=>({heading:'发言记录',text:item.summary,evidence:item.evidence})),
+    ...(minutes.tables||[]).flatMap(table=>table.rows.map(row=>({heading:table.title,text:row.cells.map((cell,index)=>`${table.columns[index]}：${cell}`).join('；'),evidence:row.evidence}))),
+    ...(minutes.visuals||[]).flatMap(visual=>visual.entries.map(entry=>({heading:visual.title,text:`${entry.label}：${entry.text||entry.quote||entry.valueText}`,evidence:entry.evidence})))
+  ];
+}
 export function manualMinutesContent(minutes) {
-  return { title: minutes.title, sections: minutes.sections.map(section => ({ heading: section.heading, items: section.items.map(item => ({ text: item.text, evidence: item.evidence })) })), actions: (minutes.actions || []).map(item => ({ text: item.text, owner: item.owner, due: item.due, evidence: item.evidence })) };
+  const sections=minutes.sections.flatMap(section=>{
+    const items=minutesDiscussionItems({sections:[section]}).flatMap(item=>minutesTextChunks(item.text).map(text=>({text,evidence:item.evidence})));
+    return Array.from({length:Math.max(1,Math.ceil(items.length/100))},(_,index)=>({heading:section.heading,items:items.slice(index*100,(index+1)*100)}));
+  });
+  const actions=(minutes.actions||[]).filter(item=>!['withdrawn','corrected'].includes(item.status)).map(item=>{const {text,owner,due,evidence,status,kind}=item,label=minutesActionLabel(item,minutes.topics);return {text,owner:owner??null,due:due??null,evidence,...(label?{label}:{}),...(kind?{kind}:{}),...(status==='pending'?{status}:{})};});
+  const result={title:minutes.title,sections,actions,decisions:[],highlights:undefined,visuals:undefined,topics:undefined,tables:undefined,speakerSummaries:undefined,currentDiscussion:undefined,corrections:undefined};
+  const key=item=>JSON.stringify([item.heading,item.text.trim().replace(/\s+/g,' '),item.evidence.map(ref=>`${ref.segmentId}:${ref.revision}`).sort()]);
+  const known=new Set(minutesDiscussionItems(result).map(key)),extra=[];
+  for(const item of minutesDiscussionItems({...minutes,sections:[],actions:(minutes.actions||[]).filter(item=>['withdrawn','corrected'].includes(item.status))})){
+    const identity=key(item);if(known.has(identity))continue;known.add(identity);
+    const context=`${item.heading}：`,step=7900-context.length;
+    for(const text of minutesTextChunks(item.text,step))extra.push({text:context+text,evidence:item.evidence});
+  }
+  for(let index=0;index<extra.length;index+=100)sections.push({heading:'补充记录',items:extra.slice(index,index+100)});
+  return result;
 }
 
 const timelineMention = (entry, snapshot) => {

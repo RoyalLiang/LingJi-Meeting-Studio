@@ -1,3 +1,4 @@
+import { manualMinutesContent } from '../packages/records/src/minutes-quality.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -148,4 +149,47 @@ test('a transient live minutes failure retries without needing another SenseVoic
   assert.equal(queueAutomaticMinutes(r,'fixture-model',46999),undefined);
   const retry=queueAutomaticMinutes(r,'fixture-model',47000);
   assert.equal(retry.retryOf,job.id);assert.equal(retry.retryAttempt,2);
+});
+
+test('manual HTTP saves retain table-only facts and do not restore facts the user removed',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'minutes-rich-edit-')),app=await createRecordServer({root,databaseUrl:'',port:0});
+  try{
+    const address=await app.start(),base=`http://127.0.0.1:${address.port}`,email='rich-edit@example.test';
+    const login=await fetch(`${base}/api/auth/register`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:'long-password'})}),session=await login.json();
+    const headers={'Content-Type':'application/json',Cookie:login.headers.get('set-cookie').split(';')[0],'X-CSRF-Token':session.csrf};
+    const record=createRecord(`user:${digest(email)}`),source={...segment('device'),text:'设备A颜色蓝色'},evidence=[ref(source)];
+    const minutes={...empty(),actions:[{text:'提交报告',label:'项目A',kind:'action',owner:null,due:null,evidence},{text:'提交报告',label:'项目B',kind:'question',owner:null,due:null,evidence}],sections:[{heading:'概要',items:[{text:'设备已经讨论',evidence}]}],topics:[{id:'device',title:'设备',summary:'设备A颜色蓝色',evidence}],tables:[{title:'设备属性',topicId:'device',columns:['设备','颜色'],rows:[{cells:['设备A','蓝色'],evidence}]}]};
+    record.capture='completed';record.segments=[source];record.minutesRevision=1;record.minutes={...minutes,revision:1,evidenceSnapshot:[source]};await app.repo.insert(record);
+    const save=(revision,value)=>fetch(`${base}/api/records/${record.id}/minutes`,{method:'PATCH',headers,body:JSON.stringify({revision,minutes:value})});
+    const response=await save(1,minutes);assert.equal(response.status,200,await response.text());
+    let saved=(await app.repo.get(record.id)).minutes;
+    assert.equal(saved.tables.length,1);
+  assert.deepEqual(saved.actions.map(action=>action.label),['项目A','项目B']);
+    saved=manualMinutesContent(saved);
+    assert.ok(saved.sections.flatMap(section=>section.items).some(item=>item.text.includes('蓝色')));
+    for(const section of saved.sections)section.items=section.items.filter(item=>!item.text.includes('蓝色'));
+    const second=await save(2,saved);assert.equal(second.status,200,await second.text());
+    saved=(await app.repo.get(record.id)).minutes;
+    assert.ok(!saved.sections.flatMap(section=>section.items).some(item=>item.text.includes('蓝色')));
+  assert.deepEqual(saved.actions.map(action=>action.label),['项目A','项目B']);assert.equal(saved.actions[1].kind,'question');
+  }finally{await app.stop();await rm(root,{recursive:true,force:true});}
+});
+
+test('manual HTTP budget follows a trusted long document while other writes retain their limit',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'minutes-long-body-')),app=await createRecordServer({root,databaseUrl:'',port:0});
+  try{
+    const address=await app.start(),base=`http://127.0.0.1:${address.port}`,email='long-edit@example.test';
+    const login=await fetch(`${base}/api/auth/register`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:'long-password'})}),session=await login.json();
+    const headers={'Content-Type':'application/json',Cookie:login.headers.get('set-cookie').split(';')[0],'X-CSRF-Token':session.csrf};
+    const record=createRecord(`user:${digest(email)}`),sources=Array.from({length:30},(_,index)=>segment(`long-${index}`,index*1000));
+    record.capture='completed';record.segments=sources;record.minutesRevision=1;
+    record.minutes={title:'长会议',revision:1,sections:sources.map((source,index)=>({heading:`议题${index}`,items:[{text:'甲'.repeat(7500),evidence:[ref(source)]}]})),actions:[],evidenceSnapshot:sources};await app.repo.insert(record);
+    const body=JSON.stringify({revision:1,minutes:manualMinutesContent(record.minutes)});
+    assert.ok(Buffer.byteLength(body)>600000);
+    const response=await fetch(`${base}/api/records/${record.id}/minutes`,{method:'PATCH',headers,body});
+    assert.equal(response.status,200,await response.text());
+    assert.equal((await app.repo.get(record.id)).minutes.sections.length,30);
+    const oversized=await fetch(`${base}/api/records/${record.id}`,{method:'PATCH',headers,body:JSON.stringify({notes:'乙'.repeat(210000),notesRevision:0})});
+    assert.equal(oversized.status,413);
+  }finally{await app.stop();await rm(root,{recursive:true,force:true});}
 });

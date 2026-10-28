@@ -10,11 +10,13 @@ import { CitationSources as Sources } from './CitationSources';
 import { MinuteSpeakers } from './MinuteSpeakers';
 
 type Props = { speakerMap?: Map<string,string>; minutes: Minutes; cite: (evidence: Evidence) => void };
-const kindLabels = { fact: '要点', decision: '已明确', action: '下一步', risk: '风险', question: '待确认' };
+import { minutesKindLabels as kindLabels, minutesStateLabel } from '../../../../packages/records/src/minutes-quality.mjs';
 export { MinuteSpeakers } from './MinuteSpeakers';
 
 function Point({ item, cite, speakers }: { item: MinutesItem; cite: Props['cite']; speakers: Map<string,string> }) {
-  return <div className="branch-node" data-kind={item.kind || 'fact'}><MinuteSpeakers evidence={item.evidence} speakers={speakers}/><p>{(item.label || (item.kind && item.kind !== 'fact')) && <strong className="point-label">{item.label || kindLabels[item.kind || 'fact']}<span aria-hidden="true"> · </span></strong>}{item.text}</p><Sources compact evidence={item.evidence} cite={cite}/></div>;
+  const state=minutesStateLabel(item),labels=[state,item.label||(!state&&item.kind&&item.kind!=='fact'?kindLabels[item.kind]:undefined)].filter(Boolean);
+  const label=[...new Set(labels)].join(' · ');
+  return <div className="branch-node" data-kind={item.kind || 'fact'}><MinuteSpeakers evidence={item.evidence} speakers={speakers}/><p>{label && <strong className="point-label">{label}<span aria-hidden="true"> · </span></strong>}{item.text}</p><Sources compact evidence={item.evidence} cite={cite}/></div>;
 }
 function Branch({ branch, index, minutes, cite, speakers }: { branch: ReturnType<typeof topicTableLayout>['branches'][number]; index: number; minutes: Minutes; cite: Props['cite']; speakers: Map<string,string> }) {
   const keyPoints = branch.items.filter(item => item.kind && item.kind !== 'fact');

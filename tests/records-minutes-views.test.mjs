@@ -1,3 +1,5 @@
+import { minutesActionText } from '../packages/records/src/minutes-quality.mjs';
+import { speakerLabels as sharedSpeakerLabels } from '../packages/records/src/minutes-speakers.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -16,7 +18,7 @@ const snapshot = [
 const ref = index => ({ segmentId:snapshot[index].id, revision:snapshot[index].revision });
 const base = () => ({ title:'发布准备', sections:[{heading:'讨论重点',items:[{text:'周五发布第一版。',evidence:[ref(0)]},{text:'回归测试由说话人 2 负责。',evidence:[ref(1)]}]}], actions:[], evidenceSnapshot:structuredClone(snapshot) });
 const source = stripTypeScriptTypes(await readFile(new URL('../apps/web/src/minutes-views.ts', import.meta.url),'utf8')).replace(/^import .*$/gm,'').replace(/export /g,'');
-const sandbox = {exports:{}};
+const sandbox = {exports:{},minutesActionText,speakerLabels:sharedSpeakerLabels};
 vm.runInNewContext(source + '\nObject.assign(exports,{topicBranches,speakerViews,decisionItems,currentMinutesJob,speakerLabels});', sandbox);
 const {topicBranches,speakerViews,decisionItems,currentMinutesJob,speakerLabels} = sandbox.exports;
 const usageSource=stripTypeScriptTypes(await readFile(new URL('../apps/web/src/minutes-usage.ts',import.meta.url),'utf8')).replace(/^import .*$/gm,'').replace(/export /g,'');
@@ -156,4 +158,35 @@ test('minutes annotations show stable speaker numbers rather than names',()=>{
  const parts=[{id:'a',revision:1,speaker:'李工',speakerId:'b'},{id:'b',revision:1,speaker:'张工',speakerId:'a'},{id:'c',revision:1,speaker:'王工',speakerId:'c'},{id:'unknown',revision:1,speaker:''}];
  const labels=speakerLabels(parts,[{id:'a',label:'张工'},{id:'b',label:'李工'},{id:'c',label:'王工'}],[{id:'b',revision:2,speakerId:'c',speaker:'王工'}]);
  assert.equal(labels.get('a:1'),'说话人2');assert.equal(labels.get('b:1'),'说话人1');assert.equal(labels.get('c:1'),'说话人3');assert.equal(labels.get('unknown:1'),'未区分说话人');
+});
+
+test('retained process sections keep project headings even when a broad root topic cites the same source',()=>{
+  const value=base(),evidence=[ref(0)];
+  value.topics=[{id:'general',title:'项目讨论',summary:'两个项目已讨论。',evidence}];
+  value.sections=['项目A','项目B'].map(name=>({heading:`讨论过程 · ${name}`,items:[{text:'颜色蓝色',kind:'fact',label:'过程记录',evidence}]}));
+  const branches=topicBranches(value);
+  for(const name of ['项目A','项目B'])assert.equal(branches.find(branch=>branch.title===`讨论过程 · ${name}`)?.items[0].text,'颜色蓝色');
+});
+
+test('ordinary section headings remain authoritative under a broad shared-source topic',()=>{
+  const value=base(),evidence=[ref(0)];
+  value.topics=[{id:'general',title:'整体情况',summary:'两个项目已讨论。',evidence}];
+  value.sections=['项目A','项目B'].map(heading=>({heading,items:[{text:'颜色蓝色',evidence}]}));
+  const branches=topicBranches(value);
+  for(const heading of ['项目A','项目B'])assert.equal(branches.find(branch=>branch.title===heading)?.items[0].text,'颜色蓝色');
+});
+
+test('labels and item context are not removed by paragraph text deduplication',()=>{
+  const value=base(),evidence=[ref(0)];
+  value.topics=[{id:'general',title:'项目讨论',summary:'颜色蓝色',evidence}];
+  value.sections=[{heading:'项目讨论',items:['项目A','项目B'].map(label=>({text:'颜色蓝色',label,evidence}))}];
+  const branch=topicBranches(value)[0];
+  assert.deepEqual(Array.from(branch.items,item=>item.label),['项目A','项目B']);
+});
+
+test('explicit broad topic membership keeps the source project context in each card',()=>{
+  const value=base(),evidence=[ref(0)];
+  value.topics=[{id:'general',title:'整体情况',summary:'两个项目已讨论。',evidence}];
+  value.sections=['项目A','项目B'].map(heading=>({heading,items:[{text:'颜色蓝色',topicId:'general',evidence}]}));
+  assert.deepEqual(Array.from(topicBranches(value)[0].items,item=>item.label),['项目A','项目B']);
 });
