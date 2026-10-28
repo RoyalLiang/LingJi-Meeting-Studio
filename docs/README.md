@@ -1,6 +1,6 @@
 # 聆记文档导航
 
-[v0.1.39 录音与处理链路优化](releases/v0.1.39-preview.md)补充修复重复纪要块并保持原有样式，等待 CI 发布；[恢复与进度说明](engineering/capture-reliability.md)、[本地证据](evidence/capture-reliability-v0.1.39-2026-10-28.md)、[自动起止研究](research/meeting-lifecycle-signals-2026-10-28.md)。
+[v0.1.39 录音与处理链路优化](releases/v0.1.39-preview.md)已发布，五项CI与公开附件核验通过；[发布回执](evidence/preview-v0.1.39-2026-10-28.md)；[恢复与进度说明](engineering/capture-reliability.md)、[本地证据](evidence/capture-reliability-v0.1.39-2026-10-28.md)、[自动起止研究](research/meeting-lifecycle-signals-2026-10-28.md)。
 
 [v0.1.36 纪要效率与界面修复](releases/v0.1.36-preview.md)已发布，五项 CI 与公开附件核验通过；[发布回执](evidence/preview-v0.1.36-2026-10-28.md)；[配置与用量说明](engineering/minutes-efficiency.md)、[验证记录](evidence/minutes-efficiency-v0.1.36-2026-10-28.md)。
 
