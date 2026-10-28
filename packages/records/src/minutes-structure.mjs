@@ -14,7 +14,7 @@ export function validateMinutesStructure(result, snapshot, requireThat, {aggrega
     }
   }
   if (result.currentDiscussion !== undefined) requireThat(Array.isArray(result.currentDiscussion) && result.currentDiscussion.length <= 8 && result.currentDiscussion.every(item => item && typeof item.text === 'string' && item.text.trim() && item.text.length <= 2000 && evidence(item.evidence)), 'invalid_current_discussion', 422);
-  validateMinutesQuality(result, snapshot, requireThat, topicIds, evidence);
+  validateMinutesQuality(result, snapshot, requireThat, topicIds, evidence, {aggregate});
   if (result.tables === undefined) return;
   requireThat(Array.isArray(result.tables) && result.tables.length <= 6, 'invalid_minutes_tables', 422);
   for (const table of result.tables) {

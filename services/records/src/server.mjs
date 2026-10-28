@@ -1,4 +1,4 @@
-import { manualMinutesContent } from '../../../packages/records/src/minutes-quality.mjs';
+import { manualMinutesContent, minutesActionText } from '../../../packages/records/src/minutes-quality.mjs';
 import { recordingWaveform, waveformKey, validWaveform } from './waveform.mjs';
 import { doubaoAudioEnabled } from './config.mjs';
 import { audioMinutesEnabled } from './config.mjs';
@@ -52,12 +52,12 @@ const escapeIcs = text => String(text).replace(/\\/g, '\\\\').replace(/\r?\n/g, 
 export function exportRecord(record, format = 'markdown') {
   if (format === 'json') return JSON.stringify(publicRecord(record), null, 2);
   if (format === 'issues') return JSON.stringify({ recordId: record.id, minutesRevision: record.minutesRevision,
-    candidates: (record.minutes?.actions || []).map(action => ({ title: action.text,
-      body: `${action.text}\n\n负责人：${action.owner || '待确认'}\n日期：${action.due || '待确认'}\n来源：${action.evidence.map(e => `${e.segmentId}@${e.revision}`).join(', ')}`,
+    candidates: (record.minutes?.actions || []).map(action => ({ title: minutesActionText(action,record.minutes.topics),
+      body: `${minutesActionText(action,record.minutes.topics)}\n\n负责人：${action.owner || '待确认'}\n日期：${action.due || '待确认'}\n来源：${action.evidence.map(e => `${e.segmentId}@${e.revision}`).join(', ')}`,
       evidence: action.evidence })) }, null, 2);
   if (format === 'ics') return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Meeting Studio//Actions//ZH',
     ...(record.minutes?.actions || []).flatMap((a, i) => ['BEGIN:VTODO', `UID:${record.id}-${i}@meeting.local`,
-      `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z')}`, `SUMMARY:${escapeIcs(a.text)}`,
+      `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z')}`, `SUMMARY:${escapeIcs(minutesActionText(a,record.minutes.topics))}`,
       ...(/^\d{4}-\d{2}-\d{2}$/.test(a.due || '') ? [`DUE;VALUE=DATE:${a.due.replace(/-/g, '')}`] : []), 'STATUS:NEEDS-ACTION', 'END:VTODO']), 'END:VCALENDAR', ''].join('\r\n');
   return exportMinutesMarkdown(record);
 }
@@ -308,7 +308,9 @@ export async function createRecordServer(options = {}) {
         send(res, 200, ack); return;
       }
       if (action === 'shares' && req.method === 'GET') { send(res, 200, { shares: record.shares.map(({ hash, ...s }) => s) }); return; }
-      const body = await readBody(req, 600000);
+      const editBytes=action==='minutes'&&req.method==='PATCH'&&record.minutes?Math.max(Buffer.byteLength(JSON.stringify(record.minutes)),Buffer.byteLength(JSON.stringify(manualMinutesContent(record.minutes)))):0;
+      const bodyLimit=editBytes?Math.min(16*1024*1024,Math.max(600000,editBytes*3+65536)):600000;
+      const body = await readBody(req, bodyLimit);
       let result;
       if (action === 'corrections' && req.method === 'POST') {
         const vocabulary = await loadVocabulary(repo, user.id, record.workspaceId || 'inbox');
@@ -345,12 +347,16 @@ export async function createRecordServer(options = {}) {
       else if (action === 'minutes' && req.method === 'PATCH') result = await changeOwned(id, user, r => {
         requireThat(r.minutes && body.revision === r.minutesRevision, 'minutes_revision_conflict');
         const sourceCount=new Set(r.minutes.evidenceSnapshot.map(segment=>`${segment.id}:${segment.revision}`)).size;
-        validateMinutes(body.minutes, r.minutes.evidenceSnapshot,undefined,{aggregate:true,maxSections:r.minutes.sections.length>20*Math.max(1,sourceCount)?r.minutes.sections.length:undefined});
+        const baseline=manualMinutesContent(r.minutes);
+        const capacity=Math.max(r.minutes.sections.length,baseline.sections.length),options={aggregate:true,maxSections:capacity>20*Math.max(1,sourceCount)?capacity:undefined};
+        validateMinutes(body.minutes,r.minutes.evidenceSnapshot,undefined,options);
+        const manual=manualMinutesContent(body.minutes);
+        validateMinutes(manual,r.minutes.evidenceSnapshot,undefined,options);
         r.minutesHistory = [...(r.minutesHistory || []), r.minutes].slice(-10);
         r.minutesRevision++;
-          const previous = { ...r.minutes };
-          for (const key of ['highlights','visuals','topics','tables','decisions','speakerSummaries','currentDiscussion']) delete previous[key];
-          r.minutes = { ...previous, ...manualMinutesContent(body.minutes), revision: r.minutesRevision, edited: true }; autoNameRecord(r,r.minutes.title); emit(r, 'minutes.edited'); return publicRecord(r);
+          const previous = { ...r.minutes },unchanged=JSON.stringify(manual)===JSON.stringify(baseline);
+          if(!unchanged)for (const key of ['highlights','visuals','topics','tables','decisions','speakerSummaries','currentDiscussion']) delete previous[key];
+          r.minutes = { ...previous, ...(unchanged?{}:manual), revision: r.minutesRevision, edited: true }; autoNameRecord(r,r.minutes.title); emit(r, 'minutes.edited'); return publicRecord(r);
       });
       else if (action === '' && req.method === 'PATCH') result = await changeOwned(id, user, r => {
         if (body.language !== undefined) {

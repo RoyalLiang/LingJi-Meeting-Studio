@@ -1,3 +1,5 @@
+import { minutesActionText } from '../packages/records/src/minutes-quality.mjs';
+import { speakerLabels as sharedSpeakerLabels } from '../packages/records/src/minutes-speakers.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire, stripTypeScriptTypes } from 'node:module';
@@ -40,7 +42,7 @@ test('paused discussion stays inactive while a queued or running minutes job rem
 const helpers = {};
 const helperSource = (await readFile(new URL('../apps/web/src/minutes-views.ts', import.meta.url), 'utf8'))
   .replace(/^import .*$/gm, '').replace(/export /g, '');
-vm.runInNewContext(stripTypeScriptTypes(helperSource) + '\nObject.assign(exports,{topicTableLayout,summaryTables,topicDurations});', { exports: helpers });
+vm.runInNewContext(stripTypeScriptTypes(helperSource) + '\nObject.assign(exports,{topicTableLayout,summaryTables,topicDurations});', { exports: helpers, minutesActionText,speakerLabels:sharedSpeakerLabels });
 const ref = (segmentId, revision = 1) => ({ segmentId, revision });
 const minutes = () => ({
   title: '交付讨论', revision: 1, transcriptRevision: 3, edited: false,
@@ -75,14 +77,17 @@ test('an old record without usage keeps the full minutes page readable with unkn
 test('AI tree places each table row inside its uniquely cited topic and preserves ambiguous rows', () => {
   const html = render();
   const branches = html.split('class="minutes-branch"').slice(1);
-  assert.equal(branches.length, 3);
+  assert.equal(branches.length, 4);
   assert.match(branches[0], /发布候选版/);
   assert.doesNotMatch(branches[0], /回归测试|跨主题协调|旧修订数据/);
   assert.match(branches[1], /回归测试/);
   assert.doesNotMatch(branches[1], /发布候选版|跨主题协调|旧修订数据/);
-  assert.match(branches[2], /补充表格/);
-  assert.match(branches[2], /跨主题协调/);
-  assert.match(branches[2], /旧修订数据/);
+  assert.match(branches[2], /讨论重点/);
+  assert.match(branches[2], /发布时间明确/);
+  assert.match(branches[2], /测试范围明确/);
+  assert.match(branches[3], /补充表格/);
+  assert.match(branches[3], /跨主题协调/);
+  assert.match(branches[3], /旧修订数据/);
   for (const text of ['发布候选版', '回归测试', '跨主题协调', '旧修订数据']) {
     assert.equal(html.split(text).length - 1, 1, `${text} is retained exactly once`);
   }
@@ -99,12 +104,12 @@ test('legacy sections and action fallback tables retain row ownership without mu
   const value = minutes();
   value.topics = [];
   value.tables = [];
-  value.actions = [{ text: '确认发布窗口', owner: '说话人 1', due: '', evidence: [ref('release')] }];
+  value.actions = [{ text: '确认发布窗口', label:'项目A',kind:'question',owner: '说话人 1', due: '', evidence: [ref('release')] }];
   const before = JSON.stringify(value);
   const { branches, unassigned } = helpers.topicTableLayout(value);
   assert.equal(branches.length, 1);
   assert.equal(branches[0].tables[0].title, '行动候选汇总');
-  assert.deepEqual(Array.from(branches[0].tables[0].rows[0].cells), ['确认发布窗口', '说话人 1']);
+  assert.deepEqual(Array.from(branches[0].tables[0].rows[0].cells), ['待确认 · 项目A：确认发布窗口', '说话人 1']);
   assert.equal(unassigned.length, 0);
   assert.equal(JSON.stringify(value), before);
 });

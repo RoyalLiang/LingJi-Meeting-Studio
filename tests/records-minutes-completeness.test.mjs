@@ -89,7 +89,7 @@ test('historical decisions stay visible as process records without becoming fina
  });
  assert.deepEqual(result.decisions,[]);assert.deepEqual(result.actions,[]);
  const history=result.sections.filter(s=>s.heading.startsWith('讨论过程')).flatMap(s=>s.items);
- const old=history.find(i=>i.text==='早先提议周五上线。');assert.ok(old);assert.equal(old.kind,'fact');assert.equal(old.label,'过程记录');assert.equal(old.topicId,undefined);
+ const old=history.find(i=>i.text.endsWith('早先提议周五上线。'));assert.ok(old);assert.equal(old.kind,'fact');assert.equal(old.label,'过程记录');assert.equal(old.topicId,undefined);
 });
 
 test('rule matches do not suppress unrelated ordinary local facts',async()=>{
@@ -202,4 +202,23 @@ test('local multiwindow extraction keeps all facts with bounded current action c
   const result=await savedPipeline(180,job=>generateMinutes(job,{}),'extractive',i=>`李工负责周五提交设备${i}清单。`);
   assert.equal(new Set(result.sections.flatMap(section=>section.items.flatMap(item=>item.evidence.map(ref=>ref.segmentId)))).size,180);
   assert.equal(result.actions.length,50);
+});
+
+test('a cited leaf topic title survives when its allowed summary is empty',async()=>{
+  const result=await savedPipeline(2,async job=>{
+    const evidence=job.summaries?job.summaries[0].topics[0].evidence:[ref(job.snapshot.find(source=>!source.contextOnly))];
+    return job.summaries?{title:'概要',sections:[{heading:'概要',items:[{text:'设备已经讨论',evidence}]}],actions:[]}:{title:'分段',sections:[{heading:'讨论',items:[]}],topics:[{id:'device',title:'设备颜色蓝色、材质金属',summary:'',evidence}],actions:[]};
+  });
+  assert.ok(result.sections.some(section=>section.items.some(item=>item.text==='设备颜色蓝色、材质金属')));
+});
+
+test('long retained headings keep their complete project context when the display prefix is truncated',async()=>{
+  const headings=[...['方案A','方案B'].map(name=>'项目背景'.repeat(49)+name),'𠮷'.repeat(99)+'甲'];
+  const result=await savedPipeline(2,async job=>{
+    const evidence=job.summaries?job.summaries[0].sections[0].items[0].evidence:[ref(job.snapshot.find(source=>!source.contextOnly))];
+    return job.summaries?{title:'概要',sections:[{heading:'概要',items:[{text:'项目已经讨论',evidence}]}],actions:[]}:{title:'分段',sections:headings.map(heading=>({heading,items:[{text:'颜色蓝色',evidence}]})),actions:[]};
+  });
+  const body=result.sections.flatMap(section=>section.items).map(item=>item.text).join('\n');
+  for(const heading of headings)assert.ok(body.includes(heading));
+  assert.ok(result.sections.every(section=>section.heading.isWellFormed()));
 });

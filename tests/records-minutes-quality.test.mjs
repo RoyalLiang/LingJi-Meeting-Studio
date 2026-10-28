@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { validateMinutes, createRecord, requestMinutes, commitMinutes } from '../packages/records/src/record.mjs';
 import { mergeLiveMinutes, minutesContext } from '../packages/records/src/live-minutes.mjs';
 import { sharedMinutes } from '../packages/records/src/shared-content.mjs';
-import { minutesQualityInstructions, groundSpeakerSummaries, manualMinutesContent, orderMinutesTimelines } from '../packages/records/src/minutes-quality.mjs';
+import { minutesQualityInstructions, groundSpeakerSummaries, manualMinutesContent, orderMinutesTimelines, minutesTextChunks, minutesActionText } from '../packages/records/src/minutes-quality.mjs';
 import { audioMinutesInstructions } from '../services/records/src/audio-minutes.mjs';
 import { exportMinutesMarkdown } from '../services/records/src/markdown-export.mjs';
 import { createRepository } from '../services/records/src/repository.mjs';
@@ -143,7 +143,7 @@ test('unknown speakers cannot acquire model-invented identities and manual edits
   const m=fixture();m.speakerSummaries=[{speaker:'总经理',speakerId:null,summary:'发布',evidence:[ref(0)]}];
   groundSpeakerSummaries(m,snapshot);assert.deepEqual(m.speakerSummaries,[]);
   const before=JSON.stringify(m),manual=manualMinutesContent(m);
-  assert.equal(manual.sections[0].items[0].text,m.sections[0].items[0].text);assert.equal(manual.sections[0].items[0].topicId,undefined);assert.equal(manual.visuals,undefined);assert.equal(manual.highlights,undefined);assert.equal(JSON.stringify(m),before);
+  assert.equal(manual.sections[0].items[0].text,`${m.sections[0].items[0].label}：${m.sections[0].items[0].text}`);assert.equal(manual.sections[0].items[0].topicId,undefined);assert.equal(manual.visuals,undefined);assert.equal(manual.highlights,undefined);assert.equal(JSON.stringify(m),before);
 });
 
 test('direct-audio synthesis paths validate rich content against raw frozen evidence, not compact metadata',async()=>{
@@ -187,4 +187,101 @@ test('explicit regeneration after upgrade queues the new content policy instead 
   record.minutes={...fixture(),edited:false};const oldMinutes=JSON.stringify(record.minutes);
   const next=requestMinutes(record,{mode:'model'});assert.notEqual(next.id,legacy.id);assert.equal(next.status,'queued');
   assert.equal(requestMinutes(record,{mode:'model'}).id,next.id);assert.equal(JSON.stringify(record.minutes),oldMinutes);
+});
+
+test('manual drafts retain rich-only facts as editable text and preserve explicit deletion',()=>{
+  const before=fixture(),manual=manualMinutesContent(before);
+  const body=manual.sections.flatMap(section=>section.items).map(item=>item.text).join('\n');
+  for(const fact of ['甲方案','100万元','乙方案','80万元','周五','下周一'])assert.ok(body.includes(fact),fact);
+  assert.deepEqual(manualMinutesContent(manual),manual);
+  for(const section of manual.sections)section.items=section.items.filter(item=>!item.text.includes('100万元'));
+  assert.ok(!manualMinutesContent(manual).sections.flatMap(section=>section.items).some(item=>item.text.includes('100万元')));
+});
+
+test('manual drafts keep withdrawal text without reviving action or decision candidates',()=>{
+  const minutes=fixture(),evidence=[ref(0)];
+  minutes.actions=[{text:'旧行动',owner:'李工',due:'周五',evidence,status:'withdrawn'}];
+  minutes.decisions=[{text:'旧决定',evidence,status:'withdrawn'}];
+  const manual=manualMinutesContent(minutes),body=manual.sections.flatMap(section=>section.items).map(item=>item.text).join('\n');
+  assert.deepEqual(manual.actions,[]);assert.deepEqual(manual.decisions,[]);
+  assert.ok(body.includes('已撤回'));assert.ok(body.includes('旧行动'));assert.ok(body.includes('旧决定'));
+});
+
+test('Markdown preserves item labels and uses the same numbered speaker annotations as the app',()=>{
+  const sources=['张工','李工','王工'].map((speaker,index)=>({id:`voice-${index}`,revision:1,speakerId:`person-${index}`,speaker,startMs:index*1000,endMs:(index+1)*1000,text:`讨论设备${index}`}));
+  const evidence=index=>[{segmentId:sources[index].id,revision:1}];
+  const minutes={title:'编号核验',revision:1,transcriptRevision:1,sections:[{heading:'设备属性',items:['项目A','项目B'].map(label=>({text:'颜色蓝色',label,evidence:evidence(0)}))}],actions:[],speakerSummaries:sources.map((source,index)=>({speakerId:source.speakerId,speaker:source.speaker,summary:`讨论设备${index}`,evidence:evidence(index)})),evidenceSnapshot:sources};
+  const record={title:'虚构会议',capture:'completed',segments:sources,speakers:sources.map(source=>({id:source.speakerId,label:source.speaker})),minutes};
+  const before=JSON.stringify(record),markdown=exportMinutesMarkdown(record);
+  for(const label of ['项目A','项目B','说话人1','说话人2','说话人3'])assert.ok(markdown.includes(label),label);
+  assert.doesNotMatch(markdown,/张工|李工|王工/);assert.equal(JSON.stringify(record),before);
+});
+
+test('manual normalization splits full-length labelled paragraphs and preserves the per-section item limit',()=>{
+  for(const count of [1,100]){
+    const original={title:'长正文',sections:[{heading:'详细记录',items:Array.from({length:count},()=>({text:'甲'.repeat(7999),label:'负责人',status:'pending',evidence:[ref(0)]}))}],actions:[]};
+    validateMinutes(original,snapshot);
+    const manual=manualMinutesContent(original);
+    assert.ok(manual.sections.every(section=>section.items.length<=100&&section.items.every(item=>item.text.length<8000)));
+    validateMinutes(manual,snapshot,undefined,{aggregate:true});
+    const text=manual.sections.flatMap(section=>section.items).map(item=>item.text).join('');
+    assert.equal((text.match(/甲/g)||[]).length,count*7999);
+    assert.equal((text.match(/待确认/g)||[]).length,count);
+    assert.deepEqual(manualMinutesContent(manual),manual);
+  }
+});
+
+test('manual text retains visible uncertainty and kind labels when no explicit label exists',()=>{
+  for(const [kind,label] of [['question','待确认'],['risk','风险'],['decision','已明确'],['action','下一步']]){
+    const minutes={title:'语义核验',sections:[{heading:'讨论',items:[{text:'周五上线',kind,evidence:[ref(0)]}]}],actions:[]};
+    const manual=manualMinutesContent(minutes);
+    assert.ok(manual.sections[0].items[0].text.includes(label));
+    assert.deepEqual(manualMinutesContent(manual),manual);
+  }
+});
+
+test('Markdown numbering uses frozen speaker identity after the current transcript revision changes',()=>{
+  const frozen={id:'frozen-voice',revision:1,speakerId:'person-a',speaker:'',text:'周五上线待确认',startMs:0,endMs:1000};
+  const current={...frozen,revision:2,speakerId:null,speaker:'',text:'修订后的原文'};
+  const minutes={title:'冻结归属',revision:1,transcriptRevision:1,sections:[{heading:'讨论',items:[{text:frozen.text,evidence:[{segmentId:frozen.id,revision:1}]}]}],actions:[],evidenceSnapshot:[frozen]};
+  const markdown=exportMinutesMarkdown({title:'归属测试',capture:'completed',minutes,segments:[current]});
+  assert.ok(markdown.includes('说话人1'));assert.ok(!markdown.includes('未区分说话人'));
+});
+
+test('minute text chunks preserve non-BMP names at UTF-16 boundaries',()=>{
+  const text='甲'.repeat(7899)+'𠮷'+'设备';
+  const chunks=minutesTextChunks(text);
+  assert.equal(chunks.join(''),text);assert.ok(chunks.every(chunk=>chunk.length<=7900&&chunk.isWellFormed()));
+  assert.throws(()=>minutesTextChunks(text,0),/invalid_minutes_text_limit/);
+});
+
+test('canonical action fields remain independent of editable rich-only supplements',()=>{
+  const text='甲'.repeat(2000),minutes={title:'行动状态',sections:[{heading:'讨论',items:[]}],actions:[{text,owner:null,due:null,evidence:[ref(0)],status:'pending',kind:'action'}]};
+  validateMinutes(minutes,snapshot);
+  const manual=manualMinutesContent(minutes);
+  assert.equal(manual.actions[0].text,text);assert.equal(manual.actions[0].status,'pending');
+  assert.equal(manual.sections.length,1);assert.equal(manual.sections[0].items.length,0);
+  validateMinutes(manual,snapshot,undefined,{aggregate:true});
+  assert.deepEqual(manualMinutesContent(manual),manual);
+});
+
+test('manual action context survives equal text, full length, and repeated normalization',()=>{
+ const evidence=[ref(0)],topics=[{id:'project-a',title:'甲'.repeat(200),summary:'项目A',evidence}];
+ const minutes={title:'独立行动',sections:[{heading:'概要',items:[]}],topics,actions:[
+  {text:'提交报告',label:'项目A',kind:'action',owner:null,due:null,evidence},
+  {text:'提交报告',label:'项目B',kind:'question',owner:null,due:null,evidence},
+  {text:'乙'.repeat(8000),topicId:'project-a',label:'项目C',kind:'risk',owner:null,due:null,evidence}
+ ]};
+ validateMinutes(minutes,snapshot);
+ const manual=manualMinutesContent(minutes);
+ assert.equal(minutesActionText(minutes.actions[0],[{title:'无关联主题'}]),'项目A：提交报告');
+ assert.equal(manual.actions[0].label,'项目A');assert.equal(manual.actions[1].kind,'question');
+ assert.match(minutesActionText(manual.actions[1]),/待确认.*项目B.*提交报告/);
+ assert.equal(manual.actions[2].text,minutes.actions[2].text);
+ assert.match(minutesActionText(manual.actions[2]),/风险.*项目C/);
+ assert.equal(manual.actions[2].label,topics[0].title+' · 项目C');
+ validateMinutes(manual,snapshot,undefined,{aggregate:true});
+ assert.deepEqual(manualMinutesContent(manual),manual);
+ const markdown=exportMinutesMarkdown({capture:'completed',minutes:manual,segments:snapshot,speakers:[],notes:''});
+ assert.match(markdown,/项目A.*提交报告/);assert.match(markdown,/待确认.*项目B.*提交报告/);
 });

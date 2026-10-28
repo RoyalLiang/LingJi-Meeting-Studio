@@ -18,7 +18,7 @@ export function sharedMinutes(minutes) {
   const output = {
     ...pick(minutes, ['title', 'revision', 'transcriptRevision', 'edited', 'method']),
     sections: (minutes.sections || []).map(section => ({ heading: section.heading, items: section.items.map(item) })),
-    actions: (minutes.actions || []).map(value => ({ ...item(value), ...pick(value, ['owner', 'due']) })),
+    actions: (minutes.actions || []).map(value => ({ ...item(value), ...pick(value, ['owner', 'due', 'status']) })),
     evidenceSnapshot: [],
   };
   if (minutes.topics) output.topics = minutes.topics.map(value => ({ ...pick(value, ['id', 'title', 'summary']), evidence: evidence(value.evidence) }));

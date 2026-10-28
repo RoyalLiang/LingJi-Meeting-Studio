@@ -731,3 +731,12 @@ test('live windows retain semantic consolidation and final evidence',async()=>{
   assert.ok(refs.some(ref=>ref.segmentId==='s-0'));assert.ok(refs.some(ref=>ref.segmentId==='s-17'));
  }finally{await f.close();}
 });
+
+test('oversized input windows keep non-BMP names intact when splitting a frozen ASR source',()=>{
+  const text='甲'.repeat(1001)+'𠮷'+'乙'.repeat(1000);
+  const job={id:'unicode',scope:'final',mode:'model',snapshot:[{id:'unicode-source',revision:1,sourceId:'mic',text,startMs:0,endMs:1000}],notes:'',template:'meeting',generation:1,notesRevision:0,transcriptRevision:1,modelVersion:'default'};
+  const manifest=buildMinutesManifest(job,{RECORD_MINUTES_INPUT_BYTES:4096});
+  assert.ok(manifest.windows.length>1);
+  const parts=manifest.windows.flatMap(window=>window.snapshot.filter(source=>!source.contextOnly).map(source=>source.text));
+  assert.equal(parts.join(''),text);assert.ok(parts.every(part=>part.isWellFormed()));
+});
