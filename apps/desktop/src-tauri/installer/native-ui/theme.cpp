@@ -260,7 +260,8 @@ extern "C" int __stdcall LingJiFileMatches(LPCWSTR path, LPCWSTR expected) {
 }
 
 extern "C" int __stdcall LingJiRetry(HWND owner, LPCWSTR bitmap, HFONT body, HFONT title) {
-  struct alignas(DWORD) Template { DLGTEMPLATE dialog{}; WORD menu = 0, windowClass = 0; wchar_t caption[16]{}; } layout;
+  struct Template { DLGTEMPLATE dialog{}; WORD menu = 0, windowClass = 0; wchar_t caption[16]{}; };
+  alignas(DWORD) Template layout;
   static_assert(sizeof(DLGTEMPLATE)==18,"dialog template header must remain packed");
   layout.dialog.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|DS_MODALFRAME;
   layout.dialog.dwExtendedStyle = WS_EX_DLGMODALFRAME;

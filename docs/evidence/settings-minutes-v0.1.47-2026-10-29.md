@@ -24,3 +24,7 @@
 第二轮截图及检查结果保存在 `.agent-runtime/tasks/settings-polish-47/revision2/`；Web 截图使用真实 React 页面与虚构会议数据。`installer-retry-design.png` 是按原生弹窗布局和实际背景位图制作的设计预览，不是 Windows 实机截图。
 
 第三轮补充：移除纪要标题下状态/版本标识整行；设置页一级配置标题恢复继承绿色，保留二级模型标题颜色。浏览器断言检查一级标题实际 RGB、标题状态节点不存在以及原有设置/纪要状态；截图在 `.agent-runtime/tasks/settings-polish-47/revision3/`。
+
+## Windows CI 反馈与 v0.1.48
+
+v0.1.47 源码 `5c4e154743bf5dd4f8726f0af4d311a451acf7a2` 的 verify、macOS 和 Linux 通过；Windows 安装器编译在 `theme.cpp:263` 因模板类型四字节对齐产生隐式尾填充（C4324，在 /WX 下失败），publish 跳过，未形成公开版本。修复为变量首地址四字节对齐，字段布局不变；保持 /W4 /WX。旧标签未移动，以 v0.1.48 继续发布。失败工作流：<https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/40910314810>。
