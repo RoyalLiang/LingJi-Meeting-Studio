@@ -91,7 +91,7 @@ test('AI tree places each table row inside its uniquely cited topic and preserve
   for (const text of ['发布候选版', '回归测试', '跨主题协调', '旧修订数据']) {
     assert.equal(html.split(text).length - 1, 1, `${text} is retained exactly once`);
   }
-  assert.equal(html.split('scope="col">来源').length - 1, 3);
+  assert.equal(html.split('scope="col">来源').length - 1, 0);
 });
 
 test('running minutes keep the topic tree visible without the default streaming block', () => {
@@ -236,4 +236,36 @@ test('AI processing is announced once in the dock capture label',()=>{
 test('an empty chapter shows an explicit empty state rather than a bare tree trunk',()=>{
  const value=minutes();value.topics=[];value.sections=[{heading:'空章节',items:[]}];value.actions=[];value.tables=[];value.highlights=[];value.visuals=[];
  const html=render({liveMinutes:value});assert.doesNotMatch(html,/class="minutes-branch"/);assert.match(html,/尚无可展示的主题/);
+});
+
+
+test('topic details are grouped while tables and charts stay outside connector nodes with no citation controls', () => {
+ const value=minutes();value.topics=[{id:'spec',title:'规格',summary:'规格汇总',evidence:[ref('release')]}];
+ value.sections=[{heading:'规格',items:Array.from({length:5},(_,i)=>({topicId:'spec',text:`规格参数${i}`,evidence:[ref('release')],kind:'fact'}))}];
+ value.tables=[{title:'规格表',topicId:'spec',columns:['项目','数值'],rows:[{cells:['CPU','4GHz'],evidence:[ref('release')]}]}];
+ value.visuals=[{title:'功耗',kind:'bar',topicId:'spec',unit:'瓦',entries:[{label:'短时',valueText:'95',quote:'短时95瓦',evidence:[ref('release')]},{label:'持续',valueText:'65',quote:'持续65瓦',evidence:[ref('release')]}]}];
+ const html=render({liveMinutes:value});
+ assert.equal((html.match(/class="branch-node branch-points"/g)||[]).length,1);
+ assert.match(html,/class="branch-content"/);
+ assert.doesNotMatch(html,/branch-node branch-table|citation-entry|查看.*引用原文|scope="col">来源/);
+ for(let i=0;i<5;i++)assert.match(html,new RegExp(`规格参数${i}`));
+ assert.match(html,/规格表/);assert.match(html,/功耗/);
+});
+
+
+test('meeting highlights stay closed during capture and open only after ending with final content', () => {
+ const live={...minutes(),highlights:[{text:'会中重点草稿',evidence:[ref('release')]}]};
+ const final={...minutes(),highlights:[{text:'会议最终重点',evidence:[ref('release')]}]};
+ const during=render({capture:'recording',liveMinutes:live,minutes:null});
+ assert.doesNotMatch(during,/class="meeting-highlights"|aria-label="重点速览"/);
+ const waiting=render({capture:'sealed',liveMinutes:live,minutes:null,jobs:[{id:'final',scope:'final',status:'running'}]});
+ assert.match(waiting,/正在整理最终重点/);assert.doesNotMatch(waiting,/会中重点草稿/);
+ const ended=render({capture:'completed',liveMinutes:live,minutes:final});
+ assert.match(ended,/class="meeting-highlights"/);assert.match(ended,/会议最终重点/);assert.doesNotMatch(ended,/会中重点草稿/);
+});
+
+
+test('an ended meeting without an AI job shows an empty state rather than indefinite processing', () => {
+ const html=render({capture:'completed',minutes:null,liveMinutes:null,jobs:[],autoMinutes:{enabled:false,intervalSeconds:120}});
+ assert.match(html,/尚未生成最终纪要/);assert.match(html,/整理会议重点/);assert.doesNotMatch(html,/正在整理最终重点/);
 });

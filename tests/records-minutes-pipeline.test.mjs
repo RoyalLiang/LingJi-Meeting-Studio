@@ -147,7 +147,7 @@ test('partial correction state follows event order even when later windows finis
 });
 test('text windows batch five minutes while audio windows keep their two-minute cap',()=>{
  const snapshot=Array.from({length:20},(_,i)=>({id:`timed-${i}`,sourceId:'mic',revision:1,text:'短句',startMs:i*30000,endMs:i*30000+1000}));
- const job={snapshot,scope:'final',notes:'',modelVersion:'default'};
+ const job={snapshot,scope:'live',notes:'',modelVersion:'default'};
  const manifest=buildMinutesManifest(job,config),audio=buildMinutesManifest(job,{...config,MINUTES_MODE:'doubao-audio'});
  assert.deepEqual(manifest.windows.map(w=>w.snapshot.filter(s=>!s.contextOnly).map(s=>s.id)),[snapshot.slice(0,10).map(s=>s.id),snapshot.slice(10).map(s=>s.id)]);
  assert.equal(audio.windows.length,5);
@@ -739,4 +739,33 @@ test('oversized input windows keep non-BMP names intact when splitting a frozen 
   assert.ok(manifest.windows.length>1);
   const parts=manifest.windows.flatMap(window=>window.snapshot.filter(source=>!source.contextOnly).map(source=>source.text));
   assert.equal(parts.join(''),text);assert.ok(parts.every(part=>part.isWellFormed()));
+});
+
+
+test('final synthesis accepts real neighboring-window evidence while live neighbors stay context-only', async () => {
+  const f=await fixture(2);
+  try {
+    await f.repo.change(f.record.id,r=>{r.segments.forEach((s,i)=>Object.assign(s,{text:i?'GPU 缓存为24MB。':'CPU 频率为4GHz。',startMs:i*301000,endMs:i*301000+1000}));});
+    const claim=await f.claim();
+    const liveManifest=buildMinutesManifest({...claim,scope:'live'},config);
+    assert.ok(liveManifest.windows.every(w=>w.snapshot.some(s=>s.contextOnly===true)));
+    const result=await runMinutesPipeline(f.repo,f.record.id,claim,config,async job=>{
+      const primary=job.snapshot[0],neighbor=job.snapshot.at(-1),ref=s=>({segmentId:s.id,revision:s.revision});
+      return {title:'芯片规格',topics:[{id:'spec',title:'芯片规格',summary:'CPU 与缓存规格',evidence:[ref(neighbor)]}],sections:[{heading:'芯片规格',items:[{topicId:'spec',text:primary.text,evidence:[ref(primary)]}]}],actions:[]};
+    });
+    await f.repo.change(f.record.id,r=>commitMinutes(r,claim.id,result,claim.fence));
+    assert.equal((await f.repo.get(f.record.id)).minutes.title,'芯片规格');
+  } finally {await f.close();}
+});
+
+
+test('preserved process facts keep their project heading when one source discusses multiple topics', async () => {
+ const f=await fixture(2);let window=0;
+ try {
+  await f.repo.change(f.record.id,r=>r.segments.forEach((s,i)=>Object.assign(s,{text:i?'项目甲预算已确认。':'项目甲预算追加10万，项目乙上线延期一周。',startMs:i*301000,endMs:i*301000+1000})));
+  const claim=await f.claim(),a={segmentId:'s-0',revision:1},b={segmentId:'s-1',revision:1};
+  const result=await runMinutesPipeline(f.repo,f.record.id,claim,{...config,RECORD_MINUTES_WINDOW_CONCURRENCY:1},async job=>job.summaries ? {title:'综合',topics:[{id:'project-a',title:'项目甲预算',summary:'预算追加10万',evidence:[a,b]}],sections:[{heading:'项目甲预算',items:[{text:'预算追加10万',topicId:'project-a',evidence:[a,b]}]}],actions:[]} : {title:'分窗',sections:[{heading:window++===0?'项目乙排期':'项目甲预算',items:[{text:window===1?'上线延期一周':'预算追加10万',evidence:window===1?[a]:[b]}]}],actions:[]});
+  const retained=result.sections.filter(section=>section.items.some(item=>item.text.includes('上线延期一周')));
+  assert.ok(retained.length>0);assert.ok(retained.every(section=>section.heading.includes('项目乙')&&section.items.every(item=>item.topicId!=='project-a')));
+ }finally{await f.close();}
 });
