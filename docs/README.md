@@ -1,6 +1,6 @@
 # 聆记文档导航
 
-[v0.1.45 树形层级与用量栏](releases/v0.1.45-preview.md)：保留主题背景、连续分支层级，移除供应商说明与明细标题；[布局证据](evidence/layout-v0.1.45-2026-10-29.md)，发布状态以发布回执为准。
+[v0.1.45 树形层级与用量栏](releases/v0.1.45-preview.md)：保留主题背景、连续分支层级，移除供应商说明与明细标题；[布局证据](evidence/layout-v0.1.45-2026-10-29.md)，已发布，[五项 CI 与公开附件核验通过](evidence/preview-v0.1.45-2026-10-29.md)。
 
 [v0.1.44 性能与界面修复](releases/v0.1.44-preview.md)：8 项实现、量测与验证边界见[本轮证据](evidence/performance-fixes-v0.1.44-2026-10-29.md)，已发布，[五项 CI 与公开附件核验通过](evidence/preview-v0.1.44-2026-10-29.md)。
 
