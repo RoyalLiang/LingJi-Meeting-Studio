@@ -25,6 +25,6 @@
 
 ## 回归与边界
 
-本地 Node 668/668，lint、typecheck、build:web、check:docs 均通过。独立复审无已确认 P1/P2：实际 MinutesTree 与全量生产 CSS 在 1280/496 两种宽度下覆盖 summary、visual、普通卡、table 的混合及四种单子节点，共 18 个节点的主干/弯头横坐标偏差均为 0。图表和表格的内层边框不影响外层伪元素原点；inset shadow 不改变包含块或创建新层叠上下文。复审 CSS SHA256 为 `87152c04fa686283ab67e8e22711a940d5ec530eced501d7092e5bfd5121c888`，主审已核对一致。CI 结果以发布回执为准。此前后端、网络、原生与渲染逻辑未再次修改，独立复审仍按[原哈希追溯](performance-fixes-v0.1.44-2026-10-29.md)。本次没有改动音频队列、ACK、处理协议或安装保护。
+本地 Node 668/668，lint、typecheck、build:web、check:docs 均通过。独立复审无已确认 P1/P2：实际 MinutesTree 与全量生产 CSS 在 1280/496 两种宽度下覆盖 summary、visual、普通卡、table 的混合及四种单子节点，共 18 个节点的主干/弯头横坐标偏差均为 0。图表和表格的内层边框不影响外层伪元素原点；inset shadow 不改变包含块或创建新层叠上下文。复审 CSS SHA256 为 `87152c04fa686283ab67e8e22711a940d5ec530eced501d7092e5bfd5121c888`，主审已核对一致。[发布回执](preview-v0.1.46-2026-10-29.md)已核验五项 CI、最终源码 SHA 与四个公开附件。此前后端、网络、原生与渲染逻辑未再次修改，独立复审仍按[原哈希追溯](performance-fixes-v0.1.44-2026-10-29.md)。本次没有改动音频队列、ACK、处理协议或安装保护。
 
 合成浏览器与 CI 不能代替用户 Windows 设备上的实际缩放、GPU、长会议及真实 ASR/LLM 验收。
