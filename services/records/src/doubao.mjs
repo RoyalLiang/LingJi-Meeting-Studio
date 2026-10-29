@@ -1,4 +1,5 @@
 import WebSocket from 'ws';
+import { setTimeout as delay } from 'node:timers/promises';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { randomUUID } from 'node:crypto';
 import { DomainError, requireThat } from '../../../packages/records/src/record.mjs';
@@ -69,6 +70,7 @@ export function createDoubaoSpeakerStream(language, config, options={}) {
   const createdAt=Date.now();let audioStartedAt;
   const elapsed=()=>audioStartedAt==null ? undefined : Date.now()-audioStartedAt;
   let drainTimer,rejectReady,closed=false,receivedText=false,receivedTurns=false;
+  const lifetime=new AbortController();
   const fail=error=>{
     if(closed || state.complete || state.error)return;
     state.error=error instanceof DomainError ? error : new DomainError('doubao_connection_failed',502);
@@ -101,10 +103,36 @@ export function createDoubaoSpeakerStream(language, config, options={}) {
       options.onUpdate?.(state);
     }catch(error){fail(error);socket.close();}
   });
+  function sendFrame(frame,signal){
+    return new Promise((resolve,reject)=>{
+      const finish=error=>{signal.removeEventListener('abort',abort);if(error)reject(error);else resolve();};
+      const abort=()=>finish(signal.reason);
+      signal.addEventListener('abort',abort,{once:true});
+      if(signal.aborted){abort();return;}
+      try{socket.send(frame,finish);}catch(error){finish(error);}
+    });
+  }
   return {
     state,ready,
-    async write(bytes){await ready;audioStartedAt??=Date.now();for(let i=0;i<bytes.length;i+=6400){if(state.error)throw state.error;await new Promise((resolve,reject)=>socket.send(encodeAsrFrame(2,0,bytes.subarray(i,i+6400)),error=>error?reject(error):resolve()));if(i+6400<bytes.length)await new Promise(resolve=>setTimeout(resolve,options.interval??100));}},
+    async write(bytes){
+      await ready;
+      const deadline=new AbortController();
+      const timer=setTimeout(()=>deadline.abort(new DomainError('doubao_completion_timeout',502)),options.timeout??45000);
+      const signal=AbortSignal.any([lifetime.signal,deadline.signal]);
+      audioStartedAt??=Date.now();
+      try{
+        signal.throwIfAborted();
+        for(let i=0;i<bytes.length;i+=6400){
+          if(state.error)throw state.error;
+          await sendFrame(encodeAsrFrame(2,0,bytes.subarray(i,i+6400)),signal);
+          if(i+6400<bytes.length)await delay(options.interval??100,undefined,{signal});
+        }
+      }catch(error){
+        const reason=signal.aborted?signal.reason:error;
+        fail(reason);socket.terminate();throw state.error||reason;
+      }finally{clearTimeout(timer);}
+    },
     end(){if(state.error || state.complete)return;socket.send(encodeAsrFrame(2,2,Buffer.alloc(0)));drainTimer=setTimeout(()=>{fail(new DomainError('doubao_completion_timeout',502));socket.terminate();},options.timeout??45000);drainTimer.unref?.();},
-    close(){closed=true;clearTimeout(drainTimer);rejectReady(new DomainError('doubao_stream_cancelled',502));socket.on('error',()=>{});socket.terminate();},
+    close(){closed=true;clearTimeout(drainTimer);const error=new DomainError('doubao_stream_cancelled',502);lifetime.abort(error);rejectReady(error);socket.on('error',()=>{});socket.terminate();},
   };
 }

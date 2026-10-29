@@ -10,14 +10,14 @@
 .minutes-branch>h4>span{min-width:0;overflow-wrap:anywhere;width:fit-content;padding:8px 12px;border:1px solid color-mix(in srgb,var(--branch-color) 12%,transparent);border-radius:8px;color:var(--branch-color);background:var(--branch-bg)}
 .minutes-branch>h4>small{flex:none;white-space:nowrap}
 
-/* Keep source access in the metadata corner instead of a separate text row. */
 .minutes-tree .branch-node { position: relative; }
-.minutes-tree .branch-node > .minute-speakers { padding-right: 30px; }
-.minutes-tree .branch-node > .citations.is-compact { position: absolute; top: 8px; right: 10px; margin: 0; }
 .citations.is-compact .citation-entry { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; min-height: 26px; padding: 4px; border-radius: 6px; }
 .citations.is-compact:has([aria-expanded="true"]) { z-index: 2; padding: 4px; border-radius: 8px; background: var(--glass-strong); box-shadow: 0 4px 18px color-mix(in srgb, var(--ink-1) 12%, transparent); }
 @media (pointer: coarse) {
   .citations.is-compact .citation-entry { min-width:44px; min-height:44px; }
-  .minutes-tree .branch-node > .minute-speakers { min-height:32px; padding-top:8px; padding-right:44px; }
 }
 .citations.is-compact:has([aria-expanded="true"]) { display:flex; flex-wrap:wrap; align-items:center; gap:4px; max-width:min(300px,calc(100vw - 64px)); max-height:240px; overflow-y:auto; }
+.minutes-tree.is-compact .branch-node:not(.branch-table){display:flex;align-items:center;min-height:60px;padding:16px 17px}
+.minutes-tree.is-compact .branch-node>.minute-speakers{position:absolute;top:4px;right:17px;max-width:calc(100% - 34px);margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px;line-height:12px}
+.minutes-tree.is-compact .branch-node>p{flex:1;margin:0}
+@media(max-width:560px){.minutes-tree.is-compact .branch-node:not(.branch-table){padding:16px 13px}.minutes-tree.is-compact .branch-node>.minute-speakers{right:13px;max-width:calc(100% - 26px)}}

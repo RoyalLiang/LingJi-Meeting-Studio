@@ -4,8 +4,10 @@ import { completeJson, providerStatus } from './providers.mjs';
 
 export async function processWorkspaceAnalysis(repo, config, providers = {}) {
   const jobs = await repo.list('workspace-analysis');
+  if (!jobs.length) return;
+  const inputs = await repo.listAnalysisInputs();
   for (const candidate of jobs) {
-    const records = retainedRecords(await repo.list(), candidate.owner, candidate.scope);
+    const records = retainedRecords(inputs, candidate.owner, candidate.scope);
     if (inputHash(records) !== candidate.inputHash) {
       if (candidate.status !== 'stale' || candidate.snapshot?.length || candidate.result) await repo.change(candidate.id, job => {
         if (job.runId === candidate.runId) Object.assign(job, { status: 'stale', snapshot: [], preview: '', result: null, fence: null, updatedAt: new Date().toISOString() });
@@ -22,7 +24,7 @@ export async function processWorkspaceAnalysis(repo, config, providers = {}) {
     const controller = new AbortController(); let checking = false, timer, lastPreview = 0, draft = '';
     const valid = async () => {
       const current = await repo.get(candidate.id);
-      return current?.fence === fence && current.status === 'running' && inputHash(retainedRecords(await repo.list(), candidate.owner, candidate.scope)) === candidate.inputHash;
+      return current?.fence === fence && current.status === 'running' && inputHash(retainedRecords(await repo.listAnalysisInputs(), candidate.owner, candidate.scope)) === candidate.inputHash;
     };
     try {
       if (!providers.completeJson && !providerStatus(config).textMinutes) throw Object.assign(new Error('minutes_not_configured'), { code: 'minutes_not_configured' });

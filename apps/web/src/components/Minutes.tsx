@@ -7,7 +7,7 @@ import { currentMinutesJob, speakerLabels } from '../minutes-views';
 import { MinutesUsage } from './MinutesUsage';
 import { TopicMap } from './TopicMap';
 import { MinutesTree, SpeakerMinutes, DecisionMinutes, MinuteSpeakers } from './MinutesViews';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowClockwise, ArrowSquareOut, Check, Sparkle, PencilSimple, ArrowsOutSimple, ArrowsInSimple } from '@phosphor-icons/react';
 import type { Evidence, Minutes as MinutesModel, RecordDetail, Segment } from '../model';
 import { api, ApiError, messageOf } from '../api';
@@ -15,6 +15,21 @@ import { Select } from './Select';
 import { Button, CloseButton, Download, Empty, Status, Modal } from './ui';
 import { FeedbackNotice } from './FeedbackNotice';
 import './Minutes.css';
+
+export function updateMinutesDraftItem(draft:MinutesModel|null,sectionIndex:number,itemIndex:number,text:string):MinutesModel|null {
+  const section=draft?.sections[sectionIndex],item=section?.items[itemIndex];
+  if(!draft || !section || !item || item.text===text)return draft;
+  const items=section.items.slice();items[itemIndex]={...item,text};
+  const sections=draft.sections.slice();sections[sectionIndex]={...section,items};
+  return {...draft,sections};
+}
+const MinutesDocumentSection=memo(function MinutesDocumentSection({section,sectionIndex,editable,speakers,cite,change}:{section:MinutesModel['sections'][number];sectionIndex:number;editable:boolean;speakers:Map<string,string>;cite:(ref:Evidence)=>void;change:(sectionIndex:number,itemIndex:number,text:string)=>void}){
+  return <section className="minutes-section"><h4>{section.heading}</h4>{section.items.map((item,itemIndex)=><div className="minute-item" key={itemIndex}>
+    <MinuteSpeakers evidence={item.evidence} speakers={speakers}/>{editable ? <textarea aria-label={`${section.heading}第 ${itemIndex + 1} 项`} value={item.text} onChange={event=>change(sectionIndex,itemIndex,event.target.value)}/> : <p>{item.text}</p>}
+    <div className="citations">{item.evidence.map((ref,index)=><button key={index} onClick={()=>cite(ref)} aria-label={`查看来源 ${index + 1}`}>来源 {index + 1}</button>)}</div>
+  </div>)}</section>;
+});
+
 export function MinutesPanel({ record, busy, onClose, generate, edit, cite, automate, historyActionsRef, inline = false, modelReady = false, realtimeMode = false, audioOnly = false, settingsOpen = false, closeSettings = () => {} }: { record: RecordDetail; busy: boolean; inline?: boolean; historyActionsRef?:(node:HTMLDivElement|null)=>void; modelReady?: boolean; realtimeMode?: boolean; audioOnly?: boolean; settingsOpen?: boolean; closeSettings?: () => void; onClose: () => void;
   automate: (enabled: boolean, intervalSeconds: number) => Promise<void>;
   generate: (template: string, mode: string) => Promise<void>; edit: (minutes: MinutesModel) => Promise<boolean>; cite: (evidence: Evidence, snapshot?: Segment[], transcriptRevision?: number) => void }) {
@@ -38,6 +53,8 @@ export function MinutesPanel({ record, busy, onClose, generate, edit, cite, auto
   }, [mobile,inline]);
   const [mode,setMode] = useState(record.autoMinutes?.enabled || modelReady ? 'model' : 'extractive');
   const [template, setTemplate] = useState('meeting'), [draft, setDraft] = useState<MinutesModel | null>(null);
+  const [draftSpeakers,setDraftSpeakers]=useState<Map<string,string>|null>(null);
+  const changeDraftItem=useCallback((sectionIndex:number,itemIndex:number,text:string)=>setDraft(current=>updateMinutesDraftItem(current,sectionIndex,itemIndex,text)),[]);
   const [historical, setHistorical] = useState<MinutesModel | null>(null), [historyError, setHistoryError] = useState('');
   const [view,setView] = useState('ai');
   const [expanded,setExpanded] = useState(false);
@@ -52,7 +69,12 @@ export function MinutesPanel({ record, busy, onClose, generate, edit, cite, auto
   const job = currentMinutesJob(record), running = ['queued', 'running'].includes(job?.status || ''); const complete = record.minutes?.edited ? record.minutes : record.capture === 'completed' ? record.minutes || record.liveMinutes : record.liveMinutes || record.minutes;
   const partial = !complete && running && job?.scope === 'live' ? job.partialMinutes : null;
   const minutes = historical || complete || partial;
+  const snapshot=minutes?.evidenceSnapshot,revision=minutes?.transcriptRevision;
+  const citeMinutes=useCallback((ref:Evidence)=>cite(ref,snapshot,revision),[cite,snapshot,revision]);
+  const documentSnapshot=draft?.evidenceSnapshot ?? snapshot,documentRevision=draft?.transcriptRevision ?? revision;
+  const citeDocument=useCallback((ref:Evidence)=>cite(ref,documentSnapshot,documentRevision),[cite,documentSnapshot,documentRevision]);
   const speakers=useMemo(()=>speakerLabels(minutes?.evidenceSnapshot || [], record.speakers, record.segments),[minutes,record.speakers,record.segments]);
+  const documentSpeakers=draft && draftSpeakers ? draftSpeakers : speakers;
   const showPreview = previewOpen && running && !historical && !draft && !record.minutes?.edited && view === 'ai';
   const formal = minutes === record.minutes && Boolean(minutes); const runtime = running ? job?.runtime : minutes?.runtime;
   const active = inline && (record.capture === 'recording' || running);
@@ -68,21 +90,17 @@ export function MinutesPanel({ record, busy, onClose, generate, edit, cite, auto
       {job?.status === 'stale' && <FeedbackNotice key={`superseded:${job.id}`} dismissalKey={`minutes-stale:${record.id}:${job.id}`} message="转录或人工内容已变化，本次旧结果已隔离，请重新整理。"/>}
       {minutes && (historical || formal) && minutes.transcriptRevision !== record.transcriptRevision && <FeedbackNotice key={`stale:${minutes.revision}`} message={`此纪要引用转录 v${minutes.transcriptRevision}，当前为 v${record.transcriptRevision}。请重新核对。`}/>}
       {!minutes ? (showPreview ? null : <Empty icon={<Sparkle size={32}/>} title={running ? '正在梳理讨论脉络' : '从讨论，到共识'}>{record.capture === 'completed' ? null : record.autoMinutes?.enabled ? 'AI 纪要随讨论更新；新内容会先显示为生成中的 AI 纪要。' : audioOnly ? '可在整理设置中允许本场原音处理，开启豆包转录与音频纪要。' : realtimeMode ? '可在整理设置中允许发送本场原音，开启音频 AI 纪要。' : '可在整理设置中开启会中 AI 纪要；也可以会后本地提取。'}</Empty>)
-        : <><div className="minutes-title"><div><h3>{minutes.title}</h3>{(formal || minutes.edited) && <Status>{minutes.edited ? '人工修订' : minutes.method === 'extractive' ? '本地提取' : !formal ? '会中草稿' : 'AI 草稿'}{formal ? ` · v${minutes.revision}` : ''}</Status>}</div><div className="minutes-document-actions"><Button variant="ghost" disabled={Boolean(historical || partial)} title={partial ? "本批内容正在整理，完成后可修订" : undefined} onClick={()=>{setView('document');setDraft(current=>current || Object.assign(structuredClone(minutes),manualMinutesContent(minutes)));}} aria-label="修订纪要"><PencilSimple size={16}/></Button>{formal && <Download href={`/api/records/${record.id}/export?format=markdown`}><ArrowSquareOut size={16}/><span className="sr-only">导出纪要</span></Download>}</div></div>
+        : <><div className="minutes-title"><div><h3>{minutes.title}</h3>{(formal || minutes.edited) && <Status>{minutes.edited ? '人工修订' : minutes.method === 'extractive' ? '本地提取' : !formal ? '会中草稿' : 'AI 草稿'}{formal ? ` · v${minutes.revision}` : ''}</Status>}</div><div className="minutes-document-actions"><Button variant="ghost" disabled={Boolean(historical || partial)} title={partial ? "本批内容正在整理，完成后可修订" : undefined} onClick={()=>{setView('document');if(!draft){setDraftSpeakers(speakers);setDraft(Object.assign({...minutes},manualMinutesContent(minutes)));}}} aria-label="修订纪要"><PencilSimple size={16}/></Button>{formal && <Download href={`/api/records/${record.id}/export?format=markdown`}><ArrowSquareOut size={16}/><span className="sr-only">导出纪要</span></Download>}</div></div>
           <div className="minutes-tabs" role="tablist" aria-label="纪要视图">{[{id:'ai',label:'AI 视图'},{id:'tables',label:'表格与图表'},{id:'speakers',label:'发言人总结'},{id:'decisions',label:'关键决策'},{id:'document',label:'正文'}].map(tab=><button key={tab.id} id={`minutes-tab-${tab.id}`} role="tab" aria-selected={view===tab.id || (view==='topics' && tab.id==='ai')} aria-controls="minutes-view" tabIndex={view===tab.id || (view==='topics' && tab.id==='ai') ? 0 : -1} onClick={()=>setView(tab.id)} onKeyDown={event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const ids=['ai','tables','speakers','decisions','document'];const index=ids.indexOf(tab.id),next=event.key==='Home'?0:event.key==='End'?4:(index+(event.key==='ArrowRight'?1:4))%5;setView(ids[next]);document.getElementById(`minutes-tab-${ids[next]}`)?.focus();}}>{tab.label}</button>)}</div>
           <div id="minutes-view" className="minutes-view" role="tabpanel" aria-labelledby={`minutes-tab-${view==='topics'?'ai':view}`}>
-          {view==='ai' && <MinutesTree speakerMap={speakers} minutes={minutes} cite={ref=>cite(ref,minutes.evidenceSnapshot,minutes.transcriptRevision)}/>}
-          {view==='tables' && <><SummaryTables minutes={minutes} speakerMap={speakers} cite={ref=>cite(ref,minutes.evidenceSnapshot,minutes.transcriptRevision)}/><SummaryCharts minutes={minutes} cite={ref=>cite(ref,minutes.evidenceSnapshot,minutes.transcriptRevision)}/></>}
-          {view==='speakers' && <SpeakerMinutes minutes={minutes} speakerMap={speakers} cite={ref=>cite(ref,minutes.evidenceSnapshot,minutes.transcriptRevision)}/>}
-          {view==='decisions' && <DecisionMinutes speakerMap={speakers} minutes={minutes} cite={ref=>cite(ref,minutes.evidenceSnapshot,minutes.transcriptRevision)}/>}
+          {view==='ai' && <MinutesTree speakerMap={speakers} minutes={minutes} cite={citeMinutes}/>}
+          {view==='tables' && <><SummaryTables minutes={minutes} speakerMap={speakers} cite={citeMinutes}/><SummaryCharts minutes={minutes} cite={citeMinutes}/></>}
+          {view==='speakers' && <SpeakerMinutes minutes={minutes} speakerMap={speakers} cite={citeMinutes}/>}
+          {view==='decisions' && <DecisionMinutes speakerMap={speakers} minutes={minutes} cite={citeMinutes}/>}
           {view==='topics' && <TopicMap minutes={minutes}/>}
-          {view==='document' && (draft || documentContent || minutes).sections.map((section, sectionIndex) => <section className="minutes-section" key={sectionIndex}><h4>{section.heading}</h4>{section.items.map((item, itemIndex) => <div className="minute-item" key={itemIndex}>
-            <MinuteSpeakers evidence={item.evidence} speakers={speakers}/>{draft ? <textarea aria-label={`${section.heading}第 ${itemIndex + 1} 项`} value={item.text} onChange={e => { const next = structuredClone(draft); next.sections[sectionIndex].items[itemIndex].text = e.target.value; setDraft(next); }}/>
-              : <p>{item.text}</p>}
-            <div className="citations">{item.evidence.map((ref, i) => <button key={i} onClick={() => cite(ref, minutes.evidenceSnapshot, minutes.transcriptRevision)} aria-label={`查看来源 ${i + 1}`}>来源 {i + 1}</button>)}</div>
-          </div>)}</section>)}
+          {view==='document' && (draft || documentContent || minutes).sections.map((section,sectionIndex)=><MinutesDocumentSection key={sectionIndex} section={section} sectionIndex={sectionIndex} editable={Boolean(draft)} speakers={documentSpeakers} cite={citeDocument} change={changeDraftItem}/>)}
           {draft && <div className="actions"><Button variant="primary" disabled={busy} onClick={async () => { if (await edit(draft)) setDraft(null); }}><Check size={16}/>保存修订</Button><Button disabled={Boolean(historical)} onClick={() => setDraft(null)}>取消</Button></div>}
-          {(view==='decisions' || view==='document') && displayedActions.length > 0 && <section className="minutes-section"><h4>行动候选</h4><p className="muted">请人工确认负责人和日期。下载不会发送给他人。</p>{displayedActions.map((action, i) => <div className="action-candidate" key={i}><span className="checkbox-mark"/><div><MinuteSpeakers evidence={action.evidence} speakers={speakers}/><p>{minutesActionText(action,(draft||documentContent||minutes).topics)}</p><small>{action.owner || '负责人待定'} · {action.due || '日期待定'}</small><div className="citations">{action.evidence.map((ref, j) => <button key={j} onClick={() => cite(ref, minutes.evidenceSnapshot, minutes.transcriptRevision)}>来源 {j + 1}</button>)}</div></div></div>)}{formal && <Download href={`/api/records/${record.id}/export?format=ics`}>下载待办日历文件</Download>}</section>}
+          {(view==='decisions' || view==='document') && displayedActions.length > 0 && <section className="minutes-section"><h4>行动候选</h4><p className="muted">请人工确认负责人和日期。下载不会发送给他人。</p>{displayedActions.map((action, i) => <div className="action-candidate" key={i}><span className="checkbox-mark"/><div><MinuteSpeakers evidence={action.evidence} speakers={documentSpeakers}/><p>{minutesActionText(action,(draft||documentContent||minutes).topics)}</p><small>{action.owner || '负责人待定'} · {action.due || '日期待定'}</small><div className="citations">{action.evidence.map((ref, j) => <button key={j} onClick={() => citeDocument(ref)}>来源 {j + 1}</button>)}</div></div></div>)}{formal && <Download href={`/api/records/${record.id}/export?format=ics`}>下载待办日历文件</Download>}</section>}
           {(view==='decisions' || view==='document') && formal && displayedActions.length > 0 && <Download href={`/api/records/${record.id}/export?format=issues`}>下载工单候选 JSON</Download>}
           </div>{!inline && <Button variant="ghost" className="topic-chart-toggle" onClick={()=>{setView(view==='topics'?'ai':'topics');}}>{view==='topics'?'返回 AI 主题视图':'查看主题时长'}</Button>}
         </>}

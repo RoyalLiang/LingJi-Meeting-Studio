@@ -1,3 +1,4 @@
+import { analysisInput } from '../../../packages/records/src/workspaces.mjs';
 import {flushAudioObject} from './audio-storage-sync.mjs';
 import {learningWorkAt} from '../../../packages/records/src/learning.mjs';
 import { cursorKey, deriveProjection, visibleSnapshot } from './projections.mjs';
@@ -22,19 +23,22 @@ function schedule(value) {
     if (source.asr?.state === 'running') times.push(now+250);
     if (source.asr?.state === 'failed' && source.asr.attempts<5) times.push(Math.max(source.asr.retryAt||0,now));
   }
+  const watermarks = new Map(value.sources.map(source => [source.id, source.watermark]));
+  const firstPending = new Map();
+  for (const chunk of value.chunks) if (chunk.state !== 'done') firstPending.set(chunk.sourceId, Math.min(firstPending.get(chunk.sourceId) ?? Infinity, chunk.sequence));
   for (const chunk of value.chunks) {
     if (chunk.expired) continue;
     if (!value.retainAudio) times.push((chunk.acceptedAt || Date.parse(value.createdAt)) + 86400000);
     if (chunk.state === 'done') continue;
-    if (chunk.attempts < 5 && value.sources.find(s => s.id === chunk.sourceId)?.watermark >= chunk.sequence
-      && !value.chunks.some(c => c.sourceId === chunk.sourceId && c.sequence < chunk.sequence && c.state !== 'done')) {
+    if (chunk.attempts < 5 && watermarks.get(chunk.sourceId) >= chunk.sequence
+      && firstPending.get(chunk.sourceId) === chunk.sequence) {
       times.push(Math.max(chunk.lease || 0, chunk.retryAt || 0, now));
     }
   }
   if (value.segments.length && value.insights?.transcriptRevision !== value.transcriptRevision) times.push(Math.max(value.intentLease || 0, value.intentRetryAt || 0, now));
   if (value.translationTarget) for (const s of value.segments) if (s.translationLanguage !== value.translationTarget && (s.translationAttempts || 0) < 3) times.push(Math.max(s.translationLease || 0, s.translationRetryAt || 0, now));
   for (const job of value.jobs) { if (job.status === 'queued') times.push(now); else if (job.status === 'running') times.push(job.lease || now); }
-  value.nextWorkAt = Math.min(...times);
+  value.nextWorkAt = times.reduce((earliest, time) => Math.min(earliest, time), Infinity);
 }
 
 export async function createRepository(options = {}) {
@@ -96,6 +100,7 @@ export async function createRepository(options = {}) {
     else db.prepare('DELETE FROM aggregate_payloads WHERE id=?').run(value.id);
   }
 
+  const workCursors = new Map(), legacyAnalysisInputs = new Map();
   const repository = {
     root, backend: pool ? 'postgres' : 'sqlite', audioBackend: objects ? 's3' : 'filesystem',
     async get(id) { return decode(pool ? (await pool.query('SELECT data FROM record_aggregates WHERE id=$1', [id])).rows[0]
@@ -115,9 +120,34 @@ export async function createRepository(options = {}) {
         : db.prepare("SELECT data FROM aggregates WHERE json_extract(data, '$.kind')=?").all(kind);
       return rows.map(decode);
     },
-    async listWork() {
-      const rows = pool ? (await pool.query("SELECT data FROM record_aggregates WHERE data->>'kind'='record' AND (data->>'nextWorkAt' IS NULL OR (data->>'nextWorkAt')::bigint <= $1) LIMIT 100", [Date.now()])).rows
-        : db.prepare("SELECT data FROM aggregates WHERE json_extract(data, '$.kind')='record' AND (json_extract(data, '$.nextWorkAt') IS NULL OR json_extract(data, '$.nextWorkAt')<=?) LIMIT 100").all(Date.now());
+    async listAnalysisInputs() {
+      const rows = pool ? (await pool.query('SELECT data FROM record_feed_meta')).rows : db.prepare('SELECT data FROM record_feed_meta').all();
+      const inputs = [], present = new Set();
+      for (const row of rows) {
+        const meta = decode(row); present.add(meta.id);
+        if (meta.deleted || Date.parse(meta.deleteAt) <= Date.now()) { legacyAnalysisInputs.delete(meta.id); continue; }
+        if (meta.analysisInput) { legacyAnalysisInputs.delete(meta.id); inputs.push({...meta.analysisInput}); continue; }
+        const key = typeof row.data === 'string' ? row.data : JSON.stringify(row.data);
+        let cached = legacyAnalysisInputs.get(meta.id);
+        if (cached?.key !== key) {
+          const record = await repository.get(meta.id);
+          if (!record) { legacyAnalysisInputs.delete(meta.id); continue; }
+          cached = {key, input: analysisInput(record)}; legacyAnalysisInputs.set(meta.id, cached);
+        }
+        inputs.push({...cached.input});
+      }
+      for (const id of legacyAnalysisInputs.keys()) if (!present.has(id)) legacyAnalysisInputs.delete(id);
+      return inputs;
+    },
+    async listWork({ lane = 'all' } = {}) {
+      const after = workCursors.get(lane) || '', now = Date.now();
+      const page = async (start, end, limit) => pool
+        ? (await pool.query("SELECT data FROM record_aggregates WHERE data->>'kind'='record' AND (data->>'nextWorkAt' IS NULL OR (data->>'nextWorkAt')::bigint <= $1) AND id>$2 AND ($3::text IS NULL OR id<=$3) ORDER BY id LIMIT $4", [now, start, end, limit])).rows
+        : db.prepare("SELECT data FROM aggregates WHERE json_extract(data,'$.kind')='record' AND (json_extract(data,'$.nextWorkAt') IS NULL OR json_extract(data,'$.nextWorkAt')<=?) AND id>? AND (? IS NULL OR id<=?) ORDER BY id LIMIT ?").all(now, start, end, end, limit);
+      const rows = await page(after, null, 100);
+      if (after && rows.length < 100) rows.push(...await page('', after, 100 - rows.length));
+      if (rows.length) workCursors.set(lane, typeof rows.at(-1).data === 'string' ? JSON.parse(rows.at(-1).data).id : rows.at(-1).data.id);
+      else workCursors.delete(lane);
       return rows.map(decode);
     },
     async insert(value) {
@@ -218,7 +248,7 @@ export async function createRepository(options = {}) {
   };
   const missing=pool ? (await pool.query("SELECT a.id FROM record_aggregates a LEFT JOIN record_feed_meta m ON a.id=m.id LEFT JOIN record_list_projection l ON a.id=l.id WHERE a.data->>'kind'='record' AND (m.id IS NULL OR l.id IS NULL)")).rows : db.prepare("SELECT a.id FROM aggregates a LEFT JOIN record_feed_meta m ON a.id=m.id LEFT JOIN record_list_projection l ON a.id=l.id WHERE json_extract(a.data,'$.kind')='record' AND (m.id IS NULL OR l.id IS NULL)").all();
   for(const {id} of missing)await repository.change(id,()=>{}, {rebuild:true});
-  for (const name of ['listSummaries','eventsAfter','get', 'list', 'listWork', 'change', 'changeMany', 'putAudio']) {
+  for (const name of ['listAnalysisInputs','listSummaries','eventsAfter','get', 'list', 'listWork', 'change', 'changeMany', 'putAudio']) {
     const operation = repository[name];
     repository[name] = (...args) => telemetry.measure(`db.${name}`, { backend: repository.backend, ...(typeof args[0] === 'string' && name !== 'list' ? {recordId:args[0]} : {}) }, () => operation(...args));
   }

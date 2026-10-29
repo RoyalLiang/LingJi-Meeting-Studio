@@ -183,13 +183,14 @@ test('topic coverage preserves exact revisions and merges overlapping cited inte
   assert.deepEqual(Array.from(helpers.topicDurations(value)), [4000, 3000]);
 });
 
-test('large citation groups keep a compact initial view with an explicit disclosure', () => {
+test('large citation groups keep their evidence without adding source controls to tree cards', () => {
   const value = minutes();
   value.topics[0].evidence = Array.from({ length: 20 }, (_, i) => ref(`extra${i}`));
   const html = render({ liveMinutes: value });
   const first = html.split('class="minutes-branch"')[1];
-  assert.equal((first.match(/class="citation-entry"/g) || []).length, 1);
-  assert.match(first, /aria-label="查看 20 处引用原文"/);
+  assert.equal((first.match(/class="citation-entry"/g) || []).length, 0);
+  assert.doesNotMatch(first, /aria-label="查看 20 处引用原文"/);
+  assert.equal(value.topics[0].evidence.length,20);
   assert.doesNotMatch(first, />原文 · 20/);
 });
 

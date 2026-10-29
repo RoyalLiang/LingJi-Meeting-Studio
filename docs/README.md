@@ -1,6 +1,8 @@
 # 聆记文档导航
 
-[v0.1.43 性能与可靠性专家评审](evidence/performance-review-v0.1.43-2026-10-29.md)：四方向定点审查确认 8 项问题（3 P1、5 P2），含复现、反证与覆盖清单；修复尚未实施。
+[v0.1.44 性能与界面修复](releases/v0.1.44-preview.md)：8 项实现、量测与验证边界见[本轮证据](evidence/performance-fixes-v0.1.44-2026-10-29.md)，发布状态以发布回执为准。
+
+[v0.1.43 性能与可靠性专家评审](evidence/performance-review-v0.1.43-2026-10-29.md)：四方向定点审查确认 8 项问题（3 P1、5 P2），含复现、反证与覆盖清单；对应修复见 v0.1.44。
 
 [v0.1.43 录音保存与界面修复](releases/v0.1.43-preview.md)：已发布，五项CI与四个公开附件核验通过；[发布回执](evidence/preview-v0.1.43-2026-10-29.md)。[本轮证据](evidence/settings-v0.1.43-2026-10-29.md)。
 

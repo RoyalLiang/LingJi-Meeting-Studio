@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowsClockwise, DownloadSimple } from '@phosphor-icons/react';
+import { ArrowUp, ArrowsClockwise, DownloadSimple } from '@phosphor-icons/react';
 import type { useClientUpdates } from '../useClientUpdates';
 import { Button, Modal } from './ui';
 import { Select } from './Select';
@@ -17,7 +17,7 @@ export function ClientUpdatesPanel({ updates }: { updates: ReturnType<typeof use
   return <section className="settings-section client-updates" aria-label="版本更新">
     <div className="client-update-heading">
       <div className="section-title"><ArrowsClockwise size={19}/><h3>版本更新</h3></div>
-      <span className="client-update-version">v{status.currentVersion || '读取中'}{status.version && status.version!==status.currentVersion ? ` → v${status.version}` : ''}</span>
+      <span className="client-update-version">v{status.currentVersion || '读取中'}{status.version && status.version!==status.currentVersion && <span className="client-update-available" role="img" aria-label={`可升级至 v${status.version}`} title={`可升级至 v${status.version}`}><ArrowUp size={10} weight="bold" aria-hidden="true"/></span>}</span>
       <div className="client-update-policy">
         <Select label="更新策略" value={updatePolicy(settings)} disabled={busy} onChange={value => saveSettings(preferencesForPolicy(value))} options={[
           {value:'manual',label:'手动检查'}, {value:'check',label:'自动检查'}, {value:'background',label:'自动检查并后台下载'}

@@ -1,0 +1,33 @@
+{
+  "schema": "backend-workspace-idle-probe/v1",
+  "node": "v24.21.0",
+  "cpu": "Apple M4 Pro",
+  "historicalRecords": 20,
+  "chunksPerRecord": 3000,
+  "totalAggregateJsonBytes": 38079950,
+  "results": [
+    {
+      "completedAnalysisJobs": 0,
+      "recordListCallsAcross8Cycles": 0,
+      "decodedRecords": 0,
+      "p50CycleMs": 0.02,
+      "sampleMaxCycleMs": 0.02
+    },
+    {
+      "completedAnalysisJobs": 1,
+      "recordListCallsAcross8Cycles": 0,
+      "decodedRecords": 0,
+      "p50CycleMs": 0.12,
+      "sampleMaxCycleMs": 0.32
+    },
+    {
+      "completedAnalysisJobs": 2,
+      "recordListCallsAcross8Cycles": 0,
+      "decodedRecords": 0,
+      "p50CycleMs": 0.19,
+      "sampleMaxCycleMs": 0.23
+    }
+  ],
+  "method": "One warmup and seven sequential real workspace-worker cycles. Every analysis job is completed and unchanged. No ASR/LLM/network/audio files; SQLite compressed aggregates in temporary directory.",
+  "baselineCommit": "d95edd86e0384e5fb93342a2237cbce053373b7d"
+}
