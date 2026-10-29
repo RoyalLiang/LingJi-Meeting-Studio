@@ -1,5 +1,5 @@
 import { minutesCoreInstructions, minutesQualityInstructions } from '../../../packages/records/src/minutes-quality.mjs';
-export const MINUTES_PROMPT_VERSION = 9;
+export const MINUTES_PROMPT_VERSION = 10;
 const string = {type:'string'};
 const object = properties => ({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
 const array = items => ({type:'array',items});
@@ -36,6 +36,7 @@ export function minutesInstructions(job={}, audio=false) {
     '不要按停顿、说话人变化、ASR 片段或两分钟边界机械分段。同一项目的现象、原因、方案和跟进合为连续主题，明确换题才另建主题。保留早中晚的重要事实、限制条件、否定和撤回。标题概括具体议题，不使用“会议纪要”等泛称。',
     '另返回 corrections:[{targetId:string,status:"pending"|"corrected"|"withdrawn",text:string,evidence:[{segmentId:string,revision:number}]}]。targetId来自context.items.id；事实条目的id、correctionOf和stateThroughMs由服务端管理。不同项目或对象须写明，不因措辞相同而合并。',
     '每个事实引用支持其结论及关键条件的原文。decisions 仅包含明确达成且仍有效的决定；提议、反问、条件句、待定和撤回不属于已决定。speakerSummaries 只使用输入的稳定 speakerId 和原标签，引用须属于本人；未知人物不合并或猜测。',
+    '同一主题中的连续补充应归并为2～4个完整小结：例如CPU、GPU、缓存与频率等规格合成“规格与变化”，带宽疑问和冲突数值合成“限制与待核实”。每个小结可用多句或自然段完整保留数字、条件、否定、来源差异和变更，不按单项参数拆成大量卡片。不同对象、风险与已明确决定仍需区分，不为压缩而省略事实。',
     '按实际事实数量输出，允许空数组，不为满足数量补内容。仅在真实对照、分类或行动清单时生成表格，不明内容写待确认；保留事实的条件。',
     '例：甲“考虑周五上线”，乙三分钟后说“刚才只是备选，安全评审过后才发”：这是有条件提议，不是周五上线决定。例：“设备不再断连”是状态事实，不是撤回任务；“取消周五上线”才是撤回。',
     job.scope==='live'?'这是增量会中纪要。contextOnly=true 仅供理解，不重复输出旧事实；新增内容和更正均须引用本轮 contextOnly 不为 true 的证据。context 是历史记忆，不是新证据。沿用 context.topics 中对应项目的稳定 id、title 和 context.headings；不能仅因都提到相机就合并不同项目。结合相关历史事实消解跨窗口指代。后续发言可补充、限制、否定或撤回早期理解，纠正不属于重复事实。更正须在 corrections 引用 context.items 的 targetId，说明 corrected/withdrawn/pending 及原因；更正后仍有效的决定或行动须完整重写到对应数组，负责人和日期未知或被取消时填 null。无法确定目标时保留待确认，不猜 targetId。':'这是终稿。依据全部给定证据还原决定及变更，最终决定和行动仅保留仍有效状态；在正文说明重要撤回与未决问题。corrections 返回空数组。',

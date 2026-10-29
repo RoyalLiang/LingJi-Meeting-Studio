@@ -2,20 +2,19 @@ import { digest, requireThat } from '../../../packages/records/src/record.mjs';
 import { parseVocabulary, vocabularyId, vocabularyHints, vocabularyCandidates, correctionSpan } from '../../../packages/records/src/vocabulary.mjs';
 import { completeModelJson } from './llm.mjs';
 
-export async function loadVocabulary(repo, owner, scope = 'inbox') {
-  const scopes = scope === 'all' ? ['all'] : ['all', scope];
-  const sets = await Promise.all(scopes.map(s => repo.get(vocabularyId(owner, s))));
+export async function loadVocabulary(repo, owner) {
+  const sets = [await repo.get(vocabularyId(owner, 'all'))];
   const entries = sets.filter(s => s?.owner === owner && s.kind === 'vocabulary').flatMap(s => parseVocabulary(s));
   return { entries, fingerprint: digest(JSON.stringify(sets.map(s => [s?.id, s?.revision || 0]))) };
 }
 
 export async function recordAsrConfig(repo, record, config) {
-  const { entries } = await loadVocabulary(repo, record.owner, record.workspaceId || 'inbox');
+  const { entries } = await loadVocabulary(repo, record.owner);
   return { ...config, ASR_VOCABULARY_HINTS: vocabularyHints(entries, [record.title, record.notes, ...record.segments.slice(-3).map(s => s.text)].join(' ')) };
 }
 
 export async function correctionCandidates(repo, record, { model = false, config, complete = completeModelJson } = {}) {
-  const vocabulary = await loadVocabulary(repo, record.owner, record.workspaceId || 'inbox');
+  const vocabulary = await loadVocabulary(repo, record.owner);
   // Bound one manual review to recent utterances; users can still edit earlier text.
   const segments = [...record.segments].sort((a,b) => a.startMs-b.startMs).slice(-120);
   const candidates = vocabularyCandidates(segments, vocabulary.entries);

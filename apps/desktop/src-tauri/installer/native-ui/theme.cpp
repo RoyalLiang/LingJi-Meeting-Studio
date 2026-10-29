@@ -19,14 +19,14 @@ void roundBox(HDC dc, RECT r, COLORREF color, COLORREF border, int radius) {
   RoundRect(dc, r.left, r.top, r.right, r.bottom, radius, radius);
   SelectObject(dc, oldPen); SelectObject(dc, oldBrush); DeleteObject(pen); DeleteObject(brush);
 }
-void paper(HWND control, HDC dc, bool outer = false) {
-  RECT root{}, bounds{}; GetClientRect(rootWindow, &root); GetClientRect(control, &bounds);
-  if (!background) { fill(dc, bounds, RGB(248, 249, 243)); return; }
+void paper(HWND control, HDC dc, bool outer = false, HWND owner = rootWindow, HBITMAP source = background) {
+  RECT root{}, bounds{}; GetClientRect(owner, &root); GetClientRect(control, &bounds);
+  if (!source) { fill(dc, bounds, RGB(248, 249, 243)); return; }
   POINT origin{};
-  if (outer) { RECT position{}; GetWindowRect(control, &position); origin = {position.left,position.top}; MapWindowPoints(nullptr,rootWindow,&origin,1); }
-  else MapWindowPoints(control, rootWindow, &origin, 1);
-  HDC image = CreateCompatibleDC(dc); HGDIOBJ previous = SelectObject(image, background);
-  BITMAP bitmap{}; GetObject(background, sizeof(bitmap), &bitmap);
+  if (outer) { RECT position{}; GetWindowRect(control, &position); origin = {position.left,position.top}; MapWindowPoints(nullptr,owner,&origin,1); }
+  else MapWindowPoints(control, owner, &origin, 1);
+  HDC image = CreateCompatibleDC(dc); HGDIOBJ previous = SelectObject(image, source);
+  BITMAP bitmap{}; GetObject(source, sizeof(bitmap), &bitmap);
   const int saved = SaveDC(dc); SetViewportOrgEx(dc, -origin.x, -origin.y, nullptr);
   SetStretchBltMode(dc, HALFTONE);
   StretchBlt(dc, 0, 0, root.right, root.bottom, image, 0, 0, bitmap.bmWidth, bitmap.bmHeight, SRCCOPY);
@@ -135,6 +135,79 @@ LRESULT CALLBACK themed(HWND window, UINT message, WPARAM w, LPARAM l, UINT_PTR 
   if (kind == 1 && (message == BM_SETCHECK || message == BM_SETSTATE || message == WM_SETFOCUS || message == WM_KILLFOCUS || message == WM_ENABLE || message == WM_UPDATEUISTATE)) InvalidateRect(window, nullptr, FALSE);
   return result;
 }
+// Keep modal state separate from the main installer's active control subclasses.
+struct RetryDialog {
+  HWND window = nullptr;
+  HBITMAP image = nullptr;
+  HFONT body = nullptr, title = nullptr;
+  UINT dpi = 96;
+};
+int retryPx(const RetryDialog& state, int value) { return MulDiv(value, static_cast<int>(state.dpi), 96); }
+LRESULT CALLBACK retryButton(HWND window, UINT message, WPARAM w, LPARAM l, UINT_PTR id, DWORD_PTR data) {
+  auto& state = *reinterpret_cast<RetryDialog*>(data);
+  if (message == WM_NCDESTROY) { RemoveWindowSubclass(window,retryButton,id); return DefSubclassProc(window,message,w,l); }
+  if (message == WM_MOUSEMOVE) {
+    TRACKMOUSEEVENT tracking{sizeof(tracking),TME_LEAVE,window,0}; TrackMouseEvent(&tracking);
+    InvalidateRect(window,nullptr,FALSE);
+  }
+  if (message == WM_MOUSELEAVE || message == WM_SETFOCUS || message == WM_KILLFOCUS || message == BM_SETSTATE || message == WM_ENABLE || message == WM_UPDATEUISTATE) InvalidateRect(window,nullptr,FALSE);
+  if (message == WM_ERASEBKGND) return 1;
+  if (message == WM_PAINT || message == WM_PRINTCLIENT) {
+    PAINTSTRUCT paint{}; HDC dc = message == WM_PAINT ? BeginPaint(window,&paint) : reinterpret_cast<HDC>(w);
+    RECT r{}; GetClientRect(window,&r); fill(dc,r,RGB(236,243,232));
+    POINT cursor{}; GetCursorPos(&cursor); ScreenToClient(window,&cursor);
+    const bool primary = GetDlgCtrlID(window) == IDRETRY, hover = PtInRect(&r,cursor) != FALSE;
+    const bool pressed = (SendMessageW(window,BM_GETSTATE,0,0) & BST_PUSHED) != 0;
+    const COLORREF color = primary ? pressed ? RGB(29,83,65) : hover ? RGB(31,92,71) : jade : hover ? RGB(230,239,225) : RGB(248,250,245);
+    roundBox(dc,r,color,primary?color:RGB(199,215,195),retryPx(state,7));
+    label(window,dc,r,primary?RGB(255,255,255):ink,DT_CENTER);
+    if (GetFocus() == window && !(SendMessageW(window,WM_QUERYUISTATE,0,0) & UISF_HIDEFOCUS)) { InflateRect(&r,-retryPx(state,3),-retryPx(state,3)); DrawFocusRect(dc,&r); }
+    if (message == WM_PAINT) EndPaint(window,&paint);
+    return 0;
+  }
+  return DefSubclassProc(window,message,w,l);
+}
+INT_PTR CALLBACK retryDialog(HWND window, UINT message, WPARAM w, LPARAM l) {
+  auto* state = reinterpret_cast<RetryDialog*>(GetWindowLongPtrW(window,GWLP_USERDATA));
+  if (message == WM_INITDIALOG) {
+    state = reinterpret_cast<RetryDialog*>(l); state->window = window;
+    SetWindowLongPtrW(window,GWLP_USERDATA,reinterpret_cast<LONG_PTR>(state));
+    HWND owner = GetWindow(window,GW_OWNER); state->dpi = owner ? GetDpiForWindow(owner) : 96;
+    if (!state->dpi) state->dpi = 96;
+    RECT bounds{0,0,retryPx(*state,560),retryPx(*state,260)}, parent{};
+    AdjustWindowRectEx(&bounds,WS_POPUP|WS_CAPTION|WS_SYSMENU|DS_MODALFRAME,FALSE,WS_EX_DLGMODALFRAME);
+    GetWindowRect(owner,&parent);
+    const int width = static_cast<int>(bounds.right-bounds.left), height = static_cast<int>(bounds.bottom-bounds.top);
+    MONITORINFO monitor{sizeof(monitor)}; GetMonitorInfoW(MonitorFromWindow(owner,MONITOR_DEFAULTTONEAREST),&monitor);
+    const int x = std::clamp(static_cast<int>(parent.left+(parent.right-parent.left-width)/2),static_cast<int>(monitor.rcWork.left),static_cast<int>(std::max(monitor.rcWork.left,monitor.rcWork.right-width)));
+    const int y = std::clamp(static_cast<int>(parent.top+(parent.bottom-parent.top-height)/2),static_cast<int>(monitor.rcWork.top),static_cast<int>(std::max(monitor.rcWork.top,monitor.rcWork.bottom-height)));
+    SetWindowPos(window,nullptr,x,y,width,height,SWP_NOZORDER);
+    const auto control = [&](LPCWSTR kind,LPCWSTR text,DWORD style,int controlId,int left,int top,int cw,int ch,HFONT font) {
+      HWND child = CreateWindowExW(0,kind,text,WS_CHILD|WS_VISIBLE|style,retryPx(*state,left),retryPx(*state,top),retryPx(*state,cw),retryPx(*state,ch),window,reinterpret_cast<HMENU>(static_cast<INT_PTR>(controlId)),GetModuleHandleW(nullptr),nullptr);
+      SendMessageW(child,WM_SETFONT,reinterpret_cast<WPARAM>(font),TRUE); return child;
+    };
+    HWND heading = control(L"STATIC",L"聆记仍在后台运行。",SS_LEFT,1001,24,24,512,34,state->title);
+    HWND body = control(L"STATIC",L"请先暂停或结束录音，等待补传完成，再从系统托盘退出聆记。\r\n\r\n退出后点击“重试”继续本次操作，无需重新打开安装程序。",SS_LEFT,1002,24,76,512,108,state->body);
+    HWND retry = control(L"BUTTON",L"重试",WS_TABSTOP|BS_DEFPUSHBUTTON,IDRETRY,312,202,104,40,state->body);
+    HWND cancel = control(L"BUTTON",L"取消",WS_TABSTOP|BS_PUSHBUTTON,IDCANCEL,432,202,104,40,state->body);
+    if (!heading || !body || !retry || !cancel || !SetWindowSubclass(retry,retryButton,1,reinterpret_cast<DWORD_PTR>(state)) || !SetWindowSubclass(cancel,retryButton,1,reinterpret_cast<DWORD_PTR>(state))) { EndDialog(window,IDCANCEL); return TRUE; }
+    SendMessageW(window,DM_SETDEFID,IDRETRY,0); SetFocus(retry); return FALSE;
+  }
+  if (!state) return FALSE;
+  if (message == WM_COMMAND && (LOWORD(w) == IDRETRY || LOWORD(w) == IDCANCEL)) { EndDialog(window,LOWORD(w)); return TRUE; }
+  if (message == WM_CLOSE) { EndDialog(window,IDCANCEL); return TRUE; }
+  if (message == WM_CTLCOLORSTATIC) { SetTextColor(reinterpret_cast<HDC>(w),ink); SetBkMode(reinterpret_cast<HDC>(w),TRANSPARENT); return reinterpret_cast<INT_PTR>(GetStockObject(HOLLOW_BRUSH)); }
+  if (message == WM_ERASEBKGND) return TRUE;
+  if (message == WM_PAINT || message == WM_PRINTCLIENT) {
+    PAINTSTRUCT paint{}; HDC dc = message == WM_PAINT ? BeginPaint(window,&paint) : reinterpret_cast<HDC>(w);
+    RECT r{}; GetClientRect(window,&r);
+    if (state->image) paper(window,dc,false,window,state->image); else fill(dc,r,RGB(242,246,239));
+    r.top = r.bottom-retryPx(*state,74); fill(dc,r,RGB(236,243,232));
+    if (message == WM_PAINT) EndPaint(window,&paint);
+    return TRUE;
+  }
+  return FALSE;
+}
 BOOL CALLBACK apply(HWND window, LPARAM) {
   wchar_t name[64]{}; GetClassNameW(window, name, 64);
   if (wcscmp(name,L"Button") == 0) SetWindowSubclass(window, themed, 1, 0);
@@ -184,4 +257,19 @@ extern "C" int __stdcall LingJiFileMatches(LPCWSTR path, LPCWSTR expected) {
   if (hash) BCryptDestroyHash(hash);
   if (algorithm) BCryptCloseAlgorithmProvider(algorithm, 0);
   CloseHandle(file); return ok ? 1 : 0;
+}
+
+extern "C" int __stdcall LingJiRetry(HWND owner, LPCWSTR bitmap, HFONT body, HFONT title) {
+  struct alignas(DWORD) Template { DLGTEMPLATE dialog{}; WORD menu = 0, windowClass = 0; wchar_t caption[16]{}; } layout;
+  static_assert(sizeof(DLGTEMPLATE)==18,"dialog template header must remain packed");
+  layout.dialog.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|DS_MODALFRAME;
+  layout.dialog.dwExtendedStyle = WS_EX_DLGMODALFRAME;
+  layout.dialog.cx = 320; layout.dialog.cy = 170;
+  wcscpy_s(layout.caption,L"聆记安装程序");
+  RetryDialog state;
+  state.body = body ? body : reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT)); state.title = title ? title : state.body;
+  if (bitmap) state.image = static_cast<HBITMAP>(LoadImageW(nullptr,bitmap,IMAGE_BITMAP,0,0,LR_LOADFROMFILE|LR_CREATEDIBSECTION));
+  const INT_PTR result = DialogBoxIndirectParamW(GetModuleHandleW(nullptr),&layout.dialog,owner,retryDialog,reinterpret_cast<LPARAM>(&state));
+  if (state.image) DeleteObject(state.image);
+  return result == IDRETRY ? IDRETRY : IDCANCEL;
 }

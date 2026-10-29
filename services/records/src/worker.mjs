@@ -91,9 +91,9 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
     // Two independent sources can progress together; a source remains strictly ordered.
     await Promise.all([processAudio(), processAudio(), realtimeWork]);
     }
-    if (['all','translation','translation-live'].includes(lane) && (providers.translate || providerStatus(config).translation)) {
+    if (['all','translation','translation-live','translation-preview'].includes(lane) && (providers.translate || providerStatus(config).translation)) {
       await processTranslation(repo,candidate.id,(text,target,options)=>(providers.translate || translateText)(text,target,config,options),
-        lane === 'translation-live' ? 'live' : lane === 'translation' ? 'history' : 'all');
+        lane === 'translation-preview' ? 'preview' : lane === 'translation-live' ? 'live' : lane === 'translation' ? 'history' : 'all');
     }
     const updated = await repo.get(candidate.id);
     if ((lane === 'all' || lane === 'intents') && !updated.deleted && updated.segments.length && updated.insights?.transcriptRevision !== updated.transcriptRevision && (updated.intentRetryAt || 0) <= Date.now()) {
@@ -199,7 +199,7 @@ export async function startWorker() {
   const repo = await createRepository(); let stop = false;
   process.on('SIGTERM', () => { stop = true; }); process.on('SIGINT', () => { stop = true; });
   console.log(`[record-worker] ${repo.backend}; durable audio and minutes queue`);
-  await Promise.all(['audio', 'realtime', 'minutes', 'intents', 'translation', 'translation-live', 'workspace', 'learning'].map(async lane => {
+  await Promise.all(['audio', 'realtime', 'minutes', 'intents', 'translation', 'translation-live', 'translation-preview', 'workspace', 'learning'].map(async lane => {
   while (!stop) {
    try { await runCycle(repo, {}, { lane }); } catch (e) { console.error('[record-worker]', lane, e.code || e.name); }
    await new Promise(resolve => setTimeout(resolve, lane === 'audio' ? 250 : 500));

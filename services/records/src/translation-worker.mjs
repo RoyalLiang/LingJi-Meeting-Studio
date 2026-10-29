@@ -5,13 +5,13 @@ const recent = (record, segment) => record.capture !== 'completed' && segment.en
 const sameSettings = (record, claim) => !record.deleted && record.generation === claim.generation
   && record.translationTarget === claim.target && (record.translationRevision || 0) === claim.settingsRevision;
 
-// Live work has its own lane, so historical requests cannot hold up a new utterance.
+// Current speech has its own lane, so even a slow confirmed sentence cannot block it.
 export async function processTranslation(repo, id, translate, mode = 'all') {
   let claim, reused=false;
   await repo.change(id, record => {
     if (record.deleted || !record.translationTarget || Date.parse(record.deleteAt) <= Date.now()) return;
     const now = Date.now();
-    const eligible = record.segments.filter(segment => segment.translationLanguage !== record.translationTarget
+    const eligible = mode === 'preview' ? [] : record.segments.filter(segment => segment.translationLanguage !== record.translationTarget
       && (segment.translationAttempts || 0) < 3 && (segment.translationLease || 0) <= now && (segment.translationRetryAt || 0) <= now
       && (mode !== 'live' || recent(record,segment)));
     if (mode === 'live') eligible.sort((a,b) => b.startMs-a.startMs);
@@ -28,7 +28,7 @@ export async function processTranslation(repo, id, translate, mode = 'all') {
       claim = { ...settings, kind:'segment', id:segment.id, revision:segment.revision, text:segment.text };
       return;
     }
-    if (mode === 'history') return;
+    if (mode === 'history' || mode === 'live') return;
     const source = record.sources.find(source => {
       const preview = source.asr?.preview, value = source.asr?.translation;
       if (source.asr?.state !== 'running' || !preview?.text?.trim() || preview.text.trim().length < 4) return false;

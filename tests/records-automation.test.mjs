@@ -319,15 +319,15 @@ test('paused catch-up waits for the stop manifest tail to be durably acknowledge
   assert.equal(checkpoint.scope,'live');assert.equal(checkpoint.pausedCheckpoint,true);assert.equal(r.capture,'paused');
 });
 
-test('default minutes interval is one minute and explicit choices survive', () => {
+test('default minutes interval is two minutes and explicit choices survive', () => {
   const record = createRecord('interval-owner');
-  assert.equal(record.autoMinutes.intervalSeconds, 60);
+  assert.equal(record.autoMinutes.intervalSeconds, 120);
   setAutomation(record, {enabled:true,intervalSeconds:15});
   setAutomation(record, {enabled:true});
   assert.equal(record.autoMinutes.intervalSeconds, 15);
   delete record.autoMinutes.intervalSeconds;
   setAutomation(record, {enabled:true});
-  assert.equal(record.autoMinutes.intervalSeconds, 60);
+  assert.equal(record.autoMinutes.intervalSeconds, 120);
 });
 
 
@@ -386,4 +386,14 @@ test('new meeting without accepted speech never queues automatic minutes across 
   for(const now of [1000,31000,61000,3600000])assert.equal(queueAutomaticMinutes(r,'fixture',now),undefined);
  }
  assert.equal(r.jobs.length,0);
+});
+
+
+test('invalid topic output retries after an interval change without bypassing the retry cap', () => {
+  const r=record();setAutomation(r,{enabled:true,intervalSeconds:30},1000);
+  r.jobs=[{id:'failed-topic',status:'failed',mode:'model',scope:'live',error:'invalid_minutes_topics',transcriptRevision:r.transcriptRevision,notesRevision:r.notesRevision,baseMinutesRevision:r.minutesRevision,retryAttempt:1,failedAt:2000}];
+  r.autoMinutes={...r.autoMinutes,lastRevision:r.transcriptRevision,lastScope:'live',lastRequestedAt:1000};
+  setAutomation(r,{enabled:true,intervalSeconds:120},3000);
+  assert.equal(automaticMinutesAt(r,3000),17000);
+  r.jobs[0].retryAttempt=3;assert.equal(automaticMinutesAt(r,3000),Infinity);
 });
