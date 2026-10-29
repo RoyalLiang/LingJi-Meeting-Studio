@@ -256,7 +256,7 @@ test('download display preserves unknown totals, byte counts and verification bo
 test('update panel distinguishes download, indeterminate and verification states with accessible progress', async () => {
   const {transform}=await import('esbuild'), source=await readFile(new URL('../apps/web/src/components/ClientUpdates.tsx',import.meta.url),'utf8');
   const code=(await transform(source.replace(/^import .*$/gm,''),{loader:'tsx',format:'cjs'})).code;
-  const box={module:{exports:{}},updatePolicy,preferencesForPolicy,updateReleaseItems,updateDownloadProgress,DownloadSimple:()=>null,ArrowsClockwise:()=>null,Select:props=>({tag:'select',props,children:[]}),Button:()=>null};
+  const box={module:{exports:{}},useState:()=>[false,()=>{}],Modal:()=>null,updatePolicy,preferencesForPolicy,updateReleaseItems,updateDownloadProgress,DownloadSimple:()=>null,ArrowsClockwise:()=>null,Select:props=>({tag:'select',props,children:[]}),Button:()=>null};
   box.React={createElement:(tag,props,...children)=>typeof tag==='function'?tag({...props,children}):({tag,props,children})};vm.runInNewContext(code,box);
   const render=(downloaded,total)=>box.module.exports.ClientUpdatesPanel({updates:{native:true,status:{phase:'downloading',currentVersion:'1',downloaded,total,notes:'## 版本改动与修复\n- 修复下载。\n## SHA-256\nNOT-A-CHANGE'},settings:defaultUpdatePreferences,installReason:'',saveSettings(){}}});
   const nodes=tree=>[tree,...(tree?.children||[]).flat(Infinity).filter(x=>x&&typeof x==='object').flatMap(nodes)];
@@ -268,4 +268,18 @@ test('update panel distinguishes download, indeterminate and verification states
   const select=known.find(n=>n.tag==='select'), background=select.props.options.find(o=>o.label==='自动检查并后台下载');
   assert.equal(preferencesForPolicy(background.value).autoDownload,true);
   assert.equal(select.props.label,'更新策略');
+});
+
+test('settings update notes open in a separate dialog with no inline explanatory line',async()=>{
+ const {transform}=await import('esbuild'),source=await readFile(new URL('../apps/web/src/components/ClientUpdates.tsx',import.meta.url),'utf8');
+ const code=(await transform(source.replace(/^import .*$/gm,''),{loader:'tsx',format:'cjs'})).code;let notesOpen=false;
+ const box={module:{exports:{}},useState:()=>[notesOpen,value=>{notesOpen=value;}],Modal:props=>({tag:'dialog',props,children:props.children}),updatePolicy,preferencesForPolicy,updateReleaseItems,updateDownloadProgress,DownloadSimple:()=>null,ArrowsClockwise:()=>null,Select:()=>null,Button:props=>({tag:'button',props,children:props.children})};
+ box.React={createElement:(tag,props,...children)=>typeof tag==='function'?tag({...props,children}):({tag,props,children})};vm.runInNewContext(code,box);
+ const updates={native:true,status:{phase:'idle',currentVersion:'0.1.42',downloaded:0},settings:preferencesForPolicy('manual'),installReason:'',saveSettings(){},update(){}};
+ const idle=box.module.exports.ClientUpdatesPanel({updates});assert.doesNotMatch(JSON.stringify(idle),/由你手动检查更新|启动后会自动检查更新/);
+ const availableUpdates={...updates,status:{...updates.status,phase:'available',version:'0.1.43',notes:'## 更新内容\n- 保留完整原音'}};
+ const render=()=>box.module.exports.ClientUpdatesPanel({updates:availableUpdates}),nodes=tree=>[tree,...(tree?.children||[]).flat(Infinity).filter(x=>x&&typeof x==='object').flatMap(nodes)];
+ const available=render();assert.match(JSON.stringify(available),/→ v0\.1\.43/);assert.ok(!nodes(available).some(node=>node.tag==='dialog'||node.tag==='details'));
+ const trigger=nodes(available).find(node=>node.props?.className==='update-notes-trigger');assert.equal(trigger.props['aria-haspopup'],'dialog');trigger.props.onClick();
+ const dialog=nodes(render()).find(node=>node.tag==='dialog');assert.ok(dialog);assert.match(JSON.stringify(dialog),/保留完整原音/);dialog.props.onClose();assert.ok(!nodes(render()).some(node=>node.tag==='dialog'));
 });

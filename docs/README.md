@@ -1,5 +1,7 @@
 # 聆记文档导航
 
+[v0.1.43 录音保存与界面修复](releases/v0.1.43-preview.md)：本地验证完成，发布核验待补记。[本轮证据](evidence/settings-v0.1.43-2026-10-29.md)。
+
 [v0.1.42 纪要完整呈现与修订](releases/v0.1.42-preview.md)已发布，五项CI与四个公开附件核验通过；[发布回执](evidence/preview-v0.1.42-2026-10-29.md)。[调用链验证](evidence/minutes-completeness-v0.1.42-2026-10-29.md)。
 
 [v0.1.41 纪要完整性与人工修订兼容](releases/v0.1.41-preview.md)已发布，五项CI与四个公开附件核验通过；[发布回执](evidence/preview-v0.1.41-2026-10-29.md)。[补充验证](evidence/minutes-completeness-v0.1.41-2026-10-29.md)。

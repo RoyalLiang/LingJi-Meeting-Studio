@@ -1,4 +1,5 @@
-import { memo, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { memo, useEffect, useId, useRef, useState } from 'react';
 import { CorrectionSuggestions } from './CorrectionSuggestions';
 import { ArrowDown, Check, PencilSimple, TextAlignLeft, X } from '@phosphor-icons/react';
 import { Button, Empty } from './ui';
@@ -9,15 +10,18 @@ import { timecode } from '../model';
 import { useTranscriptFollow } from './useTranscriptFollow';
 import { cleanSpeechDisplay } from '../../../../packages/records/src/learning-display.mjs';
 type TranscriptProps = { record: RecordDetail; highlighted: string; save: (s: Segment, text: string, speaker: string) => Promise<boolean> };
-export const TranscriptHistory = memo(function TranscriptHistory({record, save, changed}: Pick<TranscriptProps,'record'|'save'> & {changed:()=>void}) {
-  const [loaded,setLoaded]=useState(false);
+export const TranscriptHistory = memo(function TranscriptHistory({record, save, changed, actionsTarget}: Pick<TranscriptProps,'record'|'save'> & {changed:()=>void;actionsTarget?:HTMLElement|null}) {
+  const [loaded,setLoaded]=useState(false),[open,setOpen]=useState(false);
+  const details=useRef<HTMLDetailsElement>(null),visibleRecord=useRef(record),id=useId(),external=actionsTarget!==undefined;
+  if(!loaded || open)visibleRecord.current=record;
   // Keep mounted after the first opening so collapsing never discards an edit draft.
-  return <details className="transcript-disclosure" onToggle={event=>{if(event.currentTarget.open)setLoaded(true);}}>
+  return <details id={id} ref={details} className={`transcript-disclosure${external ? ' is-toolbar' : ''}`} onToggle={event=>{setOpen(event.currentTarget.open);if(event.currentTarget.open)setLoaded(true);}}>
     <summary role="button" tabIndex={0} aria-label={`逐字记录与纠错 · ${record.segments.length} 段`} title={`逐字记录与纠错 · ${record.segments.length} 段`}><TextAlignLeft size={18}/></summary>
-    {loaded && <><CorrectionSuggestions record={record} changed={changed}/><Transcript record={record} highlighted="" save={save}/></>}
+    {loaded && <><CorrectionSuggestions record={visibleRecord.current} changed={changed} active={open}/><Transcript record={visibleRecord.current} highlighted="" save={save}/></>}
+    {actionsTarget && createPortal(<Button variant="ghost" aria-label={`逐字记录与纠错 · ${record.segments.length} 段`} title="逐字记录与纠错" aria-controls={id} aria-expanded={open} onClick={()=>{if(details.current)details.current.open=!details.current.open;}}><TextAlignLeft size={18}/></Button>,actionsTarget)}
   </details>;
 });
-export function Transcript({ record, highlighted, save }: TranscriptProps) {
+export const Transcript = memo(function Transcript({ record, highlighted, save }: TranscriptProps) {
   const [query, setQuery] = useState(''), [editing, setEditing] = useState<Segment | null>(null);
   const [concise, setConcise] = useState(true);
   const [text, setText] = useState(''), [speaker, setSpeaker] = useState(''), [busy, setBusy] = useState(false);
@@ -44,4 +48,4 @@ export function Transcript({ record, highlighted, save }: TranscriptProps) {
     {(segments.length>0 || previews.length>0) && <div ref={follow.end} className="transcript-end"/>}
     {!follow.following && !query && !editing && <div className="transcript-follow"><Button onClick={follow.resume}><ArrowDown size={16}/>回到最新转录</Button></div>}
   </section>;
-}
+});

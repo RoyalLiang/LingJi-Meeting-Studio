@@ -126,13 +126,12 @@ export function drainQueue(onChange?:()=>void): Promise<void>{
     const blocked=new Set<string>(),active=new Map<string,Promise<void>>();let failure:unknown,completed=0;
     try {
     while(canUpload()){
-      let notified=false;
-      const notification=new Promise<void>(resolve=>{wakeDrain=()=>{notified=true;resolve();};});
+      const notification=new Promise<void>(resolve=>{wakeDrain=resolve;});
       const generation=completed;
       const entries=await heads(new Set([...blocked,...active.keys()]));
       // ACKs can finish while IndexedDB is selecting heads. Re-read instead of
       // waiting on another source with an otherwise unused upload slot.
-      if(notified||completed!==generation)continue;
+      if(completed!==generation)continue;
       for(const entry of entries){
         if(active.size>=parallelism()||!canUpload())break;
         if(!permittedRecords.has(entry.recordId))continue;
@@ -199,5 +198,5 @@ export async function makeChunk(sourceId: string, epoch: string, sequence: numbe
 export async function updateQueueState() {
   const connection = await db(), transaction = connection.transaction(['chunks','stats']);
   const [count, total] = await Promise.all([result(transaction.objectStore('chunks').count()), result(transaction.objectStore('stats').get('total'))]);
-  return { pendingBytes: total?.bytes || 0, pendingCount: count, queueBusy: uploading || saving > 0 };
+  return { pendingBytes: total?.bytes || 0, pendingCount: count, queueBusy: saving > 0 || (uploading && count > 0) };
 }

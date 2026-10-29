@@ -55,7 +55,7 @@ export function Modal({ title, children, onClose, wide = false, explicitCloseOnl
       if (target?.isConnected && !target.closest('[inert]')) target.focus({ preventScroll: true });
     };
   }, [initialFocus]);
-  return <dialog className={`modal glass ${wide ? 'wide' : ''} ${className}`} ref={ref} onCancel={event => { event.preventDefault(); if (!explicitCloseOnly) onClose(); }} onPointerDown={event => { backdropDown.current = event.target === event.currentTarget; }} onClick={event => {
+  return <dialog className={`modal glass ${wide ? 'wide' : ''} ${className}`} ref={ref} onCancel={event => { event.preventDefault(); event.stopPropagation(); if (!explicitCloseOnly) onClose(); }} onPointerDown={event => { backdropDown.current = event.target === event.currentTarget; }} onClick={event => {
       const startedOnBackdrop = backdropDown.current; backdropDown.current = false;
       if (!explicitCloseOnly && startedOnBackdrop && event.target === event.currentTarget) onClose();
     }} aria-labelledby={titleId}>

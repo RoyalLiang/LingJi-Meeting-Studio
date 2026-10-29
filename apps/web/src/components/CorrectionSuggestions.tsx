@@ -3,10 +3,11 @@ import { BookOpenText } from '@phosphor-icons/react';
 import { api, messageOf } from '../api';
 import { timecode, type RecordDetail } from '../model';
 import { Button } from './ui';
+import { Toast } from './Toast';
 
 type Candidate = { segmentId: string; revision: number; start: number; original: string; replacement: string; method: string };
 type Review = { candidates: Candidate[]; fingerprint: string; reviewedSegments: number; totalSegments: number };
-export function CorrectionSuggestions({ record, changed }: { record: RecordDetail; changed: () => void }) {
+export function CorrectionSuggestions({ record, changed, active: visible = true }: { record: RecordDetail; changed: () => void; active?:boolean }) {
   const [review, setReview] = useState<Review | null>(null), [message, setMessage] = useState(''), [busy, setBusy] = useState(false);
   const pending = useRef(false), active = useRef(true);
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
@@ -36,7 +37,7 @@ export function CorrectionSuggestions({ record, changed }: { record: RecordDetai
   }
   const candidates = review?.candidates.filter(c => record.segments.some(s => s.id === c.segmentId && s.revision === c.revision && (!s.edited || s.correction?.revision === s.revision))) || [];
   return <section className="correction-review" aria-label="词表辅助纠错"><div className="actions"><BookOpenText size={18}/><Button disabled={busy} onClick={() => void check(false)}>检查词表纠错</Button><Button variant="ghost" disabled={busy} onClick={() => void check(true)}>使用模型检查（发送原文与词表）</Button>{busy && <span role="status">正在检查…</span>}</div>
-    {message && <p className="inline-error" role="alert">{message}</p>}
+    <Toast message={visible ? message : ''} error={Boolean(message)} dismiss={()=>setMessage('')}/>
     {review && !candidates.length && <p role="status">没有待确认候选。可在设置中补充词语、名称和误识别写法。</p>}
     {review && review.totalSegments > review.reviewedSegments && <p>本次检查最近 {review.reviewedSegments} 段，共 {review.totalSegments} 段。</p>}
     {candidates.map((candidate,index) => {
