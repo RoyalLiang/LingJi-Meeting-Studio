@@ -28,3 +28,5 @@
 ## Windows CI 反馈与 v0.1.48
 
 v0.1.47 源码 `5c4e154743bf5dd4f8726f0af4d311a451acf7a2` 的 verify、macOS 和 Linux 通过；Windows 安装器编译在 `theme.cpp:263` 因模板类型四字节对齐产生隐式尾填充（C4324，在 /WX 下失败），publish 跳过，未形成公开版本。修复为变量首地址四字节对齐，字段布局不变；保持 /W4 /WX。旧标签未移动，以 v0.1.48 继续发布。失败工作流：<https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/40910314810>。
+
+最终 v0.1.48 源码 `44d594148e6745c53e98ab47f48db454f451f712` 已公开发布，五项 CI 全部通过，包括 Windows 严格编译、主题弹窗与安装重试测试；[公开附件及发布回执](preview-v0.1.48-2026-10-30.md)。原会议和用户原机验证边界仍保留。

@@ -2,7 +2,7 @@
 
 [v0.1.49 学习评审与实时翻译](releases/v0.1.49-preview.md)：按已确认设计完成六项改造，处于发布候选阶段；[本轮验证与边界](evidence/learning-translation-v0.1.49-2026-10-30.md)。
 
-[v0.1.48 设置与纪要优化](releases/v0.1.48-preview.md)：v0.1.47 的 Windows 严格编译失败已修复，保留旧标签，以新版本重新发布。[验证范围](evidence/settings-minutes-v0.1.47-2026-10-29.md)。
+[v0.1.48 设置与纪要优化](releases/v0.1.48-preview.md)：已发布，五项 CI、三平台安装包与更新清单核验通过；[发布回执](evidence/preview-v0.1.48-2026-10-30.md)。[验证范围](evidence/settings-minutes-v0.1.47-2026-10-29.md)。
 
 [v0.1.46 树形线条对齐](releases/v0.1.46-preview.md)：修正小结边框引起的 1px 原点偏移；[修复证据](evidence/alignment-v0.1.46-2026-10-29.md)，已发布，[五项 CI 与公开附件核验通过](evidence/preview-v0.1.46-2026-10-29.md)。
 
