@@ -1,0 +1,612 @@
+{
+  "sourceRevision": "2a4e02f5aa35da8a7088e96fa66ac30739c243e0",
+  "capturedAt": "2026-10-29T07:28:59.334328+00:00",
+  "scope": "Synthetic bounded repros; no user records, real ASR/LLM, Windows hardware or production CSS. Probe exit 0 confirms the counterexample was observed, not a fix.",
+  "environment": {
+    "node": "v24.21.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M4 Pro"
+  },
+  "sampling": "Unless noted: one warmup plus 7 observations. Median and sample maximum only; not population p95 or end-to-end latency.",
+  "frontend": {
+    "mode": "production React; synchronous render+commit wall time in actual browser; synthetic data only",
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+    "results": [
+      {
+        "label": "Transcript-open",
+        "n": 300,
+        "mountMs": 32,
+        "updateMedianMs": 9.5,
+        "maxMs": 15.5,
+        "elements": 3910,
+        "segmentsArrayRebuilt": 7,
+        "iterations": 7
+      },
+      {
+        "label": "MinutesPanel-unchanged-record-clock-tick",
+        "n": 300,
+        "mountMs": 17.5,
+        "updateMedianMs": 5.5,
+        "maxMs": 9.5,
+        "elements": 2170,
+        "segmentsArrayRebuilt": 0,
+        "iterations": 7
+      },
+      {
+        "label": "MinutesPanel-same-minutes-SSE-metadata",
+        "n": 300,
+        "mountMs": 14,
+        "updateMedianMs": 6.5,
+        "maxMs": 9.5,
+        "elements": 2170,
+        "segmentsArrayRebuilt": 7,
+        "iterations": 7
+      },
+      {
+        "label": "Transcript-open",
+        "n": 1000,
+        "mountMs": 78.10000014305115,
+        "updateMedianMs": 28.200000047683716,
+        "maxMs": 31.90000009536743,
+        "elements": 13010,
+        "segmentsArrayRebuilt": 7,
+        "iterations": 7
+      },
+      {
+        "label": "MinutesPanel-unchanged-record-clock-tick",
+        "n": 1000,
+        "mountMs": 42.30000019073486,
+        "updateMedianMs": 16.399999856948853,
+        "maxMs": 32.799999952316284,
+        "elements": 7154,
+        "segmentsArrayRebuilt": 0,
+        "iterations": 7
+      },
+      {
+        "label": "MinutesPanel-same-minutes-SSE-metadata",
+        "n": 1000,
+        "mountMs": 79,
+        "updateMedianMs": 30.59999990463257,
+        "maxMs": 45.299999952316284,
+        "elements": 7154,
+        "segmentsArrayRebuilt": 7,
+        "iterations": 7
+      },
+      {
+        "label": "Transcript-open",
+        "n": 3000,
+        "mountMs": 468.7000000476837,
+        "updateMedianMs": 102.5,
+        "maxMs": 150.09999990463257,
+        "elements": 39010,
+        "segmentsArrayRebuilt": 7,
+        "iterations": 7
+      },
+      {
+        "label": "MinutesPanel-unchanged-record-clock-tick",
+        "n": 3000,
+        "mountMs": 153.20000004768372,
+        "updateMedianMs": 71.79999995231628,
+        "maxMs": 81.10000014305115,
+        "elements": 21394,
+        "segmentsArrayRebuilt": 0,
+        "iterations": 7
+      },
+      {
+        "label": "MinutesPanel-same-minutes-SSE-metadata",
+        "n": 3000,
+        "mountMs": 225.59999990463257,
+        "updateMedianMs": 55.60000014305115,
+        "maxMs": 81.59999990463257,
+        "elements": 21394,
+        "segmentsArrayRebuilt": 7,
+        "iterations": 7
+      },
+      {
+        "label": "MinutesEditor-one-field-input",
+        "n": 300,
+        "enterMs": 33.80000019073486,
+        "updateMedianMs": 5.200000047683716,
+        "maxMs": 12.700000047683716,
+        "clonesPerSevenInputs": 7,
+        "cloneInputBytes": 87696,
+        "cloneIncludesEvidenceSnapshot": true,
+        "textareas": 303
+      },
+      {
+        "label": "MinutesEditor-one-field-input",
+        "n": 1000,
+        "enterMs": 154.29999995231628,
+        "updateMedianMs": 15.200000047683716,
+        "maxMs": 17.100000143051147,
+        "clonesPerSevenInputs": 7,
+        "cloneInputBytes": 294321,
+        "cloneIncludesEvidenceSnapshot": true,
+        "textareas": 1010
+      },
+      {
+        "label": "MinutesEditor-one-field-input",
+        "n": 3000,
+        "enterMs": 422.2000000476837,
+        "updateMedianMs": 51.700000047683716,
+        "maxMs": 306.2000000476837,
+        "clonesPerSevenInputs": 7,
+        "cloneInputBytes": 895861,
+        "cloneIncludesEvidenceSnapshot": true,
+        "textareas": 3030
+      },
+      {
+        "label": "TranscriptHistory-never-opened",
+        "n": 3000,
+        "mountMs": 1.5,
+        "updateMedianMs": 0.2999999523162842,
+        "maxMs": 0.7000000476837158,
+        "elements": 4,
+        "segmentsArrayRebuilt": 7,
+        "iterations": 7
+      },
+      {
+        "label": "TranscriptHistory-loaded-collapsed",
+        "n": 3000,
+        "updateMedianMs": 0.2999999523162842,
+        "maxMs": 0.7000000476837158
+      }
+    ],
+    "schema": {
+      "sourceSha": "2a4e02f5aa35da8a7088e96fa66ac30739c243e0",
+      "scope": "exact browser fixture passes ordinary/aggregate domain validation and isolated real HTTP PATCH; fixture inserted through trusted test repository seam, not provider generation",
+      "rows": [
+        {
+          "n": 300,
+          "ordinaryValidation": "pass",
+          "aggregateValidation": "pass",
+          "canonicalValidation": "pass",
+          "sections": 3,
+          "maxItemsPerSection": 100,
+          "canonicalSections": 4,
+          "bodyTextCodeUnits": 11290,
+          "bodyTextUtf8Bytes": 32290,
+          "canonicalPatchBytes": 60475,
+          "serverBodyLimit": 600000,
+          "noChangeHttp": 200,
+          "actualRevisionHttp": 200,
+          "textWindows": 2,
+          "commitMaxSections": 150,
+          "multiWindowCommitValidation": "pass"
+        },
+        {
+          "n": 1000,
+          "ordinaryValidation": "pass",
+          "aggregateValidation": "pass",
+          "canonicalValidation": "pass",
+          "sections": 10,
+          "maxItemsPerSection": 100,
+          "canonicalSections": 11,
+          "bodyTextCodeUnits": 37890,
+          "bodyTextUtf8Bytes": 107890,
+          "canonicalPatchBytes": 202022,
+          "serverBodyLimit": 1412614,
+          "noChangeHttp": 200,
+          "actualRevisionHttp": 200,
+          "textWindows": 7,
+          "commitMaxSections": 400,
+          "multiWindowCommitValidation": "pass"
+        },
+        {
+          "n": 3000,
+          "ordinaryValidation": "invalid_minutes_schema",
+          "aggregateValidation": "pass",
+          "canonicalValidation": "pass",
+          "sections": 30,
+          "maxItemsPerSection": 100,
+          "canonicalSections": 31,
+          "bodyTextCodeUnits": 115890,
+          "bodyTextUtf8Bytes": 325890,
+          "canonicalPatchBytes": 612482,
+          "serverBodyLimit": 4145314,
+          "noChangeHttp": 200,
+          "actualRevisionHttp": 200,
+          "textWindows": 20,
+          "commitMaxSections": 1050,
+          "multiWindowCommitValidation": "pass"
+        }
+      ]
+    }
+  },
+  "backend": {
+    "dual70": {
+      "schema": "backend-storage-probe/v1",
+      "source": "v0.1.43 source 2a4e02f5 (parent supplied)",
+      "environment": {
+        "node": "v24.21.0",
+        "platform": "darwin",
+        "arch": "arm64",
+        "cpu": "Apple M4 Pro"
+      },
+      "method": "Warm sequential isolated SQLite WAL/FULL; compressed aggregate; fabricated one-second chunk metadata; 1 warmup and 7 samples. No provider, user audio, HTTP or real UI measurement.",
+      "results": [
+        {
+          "chunks": 8400,
+          "sourceCount": 2,
+          "timelineMinutes": 70,
+          "donePerSource": 4200,
+          "pendingPerSource": 0,
+          "segments": 1680,
+          "aggregateBytes": 5771509,
+          "get": {
+            "p50Ms": 11.64,
+            "sampleMaxMs": 12.87
+          },
+          "noOp": {
+            "p50Ms": 38.31,
+            "sampleMaxMs": 42.98
+          },
+          "emit": {
+            "p50Ms": 47.07,
+            "sampleMaxMs": 51.73
+          }
+        },
+        {
+          "chunks": 8400,
+          "sourceCount": 2,
+          "timelineMinutes": 70,
+          "donePerSource": 2100,
+          "pendingPerSource": 2100,
+          "segments": 840,
+          "aggregateBytes": 5447267,
+          "get": {
+            "p50Ms": 9.05,
+            "sampleMaxMs": 11.66
+          },
+          "noOp": {
+            "p50Ms": 35,
+            "sampleMaxMs": 41.21
+          },
+          "emit": {
+            "p50Ms": 140.53,
+            "sampleMaxMs": 149.37
+          }
+        }
+      ],
+      "listWork": {
+        "p50Ms": 9.44,
+        "sampleMaxMs": 11.62
+      },
+      "list": {
+        "p50Ms": 20.85,
+        "sampleMaxMs": 21.63
+      }
+    },
+    "workspaceIdle": {
+      "schema": "backend-workspace-idle-probe/v1",
+      "node": "v24.21.0",
+      "cpu": "Apple M4 Pro",
+      "historicalRecords": 20,
+      "chunksPerRecord": 3000,
+      "totalAggregateJsonBytes": 38079950,
+      "results": [
+        {
+          "completedAnalysisJobs": 0,
+          "recordListCallsAcross8Cycles": 0,
+          "decodedRecords": 0,
+          "p50CycleMs": 0.01,
+          "sampleMaxCycleMs": 0.02
+        },
+        {
+          "completedAnalysisJobs": 1,
+          "recordListCallsAcross8Cycles": 8,
+          "decodedRecords": 160,
+          "p50CycleMs": 64.33,
+          "sampleMaxCycleMs": 70.95
+        },
+        {
+          "completedAnalysisJobs": 2,
+          "recordListCallsAcross8Cycles": 16,
+          "decodedRecords": 320,
+          "p50CycleMs": 124.6,
+          "sampleMaxCycleMs": 132.47
+        }
+      ],
+      "method": "One warmup and seven sequential real workspace-worker cycles. Every analysis job is completed and unchanged. No ASR/LLM/network/audio files; SQLite compressed aggregates in temporary directory."
+    },
+    "fairness": {
+      "schema": "backend-fairness-probe/v1",
+      "node": "v24.21.0",
+      "blockers": 100,
+      "selectedRecords": 100,
+      "targetSelected": false,
+      "cyclesWhileBlocked": 3,
+      "transcribeCallsWhileBlocked": 0,
+      "targetStateWhileBlocked": "pending",
+      "elapsedMs": 28.98,
+      "control": {
+        "transcribeCalls": 1,
+        "targetState": "done"
+      },
+      "method": "Real runCycle audio lane, temporary SQLite, 100 records awaiting translation with no configured translation provider plus one fresh durable synthetic PCM chunk. Fake transcribe is injected; no external calls."
+    }
+  },
+  "native": {
+    "scope": "Original queue_input, Pipeline, PacketQueue and verbatim native producer cleanup; no device",
+    "rawSampleRate": 48000,
+    "outputSampleRate": 16000,
+    "queuedBlocks": 256,
+    "blockFrames": 480,
+    "partialFrames": 4800,
+    "normalSavedSamples": 42560,
+    "overloadSavedSamples": 0,
+    "overloadRawBlocksLeft": 256,
+    "independentReviewer": "network expert"
+  },
+  "network": {
+    "scope": "Production WS function against local stopped reader; in-memory busy/lease test; no remote provider",
+    "controls": [
+      {
+        "action": "resume",
+        "before": {
+          "observeMs": 1000,
+          "completedChunks": 1,
+          "stateError": null
+        },
+        "outcome": {
+          "settled": "fulfilled"
+        }
+      },
+      {
+        "action": "close",
+        "before": {
+          "observeMs": 1000,
+          "completedChunks": 1,
+          "stateError": null
+        },
+        "outcome": {
+          "settled": "rejected",
+          "error": "ECANCELED"
+        }
+      }
+    ],
+    "busyLease": {
+      "expiredLease": true,
+      "opens": 1,
+      "writes": 1,
+      "closes": 0,
+      "firstSettled": false,
+      "state": "running",
+      "afterUserSeal": {
+        "capture": "sealed",
+        "asrEnded": false,
+        "firstSettled": false,
+        "closes": 0
+      }
+    }
+  },
+  "independentRechecks": {
+    "reviewer": "architecture/root",
+    "storage": {
+      "schema": "backend-storage-probe/v1",
+      "source": "v0.1.43 source 2a4e02f5 (parent supplied)",
+      "environment": {
+        "node": "v24.21.0",
+        "platform": "darwin",
+        "arch": "arm64",
+        "cpu": "Apple M4 Pro"
+      },
+      "method": "Warm sequential isolated SQLite WAL/FULL; compressed aggregate; fabricated one-second chunk metadata; 1 warmup and 7 samples. No provider, user audio, HTTP or real UI measurement.",
+      "results": [
+        {
+          "chunks": 8400,
+          "sourceCount": 2,
+          "timelineMinutes": 70,
+          "donePerSource": 4200,
+          "pendingPerSource": 0,
+          "segments": 1680,
+          "aggregateBytes": 5771509,
+          "get": {
+            "p50Ms": 9.6,
+            "sampleMaxMs": 11.29
+          },
+          "noOp": {
+            "p50Ms": 28.68,
+            "sampleMaxMs": 32.7
+          },
+          "emit": {
+            "p50Ms": 35.66,
+            "sampleMaxMs": 39.04
+          }
+        },
+        {
+          "chunks": 8400,
+          "sourceCount": 2,
+          "timelineMinutes": 70,
+          "donePerSource": 2100,
+          "pendingPerSource": 2100,
+          "segments": 840,
+          "aggregateBytes": 5447267,
+          "get": {
+            "p50Ms": 7.68,
+            "sampleMaxMs": 11.32
+          },
+          "noOp": {
+            "p50Ms": 28.93,
+            "sampleMaxMs": 30.91
+          },
+          "emit": {
+            "p50Ms": 122.53,
+            "sampleMaxMs": 126.54
+          }
+        }
+      ],
+      "listWork": {
+        "p50Ms": 7.64,
+        "sampleMaxMs": 10.04
+      },
+      "list": {
+        "p50Ms": 15.7,
+        "sampleMaxMs": 19.11
+      }
+    },
+    "workspace": {
+      "schema": "backend-workspace-idle-probe/v1",
+      "node": "v24.21.0",
+      "cpu": "Apple M4 Pro",
+      "historicalRecords": 20,
+      "chunksPerRecord": 3000,
+      "totalAggregateJsonBytes": 38079950,
+      "results": [
+        {
+          "completedAnalysisJobs": 0,
+          "recordListCallsAcross8Cycles": 0,
+          "decodedRecords": 0,
+          "p50CycleMs": 0.01,
+          "sampleMaxCycleMs": 0.02
+        },
+        {
+          "completedAnalysisJobs": 1,
+          "recordListCallsAcross8Cycles": 8,
+          "decodedRecords": 160,
+          "p50CycleMs": 64.61,
+          "sampleMaxCycleMs": 69.64
+        },
+        {
+          "completedAnalysisJobs": 2,
+          "recordListCallsAcross8Cycles": 16,
+          "decodedRecords": 320,
+          "p50CycleMs": 126.8,
+          "sampleMaxCycleMs": 130.28
+        }
+      ],
+      "method": "One warmup and seven sequential real workspace-worker cycles. Every analysis job is completed and unchanged. No ASR/LLM/network/audio files; SQLite compressed aggregates in temporary directory."
+    },
+    "fairness": {
+      "schema": "backend-fairness-probe/v1",
+      "node": "v24.21.0",
+      "blockers": 100,
+      "selectedRecords": 100,
+      "targetSelected": false,
+      "cyclesWhileBlocked": 3,
+      "transcribeCallsWhileBlocked": 0,
+      "targetStateWhileBlocked": "pending",
+      "elapsedMs": 31.43,
+      "control": {
+        "transcribeCalls": 1,
+        "targetState": "done"
+      },
+      "method": "Real runCycle audio lane, temporary SQLite, 100 records awaiting translation with no configured translation provider plus one fresh durable synthetic PCM chunk. Fake transcribe is injected; no external calls."
+    },
+    "wsControls": [
+      {
+        "action": "resume",
+        "before": {
+          "observeMs": 1000,
+          "completedChunks": 1,
+          "stateError": null
+        },
+        "outcome": {
+          "settled": "fulfilled"
+        }
+      },
+      {
+        "action": "close",
+        "before": {
+          "observeMs": 1000,
+          "completedChunks": 1,
+          "stateError": null
+        },
+        "outcome": {
+          "settled": "rejected",
+          "error": "ECANCELED"
+        }
+      }
+    ],
+    "asrLease": {
+      "expiredLease": true,
+      "opens": 1,
+      "writes": 1,
+      "closes": 0,
+      "firstSettled": false,
+      "state": "running",
+      "afterUserSeal": {
+        "capture": "sealed",
+        "asrEnded": false,
+        "firstSettled": false,
+        "closes": 0
+      }
+    },
+    "topicEvidenceReads": 4804500
+  },
+  "regression": {
+    "tests": 67,
+    "passed": 67,
+    "failed": 0,
+    "skipped": 0,
+    "scope": "Existing selected functional regressions; no assertion of performance coverage"
+  },
+  "assessmentId": "performance-v0.1.43-20261029",
+  "findings": [
+    {
+      "id": "ARC-01",
+      "priority": "P1",
+      "classification": "reproduced-scoped",
+      "author": "architecture/root",
+      "independentReviewer": "network",
+      "state": "confirmed-unfixed"
+    },
+    {
+      "id": "NET-01",
+      "priority": "P1",
+      "classification": "reproduced-scoped",
+      "author": "network",
+      "independentReviewer": "architecture/root",
+      "state": "confirmed-unfixed"
+    },
+    {
+      "id": "BE-PERF-003",
+      "priority": "P1",
+      "classification": "reproduced-scoped",
+      "author": "backend",
+      "independentReviewer": "architecture/root",
+      "state": "confirmed-unfixed"
+    },
+    {
+      "id": "BE-PERF-004",
+      "priority": "P2",
+      "classification": "reproduced-scoped",
+      "author": "backend",
+      "independentReviewer": "architecture/root",
+      "state": "confirmed-unfixed"
+    },
+    {
+      "id": "BE-PERF-001",
+      "priority": "P2",
+      "classification": "reproduced-scoped",
+      "author": "backend",
+      "independentReviewer": "architecture/root",
+      "state": "confirmed-unfixed"
+    },
+    {
+      "id": "FE-01",
+      "priority": "P2",
+      "classification": "reproduced-scoped",
+      "author": "frontend",
+      "independentReviewer": "architecture/root",
+      "state": "confirmed-unfixed"
+    },
+    {
+      "id": "FE-02",
+      "priority": "P2",
+      "classification": "reproduced-scoped",
+      "author": "frontend",
+      "independentReviewer": "architecture/root",
+      "state": "confirmed-unfixed"
+    },
+    {
+      "id": "FE-03",
+      "priority": "P2",
+      "classification": "reproduced-scoped",
+      "author": "frontend",
+      "independentReviewer": "architecture/root",
+      "state": "confirmed-unfixed"
+    }
+  ]
+}
