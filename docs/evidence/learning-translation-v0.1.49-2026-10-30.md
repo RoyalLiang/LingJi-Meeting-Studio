@@ -1,6 +1,6 @@
-# v0.1.48 学习评审、翻译与播放验证
+# v0.1.49 学习评审、翻译与播放验证
 
-基线为 v0.1.47 源码 `5c4e154743bf5dd4f8726f0af4d311a451acf7a2`。本轮在独立工作树实施，原工作区的 IDE 与播放实验改动未纳入。用户已确认按新版全流程设计实现，设计存于 `dev_learning-translation-design-20261029` 分支提交 `890f99e` 的 `docs/design/prototypes/learning-translation-20261029.html`。
+实施基线为 v0.1.47 源码 `5c4e154743bf5dd4f8726f0af4d311a451acf7a2`；发布前合入 v0.1.48 安装器编译修复 `44d5941`。本轮在独立工作树实施，原工作区的 IDE 与播放实验改动未纳入。用户已确认按新版全流程设计实现，设计存于 `dev_learning-translation-design-20261029` 分支提交 `890f99e` 的 `docs/design/prototypes/learning-translation-20261029.html`。
 
 ## 已确认原因与修复
 
