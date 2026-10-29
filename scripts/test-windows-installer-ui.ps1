@@ -8,10 +8,14 @@ using System;
 using System.Runtime.InteropServices;
 public class LingJiInstallerWindow {
  [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left,Top,Right,Bottom; }
+ [DllImport("user32.dll")] public static extern bool IsWindowEnabled(IntPtr h);
+ [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h,out Rect r);
+ [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr h,ref Point p);
  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h,out Rect r);
  [StructLayout(LayoutKind.Sequential)] public struct Point { public int X,Y; }
  [DllImport("user32.dll")] public static extern bool ScreenToClient(IntPtr h,ref Point p);
  [DllImport("user32.dll")] public static extern IntPtr ChildWindowFromPointEx(IntPtr h,Point p,uint flags);
+ [DllImport("user32.dll")] public static extern IntPtr GetLastActivePopup(IntPtr h);
  [DllImport("user32.dll")] public static extern IntPtr GetDlgItem(IntPtr h,int id);
  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h,uint m,IntPtr w,IntPtr l);
  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
@@ -24,7 +28,9 @@ public class LingJiInstallerWindow {
 New-Item -ItemType Directory -Force $Root | Out-Null
 New-Item -ItemType Directory -Force $Screenshots | Out-Null
 $install=Join-Path $Root 'Visual Install'
+$background=$null;$setup=$null
 $previousModels=@{};$previousModelTimes=@{};$changedResource=$null;$expectedChangedHash=$null
+try {
 if($Upgrade){
   $seed=Start-Process -FilePath $Installer -ArgumentList "/S /D=$install" -Wait -PassThru
   if($seed.ExitCode -ne 0){throw 'Upgrade fixture install failed'}
@@ -43,6 +49,19 @@ if($Upgrade){
   if($installedKeys.Count -ne 1){throw 'Upgrade fixture registration missing or ambiguous'}
   # Exercise the real older-version branch, whose default would uninstall before copying.
   Set-ItemProperty -LiteralPath $installedKeys[0].PSPath -Name DisplayVersion -Value '0.0.0'
+  # Keep the installed runtime mapped without recording or touching user data.
+  $background=New-Object System.Diagnostics.Process
+  $background.StartInfo.FileName=Join-Path $install 'runtime/node.exe'
+  $background.StartInfo.Arguments='-e "process.stdin.resume()"'
+  $background.StartInfo.UseShellExecute=$false
+  $background.StartInfo.RedirectStandardInput=$true
+  $background.StartInfo.CreateNoWindow=$true
+  if(-not $background.Start()){throw 'Could not start installer occupancy fixture'}
+  Start-Sleep -Milliseconds 300
+  if($background.HasExited){throw 'Installer occupancy fixture exited early'}
+  $silent=Start-Process -FilePath $Installer -ArgumentList "/S /D=$install" -Wait -PassThru
+  if($silent.ExitCode -ne 2){throw 'Silent upgrade did not block the running backend'}
+  if((Get-FileHash -LiteralPath $changedResource -Algorithm SHA256).Hash -eq $expectedChangedHash){throw 'Blocked silent upgrade overwrote installed resources'}
 }
 $setup=Start-Process -FilePath $Installer -ArgumentList "/D=$install" -PassThru
 $script:handle=[IntPtr]::Zero
@@ -72,6 +91,23 @@ function Wait-Page([string]$text,[int]$seconds=30) {
  try {Capture-Page 'unexpected'}catch{Write-Host ('::warning title=Installer capture::'+$_.Exception.Message)}
  throw "Installer page missing: $text"
 }
+function Wait-RunningPrompt {
+ for($i=0;$i -lt 150;$i++){
+  $setup.Refresh();if($setup.HasExited){throw 'Installer exited instead of offering retry'}
+  $popup=[LingJiInstallerWindow]::GetLastActivePopup($script:handle)
+  if($popup -ne [IntPtr]::Zero -and $popup -ne $script:handle){
+   $dialog=[System.Windows.Automation.AutomationElement]::FromHandle($popup)
+   $names=@($dialog.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition) | ForEach-Object {$_.Current.Name})
+   if($names | Where-Object {$_ -like '聆记仍在后台运行。*'}){return $popup}
+  }
+  Start-Sleep -Milliseconds 200
+ }
+ throw 'Running backend retry prompt missing'
+}
+function Click-Retry([IntPtr]$popup) {
+ $retry=[LingJiInstallerWindow]::GetDlgItem($popup,4)
+ if($retry -eq [IntPtr]::Zero -or -not [LingJiInstallerWindow]::PostMessage($retry,0x00f5,[IntPtr]::Zero,[IntPtr]::Zero)){throw 'Installer Retry action missing'}
+}
 function Uncheck-Checkbox([string]$name) {
  $rootElement=[System.Windows.Automation.AutomationElement]::FromHandle($script:handle)
  $condition=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty,$name)
@@ -100,23 +136,33 @@ function Click-Next {
  if([LingJiInstallerWindow]::ChildWindowFromPointEx($script:handle,$point,0) -ne $button){throw 'Installer page covers the primary button'}
  if(-not [LingJiInstallerWindow]::PostMessage($script:handle,0x0111,[IntPtr]1,$button)){throw 'Installer next action could not be posted'}
 }
-function Capture-Page([string]$name) {
- [void][LingJiInstallerWindow]::SetForegroundWindow($script:handle)
+function Capture-Page([string]$name,[IntPtr]$target=[IntPtr]::Zero,[switch]$ThemedPrompt) {
+ if($target -eq [IntPtr]::Zero){$target=$script:handle}
+ [void][LingJiInstallerWindow]::SetForegroundWindow($target)
  Start-Sleep -Milliseconds 400
  $rectangle=New-Object LingJiInstallerWindow+Rect
- if(-not [LingJiInstallerWindow]::GetWindowRect($script:handle,[ref]$rectangle)){throw 'Installer rectangle unavailable'}
+ if(-not [LingJiInstallerWindow]::GetWindowRect($target,[ref]$rectangle)){throw 'Installer rectangle unavailable'}
  $width=$rectangle.Right-$rectangle.Left;$height=$rectangle.Bottom-$rectangle.Top
- if($width -lt 600 -or $height -lt 400){throw "Installer size too small: $width x $height"}
+ if(($ThemedPrompt -and ($width -lt 500 -or $height -lt 240)) -or (-not $ThemedPrompt -and ($width -lt 600 -or $height -lt 400))){throw "Installer size too small: $width x $height"}
  $bitmap=New-Object System.Drawing.Bitmap($width,$height,[System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
  $graphics=[System.Drawing.Graphics]::FromImage($bitmap)
  try {
   $captured=$false
-  if([LingJiInstallerWindow]::GetForegroundWindow() -eq $script:handle) {
+  if([LingJiInstallerWindow]::GetForegroundWindow() -eq $target) {
    try {$graphics.CopyFromScreen($rectangle.Left,$rectangle.Top,0,0,$bitmap.Size);$captured=$true}catch{}
   }
   if(-not $captured) {
    $dc=$graphics.GetHdc()
-   try {if(-not [LingJiInstallerWindow]::PrintWindow($script:handle,$dc,2)){throw 'Installer PrintWindow failed'}}finally{$graphics.ReleaseHdc($dc)}
+   try {if(-not [LingJiInstallerWindow]::PrintWindow($target,$dc,2)){throw 'Installer PrintWindow failed'}}finally{$graphics.ReleaseHdc($dc)}
+  }
+  if($ThemedPrompt){
+   if([LingJiInstallerWindow]::IsWindowEnabled($script:handle)){throw 'Retry prompt must block installer actions'}
+   $client=New-Object LingJiInstallerWindow+Rect
+   if(-not [LingJiInstallerWindow]::GetClientRect($target,[ref]$client)){throw 'Retry client bounds missing'}
+   $sample=New-Object LingJiInstallerWindow+Point;$sample.X=8;$sample.Y=$client.Bottom-8
+   if(-not [LingJiInstallerWindow]::ClientToScreen($target,[ref]$sample)){throw 'Retry pixel position missing'}
+   $color=$bitmap.GetPixel($sample.X-$rectangle.Left,$sample.Y-$rectangle.Top)
+   if($color.G -le $color.R -or $color.G-$color.B -lt 3){throw 'Retry dialog did not use the application green background'}
   }
   $path=Join-Path $Screenshots "$name.jpg"
   $codec=[System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object {$_.MimeType -eq 'image/jpeg'}
@@ -138,7 +184,6 @@ function Capture-Page([string]$name) {
 
  } finally {$graphics.Dispose();$bitmap.Dispose()}
 }
-try {
  Wait-Page '安装聆记'
  $initialWindow=$script:handle
  Wait-Page '安装本地 SenseVoice 离线转录模型（推荐）'
@@ -146,6 +191,17 @@ try {
  Capture-Page 'welcome'
  Capture-Page 'settings'
  Click-Next
+ if($Upgrade){
+  $popup=Wait-RunningPrompt
+  Capture-Page 'running-backend-retry' $popup -ThemedPrompt
+  Click-Retry $popup
+  Start-Sleep -Milliseconds 300
+  $popup=Wait-RunningPrompt
+  if((Get-FileHash -LiteralPath $changedResource -Algorithm SHA256).Hash -eq $expectedChangedHash){throw 'Busy retry overwrote installed resources'}
+  $background.StandardInput.Close()
+  if(-not $background.WaitForExit(10000)){throw 'Occupancy fixture failed to exit safely'}
+  Click-Retry $popup
+ }
  Start-Sleep -Milliseconds 200
  $progressRoot=[System.Windows.Automation.AutomationElement]::FromHandle($script:handle)
  $progressCondition=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty,'正在安装聆记')
@@ -165,7 +221,7 @@ try {
    if([IO.File]::GetLastWriteTimeUtc($path).Ticks -ne $previousModelTimes[$path]){throw 'Upgrade rewrote an unchanged model file'}
    if(-not (Test-Path -LiteralPath $path) -or (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne $previousModels[$path]){throw 'Upgrade opt-out removed or replaced an existing model file'}
   }
-  [IO.File]::WriteAllText((Join-Path $Root 'upgrade-model-smoke.json'),(@{existingModelPreserved=$true;verifiedModelFiles=$previousModels.Count;olderVersionFixture=$true;unchangedModelsNotRewritten=$true;changedResourceUpdated=$true;singleInstallerWindow=$true} | ConvertTo-Json))
+  [IO.File]::WriteAllText((Join-Path $Root 'upgrade-model-smoke.json'),(@{existingModelPreserved=$true;verifiedModelFiles=$previousModels.Count;olderVersionFixture=$true;unchangedModelsNotRewritten=$true;changedResourceUpdated=$true;singleInstallerWindow=$true;runningBackendRetry=$true;silentBusyBlocked=$true} | ConvertTo-Json))
  }elseif($WithoutModel){
   if(Test-Path $model){throw 'Opt-out still installed local model assets'}
   $modelRoot=Split-Path $model -Parent
@@ -184,7 +240,8 @@ try {
  Write-Host ('::error title=Native installer UI::'+$_.Exception.Message.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A'))
  throw
 } finally {
- if(-not $setup.HasExited){$setup.Kill();$setup.WaitForExit()}
+ if($background -and -not $background.HasExited){$background.StandardInput.Close();if(-not $background.WaitForExit(5000)){$background.Kill();$background.WaitForExit()}}
+ if($setup -and -not $setup.HasExited){$setup.Kill();$setup.WaitForExit()}
  $remove=Join-Path $install 'uninstall.exe'
  if(Test-Path $remove){$p=Start-Process -FilePath $remove -ArgumentList '/S' -Wait -PassThru;if($p.ExitCode -ne 0){throw 'Visual probe cleanup failed'}}
 }

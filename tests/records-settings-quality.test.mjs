@@ -98,10 +98,27 @@ test('audio-only settings render the shared model fields and omit independent AS
  const states=[config,'doubao','','',false,config];let cursor=0;
  const sandbox={exports:{},React:{Fragment:'fragment',createElement:(tag,attributes,...children)=>({tag:typeof tag==='string'?tag:'component',attributes,children})},useState:()=>[states[cursor++],()=>{}],useRef:value=>({current:value}),useEffect(){},useCallback:fn=>fn,Button(){},Status(){},Select(){},Toast(){},CloudCheck(){},GearSix(){},Plug(){}};
  vm.runInNewContext(code,sandbox);const result=JSON.stringify(sandbox.exports.render({saved:async()=>{}}));
- assert.match(result,/doubao-audio-only/);assert.match(result,/LLM_API_KEY/);assert.doesNotMatch(result,/DOUBAO_API_KEY|name":"ASR_PROVIDER/);
- assert.doesNotMatch(result,/fine-print|15 秒短批次/);
+ assert.match(result,/doubao-audio-only/);assert.match(result,/LLM_API_KEY/);assert.doesNotMatch(result,/DOUBAO_API_KEY/);assert.match(result,/name":"ASR_PROVIDER/);
+ assert.doesNotMatch(result,/fine-print|15 秒短批次|当前输入方式由 AI 纪要模型同时提供转录/);
  const nodes=value=>value && typeof value==='object'?[value,...Object.values(value).flatMap(nodes)]:[];
  const effort=nodes(JSON.parse(result)).find(node=>node.attributes?.name==='LLM_REASONING_EFFORT');
  assert.deepEqual(effort.attributes.options.map(option=>option.label),['自动','低','中','高','更高']);
  assert.doesNotMatch(source,/DOUBAO_AST_|旧版双密钥/);
+});
+
+
+test('provider settings stay visible while loading and keep the transcription selector in audio-only mode', async () => {
+  const source = await readFile(new URL('../apps/web/src/components/ProviderSettings.tsx', import.meta.url), 'utf8');
+  const code = (await transform(source.replace(/^import .*$/gm, '').replace('export function', 'function') + '\nexports.render=ProviderSettings;', { loader: 'tsx' })).code;
+  for (const config of [null, { MINUTES_MODE: 'doubao-audio-only', ASR_PROVIDER: 'doubao', LLM_PROTOCOL: 'responses' }]) {
+    const states = [config, 'doubao', '', '', false, config || {}]; let cursor = 0;
+    const sandbox = { exports: {}, React: { Fragment: 'fragment', createElement: (tag, attributes, ...children) => ({tag: typeof tag === 'string' ? tag : 'component', attributes, children}) }, useState: () => [states[cursor++], () => {}], useRef: value => ({current: value}), useEffect() {}, useCallback: fn => fn, createPortal: children => children, Button() {}, Status() {}, Select() {}, Toast() {}, CloudCheck() {}, GearSix() {}, Plug() {} };
+    vm.runInNewContext(code, sandbox);
+    const result = JSON.stringify(sandbox.exports.render({saved: async () => {}, actionsTarget: {}}));
+    assert.match(result, /模型与转录服务/);
+    assert.match(result, /ASR_PROVIDER/);
+    assert.match(result, /MINUTES_MODE/);
+    assert.match(result, /provider-settings/);
+    if (!config) assert.match(result, /"aria-busy":true/);
+  }
 });

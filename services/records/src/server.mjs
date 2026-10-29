@@ -324,7 +324,7 @@ export async function createRecordServer(options = {}) {
       const body = await readBody(req, bodyLimit);
       let result;
       if (action === 'corrections' && req.method === 'POST') {
-        const vocabulary = await loadVocabulary(repo, user.id, record.workspaceId || 'inbox');
+        const vocabulary = await loadVocabulary(repo, user.id);
         requireThat(body.fingerprint === vocabulary.fingerprint, 'vocabulary_revision_conflict', 409);
         result = await changeOwned(id, user, r => {
           requireThat(r.workspaceId === record.workspaceId, 'vocabulary_revision_conflict', 409);

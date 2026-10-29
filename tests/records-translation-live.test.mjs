@@ -17,7 +17,7 @@ async function fixture(){
 }
 test('live ASR text is translated before a confirmed transcript segment exists',async()=>{
  const f=await fixture();try{
-  const calls=[];await runCycle(f.repo,{translate:async text=>{calls.push(text);return 'Discussing live translation';}},{lane:'translation-live'});
+  const calls=[];await runCycle(f.repo,{translate:async text=>{calls.push(text);return 'Discussing live translation';}},{lane:'translation-preview'});
   const r=await f.repo.get(f.record.id);
   assert.deepEqual(calls,['当前正在讨论实时翻译']);assert.equal(r.segments.length,0);
   assert.equal(r.sources[0].asr.translation.text,'Discussing live translation');
@@ -28,7 +28,7 @@ test('live ASR text is translated before a confirmed transcript segment exists',
 test('unchanged provisional text is translated once and private leases stay server-side',async()=>{
  const f=await fixture();try{
   let calls=0;const provider={translate:async()=>{calls++;return 'Live output';}};
-  await runCycle(f.repo,provider,{lane:'translation-live'});await runCycle(f.repo,provider,{lane:'translation-live'});
+  await runCycle(f.repo,provider,{lane:'translation-preview'});await runCycle(f.repo,provider,{lane:'translation-preview'});
   assert.equal(calls,1);
   const visible=publicRecord(await f.repo.get(f.record.id)).sources[0].asr.translation;
   assert.equal(visible.text,'Live output');assert.equal(visible.fence,undefined);assert.equal(visible.requestedAt,undefined);
@@ -38,7 +38,7 @@ test('unchanged provisional text is translated once and private leases stay serv
 for(const change of ['correction','new-utterance','pause','language'])test(`provisional translation cannot overwrite ${change}`,async()=>{
  const f=await fixture();try{
   let release;
-  const work=runCycle(f.repo,{translate:()=>new Promise(resolve=>{release=resolve;})},{lane:'translation-live'});
+  const work=runCycle(f.repo,{translate:()=>new Promise(resolve=>{release=resolve;})},{lane:'translation-preview'});
   while(!release)await new Promise(resolve=>setImmediate(resolve));
   await f.repo.change(f.record.id,r=>{
    if(change==='pause'||change==='language')setTranslationTarget(r,change==='pause'?'':'ja',requireThat);
@@ -52,7 +52,7 @@ for(const change of ['correction','new-utterance','pause','language'])test(`prov
 
 test('a translated prefix remains provisional during append and never commits transcript text',async()=>{
  const f=await fixture();try{
-  let release;const work=runCycle(f.repo,{translate:()=>new Promise(resolve=>{release=resolve;})},{lane:'translation-live'});
+  let release;const work=runCycle(f.repo,{translate:()=>new Promise(resolve=>{release=resolve;})},{lane:'translation-preview'});
   while(!release)await new Promise(resolve=>setImmediate(resolve));
   await f.repo.change(f.record.id,r=>{r.sources[0].asr.preview.text+='，并核对版本';});
   release('Discussing live translation');await work;
@@ -74,7 +74,7 @@ test('a slow historical request never blocks the new confirmed utterance lane',a
 
 test('exact provisional output is reused after confirmation without another model request',async()=>{
  const f=await fixture();try{
-  await runCycle(f.repo,{translate:async()=> 'Cached output'},{lane:'translation-live'});
+  await runCycle(f.repo,{translate:async()=> 'Cached output'},{lane:'translation-preview'});
   await f.repo.change(f.record.id,r=>{r.capture='completed';r.sources[0].asr.preview=null;r.sources[0].asr.state='completed';r.segments=[{id:'final',sourceId:'mic',revision:1,text:'当前正在讨论实时翻译',startMs:1000,endMs:2000}];});
   let calls=0;await runCycle(f.repo,{translate:async()=>{calls++;return 'Duplicate';}},{lane:'translation'});
   assert.equal(calls,0);assert.equal((await f.repo.get(f.record.id)).segments[0].translation,'Cached output');
@@ -97,4 +97,18 @@ test('single-sentence retry preserves settings and rejects stale language or rev
   const r=await f.repo.get(f.record.id);assert.equal(r.translationTarget,'en');assert.equal(r.translationRevision,1);
   assert.equal(r.segments[0].translationError,undefined);assert.equal(r.segments[0].translationAttempts,undefined);
  }finally{if(app)await app.stop();else await f.repo.close();await rm(f.root,{recursive:true,force:true});}
+});
+
+
+test('a slow recent confirmed sentence cannot occupy the current speech lane',async()=>{
+ const f=await fixture();let release,confirmed;
+ try{
+  await f.repo.change(f.record.id,r=>{r.segments=[{id:'confirmed',revision:1,text:'刚确认的发言',startMs:0,endMs:1000}];});
+  confirmed=runCycle(f.repo,{translate:()=>new Promise(resolve=>{release=resolve;})},{lane:'translation-live'});
+  while(!release)await new Promise(resolve=>setImmediate(resolve));
+  let request;
+  await runCycle(f.repo,{translate:async(text,target,config,options)=>{request={text,target,options};return 'Current speech';}},{lane:'translation-preview'});
+  assert.equal(request.text,'当前正在讨论实时翻译');assert.equal(request.options.timeoutMs,8000);
+  assert.equal((await f.repo.get(f.record.id)).sources[0].asr.translation.text,'Current speech');
+ }finally{if(release)release('Confirmed speech');if(confirmed)await confirmed;await f.close();}
 });
