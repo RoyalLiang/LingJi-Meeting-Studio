@@ -7,9 +7,11 @@ import { api, messageOf } from '../api';
 import { canCreateShareLinks, createShareDocument, minutesForShare, shareFilename, type ShareScope } from '../share-content';
 import { Button, Modal } from './ui';
 import { Select } from './Select';
+import { createPublishedContent } from '../../../../packages/records/src/published-content.mjs';
 import './ShareDialog.css';
 
 interface ShareLink { id: string; scope: string; expires: number; revoked: boolean }
+const publishPage = 'https://lingji-meeting-studio-beta.pages.dev/publish';
 
 export function ShareDialog({ record, localAccount, close, notify }: { record: RecordDetail; localAccount: boolean; close: () => void; notify: (message: string) => void }) {
   const linksAvailable = canCreateShareLinks(localAccount, location.origin);
@@ -50,10 +52,12 @@ export function ShareDialog({ record, localAccount, close, notify }: { record: R
     } catch (error) { if (mounted.current) setError(messageOf(error)); }
     finally { request.current = false; if (mounted.current) setBusy(false); }
   }
-  function exportFile() {
+  function exportFile(online = false) {
     setError('');
     try {
-      const file = { url: URL.createObjectURL(new Blob([createShareDocument(record, scope)], { type: 'text/html;charset=utf-8' })), name: shareFilename(record.title) };
+      const content = online ? JSON.stringify(createPublishedContent(record, scope)) : createShareDocument(record, scope);
+      if (online && new TextEncoder().encode(content).length > 2 * 1024 * 1024 - 1024) throw new Error('内容超过在线分享的 2 MiB 限额，请改选仅纪要或导出 HTML 文件。');
+      const file = { url: URL.createObjectURL(new Blob([content], { type: online ? 'application/json;charset=utf-8' : 'text/html;charset=utf-8' })), name: shareFilename(record.title).replace(/\.html$/, online ? '.lingji.json' : '.html') };
       setPrepared(file);
       beginDownload(file.url);
       const link = document.createElement('a'); link.href = file.url; link.download = file.name; document.body.append(link); link.click(); link.remove();
@@ -75,7 +79,8 @@ export function ShareDialog({ record, localAccount, close, notify }: { record: R
       ]}/></label>
       {!hasContent && <p className="meeting-share-empty" role="status">有会议内容后即可分享。</p>}
       {error && <p className="notice error" role="alert">{error}</p>}
-      <div className="actions meeting-share-actions">{linksAvailable ? <Button variant="primary" disabled={busy || !hasContent} onClick={() => void generateLink()}><LinkSimple size={18}/>{busy ? '正在生成…' : '生成分享链接'}</Button> : <Button variant="primary" disabled={!hasContent || !downloadReady || downloading} onClick={exportFile}><DownloadSimple size={18}/>{downloading ? '正在保存…' : '导出分享文件'}</Button>}{prepared && !downloading && <a className="meeting-share-retry" href={prepared.url} download={prepared.name} onClick={() => { setError(''); beginDownload(prepared.url); }}>重新下载</a>}</div>
+      <div className="actions meeting-share-actions">{linksAvailable ? <Button variant="primary" disabled={busy || !hasContent} onClick={() => void generateLink()}><LinkSimple size={18}/>{busy ? '正在生成…' : '生成分享链接'}</Button> : <Button variant="primary" disabled={!hasContent || !downloadReady || downloading} onClick={() => exportFile()}><DownloadSimple size={18}/>{downloading ? '正在保存…' : '导出 HTML 分享文件'}</Button>}{prepared && !downloading && <a className="meeting-share-retry" href={prepared.url} download={prepared.name} onClick={() => { setError(''); beginDownload(prepared.url); }}>重新下载</a>}</div>
+      <section className="meeting-share-existing"><h3>发布为在线纪要</h3><p className="meeting-share-empty">导出文件后，在发布页预览并确认上传。原音不会上传；链接 24 小时有效。删除本机会议不会自动撤销，请在发布页管理链接。</p><div className="actions meeting-share-actions"><Button disabled={!hasContent || !downloadReady || downloading} onClick={() => exportFile(true)}><DownloadSimple size={18}/>导出在线分享文件</Button>{native ? <Button onClick={async () => { try { await navigator.clipboard.writeText(publishPage); notify('发布页地址已复制，请在浏览器打开。'); } catch { setError('复制失败，请选中下方地址手动复制。'); } }}><Copy size={18}/>复制发布页地址</Button> : <a href={publishPage} target="_blank" rel="noopener noreferrer">打开发布页 ↗</a>}</div>{native && <label>在浏览器打开<input readOnly value={publishPage} onFocus={event => event.currentTarget.select()}/></label>}</section>
       {url && <div className="meeting-share-link"><label>只读链接<input readOnly value={url} onFocus={event => event.currentTarget.select()}/></label><Button aria-label="复制分享链接" onClick={async () => { setError(''); try { await navigator.clipboard.writeText(url); notify('分享链接已复制。'); } catch { setError('复制未成功，请选中链接手动复制。'); } }}><Copy size={18}/>复制</Button></div>}
       {activeLinks.length > 0 && <section className="meeting-share-existing"><h3><Check size={16}/>有效链接</h3>{activeLinks.map(link => <div className="meeting-share-row" key={link.id}><span>{link.scope === 'minutes' ? '仅纪要' : '纪要与转录'}<small>{new Date(link.expires).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 到期</small></span><Button variant="ghost" disabled={busy} onClick={async () => {
         if (request.current) return; request.current = true; setBusy(true); setError('');
