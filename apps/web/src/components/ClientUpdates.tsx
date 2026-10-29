@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { version } from '../../../../package.json';
+import type { UpdateStatus } from '../client-updates';
 import { ArrowUp, ArrowsClockwise, DownloadSimple } from '@phosphor-icons/react';
 import type { useClientUpdates } from '../useClientUpdates';
 import { Button, Modal } from './ui';
@@ -17,7 +19,7 @@ export function ClientUpdatesPanel({ updates }: { updates: ReturnType<typeof use
   return <section className="settings-section client-updates" aria-label="版本更新">
     <div className="client-update-heading">
       <div className="section-title"><ArrowsClockwise size={19}/><h3>版本更新</h3></div>
-      <span className="client-update-version">v{status.currentVersion || '读取中'}{status.version && status.version!==status.currentVersion && <span className="client-update-available" role="img" aria-label={`可升级至 v${status.version}`} title={`可升级至 v${status.version}`}><ArrowUp size={10} weight="bold" aria-hidden="true"/></span>}</span>
+
       <div className="client-update-policy">
         <Select label="更新策略" value={updatePolicy(settings)} disabled={busy} onChange={value => saveSettings(preferencesForPolicy(value))} options={[
           {value:'manual',label:'手动检查'}, {value:'check',label:'自动检查'}, {value:'background',label:'自动检查并后台下载'}
@@ -45,4 +47,9 @@ export function ClientUpdateActions({ updates }: { updates: ReturnType<typeof us
   const ready = status.phase === 'ready', background = updatePolicy(settings) === 'background';
   return <div className="actions"><Button disabled={busy || status.phase === 'disabled' || (background && !ready) || (ready && Boolean(installReason))}
     title={ready ? installReason || '使用已校验的更新安装包' : background ? '下载并校验完成后可更新' : '检查并下载更新，校验完成后继续安装'} onClick={() => void updates.update()}><DownloadSimple size={17}/>{ready || background ? '立即更新' : '下载并更新'}</Button></div>;
+}
+
+export function ClientVersion({ status }: { status: UpdateStatus }) {
+  const currentVersion = status.currentVersion || version;
+  return <span className="client-update-version">v{currentVersion}{status.version && status.version !== currentVersion && <span className="client-update-available" role="img" aria-label={`可升级至 v${status.version}`} title={`可升级至 v${status.version}`}><ArrowUp size={10} weight="bold" aria-hidden="true"/></span>}</span>;
 }
