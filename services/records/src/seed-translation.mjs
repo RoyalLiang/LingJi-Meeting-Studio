@@ -27,12 +27,12 @@ export function translationChunks(text, limit = 768) {
   return chunks;
 }
 
-export async function translateSeedText(text, target, config) {
+export async function translateSeedText(text, target, config, {timeoutMs=120000}={}) {
   const { url, key, model } = translationConnection({...config,TRANSLATION_PROVIDER:'doubao-seed'});
   requireThat(url && key && !/^(your[-_]|replace|mock|<|xxx)/i.test(key), 'translation_not_configured', 503);
   requireThat(['zh', 'en', 'ja', 'es', 'fr', 'de'].includes(target), 'invalid_translation_target', 400);
   requireThat(typeof text === 'string' && text.trim() && text.length <= 8000, 'invalid_translation_text', 422);
-  const translated = [], deadline = AbortSignal.timeout(120000);
+  const translated = [], deadline = AbortSignal.timeout(timeoutMs);
   for (const chunk of translationChunks(text)) {
     let response;
     try {

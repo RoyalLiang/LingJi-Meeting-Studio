@@ -1037,3 +1037,5 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 .settings-modal .provider-form>label,.settings-modal .provider-form>.settings-heading-row{display:grid;grid-template-columns:var(--settings-label-column) minmax(0,1fr);align-items:center;gap:8px 12px}
 .settings-modal .provider-form>.settings-heading-row>.select{width:100%;min-width:0}
 .settings-modal .provider-form :is(h3,h4){color:var(--ink-1)}
+
+.meeting-share-preview{padding:18px;border:1px solid var(--border);border-radius:12px;background:var(--panel-2);}.meeting-share-preview h4{font-size:15px;margin-bottom:12px;}.meeting-share-preview p{font-size:13px;line-height:1.85;margin-top:10px;overflow-wrap:anywhere;}

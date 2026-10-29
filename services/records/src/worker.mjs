@@ -21,6 +21,7 @@ import { commitIntents, ruleIntents } from '../../../packages/records/src/intent
 import { providerStatus, analyzeIntents, generateMinutes, minutesTimeoutMs, transcribe, translateText } from './providers.mjs';
 
 import { processRealtimeAudio, generateRealtimeMinutes, closeRealtime, reconcileRealtime, realtimeEnabled } from './realtime-minutes.mjs';
+import { processTranslation } from './translation-worker.mjs';
 import { minutesModelVersion } from './config.mjs';
 
 export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
@@ -90,27 +91,9 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
     // Two independent sources can progress together; a source remains strictly ordered.
     await Promise.all([processAudio(), processAudio(), realtimeWork]);
     }
-    if (lane === 'all' || lane === 'translation') {
-      let claim;
-      await repo.change(candidate.id, r => {
-        if (r.deleted || !r.translationTarget || (!providers.translate && !providerStatus(config).translation)) return;
-        const segment = r.segments.find(s => s.translationLanguage !== r.translationTarget && (s.translationAttempts || 0) < 3 && (s.translationLease || 0) <= Date.now() && (s.translationRetryAt || 0) <= Date.now());
-        if (!segment) return;
-        segment.translationLease = Date.now() + 150000; segment.translationFence = randomUUID();
-        claim = { id: segment.id, revision: segment.revision, text: segment.text, target: r.translationTarget, generation: r.generation, settingsRevision: r.translationRevision || 0, fence: segment.translationFence };
-      });
-      if (claim) try {
-        const text = await (providers.translate || translateText)(claim.text, claim.target, config);
-        await repo.change(candidate.id, r => {
-          const s = r.segments.find(s => s.id === claim.id);
-          if (!s || r.deleted || r.generation !== claim.generation || s.revision !== claim.revision || r.translationTarget !== claim.target || (r.translationRevision || 0) !== claim.settingsRevision || s.translationFence !== claim.fence) return;
-          s.translation = text; s.translationLanguage = claim.target; delete s.translationLease; delete s.translationFence; delete s.translationError; delete s.translationAttempts; delete s.translationRetryAt;
-          emit(r, 'transcript.translated', {segmentId: s.id});
-        });
-      } catch (error) { await repo.change(candidate.id, r => {
-        const s = r.segments.find(s => s.id === claim.id); if (!s || r.deleted || r.generation !== claim.generation || s.revision !== claim.revision || r.translationTarget !== claim.target || (r.translationRevision || 0) !== claim.settingsRevision || s.translationFence !== claim.fence) return;
-        s.translationAttempts = (s.translationAttempts || 0) + 1; s.translationError = error.code || 'translation_failed'; s.translationRetryAt = Date.now() + 60000; delete s.translationLease; delete s.translationFence; emit(r, 'transcript.translation_failed', {segmentId:s.id});
-      }); }
+    if (['all','translation','translation-live'].includes(lane) && (providers.translate || providerStatus(config).translation)) {
+      await processTranslation(repo,candidate.id,(text,target,options)=>(providers.translate || translateText)(text,target,config,options),
+        lane === 'translation-live' ? 'live' : lane === 'translation' ? 'history' : 'all');
     }
     const updated = await repo.get(candidate.id);
     if ((lane === 'all' || lane === 'intents') && !updated.deleted && updated.segments.length && updated.insights?.transcriptRevision !== updated.transcriptRevision && (updated.intentRetryAt || 0) <= Date.now()) {
@@ -216,7 +199,7 @@ export async function startWorker() {
   const repo = await createRepository(); let stop = false;
   process.on('SIGTERM', () => { stop = true; }); process.on('SIGINT', () => { stop = true; });
   console.log(`[record-worker] ${repo.backend}; durable audio and minutes queue`);
-  await Promise.all(['audio', 'realtime', 'minutes', 'intents', 'translation', 'workspace', 'learning'].map(async lane => {
+  await Promise.all(['audio', 'realtime', 'minutes', 'intents', 'translation', 'translation-live', 'workspace', 'learning'].map(async lane => {
   while (!stop) {
    try { await runCycle(repo, {}, { lane }); } catch (e) { console.error('[record-worker]', lane, e.code || e.name); }
    await new Promise(resolve => setTimeout(resolve, lane === 'audio' ? 250 : 500));
