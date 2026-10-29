@@ -65,7 +65,23 @@ export async function createRepository(options = {}) {
     await pool.query('CREATE TABLE IF NOT EXISTS record_feed_meta(id text PRIMARY KEY, data jsonb NOT NULL)');
     await pool.query('CREATE TABLE IF NOT EXISTS record_feed_events(record_id text NOT NULL, cursor text NOT NULL, data jsonb NOT NULL, PRIMARY KEY(record_id,cursor))');
   } else db.exec('CREATE TABLE IF NOT EXISTS record_list_projection(id TEXT PRIMARY KEY,data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS record_feed_meta(id TEXT PRIMARY KEY,data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS record_feed_events(record_id TEXT NOT NULL,cursor TEXT NOT NULL,data TEXT NOT NULL,PRIMARY KEY(record_id,cursor))');
-  function writeSqliteProjection(value, before) {
+  const shareSchema = 'CREATE TABLE IF NOT EXISTS record_share_index(hash TEXT PRIMARY KEY, record_id TEXT NOT NULL, expires BIGINT NOT NULL); CREATE INDEX IF NOT EXISTS record_share_record ON record_share_index(record_id); CREATE TABLE IF NOT EXISTS record_share_schema(version INTEGER PRIMARY KEY)';
+  if (pool) for (const statement of shareSchema.split(';').map(s => s.trim()).filter(Boolean)) await pool.query(statement);
+  else db.exec(shareSchema);
+  const shareState = value => value.kind === 'record' ? JSON.stringify([value.deleted, value.deleteAt, value.shares]) : '';
+  const activeShares = value => value.deleted ? [] : (value.shares || []).filter(share => !share.revoked).map(share => ({ ...share, expires: Math.min(share.expires, Date.parse(value.deleteAt)) }));
+  function writeSqliteShares(value, previous) {
+    if (value.kind !== 'record' || previous === shareState(value)) return;
+    db.prepare('DELETE FROM record_share_index WHERE record_id=?').run(value.id);
+    for (const share of activeShares(value)) db.prepare('INSERT INTO record_share_index(hash,record_id,expires) VALUES(?,?,?)').run(share.hash, value.id, share.expires);
+  }
+  async function writePgShares(client, value, previous) {
+    if (value.kind !== 'record' || previous === shareState(value)) return;
+    await client.query('DELETE FROM record_share_index WHERE record_id=$1', [value.id]);
+    for (const share of activeShares(value)) await client.query('INSERT INTO record_share_index(hash,record_id,expires) VALUES($1,$2,$3)', [share.hash, value.id, share.expires]);
+  }
+  function writeSqliteProjection(value, before, previousShares) {
+    writeSqliteShares(value, previousShares);
     const projection=deriveProjection(value,before); if(!projection)return;
     db.prepare('INSERT INTO record_list_projection(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(value.id,JSON.stringify(projection.list));
     db.prepare('INSERT INTO record_feed_meta(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(value.id,JSON.stringify(projection.meta));
@@ -73,7 +89,8 @@ export async function createRepository(options = {}) {
     for(const event of projection.events) db.prepare('INSERT INTO record_feed_events(record_id,cursor,data) VALUES(?,?,?) ON CONFLICT(record_id,cursor) DO UPDATE SET data=excluded.data').run(value.id,cursorKey(event.cursor),JSON.stringify(event));
     db.prepare('DELETE FROM record_feed_events WHERE record_id=? AND cursor<?').run(value.id,cursorKey(projection.meta.first));
   }
-  async function writePgProjection(client,value,before) {
+  async function writePgProjection(client,value,before,previousShares) {
+    await writePgShares(client,value,previousShares);
     const projection=deriveProjection(value,before); if(!projection)return;
     await client.query('INSERT INTO record_list_projection(id,data) VALUES($1,$2) ON CONFLICT(id) DO UPDATE SET data=excluded.data',[value.id,JSON.stringify(projection.list)]);
     await client.query('INSERT INTO record_feed_meta(id,data) VALUES($1,$2) ON CONFLICT(id) DO UPDATE SET data=excluded.data',[value.id,JSON.stringify(projection.meta)]);
@@ -105,6 +122,10 @@ export async function createRepository(options = {}) {
     root, backend: pool ? 'postgres' : 'sqlite', audioBackend: objects ? 's3' : 'filesystem',
     async get(id) { return decode(pool ? (await pool.query('SELECT data FROM record_aggregates WHERE id=$1', [id])).rows[0]
       : db.prepare('SELECT data FROM aggregates WHERE id=?').get(id)); },
+    async findShare(hash) {
+      const row = pool ? (await pool.query('SELECT record_id FROM record_share_index WHERE hash=$1 AND expires>$2', [hash, Date.now()])).rows[0] : db.prepare('SELECT record_id FROM record_share_index WHERE hash=? AND expires>?').get(hash, Date.now());
+      return row ? repository.get(row.record_id) : null;
+    },
     async listSummaries(owner,scope='all',query='') {
       const rows=pool ? (await pool.query(`SELECT data->'summary' AS data FROM record_list_projection WHERE data->>'owner'=$1 AND data->>'deleted'='false' AND data->>'deleteAt'>$2 AND ($3='all' OR ($3='inbox' AND data->'summary'->>'workspaceId' IS NULL) OR data->'summary'->>'workspaceId'=$3) AND strpos(data->>'search',$4)>0 ORDER BY data->'summary'->>'createdAt' DESC, id DESC LIMIT 200`,[owner,new Date().toISOString(),scope,query])).rows : db.prepare(`SELECT json_extract(data,'$.summary') AS data FROM record_list_projection WHERE json_extract(data,'$.owner')=? AND json_extract(data,'$.deleted')=0 AND json_extract(data,'$.deleteAt')>? AND (?='all' OR (?='inbox' AND json_extract(data,'$.summary.workspaceId') IS NULL) OR json_extract(data,'$.summary.workspaceId')=?) AND instr(json_extract(data,'$.search'),?)>0 ORDER BY json_extract(data,'$.summary.createdAt') DESC, id DESC LIMIT 200`).all(owner,new Date().toISOString(),scope,scope,scope,query);
       return rows.map(decode);
@@ -166,10 +187,10 @@ export async function createRepository(options = {}) {
       const client = pool ? await pool.connect() : null;
       try {
         if (client) await client.query('BEGIN'); else db.exec('BEGIN IMMEDIATE');
-        const values = [], snapshots = new Map();
+        const values = [], snapshots = new Map(), shareStates = new Map();
         for (const id of [...new Set(ids)].sort()) {
           const value = decode(client ? (await client.query('SELECT data FROM record_aggregates WHERE id=$1 FOR UPDATE', [id])).rows[0] : db.prepare('SELECT data FROM aggregates WHERE id=?').get(id));
-          requireThat(value, 'not_found', 404); values.push(value); snapshots.set(value.id,visibleSnapshot(value));
+          requireThat(value, 'not_found', 404); values.push(value); snapshots.set(value.id,visibleSnapshot(value)); shareStates.set(value.id,shareState(value));
         }
         const result = mutate(values);
         requireThat(!(result instanceof Promise), 'transaction_must_be_synchronous', 500);
@@ -178,7 +199,7 @@ export async function createRepository(options = {}) {
           traceWrite(value);
           if (client) await client.query('UPDATE record_aggregates SET data=$2 WHERE id=$1', [value.id, JSON.stringify(value)]);
           else writeSqliteValue(value);
-          if(client)await writePgProjection(client,value,snapshots.get(value.id));else writeSqliteProjection(value,snapshots.get(value.id));
+          if(client)await writePgProjection(client,value,snapshots.get(value.id),shareStates.get(value.id));else writeSqliteProjection(value,snapshots.get(value.id),shareStates.get(value.id));
         }
         if (client) await client.query('COMMIT'); else db.exec('COMMIT');
         return structuredClone(result ?? values);
@@ -195,15 +216,16 @@ export async function createRepository(options = {}) {
           : db.prepare('SELECT data FROM aggregates WHERE id=?').get(id));
         requireThat(value, 'not_found', 404);
         const original = JSON.stringify(value);
-        const before=rebuild ? null : visibleSnapshot(value);
+        const previousShares = rebuild ? undefined : shareState(value);
       const result = mutate(value);
         requireThat(!(result instanceof Promise), 'transaction_must_be_synchronous', 500);
         if (!rebuild && JSON.stringify(value) === original) { if (client) await client.query('COMMIT'); else db.exec('COMMIT'); return structuredClone(result ?? value); }
+        const before = rebuild ? null : visibleSnapshot(JSON.parse(original));
         schedule(value);
         traceWrite(value);
         if (client) await client.query('UPDATE record_aggregates SET data=$2 WHERE id=$1', [id, JSON.stringify(value)]);
         else writeSqliteValue(value);
-        if(client)await writePgProjection(client,value,before);else writeSqliteProjection(value,before);
+        if(client)await writePgProjection(client,value,before,previousShares);else writeSqliteProjection(value,before,previousShares);
         if (client) await client.query('COMMIT'); else db.exec('COMMIT');
         return structuredClone(result ?? value);
       } catch (error) { if (client) await client.query('ROLLBACK'); else db.exec('ROLLBACK'); throw error; }
@@ -246,6 +268,25 @@ export async function createRepository(options = {}) {
     },
     async close() { objects?.close(); if (pool) await pool.end(); else db.close(); }
   };
+  const shareVersion = pool ? (await pool.query('SELECT version FROM record_share_schema WHERE version=1')).rows[0] : db.prepare('SELECT version FROM record_share_schema WHERE version=1').get();
+  if (!shareVersion) {
+    let after = '';
+    for (;;) {
+      const client = pool ? await pool.connect() : null;
+      let rows;
+      try {
+        if (client) await client.query('BEGIN'); else db.exec('BEGIN IMMEDIATE');
+        rows = client ? (await client.query("SELECT data FROM record_aggregates WHERE data->>'kind'='record' AND id>$1 ORDER BY id LIMIT 100 FOR UPDATE", [after])).rows
+          : db.prepare("SELECT data FROM aggregates WHERE json_extract(data,'$.kind')='record' AND id>? ORDER BY id LIMIT 100").all(after);
+        for (const row of rows) { const value = decode(row); if (client) await writePgShares(client,value); else writeSqliteShares(value); after = value.id; }
+        if (client) await client.query('COMMIT'); else db.exec('COMMIT');
+      } catch (error) { if (client) await client.query('ROLLBACK'); else db.exec('ROLLBACK'); throw error; }
+      finally { client?.release(); }
+      if (rows.length < 100) break;
+    }
+    if (pool) await pool.query('INSERT INTO record_share_schema(version) VALUES(1) ON CONFLICT DO NOTHING');
+    else db.prepare('INSERT OR IGNORE INTO record_share_schema(version) VALUES(1)').run();
+  }
   const missing=pool ? (await pool.query("SELECT a.id FROM record_aggregates a LEFT JOIN record_feed_meta m ON a.id=m.id LEFT JOIN record_list_projection l ON a.id=l.id WHERE a.data->>'kind'='record' AND (m.id IS NULL OR l.id IS NULL)")).rows : db.prepare("SELECT a.id FROM aggregates a LEFT JOIN record_feed_meta m ON a.id=m.id LEFT JOIN record_list_projection l ON a.id=l.id WHERE json_extract(a.data,'$.kind')='record' AND (m.id IS NULL OR l.id IS NULL)").all();
   for(const {id} of missing)await repository.change(id,()=>{}, {rebuild:true});
   for (const name of ['listAnalysisInputs','listSummaries','eventsAfter','get', 'list', 'listWork', 'change', 'changeMany', 'putAudio']) {

@@ -1,9 +1,15 @@
-import { createHmac, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { DomainError, digest, requireThat } from '../../../packages/records/src/record.mjs';
 
-const same = (a, b) => typeof a === 'string' && typeof b === 'string' && a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
+const derivePassword = promisify(scrypt);
+const same = (a, b) => {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const left = Buffer.from(a), right = Buffer.from(b);
+  return left.length === right.length && timingSafeEqual(left, right);
+};
 export async function createAuth(repo, options = {}) {
   let secret = options.localAccount ? randomBytes(48).toString('hex') : options.secret || process.env.RECORD_SESSION_SECRET;
   if (options.localAccount) await writeFile(join(repo.root, 'session.key'), secret, { mode: 0o600 });
@@ -16,6 +22,13 @@ export async function createAuth(repo, options = {}) {
       catch (error) { if (error.code !== 'EEXIST') throw error; secret = await readFile(file, 'utf8'); }
     }
   }
+  let pendingPasswords = 0;
+  const passwordHash = async (password, salt) => {
+    requireThat(pendingPasswords < 8, 'authentication_busy', 429);
+    pendingPasswords++;
+    try { return (await derivePassword(password, salt, 64)).toString('hex'); }
+    finally { pendingPasswords--; }
+  };
   const sign = value => createHmac('sha256', secret).update(value).digest('hex');
   const cookies = request => Object.fromEntries((request.headers.cookie || '').split(';').map(c => c.trim().split('=')));
   const cookie = token => `record_session=${token}; HttpOnly; SameSite=Strict; Path=/${options.localAccount ? '' : '; Max-Age=604800'}${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`;
@@ -27,13 +40,13 @@ export async function createAuth(repo, options = {}) {
       requireThat(typeof body.password === 'string' && body.password.length >= 10 && body.password.length <= 128, 'password_length_10_128', 400);
       requireThat(!process.env.RECORD_INVITE_CODE || body.inviteCode === process.env.RECORD_INVITE_CODE, 'invite_required', 403);
       const salt = randomBytes(16).toString('hex');
-      const user = { id: `user:${digest(email)}`, kind: 'user', email, salt, password: scryptSync(body.password, salt, 64).toString('hex'), authVersion: 1 };
+      const user = { id: `user:${digest(email)}`, kind: 'user', email, salt, password: await passwordHash(body.password, salt), authVersion: 1 };
       await repo.insert(user); return user;
     },
     async login(body) {
       const user = await repo.get(`user:${digest(String(body.email || '').trim().toLowerCase())}`);
       const password = String(body.password || '').slice(0, 128);
-      const computed = scryptSync(password, user?.salt || 'unknown-user-salt', 64).toString('hex');
+      const computed = await passwordHash(password, user?.salt || 'unknown-user-salt');
       requireThat(user && same(computed, user.password), 'invalid_credentials', 401); return user;
     },
     issue(user) {
@@ -54,7 +67,7 @@ export async function createAuth(repo, options = {}) {
     const email = process.env.RECORD_DEV_EMAIL || 'dev@local.test';
     if (!await repo.get(`user:${digest(email.trim().toLowerCase())}`)) {
       const salt = randomBytes(16).toString('hex');
-      await repo.insert({ id: `user:${digest(email.trim().toLowerCase())}`, kind: 'user', email: email.trim().toLowerCase(), salt, password: scryptSync(process.env.RECORD_DEV_PASSWORD || 'LocalMeeting2026!', salt, 64).toString('hex'), authVersion: 1 });
+      await repo.insert({ id: `user:${digest(email.trim().toLowerCase())}`, kind: 'user', email: email.trim().toLowerCase(), salt, password: await passwordHash(process.env.RECORD_DEV_PASSWORD || 'LocalMeeting2026!', salt), authVersion: 1 });
     }
   }
   if (options.localAccount) {

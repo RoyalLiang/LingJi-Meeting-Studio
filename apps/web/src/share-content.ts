@@ -1,3 +1,4 @@
+import { truncateText } from '../../../packages/records/src/text.mjs';
 import type { Evidence, Minutes, RecordDetail, Segment, SummaryTable } from './model';
 import { sharedMinutes } from '../../../packages/records/src/shared-content.mjs';
 
@@ -19,7 +20,7 @@ export function minutesForShare(record: Pick<RecordDetail, 'capture' | 'minutes'
 }
 
 export function shareFilename(title: string) {
-  return `${title.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim().slice(0, 80) || '会议纪要'}.html`;
+  return `${truncateText(title.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim(), 80) || '会议纪要'}.html`;
 }
 
 export function createShareDocument(record: RecordDetail, scope: ShareScope) {

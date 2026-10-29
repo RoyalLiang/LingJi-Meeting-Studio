@@ -3,11 +3,12 @@ import { readFile, stat } from 'node:fs/promises';
 import { resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../dist/', import.meta.url));
-const target = new URL(process.env.RECORD_API_URL || 'http://127.0.0.1:3030');
+export function createProductionServer({ apiUrl = process.env.RECORD_API_URL || 'http://127.0.0.1:3030' } = {}) {
+const target = new URL(apiUrl);
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.woff2': 'font/woff2' };
 const server = http.createServer(async (req, res) => {
   if (req.url.startsWith('/api/')) {
-    const upstream = http.request(new URL(req.url, target), { method: req.method, headers: req.headers }, response => {
+    const upstream = http.request(new URL(req.url, target), { method: req.method, headers: { ...req.headers, 'x-record-client-ip': req.socket.remoteAddress } }, response => {
       res.writeHead(response.statusCode, response.headers); response.pipe(res);
     }); upstream.on('error', () => { if (!res.headersSent) res.writeHead(502, { 'Content-Type': 'application/json' }); res.end('{"error":"service_unavailable"}'); });
     req.pipe(upstream); res.on('close', () => upstream.destroy()); return;
@@ -24,5 +25,10 @@ const server = http.createServer(async (req, res) => {
       'Permissions-Policy': 'microphone=(self), display-capture=(self), camera=()' }); res.end(await readFile(file));
   } catch { res.writeHead(500); res.end('Unable to load application'); }
 });
-server.listen(Number(process.env.WEB_PORT || 3000), '127.0.0.1', () => console.log('[web] http://127.0.0.1:' + (process.env.WEB_PORT || 3000)));
-process.once('SIGTERM', () => server.close());
+return server;
+}
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const server = createProductionServer();
+  server.listen(Number(process.env.WEB_PORT || 3000), '127.0.0.1', () => console.log('[web] http://127.0.0.1:' + (process.env.WEB_PORT || 3000)));
+  process.once('SIGTERM', () => server.close());
+}

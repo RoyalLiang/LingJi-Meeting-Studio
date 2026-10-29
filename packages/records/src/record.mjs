@@ -1,3 +1,4 @@
+import { truncateText } from './text.mjs';
 import { liveBaseline, liveInput, minutesContext, mergeLiveMinutes, chronologicalSegments } from './live-minutes.mjs';
 import {queueLearningReview, publicLearning} from './learning.mjs';
 import { validateMinutesStructure } from './minutes-structure.mjs';
@@ -23,7 +24,7 @@ export function createRecord(owner, input = {}) {
   requireThat([1, 7, 30, 90].includes(days), 'invalid_retention', 400);
   const now = new Date().toISOString();
   const title=String(input.title || '').trim();
-  const record = { id: randomUUID(), owner, kind: 'record', workspaceId: input.workspaceId || null, title: title.slice(0, 160) || '未命名会议', titleEdited:Boolean(title), ...(input.learningEnabled ? {learning:{enabled:true,status:'waiting'}} : {}),
+  const record = { id: randomUUID(), owner, kind: 'record', workspaceId: input.workspaceId || null, title: truncateText(title, 160) || '未命名会议', titleEdited:Boolean(title), ...(input.learningEnabled ? {learning:{enabled:true,status:'waiting'}} : {}),
     language: input.language || 'auto', createdAt: now, updatedAt: now, cursor: '0', events: [], generation: 1,
     capture: 'idle', transcription: 'idle', sessions: [], sources: [], chunks: [], segments: [], transcriptRevision: 0,
     notes: '', notesRevision: 0, minutes: null, liveMinutes: null, realtimeAudioConsent: input.realtimeAudioConsent === true, autoMinutes: { enabled: input.autoMinutes === true, intervalSeconds: 60 }, minutesRevision: 0, minutesHistory: [], jobs: [], shares: [],
@@ -45,7 +46,7 @@ export function addSource(record, input) {
     const timelineOffsetMs = recordingDurationMs(record);
     session = { id: randomUUID(), status: 'recording', timelineOffsetMs, startedAt: new Date().toISOString() }; record.sessions.push(session);
   }
-  const source = { id: randomUUID(), sessionId: session.id, timelineOffsetMs: Math.max(session.timelineOffsetMs || 0, recordingDurationMs(record)), epoch: randomUUID(), kind: input.kind, label: String(input.label || input.kind).slice(0, 80),
+  const source = { id: randomUUID(), sessionId: session.id, timelineOffsetMs: Math.max(session.timelineOffsetMs || 0, recordingDurationMs(record)), epoch: randomUUID(), kind: input.kind, label: truncateText(String(input.label || input.kind), 80),
     lastSequence: null, watermark: -1, stopped: false };
   record.sources.push(source); record.capture = 'recording'; record.transcription = 'queued';
   emit(record, 'source.started', { sourceId: source.id }); return source;
@@ -180,7 +181,7 @@ export function editSegment(record, id, input) {
   const { versions, ...previous } = segment;
   segment.versions = [...(versions || []), previous].slice(-20);
   segment.recognitionText ??= segment.text;
-  segment.text = input.text.trim(); segment.speaker = String(input.speaker ?? segment.speaker).slice(0, 80);
+  segment.text = input.text.trim(); segment.speaker = truncateText(String(input.speaker ?? segment.speaker), 80);
   if (input.speaker != null) {
     // Keep the acoustic replay anchor separate from a human attribution correction.
     if (segment.speakerId) segment.speakerAnchorId ||= segment.speakerId;

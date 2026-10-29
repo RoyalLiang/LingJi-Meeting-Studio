@@ -10,7 +10,7 @@ import { meteredMinutesCall } from './minutes-usage.mjs';
 import { telemetry } from './telemetry.mjs';
 import { processWorkspaceAnalysis } from './workspace-worker.mjs';
 import { processSpeakerSources, closeSpeakerStreams } from './speaker-streams.mjs';
-import { queueAutomaticMinutes, updateMinutesPreview } from '../../../packages/records/src/automation.mjs';
+import { automaticMinutesAt, queueAutomaticMinutes, updateMinutesPreview } from '../../../packages/records/src/automation.mjs';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { commitMinutes, commitTranscript, emit, needsMinutesAudio } from '../../../packages/records/src/record.mjs';
@@ -90,7 +90,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
     // Two independent sources can progress together; a source remains strictly ordered.
     await Promise.all([processAudio(), processAudio(), realtimeWork]);
     }
-    if (lane === 'all' || lane === 'translation') {
+    if (lane === 'all' || (lane === 'translation' && candidate.translationTarget && candidate.segments.some(s => s.translationLanguage !== candidate.translationTarget && (s.translationAttempts || 0) < 3 && (s.translationLease || 0) <= Date.now() && (s.translationRetryAt || 0) <= Date.now()))) {
       let claim;
       await repo.change(candidate.id, r => {
         if (r.deleted || !r.translationTarget || (!providers.translate && !providerStatus(config).translation)) return;
@@ -112,7 +112,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
         s.translationAttempts = (s.translationAttempts || 0) + 1; s.translationError = error.code || 'translation_failed'; s.translationRetryAt = Date.now() + 60000; delete s.translationLease; delete s.translationFence; emit(r, 'transcript.translation_failed', {segmentId:s.id});
       }); }
     }
-    const updated = await repo.get(candidate.id);
+    const updated = lane === 'all' || lane === 'intents' ? await repo.get(candidate.id) : candidate;
     if ((lane === 'all' || lane === 'intents') && !updated.deleted && updated.segments.length && updated.insights?.transcriptRevision !== updated.transcriptRevision && (updated.intentRetryAt || 0) <= Date.now()) {
       let claim;
       await repo.change(candidate.id, r => {
@@ -132,8 +132,8 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
       }
     }
     let jobClaim;
-    if (lane === 'all' || lane === 'minutes') {
-    if (providerStatus(config).minutes) await repo.change(candidate.id, r => { if (!audioMinutesEnabled(config) || r.realtimeAudioConsent) queueAutomaticMinutes(r, minutesModelVersion(config)); });
+    if (lane === 'all' || (lane === 'minutes' && (automaticMinutesAt(candidate) <= Date.now() || candidate.jobs.some(job => job.status === 'queued' || (job.status === 'running' && (!Number.isFinite(job.lease) || job.lease <= Date.now())))))) {
+    if (providerStatus(config).minutes && (lane === 'all' || automaticMinutesAt(candidate) <= Date.now())) await repo.change(candidate.id, r => { if (!audioMinutesEnabled(config) || r.realtimeAudioConsent) queueAutomaticMinutes(r, minutesModelVersion(config)); });
     const minutesCandidate = await repo.get(candidate.id);
     const now=Date.now(), reclaimable=job=>job.status==='queued'||(job.status==='running'&&(!Number.isFinite(job.lease)||job.lease<=now));
     if (minutesCandidate.jobs.some(reclaimable)) await repo.change(candidate.id, r => {
