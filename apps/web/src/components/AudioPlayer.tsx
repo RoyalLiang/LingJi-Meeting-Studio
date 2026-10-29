@@ -9,7 +9,7 @@ import { mergeWaveforms, waveformSeekTime, waveformTicks, type RecordingWaveform
 import './AudioPlayer.css';
 
 type Track = { id: string; src: string; label: string; startMs?: number };
-type Props = { sources: Track[]; durationMs?: number };
+type Props = { sources: Track[]; durationMs?: number; onError?: () => void };
 const rates = [0.75, 1, 1.25, 1.5, 2];
 const seekKeys = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown']);
 function clock(value: number) {
@@ -19,32 +19,32 @@ function clock(value: number) {
     : `${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
-const SavedWaveform=memo(function SavedWaveform({peaks,reveal,played}:{peaks:number[];reveal:RefObject<HTMLSpanElement|null>;played:RefObject<SVGSVGElement|null>}) {
+const SavedWaveform=memo(function SavedWaveform({peaks,reveal}:{peaks:number[];reveal:RefObject<HTMLSpanElement|null>}) {
   const path=peaks.map((peak,index)=>{const height=Math.max(2,Math.sqrt(peak)*42);return `M${index*4+1} ${25-height/2}v${height-2}`;}).join('');
   const bars=<path d={path} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>;
-  return <><svg className="player-waveform" viewBox="0 0 768 48" preserveAspectRatio="none" aria-hidden="true">{bars}</svg><span className="player-wave-fill"><span className="player-wave-reveal" ref={reveal}><svg className="player-waveform player-waveform-played" ref={played} viewBox="0 0 768 48" preserveAspectRatio="none" aria-hidden="true">{bars}</svg></span></span></>;
+  return <><svg className="player-waveform" viewBox="0 0 768 48" preserveAspectRatio="none" aria-hidden="true">{bars}</svg><span className="player-wave-fill"><span className="player-wave-reveal" ref={reveal}><svg className="player-waveform player-waveform-played" viewBox="0 0 768 48" preserveAspectRatio="none" aria-hidden="true">{bars}</svg></span></span></>;
 });
 
 export function AudioPlayer(props: Props) {
   return <PlaybackControls key={props.sources.map(source => source.src).join('|')} {...props}/>;
 }
 
-function PlaybackControls({ sources, durationMs = 0 }: Props) {
+function PlaybackControls({ sources, durationMs = 0, onError }: Props) {
   const audio = useRef<(HTMLAudioElement | null)[]>([]), operation = useRef(0);
   const [transport] = useState(() => new PlaybackTransport(() => audio.current.filter((media): media is HTMLAudioElement => Boolean(media)), durationMs / 1000,
     media => (sources[audio.current.findIndex(element => element === media)]?.startMs || 0) / 1000));
   const [playing, setPlaying] = useState(false), [starting, setStarting] = useState(false), [error, setError] = useState('');
   const [time, setTime] = useState(0), [duration, setDuration] = useState(durationMs / 1000), [rate, setRate] = useState(1);
   const [peaks, setPeaks] = useState<number[]>([]), [waveState, setWaveState] = useState('loading');
-  const reveal=useRef<HTMLSpanElement>(null), played=useRef<SVGSVGElement>(null), cursor=useRef<HTMLSpanElement>(null), positionLabel=useRef<HTMLSpanElement>(null), advancing=useRef(false);
+  const reveal=useRef<HTMLSpanElement>(null), cursor=useRef<HTMLSpanElement>(null), positionLabel=useRef<HTMLSpanElement>(null), advancing=useRef(false);
   const [progressing,setProgressing]=useState(false), [scrubbing,setScrubbing]=useState(false);
   const [progressClock]=useState(()=>new PlaybackClock());
   function paint(position=progressClock.read(transport.time,performance.now(),advancing.current&&transport.playing,transport.leader?.playbackRate || 1)) {
     const length=transport.duration;
     const percent=length ? Math.max(0,Math.min(100,position/length*100)) : 0;
-    if(reveal.current)reveal.current.style.transform=`translateX(${percent-100}%)`;
-    if(played.current)played.current.style.transform=`translateX(${100-percent}%)`;
+    if(reveal.current)reveal.current.style.clipPath=`inset(0 ${100-percent}% 0 0)`;
     if(cursor.current)cursor.current.style.transform=`translateX(min(${percent}%,calc(100% - 1px)))`;
+    if(positionLabel.current?.firstElementChild)positionLabel.current.firstElementChild.textContent=clock(position);
     if(positionLabel.current)positionLabel.current.style.transform=`translateX(clamp(0px,calc(${percent}% - 30px),calc(100% - 60px)))`;
   }
   const [scrub] = useState(() => new PlaybackScrub(transport, position=>{progressClock.reset(position,performance.now());paint(position);setTime(position);}));
@@ -54,7 +54,7 @@ function PlaybackControls({ sources, durationMs = 0 }: Props) {
   const sourceUrls = JSON.stringify(sources.map(source => source.src));
   useEffect(() => {
     const abort = new AbortController();
-    void Promise.all((JSON.parse(sourceUrls) as string[]).map(src => api<RecordingWaveform>(`${src.replace(/^\/api/, '')}?waveform=1`, 'GET', undefined, abort.signal)))
+    void Promise.all((JSON.parse(sourceUrls) as string[]).map(src => api<RecordingWaveform>(`${src.replace(/^\/api/, '')}${src.includes('?')?'&':'?'}waveform=1`, 'GET', undefined, abort.signal)))
       .then(tracks => { if (!abort.signal.aborted) { setPeaks(mergeWaveforms(tracks)); setWaveState('ready'); } })
       .catch(() => { if (!abort.signal.aborted) setWaveState('error'); });
     return () => abort.abort();
@@ -113,12 +113,12 @@ function PlaybackControls({ sources, durationMs = 0 }: Props) {
       onTimeUpdate={sync} onPlay={event=>mediaState(event.currentTarget,false)} onPlaying={event=>mediaState(event.currentTarget,true)}
       onWaiting={event=>mediaState(event.currentTarget,false)} onSeeking={event=>mediaState(event.currentTarget,false,true)}
       onSeeked={event=>mediaState(event.currentTarget,transport.playing,true)} onPause={event=>mediaState(event.currentTarget,false)} onEnded={event=>mediaState(event.currentTarget,false,true)}
-      onError={() => { pause(); setError('原音加载失败，请检查网络与留存状态后重试。'); }}/>) }
+      onError={() => { pause(); onError?.(); setError('原音加载失败，请检查网络与留存状态后重试。'); }}/>) }
     <div className="player-timeline">
       <div className="player-wave-track" data-waveform-state={waveState}>
-        {peaks.length > 0 ? <SavedWaveform peaks={peaks} reveal={reveal} played={played}/> : <span className="player-wave-status" role="status">{waveState === 'error' ? '波形暂不可用，仍可定位播放' : '正在读取录音波形…'}</span>}
+        {peaks.length > 0 ? <SavedWaveform peaks={peaks} reveal={reveal}/> : <span className="player-wave-status" role="status">{waveState === 'error' ? '波形暂不可用，仍可定位播放' : '正在读取录音波形…'}</span>}
         <span className="player-wave-progress" aria-hidden="true"><span className="player-wave-cursor" ref={cursor}/></span>
-        <span className="player-wave-position" ref={positionLabel} aria-hidden="true"><span>{clock(time)}</span></span>
+        <span className="player-wave-position" ref={positionLabel} aria-hidden="true"><span>00:00</span></span>
     <input className="player-seek" type="range" min={0} max={duration || 1} step={0.1} value={Math.min(time, duration || 0)} disabled={!duration}
       aria-label="录音进度" aria-valuetext={duration ? `${clock(time)}，共 ${clock(duration)}` : '正在读取录音时长'}
       onPointerDown={event => { if (!event.isPrimary || event.button !== 0) return; event.preventDefault(); event.currentTarget.focus({preventScroll:true}); event.currentTarget.setPointerCapture(event.pointerId); beginScrub(); previewPointer(event); }}

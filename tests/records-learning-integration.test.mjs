@@ -285,6 +285,7 @@ test("integrated learning routes enforce account and CSRF and serve grouped UI a
       repo: f.repo,
       port: 0,
       localAccount: true,
+      learningProbe: async () => true,
     });
     const address = await app.start(),
       base = "http://127.0.0.1:" + address.port,
@@ -315,6 +316,9 @@ test("integrated learning routes enforce account and CSRF and serve grouped UI a
     const data = await (
       await fetch(path + "/round?name=r001", { headers: { cookie } })
     ).json();
+    const audioCase=data.cases.find(row=>row.family==='asr');
+    const waveform=await (await fetch(path+`/audio?round=r001&sample=${encodeURIComponent(audioCase.sample_id)}&waveform=1`,{headers:{cookie}})).json();
+    assert.equal(waveform.peaks.length,192);assert.equal(waveform.sampleRate,16000);
     const body = { round: "r001", reviews: reviewed(data.cases) };
     assert.equal(
       (
@@ -527,4 +531,37 @@ test("expired source records cannot be included in an approved training corpus",
   } finally {
     await f.close();
   }
+});
+
+
+test('unavailable learning service blocks preparation without changing the queued record', async () => {
+  const f=await fixture();let app;
+  try {
+    let calls=0;
+    app=await createRecordServer({repo:f.repo,port:0,localAccount:true,learningProbe:async()=>{calls++;return false;}});
+    const address=await app.start(),base=`http://127.0.0.1:${address.port}`,cookie=await app.localSession();
+    const boot=await (await fetch(base+'/api/bootstrap',{headers:{cookie}})).json();
+    const owner=(await f.repo.list('user'))[0].id,record=await meeting(f.repo,owner);
+    const before=JSON.stringify((await f.repo.get(record.id)).learning);
+    const result=await fetch(`${base}/api/records/${record.id}/learning/prepare`,{method:'POST',headers:{cookie,'X-CSRF-Token':boot.csrf,'Content-Type':'application/json'},body:'{}'});
+    assert.equal(result.status,503);assert.equal((await result.json()).error,'learning_service_unavailable');
+    assert.equal(JSON.stringify((await f.repo.get(record.id)).learning),before);
+    const status=await (await fetch(base+'/api/learning/status',{headers:{cookie}})).json();
+    assert.equal(status.available,false);assert.equal(calls,1);
+  } finally {if(app)await app.stop();else await f.repo.close();await rm(f.root,{recursive:true,force:true});}
+});
+
+
+test('absent learning service defers queued work without retries or repeated writes',async()=>{
+ const f=await fixture();try{
+  const {learningServiceFor}=await import('../services/records/src/learning-service.mjs');
+  const {runLearningCycle}=await import('../services/records/src/learning-worker.mjs');
+  const record=await meeting(f.repo);let probes=0,writes=0;
+  learningServiceFor(f.repo,async()=>{probes++;return false;});
+  const change=f.repo.change;f.repo.change=(...args)=>{writes++;return change(...args);};
+  await runLearningCycle(f.repo);await runLearningCycle(f.repo);
+  const saved=await f.repo.get(record.id);
+  assert.ok(saved.learning.retryAt>Date.now());assert.equal(saved.learning.attempts,0);
+  assert.equal(saved.learning.status,'queued');assert.equal(probes,1);assert.equal(writes,1);
+ }finally{await f.close();}
 });

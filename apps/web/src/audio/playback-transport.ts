@@ -139,7 +139,7 @@ export class PlaybackClock {
   }
 
   read(time: number, now: number, playing: boolean, rate = 1) {
-    if (!playing || !this.playing || !Number.isFinite(this.sample) || time < this.sample-.05 || time - this.sample > Math.max(1.5,rate*1.5) || rate !== this.rate) {
+    if (!playing || !this.playing || !Number.isFinite(this.sample) || time < this.sample-.5 || time - this.sample > Math.max(1.5,rate*1.5) || rate !== this.rate) {
       this.reset(time, now);
     }
     this.playing = playing; this.rate = rate;

@@ -312,3 +312,14 @@ test('pause cancels metadata listeners and prevents a late cold load from starti
 test('retrying an errored retained audio load preserves the chosen seek target',async()=>{
  const media=track(60),transport=new PlaybackTransport(()=>[media],60);media.error={code:4};media.load=()=>{media.error=null;media.currentTime=0;};transport.seek(20);await transport.play();assert.equal(media.currentTime,20);assert.equal(media.paused,false);
 });
+
+
+test('ordinary 80ms media sample jitter never rewinds the visible cursor',()=>{
+  const clock=new PlaybackClock();let previous=clock.read(0,0,true);
+  for(let now=16;now<1600;now+=16){
+    const actual=Math.max(0,now/1000-(now%96===0?.096:0));
+    const shown=clock.read(actual,now,true);
+    assert.ok(shown>=previous,`visible cursor rewound at ${now}ms: ${previous} to ${shown}`);
+    previous=shown;
+  }
+});

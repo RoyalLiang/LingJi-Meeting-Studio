@@ -15,6 +15,7 @@ import {
   readLines,
   roundDirectory,
 } from "../../../scripts/alpha-learning/review-store.mjs";
+import { learningServiceFor } from './learning-service.mjs';
 const repoRoot = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 export const learningWorkspace = (repo, id) => {
   requireThat(/^[a-f0-9-]{36}$/.test(id), "invalid_record_id", 400);
@@ -514,6 +515,14 @@ export async function processLearningTraining(repo, owner, providers = {}) {
   }
 }
 export async function runLearningCycle(repo, providers = {}) {
+  if(repo.backend!=='sqlite' && !providers.learningPreparation)return;
+  if (!providers.learningPreparation && !(await learningServiceFor(repo).check()).available) {
+    for(const candidate of await repo.listWork({lane:'learning'})){
+      if(!candidate.deleted && ['queued','failed'].includes(candidate.learning?.status) && (candidate.learning.retryAt||0)<=Date.now())
+        await repo.change(candidate.id,record=>{if(!record.deleted && ['queued','failed'].includes(record.learning?.status) && (record.learning.retryAt||0)<=Date.now())record.learning.retryAt=Date.now()+30000;});
+    }
+    return;
+  }
   for (const record of await repo.listWork({ lane: 'learning' }))
     if (!record.deleted && record.capture === "completed")
       await processLearningRecord(repo, record.id, providers);
