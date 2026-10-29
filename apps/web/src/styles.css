@@ -968,12 +968,6 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 .settings-heading-row:has(.settings-subheading) { border-top:1px solid var(--border); margin-top:6px; padding-top:20px; }
 .settings-heading-row .settings-subheading { flex:none; margin:0; padding:0; border:0; }
 .client-update-status { color:var(--ink-2); font-size:12px; }
-.settings-modal .update-notes { margin:18px 0 0; font-size:13px; line-height:1.7; }
-.update-notes h4 { margin:0 0 8px; font-size:12px; font-weight:550; color:var(--ink-2); }
-.update-notes ul { margin:0; padding-left:18px; }
-.update-notes li { padding-left:2px; overflow-wrap:anywhere; }
-.update-notes li+li { margin-top:6px; }
-.update-notes li::marker { color:var(--ink-3); }
 .update-download { margin:16px 0; }
 .update-download-meta { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:8px; font-size:12px; color:var(--ink-2); font-variant-numeric:tabular-nums; }
 .update-download-track { height:8px; width:100%; overflow:hidden; border-radius:999px; background:var(--border); }
@@ -1025,3 +1019,15 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 .record-processing-progress span { white-space:nowrap; }
 .record-processing-progress time { font-variant-numeric:tabular-nums; color:var(--ink-1); }
 .record-processing-progress small { font-size:inherit; }
+
+/* A toolbar entry keeps the closed transcript out of the reading flow. */
+.transcript-disclosure.is-toolbar:not([open]) { display:none; margin:0; border:0; padding:0; }
+.transcript-disclosure.is-toolbar>summary { display:none; }
+.settings-modal .section-title h3 { margin:0; color:var(--ink-1); font-size:15px; font-weight:600; }
+.settings-modal .client-update-status { margin:6px 0 0; }
+.settings-modal .update-notes-trigger.button { margin-top:8px; min-height:24px; padding:2px 0; border:0; background:transparent; color:var(--ink-2); font-size:12px; }
+.update-notes-modal .modal-body { overflow:auto; }
+.update-notes-list { margin:0; padding-left:18px; line-height:1.8; font-size:13px; }
+.update-notes-list li { overflow-wrap:anywhere; }
+.update-notes-list li+li { margin-top:10px; }
+@media(pointer:coarse) { .settings-modal .update-notes-trigger.button { min-height:44px; } }

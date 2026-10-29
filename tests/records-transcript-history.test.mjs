@@ -11,21 +11,23 @@ import {renderToStaticMarkup} from 'react-dom/server';
 const source=await readFile(new URL('../apps/web/src/components/Transcript.tsx',import.meta.url),'utf8');
 const record={id:'large',segments:Array.from({length:3000},(_,i)=>({id:String(i),revision:1,startMs:i*1000,speaker:'说话人 1',text:`会议内容 ${i}`})),sources:[]};
 test('closed history defers thousands of transcript nodes without losing edit state on collapse',async()=>{
-  let loaded=false;
-  const box={memo:component=>component,module:{exports:{}},useState:()=>[loaded,value=>{loaded=value;}],CorrectionSuggestions:()=>null,TextAlignLeft:()=>null};
+  const slots=[];let cursor=0;
+  const box={memo:component=>component,module:{exports:{}},useState:initial=>{const index=cursor++;if(!(index in slots))slots[index]=initial;return [slots[index],value=>{slots[index]=value;}];},useRef:initial=>{const index=cursor++;if(!(index in slots))slots[index]={current:initial};return slots[index];},useId:()=>"history",CorrectionSuggestions:()=>null,TextAlignLeft:()=>null};
   box.React={createElement:(tag,props,...children)=>({tag,props,children})};
   const code=(await transform(source.replace(/^import .*$/gm,''),{loader:'tsx',format:'cjs'})).code;
   vm.runInNewContext(code,box);
-  const props={record,save:async()=>true,changed:()=>{}},render=()=>box.module.exports.TranscriptHistory(props);
+  const props={record,save:async()=>true,changed:()=>{}},render=()=>{cursor=0;return box.module.exports.TranscriptHistory(props);};
   const closed=render();assert.equal(closed.tag,'details');assert.equal(closed.children[1],false);
   assert.equal(closed.children[0].props['aria-label'],'逐字记录与纠错 · 3000 段');
   assert.equal(closed.children[0].props.title,'逐字记录与纠错 · 3000 段');
   closed.props.onToggle({currentTarget:{open:true}});
   const opened=render(),children=opened.children[1].children;
-  assert.equal(children[1].props.record,record);assert.equal(children[1].props.save,props.save);
+  assert.equal(children[0].props.active,true);assert.equal(children[1].props.record,record);assert.equal(children[1].props.save,props.save);
   opened.props.onToggle({currentTarget:{open:false}});
-  assert.equal(loaded,true,'collapsing must retain the mounted transcript and its unsaved draft');
+  assert.equal(slots[0],true,'collapsing must retain the mounted transcript and its unsaved draft');
+  assert.equal(render().children[1].children[0].props.active,false);props.record={...record,transcriptRevision:99};
   assert.equal(render().children[1].children[1].props.record,record);
+  const reopened=render();reopened.props.onToggle({currentTarget:{open:true}});assert.equal(render().children[1].children[1].props.record,props.record);
 });
 test('real closed history renders a summary only for a 3000-segment meeting',async()=>{
   const compiled=await build({entryPoints:['apps/web/src/components/Transcript.tsx'],bundle:true,write:false,platform:'node',format:'cjs',jsx:'automatic',loader:{'.css':'empty'},external:['react','react/jsx-runtime','react-dom']});

@@ -215,10 +215,10 @@ test('minutes default to no generation preview and omit redundant in-progress ca
  assert.match(partial,/按主题整理的纪要/);
 });
 
-test('opening a meeting keeps failed minutes recovery inside its panel', () => {
+test('opening a meeting floats failed minutes recovery without reserving panel space', () => {
   const html=render({segments:[],jobs:[{id:'failed-job',status:'failed',transcriptRevision:3,error:'minutes_request_failed'}]});
   assert.match(html,/整理未完成/);
-  assert.match(html,/toast feedback-toast glass is-inline/);
+  assert.match(html,/toast feedback-toast glass/);assert.doesNotMatch(html,/feedback-toast[^"]*is-inline/);
   assert.match(html,/重新整理/);
 });
 
@@ -230,4 +230,9 @@ test('AI processing is announced once in the dock capture label',()=>{
  assert.doesNotMatch(html,/class="discussion-status"/);
  const issue=renderToStaticMarkup(React.createElement(CurrentDiscussion,{record:{...record,transcription:'failed'},minutes:null,job:{status:'running'},modelReady:true}));
  assert.match(issue,/class="discussion-status"/,'ASR failures must remain visible while minutes run');
+});
+
+test('an empty chapter shows an explicit empty state rather than a bare tree trunk',()=>{
+ const value=minutes();value.topics=[];value.sections=[{heading:'空章节',items:[]}];value.actions=[];value.tables=[];value.highlights=[];value.visuals=[];
+ const html=render({liveMinutes:value});assert.doesNotMatch(html,/class="minutes-branch"/);assert.match(html,/尚无可展示的主题/);
 });

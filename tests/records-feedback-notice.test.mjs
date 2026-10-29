@@ -59,3 +59,8 @@ test('processing incident identity is stable across refreshes but changes for ex
   source.asr.error='provider_unauthorized';assert.notEqual(publicRecord(record).transcriptionIssue.identity,second);
   source.asr={state:'completed'};assert.equal(publicRecord(record).transcriptionIssue,undefined);
 });
+
+test('processing notices float by default instead of shifting the meeting layout',()=>{
+ const shown=notice()({message:'纪要服务暂不可用'});
+ assert.equal(shown.props.inline,false);
+});

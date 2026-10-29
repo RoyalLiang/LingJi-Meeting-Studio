@@ -36,7 +36,7 @@ export function MinutesTree({ minutes, cite, speakerMap }: Props) {
   const branches = useMemo(() => {
     const layout = topicTableLayout(minutes);
     return layout.unassigned.length ? [...layout.branches, { title: '补充表格', summary: '', evidence: [], items: [], tables: layout.unassigned }] : layout.branches;
-  }, [minutes]);
+  }, [minutes]).filter(branch=>Boolean(branch.summary?.trim() || branch.items.length || branch.tables.length || (minutes.visuals||[]).some(visual=>branch.id&&visual.topicId===branch.id)));
   const unassignedVisuals = (minutes.visuals || []).filter(visual => !visual.topicId || !branches.some(branch => branch.id === visual.topicId));
   return branches.length || minutes.highlights?.length || unassignedVisuals.length ? <div className="minutes-reading">
     {Boolean(minutes.highlights?.length) && <section className="minutes-highlights" aria-label="重点速览"><h4>重点速览</h4><ul>{minutes.highlights!.map((item, index) => <li key={index}><MinuteSpeakers evidence={item.evidence} speakers={speakers}/><p>{item.text}</p><Sources compact evidence={item.evidence} cite={cite}/></li>)}</ul></section>}
