@@ -1,3 +1,5 @@
+import { truncateText } from '../../../packages/records/src/text.mjs';
+import { isIP } from 'node:net';
 import { manualMinutesContent, minutesActionText } from '../../../packages/records/src/minutes-quality.mjs';
 import { recordingWaveform, waveformKey, validWaveform } from './waveform.mjs';
 import { doubaoAudioEnabled } from './config.mjs';
@@ -9,7 +11,7 @@ import { clientUpdateBarrier } from './client-update.mjs';
 import { performance } from 'node:perf_hooks';
 import { setTranslationTarget } from '../../../packages/records/src/translation.mjs';
 import { workspaceRoutes, requireWorkspace } from './workspace-routes.mjs';
-import { loadVocabulary, correctionCandidates } from './vocabulary.mjs';
+import { loadRecordVocabulary, correctionCandidates } from './vocabulary.mjs';
 import { acceptVocabularyCorrection } from '../../../packages/records/src/vocabulary.mjs';
 import { setAutomation } from '../../../packages/records/src/automation.mjs';
 import http from 'node:http';
@@ -65,7 +67,29 @@ export async function createRecordServer(options = {}) {
   const repo = options.repo || await createRepository(options); const auth = await createAuth(repo, { seedDevelopment: !options.repo, ...options });
   const learningEnabled=async()=>{const config=await readConfig(repo.root);return config.RECORD_LEARNING_ENABLED==='true'||(config.RECORD_LEARNING_ENABLED!=='false'&&Boolean(options.localAccount));};
   const deltaEnabled=options.deltaEnabled ?? (process.env.RECORD_DELTA_ENABLED!=='false');
-  const streams = new Set(); const attempts = new Map();
+  const streams = new Set(); const attempts = new Map(); const feeds = new Map();
+  const clientAddress = req => {
+    const address = req.socket.remoteAddress, forwarded = req.headers['x-record-client-ip'];
+    return ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(address) && typeof forwarded === 'string' && isIP(forwarded) ? forwarded : address;
+  };
+  const limitRequest = (key, limit, code) => {
+    const now = Date.now();
+    if (attempts.size >= 10000) {
+      for (const [id, entry] of attempts) if (entry.reset <= now) attempts.delete(id);
+      requireThat(attempts.has(key) || attempts.size < 10000, 'request_rate_limited', 429);
+    }
+    const previous = attempts.get(key), entry = previous && previous.reset > now ? previous : { count: 0, reset: now + 60000 };
+    requireThat(entry.count++ < limit, code, 429); attempts.set(key, entry);
+  };
+  const feedAfter = (id, cursor) => {
+    const key = `${id}:${cursor}`;
+    if (feeds.has(key)) return feeds.get(key);
+    const request = Promise.resolve().then(() => repo.eventsAfter(id, cursor));
+    feeds.set(key, request);
+    const release = () => { const timer = setTimeout(() => { if (feeds.get(key) === request) feeds.delete(key); }, 100); timer.unref?.(); };
+    void request.then(release, release);
+    return request;
+  };
   const send = (res, status, data, headers = {}) => { const payload=JSON.stringify(data); res.writeHead(status, { 'Content-Length':Buffer.byteLength(payload), 'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...headers }); res.end(payload); };
   async function owned(id, user) { const r = await repo.get(id); requireThat(r && r.kind === 'record' && r.owner === user.id, 'not_found', 404); requireThat(!r.deleted && Date.parse(r.deleteAt) > Date.now(), 'record_deleted', 410); return r; }
@@ -89,18 +113,19 @@ export async function createRecordServer(options = {}) {
         requireThat(allowed ? req.headers.origin === allowed : new URL(req.headers.origin).host === host, 'origin_rejected', 403);
       }
       if (/^\/api\/auth\/(register|login)$/.test(path) && req.method === 'POST') {
-        const key = req.socket.remoteAddress; const now = Date.now();
-        const entry = attempts.get(key) || { count: 0, reset: now + 60000 };
-        if (entry.reset < now) { entry.count = 0; entry.reset = now + 60000; }
-        requireThat(entry.count++ < 20, 'login_rate_limited', 429); attempts.set(key, entry);
-        if (attempts.size > 10000) for (const [k, v] of attempts) if (v.reset < now) attempts.delete(k);
+        limitRequest(`auth:${clientAddress(req)}`, 20, 'login_rate_limited');
         const body = await readBody(req, 4000); const user = path.endsWith('register') ? await auth.register(body) : await auth.login(body);
         send(res, 200, { email: user.email, csrf: auth.csrf(user) }, { 'Set-Cookie': auth.issue(user) }); return;
       }
       const shared = path.match(/^\/api\/shared\/([A-Za-z0-9_-]{40,100})$/);
       if (shared && req.method === 'GET') {
-        const tokenHash = digest(shared[1]); const r = (await repo.list()).find(r => !r.deleted && Date.parse(r.deleteAt) > Date.now() && r.shares.some(s => s.hash === tokenHash && !s.revoked && s.expires > Date.now()));
-        requireThat(r, 'share_expired_or_revoked', 404); const share = r.shares.find(s => s.hash === tokenHash);
+        const invalidKey = `share-invalid:${clientAddress(req)}`, invalid = attempts.get(invalidKey);
+        requireThat(!invalid || invalid.reset <= Date.now() || invalid.count < 60, 'share_rate_limited', 429);
+        const tokenHash = digest(shared[1]); const r = await repo.findShare(tokenHash);
+        const share = r?.shares.find(s => s.hash === tokenHash && !s.revoked && s.expires > Date.now());
+        const allowed = r && !r.deleted && Date.parse(r.deleteAt) > Date.now() && share;
+        if (!allowed) limitRequest(invalidKey, 60, 'share_rate_limited');
+        requireThat(allowed, 'share_expired_or_revoked', 404);
         const minutes = r.capture === 'completed' ? r.minutes || r.liveMinutes : r.liveMinutes || r.minutes;
         send(res, 200, { title: r.title, minutes: sharedMinutes(minutes), draft: !r.minutes || r.capture !== 'completed', ...(share.scope === 'full' ? { segments: sharedSegments(r.segments) } : {}) }); return;
       }
@@ -271,7 +296,7 @@ export async function createRecordServer(options = {}) {
           if (busy || draining || ended()) return; busy = true;
           try {
             await auth.user(req); if (ended()) return;
-            const r = deltaEnabled ? await repo.eventsAfter(id, cursor) : await owned(id, user);
+            const r = deltaEnabled ? await feedAfter(id, cursor) : await owned(id, user);
             if (ended()) return;
             requireThat(r && r.owner === user.id && !r.deleted && Date.parse(r.deleteAt) > Date.now(), 'record_deleted', 410);
             const first = BigInt(r.first || r.events[0]?.cursor || r.cursor);
@@ -313,7 +338,7 @@ export async function createRecordServer(options = {}) {
       const body = await readBody(req, bodyLimit);
       let result;
       if (action === 'corrections' && req.method === 'POST') {
-        const vocabulary = await loadVocabulary(repo, user.id, record.workspaceId || 'inbox');
+        const vocabulary = await loadRecordVocabulary(repo, record);
         requireThat(body.fingerprint === vocabulary.fingerprint, 'vocabulary_revision_conflict', 409);
         result = await changeOwned(id, user, r => {
           requireThat(r.workspaceId === record.workspaceId, 'vocabulary_revision_conflict', 409);
@@ -364,7 +389,7 @@ export async function createRecordServer(options = {}) {
           requireThat(!['recording','sealed'].includes(r.capture) && r.chunks.every(c => c.state === 'done'), 'recognition_language_busy', 409);
           r.language = body.language;
         }
-        if (body.title !== undefined) { requireThat(typeof body.title === 'string' && body.title.trim(), 'invalid_title', 400); r.title = body.title.trim().slice(0, 160); r.titleEdited = true; }
+        if (body.title !== undefined) { requireThat(typeof body.title === 'string' && body.title.trim(), 'invalid_title', 400); const title = truncateText(body.title.trim(), 160); requireThat(title, 'invalid_title', 400); r.title = title; r.titleEdited = true; }
         if (body.notes !== undefined) { requireThat(body.notesRevision === r.notesRevision, 'notes_revision_conflict'); requireThat(typeof body.notes === 'string' && body.notes.length < 20000, 'invalid_notes', 400); r.notes = body.notes; r.notesRevision++; }
         if (body.translationTarget !== undefined) setTranslationTarget(r, body.translationTarget, requireThat);
         emit(r, 'record.updated'); return publicRecord(r);
@@ -377,7 +402,7 @@ export async function createRecordServer(options = {}) {
         const token = randomBytes(32).toString('base64url');
         const scope = body.scope || 'minutes'; requireThat(['minutes', 'full'].includes(scope), 'invalid_share_scope', 400);
         const share = { id: randomUUID(), hash: digest(token), scope, expires: Date.now() + 86400000, revoked: false };
-        await changeOwned(id, user, r => { requireThat(r.minutes || r.liveMinutes || (scope === 'full' && r.segments.length), 'minutes_required'); r.shares.push(share); emit(r, 'share.created'); }); result = { token, id: share.id, scope, expires: share.expires };
+        await changeOwned(id, user, r => { requireThat(r.minutes || r.liveMinutes || (scope === 'full' && r.segments.length), 'minutes_required'); r.shares = r.shares.filter(s => !s.revoked && s.expires > Date.now()); requireThat(r.shares.length < 20, 'share_limit', 429); r.shares.push(share); emit(r, 'share.created'); }); result = { token, id: share.id, scope, expires: share.expires };
       }
       else if (action.startsWith('shares/') && req.method === 'DELETE') result = await changeOwned(id, user, r => {
         const share = r.shares.find(s => s.id === action.slice(7)); requireThat(share, 'not_found', 404); share.revoked = true; emit(r, 'share.revoked'); return { revoked: true };

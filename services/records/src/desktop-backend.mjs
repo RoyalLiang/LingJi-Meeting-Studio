@@ -9,6 +9,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { createRepository } from './repository.mjs';
 import { createRecordServer } from './server.mjs';
 import { runCycle } from './worker.mjs';
+import { closeRealtime } from './realtime-minutes.mjs';
 import { closeSpeakerStreams } from './speaker-streams.mjs';
 import { emit } from '../../../packages/records/src/record.mjs';
 import { readConfig, saveConfig, defaults } from './config.mjs';
@@ -110,14 +111,14 @@ export async function startDesktopBackend({ root, port = 0, workers = true } = {
   await writeFile(join(root, 'runtime-state.json'), JSON.stringify(state) + '\n', { mode: 0o600 });
   openLocalAsr();
   let stopping = false;
-  const loops = workers ? ['audio', 'minutes', 'translation', 'intents', 'workspace', 'learning'].map(lane => (async () => {
+  const loops = workers ? ['audio', 'realtime', 'minutes', 'translation', 'intents', 'workspace', 'learning'].map(lane => (async () => {
     while (!stopping) {
       try { await runCycle(repo, {}, { lane }); } catch (error) { console.error('[client-worker]', error.code || error.name); }
       if (!stopping) await new Promise(resolve => setTimeout(resolve, lane === 'audio' ? 100 : 250));
     }
   })()) : [];
   return { repo, sqlite, url: `http://127.0.0.1:${address.port}`, session,
-    async stop() { stopping = true; await closeLocalAsr(); for (const record of await repo.list()) closeSpeakerStreams(repo, record.id); await Promise.all(loops); await app.stop(); },
+    async stop() { stopping = true; await closeLocalAsr(); for (const record of await repo.list()) closeSpeakerStreams(repo, record.id); await Promise.all(loops); closeRealtime(repo); await app.stop(); },
   };
 }
 

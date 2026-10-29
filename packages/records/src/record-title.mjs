@@ -1,3 +1,4 @@
+import { truncateText } from './text.mjs';
 const placeholders = /^(?:未命名会议|未命名记录|新会议|会议纪要|智能会议纪要|会议总结|untitled(?: meeting)?|new meeting|meeting minutes)$/i;
 const ignored = new Set(('今天 明天 昨天 现在 这个 那个 我们 你们 他们 大家 自己 可以 需要 应该 进行 讨论 决定 确认 会议 问题 事情 一下 然后 就是 所以 因为 还有 是否 怎么 什么 已经 没有 时候 之前 之后 完成 the and this that with from about should would could have will meeting discuss').split(' '));
 const words = new Intl.Segmenter('zh',{granularity:'word'});
@@ -23,7 +24,7 @@ export function automaticRecordTitle(record,preferredTitle) {
  const current=String(record.title || '').trim();
  if(current && !placeholders.test(current) && current!==record.autoTitle)return '';
  // Validated minutes may refine an automatic title; explicit meeting names stay protected.
- const preferred=typeof preferredTitle==='string' ? preferredTitle.trim().replace(/\s+/g,' ').slice(0,160) : '';
+ const preferred=typeof preferredTitle==='string' ? truncateText(preferredTitle.trim().replace(/\s+/g,' '),160) : '';
  if(preferred && !placeholders.test(preferred))return preferred;
  if(record.capture!=='completed')return '';
  if(record.autoTitle===current)return '';

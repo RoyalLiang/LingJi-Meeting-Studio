@@ -1,0 +1,21 @@
+{
+  "id": "lingji-mandarin-readings",
+  "version": "18.0.0",
+  "schema": 1,
+  "languages": [
+    "zh"
+  ],
+  "source": "https://www.unicode.org/Public/18.0.0/ucd/Unihan.zip",
+  "sourceSha256": "4c93ea9c1f636451729a840978f1667a53886af37ba854fdcce109721c63d43e",
+  "properties": [
+    "kMandarin",
+    "kHanyuPinyin",
+    "kTraditionalVariant"
+  ],
+  "range": "U+3400..U+9FFF",
+  "characters": 26711,
+  "bytes": 425851,
+  "sha256": "7ca3caf0c79a1723c01c86f6b19424a9291e64b8fd6c0c477c0e9649009f06bd",
+  "license": "Unicode-3.0",
+  "notice": "UNICODE-LICENSE.txt"
+}
