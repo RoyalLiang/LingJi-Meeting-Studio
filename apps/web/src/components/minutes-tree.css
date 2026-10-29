@@ -3,9 +3,14 @@
 .minutes-tree.is-compact .minutes-branch>h4{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:15px;padding:0;min-height:40px}.minutes-branch>h4>small{font:11px var(--mono);color:var(--ink-3)}
 .minute-speakers{display:block;width:fit-content;max-width:100%;margin:0 0 4px auto;text-align:right;color:var(--ink-3);font-size:11px;line-height:1.5;overflow-wrap:anywhere}
 
-/* Begin the trunk below the heading so wrapped titles never cross it. */
+/* Paint connectors behind cards and continue the trunk under the topic node. */
 .minutes-tree.is-compact .minutes-branch{border-left:0}
-.minutes-tree.is-compact .branch-children{border-left:2px solid var(--branch-line);margin-top:4px}
+.minutes-tree.is-compact .branch-children{position:relative;isolation:isolate;border-left:0;margin:0 0 0 18px;width:calc(100% - 18px);padding-top:18px}
+.minutes-tree.is-compact .branch-children>*{position:relative}
+.minutes-tree.is-compact .branch-children>*::before{content:'';position:absolute;z-index:-1;left:calc(-1 * var(--branch-indent));top:-12px;bottom:-12px;width:2px;height:auto;border:0;border-radius:0;background:var(--branch-line);pointer-events:none}
+.minutes-tree.is-compact .branch-children>*:first-child::before{top:-26px}
+.minutes-tree.is-compact .branch-children>*:last-child::before{bottom:calc(50% + 12px)}
+.minutes-tree.is-compact .branch-children>*::after{content:'';position:absolute;z-index:-1;left:calc(-1 * var(--branch-indent));top:calc(50% - 12px);width:calc(var(--branch-indent) + 8px);height:12px;box-sizing:border-box;border-left:2px solid var(--branch-line);border-bottom:2px solid var(--branch-line);border-bottom-left-radius:12px;pointer-events:none}
 .minutes-tree.is-compact .minutes-branch>h4{width:auto;max-width:100%;margin:0;padding:0;line-height:1.6}
 .minutes-branch>h4>span{min-width:0;overflow-wrap:anywhere;width:fit-content;padding:8px 12px;border:1px solid color-mix(in srgb,var(--branch-color) 12%,transparent);border-radius:8px;color:var(--branch-color);background:var(--branch-bg)}
 .minutes-branch>h4>small{flex:none;white-space:nowrap}
