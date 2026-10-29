@@ -514,7 +514,7 @@ export async function processLearningTraining(repo, owner, providers = {}) {
   }
 }
 export async function runLearningCycle(repo, providers = {}) {
-  for (const record of await repo.listWork())
+  for (const record of await repo.listWork({ lane: 'learning' }))
     if (!record.deleted && record.capture === "completed")
       await processLearningRecord(repo, record.id, providers);
   for (const state of await repo.list("learning-training"))

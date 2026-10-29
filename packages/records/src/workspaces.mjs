@@ -18,6 +18,7 @@ export function meetingSeconds(record) {
   return Math.round(recordingDurationMs(record) / 1000);
 }
 
+export const analysisInput = record => Object.fromEntries(['id','kind','owner','deleted','deleteAt','workspaceId','title','transcriptRevision','minutesRevision','notesRevision','capture','generation'].map(key => [key, record[key]]));
 export const inputHash = records => digest(JSON.stringify(records.map(r => [r.id, r.workspaceId || null, r.title, r.transcriptRevision, r.minutesRevision, r.notesRevision, r.capture, r.generation]).sort((a, b) => a[0].localeCompare(b[0]))));
 const sourceOf = r => ({ recordId: r.id, title: r.title, transcriptRevision: r.minutes?.transcriptRevision ?? r.transcriptRevision, minutesRevision: r.minutesRevision });
 const normalize = text => text.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();

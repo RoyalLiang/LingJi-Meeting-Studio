@@ -29,7 +29,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
   if(lane==='learning'){if(learningEnabled && (!providerStatus(config).fixture || providers.learningPreparation))await runLearningCycle(repo,providers);return;}
   if (lane === 'workspace') { await processWorkspaceAnalysis(repo, config, providers); return; }
   if (lane === 'realtime' || lane === 'all') await reconcileRealtime(repo, config);
-  const records = await repo.listWork();
+  const records = await repo.listWork({ lane });
   async function processCandidate(candidate) {
     if (lane !== 'all' && lane !== 'audio' && lane !== 'realtime' && (candidate.deleted || Date.parse(candidate.deleteAt) < Date.now())) return;
     if (candidate.deleted && candidate.cleanup === 'completed' && Date.now() - (candidate.cleanupAt || 0) < 600000) return;

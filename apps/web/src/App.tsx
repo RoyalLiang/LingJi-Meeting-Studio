@@ -347,11 +347,12 @@ function Workspace() {
     try { await importAudio(file, record, setImportProgress); await stopCapture(); }
     catch (e) { setError(messageOf(e)); await refresh(); } finally { setBusy(false); setImportProgress(null); }
   }
-  function cite(ref: Evidence, snapshotOverride?: Segment[], transcriptRevision?: number) {
+  const currentEvidenceSnapshot=record?.minutes?.evidenceSnapshot;
+  const cite=useCallback((ref: Evidence, snapshotOverride?: Segment[], transcriptRevision?: number)=>{
     window.dispatchEvent(new Event('meeting:pause-follow'));
-    const snapshot = snapshotOverride || record?.minutes?.evidenceSnapshot || [];
+    const snapshot = snapshotOverride || currentEvidenceSnapshot || [];
     setEvidence({ reference: { ...ref }, snapshot: structuredClone(snapshot), transcriptRevision });
-  }
+  },[currentEvidenceSnapshot]);
   const directoryName = scope==='all'?'所有会议':directories.find(w=>w.id===scope)?.name || '工作目录';
   const chooseScope = (next:string) => { setScope(next);selectRecord('');setQuery('');scrollRoot.current?.scrollTo({top:0,behavior:'instant'}); };
   const newDirectory = () => {setEditingDirectory(undefined);setModal('directory');};

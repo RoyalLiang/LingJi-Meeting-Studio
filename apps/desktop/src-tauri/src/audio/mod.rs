@@ -185,6 +185,14 @@ fn send_packets(sender: &PacketQueue, packets: Vec<Vec<u8>>) -> Result<(), Strin
     Ok(())
 }
 
+fn finish_capture(packets: &PacketQueue, mut pipeline: Pipeline, frames: Receiver<Vec<f32>>, discard: bool) -> Result<(), String> {
+    if !discard {
+        for data in frames.try_iter() { send_packets(packets, pipeline.push(&data)?)?; }
+        send_packets(packets, pipeline.finish()?)?;
+    }
+    Ok(())
+}
+
 impl Captures {
     pub fn active(&self) -> bool {
         !self.sessions.lock().unwrap().is_empty()
@@ -356,13 +364,7 @@ impl Captures {
                     }
                 }
                 drop(stream);
-                if !worker_discard.load(Ordering::Acquire) && worker_error.lock().unwrap().is_none()
-                {
-                    for data in frames.try_iter() {
-                        send_packets(&packets, pipeline.push(&data)?)?;
-                    }
-                    send_packets(&packets, pipeline.finish()?)?;
-                }
+                finish_capture(&packets, pipeline, frames, worker_discard.load(Ordering::Acquire))?;
                 Ok::<(), String>(())
             })();
             if let Err(message) = result {
@@ -499,6 +501,41 @@ mod tests {
         for (index, block) in blocks.iter().enumerate() {
             assert_eq!(block, &vec![index as f32; 256]);
         }
+    }
+
+    #[test]
+    fn capture_errors_preserve_preaccepted_raw_frames_and_resampler_tail() {
+        for overflow in [true, false] {
+            let packets = PacketQueue::new().unwrap();
+            let mut pipeline = Pipeline::new(48_000, 2).unwrap();
+            send_packets(&packets, pipeline.push(&vec![0.25; 4_800 * 2]).unwrap()).unwrap();
+            let (sender, frames) = raw_input_channel();
+            let stop = AtomicBool::new(false);
+            let error = Mutex::new(None);
+            for _ in 0..256 { queue_input(&sender, &[0.25f32; 960], &error, &stop); }
+            if overflow { queue_input(&sender, &[0.25f32; 960], &error, &stop); }
+            else { handle_stream_error(cpal::ErrorKind::DeviceNotAvailable.into(), &error, &stop, &AtomicBool::new(false)); }
+            assert!(stop.load(Ordering::Acquire));
+            finish_capture(&packets, pipeline, frames, false).unwrap();
+            packets.close();
+            let mut samples = 0;
+            while let Some(packet) = packets.pending().unwrap() {
+                let read = |at| u32::from_le_bytes(packet[at..at + 4].try_into().unwrap());
+                samples += read(8); packets.acknowledge(read(0), read(4), read(8)).unwrap();
+            }
+            assert_eq!(samples, 42_560);
+            assert!(error.lock().unwrap().is_some(), "the capture failure must still be reported");
+        }
+    }
+
+    #[test]
+    fn explicit_discard_skips_tail_and_encoding_failures_still_fail() {
+        let packets = PacketQueue::new().unwrap();
+        let (sender, frames) = raw_input_channel(); sender.send(vec![0.25; 960]).unwrap();
+        finish_capture(&packets, Pipeline::new(48_000, 2).unwrap(), frames, true).unwrap();
+        packets.close(); assert!(packets.pending().unwrap().is_none());
+        let (sender, frames) = raw_input_channel(); sender.send(vec![0.25]).unwrap();
+        assert!(finish_capture(&PacketQueue::new().unwrap(), Pipeline::new(48_000, 2).unwrap(), frames, false).is_err());
     }
 
     #[test]

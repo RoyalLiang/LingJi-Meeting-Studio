@@ -95,10 +95,14 @@ export function applyRecordDelta<T extends {cursor:string;segments:{id:string}[]
   if(!delta || !/^\d{1,20}$/.test(delta.cursor))return null;
   if(BigInt(delta.cursor)<=BigInt(record.cursor))return record;
   if(delta.baseCursor!==record.cursor || !delta.set || !delta.segments)return null;
-  const segments=new Map(record.segments.map(segment=>[segment.id,segment]));
-  for(const id of delta.segments.remove)segments.delete(id);
-  for(const segment of delta.segments.upsert)segments.set(segment.id,segment);
-  const next={...record,...delta.set,cursor:delta.cursor,segments:delta.segments.order ? delta.segments.order.map(id=>segments.get(id)) : [...segments.values()]};
+  let nextSegments=record.segments;
+  if(delta.segments.remove.length || delta.segments.upsert.length || delta.segments.order !== undefined){
+    const segments=new Map(record.segments.map(segment=>[segment.id,segment]));
+    for(const id of delta.segments.remove)segments.delete(id);
+    for(const segment of delta.segments.upsert)segments.set(segment.id,segment);
+    nextSegments=(delta.segments.order ? delta.segments.order.map(id=>segments.get(id)) : [...segments.values()]) as T['segments'];
+  }
+  const next={...record,...delta.set,cursor:delta.cursor,segments:nextSegments};
   for(const key of delta.remove)delete (next as Record<string,unknown>)[key];
   return next as T;
 }
