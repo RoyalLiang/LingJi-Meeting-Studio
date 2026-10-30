@@ -4,8 +4,10 @@ import type { Evidence, Minutes, MinutesItem, RecordDetail, SpeakerSummary, Summ
 
 export function currentMinutesJob(record: Pick<RecordDetail,'capture'|'jobs'|'transcriptRevision'>) {
   const ended=record.capture==='completed' || record.capture==='sealed';
-  return record.jobs.filter(job=>job.status!=='cancelled' && (!ended || job.scope!=='live'))
-    .filter(job=>!['failed','stale'].includes(job.status) || job.transcriptRevision===record.transcriptRevision || (!ended && job.scope==='live')).at(-1);
+  const jobs=record.jobs.filter(job=>job.status!=='cancelled')
+    .filter(job=>!['failed','stale'].includes(job.status) || job.transcriptRevision===record.transcriptRevision || (!ended && job.scope==='live'));
+  if(!ended)return jobs.at(-1);
+  return jobs.filter(job=>['queued','running'].includes(job.status)).at(-1) || jobs.filter(job=>job.scope!=='live').at(-1) || jobs.filter(job=>job.scope==='live' && job.status==='failed').at(-1);
 }
 
 export function topicBranches(minutes: Minutes): (Topic & { items: MinutesItem[] })[] {

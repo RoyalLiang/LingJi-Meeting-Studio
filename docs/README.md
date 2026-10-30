@@ -1,3 +1,5 @@
+[滚动总结与学习设置候选](evidence/rolling-summary-2026-10-30.md)：学习设置布局已确认，候选待发布；[后台音频调用联动](engineering/background-meeting.md)已形成首版实现，长期会议状态方案仍为 proposed。
+
 # 聆记文档导航
 
 [v0.2.3 纪要与桌面修正](releases/v0.2.3-preview.md)已发布：五项CI与三平台完整附件核验通过；[发布回执](evidence/preview-v0.2.3-2026-10-31.md) · [交互与评审](evidence/ui-followups-2026-10-30.md)。

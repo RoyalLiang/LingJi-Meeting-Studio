@@ -31,7 +31,7 @@ export function liveInput(record, template) {
   ordered.forEach((segment,index)=>{
     if(covered.has(identity(segment)))return;
     if(segment.endMs>segment.startMs){
-      const start=segment.startMs-120000,end=segment.endMs+120000,last=ranges.at(-1);
+      const start=segment.startMs-300000,end=segment.endMs+300000,last=ranges.at(-1);
       if(last&&start<=last.end)last.end=Math.max(last.end,end);else ranges.push({start,end});
     }else for(let offset=-2;offset<=2;offset++)neighbors.add(index+offset);
   });
@@ -62,19 +62,21 @@ export function minutesContext(previous, snapshot=[]) {
     if (bytes(context) > outlineBudget) context.headings.pop();
   }
   for (let index = 0; index < context.topics.length; index++) {
-    context.topics[index].summary = (summaries.get(context.topics[index]) || '').slice(0, 160);
+    context.topics[index].summary = (summaries.get(context.topics[index]) || '').slice(0, 480);
     if (bytes(context) > outlineBudget) delete context.topics[index].summary;
   }
   const entries=[...(previous.decisions || []).map(item=>({...item,kind:'decision'})),...(previous.actions || []).map(item=>({...item,kind:'action'})),...(previous.highlights || []).map(item=>({...item,kind:'item',heading:'关键结论'})),...previous.sections.flatMap(section=>section.items.map(item=>({...item,kind:'item',heading:section.heading})))];
   const relevant=new Set(snapshot.map(identity)), seen=new Set();
   const related=new Set((previous.topics || []).filter(topic=>freshText.includes(topic.title)).flatMap(topic=>(topic.evidence || []).map(identity)));
   const score=item=>Number(item.evidence.some(ref=>related.has(identity(ref))))*10+Number(item.evidence.some(ref=>relevant.has(identity(ref))));
-  entries.sort((a,b)=>score(b)-score(a));
+  const times=new Map((previous.evidenceSnapshot || []).map(segment=>[identity(segment),segment.endMs || 0]));
+  const time=item=>Math.max(0,...item.evidence.map(ref=>times.get(identity(ref)) || 0));
+  entries.sort((a,b)=>score(b)-score(a) || time(b)-time(a));
   for(const item of entries){
     const id=minutesItemId(item);if(seen.has(id))continue;seen.add(id);
     const next={id,kind:item.kind,text:item.text.slice(0,1000),evidence:item.evidence.slice(0,5),...(item.heading?{heading:item.heading}:{}),...(item.kind==='action'?{owner:item.owner??null,due:item.due??null}:{})};
     context.items.push(next);if(bytes(context)>budget)context.items.pop();
-    if(context.items.length>=40)break;
+    if(context.items.length>=60)break;
   }
   context.recentPoints = [];
   const recent = [...previous.sections.flatMap(section => section.items).map(item => ({ text: item.text.slice(0, 240), topicId: item.topicId })), ...(previous.actions || []).map(item => ({ text: item.text.slice(0, 240), owner: item.owner, due: item.due }))].reverse();
@@ -176,10 +178,10 @@ export function mergeLiveMinutes(previous, incoming, snapshot) {
   const speakers = new Map(base.speakerSummaries?.map(speaker => [speaker.speakerId || speaker.speaker, speaker]) || []);
   for (const speaker of incoming.speakerSummaries || []) speakers.set(speaker.speakerId || speaker.speaker, speaker);
   return orderMinutesTimelines({
-    ...incoming, title: previous?.title || incoming.title, sections, topics,
+    ...incoming, title: incoming.title, sections, topics,
     actions: mergeItems(base.actions, (incoming.actions || []).map(remapItem)), decisions: mergeItems(base.decisions, (incoming.decisions || []).map(remapItem)),
     speakerSummaries: [...speakers.values()], tables: [...tables.values()].slice(-6),
-    highlights: mergeItems(incoming.highlights?.map(remapItem), base.highlights).slice(0, 6), visuals: [...visuals.values()].slice(-4),
+    highlights: mergeItems(incoming.highlights?.map(remapItem), base.highlights), visuals: [...visuals.values()].slice(-4),
     ...(incoming.currentDiscussion ? {currentDiscussion:incoming.currentDiscussion.map(remapItem)} : {}),
     evidenceSnapshot: uniqueRefs([...base.evidenceSnapshot, ...snapshot]),
     correctionHistory:history.slice(-100), corrections:[]

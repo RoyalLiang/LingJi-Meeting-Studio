@@ -1,3 +1,4 @@
+import {useMeetingAutomation} from './useMeetingAutomation';
 import { manualMinutesContent } from '../../../packages/records/src/minutes-quality.mjs';
 import { ConnectionStatus } from './components/ConnectionStatus';
 import { useRecordingWidget } from './useRecordingWidget';
@@ -143,6 +144,7 @@ function Workspace() {
   const [evidence, setEvidence] = useState<CitationSelection | null>(null), [importProgress, setImportProgress] = useState<number | null>(null);
   const scrollRoot = useRef<HTMLDivElement>(null);
   const stopping = useRef(false), capture = useRef<CaptureController | null>(null), activeId = useRef(''), mounted = useRef(true), fileInput = useRef<HTMLInputElement>(null);
+  const meetingAutomation=useMeetingAutomation(authReady ? boot?.meetingAutomation : undefined,{id:record?.id || '',recording,paused:record?.capture==='paused',busy:busy || stopping.current || Boolean(modal)},{start:quickRecord,stop:async ownedId=>activeId.current===ownedId && Boolean(capture.current?.active) ? stopCapture('seal') : false,error:setError});
   useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem('meeting-theme', theme); }, [theme]);
   useNativeMenuBar({ authenticated: authReady, recordTitle: record?.title || '', capture: record?.capture || 'idle', recording, busy: busy || stopping.current,
     connection: !online && !localBackend ? 'offline' : !id ? 'idle' : connectionState }, {
@@ -329,6 +331,7 @@ function Workspace() {
         else setModal('capture');
       }
       await refresh();
+      return controller.active ? next.id : undefined;
     } catch (e) {
       await started; await controller.stop(); capture.current = null; setRecording(false); setError(messageOf(e));
     } finally { setBusy(false); setCapturePhase('idle'); if (!controller.active) capture.current = null; }
@@ -436,6 +439,7 @@ function Workspace() {
       {id && record && !['sealed','completed'].includes(record.capture) && <CurrentDiscussion audioOnly={boot.providers.minutesMode === 'doubao-audio-only'} key={`discussion:${record.id}`} record={record} minutes={(record.liveMinutes || record.minutes) || null} job={currentMinutesJob(record)} modelReady={boot.providers.minutes}/>}
       {record && translationOpen && <TranslationPanel key={`translation:${record.id}`} record={record} ready={boot.providers.translation ?? boot.providers.minutes} close={()=>setTranslationOpen(false)} configure={()=>{setTranslationOpen(false);setModal('settings');}} save={async target=>{const recordId=record.id;const saved=await api<RecordDetail>(`/records/${recordId}`,'PATCH',{translationTarget:target});setRecord(current=>current?.id===recordId && (current.translationRevision||0)<=(saved.translationRevision||0)?{...current,translationTarget:saved.translationTarget,translationRevision:saved.translationRevision}:current);}} inspect={segment=>cite({segmentId:segment.id,revision:segment.revision},record.segments,record.transcriptRevision)}/>}
     </main><input ref={fileInput} className="sr-only" type="file" accept="audio/*" aria-label="导入音频文件" onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void onImport(file); }}/>
+      {meetingAutomation && <Toast key={meetingAutomation.key} message={meetingAutomation.message} persistent warning dismiss={meetingAutomation.cancel} action={{label:'取消联动',run:meetingAutomation.cancel}}/>}
       <Toast message={error || toast.message} error={Boolean(error)} messageKey={error || toast.key} dismiss={dismissToast}/>
     {modal === 'directory' && <WorkspaceEditor directory={editingDirectory} save={saveDirectory} close={()=>{setModal(archiveIds.length?'archive':null);}}/>}
     {modal === 'archive' && <ArchiveRecords key={archiveInitial||'inbox'} directories={directories} count={archiveIds.length} initial={archiveInitial} save={saveArchive} close={()=>{setModal(null);setArchiveIds([]);}} create={newDirectory}/>}

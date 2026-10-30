@@ -1,15 +1,89 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { liveInput, minutesContext, mergeLiveMinutes, minutesItemId } from '../packages/records/src/live-minutes.mjs';
-import { requestMinutes, createRecord, validateMinutes } from '../packages/records/src/record.mjs';
+import { requestMinutes, createRecord, validateMinutes, commitMinutes, seal } from '../packages/records/src/record.mjs';
+import { automaticMinutesAt, queueAutomaticMinutes } from '../packages/records/src/automation.mjs';
 import { ruleIntents } from '../packages/records/src/intents.mjs';
 import { completeModelJson } from '../services/records/src/llm.mjs';
 import { generateMinutes } from '../services/records/src/providers.mjs';
 import { minutesInstructions, minutesSchema } from '../services/records/src/minutes-prompts.mjs';
 import { evaluateMinutes } from '../scripts/evaluate-minutes.mjs';
+import { buildMinutesManifest } from '../services/records/src/minutes-pipeline.mjs';
+import { compactMinutesPayload } from '../services/records/src/minutes-wire.mjs';
 
 const segment = (id, startMs, text) => ({id, revision:1, startMs, endMs:startMs+1000, text, sourceId:'mic', speakerId:'speaker-1', speaker:'张工'});
 const ref = s => ({segmentId:s.id, revision:s.revision});
+
+test('rolling highlights retain every round and the automatic title follows the latest summary',()=>{
+  const record=createRecord('owner');record.capture='recording';
+  for(let round=0;round<9;round++){
+    const source=segment(`round-${round}`,round*60000,`第${round}轮确认`);
+    record.segments.push(source);record.transcriptRevision++;
+    const job=requestMinutes(record,{scope:'live'});job.status='running';job.fence=job.id;
+    const result={title:`议题进展${round}`,sections:[{heading:'进展',items:[{text:source.text,evidence:[ref(source)]}]}],highlights:[{text:source.text,evidence:[ref(source)]}],actions:[]};
+    commitMinutes(record,job.id,result,job.fence);
+    assert.equal(record.title,result.title);
+    assert.equal(record.liveMinutes.highlights.length,round+1);
+    assert.ok(record.liveMinutes.highlights.some(item=>item.text==='第0轮确认'));
+    validateMinutes(record.liveMinutes,record.liveMinutes.evidenceSnapshot,undefined,{aggregate:true});
+  }
+  record.title='人工标题';record.titleEdited=true;
+  const job=requestMinutes(record,{scope:'live'});job.fence=job.id;
+  commitMinutes(record,job.id,{title:'新模型标题',sections:[{heading:'进展',items:[]}],actions:[]},job.fence);
+  assert.equal(record.title,'人工标题');
+});
+
+test('rolling context includes five minutes of speech and recent facts when old memory fills up',()=>{
+  const {record}=meeting();
+  record.segments=Array.from({length:12},(_,index)=>segment(`context-${index}`,index*60000,`上下文${index}`));
+  const prior=record.segments.slice(0,-1);
+  record.liveMinutes={...record.liveMinutes,evidenceSnapshot:prior,sections:[{heading:'进展',items:prior.flatMap(source=>Array.from({length:6},(_,index)=>({text:`${source.id}-${index} `+'背景'.repeat(100),evidence:[ref(source)]})))}]};
+  const selected=liveInput(record,'meeting');
+  assert.ok(selected.some(source=>source.id==='context-6'),'five-minute lookback must include context-6');
+  const context=minutesContext(record.liveMinutes,selected);
+  assert.ok(context.items.some(item=>item.text.startsWith('context-10-5 ')),'recent memory cannot be crowded out by early facts');
+  assert.ok(Buffer.byteLength(JSON.stringify(context))<=18000);
+});
+
+test('ending a meeting drains the running summary before queuing final minutes',()=>{
+  const {record}=meeting();record.autoMinutes={enabled:true,intervalSeconds:30,enabledAt:1};
+  record.segments.push(segment('fresh',120000,'补充完整结果'));record.transcriptRevision++;
+  const job=requestMinutes(record,{scope:'live',automatic:true});job.status='running';job.fence='active';
+  job.partialMinutes={title:'已校验窗口',sections:[{heading:'窗口',items:[{text:'已有片段',evidence:[ref(record.segments[0])]}]}],actions:[],evidenceSnapshot:[record.segments[0]]};
+  const before=structuredClone(record.liveMinutes);
+  seal(record,[]);
+  assert.equal(record.capture,'completed');assert.equal(job.status,'running');assert.equal(job.fence,'active');
+  assert.deepEqual(record.liveMinutes,before,'stop must not alter the baseline used by the running worker');
+  assert.equal(automaticMinutesAt(record),Infinity);
+  assert.equal(queueAutomaticMinutes(record,'fixture'),undefined);
+  commitMinutes(record,job.id,{title:'完整会中总结',sections:[{heading:'进展',items:[{text:'完整结果',evidence:[ref(record.segments.at(-1))]}]}],actions:[]},job.fence);
+  assert.equal(job.status,'completed');
+  assert.equal(queueAutomaticMinutes(record,'fixture').scope,'final');
+});
+
+test('the actual text provider window receives the five-minute lookback across time buckets',()=>{
+  const {record}=meeting();
+  record.segments=[300001,360000,420000,480000,540000,600000].map((time,index)=>segment(`window-${index}`,time,`原话${index}`));
+  record.liveMinutes={...record.liveMinutes,evidenceSnapshot:record.segments.slice(0,-1),sections:[{heading:'已有内容',items:[]}]};
+  const job=requestMinutes(record,{scope:'live'}),manifest=buildMinutesManifest(job);
+  assert.equal(manifest.windows.length,1);
+  const window=manifest.windows[0];assert.deepEqual(new Set(window.snapshot.map(s=>s.id)),new Set(record.segments.map(s=>s.id)));
+  const request=compactMinutesPayload({...job,snapshot:window.snapshot}).payload;
+  assert.ok(request.transcript.some(s=>s.text==='原话0' && s.contextOnly===true));
+  assert.ok(request.transcript.some(s=>s.text==='原话5' && s.contextOnly===false));
+});
+
+test('expanded speech context still fits the existing small request budget and long notes',()=>{
+  const {record}=meeting();record.segments=Array.from({length:70},(_,index)=>segment(`budget-${index}`,index*1000,'原话'+index));
+  const old=record.segments.slice(0,-1);
+  record.liveMinutes={...record.liveMinutes,evidenceSnapshot:old,sections:[{heading:'历史',items:old.map(s=>({text:s.text+'背景'.repeat(150),evidence:[ref(s)]}))}]};
+  for(const [budget,notes] of [[16000,''],[24000,'a'.repeat(7000)]]){
+    record.notes=notes;record.jobs=[];
+    const job=requestMinutes(record,{scope:'live'}),manifest=buildMinutesManifest(job,{RECORD_MINUTES_INPUT_BYTES:budget});
+    assert.ok(manifest.windows.length>0);
+    assert.ok(manifest.windows.every(window=>Buffer.byteLength(JSON.stringify({transcript:window.snapshot,notes:job.notes,context:job.liveContext}))<=budget));
+  }
+});
 test('labelled synthetic intent cases run without cloud requests',async()=>{
   const report=await evaluateMinutes();assert.equal(report.cases,12);assert.equal(report.mode,'local-rules');assert.equal(report.intentAccuracy,1);
 });

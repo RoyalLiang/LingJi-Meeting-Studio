@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+export const learningServiceTarget = (config = {}) => ({host:config.LEARNING_SSH_HOST || '',remoteBase:config.LEARNING_REMOTE_BASE || ''});
+export const validLearningServiceTarget = ({host,remoteBase}) => /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(host) && /^\/[a-zA-Z0-9/_.-]+$/.test(remoteBase);
 export const learningFingerprint = (record) =>
   createHash("sha256")
     .update(

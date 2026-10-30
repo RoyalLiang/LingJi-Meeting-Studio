@@ -11,12 +11,12 @@ export const minutesQualityInstructions = `
 highlights、items 和每个 visual entry 均引用真实片段与版本；visual.topicId 必须存在。没有依据的增强字段省略或给空数组，不输出占位图表。
 增量整理时 context 是历史去重提示而非新证据；仅重复确认而无新信息时不增加一条。复用已有主题 id；状态变化明确写变化及依据，不重复铺陈背景。汇总阶段重新按议题归并，删除重复和闲聊，并完整保留仍有效的决策、行动、数字、风险及其证据。`;
 
-export function validateMinutesQuality(result, snapshot, requireThat, topicIds, validEvidence, {aggregate=false}={}) {
+export function validateMinutesQuality(result, snapshot, requireThat, topicIds, validEvidence, {aggregate=false,aggregateParts=1}={}) {
   const text = (value, max) => typeof value === 'string' && value.trim() && value.length <= max;
   const topic = value => value === undefined || (typeof value === 'string' && topicIds.has(value));
   const items = [...(Array.isArray(result.sections) ? result.sections.flatMap(section => Array.isArray(section?.items) ? section.items : []) : []), ...(Array.isArray(result.actions) ? result.actions : []), ...(Array.isArray(result.decisions) ? result.decisions : [])];
   for (const item of items.filter(item => item && typeof item === 'object')) requireThat(topic(item.topicId) && (item.label === undefined || text(item.label, aggregate&&result.actions?.includes(item)?240:30)) && (item.kind === undefined || ['fact','decision','action','risk','question'].includes(item.kind)), 'invalid_minutes_structure', 422);
-  if (result.highlights !== undefined) requireThat(Array.isArray(result.highlights) && result.highlights.length <= 6 && result.highlights.every(item => item && text(item.text, 300) && validEvidence(item.evidence)), 'invalid_minutes_structure', 422);
+  if (result.highlights !== undefined) requireThat(Array.isArray(result.highlights) && result.highlights.length <= 6*(aggregate?aggregateParts:1) && result.highlights.every(item => item && text(item.text, 300) && validEvidence(item.evidence)), 'invalid_minutes_structure', 422);
   if (result.visuals === undefined) return;
   requireThat(Array.isArray(result.visuals) && result.visuals.length <= 4, 'invalid_minutes_visuals', 422);
   for (const visual of result.visuals) {

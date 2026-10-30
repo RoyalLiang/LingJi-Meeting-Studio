@@ -6,6 +6,7 @@ import { randomUUID, createHash } from "node:crypto";
 import {
   queueLearningReview,
   learningFingerprint,
+  learningServiceTarget,
 } from "../../../packages/records/src/learning.mjs";
 import { emit, requireThat } from "../../../packages/records/src/record.mjs";
 import {
@@ -16,6 +17,7 @@ import {
   roundDirectory,
 } from "../../../scripts/alpha-learning/review-store.mjs";
 import { learningServiceFor } from './learning-service.mjs';
+import { readConfig } from './config.mjs';
 const repoRoot = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 export const learningWorkspace = (repo, id) => {
   requireThat(/^[a-f0-9-]{36}$/.test(id), "invalid_record_id", 400);
@@ -73,6 +75,7 @@ export async function learningBridge(options) {
     String(perRecord),
   ];
   if(options.steps!==undefined)args.push("--steps",String(options.steps));
+  args.push('--host',options.host || '', '--remote-base',options.remoteBase || '');
   if (parent) args.push("--parent", parent);
   if (inputBundle) args.push("--input-bundle", inputBundle);
   if (recordId) args.push("--record-id", recordId);
@@ -139,6 +142,7 @@ export async function processLearningRecord(repo, id, providers = {}) {
     const splitsFile = join(workspace, "split-" + claim.round + ".json");
     await writeJson(splitsFile, { [id]: meetingFold(id) });
     const result = await (providers.learningPreparation || learningBridge)({
+      ...learningServiceTarget(await readConfig(repo.root)),
       workspace,
       round: claim.round,
       recordId: id,
@@ -475,6 +479,7 @@ export async function processLearningTraining(repo, owner, providers = {}) {
     await writeLines(join(inputBundle, "asr-candidates.jsonl"), corpus.asr);
     await writeLines(join(inputBundle, "reviews.jsonl"), corpus.reviews);
     const result = await (providers.learningTraining || learningBridge)({
+      ...learningServiceTarget(await readConfig(repo.root)),
       workspace,
       round: claim.round,
       parent: claim.parent,

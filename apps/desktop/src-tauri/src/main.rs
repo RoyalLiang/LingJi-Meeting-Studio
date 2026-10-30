@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod audio;
+mod meeting_watch;
 mod config;
 mod downloads;
 mod local_backend;
@@ -49,6 +50,12 @@ fn authorize(window: &WebviewWindow, state: &Client) -> Result<(), String> {
         return Err("客户端权限被拒绝".into());
     }
     Ok(())
+}
+
+#[tauri::command]
+fn meeting_watch_configure(window: WebviewWindow, state: State<'_, Client>, watch: State<'_, meeting_watch::MeetingWatch>, enabled: bool, browser: bool, feishu: bool, token: String) -> Result<bool, String> {
+    authorize(&window, &state)?;
+    watch.configure(window.app_handle().clone(),enabled,browser,feishu,token)
 }
 
 #[tauri::command]
@@ -306,6 +313,7 @@ fn main() {
     #[cfg(feature = "smoke-test")]
     let builder = builder.invoke_handler(tauri::generate_handler![
         recording_widget::recording_widget_update, recording_widget::recording_widget_state, recording_widget::recording_widget_ready, recording_widget::recording_widget_action,
+        meeting_watch_configure,
         capture_start,
         capture_read,
         capture_ack,
@@ -324,6 +332,7 @@ fn main() {
     #[cfg(not(feature = "smoke-test"))]
     let builder = builder.invoke_handler(tauri::generate_handler![
         recording_widget::recording_widget_update, recording_widget::recording_widget_state, recording_widget::recording_widget_ready, recording_widget::recording_widget_action,
+        meeting_watch_configure,
         capture_start,
         capture_read,
         capture_ack,
@@ -366,6 +375,7 @@ fn main() {
             #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             let menu_bar = status_bar::StatusBar::new(app.handle(), &menu_api_origin)?;
             app.manage(recording_widget::RecordingWidget::default());
+            app.manage(meeting_watch::MeetingWatch::default());
             app.manage(Client {
                 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
                 menu_bar,
@@ -375,7 +385,7 @@ fn main() {
                 profile: profile.clone(),
                 origin: origin.clone(), captures: Arc::new(audio::Captures::default()), resident: resident::Resident::default(), _lock: binding._lock, _backend: backend, updates, api });
             app.add_capability(CapabilityBuilder::new("local-capture").window("main").local(false).remote(format!("{origin}/*"))
-                .permission("allow-capture-start").permission("allow-capture-read").permission("allow-capture-ack").permission("allow-capture-stop").permission("allow-capture-inputs")
+                .permission("allow-meeting-watch-configure").permission("allow-capture-start").permission("allow-capture-read").permission("allow-capture-ack").permission("allow-capture-stop").permission("allow-capture-inputs")
                 .permission("allow-recording-widget-update").permission("allow-client-close").permission("allow-client-ready").permission("allow-client-status").permission("allow-update-status").permission("allow-update-activity").permission("allow-update-check").permission("allow-update-download").permission("allow-update-install")
                 .permission("core:event:allow-listen").permission("core:event:allow-unlisten"))?;
             app.add_capability(CapabilityBuilder::new("recording-widget").window("recording-widget").local(false).remote(format!("{origin}/*"))

@@ -65,6 +65,12 @@ export function buildMinutesManifest(job,config={},budget=inputBudget(config)){
   const primaryWindows=windows.map(window=>[...window.snapshot]);
   if(!audioMinutesEnabled(config))for(let index=0;index<windows.length;index++){
     const window=windows[index], adjacent=[primaryWindows[index-1]?.at(-1),primaryWindows[index+1]?.[0]].filter(Boolean);
+    if(job.scope==='live'){
+      const fresh=window.snapshot.filter(segment=>segment.contextOnly!==true);
+      const start=Math.min(...fresh.map(segment=>segment.startMs || 0)),end=Math.max(...fresh.map(segment=>segment.endMs || 0));
+      const distance=segment=>Math.max(0,start-(segment.endMs || 0),(segment.startMs || 0)-end);
+      adjacent.unshift(...snapshot.filter(segment=>segment.contextOnly===true && distance(segment)<=300000).sort((a,b)=>distance(a)-distance(b)));
+    }
     for(const neighbor of adjacent){
       if(window.snapshot.some(segment=>segment.id===neighbor.id&&segment.revision===neighbor.revision))continue;
       const candidate=[...window.snapshot,{...neighbor,contextOnly:job.scope==='live'}].sort((a,b)=>(a.startMs||0)-(b.startMs||0));

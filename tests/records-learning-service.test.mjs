@@ -1,6 +1,43 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createLearningService } from '../services/records/src/learning-service.mjs';
+import { createLearningService, probeLearningService, learningServiceFor } from '../services/records/src/learning-service.mjs';
+import { learningServiceTarget } from '../packages/records/src/learning.mjs';
+import { readConfig, saveConfig, publicConfig } from '../services/records/src/config.mjs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+test('learning has no default remote target and settings persist, validate and clear it',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'learning-settings-'));
+  try{
+    assert.deepEqual(learningServiceTarget({}),{host:'',remoteBase:''});
+    assert.equal(publicConfig(await readConfig(root,{})).LEARNING_SSH_HOST,'');
+    const values={LEARNING_SSH_HOST:'learning-host',LEARNING_REMOTE_BASE:'/opt/learning'};
+    assert.equal((await saveConfig(root,values,{})).LEARNING_REMOTE_BASE,values.LEARNING_REMOTE_BASE);
+    assert.deepEqual(learningServiceTarget(await readConfig(root,{})),{host:'learning-host',remoteBase:'/opt/learning'});
+    await assert.rejects(saveConfig(root,{LEARNING_SSH_HOST:'-oProxyCommand=evil'},{}),{code:'invalid_learning_service_config'});
+    await assert.rejects(saveConfig(root,{LEARNING_REMOTE_BASE:'relative/path'},{}),{code:'invalid_learning_service_config'});
+    await assert.rejects(saveConfig(root,{LEARNING_SSH_HOST:''},{}),{code:'invalid_learning_service_config'});
+    await saveConfig(root,{LEARNING_SSH_HOST:'',LEARNING_REMOTE_BASE:''},{});
+    assert.deepEqual(learningServiceTarget(await readConfig(root,{})),{host:'',remoteBase:''});
+    assert.equal((await learningServiceFor({root}).check()).available,false);
+  }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test('an unconfigured probe never opens SSH and an explicit target uses the saved host and directory',async()=>{
+  let calls=0;
+  const execute=async(command,args)=>{calls++;assert.equal(command,'ssh');assert.equal(args.at(-2),'learning-host');assert.match(args.at(-1),/\/opt\/learning\/\.venv/);};
+  assert.equal(await probeLearningService(learningServiceTarget({}),execute),false);assert.equal(calls,0);
+  assert.equal(await probeLearningService({host:'learning-host',remoteBase:'/opt/learning'},execute),true);assert.equal(calls,1);
+});
+
+test('a settings change rejects a late probe from the previous target and checks again immediately',async()=>{
+  let finish,calls=0;
+  const service=createLearningService({probe:()=>++calls===1?new Promise(resolve=>{finish=resolve;}):false});
+  const old=service.check();await Promise.resolve();service.invalidate();
+  assert.equal((await service.check()).available,false);finish(true);await old;
+  assert.equal(service.snapshot().available,false);assert.equal(calls,2);
+});
 
 test('learning detection is non-blocking, deduplicated, cached and recovers', async () => {
   let time = 100, calls = 0, done;

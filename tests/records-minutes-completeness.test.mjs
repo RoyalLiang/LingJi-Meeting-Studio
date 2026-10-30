@@ -18,6 +18,22 @@ const ref=s=>({segmentId:s.id,revision:s.revision});
 const segment=i=>({id:`s${i}`,revision:1,sourceId:'mic',speakerId:'person-1',speaker:'说话人1',startMs:i*300001,endMs:i*300001+1000,text:`对象编号${i}，颜色蓝色，材质金属。`});
 const minutes=(title,snapshot)=>({title,sections:[{heading:title,items:snapshot.map(s=>({text:s.text,evidence:[ref(s)]}))}],topics:[],actions:[],evidenceSnapshot:snapshot,revision:1,transcriptRevision:1});
 
+test('ending keeps the last validated highlights visible until final minutes and preserves their history afterwards',async()=>{
+ const compiled=await build({entryPoints:['apps/web/src/components/Minutes.tsx'],bundle:true,write:false,platform:'node',format:'cjs',jsx:'automatic',loader:{'.css':'empty'},external:['react','react/jsx-runtime','react-dom']});
+ const module={exports:{}};vm.runInNewContext(compiled.outputFiles[0].text,{module,exports:module.exports,require:createRequire(resolve('package.json')),console,matchMedia:()=>({matches:false})});
+ const record=createRecord('fixture');record.segments=[segment(0)];record.transcriptRevision=1;
+ record.liveMinutes={...minutes('会中总结',record.segments),highlights:[{text:'早期重点仍可查',evidence:[ref(record.segments[0])]}]};
+ record.jobs=[{id:'draining',scope:'live',status:'running',transcriptRevision:1}];
+ const render=()=>renderToStaticMarkup(React.createElement(module.exports.MinutesPanel,{record,busy:false,onClose(){},generate:async()=>{},edit:async()=>true,cite(){},automate:async()=>{},inline:true})).match(/<aside[^>]*aria-label="会议重点"[\s\S]*?<\/aside>/)?.[0] || '';
+ for(const capture of ['sealed','completed']){
+  record.capture=capture;
+  assert.match(render(),/早期重点仍可查/);assert.match(render(),/正在更新会议重点/);
+ }
+ record.jobs=[];record.minutes={...minutes('最终总结',record.segments),highlights:[{text:'最终重点',evidence:[ref(record.segments[0])]}]};
+ const final=render();assert.match(final,/最终重点/);assert.match(final,/会中重点历史/);assert.match(final,/早期重点仍可查/);
+ record.minutes.edited=true;assert.doesNotMatch(render(),/会中重点历史/,'manual deletions must not surface through automatic history');
+});
+
 test('a partial refresh must not hide already displayed complete minutes',async()=>{
  const compiled=await build({entryPoints:['apps/web/src/components/Minutes.tsx'],bundle:true,write:false,platform:'node',format:'cjs',jsx:'automatic',loader:{'.css':'empty'},external:['react','react/jsx-runtime','react-dom']});
  const module={exports:{}};vm.runInNewContext(compiled.outputFiles[0].text,{module,exports:module.exports,require:createRequire(resolve('package.json')),console,matchMedia:()=>({matches:false})});
@@ -167,8 +183,11 @@ test('stopping preserves validated partial minutes with an expanded complete bas
   job.progress={completed:1,total:1};job.manifest={windows:[{key:'next'}]};
   job.partialMinutes={...minutes('追加纪要',[old,next]),sections:[...record.liveMinutes.sections,{heading:'新增内容',items:[{text:'新事实',evidence:[ref(next)]}]}]};
   seal(record,[]);
+  assert.equal(record.liveMinutes.sections.length,41);
+  assert.equal(job.partialMinutes.sections.length,42);
+  assert.equal(record.jobs.find(j=>j.id===job.id).status,'running');
+  commitMinutes(record,job.id,minutes('追加纪要',[next]),job.fence);
   assert.equal(record.liveMinutes.sections.length,42);
-  assert.equal(record.jobs.find(j=>j.id===job.id).status,'cancelled');
 });
 
 test('a single new live window extends a complete baseline beyond twenty sections',()=>{
