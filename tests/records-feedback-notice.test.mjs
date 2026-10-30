@@ -64,3 +64,10 @@ test('processing notices float by default instead of shifting the meeting layout
  const shown=notice()({message:'纪要服务暂不可用'});
  assert.equal(shown.props.inline,false);
 });
+
+test('minutes failure forwards its floating presentation class without inline layout',()=>{
+  const shown=notice()({message:'整理未完成',className:'minutes-failure-toast'});
+  assert.equal(shown.props.className,'minutes-failure-toast');
+  assert.equal(shown.props.inline,false);
+  assert.equal(shown.props.persistent,true);
+});
