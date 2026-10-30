@@ -21,7 +21,7 @@ export function automaticMinutesAt(record, now = Date.now()) {
   const auto = record.autoMinutes;
   if (!auto?.enabled || record.deleted || !record.segments.length || record.minutes?.edited) return Infinity;
   const scope = record.capture === 'completed' ? 'final' : 'live';
-  if (record.jobs.some(job => ['queued', 'running'].includes(job.status) && (scope === 'live' || job.scope !== 'live'))) return Infinity;
+  if (record.jobs.some(job => ['queued', 'running'].includes(job.status))) return Infinity;
   const paused = record.capture === 'paused';
   // A pause remains resumable; catch up only after the saved audio tail has drained.
   if (paused && (record.sources.some(source => !source.stopped || source.watermark !== source.lastSequence) || record.chunks.some(chunk => chunk.state !== 'done'))) return Infinity;

@@ -2,7 +2,7 @@ import { CaretDown, CaretUp, Sparkle, X } from '@phosphor-icons/react';
 import type { Job, Minutes } from '../model';
 import { Button } from './ui';
 
-export function MeetingHighlights({ minutes, ended, job, collapsed, toggleCollapsed, close, retry, busy, id }: { minutes: Minutes | null; ended: boolean; job?: Job; collapsed: boolean; toggleCollapsed: () => void; close: () => void; retry: () => void; busy: boolean; id: string }) {
+export function MeetingHighlights({ minutes, history, ended, job, collapsed, toggleCollapsed, close, retry, busy, id }: { minutes: Minutes | null; history?: Minutes | null; ended: boolean; job?: Job; collapsed: boolean; toggleCollapsed: () => void; close: () => void; retry: () => void; busy: boolean; id: string }) {
   const waiting = ['queued','running'].includes(job?.status || '');
   const failed = job?.status === 'failed';
   const points = minutes?.highlights?.length ? minutes.highlights : (minutes?.topics || []).filter(topic => topic.summary?.trim()).map(topic => ({ text: topic.summary, evidence: topic.evidence }));
@@ -17,6 +17,7 @@ export function MeetingHighlights({ minutes, ended, job, collapsed, toggleCollap
         {questions.length > 0 && <section className="meeting-highlights-questions"><h4>待核实</h4><ul>{questions.map((item,index)=><li key={index}>{item.text}</li>)}</ul></section>}
         {minutes.actions.length > 0 && <section className="meeting-highlights-actions"><h4>下一步</h4><ul>{minutes.actions.map((item,index)=><li key={index}>{item.text}<small>{item.owner || '负责人待确认'} · {item.due || '时间待确认'}</small></li>)}</ul></section>}
       </div>}
+      {Boolean(history?.highlights?.length) && <details className="meeting-highlights-history"><summary>会中重点历史（{history!.highlights!.length}）</summary><p className="fine-print">保留会中整理过程，结论以最终纪要为准。</p><ul>{history!.highlights!.map((point,index)=><li key={index}>{point.text}</li>)}</ul></details>}
     </div>}
   </aside>;
 }

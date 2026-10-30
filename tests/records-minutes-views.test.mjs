@@ -49,8 +49,8 @@ test('incomplete historical usage snapshots stay unknown without crashing or man
 
 test('ended meeting status ignores old live failures and old transcript failures while preserving current final errors', () => {
   const record={capture:'completed',transcriptRevision:4,jobs:[{id:'live',scope:'live',status:'failed',transcriptRevision:4}]};
-  assert.equal(currentMinutesJob(record),undefined);
-  record.jobs.push({id:'old-final',scope:'final',status:'failed',transcriptRevision:3});assert.equal(currentMinutesJob(record),undefined);
+  assert.equal(currentMinutesJob(record).id,'live');
+  record.jobs.push({id:'old-final',scope:'final',status:'failed',transcriptRevision:3});assert.equal(currentMinutesJob(record).id,'live');
   record.jobs.push({id:'final',scope:'final',status:'running',transcriptRevision:4});assert.equal(currentMinutesJob(record).id,'final');
   record.jobs.push({id:'cancelled',scope:'final',status:'cancelled',transcriptRevision:4});assert.equal(currentMinutesJob(record).id,'final');
   record.jobs[2].status='failed';assert.equal(currentMinutesJob(record).status,'failed');

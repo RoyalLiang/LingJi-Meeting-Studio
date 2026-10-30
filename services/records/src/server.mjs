@@ -2,7 +2,7 @@ import { truncateText } from '../../../packages/records/src/text.mjs';
 import { isIP } from 'node:net';
 import { manualMinutesContent, minutesActionText } from '../../../packages/records/src/minutes-quality.mjs';
 import { recordingWaveform, waveformKey, validWaveform } from './waveform.mjs';
-import { doubaoAudioEnabled } from './config.mjs';
+import { meetingAutomationConfig, doubaoAudioEnabled } from './config.mjs';
 import { audioMinutesEnabled } from './config.mjs';
 import { testDoubaoAudio } from './doubao-audio-minutes.mjs';
 import {learningRoutes} from './learning-routes.mjs';
@@ -152,7 +152,7 @@ export async function createRecordServer(options = {}) {
         send(res, 200, { enabled, ...(enabled && supported ? learningService.read() : { available:false, status:'disabled', checkedAt:null }) }); return;
       }
       if (path === '/api/bootstrap' && req.method === 'GET') {
-        send(res, 200, { email: user.email, csrf: auth.csrf(user), audioTransport: 'pcm-v1', localAccount: Boolean(options.localAccount), learning:{enabled:await learningEnabled(),...learningService.snapshot()}, providers: providerStatus(await readConfig(repo.root)), limits: { maxMinutes: null, maxRecords: 200, maxChunkSeconds: 15 }, storage: repo.backend, canConfigure: canConfigure(user) }); return;
+        send(res, 200, { email: user.email, csrf: auth.csrf(user), audioTransport: 'pcm-v1', localAccount: Boolean(options.localAccount), learning:{enabled:await learningEnabled(),...learningService.snapshot()}, meetingAutomation:meetingAutomationConfig(await readConfig(repo.root)), providers: providerStatus(await readConfig(repo.root)), limits: { maxMinutes: null, maxRecords: 200, maxChunkSeconds: 15 }, storage: repo.backend, canConfigure: canConfigure(user) }); return;
       }
       if (path === '/api/settings/providers/test' && req.method === 'POST') {
         requireThat(canConfigure(user), 'configuration_admin_required', 403);
@@ -167,7 +167,7 @@ export async function createRecordServer(options = {}) {
       if (path === '/api/settings/providers') {
         requireThat(canConfigure(user), 'configuration_admin_required', 403);
         if (req.method === 'GET') { send(res, 200, { values: publicConfig(await readConfig(repo.root)) }); return; }
-        if (req.method === 'PUT') { send(res, 200, { values: await saveConfig(repo.root, await readBody(req, 20000)) }); return; }
+        if (req.method === 'PUT') { const values=await saveConfig(repo.root, await readBody(req, 20000)); learningService.invalidate(); send(res, 200, { values }); return; }
       }
       if (path === '/api/deletions' && req.method === 'GET') {
         send(res, 200, { deletions: (await repo.list()).filter(r => r.owner === user.id && r.deleted).map(r => ({ id: r.id, cleanup: r.cleanup || 'pending' })) }); return;

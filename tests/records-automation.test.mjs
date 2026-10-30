@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createRecord, requestMinutes, commitMinutes, validateMinutes, addSource, acknowledge, digest, editSegment, pause, commitTranscript } from '../packages/records/src/record.mjs';
+import { createRecord, requestMinutes, commitMinutes, validateMinutes, addSource, acknowledge, digest, editSegment, pause, seal, commitTranscript } from '../packages/records/src/record.mjs';
 import { setAutomation, automaticMinutesAt, queueAutomaticMinutes, updateMinutesPreview } from '../packages/records/src/automation.mjs';
 import { createRepository } from '../services/records/src/repository.mjs';
 import { runCycle } from '../services/records/src/worker.mjs';
@@ -13,6 +13,36 @@ import { publicRecord } from '../packages/records/src/record.mjs';
 const segment = {id:'s1',revision:1,text:'决定周五评审',startMs:0,endMs:1000,speaker:'',sourceId:'text-import'};
 const result = {title:'评审',topics:[{title:'评审安排',summary:'确定评审时间',evidence:[{segmentId:'s1',revision:1}]}],sections:[{heading:'决定',items:[{text:'周五评审',evidence:[{segmentId:'s1',revision:1}]}]}],actions:[]};
 function record() { const r=createRecord('fixture');r.segments=[{...segment}];r.transcriptRevision=1;r.capture='recording';return r; }
+
+test('a slow summary continues after stop and the final worker includes the drained audio tail',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'tts-summary-drain-')),repo=await createRepository({root,databaseUrl:''});
+ let release,work,ready;const gate=new Promise(resolve=>{release=resolve;}),started=new Promise(resolve=>{ready=resolve;});
+ try{
+  await saveConfig(root,{LLM_API_URL:'http://fixture.invalid/chat/completions',LLM_API_KEY:'fixture',LLM_MODEL:'fixture-model'},{});
+  const r=record(),source=addSource(r,{kind:'microphone'}),bytes=Buffer.alloc(3200);
+  acknowledge(r,{sessionId:source.sessionId,sourceId:source.id,epoch:source.epoch,sequence:0,sampleOffset:0,sampleCount:1600,sampleRate:16000,digest:digest(bytes),object:'fixture-tail'});
+  setAutomation(r,{enabled:true},Date.now()-31000);await repo.insert(r);
+  const scopes=[];
+  const providers={minutes:async job=>{
+   scopes.push(job.scope);
+   if(job.scope==='live'){ready();await gate;}
+   return {title:job.scope==='live'?'会中完整总结':'最终含尾段总结',sections:[{heading:'内容',items:job.snapshot.filter(s=>!s.contextOnly).map(s=>({text:s.text,evidence:[{segmentId:s.id,revision:s.revision}]}))}],actions:[]};
+  }};
+  work=runCycle(repo,providers,{lane:'minutes'});await started;
+  await repo.change(r.id,value=>seal(value,[{sourceId:source.id,epoch:source.epoch,lastSequence:0}]));
+  assert.equal((await repo.get(r.id)).capture,'sealed');
+  await repo.change(r.id,value=>commitTranscript(value,value.chunks[0].key,'尾段：评审改为周一',value.generation));
+  await runCycle(repo,providers,{lane:'minutes'});
+  assert.deepEqual(scopes,['live']);assert.equal((await repo.get(r.id)).jobs[0].status,'running');
+  release();await work;
+  assert.equal((await repo.get(r.id)).liveMinutes.title,'会中完整总结');
+  await runCycle(repo,providers,{lane:'minutes'});
+  const saved=await repo.get(r.id);
+  assert.deepEqual(scopes,['live','final']);assert.equal(saved.minutes.transcriptRevision,saved.transcriptRevision);
+  assert.ok(saved.minutes.sections.flatMap(section=>section.items).some(item=>item.text.includes('尾段：评审改为周一')));
+  assert.ok(saved.jobs.every(job=>job.status==='completed'));assert.equal(saved.title,'最终含尾段总结');
+ }finally{release();await work;await repo.close();await rm(root,{recursive:true,force:true});}
+});
 test('an exhausted interrupted minutes job reaches failure instead of staying running forever',async()=>{
  const root=await mkdtemp(join(tmpdir(),'tts-expired-minutes-')),repo=await createRepository({root,databaseUrl:''});
  try{
@@ -27,6 +57,39 @@ test('an exhausted interrupted minutes job reaches failure instead of staying ru
    assert.equal(failed.fence,null);assert.deepEqual(failed.snapshot,[]);assert.equal(failed.preview,undefined);assert.equal(failed.partialMinutes,undefined);
   }
  }finally{await repo.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('a post-stop timeout retains validated windows and refuses stale or manually protected drafts',async()=>{
+ for(const protection of ['none','notes','transcript','manual','recording']){
+  const root=await mkdtemp(join(tmpdir(),'tts-summary-timeout-')),repo=await createRepository({root,databaseUrl:''});
+  let release,work,ready,calls=0;const gate=new Promise(resolve=>{release=resolve;}),started=new Promise(resolve=>{ready=resolve;});
+  try{
+   const r=record();r.segments=[{...segment,id:'early',startMs:0,endMs:1000},{...segment,id:'late',startMs:400000,endMs:401000}];
+   requestMinutes(r,{scope:'live',mode:'model'});await repo.insert(r);
+   work=runCycle(repo,{minutes:async job=>{
+    if(++calls===2){ready();await gate;throw Object.assign(new Error('timeout'),{code:'llm_timeout'});}
+    const source=job.snapshot.find(s=>!s.contextOnly),evidence=[{segmentId:source.id,revision:source.revision}];
+    return {title:'保留已校验部分',sections:[{heading:'已校验',items:[{text:'第一窗内容',evidence}]}],highlights:[{text:'第一窗重点',evidence}],actions:[]};
+   }},{lane:'minutes'});
+   await started;
+   for(let count=0;count<100 && !(await repo.get(r.id)).jobs[0].partialMinutes;count++)await new Promise(resolve=>setTimeout(resolve,2));
+   assert.equal((await repo.get(r.id)).jobs[0].partialMinutes.highlights[0].text,'第一窗重点');
+   await repo.change(r.id,value=>{
+    if(protection!=='recording')seal(value,[]);
+    if(protection==='notes')value.notesRevision++;
+    if(protection==='transcript')value.segments[0].revision++;
+    if(protection==='manual')value.minutes={edited:true};
+   });
+   release();await work;
+   const saved=await repo.get(r.id);
+   assert.equal(saved.jobs[0].status,'failed');assert.equal(saved.jobs[0].error,'llm_timeout');
+   if(protection==='none'){
+    assert.equal(saved.liveMinutes.highlights[0].text,'第一窗重点');
+    assert.equal(saved.liveMinutes.template,undefined,'a partial cannot mark unfinished transcript windows as covered');
+    assert.ok(requestMinutes(saved,{scope:'live'}).snapshot.every(source=>source.contextOnly===false));
+   }else assert.equal(saved.liveMinutes,null);
+  }finally{release();await work;await repo.close();await rm(root,{recursive:true,force:true});}
+ }
 });
 test('live worker exposes first-window draft while other windows wait and keeps it through transcript appends',async()=>{
  const root=await mkdtemp(join(tmpdir(),'tts-live-visible-')),repo=await createRepository({root,databaseUrl:''});let release,work,started=0,ready;

@@ -1040,6 +1040,7 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 
 .settings-dependent-fields { display:grid; gap:14px; padding-left:12px; border-left:1px solid var(--border); }
 .settings-modal .provider-form .settings-dependent-fields>label { display:grid; grid-template-columns:var(--settings-label-column) minmax(0,1fr); align-items:center; gap:8px 12px; }
+.settings-modal .provider-form label.checkbox-label { display:flex; }
 .settings-model-title { margin:0; font-size:12px; font-weight:600; color:var(--ink-2); }
 .settings-mode-note { margin:0; color:var(--ink-2); font-size:12px; line-height:1.6; }
 .rail-brand { display:flex; align-items:center; justify-content:flex-start; gap:8px; margin-bottom:18px; }

@@ -7,10 +7,10 @@ import { homedir } from "node:os";
 import { createHash } from "node:crypto";
 import { exportSnapshots, readSnapshot } from "./intake.mjs";
 import { collectCandidates, teacherLabels } from "./providers.mjs";
+import { learningServiceTarget, validLearningServiceTarget } from '../../packages/records/src/learning.mjs';
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 const repo = resolve(here, "../..");
-export const learningServiceTarget = { host: "wgs", remoteBase: "/home/westwell/ai-labs/neohorse-jev-4b" };
 export const learningRemoteGroup = (workspace) =>
   "alpha-" +
   new Date().toISOString().slice(0, 10).replaceAll("-", "") +
@@ -85,8 +85,8 @@ export async function runLearningRound({
   inputBundle,
   splitsFile,
   perRecord = 12,
-  host = learningServiceTarget.host,
-  remoteBase = learningServiceTarget.remoteBase,
+  host = learningServiceTarget(process.env).host,
+  remoteBase = learningServiceTarget(process.env).remoteBase,
 } = {}) {
   workspace = resolve(workspace);
   if (
@@ -101,8 +101,7 @@ export async function runLearningRound({
     (recordIds &&
       (!Array.isArray(recordIds) ||
         recordIds.some((id) => !/^[a-f0-9-]{36}$/.test(id)))) ||
-    !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(host) ||
-    !/^\/[a-zA-Z0-9/_.-]+$/.test(remoteBase)
+    !validLearningServiceTarget({host,remoteBase})
   )
     throw Error("invalid_learning_parameters");
   await mkdir(join(workspace, "rounds"), { recursive: true, mode: 0o700 });

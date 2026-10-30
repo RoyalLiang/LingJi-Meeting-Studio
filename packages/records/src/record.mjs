@@ -113,26 +113,20 @@ export function pause(record, manifest) {
 export function seal(record, manifest) {
   stopSources(record, manifest);
   if (record.capture === 'completed') return;
-  const job=record.jobs.filter(job=>job.scope==='live' && job.status==='running' && job.partialMinutes).at(-1);
-  if(job && !record.minutes?.edited && job.generation===record.generation && job.notesRevision===record.notesRevision && job.baseMinutesRevision===record.minutesRevision
-    && (!job.liveBaseHash || job.liveBaseHash===digest(JSON.stringify(record.liveMinutes || null)))
-    && Array.isArray(job.partialMinutes.evidenceSnapshot) && job.partialMinutes.evidenceSnapshot.every(segment=>record.segments.some(current=>current.id===segment.id && current.revision===segment.revision))){
-    // Preserve validated windows before final scheduling cancels their in-flight live job.
-    const partial=job.partialMinutes,complete=record.liveMinutes||record.minutes,baseline=liveBaseline(record);
-    // Matching citations do not prove that a regenerated partial kept the complete content.
-    const preservesComplete=!complete||Boolean(baseline&&job.liveIncremental);
-    const baselineParts=new Set((baseline?.evidenceSnapshot || []).map(segment=>`${segment.id}:${segment.revision}`)).size;
-    if(preservesComplete){
-      validateMinutes(partial,partial.evidenceSnapshot,undefined,{aggregate:true,aggregateParts:Math.max(1,baselineParts+(job.progress?.completed || 0)),maxSections:Math.min(25650,(baseline?.sections.length||0)+20*(job.manifest?.windows.length||1)+1)});
-      record.liveMinutes={...structuredClone(partial),notesRevision:job.notesRevision,template:job.template};
-    }
-    job.status='cancelled';job.fence=null;job.snapshot=[];delete job.preview;delete job.partialMinutes;
-    if(preservesComplete){
-      if(job.mode==='model')autoNameRecord(record,partial.title);
-      emit(record,'minutes.live',{transcriptRevision:job.transcriptRevision});
-    }
-  }
   record.capture = 'sealed'; emit(record, 'capture.sealed'); finalize(record);
+}
+export function preserveMinutesProgress(record, job) {
+  const partial=job.partialMinutes,baseline=liveBaseline(record);
+  if(!['sealed','completed'].includes(record.capture) || job.scope!=='live' || !partial || record.deleted || record.minutes?.edited || job.generation!==record.generation || job.notesRevision!==record.notesRevision || job.baseMinutesRevision!==record.minutesRevision
+    || (job.liveBaseHash && job.liveBaseHash!==digest(JSON.stringify(record.liveMinutes || null)))
+    || ((record.liveMinutes || record.minutes) && !(baseline && job.liveIncremental))
+    || !partial.evidenceSnapshot?.every(segment=>record.segments.some(current=>current.id===segment.id && current.revision===segment.revision)))return;
+  const parts=(baseline?.evidenceSnapshot.length || 0)+(job.progress?.completed || 1);
+  validateMinutes(partial,partial.evidenceSnapshot,undefined,{aggregate:true,aggregateParts:Math.max(1,parts),maxSections:Math.min(25650,(baseline?.sections.length || 0)+20*(job.manifest?.windows.length || 1)+1)});
+  // A citation can span unfinished windows; this partial must not become an incremental coverage baseline.
+  record.liveMinutes={...structuredClone(partial),notesRevision:job.notesRevision,template:undefined};
+  if(job.mode==='model')autoNameRecord(record,partial.title);
+  emit(record,'minutes.live',{transcriptRevision:job.transcriptRevision});
 }
 export function finalize(record) {
   if (record.capture !== 'sealed') return;
@@ -200,20 +194,20 @@ export function requestMinutes(record, input = {}) {
   requireThat(record.segments.length > 0, 'empty_transcript');
   const template = input.template || 'meeting'; requireThat(templates.includes(template), 'unknown_template', 400);
   let selected = scope === 'live' ? liveInput(record, template) : chronologicalSegments(record.segments);
-  const liveContext = minutesContext(scope==='live'?liveBaseline(record):null,selected);
+  const baseline = scope === 'live' ? liveBaseline(record) : null;
+  const covered = new Set((baseline?.template === template ? baseline.evidenceSnapshot : []).map(s=>`${s.id}:${s.revision}`));
+  const liveContext = minutesContext(baseline?.template === template ? baseline : null,selected.map(s=>({...s,contextOnly:covered.has(`${s.id}:${s.revision}`)})));
   if(liveContext?.items?.length){
     const refs=new Set(liveContext.items.flatMap(item=>item.evidence.map(ref=>`${ref.segmentId}:${ref.revision}`)));
     const selectedIds=new Set(selected.map(s=>s.id));
     selected=chronologicalSegments([...selected,...record.segments.filter(s=>!selectedIds.has(s.id)&&refs.has(`${s.id}:${s.revision}`))]);
   }
   const snapshotOffset = record.segments.indexOf(selected[0]);
-  const baseline = scope === 'live' ? liveBaseline(record) : null;
-  const covered = new Set((baseline?.template === template ? baseline.evidenceSnapshot : []).map(s=>`${s.id}:${s.revision}`));
   const snapshot = selected.map(({versions, ...s}) => ({ ...s, ...(scope === 'live' ? {contextOnly:covered.has(`${s.id}:${s.revision}`)} : {}) }));
   const liveBaseHash = scope === 'live' ? digest(JSON.stringify(record.liveMinutes || null)) : undefined;
   const liveIncremental = Boolean(liveBaseline(record)?.template === template);
   const manifestHash = digest(JSON.stringify({snapshot, liveBaseHash, liveContext}));
-  const key = `${record.id}:${record.transcriptRevision}:${manifestHash}:${template}:v6:${record.notesRevision}:${input.modelVersion || 'default'}:${input.mode || 'model'}:${scope}`;
+  const key = `${record.id}:${record.transcriptRevision}:${manifestHash}:${template}:v7:${record.notesRevision}:${input.modelVersion || 'default'}:${input.mode || 'model'}:${scope}`;
   requireThat(input.retry === undefined || typeof input.retry === 'boolean', 'invalid_minutes_retry', 400);
   requireThat(!input.retry || input.automatic !== true, 'invalid_minutes_retry', 400);
   if (input.retry) for (const job of record.jobs) if (['queued', 'running'].includes(job.status)) {
@@ -221,7 +215,7 @@ export function requestMinutes(record, input = {}) {
   }
   const existing = !input.retry && record.jobs.find(j => j.key === key && !['failed', 'stale', 'cancelled'].includes(j.status));
   if (existing) return existing;
-  for(const job of record.jobs)if(['queued','running'].includes(job.status) && job.scope==='live' && (scope==='final' || job.status==='queued')){job.status='cancelled';job.fence=null;job.snapshot=[];delete job.preview; delete job.partialMinutes;}
+  for(const job of record.jobs)if(['queued','running'].includes(job.status) && job.scope==='live' && scope==='live' && job.status==='queued'){job.status='cancelled';job.fence=null;job.snapshot=[];delete job.preview; delete job.partialMinutes;}
   requireThat(record.jobs.filter(j => ['queued', 'running'].includes(j.status)).length < 3, 'job_limit', 429);
   const job = { id: randomUUID(), key, status: 'queued', transcriptRevision: record.transcriptRevision, notesRevision: record.notesRevision,
     baseMinutesRevision: record.minutesRevision, generation: record.generation, template, scope, automatic: input.automatic === true, mode: input.mode || 'model', modelVersion: input.modelVersion || 'default', snapshot, snapshotOffset, liveBaseHash, liveContext, liveIncremental, notes: record.notes, manifestHash,

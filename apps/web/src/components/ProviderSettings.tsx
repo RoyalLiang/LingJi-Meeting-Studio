@@ -56,6 +56,7 @@ export function ProviderSettings({ saved, actionsTarget, initialProvider = 'doub
     catch (e) { setError(messageOf(e)); }
     finally { pending.current = false; setBusy(false); }
   }
+  const nativeMeeting = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window && /Mac/.test(navigator.userAgent);
   const audioOnly = draft.MINUTES_MODE === 'doubao-audio-only';
   return <div className="settings-section">
     <Toast message={error || notice} error={Boolean(error)} dismiss={dismiss}/>
@@ -79,6 +80,13 @@ export function ProviderSettings({ saved, actionsTarget, initialProvider = 'doub
       </div>
       <div className="settings-heading-row"><div className="settings-subheading"><CloudCheck size={18}/><h4>翻译服务</h4></div><Select label="翻译模型" name="TRANSLATION_PROVIDER" disabled={!values} value={draft.TRANSLATION_PROVIDER || 'auto'} onChange={value => setDraft(current => ({...current,TRANSLATION_PROVIDER:value}))} options={[{value:'auto',label:'自动选择'},{value:'text-model',label:'当前文字模型'},{value:'doubao-seed',label:'豆包 Seed 专用翻译'}]}/></div>
       {draft.TRANSLATION_PROVIDER === 'text-model' ? <p className="settings-mode-note">翻译使用上方文字模型的连接配置。</p> : <div className="settings-dependent-fields"><h4 className="settings-model-title">专用翻译模型</h4>{field('DOUBAO_TRANSLATION_MODEL','翻译模型 / 接入点 ID',false,'doubao-seed-translation-250915')}{field('DOUBAO_TRANSLATION_API_URL','翻译服务地址（可选）',false,'留空沿用上方完整模型服务地址')}{field('DOUBAO_TRANSLATION_API_KEY','翻译 API Key（可选）',true)}</div>}
+      <div className="settings-heading-row"><div className="settings-subheading"><CloudCheck size={18}/><h4>学习与评审</h4><Status>{draft.LEARNING_SSH_HOST && draft.LEARNING_REMOTE_BASE ? '已填写' : '未配置'}</Status></div></div>
+      <div className="settings-dependent-fields">{field('LEARNING_SSH_HOST','SSH 主机',false,'填写已配置的 SSH 主机别名或域名')}{field('LEARNING_REMOTE_BASE','远端服务目录',false,'填写服务所在的绝对目录')}</div>
+      <div className="settings-heading-row"><div className="settings-subheading"><CloudCheck size={18}/><h4>后台会议联动</h4></div></div>
+      <input type="hidden" name="AUTO_MEETING_ENABLED" value={draft.AUTO_MEETING_ENABLED || 'false'}/><input type="hidden" name="AUTO_MEETING_BROWSER" value={draft.AUTO_MEETING_BROWSER || 'true'}/><input type="hidden" name="AUTO_MEETING_FEISHU" value={draft.AUTO_MEETING_FEISHU || 'true'}/>
+      <label className="checkbox-label"><input type="checkbox" checked={draft.AUTO_MEETING_ENABLED==='true'} disabled={!values || !nativeMeeting} onChange={event=>setDraft(current=>({...current,AUTO_MEETING_ENABLED:String(event.target.checked)}))}/>允许音频调用触发自动录音</label>
+      <div className="settings-dependent-fields"><label className="checkbox-label"><input type="checkbox" checked={draft.AUTO_MEETING_BROWSER!=='false'} disabled={!values || !nativeMeeting || draft.AUTO_MEETING_ENABLED!=='true'} onChange={event=>setDraft(current=>({...current,AUTO_MEETING_BROWSER:String(event.target.checked)}))}/>浏览器 · Chrome / Edge</label><label className="checkbox-label"><input type="checkbox" checked={draft.AUTO_MEETING_FEISHU!=='false'} disabled={!values || !nativeMeeting || draft.AUTO_MEETING_ENABLED!=='true'} onChange={event=>setDraft(current=>({...current,AUTO_MEETING_FEISHU:String(event.target.checked)}))}/>飞书</label></div>
+      <p className="settings-mode-note">{nativeMeeting ? '持续调用扬声器或麦克风 10 秒后开始；全部调用停止 30 秒后结束，只管理自动创建的记录。录制麦克风与系统音频，沿用当前转录和纪要设置。浏览器视频、音乐也可能触发；关闭联动不会结束当前录音。' : '初版仅支持 macOS 桌面的 Chrome / Edge 与飞书；其他浏览器及 Windows / Linux 暂不启用。'}</p>
       {actionsTarget && createPortal(<div className="actions"><Button type="button" disabled={!values || audioOnly} aria-disabled={busy || !values || audioOnly} onClick={() => void test('asr')}><Plug size={16}/>测试转录</Button><Button type="button" disabled={!values} aria-disabled={busy || !values} onClick={() => void test('minutes')}>测试纪要</Button><Button disabled={!values} aria-disabled={busy || !values} type="submit" form="provider-settings" variant="primary">保存配置</Button></div>, actionsTarget)}
     </form>
   </div>;

@@ -13,7 +13,7 @@ import { processSpeakerSources, closeSpeakerStreams } from './speaker-streams.mj
 import { automaticMinutesAt, queueAutomaticMinutes, updateMinutesPreview } from '../../../packages/records/src/automation.mjs';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { commitMinutes, commitTranscript, emit, needsMinutesAudio } from '../../../packages/records/src/record.mjs';
+import { commitMinutes, commitTranscript, preserveMinutesProgress, emit, needsMinutesAudio } from '../../../packages/records/src/record.mjs';
 import { createRepository } from './repository.mjs';
 import { readConfig } from './config.mjs';
 import { recordAsrConfig } from './vocabulary.mjs';
@@ -122,6 +122,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
     if (minutesCandidate.jobs.some(reclaimable)) await repo.change(candidate.id, r => {
       if (r.deleted) return;
       for(const job of r.jobs)if(reclaimable(job)&&job.attempts>=3){
+        preserveMinutesProgress(r,job);
         job.status='failed';job.error='minutes_request_failed';job.failedAt=now;job.fence=null;job.snapshot=[];
         delete job.lease;delete job.preview;delete job.partialMinutes;emit(r,'minutes.failed',{jobId:job.id,error:job.error});
       }
@@ -169,6 +170,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
         await repo.change(candidate.id, r => {
           const job = r.jobs.find(j => j.id === jobClaim.id);
           if (!job || job.fence !== jobClaim.fence || r.deleted) return;
+          preserveMinutesProgress(r,job);
           job.status = error.code==='minutes_snapshot_changed' ? 'stale' : 'failed'; delete job.preview; delete job.partialMinutes; job.snapshot = []; job.error = error.code || 'minutes_request_failed'; job.failedAt=Date.now(); emit(r, 'minutes.failed', { jobId: job.id, error: job.error });
         });
       }

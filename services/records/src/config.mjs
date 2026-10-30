@@ -4,8 +4,12 @@ import { randomUUID } from 'node:crypto';
 import { requireThat } from '../../../packages/records/src/record.mjs';
 import { parseAsrHotwords, parseAsrContext } from './asr-terms.mjs';
 import { localAsrConfigured, LOCAL_ASR_MODEL } from './local-asr.mjs';
+import { learningServiceTarget, validLearningServiceTarget } from '../../../packages/records/src/learning.mjs';
 
 export const defaults = {
+  AUTO_MEETING_ENABLED: 'false',
+  AUTO_MEETING_BROWSER: 'true',
+  AUTO_MEETING_FEISHU: 'true',
   ASR_PROVIDER: 'doubao',
   FUNASR_API_URL: 'http://127.0.0.1:18586/v1/audio/transcriptions',
   FUNASR_MODEL: 'sensevoice',
@@ -20,7 +24,7 @@ export const defaults = {
   DOUBAO_TRANSLATION_MODEL: 'doubao-seed-translation-250915',
   TRANSLATION_PROVIDER: 'auto',
 };
-const fields = ['TRANSLATION_PROVIDER', 'FUNASR_API_URL', 'FUNASR_MODEL', 'FUNASR_API_KEY', 'MINUTES_MODE', 'OPENAI_REALTIME_URL', 'OPENAI_REALTIME_MODEL', 'OPENAI_REALTIME_API_KEY', 'DOUBAO_TRANSLATION_API_URL', 'DOUBAO_TRANSLATION_API_KEY', 'DOUBAO_TRANSLATION_MODEL', 'DOUBAO_ASR_HOTWORDS', 'DOUBAO_ASR_CONTEXT', 'ASR_PROVIDER', 'DOUBAO_API_KEY', 'DOUBAO_ASR_URL', 'DOUBAO_ASR_RESOURCE_ID', 'ASR_API_URL', 'ASR_API_KEY', 'ASR_MODEL', 'DEEPGRAM_API_KEY', 'LLM_API_URL', 'LLM_API_KEY', 'LLM_MODEL', 'LLM_PROTOCOL', 'LLM_REASONING_EFFORT'];
+const fields = ['AUTO_MEETING_ENABLED', 'AUTO_MEETING_BROWSER', 'AUTO_MEETING_FEISHU', 'LEARNING_SSH_HOST', 'LEARNING_REMOTE_BASE', 'TRANSLATION_PROVIDER', 'FUNASR_API_URL', 'FUNASR_MODEL', 'FUNASR_API_KEY', 'MINUTES_MODE', 'OPENAI_REALTIME_URL', 'OPENAI_REALTIME_MODEL', 'OPENAI_REALTIME_API_KEY', 'DOUBAO_TRANSLATION_API_URL', 'DOUBAO_TRANSLATION_API_KEY', 'DOUBAO_TRANSLATION_MODEL', 'DOUBAO_ASR_HOTWORDS', 'DOUBAO_ASR_CONTEXT', 'ASR_PROVIDER', 'DOUBAO_API_KEY', 'DOUBAO_ASR_URL', 'DOUBAO_ASR_RESOURCE_ID', 'ASR_API_URL', 'ASR_API_KEY', 'ASR_MODEL', 'DEEPGRAM_API_KEY', 'LLM_API_URL', 'LLM_API_KEY', 'LLM_MODEL', 'LLM_PROTOCOL', 'LLM_REASONING_EFFORT'];
 const secretFields = new Set(['FUNASR_API_KEY', 'OPENAI_REALTIME_API_KEY', 'DOUBAO_TRANSLATION_API_KEY', 'DOUBAO_API_KEY', 'ASR_API_KEY', 'DEEPGRAM_API_KEY', 'LLM_API_KEY']);
 export const configured = value => Boolean(value && !/^(your[-_]|replace|mock|<|xxx)/i.test(value));
 export const reasoningEfforts = ['auto', 'default', 'low', 'medium', 'high', 'xhigh', 'max'];
@@ -52,6 +56,10 @@ export async function saveConfig(root, input, env = process.env) {
   }
   for (const key of input.clearSecrets || []) { requireThat(secretFields.has(key), 'invalid_secret_field', 400); values[key] = ''; }
   const next = { ...current, ...values };
+  for(const key of ['AUTO_MEETING_ENABLED','AUTO_MEETING_BROWSER','AUTO_MEETING_FEISHU'])requireThat(['true','false'].includes(next[key]),'invalid_meeting_automation',400);
+  requireThat(next.AUTO_MEETING_ENABLED!=='true' || next.AUTO_MEETING_BROWSER==='true' || next.AUTO_MEETING_FEISHU==='true','invalid_meeting_automation',400);
+  const learningTarget=learningServiceTarget(next);
+  requireThat((!learningTarget.host && !learningTarget.remoteBase) || validLearningServiceTarget(learningTarget),'invalid_learning_service_config',400);
   requireThat(['doubao', 'deepgram', 'openai-compatible', 'funasr', 'sensevoice-local'].includes(next.ASR_PROVIDER), 'invalid_asr_provider', 400);
   requireThat(next.ASR_PROVIDER !== 'sensevoice-local' || localAsrConfigured(next), 'local_asr_assets_missing', 503);
   requireThat(['chat-completions', 'responses'].includes(next.LLM_PROTOCOL), 'invalid_llm_protocol', 400);
@@ -86,3 +94,5 @@ export const minutesModelVersion = config => config.MINUTES_MODE === 'openai-rea
 export const audioMinutesEnabled = config => ['openai-realtime', 'doubao-audio', 'doubao-audio-only'].includes(config.MINUTES_MODE);
 
 export const doubaoAudioEnabled = config => ['doubao-audio', 'doubao-audio-only'].includes(config.MINUTES_MODE);
+
+export const meetingAutomationConfig=config=>({enabled:config.AUTO_MEETING_ENABLED==='true',browser:config.AUTO_MEETING_BROWSER!=='false',feishu:config.AUTO_MEETING_FEISHU!=='false'});

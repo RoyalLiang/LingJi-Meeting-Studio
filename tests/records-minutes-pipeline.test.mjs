@@ -233,10 +233,10 @@ test('revision, manual minutes edit, deletion and lost fence reject late provide
     const f=await fixture(2);try{const claim=await f.claim();let once=false;await assert.rejects(runMinutesPipeline(f.repo,f.record.id,claim,config,async job=>{if(!once){once=true;await f.repo.change(f.record.id,mutation);}return summarize(job);}),error=>['stale_job','minutes_snapshot_changed'].includes(error.code));assert.equal((await f.repo.get(f.record.id)).minutes,null);}finally{await f.close();}
   }
 });
-test('invalid evidence fails the window and final work supersedes live without accepting its late commit',async()=>{
+test('invalid evidence fails the window and final work waits for live completion',async()=>{
   const f=await fixture(2);try{
     const claim=await f.claim();await assert.rejects(runMinutesPipeline(f.repo,f.record.id,claim,config,async()=>({title:'bad',sections:[{heading:'bad',items:[{text:'hallucination',evidence:[{segmentId:'unknown',revision:1}]}]}]})),/evidence/);
-    await f.repo.change(f.record.id,r=>{r.jobs=[];r.capture='recording';r.autoMinutes={enabled:true,intervalSeconds:30,enabledAt:1};const live=requestMinutes(r,{scope:'live',automatic:true});live.status='running';live.fence='old-live';r.capture='completed';const final=queueAutomaticMinutes(r,'fixture-model');assert.equal(final.scope,'final');assert.equal(live.status,'cancelled');assert.equal(live.fence,null);assert.throws(()=>commitMinutes(r,live.id,summarize({...live,snapshot:r.segments}),'old-live'),/stale_job/);});
+    await f.repo.change(f.record.id,r=>{r.jobs=[];r.capture='recording';r.autoMinutes={enabled:true,intervalSeconds:30,enabledAt:1};const live=requestMinutes(r,{scope:'live',automatic:true});live.status='running';live.fence='old-live';r.capture='completed';assert.equal(queueAutomaticMinutes(r,'fixture-model'),undefined);assert.equal(live.status,'running');commitMinutes(r,live.id,summarize(live),'old-live');assert.equal(live.status,'completed');const final=queueAutomaticMinutes(r,'fixture-model');assert.equal(final.scope,'final');});
   }finally{await f.close();}
 });
 
@@ -511,18 +511,18 @@ test('model prompts preserve table topic associations and rebuild IDs during syn
   } finally {globalThis.fetch=original;}
 });
 
-test('old completed v5 jobs do not block explicit v6 requests, while new requests remain idempotent', async () => {
+test('old completed v6 jobs do not block explicit v7 requests, while new requests remain idempotent', async () => {
   const f=await fixture(2);
   try {
     let oldId,newId;
     await f.repo.change(f.record.id,r=>{
       const previous=requestMinutes(r,{modelVersion:'fixture-model'});oldId=previous.id;
-      previous.key=previous.key.replace(':v6:',':v5:');previous.status='completed';previous.snapshot=[];
+      previous.key=previous.key.replace(':v7:',':v6:');previous.status='completed';previous.snapshot=[];
       r.minutes={...summarize({snapshot:r.segments}),revision:1,edited:true};r.minutesRevision=1;
       r.autoMinutes={enabled:true,lastRevision:r.transcriptRevision,lastScope:'final',intervalSeconds:30};
       assert.equal(queueAutomaticMinutes(r,'fixture-model'),undefined,'format upgrades must not auto-replace an edited minutes version');
       const current=requestMinutes(r,{modelVersion:'fixture-model'});newId=current.id;
-      assert.notEqual(newId,oldId);assert.ok(current.key.includes(':v6:'));
+      assert.notEqual(newId,oldId);assert.ok(current.key.includes(':v7:'));
       assert.equal(requestMinutes(r,{modelVersion:'fixture-model'}).id,newId);
       assert.equal(r.minutes.edited,true);
       assert.equal(r.minutesRevision,1);
@@ -635,7 +635,7 @@ test('incremental project context survives long sessions and an edit to earlier 
     await f.repo.change(f.record.id,r=>{commitMinutes(r,first.id,old,first.fence);r.segments.push({...r.segments.at(-1),id:'s-160',text:'相机恢复后仍需排查。'});r.transcriptRevision++;});
     let claim;
     await f.repo.change(f.record.id,r=>{const job=requestMinutes(r,{scope:'live',modelVersion:'fixture-model'});job.status='running';job.fence=job.id;claim=structuredClone(job);});
-    assert.equal(claim.snapshot.length,123);assert.equal(claim.liveContext.topics[0].title,'唐山项目');
+    assert.equal(claim.snapshot.length,161);assert.equal(claim.liveContext.topics[0].title,'唐山项目');
     const result=await runMinutesPipeline(f.repo,f.record.id,claim,config,async job=>{
       assert.equal(job.liveContext.topics[0].id,'project-tangshan');
       if(!job.snapshot.some(segment=>segment.id==='s-160'))return summarize(job);
@@ -674,7 +674,7 @@ test('project memory is bounded while preserving stable identities and cumulativ
   const delta={title:'最新讨论',sections:[{heading:'安排',items:[{text:'排查相机',evidence}]}],actions:[{text:'排查相机',owner:null,due:null,evidence}]};
   const result=mergeLiveMinutes(base,delta,snapshot);
   assert.equal(result.sections[0].items.length,1);assert.equal(result.actions[0].owner,null);
-  assert.equal(result.actions[0].due,null);assert.equal(result.title,'项目会');
+  assert.equal(result.actions[0].due,null);assert.equal(result.title,'最新讨论');
 });
 
 test('partial citations retain the complete frozen transcript when a provider window splits a long segment', async () => {

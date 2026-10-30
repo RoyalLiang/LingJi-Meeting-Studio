@@ -206,5 +206,5 @@ async function verifyNativeUiLanes(record, queued) {
     const iframeBlocked = !frame.contentDocument?.querySelector('#root'); frame.remove();
     localStorage.setItem('native-probe-retained', 'yes');
     await invoke('client_probe', { result: { ok: true, residentCapture, origin: location.origin, renderer: navigator.userAgent, reactMounted: true, settingsCancelReopen:true, settingsSimplified:true, toolbarTooltip:true, uiRecordId, uiLanes, recordingWidget, pendingUiPackets, priorUiQueueReplayed, actualQueueUsed: true, nativeIpc: true, authenticated: true, csrfRejected: true, recordId: record.id, pcm, sse, indexedDbWritten: true, indexedDbRetained: retained, reloginRequired: sessionStorage.getItem('native-probe-relogin') === 'yes', iframeBlocked, kind: 'synthetic-only' } });
-  } catch (error) { await invoke('client_probe', { result: { ok: false, error: String(error), phase: sessionStorage.getItem('native-probe-phase') } }); }
+  } catch (error) { const windowState = await invoke('client_probe',{result:{widgetAction:'snapshot'}}).catch(()=>null); await invoke('client_probe', { result: { ok: false, error: String(error), phase: sessionStorage.getItem('native-probe-phase'), windowState } }); }
 })();

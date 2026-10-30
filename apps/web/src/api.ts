@@ -56,7 +56,9 @@ const messages: Record<string, string> = {
   llm_timeout: '模型整理超过处理时限，转录已保留，可稍后重新整理或使用更快的模型。',
   invalid_llm_response: '模型未返回有效的 JSON 结果，请检查模型与协议后重新整理。',
   configuration_admin_required: '当前账户无权修改服务配置，请联系维护者。',
+  invalid_meeting_automation: '请至少选择浏览器或飞书作为联动目标。',
   invalid_provider_url: '地址格式不正确。语音使用 wss://，纪要使用 https://。',
+  invalid_learning_service_config: '请同时填写 SSH 主机和远端绝对目录，或将两项都留空。',
   invalid_asr_hotwords: '术语总长最多 100 字，每词最多 50 字，请精简后重试。',
 
   login_required: '请先登录。', invalid_credentials: '邮箱或密码不正确。', password_length_10_128: '密码需要 10 至 128 个字符。',
