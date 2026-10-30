@@ -181,9 +181,10 @@ export async function downloadPendingAudio(recordId:string){
     request.onsuccess=()=>{const cursor=request.result;if(!cursor)return;blob=new Blob([blob,count++?',':'',JSON.stringify(cursor.value.chunk)],{type:'application/json'});cursor.continue();};
     tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);
   });
-  if(!count)throw new Error('本机没有这条记录的待传音频。');
+  if(!count)return false;
   blob=new Blob([blob,']}'],{type:'application/json'});
   const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=`pending-audio-${recordId}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  return true;
 }
 
 export async function makeChunk(sourceId: string, epoch: string, sequence: number, sampleOffset: number, buffer: ArrayBuffer, sessionId: string): Promise<AudioChunk> {

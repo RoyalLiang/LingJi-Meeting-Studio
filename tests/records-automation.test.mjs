@@ -319,15 +319,15 @@ test('paused catch-up waits for the stop manifest tail to be durably acknowledge
   assert.equal(checkpoint.scope,'live');assert.equal(checkpoint.pausedCheckpoint,true);assert.equal(r.capture,'paused');
 });
 
-test('default minutes interval is two minutes and explicit choices survive', () => {
+test('default minutes interval is ninety seconds and explicit choices survive', () => {
   const record = createRecord('interval-owner');
-  assert.equal(record.autoMinutes.intervalSeconds, 120);
+  assert.equal(record.autoMinutes.intervalSeconds, 90);
   setAutomation(record, {enabled:true,intervalSeconds:15});
   setAutomation(record, {enabled:true});
   assert.equal(record.autoMinutes.intervalSeconds, 15);
   delete record.autoMinutes.intervalSeconds;
   setAutomation(record, {enabled:true});
-  assert.equal(record.autoMinutes.intervalSeconds, 120);
+  assert.equal(record.autoMinutes.intervalSeconds, 90);
 });
 
 
@@ -396,4 +396,10 @@ test('invalid topic output retries after an interval change without bypassing th
   setAutomation(r,{enabled:true,intervalSeconds:120},3000);
   assert.equal(automaticMinutesAt(r,3000),17000);
   r.jobs[0].retryAttempt=3;assert.equal(automaticMinutesAt(r,3000),Infinity);
+});
+
+
+test('ninety-second automation is accepted while explicit two-minute meetings remain unchanged',()=>{
+ const r=createRecord('interval90');setAutomation(r,{enabled:true,intervalSeconds:90});assert.equal(r.autoMinutes.intervalSeconds,90);
+ setAutomation(r,{enabled:true,intervalSeconds:120});setAutomation(r,{enabled:true});assert.equal(r.autoMinutes.intervalSeconds,120);
 });

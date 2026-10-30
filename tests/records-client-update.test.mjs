@@ -277,6 +277,8 @@ test('settings update notes open in a separate dialog with no inline explanatory
  box.React={createElement:(tag,props,...children)=>typeof tag==='function'?tag({...props,children}):({tag,props,children})};vm.runInNewContext(code,box);
  const updates={native:true,status:{phase:'idle',currentVersion:'0.1.42',downloaded:0},settings:preferencesForPolicy('manual'),installReason:'',saveSettings(){},update(){}};
  const idle=box.module.exports.ClientUpdatesPanel({updates});assert.doesNotMatch(JSON.stringify(idle),/由你手动检查更新|启动后会自动检查更新/);
+ const current=box.module.exports.ClientUpdatesPanel({updates:{...updates,status:{...updates.status,phase:'current'}}});assert.doesNotMatch(JSON.stringify(current),/当前已是最新版本|client-update-status/);
+
  const availableUpdates={...updates,status:{...updates.status,phase:'available',version:'0.1.43',notes:'## 更新内容\n- 保留完整原音'}};
  const render=()=>box.module.exports.ClientUpdatesPanel({updates:availableUpdates}),nodes=tree=>[tree,...(tree?.children||[]).flat(Infinity).filter(x=>x&&typeof x==='object').flatMap(nodes)];
  const available=render();assert.doesNotMatch(JSON.stringify(available),/→ v/);assert.equal(nodes(available).filter(node=>node.props?.className==='client-update-version').length,0);const version=box.module.exports.ClientVersion({status:availableUpdates.status});assert.equal(nodes(version).filter(node=>node.props?.className==='client-update-version').length,1);assert.equal(nodes(version).find(node=>node.props?.className==='client-update-available').props['aria-label'],'可升级至 v0.1.43');assert.ok(!nodes(box.module.exports.ClientVersion({status:updates.status})).some(node=>node.props?.className==='client-update-available'));assert.ok(!nodes(available).some(node=>node.tag==='dialog'||node.tag==='details'));

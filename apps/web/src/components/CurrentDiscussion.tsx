@@ -41,19 +41,12 @@ export function CurrentDiscussion({ record, minutes, job, modelReady, audioOnly 
   const live = record.capture !== 'completed' || running;
   const protectedMinutes = Boolean(record.minutes?.edited);
   const processing=running&&!protectedMinutes&&!recognitionStatus(record,audioOnly)&&!(audioOnly&&!record.realtimeAudioConsent);
-  const pending = record.transcriptRevision > (minutes?.transcriptRevision || 0);
-  const status = (audioOnly && !record.realtimeAudioConsent ? '请在整理设置中允许本场音频处理，开启转录与纪要' : recognitionStatus(record, audioOnly)) || (protectedMinutes ? '人工版本已保护'
-    : job?.status === 'failed' ? '本轮整理未完成，可重试'
-    : !modelReady ? '尚未连接纪要模型'
-    : running ? job?.progress && job.progress.total > 1 ? `正在整理 AI 纪要 · ${job.progress.completed}/${job.progress.total}` : '正在整理 AI 纪要…'
-    : live && !record.autoMinutes?.enabled ? '自动 AI 纪要未开启'
-    : pending ? '新发言已接收，等待整理'
-    : minutes ? 'AI 纪要已更新' : '等待对话开始');
+  const status = (audioOnly && !record.realtimeAudioConsent ? '请在整理设置中允许本场音频处理，开启转录与纪要' : recognitionStatus(record, audioOnly)) || (job?.status === 'failed' ? '本轮整理未完成，可重试' : !modelReady ? '尚未连接纪要模型' : '');
   const active = record.capture !== 'paused' && (record.capture === 'recording' || running);
   const activity = [record.capture, record.usage?.samples ?? 0, record.transcriptRevision, minutes?.revision ?? 0, job?.id || '', job?.progress?.completed ?? 0, status].join(':');
   const captureState = processing ? '正在处理AI纪要' : record.capture === 'recording' ? '正在记录' : record.capture === 'paused' ? '已暂停' : record.capture === 'completed' ? '已完成' : record.capture === 'sealed' ? '整理中' : '待开始';
   return <section className="current-discussion discussion-dock" aria-label={live ? '当前正在聊' : '本场纪要'}>
     <ChatCircleDots size={18} aria-hidden="true"/><span className="discussion-capture-state" aria-live="polite">{captureState}</span>
-    <div className="discussion-status-row"><DiscussionPulse activity={activity} active={active}/>{!processing && <span className="discussion-status" title={status} role="status" aria-live="polite" aria-atomic="true">{status}</span>}</div>
+    <div className="discussion-status-row"><DiscussionPulse activity={activity} active={active}/>{!processing && status && <span className="discussion-status" title={status} role="status" aria-live="polite" aria-atomic="true">{status}</span>}</div>
   </section>;
 }

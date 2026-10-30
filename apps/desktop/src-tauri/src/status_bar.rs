@@ -136,13 +136,13 @@ impl StatusBar {
         tray.with_inner_tray_icon(|inner| {
             let Some(mtm) = objc2::MainThreadMarker::new() else { return; };
             if let Some(image) = inner.ns_status_item().and_then(|item| item.button(mtm)).and_then(|button| button.image()) {
-                // tray-icon defaults to 18 pt; 22 pt keeps this padded mark legible beside system icons.
+                // Keep the padded mark aligned with the system-sized menu icons.
                 let mut size = image.size();
-                size.width *= 22.0 / size.height;
-                size.height = 22.0;
+                size.width *= 18.0 / size.height;
+                size.height = 18.0;
                 image.setSize(size);
                 #[cfg(feature = "smoke-test")]
-                assert_eq!(image.size().height, 22.0);
+                assert_eq!(image.size().height, 18.0);
             }
         })?;
         Ok(Self {
