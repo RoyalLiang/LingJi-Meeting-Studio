@@ -48,10 +48,14 @@ export async function deployPublicSite({env=process.env,fetcher=fetch,run=comman
   const databases=await api(`/d1/database?name=${resourceName}`), existing=databases.find(d=>d.name===resourceName);
   if(!project && existing)throw new Error('Matching database already exists without a managed Pages project; inspect ownership before retrying.');
   const vars={LINGJI_SITE_ID:marker};
-  const team=env.CLOUDFLARE_ACCESS_TEAM_DOMAIN || '',aud=env.CLOUDFLARE_ACCESS_AUD || '';
-  if(team || aud){if(!/^[a-z0-9-]+\.cloudflareaccess\.com$/i.test(team) || !aud || aud.length>512)throw new Error('Configure both valid Access team domain and application AUD.');vars.ACCESS_TEAM_DOMAIN=team;vars.ACCESS_AUD=aud;}
-  else if(project?.deployment_configs?.production?.env_vars?.ACCESS_AUD?.value)throw new Error('Access variables are missing; refusing to remove an existing publisher configuration.');
+  const client=env.SITE_GITHUB_CLIENT_ID || '',secret=env.SITE_GITHUB_CLIENT_SECRET || '',owner=env.PUBLISHER_GITHUB_ID || '';
+  const publishing=Boolean(client && secret && owner);
+  if(client || secret || owner){
+    if(!/^[A-Za-z0-9_.-]{12,128}$/.test(client) || secret.length<32 || !/^\d+$/.test(owner))throw new Error('Configure GitHub OAuth client ID, secret and immutable publisher ID.');
+    Object.assign(vars,{GITHUB_CLIENT_ID:client,PUBLISHER_GITHUB_ID:owner,PUBLIC_SITE_ORIGIN:'https://rookiecode.com'});
+  }else if(project?.deployment_configs?.production?.env_vars?.GITHUB_CLIENT_SECRET)throw new Error('OAuth configuration is missing; refusing to remove an existing publisher configuration.');
   const envVars=Object.fromEntries(Object.entries(vars).map(([key,value])=>[key,{type:'plain_text',value}]));
+  if(publishing)envVars.GITHUB_CLIENT_SECRET={type:'secret_text',value:secret};
   if(!project)await api('/pages/projects','POST',{name:projectName,production_branch:'main',deployment_configs:{production:{env_vars:envVars}}});
   const db=existing || await api('/d1/database','POST',{name:resourceName});
   await api(`/pages/projects/${projectName}`,'PATCH',{deployment_configs:{production:{compatibility_date:'2026-10-29',env_vars:envVars,d1_databases:{DB:{id:db.uuid}}}}});
@@ -62,7 +66,7 @@ export async function deployPublicSite({env=process.env,fetcher=fetch,run=comman
   await run(process.execPath,[wrangler,'pages','deploy','dist','--project-name',projectName,'--branch','main','--commit-hash',env.GITHUB_SHA],{cwd:site,env});
   const deployed=await api(`/pages/projects/${projectName}`),url=`https://${deployed.subdomain}`;
   if(deployed.production_deployment?.deployment_trigger?.metadata?.commit_hash!==env.GITHUB_SHA)throw new Error('Cloudflare production source SHA differs from this workflow.');
-  const receipt={project:projectName,sha:env.GITHUB_SHA,deploymentId:deployed.production_deployment.id,url,publishingConfigured:Boolean(team && aud),verifiedAt:new Date().toISOString()};
+  const receipt={project:projectName,sha:env.GITHUB_SHA,deploymentId:deployed.production_deployment.id,url,publishingConfigured:publishing,verifiedAt:new Date().toISOString()};
   const response=await fetcher(url+'/example',{signal:AbortSignal.timeout(30000)});if(!response.ok || !(await response.text()).includes('source-example-1-1'))throw new Error('Public example acceptance failed.');
   const status=await fetcher(url+'/api/site-status',{signal:AbortSignal.timeout(30000)});if(!status.ok || (await status.json()).publishing!==receipt.publishingConfigured)throw new Error('Public publisher readiness differs from deployment configuration.');
   receipt.sharingChecks=await verifySiteSharing(api,db.uuid,url,fetcher);

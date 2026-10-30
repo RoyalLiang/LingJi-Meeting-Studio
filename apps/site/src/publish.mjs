@@ -3,7 +3,7 @@ import { createShareDocument } from '../../web/src/share-content.ts';
 
 const byId=id=>document.getElementById(id), file=byId('content-file'), consent=byId('consent'), submit=byId('publish-button');
 let content=null, ready=false, busy=false, generation=0;
-const messages={publisher_login_required:'请使用受邀邮箱登录后重试。',publishing_not_configured:'发布身份尚未配置，请联系维护者。',sharing_not_configured:'发布存储尚未配置。',publish_request_conflict:'重试内容发生变化，请重新选择文件。',active_share_limit:'有效链接已达上限，请先撤销不用的链接。',share_too_large:'在线分享内容超过 1 MiB，请缩小范围或使用离线 HTML。',invalid_share_content:'文件内容或引用版本不完整，请从桌面版重新导出。'};
+const messages={publisher_login_required:'请使用 RoyalLiang 的 GitHub 账户登录后重试。',publishing_not_configured:'发布身份尚未配置，请联系维护者。',sharing_not_configured:'发布存储尚未配置。',publish_request_conflict:'重试内容发生变化，请重新选择文件。',active_share_limit:'有效链接已达上限，请先撤销不用的链接。',share_too_large:'在线分享内容超过 1 MiB，请缩小范围或使用离线 HTML。',invalid_share_content:'文件内容或引用版本不完整，请从桌面版重新导出。'};
 const enable=()=>{submit.disabled=!ready || !content || !consent.checked || busy;};
 async function request(path,options={}){
   const response=await fetch(path,{...options,headers:{'Content-Type':'application/json',...options.headers},cache:'no-store',signal:AbortSignal.timeout(30000)});
@@ -15,7 +15,7 @@ async function history(){
   const status=byId('history-status'), list=byId('history-list');
   status.textContent='正在读取…';
   try{
-    const {shares}=await request('/api/published');ready=true;enable();list.replaceChildren();
+    const {shares}=await request('/api/published');ready=true;enable();list.replaceChildren();byId('publisher-login').hidden=true;byId('publisher-logout').hidden=false;
     status.textContent=shares.length?'链接只在创建时展示，请自行保存；这里始终可以撤销。':'还没有已发布的链接。';
     for(const share of shares){
       const row=document.createElement('div'), label=document.createElement('div'), title=document.createElement('strong'), detail=document.createElement('p');

@@ -39,8 +39,9 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_ACCESS_TEAM_DOMAIN: ${{ vars.CLOUDFLARE_ACCESS_TEAM_DOMAIN }}
-          CLOUDFLARE_ACCESS_AUD: ${{ vars.CLOUDFLARE_ACCESS_AUD }}
+          SITE_GITHUB_CLIENT_ID: ${{ secrets.SITE_GITHUB_CLIENT_ID }}
+          SITE_GITHUB_CLIENT_SECRET: ${{ secrets.SITE_GITHUB_CLIENT_SECRET }}
+          PUBLISHER_GITHUB_ID: ${{ vars.PUBLISHER_GITHUB_ID }}
         run: node scripts/deploy-public-site.mjs ${{ github.event_name == 'schedule' && '--cleanup' || '' }}
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         if: github.event_name != 'schedule'
