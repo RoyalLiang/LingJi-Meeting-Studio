@@ -52,11 +52,6 @@
 .meeting-highlights .muted,.meeting-highlights-state { font-size:13px; line-height:1.8; }
 .meeting-highlights-state { margin:0 0 16px; }
 .meeting-highlights-state:last-child { margin-bottom:0; }
-.meeting-highlights-notice .toast.feedback-toast.is-inline { margin:0 0 18px; background:var(--warn-soft); border-radius:10px; }
-.meeting-highlights-notice:last-child .toast.feedback-toast.is-inline { margin-bottom:0; }
-.meeting-highlights-notice .toast-content { display:flex; align-items:center; gap:16px; }
-.meeting-highlights-notice .toast-content>span { flex:1; }
-.meeting-highlights-notice .toast-action { flex:none; white-space:nowrap; }
 .meeting-focus-trigger { position:fixed; right:28px; bottom:24px; z-index:9; display:flex; align-items:center; gap:8px; min-height:44px; padding:10px 16px; border:1px solid var(--border); border-radius:12px; background:var(--bg); color:var(--accent); font:600 13px var(--sans); box-shadow:0 4px 18px color-mix(in srgb,var(--ink-1) 10%,transparent); cursor:pointer; }
 .meeting-focus-trigger:hover { background:var(--accent-soft); }
 .meeting-focus-trigger:focus-visible { outline:2px solid var(--focus-ring); outline-offset:3px; }
@@ -71,7 +66,13 @@
  .meeting-highlights li { font-size:12px; }
  .meeting-highlights.is-collapsed h3 { display:none; }
  .meeting-highlights-inline-lead { font-size:13px; margin-left:0; }
- .meeting-highlights-notice .toast-content { flex-direction:column; align-items:flex-start; gap:8px; }
  .meeting-highlights-tools .button { min-width:36px; min-height:36px; }
  .meeting-focus-trigger { bottom:70px; right:20px; }
 }
+
+.toast.feedback-toast.minutes-failure-toast { align-items:center; max-width:calc(100vw - 32px); background:var(--warn-soft); }
+.toast.feedback-toast.minutes-failure-toast>svg { margin-top:0; }
+.minutes-failure-toast .toast-content { display:flex; align-items:center; gap:20px; }
+.minutes-failure-toast .toast-content>span { white-space:normal; }
+.minutes-failure-toast .toast-action { flex:none; white-space:nowrap; }
+@media(max-width:700px) { .minutes-failure-toast .toast-content { flex-wrap:wrap; gap:6px; }.minutes-failure-toast .toast-content>span { flex-basis:100%; } }
