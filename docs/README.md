@@ -1,3 +1,7 @@
+# 纪要导入与 Skill 发布方案探索（2026-10-30～31）
+
+[可行性研究](research/minutes-feishu-skill-publishing-2026-10-30.md)、[交互预览与截图](design/minutes-publishing-preview-2026-10-30.md)、[proposed ADR](adr/0017-minutes-publishing-skills.md)。仅研究与独立原型，尚未接入真实飞书、技能安装或 MCP 发布。
+
 # v0.1.5 豆包音频纪要发布准备（2026-10-22）
 
 豆包音频纪要 v0.1.5 已准备后台发布，见[安装与模型配置](releases/v0.1.5-preview.md)；实际发布状态以 Actions 和 Release 回执为准。
