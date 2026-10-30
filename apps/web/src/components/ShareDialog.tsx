@@ -7,12 +7,12 @@ import { api, messageOf } from '../api';
 import { canCreateShareLinks, createShareDocument, minutesForShare, shareFilename } from '../share-content';
 import { Button, Modal } from './ui';
 import { Select } from './Select';
-import { createPublishedContent } from '../../../../packages/records/src/published-content.mjs';
+import { createPublishedContent, MAX_PUBLISHED_BYTES } from '../../../../packages/records/src/published-content.mjs';
 import type { ShareScope } from '../share-content';
 import './ShareDialog.css';
 
 interface ShareLink { id: string; scope: string; expires: number; revoked: boolean }
-const publishPage = 'https://lingji-meeting-studio-beta.pages.dev/publish';
+const publishPage = 'https://rookiecode.com/publish';
 
 export function ShareDialog({ record, localAccount, close, notify }: { record: RecordDetail; localAccount: boolean; close: () => void; notify: (message: string) => void }) {
   const [scope, setScope] = useState<ShareScope>('minutes');
@@ -57,7 +57,7 @@ export function ShareDialog({ record, localAccount, close, notify }: { record: R
     setError('');
     try {
       const content = online ? JSON.stringify(createPublishedContent(record, scope)) : createShareDocument(record);
-      if (online && new TextEncoder().encode(content).length > 2 * 1024 * 1024 - 1024) throw new Error('内容超过在线分享的 2 MiB 限额，请改选仅纪要或导出 HTML 文件。');
+      if (online && new TextEncoder().encode(content).length > MAX_PUBLISHED_BYTES - 1024) throw new Error('内容超过在线分享的 1 MiB 限额，请改选仅纪要或导出 HTML 文件。');
       const file = { url: URL.createObjectURL(new Blob([content], { type: online ? 'application/json;charset=utf-8' : 'text/html;charset=utf-8' })), name: shareFilename(record.title).replace(/\.html$/, online ? '.lingji.json' : '.html') };
       setPrepared(file);
       beginDownload(file.url);

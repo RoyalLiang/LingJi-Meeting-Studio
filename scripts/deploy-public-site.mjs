@@ -2,9 +2,32 @@ import { writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { normalizePublishedContent } from '../packages/records/src/published-content.mjs';
+import { exampleContent } from '../apps/site/src/example.mjs';
 
 export const projectName='lingji-meeting-studio-beta';
 const resourceName=projectName+'-shares', marker='lingji-public-site-v1';
+export async function verifySiteSharing(api,dbId,url,fetcher=fetch){
+  const owner=`deployment-check:${randomUUID()}`,ids=[];
+  const payload=JSON.stringify(normalizePublishedContent(exampleContent));
+  const digest=value=>createHash('sha256').update(value).digest('hex');
+  const query=(sql,params)=>api(`/d1/database/${dbId}/query`,'POST',{sql,params});
+  try{
+    for(const operation of ['expiry','revocation']){
+      const id=randomUUID(),token=randomBytes(32).toString('base64url'),now=Date.now();ids.push(id);
+      await query('INSERT INTO shares(id,owner_id,request_id,token_hash,payload,payload_hash,title,source_record_id,scope,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',[id,owner,randomUUID(),digest(token),payload,digest(payload),exampleContent.title,exampleContent.sourceRecordId,'minutes',now,now+120000]);
+      const target=url+'/share/'+token;
+      const response=await fetcher(target,{signal:AbortSignal.timeout(30000)});
+      if(!response.ok || response.headers.get('cache-control')!=='no-store' || !(await response.text()).includes('source-example-1-1'))throw new Error('D1 shared-page acceptance failed.');
+      if(operation==='expiry')await query('UPDATE shares SET expires_at=? WHERE id=? AND owner_id=?',[Date.now()-60000,id,owner]);
+      else await query('UPDATE shares SET revoked_at=?,payload=NULL WHERE id=? AND owner_id=?',[Date.now(),id,owner]);
+      const denied=await fetcher(target,{signal:AbortSignal.timeout(30000)});
+      if(denied.status!==404)throw new Error(`Shared-page ${operation} acceptance failed.`);
+    }
+    return {d1Read:true,expiry:true,revocation:true};
+  }finally{for(const id of ids)await query('DELETE FROM shares WHERE id=? AND owner_id=?',[id,owner]);}
+}
 export async function deployPublicSite({env=process.env,fetcher=fetch,run=command,root=resolve(import.meta.dirname,'..'),cleanup=false}={}){
   if(!/^[a-f0-9]{32}$/i.test(env.CLOUDFLARE_ACCOUNT_ID || '') || !env.CLOUDFLARE_API_TOKEN)throw new Error('Configure GitHub Secrets CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN before deployment.');
   const base=`https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}`;
@@ -23,8 +46,7 @@ export async function deployPublicSite({env=process.env,fetcher=fetch,run=comman
     return {cleanup:true};
   }
   const databases=await api(`/d1/database?name=${resourceName}`), existing=databases.find(d=>d.name===resourceName);
-  const bucket=await api(`/r2/buckets/${resourceName}`,'GET',undefined,true);
-  if(!project && (existing || bucket))throw new Error('Matching resources already exist without a managed Pages project; inspect ownership before retrying.');
+  if(!project && existing)throw new Error('Matching database already exists without a managed Pages project; inspect ownership before retrying.');
   const vars={LINGJI_SITE_ID:marker};
   const team=env.CLOUDFLARE_ACCESS_TEAM_DOMAIN || '',aud=env.CLOUDFLARE_ACCESS_AUD || '';
   if(team || aud){if(!/^[a-z0-9-]+\.cloudflareaccess\.com$/i.test(team) || !aud || aud.length>512)throw new Error('Configure both valid Access team domain and application AUD.');vars.ACCESS_TEAM_DOMAIN=team;vars.ACCESS_AUD=aud;}
@@ -32,10 +54,8 @@ export async function deployPublicSite({env=process.env,fetcher=fetch,run=comman
   const envVars=Object.fromEntries(Object.entries(vars).map(([key,value])=>[key,{type:'plain_text',value}]));
   if(!project)await api('/pages/projects','POST',{name:projectName,production_branch:'main',deployment_configs:{production:{env_vars:envVars}}});
   const db=existing || await api('/d1/database','POST',{name:resourceName});
-  if(!bucket)await api('/r2/buckets','POST',{name:resourceName});
-  await api(`/r2/buckets/${resourceName}/lifecycle`,'PUT',{rules:[{id:'expire-shared-snapshots',enabled:true,conditions:{prefix:'shares/'},deleteObjectsTransition:{condition:{type:'Age',maxAge:172800}}}]});
-  await api(`/pages/projects/${projectName}`,'PATCH',{deployment_configs:{production:{compatibility_date:'2026-10-29',env_vars:envVars,d1_databases:{DB:{id:db.uuid}},r2_buckets:{BUCKET:{name:resourceName}}}}});
-  const config={name:projectName,pages_build_output_dir:'./dist',compatibility_date:'2026-10-29',vars,d1_databases:[{binding:'DB',database_name:resourceName,database_id:db.uuid,migrations_dir:'migrations'}],r2_buckets:[{binding:'BUCKET',bucket_name:resourceName}]};
+  await api(`/pages/projects/${projectName}`,'PATCH',{deployment_configs:{production:{compatibility_date:'2026-10-29',env_vars:envVars,d1_databases:{DB:{id:db.uuid}}}}});
+  const config={name:projectName,pages_build_output_dir:'./dist',compatibility_date:'2026-10-29',vars,d1_databases:[{binding:'DB',database_name:resourceName,database_id:db.uuid,migrations_dir:'migrations'}]};
   const site=resolve(root,'apps/site'),configFile=resolve(site,'wrangler.jsonc');await writeFile(configFile,JSON.stringify(config,null,2)+'\n');
   const wrangler=resolve(root,'node_modules/wrangler/bin/wrangler.js');
   await run(process.execPath,[wrangler,'d1','migrations','apply','DB','--remote','--config',configFile],{cwd:site,env});
@@ -45,6 +65,7 @@ export async function deployPublicSite({env=process.env,fetcher=fetch,run=comman
   const receipt={project:projectName,sha:env.GITHUB_SHA,deploymentId:deployed.production_deployment.id,url,publishingConfigured:Boolean(team && aud),verifiedAt:new Date().toISOString()};
   const response=await fetcher(url+'/example',{signal:AbortSignal.timeout(30000)});if(!response.ok || !(await response.text()).includes('source-example-1-1'))throw new Error('Public example acceptance failed.');
   const status=await fetcher(url+'/api/site-status',{signal:AbortSignal.timeout(30000)});if(!status.ok || (await status.json()).publishing!==receipt.publishingConfigured)throw new Error('Public publisher readiness differs from deployment configuration.');
+  receipt.sharingChecks=await verifySiteSharing(api,db.uuid,url,fetcher);
   await writeFile(resolve(root,'cloudflare-publication-receipt.json'),JSON.stringify(receipt,null,2)+'\n');
   return receipt;
 }

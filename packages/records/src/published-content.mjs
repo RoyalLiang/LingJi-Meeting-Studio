@@ -1,4 +1,5 @@
 import { sharedMinutes, sharedSegments } from './shared-content.mjs';
+export const MAX_PUBLISHED_BYTES = 1024 * 1024;
 
 export class ShareContentError extends Error {
   constructor(code = 'invalid_share_content', status = 400) { super(code); this.code = code; this.status = status; }
