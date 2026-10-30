@@ -2,7 +2,7 @@
 
 # 后台会议辅助：先提示确认，再验证逐应用自动接管
 
-状态：**proposed（待批准设计，未实现或启用）**。日期：2026-10-30，Asia/Shanghai。源码核查基线：`af6d800abfac51c56c8e638198801ab676ff4939`（v0.2.2）；本轮滚动纪要修复仍是工作树增量，不作为已发布能力。本文承接[自动起止信号研究](../research/meeting-lifecycle-signals-2026-10-28.md)，只规定后台开始、结束和异常恢复方案，没有新增监听器、计划任务或真实录音。
+状态：**proposed（待批准设计，未实现或启用）**。日期：2026-10-30，Asia/Shanghai。源码核查基线：`af6d800abfac51c56c8e638198801ab676ff4939`（v0.2.2）；本段记录 2026-10-30 的提案状态；滚动纪要修复和最小音频调用联动随后已随 [v0.2.4 发布](../evidence/preview-v0.2.4-2026-10-31.md)，专用高置信会议状态集成仍未实现。本文承接[自动起止信号研究](../research/meeting-lifecycle-signals-2026-10-28.md)，只规定后台开始、结束和异常恢复方案，没有新增监听器、计划任务或真实录音。
 
 建议先提供**默认关闭的会议辅助**：用户逐个选择会议应用，检测到候选活动后提示确认；只有能够绑定到特定会议实例、区分重连和真正离会的专用集成，才允许单独开启自动动作。音量、静音、VAD、进程退出和日历到点都不能单独封存会议。通用音频接口表达的是流活动，浏览器共享还要求用户现场操作；这些限制无法靠提高“置信度分数”消除。[Apple 音频进程定义](https://developer.apple.com/documentation/coreaudio/audiohardwareprocess)、[Windows 会话状态](https://learn.microsoft.com/en-us/windows/win32/api/audiosessiontypes/ne-audiosessiontypes-audiosessionstate)、[W3C 屏幕采集](https://www.w3.org/TR/screen-capture/)
 

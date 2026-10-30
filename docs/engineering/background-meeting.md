@@ -1,6 +1,6 @@
 # 后台会议联动：浏览器与飞书音频调用
 
-更新日期：2026-10-31。当前为本轮候选源码；发布状态以 Release 回执为准。首版只支持 macOS 14.6+ 桌面上的 Chrome、Edge 和飞书。Windows、Linux、Safari 及共享 WebKit 进程暂不启用。
+更新日期：2026-10-31。已随 v0.2.4 发布；[发布核验与验收边界](../evidence/preview-v0.2.4-2026-10-31.md)。首版只支持 macOS 14.6+ 桌面上的 Chrome、Edge 和飞书。Windows、Linux、Safari 及共享 WebKit 进程暂不启用。
 
 ## 开启与停止
 
