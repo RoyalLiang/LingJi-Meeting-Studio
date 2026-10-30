@@ -1,6 +1,6 @@
 # v0.2.1 发布核验回执
 
-核验日期：2026-10-30。桌面版及官网已发布，真实 GitHub 登录通过。生产分享服务的公开读取、过期和撤销已通过自动检查；浏览器完整上传、预览、确认与撤销流程仍待 Chrome 扩展文件访问权限，不能视为完整 GUI 验收。
+核验日期：2026-10-30。桌面版及官网已发布，真实 GitHub 登录通过。生产分享服务的公开读取、过期和撤销已通过自动检查；浏览器使用虚构会议完成文件选择、完整预览、确认发布、打开动态纪要与门户撤销；独立无 Cookie 请求分别验证发布后 200、撤销后 404。
 
 ## 固定源码与后台工作流
 
@@ -29,13 +29,14 @@
 - 无 Cookie 的独立 HTTPS 请求验证：官网 200、服务配置 200/`publishing: true`，发布和管理 API 401，无效分享 404 且 `no-store`。携带伪造 `Cf-Access-Jwt-Assertion` 仍被拒绝。
 - 快照存放在 D1，单个文件最多 1 MiB；默认 24 小时有效，可提前撤销。未开通 R2、Cloudflare Access 或付费计划。
 
+浏览器证据：[完整预览](assets/beta-live-20261030/share-preview.png)、[动态分享页](assets/beta-live-20261030/share-published.png)、[门户撤销](assets/beta-live-20261030/share-revoked.png)。测试链接已撤销，未上传真实会议或音频。
+
 证据：[Cloudflare 原始公开回执](assets/beta-live-20261030/cloudflare-production-verification.json)、[域名与匿名 HTTP 检查](assets/beta-live-20261030/live-verification.json)、[正式官网截图](assets/beta-live-20261030/site-desktop.png)、[真实登录后发布入口](assets/beta-live-20261030/publisher-authenticated.png)。
 
 ## 本地验证与剩余验收
 
 735 项完整 Node 回归、24 项分享/官网专项、lint、类型检查、Web/Pages 构建通过；回执字段修正后专项及 lint 重跑通过，固定提交的两轴复审无剩余阻塞。本回执加入后 255 份 Markdown 的链接与代码围栏检查通过，git diff --check 通过。
 
-- Chrome 扩展目前未允许访问文件网址，工具无法将虚构会议文件填入选择框。真实登录已验，但 GUI 文件选择、完整预览、确认发布、打开动态链接及在门户撤销的整条路径尚未现场执行。不能用后台 D1 合成检查替代这一缺口。
 - 尚无真实会议金标集、长会话或真实供应商准确率/时延实测。词表提供场景提示与需人工确认的同音候选；SenseVoice 首次识别不注入热词，不能宣称已证明 ASR 准确率提升。
 - 本轮未在用户实体设备安装这三个公开附件；也未验证原生浏览器音频采集、Postgres/S3 或全部历史代码。CI、摘要一致和本地测试各自只证明其覆盖范围。
 - 首次 Pages 创建 API 多次返回 500；本次由控制台建立空项目和所有权标记后，Actions 成功部署。全新账户的全自动首次创建仍未验证，首次错误的 Cloudflare 内部原因未确认。

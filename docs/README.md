@@ -1,7 +1,7 @@
 # 聆记文档导航
 
 Beta v0.2.1 已发布：[官网](https://rookiecode.com)、[发布入口](https://rookiecode.com/publish)、[完整发布核验与验收缺口](evidence/preview-v0.2.1-2026-10-30.md)。
-[v0.2.1 Beta 实施](releases/v0.2.1-preview.md)：[在线纪要指南](engineering/beta-sharing.md)与[验证边界](evidence/beta-implementation-2026-10-30.md)，发布回执待补。
+[v0.2.1 Beta 实施](releases/v0.2.1-preview.md)：[在线纪要指南](engineering/beta-sharing.md)与[验证边界](evidence/beta-implementation-2026-10-30.md)，[发布核验回执](evidence/preview-v0.2.1-2026-10-30.md)。
 
 [v0.1.50 会后重点与悬浮 Toast](releases/v0.1.50-preview.md)：已发布，五项 CI 与四个公开附件核验通过；[发布回执](evidence/preview-v0.1.50-2026-10-30.md) · [截图与验证](evidence/minutes-floating-toast-2026-10-30.md)。
 

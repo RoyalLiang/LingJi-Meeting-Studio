@@ -65,5 +65,15 @@
     "allowedUserId": "26199801",
     "requestedScopes": []
   },
-  "browserUploadRoundTrip": "pending Chrome extension file URL permission"
+  "browserUploadRoundTrip": {
+    "verifiedAt": "2026-10-30T11:11:52.165920+00:00",
+    "fixtureOnly": true,
+    "fileSelection": true,
+    "fullPreview": true,
+    "confirmedPublish": true,
+    "browserRead": true,
+    "anonymousReadHttp": 200,
+    "portalRevocation": true,
+    "anonymousAfterRevocationHttp": 404
+  }
 }
