@@ -22,18 +22,16 @@ async function body(request){
 }
 function sameOrigin(request){if(request.headers.get('origin')!==new URL(request.url).origin)throw new ShareContentError('origin_rejected',403);}
 function ready(env){if(!env.DB || !env.BUCKET)throw new ShareContentError('sharing_not_configured',503);}
-function invalidBudget(request, failed=false){
+function reserveRead(request){
   const key=request.headers.get('cf-connecting-ip') || 'unknown',now=Date.now();
   let value=invalidReads.get(key);
   if(value?.reset<=now){invalidReads.delete(key);value=undefined;}
   if(value?.count>=60)throw new ShareContentError('share_rate_limited',429);
-  if(failed){
-    if(invalidReads.size>=10000){for(const [id,entry] of invalidReads)if(entry.reset<=now)invalidReads.delete(id);if(!value && invalidReads.size>=10000)throw new ShareContentError('share_rate_limited',429);}
-    invalidReads.set(key,{count:(value?.count || 0)+1,reset:value?.reset || now+60000});
-  }
+  if(invalidReads.size>=10000){for(const [id,entry] of invalidReads)if(entry.reset<=now)invalidReads.delete(id);if(!value && invalidReads.size>=10000)throw new ShareContentError('share_rate_limited',429);}
+  value ||= {count:0,reset:now+60000};value.count++;invalidReads.set(key,value);return value;
 }
 function document(content,expires){
-  let html=createShareDocument({id:content.sourceRecordId,title:content.title,capture:content.draft?'recording':'completed',minutes:content.minutes,segments:content.segments || []},content.scope);
+  let html=createShareDocument({id:content.sourceRecordId,title:content.title,capture:content.draft?'recording':'completed',minutes:content.minutes,segments:content.segments || []},content.scope,true);
   if(expires){
     html=html.replace("default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'","default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'");
     html=html.replace('</footer>',`<p id="share-status" role="status" data-expires="${expires}">只读快照 · 24 小时有效，可由发布者撤销。已保存的副本无法收回。</p></footer>`).replace('</body>','<script type="module" src="/share-status.js"></script></body>');
@@ -54,10 +52,12 @@ export function createSiteWorker({identify=publisher}={}){
       if(path==='/api/site-status' && request.method==='GET')return json({publishing:Boolean(env.ACCESS_TEAM_DOMAIN && env.ACCESS_AUD && env.DB && env.BUCKET)});
       const shared=path.match(/^\/(share|api\/shared)\/([A-Za-z0-9_-]{43})(\/status)?$/);
       if(shared && request.method==='GET'){
-        ready(env);invalidBudget(request);
+        ready(env);const permit=reserveRead(request);
         const db=database(env),tokenHash=await hash(shared[2]);
-        const row=await db.prepare('SELECT * FROM shares WHERE token_hash=? AND revoked_at IS NULL AND expires_at>?').bind(tokenHash,Date.now()).first();
-        if(!row){invalidBudget(request,true);throw new ShareContentError('share_expired_or_revoked',404);}
+        let row;
+        try{row=await db.prepare('SELECT * FROM shares WHERE token_hash=? AND revoked_at IS NULL AND expires_at>?').bind(tokenHash,Date.now()).first();}catch(error){permit.count--;throw error;}
+        if(!row)throw new ShareContentError('share_expired_or_revoked',404);
+        permit.count--;
         if(shared[3])return json({valid:true,expires:row.expires_at});
         const stored=await env.BUCKET.get(row.object_key);if(!stored)throw new ShareContentError('shared_content_unavailable',503);
         const content=normalizePublishedContent({...JSON.parse(await stored.text()),sourceRecordId:row.source_record_id});

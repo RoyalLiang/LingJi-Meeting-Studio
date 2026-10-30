@@ -1,5 +1,9 @@
 # 聆记文档导航
 
+[v0.1.49 学习评审与实时翻译](releases/v0.1.49-preview.md)：按已确认设计完成六项改造，已发布，[五项 CI 与四个附件核验通过](evidence/preview-v0.1.49-2026-10-30.md)；[本轮验证与边界](evidence/learning-translation-v0.1.49-2026-10-30.md)。
+
+[v0.1.48 设置与纪要优化](releases/v0.1.48-preview.md)：已发布，五项 CI、三平台安装包与更新清单核验通过；[发布回执](evidence/preview-v0.1.48-2026-10-30.md)。[验证范围](evidence/settings-minutes-v0.1.47-2026-10-29.md)。
+
 [v0.1.46 树形线条对齐](releases/v0.1.46-preview.md)：修正小结边框引起的 1px 原点偏移；[修复证据](evidence/alignment-v0.1.46-2026-10-29.md)，已发布，[五项 CI 与公开附件核验通过](evidence/preview-v0.1.46-2026-10-29.md)。
 
 [v0.1.45 树形层级与用量栏](releases/v0.1.45-preview.md)：保留主题背景、连续分支层级，移除供应商说明与明细标题；[布局证据](evidence/layout-v0.1.45-2026-10-29.md)，已发布，[五项 CI 与公开附件核验通过](evidence/preview-v0.1.45-2026-10-29.md)。

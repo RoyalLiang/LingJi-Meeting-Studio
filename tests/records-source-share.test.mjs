@@ -6,7 +6,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { truncateText } from '../packages/records/src/text.mjs';
-import { sharedMinutes, sharedSegments } from '../packages/records/src/shared-content.mjs';
+import { sharedMinutes } from '../packages/records/src/shared-content.mjs';
 import { createRecordServer } from '../services/records/src/server.mjs';
 
 const frontend = await Promise.all(['citation-context.ts', 'share-content.ts'].map(async file => stripTypeScriptTypes(await readFile(new URL(`../apps/web/src/${file}`, import.meta.url), 'utf8')).replace(/^import .*$/gm, '').replace(/export /g, '')));
@@ -27,12 +27,13 @@ test('citation context preserves the exact frozen revision and chronological adj
   assert.equal(citationContext({ reference: ref('s2', 2), snapshot: unordered }), null);
 });
 
-test('minutes-only sharing includes table, topic and speaker citations but excludes uncited or newer source versions', () => {
+test('minutes-only sharing excludes every transcript snapshot while preserving summary content', () => {
   const value = minutes(), result = sharedMinutes(value);
-  assert.deepEqual(result.evidenceSnapshot.map(value => `${value.id}@${value.revision}`), ['s1@1', 's2@1', 's3@1', 's4@1']);
+  assert.deepEqual(result.evidenceSnapshot, []);
+  assert.deepEqual(result.tables[0].rows[0].evidence, []);
+  assert.equal(result.tables[0].rows[0].cells[0], '周五发版');
   assert.equal(value.evidenceSnapshot.length, 6);
-  const other = { ...minutes(), decisions: [{ text: '决定', evidence: [ref('s5')] }], currentDiscussion: [{ text: '当前', evidence: [ref('s2', 2)] }] };
-  assert.equal(sharedMinutes(other).evidenceSnapshot.length, 6);
+
 });
 
 test('share serialization removes unrecognized provider fields and internal source metadata at every level', () => {
@@ -43,8 +44,7 @@ test('share serialization removes unrecognized provider fields and internal sour
   value.evidenceSnapshot[1].translationFence = 'internal fence'; value.evidenceSnapshot[1].speakerHash = 'internal hash'; value.evidenceSnapshot[1].versions = [{ text: 'unshared version' }];
   const result = JSON.stringify(sharedMinutes(value));
   assert.doesNotMatch(result, /private|internal|unshared version|sourceId|versions|runtime|未引用的敏感内容/);
-  assert.match(result, /引用时的原文/);
-  assert.deepEqual(sharedSegments([{ ...snapshot[1], translationFence: 'internal', extra: 'private' }])[0], { id: 's2', revision: 1, text: '引用时的原文', speaker: '说话人 1', startMs: 1000, endMs: 2000 });
+  assert.doesNotMatch(result, /引用时的原文|表格专属引用/);
 });
 
 test('standalone and loopback clients never offer unreachable share links while deployed origins retain link sharing', () => {
@@ -57,10 +57,10 @@ test('portable HTML escapes content and restricts minutes scope to cited frozen 
   const record = { title: '<img src=x onerror=alert(1)>', capture: 'completed', minutes: minutes(), segments: snapshot, notes: '私密人工笔记' };
   const html = createShareDocument(record, 'minutes');
   assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
-  assert.match(html, /引用时的原文/); assert.match(html, /表格专属引用/); assert.match(html, /承担回归/);
+  assert.doesNotMatch(html, /引用时的原文|表格专属引用/); assert.match(html, /承担回归/);
   assert.doesNotMatch(html, /未引用的敏感内容|后来人工修改|私密人工笔记|<script|<img|https?:\/\//);
-  assert.match(html, /default-src 'none'/); assert.match(html, /href="#source-s4-1"/);
-  assert.match(createShareDocument(record, 'full'), /未引用的敏感内容/);
+  assert.match(html, /default-src 'none'/); assert.doesNotMatch(html, /href="#source/);
+  assert.doesNotMatch(createShareDocument(record, 'full'), /未引用的敏感内容|全部转录|引用原文/);
   assert.equal(shareFilename('a/b:c'), 'a_b_c.html');
 });
 
@@ -69,7 +69,7 @@ test('active and finishing meetings can export their available AI draft before f
   assert.equal(minutesForShare({ capture: 'recording', minutes: final, liveMinutes: live }), live);
   assert.equal(minutesForShare({ capture: 'completed', minutes: final, liveMinutes: live }), final);
   const html = createShareDocument({ title: '会议', capture: 'completed', minutes: null, liveMinutes: live, segments: [] }, 'minutes');
-  assert.match(html, /纪要草稿/); assert.match(html, /版本发布安排/);
+  assert.doesNotMatch(html, /纪要草稿/); assert.match(html, /版本发布安排/);
 });
 
 test('HTTP read-only sharing keeps exact table sources, excludes unshared transcript and honors revocation', async () => {
@@ -87,8 +87,14 @@ test('HTTP read-only sharing keeps exact table sources, excludes unshared transc
     const link = await call(`/api/records/${id}/shares`, { method: 'POST', headers, body: JSON.stringify({ scope: 'minutes' }) });
     assert.equal(link.status, 200, link.data.error);
     const shared = await call(`/api/shared/${link.data.token}`);
-    assert.equal(shared.status, 200); assert.equal(shared.data.draft, true); assert.equal(shared.data.segments, undefined);
-    assert.deepEqual(shared.data.minutes.evidenceSnapshot.map(value => `${value.id}@${value.revision}`), ['s1@1', 's2@1', 's3@1', 's4@1']);
+    assert.equal(shared.status, 200); assert.equal(shared.data.draft, undefined); assert.equal(shared.data.segments, undefined);
+    assert.deepEqual(shared.data.minutes.evidenceSnapshot, []);
+    await app.repo.change(id, record => { record.shares[0].scope='full'; });
+    const legacy=await call(`/api/shared/${link.data.token}`);
+    assert.equal(legacy.data.segments,undefined);assert.deepEqual(legacy.data.minutes.evidenceSnapshot,[]);
+    assert.doesNotMatch(JSON.stringify(legacy.data),/引用时的原文|未引用的敏感内容/);
+    const rejected=await call(`/api/records/${id}/shares`,{method:'POST',headers,body:JSON.stringify({scope:'full'})});
+    assert.equal(rejected.status,400);
     await call(`/api/records/${id}/shares/${link.data.id}`, { method: 'DELETE', headers, body: '{}' });
     assert.equal((await call(`/api/shared/${link.data.token}`)).status, 404);
   } finally { await app.stop(); await rm(root, { recursive: true, force: true }); }

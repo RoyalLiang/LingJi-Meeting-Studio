@@ -33,7 +33,7 @@ file.addEventListener('change',async()=>{
   try{
     const selected=file.files[0];if(!selected)return;if(selected.size>2*1024*1024)throw new Error(messages.share_too_large);
     const parsed=normalizePublishedContent(JSON.parse(await selected.text()));if(current!==generation)return;
-    content=parsed;const preview=byId('preview');preview.srcdoc=createShareDocument({id:parsed.sourceRecordId,title:parsed.title,capture:parsed.draft?'recording':'completed',minutes:parsed.minutes,segments:parsed.segments || []},parsed.scope);preview.hidden=false;
+    content=parsed;const preview=byId('preview');preview.srcdoc=createShareDocument({id:parsed.sourceRecordId,title:parsed.title,capture:parsed.draft?'recording':'completed',minutes:parsed.minutes,segments:parsed.segments || []},parsed.scope,true);preview.hidden=false;
     byId('selection').textContent=`${parsed.title} · ${parsed.scope==='minutes'?'仅纪要及引用原文':'纪要与全部转录'}${parsed.draft?' · 草稿':''}`;
   }catch(error){if(current===generation)byId('selection').textContent=error.message===messages.share_too_large?error.message:messages.invalid_share_content;}
   enable();

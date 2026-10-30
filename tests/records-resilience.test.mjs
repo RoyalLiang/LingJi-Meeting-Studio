@@ -136,8 +136,8 @@ test('SSE delivers committed event IDs, expired cursor reset, and share revoke',
     while (!output.includes('event: reset')) { const chunk = await reader.read(); output += new TextDecoder().decode(chunk.value); }
     assert.match(output, /event: reset/); abort.abort();
     const shareRes = await fetch(base + `/records/${r.id}/shares`, { method: 'POST', headers, body: '{}' }); const share = await shareRes.json();
-    const publicData = await (await fetch(base + `/shared/${share.token}`)).json(); assert.equal(publicData.minutes.evidenceSnapshot.length, 1);
-    assert.equal(publicData.minutes.evidenceSnapshot[0].text, 'visible');
+    const publicData = await (await fetch(base + `/shared/${share.token}`)).json(); assert.equal(publicData.minutes.evidenceSnapshot.length, 0);
+    assert.equal(publicData.segments, undefined);
     await fetch(base + `/records/${r.id}/shares/${share.id}`, { method: 'DELETE', headers });
     assert.equal((await fetch(base + `/shared/${share.token}`)).status, 404);
     r.minutes.revision = 1; r.minutesRevision = 1; r.minutesHistory = [];

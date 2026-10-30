@@ -67,7 +67,7 @@ export function buildMinutesManifest(job,config={},budget=inputBudget(config)){
     const window=windows[index], adjacent=[primaryWindows[index-1]?.at(-1),primaryWindows[index+1]?.[0]].filter(Boolean);
     for(const neighbor of adjacent){
       if(window.snapshot.some(segment=>segment.id===neighbor.id&&segment.revision===neighbor.revision))continue;
-      const candidate=[...window.snapshot,{...neighbor,contextOnly:true}].sort((a,b)=>(a.startMs||0)-(b.startMs||0));
+      const candidate=[...window.snapshot,{...neighbor,contextOnly:job.scope==='live'}].sort((a,b)=>(a.startMs||0)-(b.startMs||0));
       if(size({transcript:candidate,notes:job.notes,context:job.liveContext})<=budget)window.snapshot=candidate;
     }
     window.key=hash({policy,snapshot:window.snapshot});
@@ -81,10 +81,12 @@ function keepWindowDiscussion(result,leaves,snapshot,windows){
   const known=new Set(discussionItems(result).map(itemKey)),groups=new Map();
   for(const leaf of leaves)for(const item of discussionItems(leaf.result)){
     const key=itemKey(item);if(known.has(key))continue;known.add(key);
-    const title=`讨论过程 · ${item.heading}`,heading=minutesTextChunks(title,200)[0],items=groups.get(heading)||[];
+    const exact=(result.topics||[]).filter(topic=>topic.title===item.heading);
+    const topic=exact.length===1?exact[0]:undefined;
+    const title=topic?.title||`讨论过程 · ${item.heading}`,heading=minutesTextChunks(title,200)[0],items=groups.get(heading)||[];
     const context=title.length>200?`${item.heading}：`:'',step=7900-context.length;
     // Historical proposals remain readable without becoming current decisions.
-    for(const text of minutesTextChunks(item.text,step))items.push({text:context+text,evidence:item.evidence,kind:'fact',label:'过程记录'});groups.set(heading,items);
+    for(const text of minutesTextChunks(item.text,step))items.push({text:context+text,evidence:item.evidence,kind:'fact',label:'过程记录',...(topic?.id?{topicId:topic.id}:{})});groups.set(heading,items);
   }
   const sections=[...result.sections],corrections=new Map(),windowSources=new Map(windows.map(window=>[window.key,window.snapshot]));
   for(const source of [...leaves.map(leaf=>({minutes:leaf.result,snapshot:windowSources.get(leaf.key)})),{minutes:result,snapshot}]){

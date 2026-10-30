@@ -111,7 +111,7 @@ export async function startDesktopBackend({ root, port = 0, workers = true } = {
   await writeFile(join(root, 'runtime-state.json'), JSON.stringify(state) + '\n', { mode: 0o600 });
   openLocalAsr();
   let stopping = false;
-  const loops = workers ? ['audio', 'realtime', 'minutes', 'translation', 'intents', 'workspace', 'learning'].map(lane => (async () => {
+  const loops = workers ? ['audio', 'realtime', 'minutes', 'translation', 'translation-live', 'translation-preview', 'intents', 'workspace', 'learning'].map(lane => (async () => {
     while (!stopping) {
       try { await runCycle(repo, {}, { lane }); } catch (error) { console.error('[client-worker]', error.code || error.name); }
       if (!stopping) await new Promise(resolve => setTimeout(resolve, lane === 'audio' ? 100 : 250));

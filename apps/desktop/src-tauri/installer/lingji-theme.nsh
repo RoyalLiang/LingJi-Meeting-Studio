@@ -466,6 +466,7 @@ FunctionEnd
 
 
 !macro LingJiRequireClosed executablePath productName
+  ${Do}
   !insertmacro RestartManager_StartSession $R0
   ${If} $R0 == ""
     SetErrorLevel 2
@@ -485,16 +486,32 @@ FunctionEnd
   System::Call 'RSTRTMGR::RmGetList(p R0,*i .r1,*i .r2,p 0,*i .r3)i.r0'
   ${If} $0 == ${ERROR_MORE_DATA}
     !insertmacro RestartManager_EndSession $R0
-    IfSilent +2
-      MessageBox MB_OK|MB_ICONEXCLAMATION "聆记仍在后台运行。请先暂停或结束录音，等待补传完成，再从系统托盘选择退出聆记后重试。"
+    ${If} ${Silent}
+      SetErrorLevel 2
+      Abort "聆记或其后台仍在运行。"
+    ${EndIf}
+    ${If} $LingJiThemeModule != ""
+    ${AndIf} $LingJiThemeModule != 0
+      System::Call '$PLUGINSDIR\lingji-ui.dll::LingJiRetry(p $HWNDPARENT,w "$PLUGINSDIR\lingji-background.bmp",p $LingJiBodyFont,p $LingJiBrandFont)i.r0'
+      ${If} $0 == 4
+        ${Continue}
+      ${EndIf}
+    ${Else}
+      MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "聆记仍在后台运行。请先暂停或结束录音，等待补传完成，再从系统托盘选择退出聆记。退出后点击“重试”即可继续本次操作，无需重新打开安装程序。" IDRETRY +3
+      SetErrorLevel 2
+      Abort "已取消：聆记或其后台仍在运行。"
+      ${Continue}
+    ${EndIf}
     SetErrorLevel 2
-    Abort "聆记或其后台仍在运行。"
+    Abort "已取消：聆记或其后台仍在运行。"
   ${ElseIf} $0 != 0
     !insertmacro RestartManager_EndSession $R0
     SetErrorLevel 2
     Abort "无法确认后台状态。"
   ${EndIf}
   !insertmacro RestartManager_EndSession $R0
+  ${ExitDo}
+  ${Loop}
 !macroend
 
 

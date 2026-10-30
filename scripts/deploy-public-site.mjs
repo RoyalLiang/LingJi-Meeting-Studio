@@ -36,10 +36,10 @@ export async function deployPublicSite({env=process.env,fetcher=fetch,run=comman
   await api(`/r2/buckets/${resourceName}/lifecycle`,'PUT',{rules:[{id:'expire-shared-snapshots',enabled:true,conditions:{prefix:'shares/'},deleteObjectsTransition:{condition:{type:'Age',maxAge:172800}}}]});
   await api(`/pages/projects/${projectName}`,'PATCH',{deployment_configs:{production:{compatibility_date:'2026-10-29',env_vars:envVars,d1_databases:{DB:{id:db.uuid}},r2_buckets:{BUCKET:{name:resourceName}}}}});
   const config={name:projectName,pages_build_output_dir:'./dist',compatibility_date:'2026-10-29',vars,d1_databases:[{binding:'DB',database_name:resourceName,database_id:db.uuid,migrations_dir:'migrations'}],r2_buckets:[{binding:'BUCKET',bucket_name:resourceName}]};
-  const site=resolve(root,'apps/site'),configFile=resolve(site,'wrangler.deploy.json');await writeFile(configFile,JSON.stringify(config,null,2)+'\n');
+  const site=resolve(root,'apps/site'),configFile=resolve(site,'wrangler.jsonc');await writeFile(configFile,JSON.stringify(config,null,2)+'\n');
   const wrangler=resolve(root,'node_modules/wrangler/bin/wrangler.js');
   await run(process.execPath,[wrangler,'d1','migrations','apply','DB','--remote','--config',configFile],{cwd:site,env});
-  await run(process.execPath,[wrangler,'pages','deploy','dist','--project-name',projectName,'--branch','main','--commit-hash',env.GITHUB_SHA,'--config',configFile],{cwd:site,env});
+  await run(process.execPath,[wrangler,'pages','deploy','dist','--project-name',projectName,'--branch','main','--commit-hash',env.GITHUB_SHA],{cwd:site,env});
   const deployed=await api(`/pages/projects/${projectName}`),url=`https://${deployed.subdomain}`;
   if(deployed.production_deployment?.deployment_trigger?.metadata?.commit_hash!==env.GITHUB_SHA)throw new Error('Cloudflare production source SHA differs from this workflow.');
   const receipt={project:projectName,sha:env.GITHUB_SHA,deploymentId:deployed.production_deployment.id,url,publishingConfigured:Boolean(team && aud),verifiedAt:new Date().toISOString()};

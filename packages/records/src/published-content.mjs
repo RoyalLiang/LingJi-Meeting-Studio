@@ -33,7 +33,7 @@ export function normalizePublishedContent(input) {
     if(source.tables!==undefined)minutes.tables=list(source.tables,100).map(value=>{object(value);const columns=list(value.columns,20).map(c=>text(c,2000));check(columns.length>0);return {title:text(value.title,2000),...(value.topicId?{topicId:text(value.topicId,128)}:{}),columns,rows:list(value.rows,10000).map(row=>{object(row);const cells=list(row.cells,20).map(c=>text(c));check(cells.length===columns.length);return {cells,evidence:refs(row.evidence)};})};});
     if(source.speakerSummaries!==undefined)minutes.speakerSummaries=list(source.speakerSummaries,1000).map(value=>{object(value);return {speaker:text(value.speaker,512),speakerId:null,summary:text(value.summary),evidence:refs(value.evidence)};});
     if(source.visuals!==undefined)minutes.visuals=list(source.visuals,100).map(value=>{object(value);check(['timeline','bar'].includes(value.kind));return {kind:value.kind,title:text(value.title,2000),...(value.topicId?{topicId:text(value.topicId,128)}:{}),...(value.kind==='bar'?{unit:text(value.unit,512)}:{}),entries:list(value.entries,1000).map(entry=>{object(entry);return {label:text(entry.label,2000),...(value.kind==='timeline'?{text:text(entry.text)}:{valueText:text(entry.valueText,512),quote:text(entry.quote || '',10000)}),evidence:refs(entry.evidence)};})};});
-    minutes=sharedMinutes(minutes);
+    minutes=sharedMinutes(minutes, { includeEvidence: true });
   }
   const segments=input.scope==='full'?list(input.segments).map(segment):[];
   check(minutes || segments.length);
@@ -42,5 +42,5 @@ export function normalizePublishedContent(input) {
 
 export function createPublishedContent(record, scope) {
   const minutes=record.capture==='completed'?record.minutes || record.liveMinutes:record.liveMinutes || record.minutes;
-  return normalizePublishedContent({schemaVersion:1,sourceRecordId:record.id,title:record.title,scope,draft:!record.minutes || record.capture!=='completed',minutes:sharedMinutes(minutes),...(scope==='full'?{segments:sharedSegments(record.segments)}:{})});
+  return normalizePublishedContent({schemaVersion:1,sourceRecordId:record.id,title:record.title,scope,draft:!record.minutes || record.capture!=='completed',minutes:sharedMinutes(minutes, { includeEvidence: true }),...(scope==='full'?{segments:sharedSegments(record.segments)}:{})});
 }
