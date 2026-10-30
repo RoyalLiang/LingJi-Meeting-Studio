@@ -216,10 +216,11 @@ test('minutes default to no generation preview and omit redundant in-progress ca
  assert.match(partial,/按主题整理的纪要/);
 });
 
-test('failed minutes recovery remains inline in its owner instead of covering navigation', () => {
+test('failed minutes recovery stays floating and independent of the highlights card', () => {
   const html=render({segments:[],jobs:[{id:'failed-job',status:'failed',transcriptRevision:3,error:'minutes_request_failed'}]});
   assert.match(html,/整理未完成/);
-  assert.match(html,/toast feedback-toast glass[^"]*is-inline/);
+  assert.match(html,/toast feedback-toast glass[^"]*minutes-failure-toast/);
+  assert.doesNotMatch(html,/class="[^"]*is-inline[^"]*minutes-failure-toast/);
   assert.equal((html.match(/整理未完成/g)||[]).length,1);
   assert.match(html,/重新整理/);
 });

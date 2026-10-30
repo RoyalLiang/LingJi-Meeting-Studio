@@ -1,6 +1,6 @@
 # 聆记文档导航
 
-[会后重点顶部卡片](evidence/highlights-top-2026-10-30.md)：已按确认的方案 A 实现，整理失败提示移入卡片或纪要模块；本地验证通过，网络阻断推送与发版。
+[v0.1.50 会后重点与悬浮 Toast](releases/v0.1.50-preview.md)：方案 A 与独立失败 Toast 已形成本地候选，697 项回归通过；[截图与验证](evidence/minutes-floating-toast-2026-10-30.md)。GitHub 通道已恢复，待后台 CI 与公开附件核验完成。
 
 [v0.1.49 学习评审与实时翻译](releases/v0.1.49-preview.md)：按已确认设计完成六项改造，已发布，[五项 CI 与四个附件核验通过](evidence/preview-v0.1.49-2026-10-30.md)；[本轮验证与边界](evidence/learning-translation-v0.1.49-2026-10-30.md)。
 
