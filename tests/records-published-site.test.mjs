@@ -5,14 +5,63 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { DatabaseSync } from 'node:sqlite';
-import { generateKeyPair, SignJWT } from 'jose';
+import { SignJWT } from 'jose';
 import { createSiteWorker } from '../apps/site/src/worker.mjs';
-import { verifyPublisherToken, publisher } from '../apps/site/src/identity.mjs';
+import { authentication, publisher, publishingConfigured } from '../apps/site/src/identity.mjs';
 import { exampleContent } from '../apps/site/src/example.mjs';
 import { normalizePublishedContent, createPublishedContent, ShareContentError, MAX_PUBLISHED_BYTES } from '../packages/records/src/published-content.mjs';
 import { deployPublicSite, projectName, verifySiteSharing } from '../scripts/deploy-public-site.mjs';
 
 const origin='https://lingji-meeting-studio-beta.pages.dev';
+const oauthEnv={GITHUB_CLIENT_ID:'fixture-client-id',GITHUB_CLIENT_SECRET:'s'.repeat(40),PUBLISHER_GITHUB_ID:'123',PUBLIC_SITE_ORIGIN:'https://rookiecode.com'};
+const oauthRequest=(path,cookie='',extra={})=>new Request(oauthEnv.PUBLIC_SITE_ORIGIN+path,{headers:{cookie,...extra}});
+async function loginFlow(){
+  const response=await authentication(oauthRequest('/auth/login'),oauthEnv),target=new URL(response.headers.get('location'));
+  return {response,target,cookie:response.headers.get('set-cookie').split(';')[0]};
+}
+test('GitHub sign-in uses empty scopes, PKCE and a short HttpOnly host cookie',async()=>{
+  const {response,target,cookie}=await loginFlow();
+  assert.equal(response.status,303);assert.equal(target.origin,'https://github.com');assert.equal(target.searchParams.get('scope'),'');assert.equal(target.searchParams.get('code_challenge_method'),'S256');assert.equal(target.searchParams.get('code_challenge').length,43);assert.equal(target.searchParams.get('state').length,43);
+  assert.equal(target.searchParams.get('redirect_uri'),'https://rookiecode.com/auth/callback');assert.match(cookie,/^__Host-lingji_oauth=/);assert.match(response.headers.get('set-cookie'),/Secure; HttpOnly; SameSite=Lax; Max-Age=600/);
+  assert.equal(publishingConfigured(oauthEnv),true);assert.equal(publishingConfigured({...oauthEnv,GITHUB_CLIENT_SECRET:''}),false);
+});
+test('OAuth validates the live immutable identity and creates only an eight-hour publisher session',async()=>{
+  const {target,cookie}=await loginFlow();let calls=0;
+  const response=await authentication(oauthRequest('/auth/callback?code=test-code&state='+target.searchParams.get('state'),cookie),oauthEnv,async(url,options)=>{
+    calls++;
+    if(calls===1){assert.equal(url,'https://github.com/login/oauth/access_token');assert.equal(options.body.get('code'),'test-code');assert.equal(options.body.get('code_verifier').length,43);return Response.json({access_token:'test-token',scope:'',token_type:'bearer'});}
+    assert.equal(url,'https://api.github.com/user');assert.equal(options.headers.Authorization,'Bearer test-token');return Response.json({id:123,login:'RoyalLiang'});
+  });
+  assert.equal(response.status,303);assert.equal(response.headers.get('location'),'https://rookiecode.com/publish');assert.equal(calls,2);
+  const session=response.headers.getSetCookie().find(v=>v.startsWith('__Host-lingji_publisher='));assert.match(session,/Max-Age=28800/);assert.doesNotMatch(session,/test-token/);
+  assert.deepEqual(await publisher(oauthRequest('/api/published',session.split(';')[0]),oauthEnv),{id:'github:123'});
+  await assert.rejects(publisher(new Request(origin+'/api/published',{headers:{cookie:session.split(';')[0]}}),oauthEnv),{code:'publisher_login_required'});
+});
+test('missing, mismatched or forged OAuth state never reaches the token endpoint',async()=>{
+  const {cookie}=await loginFlow();let calls=0;
+  for(const value of ['',cookie,cookie+'x']){
+    const response=await authentication(oauthRequest('/auth/callback?code=test&state=wrong',value),oauthEnv,async()=>{calls++;throw new Error();});assert.equal(response.status,401);assert.match(response.headers.get('set-cookie'),/Max-Age=0/);
+  }assert.equal(calls,0);
+});
+test('OAuth rejects another account, changed immutable ID, expanded scopes and provider failures',async()=>{
+  for(const mode of ['login','id','scope','unavailable']){
+    const {target,cookie}=await loginFlow();let calls=0;
+    const response=await authentication(oauthRequest('/auth/callback?code=test&state='+target.searchParams.get('state'),cookie),oauthEnv,async()=>{
+      calls++;if(mode==='unavailable')throw new Error('network');
+      if(calls===1)return Response.json({access_token:'test-token',scope:mode==='scope'?'repo':'',token_type:'bearer'});
+      return Response.json({id:mode==='id'?456:123,login:mode==='login'?'other':'RoyalLiang'});
+    });assert.equal(response.status,401);assert.doesNotMatch(response.headers.get('set-cookie'),/__Host-lingji_publisher=/);
+  }
+});
+test('publisher sessions enforce signature, audience, expiry and allowlist; logout checks Origin',async()=>{
+  for(const mode of ['signature','audience','expiry','owner']){
+    const token=await new SignJWT({sub:mode==='owner'?'456':'123'}).setProtectedHeader({alg:'HS256'}).setIssuer(oauthEnv.PUBLIC_SITE_ORIGIN).setAudience(mode==='audience'?'oauth-flow':'publisher').setIssuedAt().setExpirationTime(mode==='expiry'?1:'2h').sign(new TextEncoder().encode(mode==='signature'?'x'.repeat(40):oauthEnv.GITHUB_CLIENT_SECRET));
+    await assert.rejects(publisher(oauthRequest('/api/published','__Host-lingji_publisher='+token),oauthEnv),{code:'publisher_login_required'});
+  }
+  await assert.rejects(publisher(oauthRequest('/api/published'),{}),{code:'publishing_not_configured'});
+  await assert.rejects(authentication(new Request('https://rookiecode.com/auth/logout',{method:'POST',headers:{origin:'https://evil.invalid'}}),oauthEnv),{code:'origin_rejected'});
+  const logout=await authentication(new Request('https://rookiecode.com/auth/logout',{method:'POST',headers:{origin:'https://rookiecode.com'}}),oauthEnv);assert.equal(logout.status,303);assert.equal(logout.headers.getSetCookie().length,2);assert.ok(logout.headers.getSetCookie().every(v=>v.includes('Max-Age=0')));
+});
 test('a revoked reader clears its body and stops background status requests',async()=>{
   let reads=0,periodic,visibility,stopped=false,cleared=false;
   const status={dataset:{expires:String(Date.now()+60000)},textContent:''};
@@ -29,7 +78,7 @@ async function fixture(t){
   const sqlite=new DatabaseSync(':memory:');sqlite.exec(await readFile(new URL('../apps/site/migrations/0001_shares.sql',import.meta.url),'utf8'));t.after(()=>sqlite.close());
   let mode='',afterInsert=false,reads=0;const queries=[];
   const db={withSession(){return this;},prepare(sql){queries.push(sql);let args=[];return {bind(...values){args=values;return this;},async first(){if(mode==='unknown' && afterInsert)throw new Error('uncertain');reads++;return sqlite.prepare(sql).get(...args) || null;},async all(){return {results:sqlite.prepare(sql).all(...args)};},async run(){if(sql.startsWith('INSERT') && ['failed','unknown'].includes(mode)){afterInsert=true;throw new Error('write unavailable');}const result=sqlite.prepare(sql).run(...args);if(sql.startsWith('INSERT') && mode==='committed'){afterInsert=true;throw new Error('response lost');}return {meta:{changes:Number(result.changes)}};}};}};
-  const env={DB:db,ASSETS:{fetch:async()=>new Response('static asset')},ACCESS_TEAM_DOMAIN:'fixture.cloudflareaccess.com',ACCESS_AUD:'fixture'};
+  const env={DB:db,ASSETS:{fetch:async()=>new Response('static asset')},GITHUB_CLIENT_ID:'fixture-client-id',GITHUB_CLIENT_SECRET:'s'.repeat(40),PUBLISHER_GITHUB_ID:'123',PUBLIC_SITE_ORIGIN:origin};
   const worker=createSiteWorker({identify:async request=>{if(!request.headers.get('test-owner'))throw new ShareContentError('publisher_login_required',401);return {id:request.headers.get('test-owner')};}});
   const call=(path,method='GET',value,owner='owner-a',extra={})=>worker.fetch(new Request(origin+path,{method,headers:{origin,'test-owner':owner,'cf-connecting-ip':clientIp,...extra},...(value!==undefined?{body:JSON.stringify(value)}:{})}),env);
   const input=()=>({requestId:crypto.randomUUID(),token:Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64url'),content:structuredClone(exampleContent)});
@@ -47,14 +96,6 @@ test('published schema strips private metadata, freezes references and respects 
 test('invalid schema and unresolved frozen references are rejected at the upload boundary',()=>{
   for(const mutate of [v=>v.schemaVersion=2,v=>v.minutes.sections[0].items[0].evidence[0].revision=999,v=>v.minutes.topics=[null],v=>v.minutes.visuals=[null],v=>v.minutes.speakerSummaries=[null],v=>v.minutes.evidenceSnapshot.push(v.minutes.evidenceSnapshot[0]),v=>v.scope='private']){const input=structuredClone(exampleContent);mutate(input);assert.throws(()=>normalizePublishedContent(input),ShareContentError);}
   for(const input of [null,{},[],false])assert.throws(()=>normalizePublishedContent(input),ShareContentError);
-});
-test('real signed publisher JWT verifies issuer, audience, expiry and signature',async()=>{
-  const {privateKey,publicKey}=await generateKeyPair('RS256');const make=(aud='publish',iss='https://team.cloudflareaccess.com',exp='2h')=>new SignJWT({}).setProtectedHeader({alg:'RS256'}).setSubject('owner').setIssuer(iss).setAudience(aud).setExpirationTime(exp).sign(privateKey);
-  assert.deepEqual(await verifyPublisherToken(await make(),publicKey,'https://team.cloudflareaccess.com','publish'),{id:'owner'});
-  for(const token of [await make('other'),await make('publish','https://wrong.invalid'),await make('publish','https://team.cloudflareaccess.com',1)])await assert.rejects(verifyPublisherToken(token,publicKey,'https://team.cloudflareaccess.com','publish'));
-  const other=await generateKeyPair('RS256');await assert.rejects(verifyPublisherToken(await make(),other.publicKey,'https://team.cloudflareaccess.com','publish'));
-  await assert.rejects(publisher(new Request(origin),{}),{code:'publishing_not_configured'});
-  await assert.rejects(publisher(new Request(origin),{ACCESS_TEAM_DOMAIN:'team.cloudflareaccess.com',ACCESS_AUD:'publish'}),{code:'publisher_login_required'});
 });
 test('publish is authenticated, origin protected, idempotent and owner isolated',async t=>{
   const f=await fixture(t),input=f.input();
@@ -127,12 +168,12 @@ test('deployment smoke verifies real snapshot reads and denies expiry/revocation
 });
 test('deployment provisions bindings, applies migrations and verifies the production source and example',async t=>{
   const root=await mkdtemp(join(tmpdir(),'lingji-pages-deploy-'));t.after(()=>rm(root,{recursive:true,force:true}));await mkdir(join(root,'apps/site'),{recursive:true});
-  const env={CLOUDFLARE_ACCOUNT_ID:'a'.repeat(32),CLOUDFLARE_API_TOKEN:'test-secret',GITHUB_SHA:'b'.repeat(40)},calls=[],commands=[];
+  const env={CLOUDFLARE_ACCOUNT_ID:'a'.repeat(32),CLOUDFLARE_API_TOKEN:'test-secret',GITHUB_SHA:'b'.repeat(40),SITE_GITHUB_CLIENT_ID:'fixture-client-id',SITE_GITHUB_CLIENT_SECRET:'oauth-secret-'.repeat(4),PUBLISHER_GITHUB_ID:'123'},calls=[],commands=[];
   const fetcher=async(url,options={})=>{
     const path=new URL(url).pathname;assert.doesNotMatch(path,/\/r2\//,'R2 must stay disabled');calls.push([options.method || 'GET',path]);
     if(!path.startsWith('/client/v4/')){
       if(path.startsWith('/share/'))return new Response('source-example-1-1',{status:checksDenied?404:200,headers:{'Cache-Control':'no-store'}});
-      return path==='/example'?new Response('source-example-1-1'):Response.json({publishing:false});
+      return path==='/example'?new Response('source-example-1-1'):Response.json({publishing:true});
     }
     let result={};
     if(options.method==='GET' && path.endsWith('/pages/projects/'+projectName)){
@@ -141,11 +182,12 @@ test('deployment provisions bindings, applies migrations and verifies the produc
     }else if(path.endsWith('/d1/database') && options.method==='GET')result=[];
     else if(path.endsWith('/d1/database'))result={uuid:'database-id'};
     else if(path.endsWith('/query'))checksDenied=!JSON.parse(options.body).sql.startsWith('INSERT');
+    if(options.method==='PATCH'){const vars=JSON.parse(options.body).deployment_configs.production.env_vars;assert.deepEqual(vars.GITHUB_CLIENT_SECRET,{type:'secret_text',value:env.SITE_GITHUB_CLIENT_SECRET});}
     return Response.json({success:true,result});
   };
   let checksDenied=false;
   const receipt=await deployPublicSite({env,root,fetcher,run:async(...args)=>commands.push(args)});
   assert.equal(receipt.url,origin);assert.equal(receipt.sha,env.GITHUB_SHA);assert.equal(commands.length,2);
   assert.equal(commands[1][1].includes('--config'),false,'Pages uses the standard project config path');
-  const config=JSON.parse(await readFile(join(root,'apps/site/wrangler.jsonc'),'utf8'));assert.equal(config.d1_databases[0].database_id,'database-id');assert.equal(config.vars.LINGJI_SITE_ID,'lingji-public-site-v1');assert.equal(JSON.stringify(config).includes('test-secret'),false);assert.equal('r2_buckets' in config,false);
+  const config=JSON.parse(await readFile(join(root,'apps/site/wrangler.jsonc'),'utf8'));assert.equal(config.d1_databases[0].database_id,'database-id');assert.equal(config.vars.LINGJI_SITE_ID,'lingji-public-site-v1');assert.equal(JSON.stringify(config).includes('test-secret'),false);assert.equal(JSON.stringify(config).includes(env.SITE_GITHUB_CLIENT_SECRET),false);assert.equal(config.vars.PUBLIC_SITE_ORIGIN,'https://rookiecode.com');assert.equal('r2_buckets' in config,false);
 });

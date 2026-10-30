@@ -1,6 +1,6 @@
 import { normalizePublishedContent, ShareContentError, MAX_PUBLISHED_BYTES } from '../../../packages/records/src/published-content.mjs';
 import { createShareDocument } from '../../web/src/share-content.ts';
-import { publisher } from './identity.mjs';
+import { publisher, authentication, publishingConfigured } from './identity.mjs';
 import { exampleContent } from './example.mjs';
 
 const encoder=new TextEncoder(), invalidReads=new Map();
@@ -47,8 +47,9 @@ export function createSiteWorker({identify=publisher}={}){
   return {async fetch(request,env){
     try{
       const url=new URL(request.url),path=url.pathname;
+      if(path.startsWith('/auth/'))return await authentication(request,env);
       if(path==='/example' && request.method==='GET')return document(exampleContent);
-      if(path==='/api/site-status' && request.method==='GET')return json({publishing:Boolean(env.ACCESS_TEAM_DOMAIN && env.ACCESS_AUD && env.DB)});
+      if(path==='/api/site-status' && request.method==='GET')return json({publishing:Boolean(publishingConfigured(env) && env.DB)});
       const shared=path.match(/^\/(share|api\/shared)\/([A-Za-z0-9_-]{43})(\/status)?$/);
       if(shared && request.method==='GET'){
         ready(env);const permit=reserveRead(request);

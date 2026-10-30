@@ -43,3 +43,8 @@ Beta 需要官网和可在其他设备浏览器打开的会议 URL。当前桌�
 先在隔离预览环境使用虚构会议验收：异机打开、引用版本、只读权限、撤销/到期、XSS、重复上传、失败回滚、缓存失效和删除联动。正式发布由后台 Actions 绑定源码 SHA 与部署版本；回退优先关闭发布写入，分享读取继续执行撤销/到期校验。数据库迁移与对象删除不能通过回退旧前端隐式撤销。
 
 代码与验证事实见 [Beta 体检和计划](../design/beta-plan-2026-10-28.md)。Cloudflare 官方依据：[Static Assets](https://developers.cloudflare.com/workers/static-assets/)、[D1](https://developers.cloudflare.com/d1/worker-api/prepared-statements/)、[R2 Worker 访问](https://developers.cloudflare.com/r2/api/workers/workers-api-usage/)、[Workers 文件系统边界](https://developers.cloudflare.com/workers/runtime-apis/nodejs/fs/)。上述依据证明平台接口可用，不表示本项目已部署或验收。
+
+
+### 2026-10-30 身份方案约束更新
+
+Access 免费版激活要求支付资料和超额扣款授权，用户改选 GitHub 登录。首版只允许 RoyalLiang（ID 26199801）发布，OAuth scope 为空，使用 state、PKCE 和有期限的服务端签名 Cookie。此项替代此前 Access 身份建议，不开通 Access 或 R2；后续多发布者邀请仍是 proposed。
