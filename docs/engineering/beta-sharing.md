@@ -4,7 +4,7 @@
 
 官网 https://rookiecode.com、发布入口 https://rookiecode.com/publish 已上线；Pages 自定义域处于活动状态且 SSL 已启用。正式发布身份为 GitHub RoyalLiang（ID 26199801），只请求公开身份。D1 保存最多 1 MiB 的共享快照，未开通 R2 或 Cloudflare Access。根域已替换，api、mail、MX、TXT 等其余 9 条 DNS 记录对账未变。
 
-[发布回执](../evidence/preview-v0.2.1-2026-10-30.md) 包含生产源码、工作流和真实 D1 读取/过期/撤销证据。首次新建 Pages 项目的 API 多次返回 500，本次在控制台建立空项目和所有权标记后，由 Actions 完成全部构建与部署；全新账户的全自动首次创建仍未验证。浏览器完整上传测试仍待 Chrome 扩展允许访问文件网址；不得将后台合成测试表述为真实会议或完整 GUI 验收。
+[发布回执](../evidence/preview-v0.2.1-2026-10-30.md) 包含生产源码、工作流和真实 D1 读取/过期/撤销证据。首次新建 Pages 项目的 API 多次返回 500，本次在控制台建立空项目和所有权标记后，由 Actions 完成全部构建与部署；全新账户的全自动首次创建仍未验证。Chrome 扩展文件权限开启后，虚构会议的浏览器完整上传、预览、发布、匿名阅读和撤销已验；这不代表真实会议质量验收。
 
 官网由 Cloudflare Pages 的高级模式 Worker 托管。D1 在同一事务中保存发布身份、令牌摘要、范围、到期时间、幂等请求和白名单内容快照。用户指定暂不开通 R2，本版不请求 R2 服务或账单权限。录音、模型密钥和本机工作台不随官网部署。部署入口是后台 [Cloudflare Pages 工作流](../../.github/workflows/cloudflare-pages.yml)，目标为 `rookiecode.com`，实际可用状态以部署回执为准。用户明确授权替换根域旧站；既有 api、mail、MX 与 TXT 记录保持。
 

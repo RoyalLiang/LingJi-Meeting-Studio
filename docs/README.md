@@ -1,7 +1,9 @@
 # 聆记文档导航
 
+[v0.2.2 桌面修复候选](releases/v0.2.2-preview.md)：本地回归与独立评审通过，等待 GitHub Actions 构建三平台安装包；[验证记录与边界](evidence/desktop-reliability-2026-10-30.md)。
+
 Beta v0.2.1 已发布：[官网](https://rookiecode.com)、[发布入口](https://rookiecode.com/publish)、[完整发布核验与验收缺口](evidence/preview-v0.2.1-2026-10-30.md)。
-[v0.2.1 Beta 实施](releases/v0.2.1-preview.md)：[在线纪要指南](engineering/beta-sharing.md)与[验证边界](evidence/beta-implementation-2026-10-30.md)，发布回执待补。
+[v0.2.1 Beta 实施](releases/v0.2.1-preview.md)：[在线纪要指南](engineering/beta-sharing.md)与[验证边界](evidence/beta-implementation-2026-10-30.md)，[发布核验回执](evidence/preview-v0.2.1-2026-10-30.md)。
 
 [v0.1.50 会后重点与悬浮 Toast](releases/v0.1.50-preview.md)：已发布，五项 CI 与四个公开附件核验通过；[发布回执](evidence/preview-v0.1.50-2026-10-30.md) · [截图与验证](evidence/minutes-floating-toast-2026-10-30.md)。
 
@@ -46,7 +48,7 @@ Beta v0.2.1 已发布：[官网](https://rookiecode.com)、[发布入口](https:
 
 | 目标 | 文档 |
 | --- | --- |
-| 安装桌面版、核对当前验证范围 | [v0.1.36 安装说明](releases/v0.1.36-preview.md) |
+| 安装桌面版、核对当前验证范围 | [v0.2.2 安装说明](releases/v0.2.2-preview.md) |
 | 处理 macOS 安装与系统信任提示 | [macOS 安装与信任](releases/macos-trust.md) |
 | 使用内置 SenseVoice、选择云端转录或外部 FunASR | [本地转录与高级配置](engineering/funasr.md) |
 | 配置豆包音频纪要 | [两种音频模式与权限](engineering/doubao-audio.md) |

@@ -1,6 +1,6 @@
 <p align="center">
 
-[v0.2.1 Beta 实施](docs/releases/v0.2.1-preview.md)：官网与在线快照、通用场景词表和同音校对、稳定性整改；后台发布与线上状态以[验证记录](docs/evidence/beta-implementation-2026-10-30.md)为准。
+[v0.2.2 桌面修复候选](docs/releases/v0.2.2-preview.md)：修正保存状态、三端默认启动加载、设置重绘与顶部居中录音悬浮条；本地检查已通过，安装包等待 GitHub Actions 发布。[验证记录与边界](docs/evidence/desktop-reliability-2026-10-30.md)。
   <img src="apps/desktop/src-tauri/icons/icon.png" width="88" alt="聆记标识">
 </p>
 
