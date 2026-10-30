@@ -23,7 +23,7 @@ async function verifyNativeUiLanes(record, queued) {
   if(window.__nativeProbeStarted)return;window.__nativeProbeStarted=true;
  const invoke = window.__TAURI_INTERNALS__.invoke;
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-  const until = async (check, budgetMs=16000, label='frontend') => { const deadline=performance.now()+budgetMs; while(performance.now()<deadline) { const result=await check(); if(result)return result; await sleep(100); } throw new Error(`${label} probe timeout`); };
+  const until = async (check, budgetMs=16000, label='frontend') => { const origin=new Error().stack; const deadline=performance.now()+budgetMs; while(performance.now()<deadline) { const result=await check(); if(result)return result; await sleep(100); } throw new Error(`${label} probe timeout: ${origin}`); };
   try {
     await until(() => document.querySelector('#root')?.textContent?.length > 50,16000,'React mounted');
     const json = async (path, method = 'GET', body, csrf) => {
@@ -107,6 +107,10 @@ async function verifyNativeUiLanes(record, queued) {
     await invoke('client_probe',{result:{widgetAction:'release-ready'}});
     const readyCapsule=await invoke('client_probe',{result:{widgetAction:'snapshot'}});
     if(!readyCapsule.widgetVisible||readyCapsule.mainVisible||Math.abs(readyCapsule.widgetLogicalHeight-42)>1)throw new Error('ready capsule handoff or compact height failed');
+    if(!readyCapsule.placement||Math.abs(readyCapsule.placement.width-340)>1||Math.abs(readyCapsule.placement.topGap-16)>1||Math.abs(readyCapsule.placement.centerOffset)>1)throw new Error('capsule width or top-center placement failed');
+    const displaced=(await invoke('client_probe',{result:{widgetAction:'displace'}})).placement;
+    if(!displaced||(Math.abs(displaced.topGap-16)<=1&&Math.abs(displaced.centerOffset)<=1))throw new Error('capsule displacement did not take effect');
+    await until(async()=>{const p=(await invoke('client_probe',{result:{widgetAction:'snapshot'}})).placement;return p&&Math.abs(p.topGap-16)<=1&&Math.abs(p.centerOffset)<=1;},16000,'capsule re-anchoring');
     await until(async()=>{const s=await invoke('client_probe',{result:{widgetAction:'snapshot'}});return s.widgetVisible&&(!s.mainVisible||s.mainMinimized);});
     await invoke('client_probe',{result:{widgetAction:'pause'}});
     await until(async()=>{const r=await json(`/records/${healthyId}`);return r.capture==='paused'&&r.sources.every(source=>source.watermark===source.lastSequence);});
@@ -164,7 +168,7 @@ async function verifyNativeUiLanes(record, queued) {
     await until(async()=>{const state=await invoke('client_probe',{result:{widgetAction:'snapshot'}});return state.ready&&state.widgetVisible&&(!state.mainVisible||state.mainMinimized);});
     await invoke('client_probe',{result:{widgetAction:'restore'}});
     await until(async()=>{const state=await invoke('client_probe',{result:{widgetAction:'snapshot'}});return state.mainVisible&&!state.mainMinimized&&!state.widgetVisible;});
-    const recordingWidget={loadedPrivateSession:true,automaticallyMinimized:true,pause:true,resume:true,pausedCapsuleRetained:true,restoredMain:true,finishConfirmation:true,queuedAudioClock:true,coldReadyExclusive:true,nativeRestore:true,compactHeight:true,lateReadyCancelled:true};
+    const recordingWidget={loadedPrivateSession:true,automaticallyMinimized:true,pause:true,resume:true,pausedCapsuleRetained:true,restoredMain:true,finishConfirmation:true,queuedAudioClock:true,coldReadyExclusive:true,nativeRestore:true,compactHeight:true,topCentered:true,compactWidth:true,reanchored:true,lateReadyCancelled:true};
     const widgetBefore=await invoke('client_probe',{result:{widgetAction:'snapshot'}});
     await invoke('client_probe', {result:{residentAction:'close'}});
     await until(async()=>{const state=await invoke('client_probe',{result:{residentAction:'snapshot'}});return !state.visible&&state.nativeActive;});

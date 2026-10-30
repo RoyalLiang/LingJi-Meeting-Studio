@@ -17,7 +17,7 @@ async function quickRecordHarness({ active, issues, minutesMode = 'asr-llm' }) {
     capture: { current: null }, activeId: { current: '' }, controllerFor: () => controller,
     api: async (_path, method, body) => method === 'POST' ? (state.created = body, { id: 'quick-fixture' }) : { records: [{ id: 'quick-fixture' }] },
     setError: value => { state.error = value; }, setCaptureIssues: value => { state.issues = value; }, setBusy() {}, setCapturePhase() {},
-    selectRecord() {}, setRecord() {}, setQueueRecords() {}, loadList: async () => {}, refresh: async () => {},
+    selectRecord() {}, rememberRecord() {}, setQueueRecords() {}, loadList: async () => {}, refresh: async () => {},
     setModal: value => { state.modal = value; }, setRecording: value => { state.recording = value; }, messageOf: error => error.message,
   };
   vm.runInNewContext(compiled, sandbox);

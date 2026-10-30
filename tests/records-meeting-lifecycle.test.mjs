@@ -17,7 +17,7 @@ async function stopHarness({ backgroundWait = Promise.resolve(), refreshFails = 
     exports: {}, stopping: { current: false }, capture: { current: controller }, activeId: { current: current.id },
     setBusy: value => { state.busy = value; }, setCapturePhase: value => { state.phase = value; },
     setError: value => { state.error = value; }, setRecording: value => { state.recording = value; },
-    setRecord: value => { state.record = value; }, setModal: value => { state.modal = value; },
+    rememberRecord: value => { state.record = value; }, setModal: value => { state.modal = value; },
     api: async (path, method, body) => { state.calls.push({ path, method, body }); return method === 'POST' ? { ...current, capture: 'sealed' } : current; },
     localManifests: async () => [{ sourceId: 'mic', lastSequence: 3 }],
     upload: () => backgroundWait,

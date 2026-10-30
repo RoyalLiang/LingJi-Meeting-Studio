@@ -21,7 +21,7 @@ test('widget initial snapshot cannot overwrite a newer recording event',async()=
  const states=[],effects=[],layouts=[],calls=[],actionInputs=[];let cursor=0,receive,resolveSnapshot;
  const snapshot=new Promise(resolve=>{resolveSnapshot=resolve;}),icon=()=>null;
  const sandbox={useRecordingDuration:(_id,savedMs)=>savedMs,module:{exports:{}},useState(initial){const i=cursor++;if(!(i in states))states[i]=initial;return[states[i],value=>{states[i]=value;}];},useEffect:fn=>effects.push(fn),useLayoutEffect:fn=>layouts.push(fn),
-  listen:async(_name,handler)=>{receive=handler;return()=>{};},invoke:async(name,input)=>{calls.push(name);if(name==='recording_widget_action')actionInputs.push(input);return name==='recording_widget_state'?snapshot:undefined;},Pause:icon,Play:icon,Stop:icon,ArrowsOutSimple:icon,Microphone:icon,MicrophoneSlash:icon};
+  listen:async(_name,handler)=>{receive=handler;return()=>{};},invoke:async(name,input)=>{calls.push(name);if(name==='recording_widget_action')actionInputs.push(input);return name==='recording_widget_state'?snapshot:undefined;},Pause:icon,Play:icon,Stop:icon,ArrowsOutSimple:icon,Microphone:()=>null,MicrophoneSlash:()=>null};
  sandbox.React={createElement:(tag,props,...children)=>({tag,props,children})};
  vm.runInNewContext(code,sandbox);sandbox.module.exports.RecordingWidget();effects[0]();await tick();
  receive({payload:{recording:true,microphoneOn:true,paused:false,canResume:false,busy:false,durationMs:2000,rms:.1}});
@@ -32,6 +32,7 @@ test('widget initial snapshot cannot overwrite a newer recording event',async()=
  const nodes=value=>value&&typeof value==='object'?[value,...(value.children||[]).flat(Infinity).flatMap(nodes)]:[];
  const microphone=nodes(tree).find(node=>node.props?.['aria-label']==='关闭麦克风');
  assert.ok(microphone);assert.equal(microphone.props['aria-pressed'],true);assert.equal(microphone.props.disabled,false);
+ assert.equal(microphone.children[0].tag,sandbox.Microphone,'enabled microphone shows its current unmuted state');
  microphone.props.onClick();await tick();assert.equal(actionInputs.at(-1).action,'microphone');
  const native=await readFile(new URL('../apps/desktop/src-tauri/src/main.rs',import.meta.url),'utf8');
  for(const action of ['pause','finish','restore']){
@@ -41,6 +42,10 @@ test('widget initial snapshot cannot overwrite a newer recording event',async()=
   assert.ok(button,`Native ${action} probe must target the rendered accessible button`);
   button.props.onClick();await tick();assert.equal(actionInputs.at(-1).action,action);
  }
+ receive({payload:{recording:true,microphoneOn:false,paused:false,canResume:true,busy:false,durationMs:3661000,rms:0}});
+ cursor=0;const mutedTree=sandbox.module.exports.RecordingWidget(),muted=nodes(mutedTree).find(node=>node.props?.['aria-label']==='开启麦克风');
+ assert.equal(muted.children[0].tag,sandbox.MicrophoneSlash);assert.equal(muted.props['aria-pressed'],false);
+ assert.equal(nodes(mutedTree).find(node=>node.tag==='time').children[0],'01:01:01');
 });
 
 test('native packets enforce sequence, offset, sample count and binary length', () => {

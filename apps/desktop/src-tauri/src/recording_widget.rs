@@ -3,6 +3,32 @@ use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindow};
 
+const WIDTH: f64 = 340.0;
+const HEIGHT: f64 = 42.0;
+const TOP_GAP: f64 = 16.0;
+
+fn dock_position(area: &tauri::PhysicalRect<i32, u32>, scale: f64) -> tauri::PhysicalPosition<i32> {
+    let width = (WIDTH * scale).round() as u32;
+    tauri::PhysicalPosition::new(
+        area.position.x + (area.size.width.saturating_sub(width) / 2) as i32,
+        area.position.y + (TOP_GAP * scale).round() as i32,
+    )
+}
+
+fn dock(reference: &WebviewWindow, floating: &WebviewWindow) -> Result<(), String> {
+    let monitor = match reference.current_monitor().map_err(|e| e.to_string())? {
+        Some(monitor) => Some(monitor),
+        None => reference.primary_monitor().map_err(|e| e.to_string())?,
+    };
+    if let Some(monitor) = monitor {
+        let position = dock_position(monitor.work_area(), monitor.scale_factor());
+        if floating.outer_position().map_err(|e| e.to_string())? != position {
+            floating.set_position(position).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Report {
@@ -101,6 +127,11 @@ pub async fn recording_widget_update(
     if open {
         show_when_ready(&app).await?;
     }
+    if let Some(floating) = app.get_webview_window("recording-widget") {
+        if floating.is_visible().map_err(|e| e.to_string())? {
+            dock(&floating, &floating)?;
+        }
+    }
     if !report.recording && !report.paused && !report.busy {
         if let Some(floating) = app.get_webview_window("recording-widget") {
             if floating.is_visible().unwrap_or(false) {
@@ -134,7 +165,7 @@ pub fn prepare(app: &AppHandle, client: &Client) -> Result<(), String> {
             ),
         )
         .title("聆记 · 正在记录")
-        .inner_size(448.0, 42.0)
+        .inner_size(WIDTH, HEIGHT)
         .visible(false)
         .resizable(false)
         .decorations(false)
@@ -189,6 +220,7 @@ async fn show_when_ready(app: &AppHandle) -> Result<(), String> {
             let floating = handle
                 .get_webview_window("recording-widget")
                 .ok_or("recording window unavailable")?;
+            dock(&main, &floating)?;
             main.hide().map_err(|e| e.to_string())?;
             if let Err(error) = floating.show() {
                 let _ = main.show();
@@ -324,6 +356,18 @@ pub fn recording_widget_action(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn capsule_is_centered_below_the_work_area_top_at_each_scale() {
+        for (x, y, width, scale, expected_x, expected_y) in [
+            (0, 24, 1920, 1.0, 790, 40),
+            (-1920, 0, 1920, 1.0, -1130, 16),
+            (1920, 48, 3840, 2.0, 3500, 80),
+        ] {
+            let area = tauri::PhysicalRect { position: tauri::PhysicalPosition::new(x, y), size: tauri::PhysicalSize::new(width, 1080) };
+            assert_eq!(dock_position(&area, scale), tauri::PhysicalPosition::new(expected_x, expected_y));
+        }
+    }
+
     #[test]
     fn cold_window_waits_for_renderer_before_requesting_display() {
         let mut widget = Widget::default();
