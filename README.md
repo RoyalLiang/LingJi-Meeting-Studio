@@ -1,6 +1,6 @@
 <p align="center">
 
-[v0.2.0 Beta 实施](docs/releases/v0.2.0-preview.md)：官网与在线快照、通用场景词表和同音校对、稳定性整改；后台发布与线上状态以[验证记录](docs/evidence/beta-implementation-2026-10-30.md)为准。
+[v0.2.1 Beta 实施](docs/releases/v0.2.1-preview.md)：官网与在线快照、通用场景词表和同音校对、稳定性整改；后台发布与线上状态以[验证记录](docs/evidence/beta-implementation-2026-10-30.md)为准。
   <img src="apps/desktop/src-tauri/icons/icon.png" width="88" alt="聆记标识">
 </p>
 

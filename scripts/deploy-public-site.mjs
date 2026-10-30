@@ -34,7 +34,13 @@ export async function deployPublicSite({env=process.env,fetcher=fetch,run=comman
   async function api(path,method='GET',data,optional=false){
     const response=await fetcher(base+path,{method,headers:{Authorization:`Bearer ${env.CLOUDFLARE_API_TOKEN}`,'Content-Type':'application/json'},...(data?{body:JSON.stringify(data)}:{}),signal:AbortSignal.timeout(30000)});
     if(optional && response.status===404)return null;
-    const value=await response.json();if(!response.ok || !value.success)throw new Error(`Cloudflare ${method} ${path.split('?')[0]} failed (HTTP ${response.status}; codes ${(value.errors || []).map(e=>e.code).join(',')}).`);
+    const value=await response.json().catch(()=>({success:false,errors:[{message:'Cloudflare returned a non-JSON response.'}]}));
+    if(!response.ok || !value.success){
+      let detail=(value.errors || []).map(e=>e.message || '').join('; ');
+      for(const secret of [env.CLOUDFLARE_API_TOKEN,env.SITE_GITHUB_CLIENT_SECRET].filter(Boolean))detail=detail.replaceAll(secret,'[redacted]');
+      detail=detail.replace(/[A-Za-z0-9_-]{40,}/g,'[redacted]').slice(0,1000);
+      const error=new Error(`Cloudflare ${method} ${path.split('?')[0]} failed (HTTP ${response.status}; codes ${(value.errors || []).map(e=>e.code).join(',')}). ${detail}`);error.status=response.status;throw error;
+    }
     return value.result;
   }
   const project=await api(`/pages/projects/${projectName}`,'GET',undefined,true);
@@ -56,7 +62,18 @@ export async function deployPublicSite({env=process.env,fetcher=fetch,run=comman
   }else if(project?.deployment_configs?.production?.env_vars?.GITHUB_CLIENT_SECRET)throw new Error('OAuth configuration is missing; refusing to remove an existing publisher configuration.');
   const envVars=Object.fromEntries(Object.entries(vars).map(([key,value])=>[key,{type:'plain_text',value}]));
   if(publishing)envVars.GITHUB_CLIENT_SECRET={type:'secret_text',value:secret};
-  if(!project)await api('/pages/projects','POST',{name:projectName,production_branch:'main',deployment_configs:{production:{env_vars:envVars}}});
+  if(!project){
+    for(let attempt=0;attempt<3;attempt++){
+      try{await api('/pages/projects','POST',{name:projectName,production_branch:'main',deployment_configs:{production:{env_vars:{LINGJI_SITE_ID:envVars.LINGJI_SITE_ID}},preview:{env_vars:{LINGJI_SITE_ID:envVars.LINGJI_SITE_ID}}}});break;}
+      catch(error){
+        if(error.status<500 || !error.status)throw error;
+        const confirmed=await api(`/pages/projects/${projectName}`,'GET',undefined,true);
+        if(confirmed){if(confirmed.deployment_configs?.production?.env_vars?.LINGJI_SITE_ID?.value!==marker)throw new Error('Created project ownership could not be confirmed.');break;}
+        if(attempt===2)throw error;
+        await new Promise(resolve=>setTimeout(resolve,1000*(attempt+1)));
+      }
+    }
+  }
   const db=existing || await api('/d1/database','POST',{name:resourceName});
   await api(`/pages/projects/${projectName}`,'PATCH',{deployment_configs:{production:{compatibility_date:'2026-10-29',env_vars:envVars,d1_databases:{DB:{id:db.uuid}}}}});
   const config={name:projectName,pages_build_output_dir:'./dist',compatibility_date:'2026-10-29',vars,d1_databases:[{binding:'DB',database_name:resourceName,database_id:db.uuid,migrations_dir:'migrations'}]};

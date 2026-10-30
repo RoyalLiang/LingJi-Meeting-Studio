@@ -161,14 +161,22 @@ test('concurrent invalid reads reserve capacity before awaiting D1',async t=>{
   await new Promise(resolve=>setTimeout(resolve,50));release();
   const responses=await Promise.all(requests);assert.equal(lookups,60);assert.equal(responses.filter(r=>r.status===429).length,20);
 });
+test('deployment errors redact credentials before logging and never retry rejected permissions',async()=>{
+  const env={CLOUDFLARE_ACCOUNT_ID:'a'.repeat(32),CLOUDFLARE_API_TOKEN:'private-deployment-secret',SITE_GITHUB_CLIENT_ID:'fixture-client-id',SITE_GITHUB_CLIENT_SECRET:'private-oauth-secret-'.repeat(3),PUBLISHER_GITHUB_ID:'123'};let writes=0;
+  await assert.rejects(deployPublicSite({env,fetcher:async(url,options)=>{
+    if(url.endsWith('/pages/projects/'+projectName))return new Response('{}',{status:404});
+    if(options.method==='POST'){writes++;return Response.json({success:false,errors:[{code:10000,message:env.CLOUDFLARE_API_TOKEN+' '+env.SITE_GITHUB_CLIENT_SECRET}]},{status:403});}
+    return Response.json({success:true,result:[]});
+  }}),error=>{assert.match(error.message,/HTTP 403/);assert.match(error.message,/\[redacted\]/);assert.equal(error.message.includes(env.CLOUDFLARE_API_TOKEN),false);assert.equal(error.message.includes(env.SITE_GITHUB_CLIENT_SECRET),false);return true;});assert.equal(writes,1);
+});
 test('deployment smoke verifies real snapshot reads and denies expiry/revocation, then removes only its own rows',async t=>{
   const f=await fixture(t),saved=await f.call('/api/publish','POST',f.input());assert.equal(saved.status,201);
   const checks=await verifySiteSharing(async(_path,method,{sql,params})=>{assert.equal(method,'POST');return f.sqlite.prepare(sql).run(...params);},'fixture-db',origin,url=>f.call(new URL(url).pathname));
   assert.deepEqual(checks,{d1Read:true,expiry:true,revocation:true});assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM shares').get().n,1);
 });
-test('deployment provisions bindings, applies migrations and verifies the production source and example',async t=>{
+test('deployment recovers from a non-JSON 500 and confirms a committed final create before migrations',async t=>{
   const root=await mkdtemp(join(tmpdir(),'lingji-pages-deploy-'));t.after(()=>rm(root,{recursive:true,force:true}));await mkdir(join(root,'apps/site'),{recursive:true});
-  const env={CLOUDFLARE_ACCOUNT_ID:'a'.repeat(32),CLOUDFLARE_API_TOKEN:'test-secret',GITHUB_SHA:'b'.repeat(40),SITE_GITHUB_CLIENT_ID:'fixture-client-id',SITE_GITHUB_CLIENT_SECRET:'oauth-secret-'.repeat(4),PUBLISHER_GITHUB_ID:'123'},calls=[],commands=[];
+  const env={CLOUDFLARE_ACCOUNT_ID:'a'.repeat(32),CLOUDFLARE_API_TOKEN:'test-secret',GITHUB_SHA:'b'.repeat(40),SITE_GITHUB_CLIENT_ID:'fixture-client-id',SITE_GITHUB_CLIENT_SECRET:'oauth-secret-'.repeat(4),PUBLISHER_GITHUB_ID:'123'},calls=[],commands=[];let creates=0,finalConfirmations=0;
   const fetcher=async(url,options={})=>{
     const path=new URL(url).pathname;assert.doesNotMatch(path,/\/r2\//,'R2 must stay disabled');calls.push([options.method || 'GET',path]);
     if(!path.startsWith('/client/v4/')){
@@ -176,8 +184,15 @@ test('deployment provisions bindings, applies migrations and verifies the produc
       return path==='/example'?new Response('source-example-1-1'):Response.json({publishing:true});
     }
     let result={};
+    if(path.endsWith('/pages/projects') && options.method==='POST'){
+      creates++;if(creates===1)return new Response('<html>Unavailable</html>',{status:500});
+      return Response.json({success:false,errors:[{code:8000000,message:'Transient creation failure'}]},{status:500});
+    }
     if(options.method==='GET' && path.endsWith('/pages/projects/'+projectName)){
-      if(!commands.length)return new Response('{}',{status:404});
+      if(!commands.length){
+        if(creates<3)return new Response('{}',{status:404});
+        finalConfirmations++;return Response.json({success:true,result:{deployment_configs:{production:{env_vars:{LINGJI_SITE_ID:{value:'lingji-public-site-v1'}}}}}});
+      }
       result={subdomain:projectName+'.pages.dev',production_deployment:{id:'deployment',deployment_trigger:{metadata:{commit_hash:env.GITHUB_SHA}}}};
     }else if(path.endsWith('/d1/database') && options.method==='GET')result=[];
     else if(path.endsWith('/d1/database'))result={uuid:'database-id'};
@@ -187,7 +202,7 @@ test('deployment provisions bindings, applies migrations and verifies the produc
   };
   let checksDenied=false;
   const receipt=await deployPublicSite({env,root,fetcher,run:async(...args)=>commands.push(args)});
-  assert.equal(receipt.url,origin);assert.equal(receipt.sha,env.GITHUB_SHA);assert.equal(commands.length,2);
+  assert.equal(receipt.url,origin);assert.equal(receipt.sha,env.GITHUB_SHA);assert.equal(commands.length,2);assert.equal(creates,3);assert.equal(finalConfirmations,1,'even the last failed create must be read back');
   assert.equal(commands[1][1].includes('--config'),false,'Pages uses the standard project config path');
   const config=JSON.parse(await readFile(join(root,'apps/site/wrangler.jsonc'),'utf8'));assert.equal(config.d1_databases[0].database_id,'database-id');assert.equal(config.vars.LINGJI_SITE_ID,'lingji-public-site-v1');assert.equal(JSON.stringify(config).includes('test-secret'),false);assert.equal(JSON.stringify(config).includes(env.SITE_GITHUB_CLIENT_SECRET),false);assert.equal(config.vars.PUBLIC_SITE_ORIGIN,'https://rookiecode.com');assert.equal('r2_buckets' in config,false);
 });
