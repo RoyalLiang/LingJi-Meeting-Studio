@@ -237,3 +237,11 @@ test('finished meeting drains durable tail and unlocks original audio before ASR
   const queue=await h.updateQueueState();assert.equal(queue.pendingCount,0);assert.equal(queue.pendingBytes,0);assert.equal(queue.queueBusy,false);
  }finally{await app.stop();await rm(root,{recursive:true,force:true});}
 });
+
+
+test('empty pending backup returns an explicit no-op without a bogus download',async()=>{
+ const h=harness();h.setQueueRecords(['empty-backup']);
+ assert.equal(await h.downloadPendingAudio('empty-backup'),false);assert.equal(h.downloads.length,0);
+ await h.enqueue('empty-backup',chunk());assert.equal(await h.downloadPendingAudio('empty-backup'),true);
+ assert.equal(await h.pendingCount('empty-backup'),1,'backup must leave real queued data untouched');
+});

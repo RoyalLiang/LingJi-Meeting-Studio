@@ -20,14 +20,14 @@ function Point({ item, speakers }: { item: MinutesItem; speakers: Map<string,str
 function Branch({ branch, index, minutes, cite, speakers }: { branch: ReturnType<typeof topicTableLayout>['branches'][number]; index: number; minutes: Minutes; cite: Props['cite']; speakers: Map<string,string> }) {
   const groups = new Map<string, MinutesItem[]>();
   for (const item of branch.items) {
-    const key = item.label === '过程记录' ? 'discussion' : item.kind || 'fact';
+    const key = item.kind || 'fact';
     const group=groups.get(key) || []; group.push(item); groups.set(key,group);
   }
   const visuals = (minutes.visuals || []).filter(visual => branch.id && visual.topicId === branch.id);
   return <section className="minutes-branch" data-tone={index % 4}>
     <h4><span>{branch.title}</span><small>{String(index + 1).padStart(2, '0')}</small></h4>
     <div className="branch-children">{branch.summary && <div className="branch-node branch-summary"><MinuteSpeakers evidence={branch.evidence} speakers={speakers}/><p>{branch.summary}</p></div>}
-      {[...groups].map(([kind,items]) => <div className="branch-node branch-points" key={kind} data-kind={kind}>{kind === 'discussion' ? <details className="branch-discussion"><summary>讨论过程 · {items.length} 项</summary>{items.map((item,index)=><Point key={index} item={item} speakers={speakers}/>)}</details> : items.map((item,index)=><Point key={index} item={item} speakers={speakers}/>)}</div>)}
+      {[...groups].map(([kind,items]) => <div className="branch-node branch-points" key={kind} data-kind={kind}>{items.map((item,index)=><Point key={index} item={item} speakers={speakers}/>)}</div>)}
     </div>
     {(visuals.length > 0 || branch.tables.length > 0) && <div className="branch-content"><MinutesVisuals visuals={visuals}/>{branch.tables.length > 0 && <SummaryTables minutes={minutes} tables={branch.tables} speakerMap={speakers}/>}</div>}
   </section>;
@@ -35,7 +35,7 @@ function Branch({ branch, index, minutes, cite, speakers }: { branch: ReturnType
 export const MinutesTree=memo(function MinutesTree({ minutes, cite, speakerMap, showHighlights = true }: Props) {
   const speakers=useMemo(()=>speakerMap || speakerLabels(minutes.evidenceSnapshot || []),[minutes,speakerMap]);
   const branches = useMemo(() => {
-    const layout = topicTableLayout(minutes);
+    const layout = topicTableLayout({...minutes,sections:minutes.sections.map(section=>({...section,items:section.items.filter(item=>item.label!=='过程记录')}))});
     return layout.unassigned.length ? [...layout.branches, { title: '补充表格', summary: '', evidence: [], items: [], tables: layout.unassigned }] : layout.branches;
   }, [minutes]).filter(branch=>Boolean(branch.summary?.trim() || branch.items.length || branch.tables.length || (minutes.visuals||[]).some(visual=>branch.id&&visual.topicId===branch.id)));
   const unassignedVisuals = (minutes.visuals || []).filter(visual => !visual.topicId || !branches.some(branch => branch.id === visual.topicId));

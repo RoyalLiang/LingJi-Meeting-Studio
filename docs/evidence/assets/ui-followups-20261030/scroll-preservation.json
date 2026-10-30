@@ -1,0 +1,13 @@
+{
+  "method": "Set local fixture reader scrollTop=240 then click actual controls; measure after two animation frames",
+  "before": 240,
+  "opened": {
+    "scrollTop": 240,
+    "top": 93
+  },
+  "closed": {
+    "scrollTop": 240,
+    "top": 93,
+    "focusRestored": true
+  }
+}

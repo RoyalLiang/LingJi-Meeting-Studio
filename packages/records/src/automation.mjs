@@ -2,8 +2,8 @@ import { emit, requestMinutes, requireThat } from './record.mjs';
 
 export function setAutomation(record, input, now = Date.now()) {
  requireThat(typeof input.enabled === 'boolean', 'invalid_automation', 400);
- const intervalSeconds = Number(input.intervalSeconds || record.autoMinutes?.intervalSeconds || 120);
- requireThat([15, 30, 60, 120].includes(intervalSeconds), 'invalid_automation_interval', 400);
+ const intervalSeconds = Number(input.intervalSeconds || record.autoMinutes?.intervalSeconds || 90);
+ requireThat([15, 30, 60, 90, 120].includes(intervalSeconds), 'invalid_automation_interval', 400);
  if (input.realtimeAudioConsent === true) record.realtimeAudioConsent = true;
   record.autoMinutes = { ...record.autoMinutes, enabled: input.enabled, intervalSeconds, enabledAt: now };
  if (!input.enabled) for (const job of record.jobs) if (job.automatic && ['queued', 'running'].includes(job.status)) {

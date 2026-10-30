@@ -1,0 +1,38 @@
+{
+  "open": {
+    "card": {
+      "height": 280.234375,
+      "width": 892,
+      "x": 331,
+      "y": 111
+    },
+    "scroll": {
+      "height": 289.765625,
+      "width": 972,
+      "x": 291,
+      "y": 413.234375
+    },
+    "slot": {
+      "height": 280.234375,
+      "width": 892,
+      "x": 331,
+      "y": 111
+    }
+  },
+  "closed": {
+    "scroll": {
+      "height": 610,
+      "y": 93
+    },
+    "trigger": {
+      "height": 44,
+      "width": 111,
+      "x": 1141,
+      "y": 652
+    },
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    }
+  }
+}

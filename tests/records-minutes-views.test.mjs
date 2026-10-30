@@ -190,3 +190,9 @@ test('explicit broad topic membership keeps the source project context in each c
   value.sections=['项目A','项目B'].map(heading=>({heading,items:[{text:'颜色蓝色',topicId:'general',evidence}]}));
   assert.deepEqual(Array.from(topicBranches(value)[0].items,item=>item.label),['项目A','项目B']);
 });
+
+
+test('legacy minutes without a snapshot still resolve exact current speaker revisions',()=>{
+ const labels=speakerLabels([],[{id:'speaker-a',label:'说话人 1'}],[{id:'spoken',revision:4,speakerId:'speaker-a',speaker:''}]);
+ assert.equal(labels.get('spoken:4'),'说话人1');assert.equal(labels.has('spoken:3'),false);
+});

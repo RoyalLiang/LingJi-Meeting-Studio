@@ -202,8 +202,8 @@ test('all topic details stay visible and each paragraph shows only its frozen sp
  const html=render({liveMinutes:value});
  assert.doesNotMatch(html,/展开 .*条讨论细节|class="branch-detail"/);
  for(let i=1;i<=5;i++)assert.match(html,new RegExp(`讨论详情${i}`));
- assert.equal((html.match(/class="minute-speakers"/g)||[]).length,5);
-  assert.match(html,/说话人1/);assert.match(html,/未区分说话人/);assert.doesNotMatch(html,/张工|错误的新修订姓名/);
+ assert.equal((html.match(/class="minute-speakers"/g)||[]).length,4);
+  assert.match(html,/说话人1/);assert.doesNotMatch(html,/未区分说话人/);assert.doesNotMatch(html,/张工|错误的新修订姓名/);
 });
 
 
@@ -270,4 +270,29 @@ test('meeting highlights stay closed during capture and open only after ending w
 test('an ended meeting without an AI job shows an empty state rather than indefinite processing', () => {
  const html=render({capture:'completed',minutes:null,liveMinutes:null,jobs:[],autoMinutes:{enabled:false,intervalSeconds:120}});
  assert.match(html,/尚未生成最终纪要/);assert.match(html,/整理会议重点/);assert.doesNotMatch(html,/正在整理最终重点/);
+});
+
+
+test('routine transcript progress does not add explanatory dock captions',()=>{
+ const record={capture:'recording',transcription:'completed',sources:[],pendingChunks:0,transcriptRevision:4,usage:{samples:16000},autoMinutes:{enabled:true}};
+ const html=renderToStaticMarkup(React.createElement(CurrentDiscussion,{record,minutes:{transcriptRevision:2},modelReady:true}));
+ assert.doesNotMatch(html,/新发言已接收|等待整理|class="discussion-status"/);assert.match(html,/正在记录/);
+});
+test('process-only retention is omitted from the AI minutes presentation while concrete points stay',()=>{
+ const value=minutes();value.topics=[];value.tables=[];
+ value.sections=[{heading:'讨论过程 · 规格',items:[{text:'仅供追溯的讨论原句',label:'过程记录',evidence:[ref('release')]}]},{heading:'规格',items:[{text:'应保留的确定配置',kind:'fact',evidence:[ref('quality')]}]}];
+ const html=render({liveMinutes:value});assert.doesNotMatch(html,/讨论过程|仅供追溯的讨论原句/);assert.match(html,/应保留的确定配置/);
+ assert.equal(value.sections[0].items.length,1,'presentation must not delete retained evidence');
+});
+test('unattributed minutes omit repetitive unknown speaker badges without fabricating speakers',()=>{
+ const value=minutes();value.tables=[];value.evidenceSnapshot=[{id:'release',revision:1,speaker:''},{id:'quality',revision:1,speaker:''}];
+ const html=render({liveMinutes:value});assert.doesNotMatch(html,/未区分说话人|来源待核对|class="minute-speakers"/);assert.match(html,/发布时间明确/);
+});
+
+
+test('process items with an explicit mismatched topic are filtered before layout decorates their labels',()=>{
+ const value=minutes();value.tables=[];value.topics=[{id:'broad',title:'项目讨论',summary:'保留的主题结论',evidence:[ref('release')]}];
+ value.sections=[{heading:'讨论过程 · 项目A',items:[{topicId:'broad',label:'过程记录',text:'归组后也不能显示的过程原句',evidence:[ref('release')]}]},{heading:'项目讨论',items:[{topicId:'broad',kind:'decision',text:'仍应显示的最终决定',evidence:[ref('quality')]}]}];
+ const html=render({liveMinutes:value});assert.doesNotMatch(html,/归组后也不能显示的过程原句|过程记录|讨论过程/);assert.match(html,/仍应显示的最终决定/);assert.match(html,/保留的主题结论/);
+ assert.equal(value.sections[0].items[0].label,'过程记录');
 });

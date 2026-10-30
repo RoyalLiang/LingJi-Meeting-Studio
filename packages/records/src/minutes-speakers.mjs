@@ -32,7 +32,7 @@ export function speakerLabels(snapshot, registry = [], current = []) {
     if (segment.speakerHash) labels.set(segment.speakerHash, display);
   }
   const exact = new Map(current.map(segment => [`${segment.id}:${segment.revision}`, segment]));
-  return new Map(snapshot.map(segment => {
+  return new Map([...current, ...snapshot].map(segment => {
     const key = `${segment.id}:${segment.revision}`,
       id = identity(segment) || identity(exact.get(key) || segment);
     return [key, labels.get(id) || '未区分说话人'];
