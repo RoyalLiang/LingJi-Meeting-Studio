@@ -1,0 +1,14 @@
+{
+  "node": "v24.21.0",
+  "platform": "darwin",
+  "syntheticOnly": true,
+  "realProviders": false,
+  "tracks": 2,
+  "minutesPerTrack": 50,
+  "pcmObjects": 2000,
+  "coldWaveformMs": 367,
+  "coldReads": 2000,
+  "cachedWaveformMs": 15,
+  "cachedReads": 0,
+  "concurrentBootstrapMs": 33
+}

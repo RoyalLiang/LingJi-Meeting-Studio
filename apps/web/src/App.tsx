@@ -11,7 +11,7 @@ import { useClientUpdates } from './useClientUpdates';
 import { ClientVersion, ClientUpdatesPanel } from './components/ClientUpdates';
 import { useNativeMenuBar } from './useNativeMenuBar';
 import { trace, traceCommit } from './telemetry';
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { memo, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Archive, ArrowDown, ArrowSquareOut, Folder, FolderPlus, House, Check, FileText, GearSix, Microphone, Moon,
   Plus, Translate, MagnifyingGlass, ShareNetwork, SignOut, Sparkle, Sun, Trash, WarningCircle, X, CaretRight } from '@phosphor-icons/react';
 import { api, messageOf, setCsrf, setAudioTransport, ApiError } from './api';
@@ -32,11 +32,11 @@ import type { CitationSelection } from './citation-context';
 import { ShareDialog } from './components/ShareDialog';
 import { SharedMeeting, type SharedMeetingData } from './components/SharedMeeting';
 import { currentMinutesJob } from './minutes-views';
-import { ProviderSettings } from './components/ProviderSettings';
-import { VocabularySettings } from './components/VocabularySettings';
+import { ProviderSettings as ProviderSettingsForm } from './components/ProviderSettings';
+import { VocabularySettings as VocabularySettingsForm } from './components/VocabularySettings';
 import { TranscriptHistory } from './components/Transcript';
 import { TranslationSettings } from './components/TranslationSettings';
-import { DeviceSettings } from './components/DeviceSettings';
+import { DeviceSettings as DeviceSettingsForm } from './components/DeviceSettings';
 import { MeetingControls } from './components/MeetingControls';
 import { MeetingFinish } from './components/MeetingFinish';
 import { RecordTitle } from './components/RecordTitle';
@@ -49,6 +49,10 @@ import { Notes } from './components/Notes';
 import { CaptureController, capabilities, importAudio, type CaptureIssue } from './audio/controller';
 import type { CaptureSignal } from './audio/signal';
 import { clearRecordAudio, setLocalQueueBackend, drainQueue, localManifests, pendingCount, setQueueRecords, downloadPendingAudio } from './audio/queue';
+
+const ProviderSettings = memo(ProviderSettingsForm);
+const VocabularySettings = memo(VocabularySettingsForm);
+const DeviceSettings = memo(DeviceSettingsForm);
 
 function Auth({ ready }: { ready: () => Promise<boolean> }) {
   const [register, setRegister] = useState(false), [error, setError] = useState(''), [busy, setBusy] = useState(false);
@@ -118,9 +122,13 @@ function Workspace() {
   const cacheEpoch = useRef(0);
   const listRequest = useRef(0), listView = useRef({query, scope});
   listView.current = {query, scope};
+  const bootListReady = useRef(false);
   const [retryVersion, setRetryVersion] = useState(0);
   const rememberRecord = useCallback((detail: RecordDetail) => {
-    const cache = recordCache.current; cache.delete(detail.id); cache.set(detail.id, detail);
+    const cache = recordCache.current, previous = cache.get(detail.id);
+    // A late GET must not undo a newer durable ACK or completed capture.
+    if (previous && BigInt(detail.cursor) < BigInt(previous.cursor)) return;
+    cache.delete(detail.id); cache.set(detail.id, detail);
     if (cache.size > 8) cache.delete(cache.keys().next().value!);
     if (mounted.current && activeId.current === detail.id) setRecord(detail);
   }, []);
@@ -152,8 +160,11 @@ function Workspace() {
   const loadBoot = useCallback(() => {
     if (bootRequest.current) return bootRequest.current;
     const request = (async () => {
-    cacheEpoch.current++; recordCache.current.clear(); setError(''); try { const b = await api<Bootstrap>('/bootstrap'); setCsrf(b.csrf); setAudioTransport(b.audioTransport); setLocalQueueBackend(Boolean(b.localAccount)); const [list, folders] = await Promise.all([api<{records: RecordListItem[]}>('/records'), api<{workspaces:WorkspaceDirectory[]}>('/workspaces')]);
-        setQueueRecords(list.records.map(r => r.id)); setDirectories(folders.workspaces); setBoot(b); setAuthReady(true); return true; }
+    cacheEpoch.current++; recordCache.current.clear(); bootListReady.current=false; setError(''); try { const b = await api<Bootstrap>('/bootstrap'); setCsrf(b.csrf); setAudioTransport(b.audioTransport); setLocalQueueBackend(Boolean(b.localAccount)); const [list, folders] = await Promise.all([api<{records: RecordListItem[]}>('/records'), api<{workspaces:WorkspaceDirectory[]}>('/workspaces')]);
+        setQueueRecords(list.records.map(r => r.id)); setDirectories(folders.workspaces);
+        bootListReady.current = !listView.current.query && listView.current.scope === 'all';
+        if (bootListReady.current) setRecords(list.records);
+        setBoot(b); setAuthReady(true); return true; }
     catch (e) { if (!(e instanceof ApiError && e.status === 401)) setError(messageOf(e)); setAuthReady(false); return false; } finally { setLoading(false); }
     })();
     bootRequest.current = request;
@@ -175,7 +186,12 @@ function Workspace() {
     const epoch = cacheEpoch.current; const detail = await api<RecordDetail>(`/records/${current}`); if (epoch === cacheEpoch.current) rememberRecord(detail);
   }, [rememberRecord]);
   useEffect(() => {
-    if (!authReady) return; const controller = new AbortController(); const timer = setTimeout(() => { loadList(controller.signal).catch(e => { if (e.name !== 'AbortError') setError(messageOf(e)); }); }, 180);
+    if (!authReady) return;
+    if (bootListReady.current) {
+      bootListReady.current = false;
+      if (!query && scope === 'all') return;
+    }
+    const controller = new AbortController(); const timer = setTimeout(() => { loadList(controller.signal).catch(e => { if (e.name !== 'AbortError') setError(messageOf(e)); }); }, 180);
     return () => { clearTimeout(timer); controller.abort(); };
   }, [loadList, authReady]);
   useEffect(() => {
@@ -266,7 +282,7 @@ function Workspace() {
       const saved = await api<RecordDetail>(`/records/${current.id}/${mode}`, 'POST', {
         sources: current.sources.map(source => ({ sourceId: source.id, epoch: source.epoch, lastSequence: source.lastSequence ?? manifests.find(m => m.sourceId === source.id)?.lastSequence ?? source.watermark }))
       }, AbortSignal.timeout(15000));
-      setRecord(saved); setModal(null);
+      rememberRecord(saved); setModal(null);
       // Local persistence and sealing are the finish barrier. Network upload
       // and ASR continue independently, including after a lost connection.
       void upload().catch(e => setError(messageOf(e)));
@@ -304,7 +320,7 @@ function Workspace() {
     const started = controller.startMeeting();
     try {
       const next = await created;
-      activeId.current = next.id; selectRecord(next.id); setRecord(next); setModal(null);
+      activeId.current = next.id; selectRecord(next.id); rememberRecord(next); setModal(null);
       const list = await api<{records: RecordListItem[]}>('/records');
       setQueueRecords(list.records.map(item => item.id)); await loadList();
       const issues = await started; setCaptureIssues(issues); setRecording(controller.active);

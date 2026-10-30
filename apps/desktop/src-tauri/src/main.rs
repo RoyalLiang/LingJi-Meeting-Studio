@@ -183,6 +183,11 @@ async fn client_probe(
         let widget = window.app_handle().get_webview_window("recording-widget");
         if let Some(floating) = &widget {
             let selector = match action {
+                "displace" => {
+                    let position = floating.outer_position().map_err(|e| e.to_string())?;
+                    floating.set_position(tauri::PhysicalPosition::new(position.x + 73, position.y + 41)).map_err(|e| e.to_string())?;
+                    None
+                },
                 "snapshot" | "hold-ready" | "release-ready" | "native-restore" | "native-minimize" | "native-close" => None,
                 "pause" => Some(r#".capsule-actions button[aria-label="暂停录音"], .capsule-actions button[aria-label="继续录音"]"#),
                 "finish" => Some(r#".capsule-actions button[aria-label="结束并整理"]"#),
@@ -193,8 +198,19 @@ async fn client_probe(
                 floating.eval(&format!("(()=>{{let tries=0;const click=()=>{{const button=document.querySelector({});if(button&&!button.disabled)button.click();else if(++tries<100)setTimeout(click,50);}};click();}})()", serde_json::to_string(selector).unwrap())).map_err(|e| e.to_string())?;
             }
         }
+        let placement = widget.as_ref().and_then(|floating| {
+            let monitor = window.current_monitor().ok()??;
+            let position = floating.outer_position().ok()?;
+            let size = floating.outer_size().ok()?;
+            let area = monitor.work_area();
+            Some(serde_json::json!({
+                "topGap": (position.y - area.position.y) as f64 / monitor.scale_factor(),
+                "centerOffset": (position.x as f64 + size.width as f64 / 2.0 - area.position.x as f64 - area.size.width as f64 / 2.0) / monitor.scale_factor(),
+                "width": size.width as f64 / monitor.scale_factor(),
+            }))
+        });
         let widget_state = window.state::<recording_widget::RecordingWidget>();
-        return Ok(serde_json::json!({"ready":widget_state.ready(),"widgetRecording":widget_state.recording(), "widgetLogicalHeight":widget.as_ref().and_then(|w|Some(w.inner_size().ok()?.height as f64/w.scale_factor().ok()?)), "widgetDurationMs":widget_state.duration_ms(), "canResume":widget_state.can_resume(), "widgetVisible":widget.as_ref().is_some_and(|w|w.is_visible().unwrap_or(false)), "mainVisible":window.is_visible().map_err(|e|e.to_string())?, "mainMinimized":window.is_minimized().map_err(|e|e.to_string())?}));
+        return Ok(serde_json::json!({"placement":placement,"ready":widget_state.ready(),"widgetRecording":widget_state.recording(), "widgetLogicalHeight":widget.as_ref().and_then(|w|Some(w.inner_size().ok()?.height as f64/w.scale_factor().ok()?)), "widgetDurationMs":widget_state.duration_ms(), "canResume":widget_state.can_resume(), "widgetVisible":widget.as_ref().is_some_and(|w|w.is_visible().unwrap_or(false)), "mainVisible":window.is_visible().map_err(|e|e.to_string())?, "mainMinimized":window.is_minimized().map_err(|e|e.to_string())?}));
     }
     if let Some(activity) = result.get("updateActivity") {
         state

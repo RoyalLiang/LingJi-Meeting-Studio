@@ -1,0 +1,20 @@
+{
+  "environment": "Chrome; synthetic config; 300 synchronous parent refreshes; not real recording throughput",
+  "before": {
+    "parentRefreshes": 300,
+    "formRenders": 300,
+    "elapsedMs": 288.3
+  },
+  "after": {
+    "parentRefreshes": 300,
+    "formRenders": 0,
+    "elapsedMs": 16.8
+  },
+  "draftPreserved": true,
+  "iabRepeat": {
+    "parentRefreshes": 300,
+    "formRenders": 0,
+    "elapsedMs": 55.4,
+    "draftPreserved": true
+  }
+}
