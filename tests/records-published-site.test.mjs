@@ -92,6 +92,15 @@ test('deployment fails before mutations when credentials or project ownership ar
   const env={CLOUDFLARE_ACCOUNT_ID:'a'.repeat(32),CLOUDFLARE_API_TOKEN:'test-secret'};
   await assert.rejects(deployPublicSite({env,fetcher:async(_url,options)=>{calls++;assert.equal(options.method,'GET');return Response.json({success:true,result:{deployment_configs:{production:{env_vars:{}}}}});}}),/not owned/);assert.equal(calls,1);
 });
+
+test('concurrent invalid reads reserve capacity before awaiting D1',async t=>{
+  const f=await fixture(t);let release,lookups=0;
+  const gate=new Promise(resolve=>{release=resolve;});
+  f.env.DB={withSession(){return this;},prepare(){return{bind(){return this;},async first(){lookups++;await gate;return null;}};}};
+  const requests=Array.from({length:80},()=>f.call('/share/'+'z'.repeat(43)));
+  await new Promise(resolve=>setTimeout(resolve,50));release();
+  const responses=await Promise.all(requests);assert.equal(lookups,60);assert.equal(responses.filter(r=>r.status===429).length,20);
+});
 test('deployment provisions bindings, applies migrations and verifies the production source and example',async t=>{
   const root=await mkdtemp(join(tmpdir(),'lingji-pages-deploy-'));t.after(()=>rm(root,{recursive:true,force:true}));await mkdir(join(root,'apps/site'),{recursive:true});
   const env={CLOUDFLARE_ACCOUNT_ID:'a'.repeat(32),CLOUDFLARE_API_TOKEN:'test-secret',GITHUB_SHA:'b'.repeat(40)},calls=[],commands=[];
@@ -109,5 +118,6 @@ test('deployment provisions bindings, applies migrations and verifies the produc
   };
   const receipt=await deployPublicSite({env,root,fetcher,run:async(...args)=>commands.push(args)});
   assert.equal(receipt.url,origin);assert.equal(receipt.sha,env.GITHUB_SHA);assert.equal(commands.length,2);
-  const config=JSON.parse(await readFile(join(root,'apps/site/wrangler.deploy.json'),'utf8'));assert.equal(config.d1_databases[0].database_id,'database-id');assert.equal(config.vars.LINGJI_SITE_ID,'lingji-public-site-v1');assert.equal(JSON.stringify(config).includes('test-secret'),false);assert.ok(calls.some(([method,path])=>method==='PUT' && path.endsWith('/lifecycle')));
+  assert.equal(commands[1][1].includes('--config'),false,'Pages uses the standard project config path');
+  const config=JSON.parse(await readFile(join(root,'apps/site/wrangler.jsonc'),'utf8'));assert.equal(config.d1_databases[0].database_id,'database-id');assert.equal(config.vars.LINGJI_SITE_ID,'lingji-public-site-v1');assert.equal(JSON.stringify(config).includes('test-secret'),false);assert.ok(calls.some(([method,path])=>method==='PUT' && path.endsWith('/lifecycle')));
 });

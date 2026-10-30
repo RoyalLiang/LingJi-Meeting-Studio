@@ -197,3 +197,11 @@ test('desktop shutdown lets an owned in-flight lane finish before closing Realti
   try {assert.equal(closed,false);assert.equal(stopped,false);} finally {release();}
   await stopping;assert.equal(closed,true);assert.equal(stopped,true);
 });
+
+test('concurrent invalid local share reads reserve capacity before awaiting the repository',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'lingji-share-concurrent-')),app=await createRecordServer({root,databaseUrl:'',port:0,secret});
+  const address=await app.start();let release,lookups=0;
+  const gate=new Promise(resolve=>{release=resolve;});app.repo.findShare=async()=>{lookups++;await gate;return null;};
+  try{const requests=Array.from({length:80},()=>fetch(`http://127.0.0.1:${address.port}/api/shared/${'c'.repeat(43)}`));await new Promise(resolve=>setTimeout(resolve,100));release();const responses=await Promise.all(requests);assert.equal(lookups,60);assert.equal(responses.filter(r=>r.status===429).length,20);}
+  finally{release();await app.stop();await rm(root,{recursive:true,force:true});}
+});

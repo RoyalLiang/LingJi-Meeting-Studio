@@ -5,6 +5,8 @@ export function setAudioTransport(value?: string) { binaryAudio = value === 'pcm
 let csrf = '';
 export const setCsrf = (token: string) => { csrf = token; };
 const messages: Record<string, string> = {
+  invalid_minutes_topics: '纪要主题结构未通过校验，已有内容保留，可重新整理。',
+  minutes_without_new_evidence: '本轮纪要未包含有效的新内容，已有纪要保留，可重新整理。',
   invalid_translation_provider: '请选择自动、当前文字模型或豆包 Seed 翻译。',
   invalid_vocabulary: '词表格式无效：每集最多 12000 字符，两集合计最多 200 条，每项最多 50 字、8 个别名。', vocabulary_revision_conflict: '词表已变更，请重新打开设置或检查纠错后重试。', invalid_correction: '纠错候选与当前词表或原文不一致，请重新检查。', invalid_corrections: '模型返回的候选不符合原文或词表，未修改转录。', invalid_recognition_language: '识别语言无效，请重新选择。', recognition_language_busy: '请暂停录音并等待当前音频处理完成后切换识别语言。',
 

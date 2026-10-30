@@ -5,9 +5,8 @@ import { phoneticCandidates } from '../../../packages/records/src/phonetic-vocab
 import { loadRecognitionLexicon } from './recognition-lexicon.mjs';
 import { completeModelJson } from './llm.mjs';
 
-export async function loadVocabulary(repo, owner, scope = 'inbox') {
-  const scopes = scope === 'all' ? ['all'] : ['all', scope];
-  const sets = await Promise.all(scopes.map(s => repo.get(vocabularyId(owner, s))));
+export async function loadVocabulary(repo, owner) {
+  const sets = [await repo.get(vocabularyId(owner, 'all'))];
   const entries = sets.filter(s => s?.owner === owner && s.kind === 'vocabulary').flatMap(s => parseVocabulary(s));
   return { entries, fingerprint: digest(JSON.stringify(sets.map(s => [s?.id, s?.revision || 0]))) };
 }

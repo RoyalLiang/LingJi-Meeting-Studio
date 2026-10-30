@@ -10,5 +10,5 @@ if ($LASTEXITCODE -ne 0) { throw 'Installer UI compilation failed' }
 New-Item -ItemType Directory -Force $output | Out-Null
 Copy-Item (Join-Path $build 'Release/lingji-ui.dll') (Join-Path $output 'lingji-ui.dll') -Force
 
-& (Join-Path $build 'Release/lingji-ui-tests.exe')
-if ($LASTEXITCODE -ne 0) { throw 'Installer resource hash tests failed' }
+& (Join-Path $build 'Release/lingji-ui-tests.exe') (Join-Path $Root 'apps/desktop/src-tauri/installer/background.bmp')
+if ($LASTEXITCODE -ne 0) { throw 'Installer native UI checks failed' }

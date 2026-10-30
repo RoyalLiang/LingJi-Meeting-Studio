@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { openSync, closeSync } from "node:fs";
-import { readFile, writeFile, mkdir, stat, copyFile } from "node:fs/promises";
+import { readFile, writeFile, mkdir, stat, copyFile, cp } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
@@ -10,6 +10,7 @@ import { collectCandidates, teacherLabels } from "./providers.mjs";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 const repo = resolve(here, "../..");
+export const learningServiceTarget = { host: "wgs", remoteBase: "/home/westwell/ai-labs/neohorse-jev-4b" };
 export const learningRemoteGroup = (workspace) =>
   "alpha-" +
   new Date().toISOString().slice(0, 10).replaceAll("-", "") +
@@ -54,6 +55,23 @@ async function execute(command, args, log) {
   });
 }
 
+// Human review needs frozen cases, not teacher labels or GPU predictions.
+export async function finishPreparation(dir, round, meta) {
+  await cp(join(dir, "prelabel"), join(dir, "dataset"), { recursive:true, errorOnExist:true, force:false });
+  const cases = await lines(join(dir, "dataset/cases.jsonl"));
+  const manifest = await json(join(dir, "dataset/manifest.json"));
+  await writeLines(join(dir, "teacher.jsonl"), []);
+  await writeLines(join(dir, "annotation-results.jsonl"), cases.map(row => ({ ...row,
+    target:null, reviewer:"", audioVerified:false, blindReview:false, note:"", correctedText:"" })));
+  const report = { roundId:round, status:"complete", shadowOnly:true, businessWrites:0,
+    cases:cases.length, families:manifest.per_family, datasetCounts:manifest.counts,
+    trained:false, goldTestReady:false, baseScores:null, adapterScores:null,
+    preparation:"stored-transcript-human-review", qualityStatement:"Unreviewed source; no quality claim." };
+  await store(join(dir, "round-report.json"), report);
+  await store(join(dir, "round.json"), { ...meta, status:"已完成", completedAt:new Date().toISOString(), trainingSkipped:"人工标注前不运行训练或预测" });
+  return report;
+}
+
 export async function runLearningRound({
   workspace = ".data/alpha-learning",
   round,
@@ -67,8 +85,8 @@ export async function runLearningRound({
   inputBundle,
   splitsFile,
   perRecord = 12,
-  host = "wgs",
-  remoteBase = "/home/westwell/ai-labs/neohorse-jev-4b",
+  host = learningServiceTarget.host,
+  remoteBase = learningServiceTarget.remoteBase,
 } = {}) {
   workspace = resolve(workspace);
   if (
@@ -164,7 +182,7 @@ export async function runLearningRound({
           { recordIds },
         );
         await collectCandidates(join(workspace, intake), join(workspace, asr), {
-          limit: 24,
+          limit: prepareOnly ? 0 : 24,
           perRecord: prepareOnly ? 24 : 4,
           includeAll: prepareOnly,
         });
@@ -267,6 +285,7 @@ export async function runLearningRound({
     );
     await mkdir(join(dir, "prelabel"), { mode: 0o700 });
     await download(remoteRoot + "/prelabel/*", join(dir, "prelabel"));
+    if (prepareOnly) return finishPreparation(dir, round, meta);
     const cases = await lines(join(dir, "prelabel/cases.jsonl")),
       lookup = new Map(cases.map((value) => [value.sample_id, value]));
     let teachers = [],

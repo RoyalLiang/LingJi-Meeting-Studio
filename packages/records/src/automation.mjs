@@ -2,7 +2,7 @@ import { emit, requestMinutes, requireThat } from './record.mjs';
 
 export function setAutomation(record, input, now = Date.now()) {
  requireThat(typeof input.enabled === 'boolean', 'invalid_automation', 400);
- const intervalSeconds = Number(input.intervalSeconds || record.autoMinutes?.intervalSeconds || 60);
+ const intervalSeconds = Number(input.intervalSeconds || record.autoMinutes?.intervalSeconds || 120);
  requireThat([15, 30, 60, 120].includes(intervalSeconds), 'invalid_automation_interval', 400);
  if (input.realtimeAudioConsent === true) record.realtimeAudioConsent = true;
   record.autoMinutes = { ...record.autoMinutes, enabled: input.enabled, intervalSeconds, enabledAt: now };
@@ -11,7 +11,7 @@ export function setAutomation(record, input, now = Date.now()) {
  }
  emit(record, 'minutes.automation', { enabled: input.enabled });
 }
-const recoverableMinutesError = /^(?:llm_timeout|llm_connection_failed|llm_stream_incomplete|llm_stream_failed|invalid_llm_response|invalid_minutes_schema|provider_rate_limited|provider_http_5\d\d)$/;
+const recoverableMinutesError = /^(?:llm_timeout|llm_connection_failed|llm_stream_incomplete|llm_stream_failed|invalid_llm_response|invalid_minutes_schema|invalid_minutes_topics|minutes_without_new_evidence|provider_rate_limited|provider_http_5\d\d)$/;
 
 function checkpointJob(record, scope) {
   return record.jobs.filter(job => (scope === 'live' ? job.scope === 'live' : job.scope !== 'live') && job.transcriptRevision === record.transcriptRevision && job.notesRevision === record.notesRevision).at(-1);

@@ -47,7 +47,8 @@ test('validated partial minutes remain visible by default while unchecked genera
 test('project minutes render sourced highlights, timeline and actual same-unit numbers',()=>{
   const value=fixture();assert.equal(validateMinutes(value,snapshot),value);
   const html=render(value);
-  for(const text of ['重点速览','推进顺序','周五','下周一','方案预算','单位：','100','80','引用原文'])assert.ok(html.includes(text),text);
+  for(const text of ['重点速览','推进顺序','周五','下周一','方案预算','单位：','100','80'])assert.ok(html.includes(text),text);
+  assert.doesNotMatch(html,/引用原文|citation-entry/);
   assert.equal(html.split('class="minutes-visual is-timeline"').length-1,1);
   assert.equal(html.split('class="minutes-visual is-bar"').length-1,1);
   assert.doesNotMatch(html,/纪要条目分布|主题引用覆盖|2026/);
@@ -103,7 +104,7 @@ test('live merge, bounded deduplication context and share/export preserve rich e
   assert.equal(merged.visuals.length,2);assert.equal(merged.visuals[0].entries.length,2);assert.equal(merged.highlights[0].text,'新增预算核对事项');
   merged.notesRevision=0;const context=minutesContext(merged);assert.ok(context.recentPoints.length);assert.ok(Buffer.byteLength(JSON.stringify(context))<=12000);
   merged.providerSecret='do-not-share';merged.visuals[0].providerSecret='do-not-share';merged.visuals[0].entries[0].raw='do-not-share';
-  const shared=sharedMinutes(merged);assert.equal(shared.sections[0].items[0].topicId,'release');assert.equal(shared.highlights.length,2);assert.equal(shared.evidenceSnapshot.length,3);assert.doesNotMatch(JSON.stringify(shared),/do-not-share/);
+  const shared=sharedMinutes(merged);assert.equal(shared.sections[0].items[0].topicId,'release');assert.equal(shared.highlights.length,2);assert.equal(shared.evidenceSnapshot.length,0);assert.doesNotMatch(JSON.stringify(shared),/do-not-share/);
   const md=exportMinutesMarkdown({title:'合成验收',capture:'completed',minutes:merged});
   for(const text of ['重点速览','推进节点','下周一','方案预算','100','万元'])assert.ok(md.includes(text),text);
   assert.doesNotMatch(md,/do-not-share/);

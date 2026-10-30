@@ -52,14 +52,15 @@ test('confirmed correction preserves recognition original, creates revision, rev
   assert.equal(segment.recognitionText,'王小明决定不要删除缓存。');
 });
 
-test('account and directory vocabulary is isolated and survives repository reopening', async () => fixture(async(repo,root) => {
+test('global vocabulary is account-isolated, ignores legacy directory sets and survives reopening', async () => fixture(async(repo,root) => {
   await repo.insert({id:vocabularyId('one','all'),kind:'vocabulary',owner:'one',scope:'all',revision:1,...vocabulary});
   await repo.insert({id:vocabularyId('one','project'),kind:'vocabulary',owner:'one',scope:'project',revision:1,terms:'QTruck',names:''});
   assert.equal((await loadVocabulary(repo,'two','project')).entries.length,0);
   const common=await loadVocabulary(repo,'one','inbox'), local=await loadVocabulary(repo,'one','project');
-  assert.equal(local.entries.length,common.entries.length+1);
+  assert.deepEqual(local.entries,common.entries);
   const record={...createRecord('one'),title:'QTruck 周会',workspaceId:'project'};
-  assert.ok((await recordAsrConfig(repo,record,{})).ASR_VOCABULARY_HINTS.includes('QTruck'));
+  assert.ok(!(await recordAsrConfig(repo,record,{})).ASR_VOCABULARY_HINTS.includes('QTruck'));
+  assert.ok(await repo.get(vocabularyId('one','project')), 'legacy stored vocabulary is preserved');
   const second=await createRepository({root,databaseUrl:''});
   try { assert.deepEqual((await loadVocabulary(second,'one','project')).entries,local.entries); } finally { await second.close(); }
 }));
