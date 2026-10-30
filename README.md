@@ -43,7 +43,11 @@
 
 ## 快速开始
 
-### 安装桌面测试版
+### Beta 线上入口
+
+[官网](https://rookiecode.com) · [发布会议纪要](https://rookiecode.com/publish) · [示例纪要](https://rookiecode.com/example) · [v0.2.1 发布核验](docs/evidence/preview-v0.2.1-2026-10-30.md)。发布目前仅允许 RoyalLiang 通过 GitHub 公开身份登录；读者持链接即可访问，链接 24 小时有效，可提前撤销。
+
+## 安装桌面测试版
 
 在 [Releases](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases) 选择同一版本的成品安装包。版本改动、安装步骤和 SHA-256 在发布正文中；Source code (zip / tar.gz) 为该标签源码。验证报告保留在 Actions，附件不再混入测试 JSON、校验文件或安装文档。
 
