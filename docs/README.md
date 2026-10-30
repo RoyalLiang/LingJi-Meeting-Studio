@@ -1,5 +1,7 @@
 # 聆记文档导航
 
+[会后重点顶部卡片](evidence/highlights-top-2026-10-30.md)：已按确认的方案 A 实现，整理失败提示移入卡片或纪要模块；本地验证通过，网络阻断推送与发版。
+
 [v0.1.49 学习评审与实时翻译](releases/v0.1.49-preview.md)：按已确认设计完成六项改造，已发布，[五项 CI 与四个附件核验通过](evidence/preview-v0.1.49-2026-10-30.md)；[本轮验证与边界](evidence/learning-translation-v0.1.49-2026-10-30.md)。
 
 [v0.1.48 设置与纪要优化](releases/v0.1.48-preview.md)：已发布，五项 CI、三平台安装包与更新清单核验通过；[发布回执](evidence/preview-v0.1.48-2026-10-30.md)。[验证范围](evidence/settings-minutes-v0.1.47-2026-10-29.md)。
