@@ -193,7 +193,7 @@ test('deployment recovers from a non-JSON 500 and confirms a committed final cre
         if(creates<3)return new Response('{}',{status:404});
         finalConfirmations++;return Response.json({success:true,result:{deployment_configs:{production:{env_vars:{LINGJI_SITE_ID:{value:'lingji-public-site-v1'}}}}}});
       }
-      result={subdomain:projectName+'.pages.dev',production_deployment:{id:'deployment',deployment_trigger:{metadata:{commit_hash:env.GITHUB_SHA}}}};
+      result={subdomain:projectName+'.pages.dev',canonical_deployment:{id:'deployment',deployment_trigger:{metadata:{commit_hash:env.GITHUB_SHA}}},latest_deployment:{id:'unrelated-preview',deployment_trigger:{metadata:{commit_hash:'c'.repeat(40)}}}};
     }else if(path.endsWith('/d1/database') && options.method==='GET')result=[];
     else if(path.endsWith('/d1/database'))result={uuid:'database-id'};
     else if(path.endsWith('/query'))checksDenied=!JSON.parse(options.body).sql.startsWith('INSERT');
@@ -202,7 +202,7 @@ test('deployment recovers from a non-JSON 500 and confirms a committed final cre
   };
   let checksDenied=false;
   const receipt=await deployPublicSite({env,root,fetcher,run:async(...args)=>commands.push(args)});
-  assert.equal(receipt.url,origin);assert.equal(receipt.sha,env.GITHUB_SHA);assert.equal(commands.length,2);assert.equal(creates,3);assert.equal(finalConfirmations,1,'even the last failed create must be read back');
+  assert.equal(receipt.url,origin);assert.equal(receipt.sha,env.GITHUB_SHA);assert.equal(receipt.deploymentId,'deployment','verify the canonical production deployment, never the latest preview');assert.equal(commands.length,2);assert.equal(creates,3);assert.equal(finalConfirmations,1,'even the last failed create must be read back');
   assert.equal(commands[1][1].includes('--config'),false,'Pages uses the standard project config path');
   const config=JSON.parse(await readFile(join(root,'apps/site/wrangler.jsonc'),'utf8'));assert.equal(config.d1_databases[0].database_id,'database-id');assert.equal(config.vars.LINGJI_SITE_ID,'lingji-public-site-v1');assert.equal(JSON.stringify(config).includes('test-secret'),false);assert.equal(JSON.stringify(config).includes(env.SITE_GITHUB_CLIENT_SECRET),false);assert.equal(config.vars.PUBLIC_SITE_ORIGIN,'https://rookiecode.com');assert.equal('r2_buckets' in config,false);
 });

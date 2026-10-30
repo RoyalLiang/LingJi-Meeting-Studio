@@ -82,8 +82,8 @@ export async function deployPublicSite({env=process.env,fetcher=fetch,run=comman
   await run(process.execPath,[wrangler,'d1','migrations','apply','DB','--remote','--config',configFile],{cwd:site,env});
   await run(process.execPath,[wrangler,'pages','deploy','dist','--project-name',projectName,'--branch','main','--commit-hash',env.GITHUB_SHA],{cwd:site,env});
   const deployed=await api(`/pages/projects/${projectName}`),url=`https://${deployed.subdomain}`;
-  if(deployed.production_deployment?.deployment_trigger?.metadata?.commit_hash!==env.GITHUB_SHA)throw new Error('Cloudflare production source SHA differs from this workflow.');
-  const receipt={project:projectName,sha:env.GITHUB_SHA,deploymentId:deployed.production_deployment.id,url,publishingConfigured:publishing,verifiedAt:new Date().toISOString()};
+  if(deployed.canonical_deployment?.deployment_trigger?.metadata?.commit_hash!==env.GITHUB_SHA)throw new Error('Cloudflare production source SHA differs from this workflow.');
+  const receipt={project:projectName,sha:env.GITHUB_SHA,deploymentId:deployed.canonical_deployment.id,url,publishingConfigured:publishing,verifiedAt:new Date().toISOString()};
   const response=await fetcher(url+'/example',{signal:AbortSignal.timeout(30000)});if(!response.ok || !(await response.text()).includes('source-example-1-1'))throw new Error('Public example acceptance failed.');
   const status=await fetcher(url+'/api/site-status',{signal:AbortSignal.timeout(30000)});if(!status.ok || (await status.json()).publishing!==receipt.publishingConfigured)throw new Error('Public publisher readiness differs from deployment configuration.');
   receipt.sharingChecks=await verifySiteSharing(api,db.uuid,url,fetcher);
