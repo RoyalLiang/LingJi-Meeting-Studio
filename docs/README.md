@@ -1,6 +1,6 @@
 # 聆记文档导航
 
-[v0.2.0 Beta 实施](releases/v0.2.0-preview.md)：[在线纪要指南](engineering/beta-sharing.md)与[验证边界](evidence/beta-implementation-2026-10-30.md)，发布回执待补。
+[v0.2.1 Beta 实施](releases/v0.2.1-preview.md)：[在线纪要指南](engineering/beta-sharing.md)与[验证边界](evidence/beta-implementation-2026-10-30.md)，发布回执待补。
 
 [v0.1.50 会后重点与悬浮 Toast](releases/v0.1.50-preview.md)：方案 A 与独立失败 Toast 已形成本地候选，697 项回归通过；[截图与验证](evidence/minutes-floating-toast-2026-10-30.md)。GitHub 通道已恢复，待后台 CI 与公开附件核验完成。
 
