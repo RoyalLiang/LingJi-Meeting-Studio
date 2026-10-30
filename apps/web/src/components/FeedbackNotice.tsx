@@ -7,8 +7,8 @@ function acknowledged(key?: string) {
 }
 
 /** The caller keys a persisted notice by incident; explicit reopening bypasses its acknowledgement. */
-export function FeedbackNotice({ message, action, warning = true, open = true, dismissalKey, forceOpen = false, inline = false }: {
-  message: string; warning?: boolean; open?: boolean; dismissalKey?: string; forceOpen?: boolean; inline?: boolean;
+export function FeedbackNotice({ message, action, warning = true, open = true, dismissalKey, forceOpen = false, inline = false, className = '' }: {
+  message: string; warning?: boolean; open?: boolean; dismissalKey?: string; forceOpen?: boolean; inline?: boolean; className?: string;
   action?: { label: string; run: () => void; disabled?: boolean; busy?: boolean };
 }) {
   const [dismissed, setDismissed] = useState(() => !forceOpen && acknowledged(dismissalKey));
@@ -17,5 +17,5 @@ export function FeedbackNotice({ message, action, warning = true, open = true, d
     try { if (dismissalKey) globalThis.localStorage?.setItem(`lingji:notice:${dismissalKey}`, 'dismissed'); }
     catch { /* Storage may be unavailable; closing still works for this mounted notice. */ }
   }
-  return dismissed || !open ? null : <Toast message={message} warning={warning} persistent inline={inline} action={action} dismiss={dismiss}/>;
+  return dismissed || !open ? null : <Toast message={message} warning={warning} persistent inline={inline} className={className} action={action} dismiss={dismiss}/>;
 }
