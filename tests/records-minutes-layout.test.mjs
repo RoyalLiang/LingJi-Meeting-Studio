@@ -216,10 +216,11 @@ test('minutes default to no generation preview and omit redundant in-progress ca
  assert.match(partial,/按主题整理的纪要/);
 });
 
-test('opening a meeting floats failed minutes recovery without reserving panel space', () => {
+test('failed minutes recovery remains inline in its owner instead of covering navigation', () => {
   const html=render({segments:[],jobs:[{id:'failed-job',status:'failed',transcriptRevision:3,error:'minutes_request_failed'}]});
   assert.match(html,/整理未完成/);
-  assert.match(html,/toast feedback-toast glass/);assert.doesNotMatch(html,/feedback-toast[^"]*is-inline/);
+  assert.match(html,/toast feedback-toast glass[^"]*is-inline/);
+  assert.equal((html.match(/整理未完成/g)||[]).length,1);
   assert.match(html,/重新整理/);
 });
 
