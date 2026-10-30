@@ -1,0 +1,13 @@
+{
+  "checkedAt": "2026-10-30T15:54:12.044Z",
+  "results": [
+    {
+      "url": "https://rookiecode.com",
+      "status": 200
+    },
+    {
+      "url": "https://rookiecode.com/example",
+      "status": 200
+    }
+  ]
+}

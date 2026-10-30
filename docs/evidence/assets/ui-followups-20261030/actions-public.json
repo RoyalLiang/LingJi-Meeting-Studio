@@ -1,0 +1,46 @@
+{
+  "title": "Preview v0.2.3 · push · RoyalLiang/LingJi-Meeting-Studio@d17d158 · GitHub",
+  "summary": "Triggered via push \nRoyalLiang\npushed\n d17d158\nv0.2.3\nStatus\nSuccess\nTotal duration\n33m 51s\nArtifacts\n5",
+  "commits": [
+    "https://github.com/RoyalLiang/LingJi-Meeting-Studio/commit/d17d15811564201c403da65bfbd89dd5c7407912"
+  ],
+  "jobs": [
+    {
+      "text": "verify\n10s",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/41082592947/job/124155311280",
+      "labels": [
+        "completed successfully: "
+      ]
+    },
+    {
+      "text": "build\n13m 10s",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/41082592947/job/124155422098",
+      "labels": [
+        "completed successfully: "
+      ]
+    },
+    {
+      "text": "build_windows\n32m 4s",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/41082592947/job/124155422013",
+      "labels": [
+        "completed successfully: "
+      ]
+    },
+    {
+      "text": "build_linux\n9m 18s",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/41082592947/job/124155421817",
+      "labels": [
+        "completed successfully: "
+      ]
+    },
+    {
+      "text": "publish\n1m 28s",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/41082592947/job/124172458885",
+      "labels": [
+        "completed successfully: "
+      ]
+    }
+  ],
+  "checkedAt": "2026-10-30T16:14:32.036Z",
+  "source": "public rendered Actions summary"
+}
