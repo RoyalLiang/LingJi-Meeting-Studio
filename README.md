@@ -1,6 +1,6 @@
 <p align="center">
 
-[v0.2.2 桌面修复候选](docs/releases/v0.2.2-preview.md)：修正保存状态、三端默认启动加载、设置重绘与顶部居中录音悬浮条；本地检查已通过，安装包等待 GitHub Actions 发布。[验证记录与边界](docs/evidence/desktop-reliability-2026-10-30.md)。
+[v0.2.2 桌面修复](docs/releases/v0.2.2-preview.md)已发布：修正保存状态、三端默认启动加载、设置重绘与顶部居中录音悬浮条；五项 CI 和三平台安装包完整下载核验通过。[发布回执与边界](docs/evidence/preview-v0.2.2-2026-10-30.md)。
   <img src="apps/desktop/src-tauri/icons/icon.png" width="88" alt="聆记标识">
 </p>
 

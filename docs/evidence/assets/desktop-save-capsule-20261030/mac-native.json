@@ -1,0 +1,42 @@
+{
+  "timestamp": "2026-10-30T13:27:41.110Z",
+  "platform": "darwin",
+  "architecture": "arm64",
+  "kind": "synthetic-only",
+  "ok": true,
+  "recordingWidget": {
+    "automaticallyMinimized": true,
+    "coldReadyExclusive": true,
+    "compactHeight": true,
+    "compactWidth": true,
+    "finishConfirmation": true,
+    "lateReadyCancelled": true,
+    "loadedPrivateSession": true,
+    "nativeRestore": true,
+    "pause": true,
+    "pausedCapsuleRetained": true,
+    "queuedAudioClock": true,
+    "reanchored": true,
+    "restoredMain": true,
+    "resume": true,
+    "topCentered": true
+  },
+  "residentCapture": {
+    "continuedDurableQueue": true,
+    "continuedNativeCapture": true,
+    "hiddenMs": 9000,
+    "hiddenWindow": true,
+    "recordingNotPaused": true,
+    "restoredWindow": true,
+    "sampleCoverageVerified": true
+  },
+  "settingsCancelReopen": true,
+  "settingsSimplified": true,
+  "toolbarTooltip": true,
+  "stableOriginAfterRestart": true,
+  "indexedDbRetainedAfterRestart": true,
+  "realQueueReplayedAfterRestart": true,
+  "replayedUiReceipts": 20,
+  "realAudioDevicesOpened": false,
+  "realProvidersInvoked": false
+}

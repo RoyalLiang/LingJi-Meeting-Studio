@@ -1,6 +1,6 @@
 # 聆记文档导航
 
-[v0.2.2 桌面修复候选](releases/v0.2.2-preview.md)：本地回归与独立评审通过，等待 GitHub Actions 构建三平台安装包；[验证记录与边界](evidence/desktop-reliability-2026-10-30.md)。
+[v0.2.2 桌面修复](releases/v0.2.2-preview.md)已发布：五项 CI、三平台安装包与更新清单完整下载核验通过；[发布回执](evidence/preview-v0.2.2-2026-10-30.md) · [实现与评审](evidence/desktop-reliability-2026-10-30.md)。
 
 Beta v0.2.1 已发布：[官网](https://rookiecode.com)、[发布入口](https://rookiecode.com/publish)、[完整发布核验与验收缺口](evidence/preview-v0.2.1-2026-10-30.md)。
 [v0.2.1 Beta 实施](releases/v0.2.1-preview.md)：[在线纪要指南](engineering/beta-sharing.md)与[验证边界](evidence/beta-implementation-2026-10-30.md)，[发布核验回执](evidence/preview-v0.2.1-2026-10-30.md)。
