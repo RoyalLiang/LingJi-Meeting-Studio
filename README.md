@@ -1,6 +1,6 @@
 <p align="center">
 
-[v0.2.2 桌面修复](docs/releases/v0.2.2-preview.md)已发布：修正保存状态、三端默认启动加载、设置重绘与顶部居中录音悬浮条；五项 CI 和三平台安装包完整下载核验通过。[发布回执与边界](docs/evidence/preview-v0.2.2-2026-10-30.md)。
+[v0.2.3 纪要与桌面修正](docs/releases/v0.2.3-preview.md)已发布：顶部宽幅悬浮重点卡片、90秒默认刷新、稳定备份入口及可靠说话人标签；五项CI和三平台完整安装包核验通过。[发布回执与边界](docs/evidence/preview-v0.2.3-2026-10-31.md)。
   <img src="apps/desktop/src-tauri/icons/icon.png" width="88" alt="聆记标识">
 </p>
 
@@ -23,7 +23,7 @@
 
 聆记是一个会议记录工作台，把录音、转录、AI 纪要和行动候选放在同一条可回溯的记录中。可以在浏览器中使用，也可以安装 Windows、macOS 或 Linux 客户端，接入麦克风与系统音频。
 
-当前提供预览版。最近一次已验证发布为 [v0.1.39](docs/evidence/preview-v0.1.39-2026-10-28.md)；下载、正文校验值及各版本验证范围以 [Releases](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases) 为准。
+当前提供预览版。最近一次已验证发布为 [v0.2.3](docs/evidence/preview-v0.2.3-2026-10-31.md)；下载、正文校验值及各版本验证范围以 [Releases](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases) 为准。
 
 ## 主要能力
 
