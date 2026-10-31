@@ -37,8 +37,17 @@ jobs:
           const url=`https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/actions/jobs/124541073358/logs`;
           const response=await fetch(url,{headers:{Authorization:`Bearer ${process.env.GH_TOKEN}`,Accept:'application/vnd.github+json'}});
           if(!response.ok)throw new Error(`Diagnostic log request failed: ${response.status}`);
-          const text=await response.text();
+          const text=(await response.text()).split('\n').slice(-160).join('\n');
           const markers={
+            npmError:text.includes('npm error'),
+            spawnCargo:/spawn cargo.*ENOENT/.test(text),
+            spawnNode:/spawn node.*ENOENT/.test(text),
+            spawnNpm:/spawn npm.*ENOENT/.test(text),
+            cwdMissing:/getcwd|uv_cwd/.test(text),
+            processKilled:/SIGKILL|Killed: 9|signal: 9/.test(text),
+            diskFull:/No space left on device/.test(text),
+            networkFailure:/ENOTFOUND|ECONNRESET|ETIMEDOUT/.test(text),
+            nodeStack:/file:\/\/.*\.mjs:/.test(text),
             rustCompile:text.includes('could not compile'),
             bundleFailure:text.includes('failed to bundle'),
             iconMismatch:text.includes('Regenerate '),
