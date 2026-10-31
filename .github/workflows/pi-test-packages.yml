@@ -23,7 +23,42 @@ env:
   WORKFLOW_SHA: ${{ github.sha }}
 
 jobs:
+  inspect_windows:
+    if: contains(github.event.head_commit.message, '[inspect-windows]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+    steps:
+      - name: Read fixed Windows package progress flags
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node --input-type=module <<'NODE'
+          let response;
+          for(let attempt=0;attempt<18;attempt++){
+            response=await fetch(`https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/actions/jobs/124541073532/logs`,{headers:{Authorization:`Bearer ${process.env.GH_TOKEN}`,Accept:'application/vnd.github+json'}});
+            if(response.ok)break;
+            await response.body?.cancel();
+            if(attempt<17)await new Promise(resolve=>setTimeout(resolve,25000));
+          }
+          if(!response.ok){console.log('::notice title=Fixed Windows build progress::'+JSON.stringify({logsAvailable:false}));process.exit(0);}
+          const text=await response.text();
+          const markers={
+            rustCompilation:text.includes('Compiling '),
+            releaseFinished:/Finished .*release.*profile/.test(text),
+            bundling:text.includes('Bundling '),
+            webviewDownload:/Downloading.*WebView2/i.test(text),
+            silentProbe:text.includes('Windows packaging: Verify silent installation'),
+            uiProbe:text.includes('Windows packaging: Inspect installer UI'),
+            cancelled:text.includes('The operation was canceled'),
+          };
+          const codes=Object.fromEntries(['ERR_MODULE_NOT_FOUND','ERR_DLOPEN_FAILED','ERR_ASSERTION','ENOENT','EACCES','ETIMEDOUT','SIGKILL'].map(code=>[code,text.includes(code)]));
+          console.log('::notice title=Fixed Windows build progress::'+JSON.stringify({logsAvailable:true,markers,codes}));
+          NODE
+
   macos:
+    if: ${{ !contains(github.event.head_commit.message, '[inspect-windows]') }}
     runs-on: macos-15
     timeout-minutes: 90
     steps:
@@ -58,6 +93,7 @@ jobs:
           retention-days: 14
 
   windows:
+    if: ${{ !contains(github.event.head_commit.message, '[inspect-windows]') }}
     runs-on: windows-2025
     timeout-minutes: 90
     steps:
