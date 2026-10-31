@@ -62,7 +62,7 @@ svg { flex-shrink:0; }
 .brand b { font-size:20px; letter-spacing:.03em; }
 .brand>span:last-child:not(.brand-mark) { color:var(--ink-3); font-size:10px; letter-spacing:.03em; }
 .brand-mark { display:grid; place-items:center; width:36px; height:36px; background:var(--accent); color:var(--on-accent); border-radius:12px; }
-.app-shell { display:flex; max-width:1720px; min-height:calc(100dvh - 32px); margin:16px auto; padding:0 16px; gap:16px; }
+.app-shell { display:flex; min-height:calc(100dvh - 32px); margin:16px auto; padding:0 16px; gap:16px; }
 .sidebar { width:256px; flex:none; border-radius:var(--r-lg); display:flex; flex-direction:column; padding:20px 16px 12px; position:sticky; top:16px; height:calc(100dvh - 32px); }
 .sidebar .brand { padding:0 8px; margin-bottom:28px; }
 .new-record { width:100%; margin-bottom:22px; }
@@ -273,7 +273,7 @@ html,body,#root { width:100%; height:100%; min-height:0; overflow-y:hidden; over
 html,body { overflow-x:clip; }
 * { scrollbar-width:none; }
 *::-webkit-scrollbar { display:none; width:0; height:0; }
-.app-shell { width:min(1720px,calc(100% - 32px)); height:calc(100dvh - 32px); min-height:0; margin:16px auto; padding:0; gap:18px; align-items:stretch; }
+.app-shell { width:calc(100% - 32px); height:calc(100dvh - 32px); min-height:0; margin:16px auto; padding:0; gap:18px; align-items:stretch; }
 .sidebar { position:relative; top:auto; height:100%; min-height:0; flex-shrink:0; }
 .record-list { min-height:0; overscroll-behavior:contain; }
 .workspace,.workspace.with-minutes { position:relative; display:flex; flex-direction:column; padding:0; height:100%; min-height:0; overflow:hidden; }
@@ -1052,3 +1052,9 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 @media(max-width:700px) { .rail-brand { margin:0; gap:8px; } }
 
 .meeting-share-preview{padding:18px;border:1px solid var(--border);border-radius:12px;background:var(--panel-2);}.meeting-share-preview h4{font-size:15px;margin-bottom:12px;}.meeting-share-preview p{font-size:13px;line-height:1.85;margin-top:10px;overflow-wrap:anywhere;}
+
+.meeting-controls.is-processing .record-indicator,.meeting-controls.is-processing .capture-status b { color:var(--accent); }
+.meeting-header .meeting-controls:is(.is-processing,.is-blocked) .capture-status b { font-size:13px; white-space:normal; overflow:visible; }
+.meeting-header .meeting-controls:is(.is-processing,.is-blocked) .capture-status small { font-size:12px; line-height:1.6; max-width:none; white-space:normal; overflow:visible; text-overflow:clip; }
+
+.meeting-controls.is-blocked .record-indicator,.meeting-controls.is-blocked .capture-status b { color:var(--warn); }
