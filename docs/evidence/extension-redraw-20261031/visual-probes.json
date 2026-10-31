@@ -1,0 +1,23 @@
+[
+  {
+    "width": 1440,
+    "sticky": [
+      "app-nav"
+    ],
+    "loadedBrand": true
+  },
+  {
+    "width": 768,
+    "sticky": [
+      "app-nav"
+    ],
+    "loadedBrand": true
+  },
+  {
+    "width": 390,
+    "sticky": [
+      "app-topbar"
+    ],
+    "loadedBrand": true
+  }
+]

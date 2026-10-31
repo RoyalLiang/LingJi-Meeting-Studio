@@ -1,10 +1,39 @@
 [
   {
+    "date": "2026-10-31",
+    "page": "meeting-extension-center-redraw",
+    "register": "product",
+    "status": "proposed-awaiting-user",
+    "axes": {
+      "palette": "near-white sage neutrals and restrained jade",
+      "type": "humanist system and Chinese system",
+      "layout": "open plane sidebar, full-width object lists, on-demand right drawers",
+      "engine": "resident controls and incremental streaming feedback",
+      "material": "flat paper, no resting shadows"
+    },
+    "dials": {
+      "soul": 6,
+      "spectacle": 1,
+      "density": 7
+    },
+    "brief": "User rejected the framed split-pane draft; redraw with taste and finesse. Meeting-first, local prototype only."
+  },
+  {
     "date": "2026-10-11",
     "page": "meeting-studio",
     "register": "product",
-    "axes": { "palette": "sage neutrals and jade", "type": "humanist system and Chinese system", "layout": "floating workbench with on-demand minutes", "engine": "recording and save feedback", "material": "frosted glass" },
-    "dials": { "soul": 6, "spectacle": 2, "density": 5 },
+    "axes": {
+      "palette": "sage neutrals and jade",
+      "type": "humanist system and Chinese system",
+      "layout": "floating workbench with on-demand minutes",
+      "engine": "recording and save feedback",
+      "material": "frosted glass"
+    },
+    "dials": {
+      "soul": 6,
+      "spectacle": 2,
+      "density": 5
+    },
     "brief": "Browser-first meeting transcription. User confirmed on-demand minutes drawer, modern frosted glass throughout. No photography."
   }
 ]

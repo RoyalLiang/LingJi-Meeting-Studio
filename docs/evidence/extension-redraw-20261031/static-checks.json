@@ -1,0 +1,53 @@
+{
+  "assets": [
+    "../../../desktop/assets/lingji-brand-mark.svg",
+    "./?screen=meeting",
+    "./center.css",
+    "./center.html",
+    "./center.mjs"
+  ],
+  "missingAssets": 0,
+  "contrast": [
+    {
+      "foreground": "#252d28",
+      "background": "#fdfefc",
+      "ratio": 13.98,
+      "required": 4.5
+    },
+    {
+      "foreground": "#657167",
+      "background": "#fdfefc",
+      "ratio": 5.05,
+      "required": 4.5
+    },
+    {
+      "foreground": "#fdfefb",
+      "background": "#2d3931",
+      "ratio": 11.92,
+      "required": 4.5
+    },
+    {
+      "foreground": "#32664b",
+      "background": "#fdfefc",
+      "ratio": 6.62,
+      "required": 4.5
+    },
+    {
+      "foreground": "#8b6428",
+      "background": "#faf5ea",
+      "ratio": 4.89,
+      "required": 4.5
+    },
+    {
+      "foreground": "#77827a",
+      "background": "#fdfefc",
+      "ratio": 3.95,
+      "required": 3
+    }
+  ],
+  "sourceSha256": {
+    "apps/web/prototypes/minutes-publish/center.html": "e2649e86aca9e40f78aa7a8079d06f20efd7ae92f56b5e07f948ef91c1fef34b",
+    "apps/web/prototypes/minutes-publish/center.css": "7c3995eec3c574d6bdc93b21073d768b6e63dc28ccb05afdf11c288b92133b68",
+    "apps/web/prototypes/minutes-publish/center.mjs": "a5cd7b978682f7b1062c3649c3f7dee17e703c5c9e65a9474cd8ad7592952ab8"
+  }
+}

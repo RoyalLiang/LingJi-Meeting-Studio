@@ -1,0 +1,763 @@
+{
+  "date": "2026-10-31",
+  "browser": "ego-lite",
+  "scope": "isolated memory-only prototype",
+  "checks": [
+    {
+      "name": "skills at 1440",
+      "ok": true
+    },
+    {
+      "name": "plugins at 1440",
+      "ok": true
+    },
+    {
+      "name": "runs at 1440",
+      "ok": true
+    },
+    {
+      "name": "schedule at 1440",
+      "ok": true
+    },
+    {
+      "name": "assistant at 1440",
+      "ok": true
+    },
+    {
+      "name": "drawer footer at 1440 view=skills&detail=skill",
+      "ok": true
+    },
+    {
+      "name": "drawer footer at 1440 view=plugins&detail=plugin&tab=tools",
+      "ok": true
+    },
+    {
+      "name": "drawer footer at 1440 view=skills&dialog=install",
+      "ok": true
+    },
+    {
+      "name": "skills at 1280",
+      "ok": true
+    },
+    {
+      "name": "plugins at 1280",
+      "ok": true
+    },
+    {
+      "name": "runs at 1280",
+      "ok": true
+    },
+    {
+      "name": "schedule at 1280",
+      "ok": true
+    },
+    {
+      "name": "assistant at 1280",
+      "ok": true
+    },
+    {
+      "name": "drawer footer at 1280 view=skills&detail=skill",
+      "ok": true
+    },
+    {
+      "name": "drawer footer at 1280 view=plugins&detail=plugin&tab=tools",
+      "ok": true
+    },
+    {
+      "name": "drawer footer at 1280 view=skills&dialog=install",
+      "ok": true
+    },
+    {
+      "name": "skills at 1024",
+      "ok": true
+    },
+    {
+      "name": "plugins at 1024",
+      "ok": true
+    },
+    {
+      "name": "runs at 1024",
+      "ok": true
+    },
+    {
+      "name": "schedule at 1024",
+      "ok": true
+    },
+    {
+      "name": "assistant at 1024",
+      "ok": true
+    },
+    {
+      "name": "drawer footer at 1024 view=skills&detail=skill",
+      "ok": true
+    },
+    {
+      "name": "drawer footer at 1024 view=plugins&detail=plugin&tab=tools",
+      "ok": true
+    },
+    {
+      "name": "drawer footer at 1024 view=skills&dialog=install",
+      "ok": true
+    },
+    {
+      "name": "skills at 768",
+      "ok": true
+    },
+    {
+      "name": "plugins at 768",
+      "ok": true
+    },
+    {
+      "name": "runs at 768",
+      "ok": true
+    },
+    {
+      "name": "schedule at 768",
+      "ok": true
+    },
+    {
+      "name": "assistant at 768",
+      "ok": true
+    },
+    {
+      "name": "drawer footer at 768 view=skills&detail=skill",
+      "ok": true
+    },
+    {
+      "name": "drawer footer at 768 view=plugins&detail=plugin&tab=tools",
+      "ok": true
+    },
+    {
+      "name": "drawer footer at 768 view=skills&dialog=install",
+      "ok": true
+    },
+    {
+      "name": "skills at 414",
+      "ok": true
+    },
+    {
+      "name": "plugins at 414",
+      "ok": true
+    },
+    {
+      "name": "runs at 414",
+      "ok": true
+    },
+    {
+      "name": "schedule at 414",
+      "ok": true
+    },
+    {
+      "name": "assistant at 414",
+      "ok": true
+    },
+    {
+      "name": "drawer footer at 414 view=skills&detail=skill",
+      "ok": true
+    },
+    {
+      "name": "drawer footer at 414 view=plugins&detail=plugin&tab=tools",
+      "ok": true
+    },
+    {
+      "name": "drawer footer at 414 view=skills&dialog=install",
+      "ok": true
+    },
+    {
+      "name": "skills at 390",
+      "ok": true
+    },
+    {
+      "name": "plugins at 390",
+      "ok": true
+    },
+    {
+      "name": "runs at 390",
+      "ok": true
+    },
+    {
+      "name": "schedule at 390",
+      "ok": true
+    },
+    {
+      "name": "assistant at 390",
+      "ok": true
+    },
+    {
+      "name": "drawer footer at 390 view=skills&detail=skill",
+      "ok": true
+    },
+    {
+      "name": "drawer footer at 390 view=plugins&detail=plugin&tab=tools",
+      "ok": true
+    },
+    {
+      "name": "drawer footer at 390 view=skills&dialog=install",
+      "ok": true
+    },
+    {
+      "name": "skills at 375",
+      "ok": true
+    },
+    {
+      "name": "plugins at 375",
+      "ok": true
+    },
+    {
+      "name": "runs at 375",
+      "ok": true
+    },
+    {
+      "name": "schedule at 375",
+      "ok": true
+    },
+    {
+      "name": "assistant at 375",
+      "ok": true
+    },
+    {
+      "name": "drawer footer at 375 view=skills&detail=skill",
+      "ok": true
+    },
+    {
+      "name": "drawer footer at 375 view=plugins&detail=plugin&tab=tools",
+      "ok": true
+    },
+    {
+      "name": "drawer footer at 375 view=skills&dialog=install",
+      "ok": true
+    },
+    {
+      "name": "skills at 320",
+      "ok": true
+    },
+    {
+      "name": "plugins at 320",
+      "ok": true
+    },
+    {
+      "name": "runs at 320",
+      "ok": true
+    },
+    {
+      "name": "schedule at 320",
+      "ok": true
+    },
+    {
+      "name": "assistant at 320",
+      "ok": true
+    },
+    {
+      "name": "drawer footer at 320 view=skills&detail=skill",
+      "ok": true
+    },
+    {
+      "name": "drawer footer at 320 view=plugins&detail=plugin&tab=tools",
+      "ok": true
+    },
+    {
+      "name": "drawer footer at 320 view=skills&dialog=install",
+      "ok": true
+    },
+    {
+      "name": "search empty state",
+      "ok": true
+    },
+    {
+      "name": "search preserves input node",
+      "ok": true
+    },
+    {
+      "name": "install requires sample selection",
+      "ok": true
+    },
+    {
+      "name": "install clears search and adds item",
+      "ok": true
+    },
+    {
+      "name": "unused skill can uninstall",
+      "ok": true
+    },
+    {
+      "name": "busy skill version protected",
+      "ok": true
+    },
+    {
+      "name": "tool permissions stay per plugin",
+      "ok": true
+    },
+    {
+      "name": "revoke current plugin only",
+      "ok": true
+    },
+    {
+      "name": "connection validates HTTPS",
+      "ok": true
+    },
+    {
+      "name": "connection rejects embedded credentials",
+      "ok": true
+    },
+    {
+      "name": "new connection disabled by default",
+      "ok": true
+    },
+    {
+      "name": "connection retains endpoint without invented credentials",
+      "ok": true
+    },
+    {
+      "name": "revoked meeting access blocks new run",
+      "ok": true
+    },
+    {
+      "name": "blocked run has resident stop",
+      "ok": true
+    },
+    {
+      "name": "disabled original skill needs enable",
+      "ok": true
+    },
+    {
+      "name": "rerun retains original skill",
+      "ok": true
+    },
+    {
+      "name": "old plugin version retained on resume",
+      "ok": true
+    },
+    {
+      "name": "version drawer reflects restored version",
+      "ok": true
+    },
+    {
+      "name": "cancelling waits for acknowledgement",
+      "ok": true
+    },
+    {
+      "name": "cancel reaches terminal state",
+      "ok": true
+    },
+    {
+      "name": "rule retains chosen skill and starts disabled",
+      "ok": true
+    },
+    {
+      "name": "explicit rule enable",
+      "ok": true
+    },
+    {
+      "name": "send confirms scope first",
+      "ok": true
+    },
+    {
+      "name": "scope cancel retains question",
+      "ok": true
+    },
+    {
+      "name": "scope confirm starts requested stream",
+      "ok": true
+    },
+    {
+      "name": "run cancellation stops associated chat stream",
+      "ok": true
+    },
+    {
+      "name": "source drawer keeps original transcript version",
+      "ok": true
+    },
+    {
+      "name": "mobile queue opens task detail",
+      "ok": true
+    },
+    {
+      "name": "mobile returns to queue",
+      "ok": true
+    },
+    {
+      "name": "mobile navigation works",
+      "ok": true
+    },
+    {
+      "name": "automation warns about disabled Skill",
+      "ok": true
+    }
+  ],
+  "metrics": [
+    {
+      "view": "skills",
+      "width": 1440,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "plugins",
+      "width": 1440,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "runs",
+      "width": 1440,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "schedule",
+      "width": 1440,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "assistant",
+      "width": 1440,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "skills",
+      "width": 1280,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "plugins",
+      "width": 1280,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "runs",
+      "width": 1280,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "schedule",
+      "width": 1280,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "assistant",
+      "width": 1280,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "skills",
+      "width": 1024,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "plugins",
+      "width": 1024,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "runs",
+      "width": 1024,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "schedule",
+      "width": 1024,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "assistant",
+      "width": 1024,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "skills",
+      "width": 768,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "plugins",
+      "width": 768,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "runs",
+      "width": 768,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "schedule",
+      "width": 768,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "assistant",
+      "width": 768,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "skills",
+      "width": 414,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "plugins",
+      "width": 414,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "runs",
+      "width": 414,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "schedule",
+      "width": 414,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "assistant",
+      "width": 414,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "skills",
+      "width": 390,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "plugins",
+      "width": 390,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "runs",
+      "width": 390,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "schedule",
+      "width": 390,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "assistant",
+      "width": 390,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "skills",
+      "width": 375,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "plugins",
+      "width": 375,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "runs",
+      "width": 375,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "schedule",
+      "width": 375,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "assistant",
+      "width": 375,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "skills",
+      "width": 320,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "plugins",
+      "width": 320,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "runs",
+      "width": 320,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "schedule",
+      "width": 320,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    },
+    {
+      "view": "assistant",
+      "width": 320,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": 0,
+      "unnamedNav": 0
+    }
+  ],
+  "presentationChecks": [
+    {
+      "name": "usage state r1",
+      "ok": true
+    },
+    {
+      "name": "usage state r2",
+      "ok": true
+    },
+    {
+      "name": "usage state r3",
+      "ok": true
+    }
+  ]
+}

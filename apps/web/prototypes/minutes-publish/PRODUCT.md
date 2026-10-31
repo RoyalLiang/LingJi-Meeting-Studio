@@ -4,6 +4,8 @@
 
 2026-10-31 新增 `center.html` / `center.css` / `center.mjs`：Skill/插件中心与 Pi Durable 调度设计评审，仍为独立原型。最新分期和截图见 [中心设计](../../../../docs/design/extension-center-2026-10-31.md)。`index.html` 的旧扩展页面保留用于比较；本轮中心评审以 `center.html` 为准。
 
+同日重绘：用户否定上一版样式、布局、容器位置与文案，要求使用 taste skill 和 finesse-ui。当前 `center.*` 已改为连续工作面、单一侧栏、全幅列表与右侧详情抽屉，最新图片见 [重绘稿](../../../../docs/design/extension-center-redraw-2026-10-31.md)。新视觉仍待确认。原型所有状态均在内存；连接只验证输入，凭据不保存原文；选择导入仅展示固定示例。
+
 ## 已确认的约束
 
 - 面向会议内容的整理、回顾与有来源的问答；保留现有聆记标识。

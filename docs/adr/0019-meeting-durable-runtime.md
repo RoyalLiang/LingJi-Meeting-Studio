@@ -2,6 +2,8 @@
 
 2026-10-31。状态：**proposed，设计与实施计划待确认**。本提议细化 ADR 0018 的执行底座选择，不表示已接入主程序。
 
+界面最新评审稿已按用户要求重绘，见 [连续工作面设计](../design/extension-center-redraw-2026-10-31.md)。上一份视觉稿未被接受；本 ADR 的能力与接入计划仍待确认。
+
 ## 背景与证据
 
 用户引入 Pi 的目的，是复用 agent harness 的调度、生命周期与恢复，减少后台维护与链路复杂性；产品围绕会议而非 coding。上轮锁定 Pi 1.4.0 / Node 26.12.1 的 [隔离 fixture](../../services/records/prototypes/pi-meeting-fixture/README.md)通过 8 项断言，覆盖队列去重、工具并发策略、父子取消、版本缺失与 SQLite 检查点恢复。没有验证真实供应商、MCP、Skill 安装器、主程序授权或全局资源调度。
