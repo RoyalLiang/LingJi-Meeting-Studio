@@ -28,7 +28,7 @@ function harness(api) {
   const exports = {};
   const sandbox = {
     module: { exports }, exports,
-    require: name => name === 'react' ? { useState, useRef, useEffect, useCallback } : name === 'react/jsx-runtime' ? {
+    require: name => name === 'react' ? { useState, useRef, useEffect, useCallback, lazy: () => component } : name === 'react/jsx-runtime' ? {
       jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }), Fragment: Symbol('fragment')
     } : name === './api' ? { api, ApiError: class ApiError extends Error { constructor(message, status) { super(message); this.status = status; } }, setCsrf() {}, setAudioTransport() {}, messageOf: error => error.message } : generic,
     location: { pathname: '/', search: '' }, localStorage: { getItem: () => null }, navigator: { onLine: true },
