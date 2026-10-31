@@ -1,0 +1,55 @@
+{
+  "nsis": "3.13",
+  "results": [
+    {
+      "count": 1000,
+      "mode": "direct",
+      "wallMs": 240.736625,
+      "timeoutMs": 30000,
+      "status": 0,
+      "signal": null,
+      "peHeader": true,
+      "bytes": 41854,
+      "allHashAssertionsPassed": true,
+      "compileOnly": true
+    },
+    {
+      "count": 1000,
+      "mode": "legacy",
+      "wallMs": 11570.258957999999,
+      "timeoutMs": 30000,
+      "status": 0,
+      "signal": null,
+      "peHeader": true,
+      "bytes": 41854,
+      "allHashAssertionsPassed": true,
+      "compileOnly": true
+    },
+    {
+      "count": 12770,
+      "mode": "direct",
+      "wallMs": 4880.129917000002,
+      "timeoutMs": 30000,
+      "status": 0,
+      "signal": null,
+      "peHeader": true,
+      "bytes": 41854,
+      "allHashAssertionsPassed": true,
+      "compileOnly": true
+    },
+    {
+      "count": 12770,
+      "mode": "legacy",
+      "wallMs": 30001.956959,
+      "timeoutMs": 30000,
+      "status": null,
+      "signal": "SIGTERM",
+      "error": "ETIMEDOUT",
+      "peHeader": false,
+      "bytes": 0,
+      "allHashAssertionsPassed": false,
+      "compileOnly": true
+    }
+  ],
+  "scope": "Compile-time exact hash and missing/case/path assertions; no Windows installer execution, real resources or compression"
+}

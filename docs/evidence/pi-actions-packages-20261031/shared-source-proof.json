@@ -1,0 +1,25 @@
+{
+  "macosRevision": "6e353a88872ea70555f61cae641bc98a48eef193",
+  "windowsRevision": "871176d393af75c076e99198b89aa27d1bde8f02",
+  "unchangedSharedApplicationPaths": [
+    "apps/web",
+    "apps/desktop/src",
+    "apps/desktop/src-tauri/src",
+    "apps/desktop/src-tauri/Cargo.toml",
+    "apps/desktop/src-tauri/Cargo.lock",
+    ":(glob)apps/desktop/src-tauri/tauri*.conf.json",
+    "services/records/src",
+    "packages/records/src",
+    "package-lock.json",
+    "scripts/prepare-client-backend.mjs",
+    "scripts/prepare-local-asr.mjs"
+  ],
+  "differences": [],
+  "unchangedRootPackageFields": [
+    "version",
+    "dependencies",
+    "devDependencies",
+    "engines"
+  ],
+  "scope": "Windows changes installer hash generation, compiler regression and CI only; not identical full Git snapshots"
+}

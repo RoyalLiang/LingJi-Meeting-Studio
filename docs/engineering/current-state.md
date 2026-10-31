@@ -1,6 +1,6 @@
-## Pi 双平台 Actions 构建（2026-10-31，进行中）
+## Pi 双平台 Actions 测试包（2026-10-31，已产出，待真机验收）
 
-用户确认终端推送后，研究分支已上传，当前源码 `6e353a8`；Mac 构建/包级验证与附件上传成功，Windows 安装器仍在构建/验证，不计为完成。已修复专用 CI 漏掉 DMG 布局标志导致的 `.DS_Store` ENOENT。无 main/tag/Release 变更。[当前回执与真机指南](pi-actions-test-packages-2026-10-31.md)。
+Mac `6e353a8` 作业与Windows `871176d`优化构建均成功并上传Actions附件。已核对源码/作业/大小/摘要/有效期，809项Node回归和真实NSIS编译检查通过；修复Mac DMG布局标志遗漏与Pi资源放大NSIS线性查找宏的问题，所有资源/哈希/模型选装和升级行为保留。两端共享应用源码一致，Windows额外更新打包工具。仅测试分支，无main/tag/Release变更。[下载、回执与真机指南](pi-actions-test-packages-2026-10-31.md)。
 
 ## Pi 运行底座整合验证（2026-10-31，仅本地）
 

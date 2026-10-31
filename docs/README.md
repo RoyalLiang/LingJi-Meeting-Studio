@@ -1,4 +1,4 @@
-[Pi Actions 测试包](engineering/pi-actions-test-packages-2026-10-31.md)：Mac 已通过并上传；Windows 安装器构建/验证中，仅测试分支与 Actions 附件，未创建 Release。
+[Pi Actions 测试包](engineering/pi-actions-test-packages-2026-10-31.md)：Mac与Windows均构建/验证成功，提供下载与分平台源码回执；809项Node回归通过，待真机验收，未创建Release。
 
 [Pi 本地真机测试包](engineering/pi-local-packages-2026-10-31.md)：Mac ARM64 本地产物已构建；Windows 安装包等待构建环境，仅提供源码套件。
 

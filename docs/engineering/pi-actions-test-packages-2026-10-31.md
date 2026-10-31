@@ -1,38 +1,53 @@
 # Pi 双平台 Actions 测试包
 
-2026-10-31，当前为部分完成：Mac 验证及附件上传成功，Windows 安装器仍在构建/验证。不是 Release 发布回执。
+2026-10-31。Mac ARM64 与 Windows x64 测试包均已产出并通过各自 CI 检查，待真机验收。只推送测试分支 `dev_pi-chain-regression-20261031`，没有改 main、版本标签或 GitHub Release，也没有替换本机已安装程序。
 
-用户确认使用终端推送后，已上传测试分支 `dev_pi-chain-regression-20261031`；未改 main、创建版本标签或 Release。仓库 canonical 名称为 `RoyalLiang/LingJi-Meeting-Studio`，原 `lingji` URL 重定向至此。
+## 下载与来源
 
-[当前构建](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/41205937873)冻结源码为 `6e353a88872ea70555f61cae641bc98a48eef193`，应用仍显示 0.2.6。附件按平台与完整源码 SHA 命名，保留 14 天。实际摘要、大小、有效期及当前 Windows 状态见[机器可读回执](../evidence/pi-actions-packages-20261031/receipt.json)。
+需登录 GitHub，解压 Actions ZIP 后使用其中的 `.dmg` 或 `.exe`。附件保留 14 天，实际有效期见[API回执](../evidence/pi-actions-packages-20261031/receipt.json)。
 
-## 当前验证
+| 平台 | 下载 | ZIP大小 | 二进制构建源码 |
+| --- | --- | ---: | --- |
+| Mac Apple Silicon，macOS 14.6+ | [Mac测试包](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/41205937873/artifacts/13044886750) | 240341575字节，约229MiB | `6e353a88872ea70555f61cae641bc98a48eef193` |
+| Windows x64 | [Windows测试包](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/41212396795/artifacts/13047649411) | 417608896字节，约398MiB | `871176d393af75c076e99198b89aa27d1bde8f02` |
 
-Mac 的完整 Node 回归、lint、类型检查、Web 构建、Rust 原生测试、冻结源码打包、DMG/Finder 布局、签名与包级生命周期、Pi 初始化、包内本地 ASR 和附件上传步骤通过。Pi 包级探针要求 agent API 200 且任务数组有效；它不等于真实云模型复盘通过。更早的[本地包内 Pi fixture 及整链证据](pi-local-packages-2026-10-31.md)另行保留。
+两端仍显示应用版本 0.2.6。Mac 使用[已通过的 macos 作业](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/41205937873/job/124550906229)；该旧 run 的 Windows 后来超时，所以 Windows 使用[优化后成功的 run](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/41212396795)。两端不是同一完整 Git 快照；Windows 额外改了打包哈希生成、测试与 CI，应用/前端/后端/原生源码、依赖锁、版本和依赖保持一致，见[共享应用源核对](../evidence/pi-actions-packages-20261031/shared-source-proof.json)。
 
-Windows 的定点打包/来源测试、Web 构建、后端与 ASR 准备、Rust 原生测试通过，当前仍在既有安装器生成及安装/卸载/UI/资源验证脚本内，尚无本轮 Windows 附件，不计为完成。
+## 验证
 
-首次 run `41202556753` 的 Mac 打包失败。固定类别诊断确认 `.DS_Store` 缺失的 ENOENT；专用工作流漏掉原发布工作流的 `TAURI_BUNDLER_DMG_IGNORE_CI=true`。补齐配置后当前 Mac CI 成功。临时诊断已移除，最终工作流仅 `contents:read` 和 Actions 附件上传，不发布 Release。修复只改工作流，供打包的应用/后端/脚本源码与首轮 `5898c90` 无差异。
+- 本地 Node 26.12.1 全量回归 **809/809**，无跳过；lint 通过，独立审查无未解决 P1/P2。
+- Mac CI 的完整回归、类型/Web构建、Rust测试、冻结源码 DMG、Finder布局、签名、独立后端/重启持久化、Pi初始化、包内真实本地ASR、附件上传均通过。
+- Windows CI 的真实NSIS前置检查、定点回归、Web/后端准备、Rust测试、冻结源码打包、静默安装/卸载、资源完整性、独立后端/Pi初始化、本地ASR、模型选装、升级与UI探针、附件上传通过。
+- Pi包级探针要求 `/api/agent/tasks` 返回200且任务数组有效，能拦住SDK初始化失败；它不等于真实云模型任务或实体音源通过。此前[本地Pi fixture和整链证据](pi-local-packages-2026-10-31.md)另行保留。
+- 已通过GitHub API核对两端来源SHA、作业结论、附件名称/字节数/digest/未过期。digest是Actions ZIP封装摘要；内层安装器校验文件随附件提供。没有下载附件、解包或安装补验。
 
-摘要取自 GitHub API 的 Actions ZIP 附件元数据，不能视为独立下载/安装或内层 exe/DMG 的字节验证；内层校验文件随附件提供。没有下载附件补验。
+## 两项打包修复
+
+Mac专用CI漏掉原发布工作流的 `TAURI_BUNDLER_DMG_IGNORE_CI=true`，固定类别诊断确认挂载卷 `.DS_Store` 缺失的ENOENT。补齐后Mac真实CI成功。
+
+Pi资源约12770文件，原NSIS哈希宏对每个资源都扫描整表，约1.63亿次条件比较。改为按完整目标路径建立符号索引，每资源固定次数查询；仍以实际字节计算SHA-256，保留调用方清理、missing复制回退、模型选装和升级逻辑。增加嵌套符号边界及Windows大小写冲突的fail-closed检查，没有裁剪资源。
+
+真实NSIS3.13实验：1000项旧11.57秒、新0.24秒；12770项旧固定30秒超时、新4.88秒。实际生产函数4000项旧30秒超时，新约1.64秒通过全部哈希/大小写/特殊路径/missing/PE断言。[编译结果](../evidence/pi-actions-packages-20261031/nsis-compile-results.json)。
+
+另用本地Mac公开程序资源12770文件、504171063字节，逐文件独立SHA核验，再用相同 `/SOLID lzma` 编译，138.45秒通过180秒上限。[完整payload实验](../evidence/pi-actions-packages-20261031/nsis-real-payload-result.json)仅为编译性能验证，输出是含Mac资源的实验PE，未执行/分发，不是Windows客户端；不能外推Windows耗时或认定旧90分钟等待只有单一原因。最终Windows安装包以真实CI通过结果为准。
 
 ## 真机测试启动
 
-先将测试程序放到独立测试目录。候选沿用 Preview 标识和 0.2.6 版本，真实既有数据升级未验，建议先以独立数据目录验证。以下路径替换为实际测试程序路径：
+候选沿用Preview标识和0.2.6版本。先选择独立测试安装目录，再以独立数据目录启动；真实既有用户数据升级尚未验收。替换为实际程序路径：
 
-Mac（Apple Silicon，macOS 14.6+）：
+Mac：
 
 ```sh
 TTS_CLIENT_DATA_DIR="$HOME/Library/Application Support/Lingji-Pi-Test-6e353a8" "/你的测试目录/聆记 Preview.app/Contents/MacOS/tts-client"
 ```
 
-Windows x64（安装包完成后使用）：
+Windows：
 
 ```powershell
-$env:TTS_CLIENT_DATA_DIR = Join-Path $env:LOCALAPPDATA 'Lingji-Pi-Test-6e353a8'
+$env:TTS_CLIENT_DATA_DIR = Join-Path $env:LOCALAPPDATA 'Lingji-Pi-Test-871176d'
 & 'C:\你的测试目录\tts-client.exe'
 ```
 
-独立目录不会沿用原模型设置，需要重新配置纪要/Pi 模型；包内 SenseVoice 可测试本地转录。按录制→暂停/恢复→停止排空→逐字稿→滚动/最终纪要→重点隐藏/恢复→原音→导出顺序检查，再授权所选会议文字运行 Pi 复盘，核对引用和重启结果。实体音源、权限、驱动、云 ASR/模型与长会议仍待真机验证。
+独立目录需要重新配置纪要/Pi模型；包内SenseVoice可直接测试本地转录。按录制→暂停/恢复→停止排空→逐字稿→滚动/最终纪要→重点隐藏/恢复→原音→导出顺序检查，再授权所选会议文字运行Pi复盘，核对引用和重启结果。
 
-Mac 为 ad-hoc 签名且未公证，Windows 为未签名测试包；系统信任行为与 CI 隔离安装不同，需要测试者按系统提示确认。
+Mac为ad-hoc签名且未公证，Windows未签名。实体音源、权限/驱动、全新机器依赖、真实云ASR/模型及长会议，仍待真机测试；CI安装探针不能替代这些验收。

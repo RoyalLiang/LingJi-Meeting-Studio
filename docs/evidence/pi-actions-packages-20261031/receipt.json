@@ -1,12 +1,12 @@
 {
-  "observedAt": "2026-10-31T13:58:50.416262+00:00",
+  "observedAt": "2026-10-31T15:50:36.025540+00:00",
   "repository": "RoyalLiang/LingJi-Meeting-Studio",
   "branch": "dev_pi-chain-regression-20261031",
-  "sourceRevision": "6e353a88872ea70555f61cae641bc98a48eef193",
-  "runId": 41205937873,
-  "runUrl": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/41205937873",
-  "scope": "Actions test artifacts only; no Release/tag/main publication",
+  "scope": "Test branch and Actions artifacts only; no main/tag/Release publication",
   "macos": {
+    "sourceRevision": "6e353a88872ea70555f61cae641bc98a48eef193",
+    "runId": 41205937873,
+    "jobId": 124550906229,
     "conclusion": "success",
     "artifact": {
       "id": 13044886750,
@@ -15,16 +15,47 @@
       "digest": "sha256:3a40c34247f3119d26aa868946e93425956be8cc11286f531153de0fd01ba573",
       "created_at": "2026-10-31T13:50:40Z",
       "expires_at": "2026-11-14T13:50:30Z",
-      "expired": false
+      "expired": false,
+      "downloadUrl": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/41205937873/artifacts/13044886750"
     },
-    "digestScope": "GitHub artifact ZIP archive; not the inner DMG checksum"
+    "signing": "ad-hoc",
+    "notarized": false
   },
   "windows": {
-    "conclusion": null,
-    "status": "in_progress",
-    "jobId": 124550906424,
-    "stage": "Build and verify Windows test installer"
+    "sourceRevision": "871176d393af75c076e99198b89aa27d1bde8f02",
+    "runId": 41212396795,
+    "jobId": 124570019417,
+    "conclusion": "success",
+    "installerHashesGate": "success",
+    "artifact": {
+      "id": 13047649411,
+      "name": "pi-test-windows-x64-871176d393af75c076e99198b89aa27d1bde8f02",
+      "size_in_bytes": 417608896,
+      "digest": "sha256:54c0f5595aff8fc319f73327e038f73459ac07748b856a133cf8706be4099920",
+      "created_at": "2026-10-31T15:35:42Z",
+      "expires_at": "2026-11-14T15:35:30Z",
+      "expired": false,
+      "downloadUrl": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/41212396795/artifacts/13047649411"
+    },
+    "signing": "unsigned"
   },
   "artifactDownloadedForVerification": false,
-  "physicalDeviceTested": false
+  "physicalDeviceTested": false,
+  "capturedAt": "2026-10-31T15:50:36.025540+00:00",
+  "localValidation": {
+    "nodeVersion": "26.12.1",
+    "nodeRegression": {
+      "pass": 809,
+      "fail": 0,
+      "skip": 0
+    },
+    "lint": "passed",
+    "independentReview": "no unresolved P1/P2",
+    "compiler": "NSIS 3.13",
+    "production4000ResourceTest": "passed after legacy 30-second timeout",
+    "realPayloadCompileOnly": true,
+    "realPayloadIsWindowsApplication": false
+  },
+  "digestScope": "GitHub artifact ZIP archive, not an independent inner installer checksum verification",
+  "validationBoundary": "CI builds and package/install/ASR/Pi-init probes plus API metadata; no downloaded-byte or physical-machine verification"
 }

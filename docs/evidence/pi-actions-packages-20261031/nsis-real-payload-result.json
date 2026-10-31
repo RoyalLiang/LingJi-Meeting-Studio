@@ -1,0 +1,20 @@
+{
+  "nsis": "3.13",
+  "source": "Public program resources from the local macOS Pi package; no user configuration or meetings",
+  "fileCount": 12770,
+  "resourceBytes": 504171063,
+  "hashGenerationMs": 1387.069125,
+  "independentByteHashes": 12770,
+  "allCompileTimeHashAssertionsPassed": true,
+  "compressor": "SetCompressor /SOLID lzma",
+  "dictionaryAndDatablock": "compiler defaults; no overrides in production installer.nsi",
+  "timeoutMs": 180000,
+  "wallMs": 138451.368583,
+  "status": 0,
+  "signal": null,
+  "peHeader": true,
+  "artifactBytes": 196250120,
+  "compileOnly": true,
+  "distributable": false,
+  "scope": "Actual macOS app resource payload with simplified NSIS section; not a Windows application, no GUI/plugin/install execution"
+}
