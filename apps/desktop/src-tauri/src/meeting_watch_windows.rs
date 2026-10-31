@@ -181,14 +181,9 @@ impl Endpoint {
                             Interface::as_raw(session),
                             &mut pid,
                         );
-                        status.ok()?;
-                        // A nonzero success only identifies the initial PID of a cross-process session.
-                        if status.0 != 0 {
-                            return Err(unavailable());
-                        }
-                        if pid == 0 || pid == std::process::id() {
+                        let Some(pid) = super::windows_session_pid(status.0, pid).map_err(|_| unavailable())? else {
                             return Ok(false);
-                        }
+                        };
                         Ok(super::selected_windows(
                             &process_path(pid)?,
                             browser,

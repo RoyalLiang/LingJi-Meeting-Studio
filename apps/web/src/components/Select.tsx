@@ -26,7 +26,7 @@ export function Select({ value, defaultValue, onChange, options, name, label, di
   place();addEventListener('resize',place);addEventListener('scroll',place,true);visualViewport?.addEventListener('resize',place);
   return()=>{popup.current?.hidePopover();removeEventListener('resize',place);removeEventListener('scroll',place,true);visualViewport?.removeEventListener('resize',place);};
  },[open,options.length,menuMinWidth]);
- useEffect(()=>{if(open)popup.current?.querySelector<HTMLElement>(`[data-option-index="${index}"]`)?.scrollIntoView({block:'nearest'});},[index,open]);
+ useEffect(()=>{if(open){const menu=popup.current,option=menu?.querySelector<HTMLElement>(`[data-option-index="${index}"]`);if(menu&&option){const top=option.offsetTop,bottom=top+option.offsetHeight;if(top<menu.scrollTop)menu.scrollTop=top;else if(bottom>menu.scrollTop+menu.clientHeight)menu.scrollTop=bottom-menu.clientHeight;}}},[index,open]);
  return <div ref={root} className={`select select-enhanced ${open?'is-open':''}`} onKeyDown={e=>{
   if(disabled || readOnly || !options.length)return;
   if(e.key==='Escape'){e.preventDefault();e.stopPropagation();setOpen(false);button.current?.focus();}

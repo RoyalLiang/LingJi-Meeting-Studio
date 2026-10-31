@@ -1,0 +1,123 @@
+[
+  {
+    "kind": "extension",
+    "width": 3840,
+    "height": 2053,
+    "overflow": 0,
+    "contentOverflow": 0,
+    "sidebarWidth": 256,
+    "brandFits": true,
+    "navAligned": true,
+    "heading": "30px"
+  },
+  {
+    "kind": "extension",
+    "width": 1920,
+    "height": 1080,
+    "overflow": 0,
+    "contentOverflow": 0,
+    "sidebarWidth": 256,
+    "brandFits": true,
+    "navAligned": true,
+    "heading": "30px"
+  },
+  {
+    "kind": "extension",
+    "width": 1440,
+    "height": 1000,
+    "overflow": 0,
+    "contentOverflow": 0,
+    "sidebarWidth": 256,
+    "brandFits": true,
+    "navAligned": true,
+    "heading": "30px"
+  },
+  {
+    "kind": "extension",
+    "width": 1280,
+    "height": 800,
+    "overflow": 0,
+    "contentOverflow": 0,
+    "sidebarWidth": 256,
+    "brandFits": true,
+    "navAligned": true,
+    "heading": "30px"
+  },
+  {
+    "kind": "extension",
+    "width": 1024,
+    "height": 768,
+    "overflow": 0,
+    "contentOverflow": 0,
+    "sidebarWidth": 220,
+    "brandFits": true,
+    "navAligned": true,
+    "heading": "30px"
+  },
+  {
+    "kind": "extension",
+    "width": 760,
+    "height": 600,
+    "overflow": 0,
+    "contentOverflow": 0,
+    "sidebarWidth": 220,
+    "brandFits": true,
+    "navAligned": true,
+    "heading": "30px"
+  },
+  {
+    "kind": "extension",
+    "width": 390,
+    "height": 844,
+    "overflow": 0,
+    "contentOverflow": 0,
+    "sidebarWidth": 390,
+    "brandFits": true,
+    "navAligned": true,
+    "heading": "26px"
+  },
+  {
+    "kind": "record",
+    "width": 3840,
+    "height": 2053,
+    "notesBottom": 1952,
+    "scrollBottom": 1980,
+    "minutesHeight": 1345.0625,
+    "contentHeight": 1887,
+    "scrollHeight": 1887,
+    "overflow": 0
+  },
+  {
+    "kind": "record",
+    "width": 1920,
+    "height": 1080,
+    "notesBottom": 1003.328125,
+    "scrollBottom": 1007,
+    "minutesHeight": 396.390625,
+    "contentHeight": 938,
+    "scrollHeight": 914,
+    "overflow": 0
+  },
+  {
+    "kind": "record",
+    "width": 1280,
+    "height": 800,
+    "notesBottom": 1003.328125,
+    "scrollBottom": 727,
+    "minutesHeight": 396.390625,
+    "contentHeight": 938,
+    "scrollHeight": 634,
+    "overflow": 0
+  },
+  {
+    "kind": "record",
+    "width": 760,
+    "height": 600,
+    "notesBottom": 1081.328125,
+    "scrollBottom": 527,
+    "minutesHeight": 396.390625,
+    "contentHeight": 982,
+    "scrollHeight": 404,
+    "overflow": 0
+  }
+]
