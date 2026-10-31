@@ -111,7 +111,7 @@ test('Pi center keeps the main workspace mounted and returns to its directory th
   const entry=find(page,item=>item.props?.className?.includes('extension-entry'));
   assert.ok(entry,'the real Pi center has an independent workspace entry');
   entry.props.onClick();page=h.render('Workspace');
-  assert.equal(page.props.className,'app-shell meeting-agent-shell');
+  assert.equal(page.props.className,'app-shell');
   const center=find(page,item=>Array.isArray(item.props?.records)&&typeof item.props?.openRecord==='function');
   assert.ok(center,'the center receives the same real record list and selection callback');
   assert.equal(find(page,item=>item.props?.className?.includes('directory-home-link')).props.className.includes('selected'),false);
@@ -149,10 +149,10 @@ test('native resume returns from Pi center to the same paused meeting without by
   subscription.onRecord(paused);
   let page=h.render('Workspace');
   find(page,item=>item.props?.className?.includes('extension-entry')).props.onClick();
-  page=h.render('Workspace');assert.equal(page.props.className,'app-shell meeting-agent-shell');
+  page=h.render('Workspace');assert.equal(page.props.className,'app-shell');assert.ok(find(page,item=>Array.isArray(item.props?.records)&&typeof item.props?.openRecord==='function'));
   nativeMenu.actions.resume();await tick();page=h.render('Workspace');
   assert.equal(controllers.length,0,'unavailable audio capability must still prevent capture');
-  assert.equal(page.props.className,'app-shell meeting-agent-shell','a refused capture does not change the current view');
+  assert.ok(find(page,item=>Array.isArray(item.props?.records)&&typeof item.props?.openRecord==='function'),'a refused capture does not change the current view');
   secure=true;nativeMenu.actions.resume();
   assert.equal(controllers.length,1);assert.equal(controllers[0].recordId,paused.id,'resume reuses the selected meeting instead of creating one');
   started.resolve();await tick();page=h.render('Workspace');

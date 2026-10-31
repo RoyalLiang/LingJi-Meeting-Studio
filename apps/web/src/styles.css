@@ -1058,3 +1058,17 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 .meeting-header .meeting-controls:is(.is-processing,.is-blocked) .capture-status small { font-size:12px; line-height:1.6; max-width:none; white-space:normal; overflow:visible; text-overflow:clip; }
 
 .meeting-controls.is-blocked .record-indicator,.meeting-controls.is-blocked .capture-status b { color:var(--warn); }
+
+/* Short meetings fill the viewport; longer content stays in the shared scroll area. */
+.record-reading { display:flex; flex-direction:column; }
+.record-reading > * { flex-shrink:0; }
+.record-reading > .minutes-panel.is-inline { display:flex; flex-direction:column; flex:1 0 auto; margin-bottom:0; }
+.record-reading .minutes-panel.is-inline .minutes-content { display:flex; flex-direction:column; flex:1; }
+.record-reading .minutes-panel.is-inline .minutes-reading-layout { display:flex; flex-direction:column; flex:1; }
+.record-reading .minutes-panel.is-inline .empty { flex:1; min-height:160px; display:flex; flex-direction:column; justify-content:center; }
+.record-reading .minutes-panel.is-inline .empty p { margin:0 auto; }
+.record-reading .notes-block { margin-top:22px; }
+.sidebar .extension-entry { width:100%; justify-content:flex-start; gap:8px; padding:6px 10px; font-size:12px; min-height:34px; margin:8px 0; }
+.sidebar .extension-entry.selected { color:var(--accent); background:var(--accent-soft); }
+.rail-brand { min-width:0; flex-wrap:wrap; row-gap:0; }
+.sidebar .rail-brand .brand { min-width:0; gap:6px; }

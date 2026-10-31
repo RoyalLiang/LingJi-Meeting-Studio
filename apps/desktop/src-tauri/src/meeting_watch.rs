@@ -104,6 +104,15 @@ fn sample(browser: bool, feishu: bool) -> Result<(bool, bool), String> {
 }
 
 #[cfg(any(test, target_os = "windows"))]
+fn windows_session_pid(status: i32, pid: u32) -> Result<Option<u32>, &'static str> {
+    // WASAPI can return a success code with the creator PID for a cross-process session.
+    if status < 0 {
+        return Err("audio_process_identity_unavailable");
+    }
+    Ok((pid != 0 && pid != std::process::id()).then_some(pid))
+}
+
+#[cfg(any(test, target_os = "windows"))]
 fn selected_windows(path: &str, browser: bool, feishu: bool) -> bool {
     let name = path
         .rsplit(['\\', '/'])
@@ -247,6 +256,14 @@ mod macos {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn windows_shared_session_keeps_the_creator_pid() {
+        assert_eq!(windows_session_pid(0x0889000d, 123), Ok(Some(123)));
+        assert_eq!(windows_session_pid(0, 123), Ok(Some(123)));
+        assert!(windows_session_pid(-1, 123).is_err());
+        assert_eq!(windows_session_pid(0, 0), Ok(None));
+        assert_eq!(windows_session_pid(0, std::process::id()), Ok(None));
+    }
     #[test]
     fn windows_targets_use_exact_executable_names_and_selected_categories() {
         assert!(selected_windows(
