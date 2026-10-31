@@ -7,8 +7,7 @@ import { createRecord } from '../packages/records/src/record.mjs';
 import { queueLearningReview } from '../packages/records/src/learning.mjs';
 import { startDesktopBackend, recoverLocalWork } from '../services/records/src/desktop-backend.mjs';
 
-const [major, minor] = process.versions.node.split('.').map(Number);
-if (major < 24 || (major === 24 && minor < 21)) throw new Error('Use Node 24.21 or newer with SQLite FTS5 support.');
+if (process.version !== 'v26.12.1') throw new Error('Use the project-pinned Node 26.12.1 runtime with SQLite FTS5 support.');
 const root = await mkdtemp(join(tmpdir(), 'lingji-startup-benchmark-'));
 let repo;
 try {

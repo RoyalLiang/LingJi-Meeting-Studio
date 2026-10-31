@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
 import { stripTypeScriptTypes } from 'node:module';
+import { transpileTypeScript } from './helpers/typescript.mjs';
 import { transform } from 'esbuild';
 
 async function quickRecordHarness({ active, issues }) {
@@ -102,7 +103,7 @@ test('enable microphone starts directly and a successful explicit recovery close
 
 async function captureHarness({ noDisplayAudio = false, micFailure = false, displayDenied = false, displayUnsupported = false, recordId = 'record', chunkWait, displayVideo = false, enqueueFailure = false } = {}) {
   let source = await readFile(new URL('../apps/web/src/audio/capture.ts', import.meta.url), 'utf8');
-  source = stripTypeScriptTypes(source, { mode: 'transform' }).replace(/^import .*$/gm, '').replace(/export /g, '');
+  source = transpileTypeScript(source).replace(/^import .*$/gm, '').replace(/export /g, '');
   const signalSource = stripTypeScriptTypes(await readFile(new URL('../apps/web/src/audio/signal.ts', import.meta.url), 'utf8')).replace(/^import .*$/gm, '').replace(/export /g, '');
   const health = [], nodes = [], calls = [], contexts = [], uploads = [], errors = [], ended = []; let sourceNumber = 0;
   const track = label => ({ label, enabled: true, muted: false, readyState: 'live', handlers: {}, addEventListener(name, fn) { this.handlers[name] = fn; }, stop() { this.readyState = 'ended'; } });

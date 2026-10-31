@@ -57,7 +57,7 @@ async function launch() {
       return response.status === 403 && (await response.json()).error === 'client_session_required';
     } catch { return false; }
   }, 'native profile registration and page proxy readiness');
-  assert.equal(state.node, 'v24.21.0'); assert.equal(state.sqlite, '3.53.4');
+  assert.equal(state.node, 'v26.12.1'); assert.equal(state.sqlite, '3.54.0');
   assert.equal(new URL(state.url).hostname, '127.0.0.1'); assert.notEqual(new URL(state.url).port, String(trap.address().port));
   const auth = await createAuth({ root: join(data, 'backend') });
   const user = { id: `user:${digest('local@device.invalid')}`, authVersion: 1 };

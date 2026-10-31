@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { stripTypeScriptTypes } from 'node:module';
+import { transpileTypeScript } from './helpers/typescript.mjs';
 
 const source = await readFile(new URL('../apps/web/src/audio/playback-transport.ts', import.meta.url), 'utf8');
-const outputText = stripTypeScriptTypes(source, { mode: 'transform' });
+const outputText = transpileTypeScript(source);
 const { PlaybackTransport, PlaybackScrub } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`);
 
 function track(duration) {

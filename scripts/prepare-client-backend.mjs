@@ -8,12 +8,12 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const project = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const version = '24.21.0';
+const version = '26.12.1';
 const runtimes = {
-  'darwin-arm64': ['tar.xz', '6239d4cf92d864487ec8cd3615038f7b67e7f58b77b21cd2f09ea9fbd68065fe'],
-  'darwin-x64': ['tar.xz', '0ae5a24c24bb7d015cd816c5036b3f90f2945aa872fcf54e58da054753b3a299'],
-  'linux-x64': ['tar.xz', 'fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6'],
-  'win-x64': ['zip', '158f7685b44de51f6c0df1d153526cbcd3e1bc739a8dfc607721cef75de9e541'],
+  'darwin-arm64': ['tar.xz', '18830bf448fe187c650dc28c98aa8c968ed1d40b6dd032c081e70a384a1bf660'],
+  'darwin-x64': ['tar.xz', '69316aaafb4dfcb25ac7b9a460f5c60928a37580284fde410144d0e6c8672d0f'],
+  'linux-x64': ['tar.xz', '6170b2d474e1c626f43cff3adc118df9fe3b573258a4fc3d850c8dbc6b079bbd'],
+  'win-x64': ['zip', 'b3efd5c70cba3308ed46e7e699a9b8aac075bbc6b027fcb39c84c31acc25e2b4'],
 };
 export async function prepareClientBackend({ root = project, cacheRoot = join(project, '.agent-runtime/runtimes') } = {}) {
   const target = `${process.platform === 'win32' ? 'win' : process.platform}-${process.arch}`;
@@ -35,7 +35,7 @@ export async function prepareClientBackend({ root = project, cacheRoot = join(pr
   execFileSync('tar', ['-xf', tar, '-C', cache]);
   const binary = join(extracted, ...(process.platform === 'win32' ? ['node.exe'] : ['bin', 'node']));
   const verified = JSON.parse(execFileSync(binary, ['--input-type=module', '-e', 'import {DatabaseSync} from "node:sqlite";const db=new DatabaseSync(":memory:");db.exec("CREATE VIRTUAL TABLE f USING fts5(content)");console.log(JSON.stringify({node:process.version,sqlite:db.prepare("SELECT sqlite_version() v").get().v,fts5:true,platform:process.platform,arch:process.arch}));db.close()'], { encoding: 'utf8' }));
-  assert.equal(verified.node, `v${version}`); assert.equal(verified.sqlite, '3.53.4'); assert.equal(verified.arch, process.arch);
+  assert.equal(verified.node, `v${version}`); assert.equal(verified.sqlite, '3.54.0'); assert.equal(verified.arch, process.arch);
   assert.equal(verified.platform, process.platform);
   const resources = join(root, 'apps/desktop/src-tauri/resources');
   const runtime = join(resources, 'runtime'), backend = join(resources, 'client-backend');

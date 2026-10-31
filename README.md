@@ -38,7 +38,7 @@
 | 方式 | 需要准备 |
 | --- | --- |
 | macOS 测试客户端 | Apple Silicon Mac、macOS 14.6+、自己的 ASR/纪要服务配置 |
-| 浏览器本地运行 | Node.js 22.14+、npm；推荐 Node 24 LTS |
+| 浏览器本地运行 | Node.js 26.12.1、npm；项目版本固定在 `.nvmrc` |
 | 自行部署 | HTTPS、身份与访问控制、持久卷、备份及供应商配置，见[运行手册](docs/engineering/runbook.md) |
 
 桌面数据保存在本机，但启用的云端 ASR/LLM 会接收相应音频或文字。当前不包含本地离线语音模型。Windows/Linux 构建与自动更新代码已存在，本次没有发布这些平台的已验收安装包。

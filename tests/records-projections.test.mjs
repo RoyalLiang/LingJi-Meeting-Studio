@@ -12,6 +12,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import vm from 'node:vm';
 import {stripTypeScriptTypes} from 'node:module';
+import {transpileTypeScript} from './helpers/typescript.mjs';
 import {createRepository} from '../services/records/src/repository.mjs';
 import {createRecord,emit,publicRecord} from '../packages/records/src/record.mjs';
 import {DatabaseSync} from 'node:sqlite';
@@ -75,7 +76,7 @@ for(const deltaEnabled of [true,false])test(`SSE ${deltaEnabled?'delta':'rollbac
 });
 
 test('binary audio negotiates explicitly, preserves CSRF and identity, and falls back for older APIs', async () => {
-  const source = stripTypeScriptTypes(await readFile(new URL('../apps/web/src/api.ts', import.meta.url), 'utf8'), { mode: 'transform' }).replace(/^import .*$/gm, '').replace(/export /g, '');
+  const source = transpileTypeScript(await readFile(new URL('../apps/web/src/api.ts', import.meta.url), 'utf8')).replace(/^import .*$/gm, '').replace(/export /g, '');
   const requests = [], exports = {};
   vm.runInNewContext(source + '\nObject.assign(exports,{uploadAudio,setAudioTransport,setCsrf});', {
     exports, crypto: webcrypto, performance, Uint8Array, atob, trace() {},
