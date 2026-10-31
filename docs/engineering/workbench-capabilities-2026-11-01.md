@@ -1,6 +1,6 @@
 # 窗口布局、后台联动与扩展能力
 
-2026-11-01。基于完整 v0.2.6 主线与 Pi 集成分支 `ab26409` 修复，候选版本 v0.2.7。发布状态单独见[安装说明](../releases/v0.2.7-preview.md)。
+2026-11-01。基于完整 v0.2.6 主线与 Pi 集成分支 `ab26409` 修复，候选版本 v0.2.8。发布状态单独见[安装说明](../releases/v0.2.8-preview.md)。
 
 ## 窗口布局
 
@@ -28,7 +28,7 @@ Pi Durable 1.4.0 是会议 agent 的实际运行底座，负责任务、持久�
 
 - 本轮 `records-agent-api`、`records-meeting-agent`、`records-pi-full-chain` 回归真实运行 Pi 调度/存储与 HTTP 接口，模型使用隔离 fixture。
 - 2026-10-31 已有真实本地 ASR + 已配置纪要模型 + Pi 复盘的合成语音链路，复盘约 7.05 秒，详见[全链路验证](pi-full-chain-validation-2026-10-31.md)及[真实结果](../evidence/pi-full-chain-20261031/real-chain-result.json)。这是历史合成数据证据，不是本轮重测真实模型或用户会议。
-- Pi 测试包曾由独立分支 Actions 构建，见[旧包回执](../evidence/pi-actions-packages-20261031/receipt.json)；当时未并入 main/Release。v0.2.7 的发布情况另列，不把旧测试包当成本轮已安装证据。
+- Pi 测试包曾由独立分支 Actions 构建，见[旧包回执](../evidence/pi-actions-packages-20261031/receipt.json)；当时未并入 main/Release。v0.2.8 的发布情况另列，不把旧测试包当成本轮已安装证据。
 
 ## 远程 Skill 和插件
 
@@ -51,3 +51,5 @@ Pi Durable 1.4.0 是会议 agent 的实际运行底座，负责任务、持久�
 - ESLint、TypeScript、Web 构建通过。构建保留既有大 chunk 提示。
 - ego-browser：390、760、1024、1280、1440、1920、3840px 扩展中心无页面横向溢出，品牌未越界、导航字号一致；3840×2053 下纪要高度约 1345px，笔记底部与滚动内容底部相差既定 28px 留白。下拉前后侧栏/页面几何尺寸一致。见[尺寸断言](../evidence/workbench-20261101/browser-checks.json)和[下拉断言](../evidence/workbench-20261101/popup-check.json)。
 - 独立只读评审已复核 Windows PID 路径与 Select 行为，发现的深色对比度问题已修复。原有 IDE/播放实验改动留在原工作区，未进入本轮提交。
+
+发布过程：v0.2.7 的 Windows CI 编译暴露闭包错误类型推断缺失，本地 Mac 不编译该模块；v0.2.8 补齐显式 `Result<bool>`。保留失败标签，不覆盖历史附件或重写提交。跨平台编译仍以本版 Actions 为准。

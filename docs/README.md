@@ -1,4 +1,4 @@
-[v0.2.7 窗口布局、后台联动与扩展能力](engineering/workbench-capabilities-2026-11-01.md)：本地候选；Pi 已实际接入，远程 Skill/MCP/飞书直发仍未接通。发布以 Actions 和 Release 回执为准。
+[v0.2.8 窗口布局、后台联动与扩展能力](engineering/workbench-capabilities-2026-11-01.md)：本地候选；Pi 已实际接入，远程 Skill/MCP/飞书直发仍未接通。发布以 Actions 和 Release 回执为准。
 
 [Pi Actions 测试包](engineering/pi-actions-test-packages-2026-10-31.md)：Mac与Windows均构建/验证成功，提供下载与分平台源码回执；809项Node回归通过，待真机验收，未创建Release。
 
