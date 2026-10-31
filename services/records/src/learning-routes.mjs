@@ -1,3 +1,4 @@
+import { recordingWaveform } from './waveform.mjs';
 import { join } from "node:path";
 import { emit, requireThat } from "../../../packages/records/src/record.mjs";
 import {
@@ -33,14 +34,18 @@ export async function learningRoutes({
   readBody,
   send,
   csrf,
+  requireLearning,
+  learningService,
 }) {
   if (!action.startsWith("learning/")) return false;
   const route = action.slice("learning/".length);
+  if (req.method === "POST") await requireLearning();
   if (route === "bootstrap" && req.method === "GET") {
     const status = record.learning?.status || "waiting";
     const training = await repo.get(trainingStateId(user.id));
     send(res, 200, {
       integrated: true,
+      service: learningService.read(),
       training: training
         ? {
             status: training.status,
@@ -158,6 +163,9 @@ export async function learningRoutes({
       requireThat(focus, "learning_snapshot_changed");
       const pcm = await segmentPcm(repo.root, snapshot, focus);
       requireThat(sha(pcm) === row.source.audioSha256, "audio_corrupt");
+      if(url.searchParams.get('waveform')==='1'){
+        send(res,200,await recordingWaveform([{object:'clip',sampleOffset:0,sampleCount:pcm.length/2}],async()=>pcm));return true;
+      }
       const bytes = wav(pcm);
       res.writeHead(200, {
         "Content-Type": "audio/wav",

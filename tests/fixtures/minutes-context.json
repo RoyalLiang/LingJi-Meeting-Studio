@@ -1,0 +1,14 @@
+[
+  {"name":"明确决定","turns":["决定采用方案一。"],"kinds":["decision"],"activeDecisions":[0]},
+  {"name":"条件承诺","turns":["如果客户同意采用，就按方案一推进。"],"kinds":["proposal"],"activeDecisions":[]},
+  {"name":"事实否定","turns":["设备不需要人工干预，也不再断连。"],"kinds":[null],"activeDecisions":[]},
+  {"name":"撤回反问","turns":["是否取消周五上线？"],"kinds":["question"],"activeDecisions":[]},
+  {"name":"明确撤回","turns":["取消周五上线安排。"],"kinds":["withdrawal"],"activeDecisions":[]},
+  {"name":"行动承诺","turns":["我来提交安全评审。"],"kinds":["action"],"activeDecisions":[]},
+  {"name":"未确认提议","turns":["建议周五上线。"],"kinds":["proposal"],"activeDecisions":[]},
+  {"name":"转述观点","turns":["客户说决定采用方案一。"],"kinds":["proposal"],"activeDecisions":[]},
+  {"name":"未说完","turns":["那个就按……"],"kinds":["question"],"activeDecisions":[]},
+  {"name":"双重否定","turns":["不能不做安全评审。"],"kinds":[null],"activeDecisions":[]},
+  {"name":"跨窗条件补充","turns":["建议周五上线。","刚才只是备选，安全评审通过才上线。"],"kinds":["proposal","proposal"],"activeDecisions":[],"times":[0,190000]},
+  {"name":"延迟撤回后改期","turns":["决定周五上线。","取消周五上线安排。","决定改为周一上线。"],"kinds":["decision","withdrawal","decision"],"activeDecisions":[2],"times":[0,190000,200000],"arrival":[0,2,1]}
+]

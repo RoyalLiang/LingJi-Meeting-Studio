@@ -1,9 +1,11 @@
 import { emit, requireThat } from './record.mjs';
 
-const fields=['inputTokens','outputTokens','totalTokens'];
+const fields=['inputTokens','outputTokens','totalTokens','cachedInputTokens','reasoningTokens'];
 export function tokenUsage(input) {
  const source=input && typeof input==='object' ? input : {};
- const values={inputTokens:source.input_tokens ?? source.prompt_tokens ?? source.inputTokens,outputTokens:source.output_tokens ?? source.completion_tokens ?? source.outputTokens,totalTokens:source.total_tokens ?? source.totalTokens};
+ const values={cachedInputTokens:source.cachedInputTokens ?? source.prompt_cache_hit_tokens ?? source.prompt_tokens_details?.cached_tokens ?? source.input_tokens_details?.cached_tokens,reasoningTokens:source.reasoningTokens ?? source.completion_tokens_details?.reasoning_tokens ?? source.output_tokens_details?.reasoning_tokens,inputTokens:source.input_tokens ?? source.prompt_tokens ?? source.inputTokens,outputTokens:source.output_tokens ?? source.completion_tokens ?? source.outputTokens,totalTokens:source.total_tokens ?? source.totalTokens};
+ if(values.cachedInputTokens>values.inputTokens)delete values.cachedInputTokens;
+ if(values.reasoningTokens>values.outputTokens)delete values.reasoningTokens;
  return Object.fromEntries(Object.entries(values).filter(([,value])=>Number.isSafeInteger(value) && value>=0));
 }
 

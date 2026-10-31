@@ -1,12 +1,20 @@
 import { createMeetingAgentRuntime } from './meeting-agent.mjs';
+import { truncateText } from '../../../packages/records/src/text.mjs';
+import { isIP } from 'node:net';
+import { manualMinutesContent, minutesActionText } from '../../../packages/records/src/minutes-quality.mjs';
+import { recordingWaveform, waveformKey, validWaveform } from './waveform.mjs';
+import { meetingAutomationConfig, doubaoAudioEnabled } from './config.mjs';
 import { audioMinutesEnabled } from './config.mjs';
 import { testDoubaoAudio } from './doubao-audio-minutes.mjs';
 import {learningRoutes} from './learning-routes.mjs';
+import {learningServiceFor} from './learning-service.mjs';
 import { telemetry } from './telemetry.mjs';
 import { clientUpdateBarrier } from './client-update.mjs';
 import { performance } from 'node:perf_hooks';
 import { setTranslationTarget } from '../../../packages/records/src/translation.mjs';
 import { workspaceRoutes, requireWorkspace } from './workspace-routes.mjs';
+import { loadRecordVocabulary, correctionCandidates } from './vocabulary.mjs';
+import { acceptVocabularyCorrection } from '../../../packages/records/src/vocabulary.mjs';
 import { setAutomation } from '../../../packages/records/src/automation.mjs';
 import http from 'node:http';
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -19,7 +27,7 @@ import { readConfig, saveConfig, publicConfig, canConfigure } from './config.mjs
 import { minutesModelVersion } from './config.mjs';
 import { testRealtime, realtimeEnabled } from './realtime-minutes.mjs';
 import { providerStatus, transcribe, completeJson, waveHeader } from './providers.mjs';
-import { sharedMinutes, sharedSegments } from '../../../packages/records/src/shared-content.mjs';
+import { sharedMinutes } from '../../../packages/records/src/shared-content.mjs';
 import { exportMinutesMarkdown, attachmentHeader } from './markdown-export.mjs';
 
 async function readBytes(request, max = 600000) {
@@ -48,12 +56,12 @@ const escapeIcs = text => String(text).replace(/\\/g, '\\\\').replace(/\r?\n/g, 
 export function exportRecord(record, format = 'markdown') {
   if (format === 'json') return JSON.stringify(publicRecord(record), null, 2);
   if (format === 'issues') return JSON.stringify({ recordId: record.id, minutesRevision: record.minutesRevision,
-    candidates: (record.minutes?.actions || []).map(action => ({ title: action.text,
-      body: `${action.text}\n\n负责人：${action.owner || '待确认'}\n日期：${action.due || '待确认'}\n来源：${action.evidence.map(e => `${e.segmentId}@${e.revision}`).join(', ')}`,
+    candidates: (record.minutes?.actions || []).map(action => ({ title: minutesActionText(action,record.minutes.topics),
+      body: `${minutesActionText(action,record.minutes.topics)}\n\n负责人：${action.owner || '待确认'}\n日期：${action.due || '待确认'}\n来源：${action.evidence.map(e => `${e.segmentId}@${e.revision}`).join(', ')}`,
       evidence: action.evidence })) }, null, 2);
   if (format === 'ics') return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Meeting Studio//Actions//ZH',
     ...(record.minutes?.actions || []).flatMap((a, i) => ['BEGIN:VTODO', `UID:${record.id}-${i}@meeting.local`,
-      `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z')}`, `SUMMARY:${escapeIcs(a.text)}`,
+      `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z')}`, `SUMMARY:${escapeIcs(minutesActionText(a,record.minutes.topics))}`,
       ...(/^\d{4}-\d{2}-\d{2}$/.test(a.due || '') ? [`DUE;VALUE=DATE:${a.due.replace(/-/g, '')}`] : []), 'STATUS:NEEDS-ACTION', 'END:VTODO']), 'END:VCALENDAR', ''].join('\r\n');
   return exportMinutesMarkdown(record);
 }
@@ -66,8 +74,36 @@ export async function createRecordServer(options = {}) {
     return null;
   });
   const learningEnabled=async()=>{const config=await readConfig(repo.root);return config.RECORD_LEARNING_ENABLED==='true'||(config.RECORD_LEARNING_ENABLED!=='false'&&Boolean(options.localAccount));};
+  const learningService = learningServiceFor(repo, options.learningProbe);
+  const requireLearning = async () => {
+    requireThat(await learningEnabled(), 'learning_disabled', 503);
+    requireThat(repo.backend === 'sqlite', 'learning_requires_local_store', 503);
+    requireThat((await learningService.check()).available, 'learning_service_unavailable', 503);
+  };
   const deltaEnabled=options.deltaEnabled ?? (process.env.RECORD_DELTA_ENABLED!=='false');
-  const streams = new Set(); const attempts = new Map();
+  const streams = new Set(); const attempts = new Map(); const feeds = new Map();
+  const clientAddress = req => {
+    const address = req.socket.remoteAddress, forwarded = req.headers['x-record-client-ip'];
+    return ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(address) && typeof forwarded === 'string' && isIP(forwarded) ? forwarded : address;
+  };
+  const limitRequest = (key, limit, code) => {
+    const now = Date.now();
+    if (attempts.size >= 10000) {
+      for (const [id, entry] of attempts) if (entry.reset <= now) attempts.delete(id);
+      requireThat(attempts.has(key) || attempts.size < 10000, 'request_rate_limited', 429);
+    }
+    const previous = attempts.get(key), entry = previous && previous.reset > now ? previous : { count: 0, reset: now + 60000 };
+    requireThat(entry.count < limit, code, 429); entry.count++; attempts.set(key, entry); return entry;
+  };
+  const feedAfter = (id, cursor) => {
+    const key = `${id}:${cursor}`;
+    if (feeds.has(key)) return feeds.get(key);
+    const request = Promise.resolve().then(() => repo.eventsAfter(id, cursor));
+    feeds.set(key, request);
+    const release = () => { const timer = setTimeout(() => { if (feeds.get(key) === request) feeds.delete(key); }, 100); timer.unref?.(); };
+    void request.then(release, release);
+    return request;
+  };
   const send = (res, status, data, headers = {}) => { const payload=JSON.stringify(data); res.writeHead(status, { 'Content-Length':Buffer.byteLength(payload), 'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...headers }); res.end(payload); };
   async function owned(id, user) { const r = await repo.get(id); requireThat(r && r.kind === 'record' && r.owner === user.id, 'not_found', 404); requireThat(!r.deleted && Date.parse(r.deleteAt) > Date.now(), 'record_deleted', 410); return r; }
@@ -91,20 +127,21 @@ export async function createRecordServer(options = {}) {
         requireThat(allowed ? req.headers.origin === allowed : new URL(req.headers.origin).host === host, 'origin_rejected', 403);
       }
       if (/^\/api\/auth\/(register|login)$/.test(path) && req.method === 'POST') {
-        const key = req.socket.remoteAddress; const now = Date.now();
-        const entry = attempts.get(key) || { count: 0, reset: now + 60000 };
-        if (entry.reset < now) { entry.count = 0; entry.reset = now + 60000; }
-        requireThat(entry.count++ < 20, 'login_rate_limited', 429); attempts.set(key, entry);
-        if (attempts.size > 10000) for (const [k, v] of attempts) if (v.reset < now) attempts.delete(k);
+        limitRequest(`auth:${clientAddress(req)}`, 20, 'login_rate_limited');
         const body = await readBody(req, 4000); const user = path.endsWith('register') ? await auth.register(body) : await auth.login(body);
         send(res, 200, { email: user.email, csrf: auth.csrf(user) }, { 'Set-Cookie': auth.issue(user) }); return;
       }
       const shared = path.match(/^\/api\/shared\/([A-Za-z0-9_-]{40,100})$/);
       if (shared && req.method === 'GET') {
-        const tokenHash = digest(shared[1]); const r = (await repo.list()).find(r => !r.deleted && Date.parse(r.deleteAt) > Date.now() && r.shares.some(s => s.hash === tokenHash && !s.revoked && s.expires > Date.now()));
-        requireThat(r, 'share_expired_or_revoked', 404); const share = r.shares.find(s => s.hash === tokenHash);
+        const permit = limitRequest(`share-invalid:${clientAddress(req)}`, 60, 'share_rate_limited');
+        const tokenHash = digest(shared[1]); let r;
+        try { r = await repo.findShare(tokenHash); } catch (error) { permit.count--; throw error; }
+        const share = r?.shares.find(s => s.hash === tokenHash && !s.revoked && s.expires > Date.now());
+        const allowed = r && !r.deleted && Date.parse(r.deleteAt) > Date.now() && share;
+        if (allowed) permit.count--;
+        requireThat(allowed, 'share_expired_or_revoked', 404);
         const minutes = r.capture === 'completed' ? r.minutes || r.liveMinutes : r.liveMinutes || r.minutes;
-        send(res, 200, { title: r.title, minutes: sharedMinutes(minutes), draft: !r.minutes || r.capture !== 'completed', ...(share.scope === 'full' ? { segments: sharedSegments(r.segments) } : {}) }); return;
+        send(res, 200, { title: r.title, minutes: sharedMinutes(minutes),  }); return;
       }
       if (path === '/api/development-account' && req.method === 'GET') {
         requireThat(process.env.NODE_ENV !== 'production' && process.env.RECORD_DEV_ACCOUNT !== 'off', 'not_found', 404);
@@ -117,23 +154,27 @@ export async function createRecordServer(options = {}) {
         await repo.change(user.id, u => { u.authVersion++; }); send(res, 200, { ok: true }, { 'Set-Cookie': auth.clear() }); return;
       }
       if (path === '/api/diagnostics/traces' && req.method === 'GET') { requireThat(canConfigure(user), 'configuration_admin_required', 403); send(res,200,telemetry.snapshot()); return; }
+      if (path === '/api/learning/status' && req.method === 'GET') {
+        const enabled = await learningEnabled(), supported = repo.backend === 'sqlite';
+        send(res, 200, { enabled, ...(enabled && supported ? learningService.read() : { available:false, status:'disabled', checkedAt:null }) }); return;
+      }
       if (path === '/api/bootstrap' && req.method === 'GET') {
-        send(res, 200, { email: user.email, csrf: auth.csrf(user), audioTransport: 'pcm-v1', localAccount: Boolean(options.localAccount), learning:{enabled:await learningEnabled()}, providers: providerStatus(await readConfig(repo.root)), limits: { maxMinutes: null, maxRecords: 200, maxChunkSeconds: 15 }, storage: repo.backend, canConfigure: canConfigure(user) }); return;
+        send(res, 200, { email: user.email, csrf: auth.csrf(user), audioTransport: 'pcm-v1', localAccount: Boolean(options.localAccount), learning:{enabled:await learningEnabled(),...learningService.snapshot()}, meetingAutomation:meetingAutomationConfig(await readConfig(repo.root)), providers: providerStatus(await readConfig(repo.root)), limits: { maxMinutes: null, maxRecords: 200, maxChunkSeconds: 15 }, storage: repo.backend, canConfigure: canConfigure(user) }); return;
       }
       if (path === '/api/settings/providers/test' && req.method === 'POST') {
         requireThat(canConfigure(user), 'configuration_admin_required', 403);
         const {kind} = await readBody(req, 1000), config = await readConfig(repo.root);
         requireThat(['asr', 'minutes'].includes(kind), 'invalid_provider_test', 400);
-        if (kind === 'asr') await transcribe(Buffer.alloc(6400), {language:'zh'}, {}, config);
+        if (kind === 'asr') await transcribe(Buffer.alloc(6400), {language:'zh',realtimeAudioConsent:true}, {}, config);
         else if (realtimeEnabled(config)) await testRealtime(config);
-      else if (config.MINUTES_MODE === 'doubao-audio') await testDoubaoAudio(config);
+      else if (doubaoAudioEnabled(config)) await testDoubaoAudio(config);
       else await completeJson([{role:'system', content:'Return JSON {ok:true}.'},{role:'user',content:'Synthetic connectivity check.'}], config);
         send(res, 200, {message: '连接测试通过。真实会议识别质量仍需试录核对。'}); return;
       }
       if (path === '/api/settings/providers') {
         requireThat(canConfigure(user), 'configuration_admin_required', 403);
         if (req.method === 'GET') { send(res, 200, { values: publicConfig(await readConfig(repo.root)) }); return; }
-        if (req.method === 'PUT') { send(res, 200, { values: await saveConfig(repo.root, await readBody(req, 20000)) }); return; }
+        if (req.method === 'PUT') { const values=await saveConfig(repo.root, await readBody(req, 20000)); learningService.invalidate(); send(res, 200, { values }); return; }
       }
       if (path === '/api/deletions' && req.method === 'GET') {
         send(res, 200, { deletions: (await repo.list()).filter(r => r.owner === user.id && r.deleted).map(r => ({ id: r.id, cleanup: r.cleanup || 'pending' })) }); return;
@@ -170,7 +211,7 @@ export async function createRecordServer(options = {}) {
       }
       const route = path.match(/^\/api\/records\/([a-f0-9-]{36})(?:\/(.*))?$/);
       requireThat(route, 'not_found', 404); const id = route[1], action = route[2] || ''; const record = await owned(id, user);
-      if(await learningRoutes({req,res,url,action,repo,user,record,readBody,send,csrf:auth.csrf(user)}))return;
+      if(await learningRoutes({req,res,url,action,repo,user,record,readBody,send,csrf:auth.csrf(user),requireLearning,learningService}))return;
       if (action === 'automation' && req.method === 'PATCH') {
         const body = await readBody(req, 4000);
         const config = await readConfig(repo.root);
@@ -185,6 +226,12 @@ export async function createRecordServer(options = {}) {
         send(res, 202, {queued:true}); return;
       }
       if (action === '' && req.method === 'GET') { send(res, 200, publicRecord(record)); return; }
+      if (action === 'corrections' && req.method === 'GET') { send(res, 200, await correctionCandidates(repo, record)); return; }
+      if (action === 'corrections/model' && req.method === 'POST') {
+        const config = await readConfig(repo.root);
+        requireThat(providerStatus(config).textMinutes, 'minutes_not_configured', 503);
+        send(res, 200, await correctionCandidates(repo, record, {model:true,config})); return;
+      }
       if (action.startsWith('minutes/versions/') && req.method === 'GET') {
         const revision = Number(action.slice('minutes/versions/'.length));
         const minutes = [...(record.minutesHistory || []), record.minutes].find(m => m?.revision === revision);
@@ -200,7 +247,26 @@ export async function createRecordServer(options = {}) {
           const contiguous = chunk.sequence === index && chunk.sampleOffset === sampleOffset;
           sampleOffset += chunk.sampleCount; return contiguous;
         }), 'audio_unavailable', 404);
-        const length = chunks.reduce((n, c) => n + c.sampleCount * 2, 0), total = length + 44;
+        const leadingSamples = Math.round((source.timelineOffsetMs || 0) * 16);
+        requireThat(Number.isSafeInteger(leadingSamples) && leadingSamples >= 0, 'audio_unavailable', 404);
+        if (url.searchParams.get('waveform') === '1') {
+          const key = waveformKey(chunks,leadingSamples), samples = leadingSamples + sampleOffset;
+          const cached = record.waveforms?.[source.id];
+          if (cached?.key === key && validWaveform(cached.value,samples)) { send(res,200,cached.value); return; }
+          const waveform = await recordingWaveform(chunks, object => repo.readAudio(object), () => res.destroyed || res.writableEnded, leadingSamples);
+          if (waveform) {
+            await changeOwned(id,user,r=>{
+              const currentSource = r.sources.find(s=>s.id===source.id), currentChunks = r.chunks.filter(c=>c.sourceId===source.id).sort((a,b)=>a.sequence-b.sequence);
+              requireThat(!r.deleted && r.retainAudio && !r.audioPurged && !r.audioCleanup && Date.parse(r.deleteAt)>Date.now() && currentSource?.stopped && currentSource.watermark===currentSource.lastSequence && waveformKey(currentChunks,Math.round((currentSource.timelineOffsetMs||0)*16))===key,'audio_unavailable',404);
+              r.waveforms ||= {}; r.waveforms[source.id] = {key,value:waveform}; return true;
+            });
+            if (!res.destroyed && !res.writableEnded) send(res, 200, waveform);
+          }
+          return;
+        }
+        const leadingBytes = leadingSamples * 2;
+        const length = leadingBytes + chunks.reduce((n, c) => n + c.sampleCount * 2, 0), total = length + 44;
+        requireThat(length <= 0xffffffff - 36, 'audio_unavailable', 413);
         const range = req.headers.range?.match(/^bytes=(\d+)-(\d*)$/);
         const start = range ? Number(range[1]) : 0, end = range && range[2] ? Math.min(Number(range[2]), total - 1) : total - 1;
         requireThat(start <= end && start < total, 'range_not_satisfiable', 416);
@@ -208,20 +274,32 @@ export async function createRecordServer(options = {}) {
           ...(url.searchParams.get('download') === '1' ? { 'Content-Disposition': attachmentHeader(`${record.title}-${source.label || source.kind}-${source.id.slice(0,8)}`, 'wav') } : {}),
           'Content-Length': end - start + 1, ...(range ? { 'Content-Range': `bytes ${start}-${end}/${total}` } : {}) });
         res.once('error', () => res.destroy());
+        const write = async bytes => {
+          if (!res.write(bytes)) await new Promise(resolve => {
+            const done = () => { res.off('drain', done); res.off('close', done); resolve(); };
+            res.once('drain', done); res.once('close', done);
+            if (res.destroyed || res.writableEnded) done();
+          });
+        };
         let offset = 0;
-        for (let i = -1; i < chunks.length; i++) {
+        for (let i = -2; i < chunks.length; i++) {
           if (res.destroyed || res.writableEnded) break;
-          const bytes = i < 0 ? waveHeader(length) : await repo.readAudio(chunks[i].object);
-          if (res.destroyed || res.writableEnded) break;
-          if (offset <= end && offset + bytes.length > start) {
-            const slice = bytes.subarray(Math.max(0, start - offset), Math.min(bytes.length, end - offset + 1));
-            if (!res.write(slice)) await new Promise(resolve => {
-              const done = () => { res.off('drain', done); res.off('close', done); resolve(); };
-              res.once('drain', done); res.once('close', done);
-              if (res.destroyed || res.writableEnded) done();
-            });
+          const size=i===-2?44:i===-1?leadingBytes:chunks[i].sampleCount*2;
+          if(offset+size<=start){offset+=size;continue;}
+          const from = Math.max(0, start - offset), until = Math.min(size, end - offset + 1);
+          if (i === -1) {
+            // Virtual silence aligns resumed sources without copying or changing stored PCM.
+            let remaining = until - from;
+            const silence = Buffer.alloc(Math.min(65536, remaining));
+            while (remaining > 0 && !res.destroyed && !res.writableEnded) {
+              const count = Math.min(remaining, silence.length); await write(silence.subarray(0,count)); remaining -= count;
+            }
+          } else {
+            const bytes = i === -2 ? waveHeader(length) : await repo.readAudio(chunks[i].object);
+            if (res.destroyed || res.writableEnded) break;
+            await write(bytes.subarray(from,until));
           }
-          offset += bytes.length; if (offset > end) break;
+          offset += size; if (offset > end) break;
         }
         if (!res.destroyed && !res.writableEnded) res.end(); return;
       }
@@ -249,7 +327,7 @@ export async function createRecordServer(options = {}) {
           if (busy || draining || ended()) return; busy = true;
           try {
             await auth.user(req); if (ended()) return;
-            const r = deltaEnabled ? await repo.eventsAfter(id, cursor) : await owned(id, user);
+            const r = deltaEnabled ? await feedAfter(id, cursor) : await owned(id, user);
             if (ended()) return;
             requireThat(r && r.owner === user.id && !r.deleted && Date.parse(r.deleteAt) > Date.now(), 'record_deleted', 410);
             const first = BigInt(r.first || r.events[0]?.cursor || r.cursor);
@@ -286,16 +364,26 @@ export async function createRecordServer(options = {}) {
         send(res, 200, ack); return;
       }
       if (action === 'shares' && req.method === 'GET') { send(res, 200, { shares: record.shares.map(({ hash, ...s }) => s) }); return; }
-      const body = await readBody(req, 600000);
+      const editBytes=action==='minutes'&&req.method==='PATCH'&&record.minutes?Math.max(Buffer.byteLength(JSON.stringify(record.minutes)),Buffer.byteLength(JSON.stringify(manualMinutesContent(record.minutes)))):0;
+      const bodyLimit=editBytes?Math.min(16*1024*1024,Math.max(600000,editBytes*3+65536)):600000;
+      const body = await readBody(req, bodyLimit);
       let result;
-      if (action === 'sources' && req.method === 'POST') result = await changeOwned(id, user, r => addSource(r, body));
+      if (action === 'corrections' && req.method === 'POST') {
+        const vocabulary = await loadRecordVocabulary(repo, record);
+        requireThat(body.fingerprint === vocabulary.fingerprint, 'vocabulary_revision_conflict', 409);
+        result = await changeOwned(id, user, r => {
+          requireThat(r.workspaceId === record.workspaceId, 'vocabulary_revision_conflict', 409);
+          acceptVocabularyCorrection(r, body, vocabulary.entries); return publicRecord(r);
+        });
+      }
+      else if (action === 'sources' && req.method === 'POST') result = await changeOwned(id, user, r => addSource(r, body));
       else if (action === 'seal' && req.method === 'POST') result = await changeOwned(id, user, r => { seal(r, body.sources); return publicRecord(r); });
       else if (action === 'pause' && req.method === 'POST') result = await changeOwned(id, user, r => { pause(r, body.sources); return publicRecord(r); });
       else if (action === 'retry' && req.method === 'POST') result = await changeOwned(id, user, r => {
         requireThat(!r.chunks.some(c => c.expired), 'temporary_audio_expired', 410);
         for (const c of r.chunks) if (c.state !== 'done') { c.attempts = 0; c.retryAt = 0; }
         for (const source of r.sources) if (source.asr?.state==='failed') { source.asr.attempts=0;source.asr.retryAt=0; }
-        r.transcription = 'queued'; emit(r, 'transcription.retry'); return publicRecord(r);
+        r.transcriptionRetryVersion = (r.transcriptionRetryVersion || 0) + 1; r.transcription = 'queued'; emit(r, 'transcription.retry'); return publicRecord(r);
       });
       else if (action === 'import-text' && req.method === 'POST') result = await changeOwned(id, user, r => {
         requireThat(r.capture !== 'recording' && r.capture !== 'sealed', 'capture_active');
@@ -314,25 +402,46 @@ export async function createRecordServer(options = {}) {
       }
       else if (action === 'minutes' && req.method === 'PATCH') result = await changeOwned(id, user, r => {
         requireThat(r.minutes && body.revision === r.minutesRevision, 'minutes_revision_conflict');
-        validateMinutes(body.minutes, r.minutes.evidenceSnapshot);
+        const sourceCount=new Set(r.minutes.evidenceSnapshot.map(segment=>`${segment.id}:${segment.revision}`)).size;
+        const baseline=manualMinutesContent(r.minutes);
+        const capacity=Math.max(r.minutes.sections.length,baseline.sections.length),options={aggregate:true,maxSections:capacity>20*Math.max(1,sourceCount)?capacity:undefined};
+        validateMinutes(body.minutes,r.minutes.evidenceSnapshot,undefined,options);
+        const manual=manualMinutesContent(body.minutes);
+        validateMinutes(manual,r.minutes.evidenceSnapshot,undefined,options);
         r.minutesHistory = [...(r.minutesHistory || []), r.minutes].slice(-10);
-        r.minutesRevision++; r.minutes = { ...r.minutes, title: body.minutes.title, sections: body.minutes.sections, actions: body.minutes.actions || [], revision: r.minutesRevision, edited: true }; autoNameRecord(r,r.minutes.title); emit(r, 'minutes.edited'); return publicRecord(r);
+        r.minutesRevision++;
+          const previous = { ...r.minutes },unchanged=JSON.stringify(manual)===JSON.stringify(baseline);
+          if(!unchanged)for (const key of ['highlights','visuals','topics','tables','decisions','speakerSummaries','currentDiscussion']) delete previous[key];
+          r.minutes = { ...previous, ...(unchanged?{}:manual), revision: r.minutesRevision, edited: true }; autoNameRecord(r,r.minutes.title); emit(r, 'minutes.edited'); return publicRecord(r);
+      });
+      else if (action === 'translation/retry' && req.method === 'POST') result = await changeOwned(id,user,r=>{
+        requireThat(body.target === r.translationTarget && r.translationTarget, 'translation_target_changed');
+        const segment=r.segments.find(segment=>segment.id===body.segmentId);
+        requireThat(segment && segment.revision===body.revision, 'segment_revision_conflict');
+        requireThat(segment.translationError, 'translation_not_failed');
+        for(const key of ['translationLease','translationFence','translationAttempts','translationRetryAt','translationError'])delete segment[key];
+        emit(r,'translation.requeued',{segmentId:segment.id});return publicRecord(r);
       });
       else if (action === '' && req.method === 'PATCH') result = await changeOwned(id, user, r => {
-        if (body.title !== undefined) { requireThat(typeof body.title === 'string' && body.title.trim(), 'invalid_title', 400); r.title = body.title.trim().slice(0, 160); r.titleEdited = true; }
+        if (body.language !== undefined) {
+          requireThat(typeof body.language === 'string' && /^(?:auto|[a-z]{2,3}(?:-[A-Za-z]{2,8})?)$/u.test(body.language), 'invalid_recognition_language', 400);
+          requireThat(!['recording','sealed'].includes(r.capture) && r.chunks.every(c => c.state === 'done'), 'recognition_language_busy', 409);
+          r.language = body.language;
+        }
+        if (body.title !== undefined) { requireThat(typeof body.title === 'string' && body.title.trim(), 'invalid_title', 400); const title = truncateText(body.title.trim(), 160); requireThat(title, 'invalid_title', 400); r.title = title; r.titleEdited = true; }
         if (body.notes !== undefined) { requireThat(body.notesRevision === r.notesRevision, 'notes_revision_conflict'); requireThat(typeof body.notes === 'string' && body.notes.length < 20000, 'invalid_notes', 400); r.notes = body.notes; r.notesRevision++; }
         if (body.translationTarget !== undefined) setTranslationTarget(r, body.translationTarget, requireThat);
         emit(r, 'record.updated'); return publicRecord(r);
       });
       else if (action === '' && req.method === 'DELETE') result = await changeOwned(id, user, r => {
-        r.deleted = true; r.generation++; r.title = '已删除'; r.segments = []; r.notes = ''; r.minutes = null; r.liveMinutes = null; r.minutesHistory = []; r.insights = null; r.jobs = []; r.shares = []; r.cleanup = 'pending';
+        r.deleted = true; delete r.waveforms; r.generation++; r.title = '已删除'; r.segments = []; r.notes = ''; r.minutes = null; r.liveMinutes = null; r.minutesHistory = []; r.insights = null; r.jobs = []; r.shares = []; r.cleanup = 'pending';
         emit(r, 'record.deleted'); return { deleted: true, cleanup: r.cleanup };
       });
       else if (action === 'shares' && req.method === 'POST') {
         const token = randomBytes(32).toString('base64url');
-        const scope = body.scope || 'minutes'; requireThat(['minutes', 'full'].includes(scope), 'invalid_share_scope', 400);
+        const scope = body.scope || 'minutes'; requireThat(scope === 'minutes', 'invalid_share_scope', 400);
         const share = { id: randomUUID(), hash: digest(token), scope, expires: Date.now() + 86400000, revoked: false };
-        await changeOwned(id, user, r => { requireThat(r.minutes || r.liveMinutes || (scope === 'full' && r.segments.length), 'minutes_required'); r.shares.push(share); emit(r, 'share.created'); }); result = { token, id: share.id, scope, expires: share.expires };
+        await changeOwned(id, user, r => { requireThat(r.minutes || r.liveMinutes || (scope === 'full' && r.segments.length), 'minutes_required'); r.shares = r.shares.filter(s => !s.revoked && s.expires > Date.now()); requireThat(r.shares.length < 20, 'share_limit', 429); r.shares.push(share); emit(r, 'share.created'); }); result = { token, id: share.id, scope, expires: share.expires };
       }
       else if (action.startsWith('shares/') && req.method === 'DELETE') result = await changeOwned(id, user, r => {
         const share = r.shares.find(s => s.id === action.slice(7)); requireThat(share, 'not_found', 404); share.revoked = true; emit(r, 'share.revoked'); return { revoked: true };
@@ -341,7 +450,7 @@ export async function createRecordServer(options = {}) {
       send(res, 200, result);
     } catch (error) {
       if (res.headersSent) { res.end(); return; }
-      if (!(error instanceof DomainError)) console.error('[record-api]', error.code || error.name);
+      if (!(error instanceof DomainError)) { console.error('[record-api]', error.code || error.name); try { options.onError?.(error); } catch { /* Observability must not alter the response. */ } }
       send(res, error.status || 500, { error: error.code || 'internal_error' });
     }
   });

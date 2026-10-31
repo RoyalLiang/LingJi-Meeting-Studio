@@ -21,7 +21,7 @@ struct Handshake {
 
 pub struct LocalBackend {
     child: Mutex<Child>,
-    input: Option<ChildStdin>,
+    input: Mutex<Option<ChildStdin>>,
     pub url: String,
     pub cookie: String,
 }
@@ -60,6 +60,7 @@ impl LocalBackend {
             log_options.mode(0o600);
         }
         log_options.open(&log).map_err(|e| e.to_string())?;
+        let asr = entry.ancestors().nth(4).ok_or("本地语音资源目录不可用")?.join("local-asr");
         let mut command = Command::new(runtime);
         command
             .arg(entry)
@@ -67,6 +68,7 @@ impl LocalBackend {
             .current_dir(&root)
             .env_clear()
             .env("NODE_ENV", "desktop")
+            .env("LINGJI_LOCAL_ASR_DIR", asr)
             .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -76,6 +78,8 @@ impl LocalBackend {
                 command.env(key, value);
             }
         }
+        #[cfg(windows)]
+        { use std::os::windows::process::CommandExt; command.creation_flags(0x08000000); }
         let mut child = command
             .spawn()
             .map_err(|e| format!("客户端后台无法启动：{e}"))?;
@@ -136,7 +140,7 @@ impl LocalBackend {
             return Err("客户端后台握手校验失败".into());
         }
         Ok(Self {
-            input: child.stdin.take(),
+            input: Mutex::new(child.stdin.take()),
             child: Mutex::new(child),
             url: handshake.url,
             cookie: handshake.cookie,
@@ -144,18 +148,32 @@ impl LocalBackend {
     }
 }
 
-impl Drop for LocalBackend {
-    fn drop(&mut self) {
-        self.input.take(); // EOF tells only this owned backend to stop.
-        if let Ok(child) = self.child.get_mut() {
-            for _ in 0..40 {
-                if child.try_wait().ok().flatten().is_some() {
-                    return;
-                }
-                thread::sleep(Duration::from_millis(100));
-            }
-            let _ = child.kill();
-            let _ = child.wait();
+impl LocalBackend {
+    pub fn stop(&self) -> Result<(), String> {
+        self.input.lock().unwrap_or_else(|error|error.into_inner()).take();
+        let mut child=self.child.lock().unwrap_or_else(|error|error.into_inner());
+        for _ in 0..40 {
+            if child.try_wait().map_err(|e|e.to_string())?.is_some() {return Ok(());}
+            thread::sleep(Duration::from_millis(100));
         }
+        if child.kill().is_err() && child.try_wait().map_err(|e|e.to_string())?.is_none() {return Err("记录服务未完全退出，未启动安装；请重启客户端后重试".into());}
+        child.wait().map(|_|()).map_err(|e|e.to_string())
+    }
+}
+impl Drop for LocalBackend {
+    fn drop(&mut self) {let _=self.stop();}
+}
+#[cfg(test)]
+mod shutdown_tests {
+    use super::*;
+    #[test]
+    fn handoff_waits_until_the_owned_backend_has_finished_after_eof() {
+        #[cfg(unix)]
+        let mut command={let mut command=Command::new("/bin/sh");command.args(["-c","cat >/dev/null; sleep 0.2"]);command};
+        #[cfg(windows)]
+        let mut command={let mut command=Command::new("powershell.exe");command.args(["-NoProfile","-NonInteractive","-Command","$input | Out-Null; Start-Sleep -Milliseconds 200"]);command};
+        let mut child=command.stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
+        let backend=LocalBackend{input:Mutex::new(child.stdin.take()),child:Mutex::new(child),url:String::new(),cookie:String::new()};
+        backend.stop().unwrap();assert!(backend.child.lock().unwrap().try_wait().unwrap().is_some());backend.stop().unwrap();
     }
 }

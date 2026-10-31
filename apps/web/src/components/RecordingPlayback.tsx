@@ -12,6 +12,6 @@ export function RecordingPlayback({ record }: { record: RecordDetail }) {
     <span>{playback.label}</span>
   </div>;
   return <div className="recording-playback" role="group" aria-label="原音回放">
-    <AudioPlayer sources={playback.sources.map(source => ({ id: source.id, src: recordingAudioUrl(record.id, source.id), label: source.label }))}/>
+    <AudioPlayer durationMs={record.durationMs} sources={playback.sources.map(source => ({ id: source.id, src: recordingAudioUrl(record.id, source.id), label: source.label, startMs: source.timelineOffsetMs }))}/>
   </div>;
 }

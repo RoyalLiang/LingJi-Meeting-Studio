@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { prepareLocalAsr } from './prepare-local-asr.mjs';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { access, chmod, copyFile, cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -24,9 +25,15 @@ export async function prepareClientBackend({ root = project, cacheRoot = join(pr
   await mkdir(cache, { recursive: true });
   try { await access(tar); } catch (error) {
     if (error.code !== 'ENOENT') throw error;
-    const response = await fetch(`https://nodejs.org/dist/v${version}/${archive}`, { signal: AbortSignal.timeout(180000) });
-    assert.ok(response.ok, `Official Node download failed: ${response.status}`);
-    await writeFile(tar, Buffer.from(await response.arrayBuffer()), { flag: 'wx' });
+    let bytes;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const response = await fetch(`https://nodejs.org/dist/v${version}/${archive}`, { signal: AbortSignal.timeout(180000) });
+        assert.ok(response.ok, `Official Node download failed: ${response.status}`);
+        bytes = Buffer.from(await response.arrayBuffer()); break;
+      } catch (error) { if (attempt) throw error; }
+    }
+    await writeFile(tar, bytes, { flag: 'wx' });
   }
   assert.equal(createHash('sha256').update(await readFile(tar)).digest('hex'), expected, 'Official runtime checksum mismatch.');
   const extracted = join(cache, `node-v${version}-${target}`);
@@ -45,7 +52,7 @@ export async function prepareClientBackend({ root = project, cacheRoot = join(pr
   const runtimeBinary = join(runtime, process.platform === 'win32' ? 'node.exe' : 'node');
   await copyFile(binary, runtimeBinary); await chmod(runtimeBinary, 0o755);
   await copyFile(join(extracted, 'LICENSE'), join(runtime, 'LICENSE'));
-  for (const path of ['services/records/src', 'packages/records/src', 'scripts/alpha-learning', 'services/session-gateway/src/providers/doubao-ast-codec.mjs', 'services/session-gateway/src/providers/doubao-ast/protos']) {
+  for (const path of ['services/records/src', 'packages/records/src', 'scripts/alpha-learning']) {
     await cp(join(root, path), join(backend, path), { recursive: true, filter: path => !path.endsWith('.DS_Store') });
   }
   await mkdir(join(backend,'tools/neohorse'),{recursive:true});
@@ -68,6 +75,7 @@ export async function prepareClientBackend({ root = project, cacheRoot = join(pr
     await cp(directory, join(backend, 'node_modules', name), { recursive: true, dereference: true, filter: path => !path.includes('/node_modules/node_modules/') && !path.endsWith('.DS_Store') });
     pending.push(...Object.keys(pkg.dependencies || {}));
   }
+  const localAsr = await prepareLocalAsr({ destination: join(backend, 'local-asr'), cacheRoot: join(cacheRoot, 'local-asr') });
   // Verify the packaged import graph, rather than accidentally resolving from
   // the repository's node_modules or source-only provider files.
   const isolated = await mkdtemp(join(tmpdir(), 'lingji-backend-import-'));
@@ -75,7 +83,7 @@ export async function prepareClientBackend({ root = project, cacheRoot = join(pr
     await cp(backend, isolated, { recursive: true, dereference: true });
     execFileSync(binary, ['--input-type=module', '-e', 'await import(process.argv[1]);', pathToFileURL(join(isolated, 'services/records/src/desktop-backend.mjs')).href]);
   } finally { await rm(isolated, { recursive: true, force: true }); }
-  const metadata = { ...verified, archive, archiveSha256: expected, dependencies: Object.fromEntries(modules), backendBundled: true, externalDevelopmentServiceRequired: false };
+  const metadata = { ...verified, archive, archiveSha256: expected, dependencies: Object.fromEntries(modules), localAsr, backendBundled: true, externalDevelopmentServiceRequired: false };
   await writeFile(join(runtime, 'runtime.json'), JSON.stringify(metadata, null, 2) + '\n');
   return metadata;
 }

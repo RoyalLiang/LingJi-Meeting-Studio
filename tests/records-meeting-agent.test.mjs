@@ -184,3 +184,67 @@ test('reopen recovery shares one pending job Harness with concurrent API reads a
   const get=runtime.get('owner',task.id),list=runtime.list('owner'),cancel=runtime.cancel('owner',task.id);await delay(20);assert.equal(opens,1);release.resolve();
   assert.equal((await get).id,task.id);assert.equal((await list)[0].id,task.id);assert.ok(['cancelling','cancelled'].includes((await cancel).status));assert.equal((await settled(runtime,task.id)).status,'cancelled');assert.equal(opens,1);
 });
+
+for (const compressAggregates of [false, true]) {
+  test(`Record access metadata stays small and changes transactionally without events, compressed=${compressAggregates}`, async t => {
+    const root = await mkdtemp(join(tmpdir(), 'meeting-agent-access-'));
+    const repo = await createRepository({ root, databaseUrl: '', compressAggregates });
+    t.after(async () => { await repo.close(); await rm(root, { recursive: true, force: true }); });
+    const record = createRecord('access-owner');
+    record.segments = [{ id: 'access-segment', revision: 1, text: 'sensitive-source-'.repeat(5000), startMs: 0, endMs: 1 }];
+    await repo.insert(record);
+    const initial = (await repo.getRecordAccess([record.id, record.id, 'missing']))[0];
+    assert.deepEqual(Object.keys(initial).sort(), ['deleteAt', 'deleted', 'id', 'kind', 'owner', 'version']);
+    assert.equal(initial.kind, 'record'); assert.equal(initial.owner, 'access-owner'); assert.equal(initial.deleted, false);
+    assert.equal((await repo.getRecordAccess([])).length, 0); assert.ok(!JSON.stringify(initial).includes('sensitive-source'));
+    assert.equal((await repo.getRecordAccess([record.id])).length, 1);
+    await assert.rejects(repo.change(record.id, value => { value.owner = 'rolled-back'; throw new Error('rollback'); }));
+    assert.deepEqual((await repo.getRecordAccess([record.id]))[0], initial);
+    await repo.changeMany([record.id], values => { values[0].segments[0].revision++; values[0].minutesRevision++; });
+    const changed = (await repo.getRecordAccess([record.id]))[0]; assert.notEqual(changed.version, initial.version);
+    assert.equal((await repo.get(record.id)).cursor, record.cursor, 'a write without emit still invalidates the access token');
+    await repo.change(record.id, value => { value.owner = 'next-owner'; value.deleted = true; value.deleteAt = '2000-01-01T00:00:00.000Z'; });
+    const denied = (await repo.getRecordAccess([record.id]))[0];
+    assert.equal(denied.owner, 'next-owner'); assert.equal(denied.deleted, true); assert.equal(denied.deleteAt, '2000-01-01T00:00:00.000Z');
+    assert.notEqual(denied.version, changed.version);
+    const db = new DatabaseSync(join(root, 'records.sqlite'));
+    try { db.prepare("UPDATE record_feed_meta SET data=json_remove(data,'$.writeVersion') WHERE id=?").run(record.id); } finally { db.close(); }
+    assert.equal((await repo.getRecordAccess([record.id]))[0].version, record.cursor, 'legacy projections use their cursor until the next write');
+    await repo.change(record.id, value => { value.kind = 'workspace'; });
+    assert.deepEqual(await repo.getRecordAccess([record.id]), [], 'a changed aggregate kind invalidates its record projection');
+  });
+}
+
+test('terminal Pi retention and task lists use metadata without rereading bodies, while ownership loss still purges automatically', async t => {
+  const f = await fixture(t), p = provider([reads(f.records), message(JSON.stringify(result(f.records)))]);
+  const runtime = await f.open({ ...p, retentionPollMs: 20 });
+  const task = await runtime.request('owner', request(f.records)); assert.equal((await settled(runtime, task.id)).status, 'completed');
+  p.fake.setResponses([reads(f.records), message(JSON.stringify(result(f.records)))]);
+  const second = await runtime.request('owner', request(f.records, 'shared-sources')); assert.equal((await settled(runtime, second.id)).status, 'completed');
+  let bodies = 0, metadata = 0;
+  const get = f.repo.get.bind(f.repo), access = f.repo.getRecordAccess.bind(f.repo);
+  t.mock.method(f.repo, 'get', async id => { bodies++; return get(id); });
+  t.mock.method(f.repo, 'getRecordAccess', async ids => { metadata++; assert.equal(ids.length, new Set(ids).size); return access(ids); });
+  for (let i = 0; i < 10; i++) { assert.equal((await runtime.get('owner', task.id)).stale, false); assert.equal((await runtime.list('owner')).length, 2); }
+  const before = metadata; await delay(80); assert.ok(metadata > before, 'retention remains active'); assert.equal(bodies, 0);
+  await f.repo.change(f.records[0].id, record => { record.owner = 'another-owner'; });
+  await waitUntil(async () => (await piFiles(f.root)).length === 0);
+  const hidden = await runtime.get('owner', task.id); assert.equal(hidden.status, 'blocked'); assert.equal(hidden.error, 'agent_scope_denied');
+  assert.equal(hidden.result, undefined); assert.equal(bodies, 0, 'revocation cleanup must not decode source bodies');
+});
+
+test('Pi hash cache invalidates exactly after source writes without requiring an emitted cursor or version change', async t => {
+  const f = await fixture(t), records = f.records.slice(0, 1), p = provider([reads(records), message(JSON.stringify(result(records)))]);
+  const runtime = await f.open(p), task = await runtime.request('owner', request(records));
+  assert.equal((await settled(runtime, task.id)).stale, false);
+  p.fake.setResponses([reads(records), message(JSON.stringify(result(records)))]);
+  const second = await runtime.request('owner', request(records, 'shared-sources')); assert.equal((await settled(runtime, second.id)).status, 'completed');
+  let bodies = 0; const get = f.repo.get.bind(f.repo);
+  t.mock.method(f.repo, 'get', async id => { bodies++; return get(id); });
+  await f.repo.change(records[0].id, record => { record.minutes.summary = 'changed without incrementing versions'; });
+  const listed = await runtime.list('owner'); assert.equal(listed.length, 2); assert.ok(listed.every(item => item.stale)); assert.equal(bodies, 1, 'concurrent tasks sharing a source share the body read');
+  await runtime.get('owner', task.id); await runtime.list('owner'); assert.equal(bodies, 1);
+  await f.repo.change(records[0].id, record => { record.minutes.summary = '人工纪要'; });
+  assert.equal((await runtime.get('owner', task.id)).stale, false); assert.equal(bodies, 2);
+  assert.deepEqual((await runtime.get('owner', task.id)).result, result(records)); assert.equal(bodies, 2);
+});

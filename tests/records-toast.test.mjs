@@ -120,16 +120,16 @@ function groupHarness() {
   };
 }
 
-test('ordinary toast closes after five seconds; long messages get bounded reading time', () => {
+test('ordinary toast closes after two seconds regardless of message length', () => {
   const h = harness(); let dismissed = 0;
   const tree = h.render({ message: '会议标题已保存。', dismiss: () => dismissed++ });
   assert.equal(tree.props.role, 'status'); assert.equal(tree.props['aria-live'], 'polite');
   assert.equal(tree.props['aria-atomic'], 'true'); assert.equal(h.open, true);
   assert.equal(tree.props.autoFocus, undefined);
-  h.tick(4999); assert.equal(dismissed, 0); h.tick(1); assert.equal(dismissed, 1);
-  assert.equal(h.duration('字'.repeat(40)), 5000);
-  assert.equal(h.duration('字'.repeat(80)), 8000);
-  assert.equal(h.duration('字'.repeat(400)), 10000);
+  h.tick(1999); assert.equal(dismissed, 0); h.tick(1); assert.equal(dismissed, 1);
+  assert.equal(h.duration('字'.repeat(40)), 2000);
+  assert.equal(h.duration('字'.repeat(80)), 2000);
+  assert.equal(h.duration('字'.repeat(400)), 2000);
   h.unmount(); assert.equal(h.open, false);
 });
 
@@ -138,15 +138,15 @@ test('hover and keyboard focus pause the same remaining time until both end', ()
   const tree = h.render({ message: '已保存', dismiss: () => dismissed++ });
   h.tick(1000); h.hover(tree, true); h.focus(tree, true);
   h.tick(10000); h.hover(tree, false); h.tick(10000); assert.equal(dismissed, 0);
-  h.focus(tree, false); h.tick(3999); assert.equal(dismissed, 0);
+  h.focus(tree, false); h.tick(999); assert.equal(dismissed, 0);
   h.tick(1); assert.equal(dismissed, 1);
 });
 
 test('hidden pages pause reading time and resume it when shown', () => {
   const h = harness(); let dismissed = 0;
   h.render({ message: '已保存', dismiss: () => dismissed++ });
-  h.tick(2000); h.hidden(true); h.tick(20000); assert.equal(dismissed, 0);
-  h.hidden(false); h.tick(2999); assert.equal(dismissed, 0); h.tick(1); assert.equal(dismissed, 1);
+  h.tick(1000); h.hidden(true); h.tick(20000); assert.equal(dismissed, 0);
+  h.hidden(false); h.tick(999); assert.equal(dismissed, 0); h.tick(1); assert.equal(dismissed, 1);
   const initiallyHidden = harness(); initiallyHidden.hidden(true);
   initiallyHidden.render({ message: '后台完成', dismiss: () => dismissed++ });
   initiallyHidden.tick(20000); assert.equal(dismissed, 1);
@@ -156,21 +156,21 @@ test('hidden pages pause reading time and resume it when shown', () => {
 test('repeating the same text with a new key restarts its timer', () => {
   const h = harness(); let dismissed = 0;
   const props = { message: '已保存', messageKey: 1, dismiss: () => dismissed++ };
-  h.render(props); h.tick(4000); h.render({ ...props, messageKey: 2 });
-  h.tick(4999); assert.equal(dismissed, 0); h.tick(1); assert.equal(dismissed, 1);
+  h.render(props); h.tick(1000); h.render({ ...props, messageKey: 2 });
+  h.tick(1999); assert.equal(dismissed, 0); h.tick(1); assert.equal(dismissed, 1);
 });
 
 test('covered toast resumes its remaining reading time when restored', () => {
   const h = harness(); let dismissed = 0;
   h.render({ message: '已保存', dismiss: () => dismissed++ });
   h.tick(1000); h.covered(true); h.tick(20000); assert.equal(dismissed, 0);
-  h.covered(false); h.tick(3999); assert.equal(dismissed, 0); h.tick(1); assert.equal(dismissed, 1);
+  h.covered(false); h.tick(999); assert.equal(dismissed, 0); h.tick(1); assert.equal(dismissed, 1);
   h.unmount(); assert.equal(h.listeners, 0);
 });
 
 test('rerender keeps elapsed time and uses the latest callback; unmount clears timer and listener', () => {
   const h = harness(); let first = 0, latest = 0;
-  h.render({ message: '已保存', dismiss: () => first++ }); h.tick(4000);
+  h.render({ message: '已保存', dismiss: () => first++ }); h.tick(1000);
   h.render({ message: '已保存', dismiss: () => latest++ }); h.tick(1000);
   assert.equal(first, 0); assert.equal(latest, 1);
   h.render({ message: '第二条', dismiss: () => latest++ }); assert.equal(h.timers, 1);
@@ -188,22 +188,12 @@ test('errors and explicitly persistent messages stay until dismissed', () => {
   }
 });
 
-test('a newer success toast restores the mounted persistent error when it closes', () => {
-  const h = groupHarness(); let errorDismissed = 0;
-  h.render('error', { message: '保存失败，请重试', error: true, dismiss: () => errorDismissed++ });
-  h.render('success', { message: '已复制', dismiss: () => h.unmount('success') });
-  assert.equal(h.open('error'), false); assert.equal(h.open('success'), true);
-  h.tick(5000); assert.equal(h.open('error'), true); assert.equal(h.open('success'), false);
-  h.tick(20000); assert.equal(errorDismissed, 0);
-  h.unmount('error'); assert.equal(h.timers, 0); assert.equal(h.listeners, 0);
-});
-
 test('a covered success resumes its remaining time after the newer toast closes', () => {
   const h = groupHarness(); let firstDismissed = 0;
   h.render('first', { message: '已保存', dismiss: () => { firstDismissed++; h.unmount('first'); } });
   h.tick(1000); h.render('second', { message: '已复制', dismiss: () => h.unmount('second') });
-  h.tick(5000); assert.equal(h.open('first'), true); assert.equal(firstDismissed, 0);
-  h.tick(3999); assert.equal(firstDismissed, 0); h.tick(1); assert.equal(firstDismissed, 1);
+  h.tick(2000); assert.equal(h.open('first'), true); assert.equal(firstDismissed, 0);
+  h.tick(999); assert.equal(firstDismissed, 0); h.tick(1); assert.equal(firstDismissed, 1);
   assert.equal(h.timers, 0); assert.equal(h.listeners, 0);
 });
 
@@ -223,7 +213,16 @@ test('retriggering a covered toast with the same message makes it latest and res
   h.render('second', { message: '已复制', dismiss: () => { secondDismissed++; h.unmount('second'); } }); h.tick(500);
   h.render('first', { ...first, messageKey: 2 });
   assert.equal(h.open('first'), true); assert.equal(h.open('second'), false);
-  h.tick(4999); assert.equal(firstDismissed, 0); h.tick(1); assert.equal(firstDismissed, 1);
-  assert.equal(h.open('second'), true); h.tick(4499); assert.equal(secondDismissed, 0);
+  h.tick(1999); assert.equal(firstDismissed, 0); h.tick(1); assert.equal(firstDismissed, 1);
+  assert.equal(h.open('second'), true); h.tick(1499); assert.equal(secondDismissed, 0);
   h.tick(1); assert.equal(secondDismissed, 1); assert.equal(h.timers, 0); assert.equal(h.listeners, 0);
+});
+
+test('a routine confirmation never covers an unresolved error and keeps its reading time',()=>{
+ const h=groupHarness();let dismissed=0;
+ h.render('critical',{message:'音频未保存',error:true,dismiss:()=>{}});
+ h.render('routine',{message:'设置已保存',messageKey:1,dismiss:()=>{dismissed++;h.unmount('routine');}});
+ assert.equal(h.open('critical'),true);assert.equal(h.open('routine'),false);
+ h.tick(5000);assert.equal(dismissed,0);
+ h.unmount('critical');assert.equal(h.open('routine'),true);h.tick(2000);assert.equal(dismissed,1);
 });

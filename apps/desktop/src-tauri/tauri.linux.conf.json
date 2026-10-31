@@ -1,0 +1,13 @@
+{
+  "productName": "Lingji Preview",
+  "bundle": {
+    "targets": ["deb"],
+    "category": "Productivity",
+    "shortDescription": "Meeting recording, transcription and minutes",
+    "linux": {
+      "deb": {
+        "depends": ["libasound2t64", "libpipewire-0.3-0"]
+      }
+    }
+  }
+}

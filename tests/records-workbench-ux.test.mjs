@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import {readFile} from 'node:fs/promises';
 import {transpileTypeScript} from './helpers/typescript.mjs';
 const source=await Promise.all(['api.ts','downloads.ts','provider-settings.ts'].map(async file=>transpileTypeScript(await readFile(new URL(`../apps/web/src/${file}`,import.meta.url),'utf8')).replace(/^import .*$/gm,'').replace(/export /g,'')));
-function harness(fetch){const sandbox={exports:{},fetch,URL,location:{origin:'https://studio.example'},performance:{now:()=>0},trace:()=>{}};vm.runInNewContext(source.join('\n')+'\nObject.assign(exports,{fetchDownload,protocolForAddress,api});',sandbox);return sandbox.exports;}
+function harness(fetch){const sandbox={exports:{},fetch,URL,AbortSignal,location:{origin:'https://studio.example'},performance:{now:()=>0},trace:()=>{}};vm.runInNewContext(source.join('\n')+'\nObject.assign(exports,{fetchDownload,protocolForAddress,api});',sandbox);return sandbox.exports;}
 test('backup reads authenticated response before returning a named download and preserves HTTP errors',async()=>{
   const blob={size:200};let request;
   const h=harness(async(href,options)=>{request={href,options};return{ok:true,blob:async()=>blob,headers:new Map([['content-disposition','attachment; filename="meeting.json"']])};});
@@ -83,4 +83,28 @@ test('common requests normalize WebKit pattern and malformed JSON failures while
   await assert.rejects(harness(async()=>{throw aborted;}).api('/records'), error => error === aborted);
   const rejected = harness(async()=>({ok:false,status:409,json:async()=>({error:'segment_revision_conflict'})}));
   await assert.rejects(rejected.api('/records/example','PATCH',{}), error => error.status === 409 && error.code === 'segment_revision_conflict');
+});
+
+test('background minutes requests never disable or release unrelated blocking actions',async()=>{
+ const app=await readFile(new URL('../apps/web/src/App.tsx',import.meta.url),'utf8');
+ const mutation=app.slice(app.indexOf('  const mutate = useCallback('),app.indexOf('  const saveTranscript ='));
+ const busy=[];let resolve;
+ const sandbox={useCallback:fn=>fn,exports:{},setBusy:value=>busy.push(value),setError(){},api:async()=>new Promise(r=>{resolve=r;}),refresh:async()=>{},loadList:async()=>{},showToast(){},activeId:{current:'record'},messageOf:e=>e.message,Promise};
+ vm.runInNewContext(transpileTypeScript(mutation)+'\nexports.mutate=mutate;',sandbox);
+ const background=sandbox.exports.mutate('/records/record/minutes','POST',{},false);assert.deepEqual(busy,[]);resolve();await background;assert.deepEqual(busy,[]);
+ const blocking=sandbox.exports.mutate('/records/record','PATCH',{});assert.deepEqual(busy,[true]);resolve();await blocking;assert.deepEqual(busy,[true,false]);
+ const generation=app.slice(app.indexOf('generate={async (template,mode)'),app.indexOf(' edit={async minutes'));
+ assert.match(generation,/mutate\([\s\S]*?}, false\)/,'the actual regenerate caller must use nonblocking mutation');
+});
+
+test('regeneration guards double clicks locally and always releases its own loading state',async()=>{
+ const source=await readFile(new URL('../apps/web/src/components/Minutes.tsx',import.meta.url),'utf8');
+ const start=source.indexOf('  async function regenerate()'),end=source.indexOf('\n  }',start)+4;
+ assert.equal((source.match(/generate\(template,mode\)/g)||[]).length,1,'all retry entry points must share the guarded regenerate action');
+ assert.match(source,/label:'重新整理',run:\(\)=>void regenerate\(\),disabled:busy \|\| generating/);
+ const states=[];let calls=0,resolve;
+ const sandbox={exports:{},submitting:{current:false},setGenerating:value=>states.push(value),template:'meeting',mode:'model',generate:async()=>{calls++;await new Promise(r=>{resolve=r;});}};
+ vm.runInNewContext(source.slice(start,end)+'\nexports.regenerate=regenerate;',sandbox);
+ const request=sandbox.exports.regenerate();await sandbox.exports.regenerate();assert.equal(calls,1);assert.deepEqual(states,[true]);resolve();await request;assert.deepEqual(states,[true,false]);
+ sandbox.generate=async()=>{throw Error('fixture failure');};await assert.rejects(sandbox.exports.regenerate(),/fixture failure/);assert.equal(sandbox.submitting.current,false);assert.deepEqual(states,[true,false,true,false]);
 });

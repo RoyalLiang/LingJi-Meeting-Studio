@@ -1,12 +1,15 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { Play, Pause, ArrowCounterClockwise, ArrowClockwise, Waveform } from '@phosphor-icons/react';
+import { memo, useEffect, useRef, useState, type RefObject, type PointerEvent as ReactPointerEvent } from 'react';
+import { Play, Pause, ArrowCounterClockwise, ArrowClockwise, Gauge } from '@phosphor-icons/react';
 import { Button } from './ui';
+import { Select } from './Select';
 import { Toast } from './Toast';
-import { PlaybackTransport, PlaybackScrub } from '../audio/playback-transport';
+import { PlaybackTransport, PlaybackScrub, PlaybackClock } from '../audio/playback-transport';
+import { api } from '../api';
+import { mergeWaveforms, waveformSeekTime, waveformTicks, type RecordingWaveform } from '../audio/playback-waveform';
 import './AudioPlayer.css';
 
-type Track = { id: string; src: string; label: string };
-type Props = { sources: Track[] };
+type Track = { id: string; src: string; label: string; startMs?: number };
+type Props = { sources: Track[]; durationMs?: number; onError?: () => void };
 const rates = [0.75, 1, 1.25, 1.5, 2];
 const seekKeys = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown']);
 function clock(value: number) {
@@ -16,23 +19,65 @@ function clock(value: number) {
     : `${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
+const SavedWaveform=memo(function SavedWaveform({peaks,reveal}:{peaks:number[];reveal:RefObject<HTMLSpanElement|null>}) {
+  const path=peaks.map((peak,index)=>{const height=Math.max(2,Math.sqrt(peak)*42);return `M${index*4+1} ${25-height/2}v${height-2}`;}).join('');
+  const bars=<path d={path} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>;
+  return <><svg className="player-waveform" viewBox="0 0 768 48" preserveAspectRatio="none" aria-hidden="true">{bars}</svg><span className="player-wave-fill"><span className="player-wave-reveal" ref={reveal}><svg className="player-waveform player-waveform-played" viewBox="0 0 768 48" preserveAspectRatio="none" aria-hidden="true">{bars}</svg></span></span></>;
+});
+
 export function AudioPlayer(props: Props) {
   return <PlaybackControls key={props.sources.map(source => source.src).join('|')} {...props}/>;
 }
 
-function PlaybackControls({ sources }: Props) {
+function PlaybackControls({ sources, durationMs = 0, onError }: Props) {
   const audio = useRef<(HTMLAudioElement | null)[]>([]), operation = useRef(0);
-  const [transport] = useState(() => new PlaybackTransport(() => audio.current.filter((media): media is HTMLAudioElement => Boolean(media))));
+  const [transport] = useState(() => new PlaybackTransport(() => audio.current.filter((media): media is HTMLAudioElement => Boolean(media)), durationMs / 1000,
+    media => (sources[audio.current.findIndex(element => element === media)]?.startMs || 0) / 1000));
   const [playing, setPlaying] = useState(false), [starting, setStarting] = useState(false), [error, setError] = useState('');
-  const [time, setTime] = useState(0), [duration, setDuration] = useState(0), [rate, setRate] = useState(1);
-  const [scrub] = useState(() => new PlaybackScrub(transport, setTime));
+  const [time, setTime] = useState(0), [duration, setDuration] = useState(durationMs / 1000), [rate, setRate] = useState(1);
+  const [peaks, setPeaks] = useState<number[]>([]), [waveState, setWaveState] = useState('loading');
+  const reveal=useRef<HTMLSpanElement>(null), cursor=useRef<HTMLSpanElement>(null), positionLabel=useRef<HTMLSpanElement>(null), advancing=useRef(false);
+  const [progressing,setProgressing]=useState(false), [scrubbing,setScrubbing]=useState(false);
+  const [progressClock]=useState(()=>new PlaybackClock());
+  function paint(position=progressClock.read(transport.time,performance.now(),advancing.current&&transport.playing,transport.leader?.playbackRate || 1)) {
+    const length=transport.duration;
+    const percent=length ? Math.max(0,Math.min(100,position/length*100)) : 0;
+    if(reveal.current)reveal.current.style.clipPath=`inset(0 ${100-percent}% 0 0)`;
+    if(cursor.current)cursor.current.style.transform=`translateX(min(${percent}%,calc(100% - 1px)))`;
+    if(positionLabel.current?.firstElementChild)positionLabel.current.firstElementChild.textContent=clock(position);
+    if(positionLabel.current)positionLabel.current.style.transform=`translateX(clamp(0px,calc(${percent}% - 30px),calc(100% - 60px)))`;
+  }
+  const [scrub] = useState(() => new PlaybackScrub(transport, position=>{progressClock.reset(position,performance.now());paint(position);setTime(position);}));
 
   useEffect(() => () => { operation.current++; scrub.finish(false, false); transport.pause(); }, [transport, scrub]);
 
+  const sourceUrls = JSON.stringify(sources.map(source => source.src));
+  useEffect(() => {
+    const abort = new AbortController();
+    void Promise.all((JSON.parse(sourceUrls) as string[]).map(src => api<RecordingWaveform>(`${src.replace(/^\/api/, '')}${src.includes('?')?'&':'?'}waveform=1`, 'GET', undefined, abort.signal)))
+      .then(tracks => { if (!abort.signal.aborted) { setPeaks(mergeWaveforms(tracks)); setWaveState('ready'); } })
+      .catch(() => { if (!abort.signal.aborted) setWaveState('error'); });
+    return () => abort.abort();
+  }, [sourceUrls]);
+  useEffect(()=>{paint();},[peaks]);
+
   const sync = () => {
+    transport.syncLevels();
     setPlaying(transport.playing);
     setDuration(transport.duration);
-    if (!scrub.active) setTime(transport.time);
+    if (!scrub.active) { setTime(transport.time); paint(); }
+  };
+  useEffect(() => {
+    if (!playing || !progressing) return;
+    let frame = 0;
+    const update = () => { if (!scrub.active) paint(); frame = requestAnimationFrame(update); };
+    frame = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(frame);
+  }, [playing, progressing, transport, scrub]);
+  const mediaState=(media:HTMLAudioElement, progressing:boolean, seek=false)=>{
+    progressing=progressing && !media.paused && !media.ended && media.readyState>=media.HAVE_FUTURE_DATA;
+    if(media===transport.leader){advancing.current=progressing;setProgressing(progressing);if(seek)progressClock.reset(transport.time,performance.now());}
+    sync();
   };
   const run = async (action: () => Promise<unknown>) => {
     const current = ++operation.current;
@@ -49,19 +94,43 @@ function PlaybackControls({ sources }: Props) {
     await transport.play();
   });
   const pause = () => { operation.current++; transport.pause(); setStarting(false); sync(); };
-  const beginScrub = () => { operation.current++; setStarting(false); scrub.begin(); sync(); };
+  const beginScrub = () => { operation.current++; setStarting(false); scrub.begin(); setScrubbing(scrub.active); sync(); };
   const finishScrub = (commit = true) => {
-    if (scrub.finish(commit)) void run(() => transport.play());
+    const resume=scrub.finish(commit);
+    setScrubbing(false);
+    if (resume) void run(() => transport.play());
     else sync();
   };
+  const previewPointer = (event: ReactPointerEvent<HTMLInputElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    scrub.move(waveformSeekTime(event.clientX, rect.left, rect.width, duration)); sync();
+  };
 
-  return <div className="audio-player" role="group" aria-label="原音播放">
+  return <div className="audio-player" data-animating={playing && progressing || scrubbing} role="group" aria-label="原音播放">
     {sources.map((source, index) => <audio key={source.id} ref={element => { audio.current[index] = element; }}
-      preload="metadata" src={source.src} aria-label={source.label}
+      preload="none" src={source.src} aria-label={source.label}
       onLoadedMetadata={() => { sync(); setError(''); }} onDurationChange={sync}
-      onTimeUpdate={sync} onSeeked={sync} onPlay={sync} onPause={sync} onEnded={sync}
-      onError={() => { pause(); setError('原音加载失败，请检查网络与留存状态后重试。'); }}/>) }
-    <span className="player-label"><Waveform size={19} aria-hidden="true"/><span>会议录音</span></span>
+      onTimeUpdate={sync} onPlay={event=>mediaState(event.currentTarget,false)} onPlaying={event=>mediaState(event.currentTarget,true)}
+      onWaiting={event=>mediaState(event.currentTarget,false)} onSeeking={event=>mediaState(event.currentTarget,false,true)}
+      onSeeked={event=>mediaState(event.currentTarget,transport.playing,true)} onPause={event=>mediaState(event.currentTarget,false)} onEnded={event=>mediaState(event.currentTarget,false,true)}
+      onError={() => { pause(); onError?.(); setError('原音加载失败，请检查网络与留存状态后重试。'); }}/>) }
+    <div className="player-timeline">
+      <div className="player-wave-track" data-waveform-state={waveState}>
+        {peaks.length > 0 ? <SavedWaveform peaks={peaks} reveal={reveal}/> : <span className="player-wave-status" role="status">{waveState === 'error' ? '波形暂不可用，仍可定位播放' : '正在读取录音波形…'}</span>}
+        <span className="player-wave-progress" aria-hidden="true"><span className="player-wave-cursor" ref={cursor}/></span>
+        <span className="player-wave-position" ref={positionLabel} aria-hidden="true"><span>00:00</span></span>
+    <input className="player-seek" type="range" min={0} max={duration || 1} step={0.1} value={Math.min(time, duration || 0)} disabled={!duration}
+      aria-label="录音进度" aria-valuetext={duration ? `${clock(time)}，共 ${clock(duration)}` : '正在读取录音时长'}
+      onPointerDown={event => { if (!event.isPrimary || event.button !== 0) return; event.preventDefault(); event.currentTarget.focus({preventScroll:true}); event.currentTarget.setPointerCapture(event.pointerId); beginScrub(); previewPointer(event); }}
+        onPointerMove={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) previewPointer(event); }}
+      onChange={event => { const immediate = !scrub.active; if (immediate) beginScrub(); scrub.move(Number(event.currentTarget.value)); if (immediate) finishScrub(); }}
+      onPointerUp={event => { if (!event.currentTarget.hasPointerCapture(event.pointerId)) return; previewPointer(event); finishScrub(); event.currentTarget.releasePointerCapture(event.pointerId); }} onPointerCancel={() => finishScrub(false)} onLostPointerCapture={() => finishScrub(false)}
+      onKeyDown={event => { if (seekKeys.has(event.key)) beginScrub(); else if (event.key === 'Escape') { event.preventDefault(); finishScrub(false); } }}
+      onKeyUp={event => { if (seekKeys.has(event.key)) finishScrub(); }} onBlur={() => finishScrub()}/>
+      </div>
+      <div className="player-wave-ticks" aria-hidden="true">{waveformTicks(duration).map((tick, index) => <span key={index}>{clock(tick)}</span>)}</div>
+    </div>
+    <div className="player-bottomline">
     <div className="player-buttons">
       <Button className="player-control player-jump" disabled={!duration} aria-label="后退 15 秒" title="后退 15 秒" onClick={() => void run(() => transport.skip(-15))}>
         <ArrowCounterClockwise size={25} aria-hidden="true"/><span aria-hidden="true">15</span>
@@ -74,18 +143,10 @@ function PlaybackControls({ sources }: Props) {
         <ArrowClockwise size={25} aria-hidden="true"/><span aria-hidden="true">15</span>
       </Button>
     </div>
-    <input className="player-seek" type="range" min={0} max={duration || 1} step={0.1} value={Math.min(time, duration || 0)} disabled={!duration}
-      aria-label="录音进度" aria-valuetext={duration ? `${clock(time)}，共 ${clock(duration)}` : '正在读取录音时长'}
-      style={{ '--played': `${duration ? time / duration * 100 : 0}%` } as CSSProperties}
-      onPointerDown={event => { event.currentTarget.setPointerCapture(event.pointerId); beginScrub(); }}
-      onChange={event => { const immediate = !scrub.active; if (immediate) beginScrub(); scrub.move(Number(event.currentTarget.value)); if (immediate) finishScrub(); }}
-      onPointerUp={() => finishScrub()} onPointerCancel={() => finishScrub(false)} onLostPointerCapture={() => finishScrub(false)}
-      onKeyDown={event => { if (seekKeys.has(event.key)) beginScrub(); else if (event.key === 'Escape') { event.preventDefault(); finishScrub(false); } }}
-      onKeyUp={event => { if (seekKeys.has(event.key)) finishScrub(); }} onBlur={() => finishScrub()}/>
-    <span className="player-time" aria-hidden="true">{clock(time)}<span> / {duration ? clock(duration) : '--:--'}</span></span>
-    <select className="player-rate" aria-label="播放速度" value={rate} onChange={event => { const value = Number(event.currentTarget.value); transport.setRate(value); setRate(value); }}>
-      {rates.map(value => <option key={value} value={value}>{value}×</option>)}
-    </select>
+    <div className="player-rate"><Select label={`播放速度，当前 ${rate} 倍`} triggerContent={<><Gauge size={17} aria-hidden="true"/><span className="player-rate-value">{rate}×</span></>} value={String(rate)} menuMinWidth={112}
+      options={rates.map(value => ({ value: String(value), label: `${value}×` }))}
+      onChange={next => { const value = Number(next); transport.setRate(value); setRate(value); }}/></div>
+    </div>
     {error && <Toast message={error} error dismiss={() => setError('')} action={{ label: '重试播放', run: () => void play(), disabled: starting }}/>}
   </div>;
 }

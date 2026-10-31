@@ -1,7 +1,7 @@
 import { preferredDevice, openMicrophone } from './devices';
 import { api } from '../api';
 import type { RecordDetail, Source, SourceKind } from '../model';
-import { drainQueue, enqueue, makeChunk } from './queue';
+import { drainQueue, enqueue, makeChunk, ensureAudioCapacity } from './queue';
 import { pcmSignal, signalMessage } from './signal';
 import type { CaptureSignal } from './signal';
 
@@ -69,6 +69,7 @@ export class CaptureController {
     if (!stream.getAudioTracks().length) { stream.getTracks().forEach(t => t.stop()); throw new Error('共享来源没有音轨。请选择带音频的标签页并勾选共享音频，或改用麦克风/导入。'); }
     let context: AudioContext | undefined;
     try {
+      await ensureAudioCapacity();
       const recordId = await this.recordId;
       context = new AudioContext({ latencyHint: 'interactive' }); await context.resume();
       if (context.state !== 'running') throw new Error('浏览器未启动音频处理，请检查站点权限后重新开始。');

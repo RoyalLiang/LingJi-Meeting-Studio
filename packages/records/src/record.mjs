@@ -1,4 +1,5 @@
-import { liveBaseline, liveInput, minutesContext, mergeLiveMinutes } from './live-minutes.mjs';
+import { truncateText } from './text.mjs';
+import { liveBaseline, liveInput, minutesContext, mergeLiveMinutes, chronologicalSegments } from './live-minutes.mjs';
 import {queueLearningReview, publicLearning} from './learning.mjs';
 import { validateMinutesStructure } from './minutes-structure.mjs';
 import { automaticRecordTitle } from './record-title.mjs';
@@ -18,14 +19,15 @@ export function emit(record, type, payload = {}) {
   record.events = record.events.slice(-1000);
 }
 export function createRecord(owner, input = {}) {
+  requireThat(input.language === undefined || (typeof input.language === 'string' && /^(?:auto|[a-z]{2,3}(?:-[A-Za-z]{2,8})?)$/u.test(input.language)), 'invalid_recognition_language', 400);
   const days = Number(input.retentionDays ?? 30);
   requireThat([1, 7, 30, 90].includes(days), 'invalid_retention', 400);
   const now = new Date().toISOString();
   const title=String(input.title || '').trim();
-  const record = { id: randomUUID(), owner, kind: 'record', workspaceId: input.workspaceId || null, title: title.slice(0, 160) || '未命名会议', titleEdited:Boolean(title), ...(input.learningEnabled ? {learning:{enabled:true,status:'waiting'}} : {}),
-    language: input.language || 'zh', createdAt: now, updatedAt: now, cursor: '0', events: [], generation: 1,
+  const record = { id: randomUUID(), owner, kind: 'record', workspaceId: input.workspaceId || null, title: truncateText(title, 160) || '未命名会议', titleEdited:Boolean(title), ...(input.learningEnabled ? {learning:{enabled:true,status:'waiting'}} : {}),
+    language: input.language || 'auto', createdAt: now, updatedAt: now, cursor: '0', events: [], generation: 1,
     capture: 'idle', transcription: 'idle', sessions: [], sources: [], chunks: [], segments: [], transcriptRevision: 0,
-    notes: '', notesRevision: 0, minutes: null, liveMinutes: null, realtimeAudioConsent: input.realtimeAudioConsent === true, autoMinutes: { enabled: input.autoMinutes === true, intervalSeconds: 30 }, minutesRevision: 0, minutesHistory: [], jobs: [], shares: [],
+    notes: '', notesRevision: 0, minutes: null, liveMinutes: null, realtimeAudioConsent: input.realtimeAudioConsent === true, autoMinutes: { enabled: input.autoMinutes === true, intervalSeconds: 90 }, minutesRevision: 0, minutesHistory: [], jobs: [], shares: [],
     retentionDays: days, retainAudio: input.retainAudio !== false, deleteAt: new Date(Date.now() + days * 86400000).toISOString(),
     usage: { samples: 0, sampleRate: 16000, llmTokens: 0 }, deleted: false };
   emit(record, 'record.created'); return record;
@@ -41,11 +43,10 @@ export function addSource(record, input) {
   record.sessions ||= [];
   let session = record.sessions.at(-1);
   if (!session || session.status !== 'recording') {
-    const timelineOffsetMs = Math.max(0, ...record.sources.map(s => (s.timelineOffsetMs || 0) + Math.max(0,
-      ...record.chunks.filter(c => c.sourceId === s.id).map(c => (c.sampleOffset + c.sampleCount) / 16))));
+    const timelineOffsetMs = recordingDurationMs(record);
     session = { id: randomUUID(), status: 'recording', timelineOffsetMs, startedAt: new Date().toISOString() }; record.sessions.push(session);
   }
-  const source = { id: randomUUID(), sessionId: session.id, timelineOffsetMs: session.timelineOffsetMs || 0, epoch: randomUUID(), kind: input.kind, label: String(input.label || input.kind).slice(0, 80),
+  const source = { id: randomUUID(), sessionId: session.id, timelineOffsetMs: Math.max(session.timelineOffsetMs || 0, recordingDurationMs(record)), epoch: randomUUID(), kind: input.kind, label: truncateText(String(input.label || input.kind), 80),
     lastSequence: null, watermark: -1, stopped: false };
   record.sources.push(source); record.capture = 'recording'; record.transcription = 'queued';
   emit(record, 'source.started', { sourceId: source.id }); return source;
@@ -98,6 +99,8 @@ function stopSources(record, manifest) {
   for (const source of record.sources) {
     source.lastSequence = manifest.find(m => m.sourceId === source.id).lastSequence; source.stopped = true;
   }
+  // A pause/stop flushes waiting ASR batches, but preserves real failure backoff.
+  for (const chunk of record.chunks) if (chunk.batchWaiting) { delete chunk.retryAt; delete chunk.batchWaiting; }
   for (const session of record.sessions || []) if (session.status === 'recording') session.status = 'sealed';
 }
 export function pause(record, manifest) {
@@ -111,6 +114,24 @@ export function seal(record, manifest) {
   stopSources(record, manifest);
   if (record.capture === 'completed') return;
   record.capture = 'sealed'; emit(record, 'capture.sealed'); finalize(record);
+}
+export function transcriptSnapshotMatches(record, snapshot) {
+  const revisions = new Map(record.segments.map(segment => [segment.id, segment.revision]));
+  return snapshot.every(segment => revisions.has(segment.id) && revisions.get(segment.id) === segment.revision);
+}
+
+export function preserveMinutesProgress(record, job) {
+  const partial=job.partialMinutes,baseline=liveBaseline(record);
+  if(!['sealed','completed'].includes(record.capture) || job.scope!=='live' || !partial || record.deleted || record.minutes?.edited || job.generation!==record.generation || job.notesRevision!==record.notesRevision || job.baseMinutesRevision!==record.minutesRevision
+    || (job.liveBaseHash && job.liveBaseHash!==digest(JSON.stringify(record.liveMinutes || null)))
+    || ((record.liveMinutes || record.minutes) && !(baseline && job.liveIncremental))
+    || !partial.evidenceSnapshot || !transcriptSnapshotMatches(record,partial.evidenceSnapshot))return;
+  const parts=(baseline?.evidenceSnapshot.length || 0)+(job.progress?.completed || 1);
+  validateMinutes(partial,partial.evidenceSnapshot,undefined,{aggregate:true,aggregateParts:Math.max(1,parts),maxSections:Math.min(25650,(baseline?.sections.length || 0)+20*(job.manifest?.windows.length || 1)+1)});
+  // A citation can span unfinished windows; this partial must not become an incremental coverage baseline.
+  record.liveMinutes={...structuredClone(partial),notesRevision:job.notesRevision,template:undefined};
+  if(job.mode==='model')autoNameRecord(record,partial.title);
+  emit(record,'minutes.live',{transcriptRevision:job.transcriptRevision});
 }
 export function finalize(record) {
   if (record.capture !== 'sealed') return;
@@ -136,6 +157,21 @@ export function commitTranscript(record, chunkKey, text, generation, translation
   record.transcriptRevision++; record.transcription = 'processing';
   emit(record, 'transcript.committed', { transcriptRevision: record.transcriptRevision }); finalize(record);
 }
+export function commitTranscriptBatch(record, keys, text, generation, model, metadata = {}) {
+  requireThat(!record.deleted && record.generation === generation, 'stale_generation', 410);
+  requireThat(keys.length > 0 && new Set(keys).size === keys.length, 'invalid_audio_batch', 409);
+  const index = new Map(record.chunks.map(chunk => [chunk.key, chunk]));
+  const chunks = keys.map(key => index.get(key));
+  requireThat(chunks.every(Boolean) && chunks.every((c,i) => c.state !== 'done' && !c.expired && c.sourceId === chunks[0].sourceId && c.epoch === chunks[0].epoch && (!i || (c.sequence === chunks[i-1].sequence+1 && c.sampleOffset === chunks[i-1].sampleOffset+chunks[i-1].sampleCount))), 'invalid_audio_batch', 409);
+  const source=record.sources.find(s=>s.id===chunks[0].sourceId && s.epoch===chunks[0].epoch);
+  requireThat(source && chunks.at(-1).sequence <= source.watermark && typeof text === 'string' && text.length <= 8000, 'invalid_audio_batch', 409);
+  if (text.trim()) record.segments.push({id:randomUUID(),revision:1,sourceId:source.id,chunkKey:keys[0],chunkKeys:[...keys],startMs:(source.timelineOffsetMs||0)+chunks[0].sampleOffset/16,
+    endMs:(source.timelineOffsetMs||0)+(chunks.at(-1).sampleOffset+chunks.at(-1).sampleCount)/16,text:text.trim(),speaker:'',translation:null,edited:false,transcriptProvider:metadata.provider || 'doubao-audio-only',modelVersion:model,
+    ...(['zh','en','ja','ko','yue'].includes(metadata.language) ? { languageDetection:{language:metadata.language,scope:'audio-batch',provider:metadata.provider,modelVersion:model,revision:1} } : {})});
+  for (const chunk of chunks) { chunk.state='done'; delete chunk.error; delete chunk.lease; delete chunk.batchWaiting; delete chunk.retryAt; }
+  record.transcriptRevision+=chunks.length;record.transcription='processing';
+  emit(record,'transcript.committed',{transcriptRevision:record.transcriptRevision});finalize(record);
+}
 export function editSegment(record, id, input) {
   const segment = record.segments.find(s => s.id === id);
   requireThat(segment, 'segment_not_found', 404);
@@ -143,7 +179,8 @@ export function editSegment(record, id, input) {
   requireThat(typeof input.text === 'string' && input.text.trim() && input.text.length <= 8000, 'invalid_segment_text', 400);
   const { versions, ...previous } = segment;
   segment.versions = [...(versions || []), previous].slice(-20);
-  segment.text = input.text.trim(); segment.speaker = String(input.speaker ?? segment.speaker).slice(0, 80);
+  segment.recognitionText ??= segment.text;
+  segment.text = input.text.trim(); segment.speaker = truncateText(String(input.speaker ?? segment.speaker), 80);
   if (input.speaker != null) {
     // Keep the acoustic replay anchor separate from a human attribution correction.
     if (segment.speakerId) segment.speakerAnchorId ||= segment.speakerId;
@@ -161,72 +198,106 @@ export function requestMinutes(record, input = {}) {
   requireThat(scope === 'live' || record.capture === 'completed', 'record_not_finalized');
   requireThat(record.segments.length > 0, 'empty_transcript');
   const template = input.template || 'meeting'; requireThat(templates.includes(template), 'unknown_template', 400);
-  const selected = scope === 'live' ? liveInput(record, template) : record.segments;
-  const snapshotOffset = record.segments.indexOf(selected[0]);
+  let selected = scope === 'live' ? liveInput(record, template) : chronologicalSegments(record.segments);
   const baseline = scope === 'live' ? liveBaseline(record) : null;
   const covered = new Set((baseline?.template === template ? baseline.evidenceSnapshot : []).map(s=>`${s.id}:${s.revision}`));
+  const liveContext = minutesContext(baseline?.template === template ? baseline : null,selected.map(s=>({...s,contextOnly:covered.has(`${s.id}:${s.revision}`)})));
+  if(liveContext?.items?.length){
+    const refs=new Set(liveContext.items.flatMap(item=>item.evidence.map(ref=>`${ref.segmentId}:${ref.revision}`)));
+    const selectedIds=new Set(selected.map(s=>s.id));
+    selected=chronologicalSegments([...selected,...record.segments.filter(s=>!selectedIds.has(s.id)&&refs.has(`${s.id}:${s.revision}`))]);
+  }
+  const snapshotOffset = record.segments.indexOf(selected[0]);
   const snapshot = selected.map(({versions, ...s}) => ({ ...s, ...(scope === 'live' ? {contextOnly:covered.has(`${s.id}:${s.revision}`)} : {}) }));
   const liveBaseHash = scope === 'live' ? digest(JSON.stringify(record.liveMinutes || null)) : undefined;
   const liveIncremental = Boolean(liveBaseline(record)?.template === template);
-  const liveContext = minutesContext(liveBaseline(record));
   const manifestHash = digest(JSON.stringify({snapshot, liveBaseHash, liveContext}));
-  const key = `${record.id}:${record.transcriptRevision}:${manifestHash}:${template}:v4:${record.notesRevision}:${input.modelVersion || 'default'}:${input.mode || 'model'}:${scope}`;
-  const existing = record.jobs.find(j => j.key === key && !['failed', 'stale', 'cancelled'].includes(j.status));
+  const key = `${record.id}:${record.transcriptRevision}:${manifestHash}:${template}:v7:${record.notesRevision}:${input.modelVersion || 'default'}:${input.mode || 'model'}:${scope}`;
+  requireThat(input.retry === undefined || typeof input.retry === 'boolean', 'invalid_minutes_retry', 400);
+  requireThat(!input.retry || input.automatic !== true, 'invalid_minutes_retry', 400);
+  if (input.retry) for (const job of record.jobs) if (['queued', 'running'].includes(job.status)) {
+    job.status = 'cancelled'; job.fence = null; job.snapshot = []; delete job.preview; delete job.partialMinutes;
+  }
+  const existing = !input.retry && record.jobs.find(j => j.key === key && !['failed', 'stale', 'cancelled'].includes(j.status));
   if (existing) return existing;
-  for(const job of record.jobs)if(['queued','running'].includes(job.status) && job.scope==='live' && (scope==='final' || job.status==='queued')){job.status='cancelled';job.fence=null;job.snapshot=[];delete job.preview; delete job.partialMinutes;}
+  for(const job of record.jobs)if(['queued','running'].includes(job.status) && job.scope==='live' && scope==='live' && job.status==='queued'){job.status='cancelled';job.fence=null;job.snapshot=[];delete job.preview; delete job.partialMinutes;}
   requireThat(record.jobs.filter(j => ['queued', 'running'].includes(j.status)).length < 3, 'job_limit', 429);
   const job = { id: randomUUID(), key, status: 'queued', transcriptRevision: record.transcriptRevision, notesRevision: record.notesRevision,
     baseMinutesRevision: record.minutesRevision, generation: record.generation, template, scope, automatic: input.automatic === true, mode: input.mode || 'model', modelVersion: input.modelVersion || 'default', snapshot, snapshotOffset, liveBaseHash, liveContext, liveIncremental, notes: record.notes, manifestHash,
     createdAt: new Date().toISOString(), attempts: 0 };
   record.jobs.push(job); emit(record, 'minutes.queued', { jobId: job.id }); return job;
 }
-export function validateMinutes(result, snapshot) {
-  validateMinutesStructure(result || {}, snapshot, requireThat);
-  requireThat(result && typeof result.title === 'string' && result.title.trim() && result.title.length <= 300 && Array.isArray(result.sections) && result.sections.length <= 20, 'invalid_minutes_schema', 422);
+export function validateMinutes(result, snapshot, context, {newEvidenceOnly=false,aggregate=false,aggregateParts=1,maxSections}={}) {
+  requireThat(result&&typeof result==='object'&&!Array.isArray(result),'invalid_minutes',422);
+  if(result.corrections!==undefined){
+    requireThat(Array.isArray(result.corrections)&&result.corrections.length<=40,'invalid_minutes_corrections',422);
+    const targets=new Set();
+    for(const correction of result.corrections){
+      requireThat(correction&&typeof correction.targetId==='string'&&!targets.has(correction.targetId)&&['pending','corrected','withdrawn'].includes(correction.status)&&typeof correction.text==='string'&&correction.text.trim()&&correction.text.length<=2000&&Array.isArray(correction.evidence)&&correction.evidence.length>0&&correction.evidence.length<=20&&correction.evidence.every(ref=>ref&&snapshot.some(s=>s.id===ref.segmentId&&s.revision===ref.revision)),'invalid_minutes_corrections',422);
+      requireThat(context?.items?.some(item=>item.id===correction.targetId),'invalid_minutes_correction_target',422);
+      targets.add(correction.targetId);
+      requireThat(correction.evidence.some(ref=>snapshot.some(s=>s.id===ref.segmentId&&s.revision===ref.revision&&s.contextOnly!==true)),'minutes_correction_without_new_evidence',422);
+    }
+  }
+  requireThat((!aggregate||!newEvidenceOnly)&&Number.isInteger(aggregateParts)&&aggregateParts>0&&(aggregate||aggregateParts===1),'invalid_minutes_validation_mode',422);
+  const sources=new Map(snapshot.map(segment=>[`${segment.id}:${segment.revision}`,segment]));
+  const cited=ref=>ref&&typeof ref.segmentId==='string'&&Number.isInteger(ref.revision)&&sources.has(`${ref.segmentId}:${ref.revision}`);
+  const count=aggregate?Math.max(aggregateParts,sources.size):1, evidenceLimit=aggregate?Math.max(500,sources.size):500;
+  requireThat(maxSections===undefined||(Number.isSafeInteger(maxSections)&&maxSections>0&&maxSections<=25650),'invalid_minutes_validation_mode',422);
+  validateMinutesStructure(result || {}, snapshot, requireThat,{aggregate,aggregateParts});
+  requireThat(result && typeof result.title === 'string' && result.title.trim() && result.title.length <= 300 && Array.isArray(result.sections) && result.sections.length <= (maxSections ?? 20*count), 'invalid_minutes_schema', 422);
   requireThat(result.sections.length > 0, 'empty_minutes', 422);
   for (const section of result.sections) {
     requireThat(typeof section.heading === 'string' && section.heading.length <= 200 && Array.isArray(section.items) && section.items.length <= 100, 'invalid_minutes_section', 422);
     for (const item of section.items) {
       requireThat(typeof item.text === 'string' && item.text.trim() && item.text.length < 8000 && Array.isArray(item.evidence) && item.evidence.length > 0, 'missing_evidence', 422);
-      for (const ref of item.evidence) requireThat(snapshot.some(s => s.id === ref.segmentId && s.revision === ref.revision), 'unknown_evidence', 422);
+      for (const ref of item.evidence) requireThat(cited(ref), 'unknown_evidence', 422);
     }
   }
   if (result.topics !== undefined) {
-    requireThat(Array.isArray(result.topics) && result.topics.length <= 30, 'invalid_minutes_topics', 422);
-    for (const topic of result.topics) requireThat(typeof topic.title === 'string' && topic.title.trim() && topic.title.length <= 200 && typeof topic.summary === 'string' && topic.summary.length <= 4000 && Array.isArray(topic.evidence) && topic.evidence.length > 0 && topic.evidence.length <= 500 && topic.evidence.every(ref => snapshot.some(s => s.id === ref.segmentId && s.revision === ref.revision)), 'invalid_minutes_topics', 422);
+    requireThat(Array.isArray(result.topics) && result.topics.length <= 30*count, 'invalid_minutes_topics', 422);
+    for (const topic of result.topics) requireThat(typeof topic.title === 'string' && topic.title.trim() && topic.title.length <= 200 && typeof topic.summary === 'string' && topic.summary.length <= 4000 && Array.isArray(topic.evidence) && topic.evidence.length > 0 && topic.evidence.length <= evidenceLimit && topic.evidence.every(ref => cited(ref)), 'invalid_minutes_topics', 422);
   }
-  requireThat(!result.actions || (Array.isArray(result.actions) && result.actions.length <= 100 && result.actions.every(a => typeof a.text === 'string' && a.text.trim() && a.text.length <= 8000 && (a.owner == null || (typeof a.owner === 'string' && a.owner.length <= 100)) && (a.due == null || (typeof a.due === 'string' && a.due.length <= 100))
-    && Array.isArray(a.evidence) && a.evidence.length && a.evidence.every(ref => snapshot.some(s => s.id === ref.segmentId && s.revision === ref.revision)))), 'invalid_actions', 422);
+  requireThat(!result.actions || (Array.isArray(result.actions) && result.actions.length <= 100*count && result.actions.every(a => typeof a.text === 'string' && a.text.trim() && a.text.length <= 8000 && (a.owner == null || (typeof a.owner === 'string' && a.owner.length <= 100)) && (a.due == null || (typeof a.due === 'string' && a.due.length <= 100))
+    && Array.isArray(a.evidence) && a.evidence.length && a.evidence.every(ref => cited(ref)))), 'invalid_actions', 422);
 
-  const validEvidence = evidence => Array.isArray(evidence) && evidence.length > 0 && evidence.length <= 500 && evidence.every(ref => ref && snapshot.some(segment => segment.id === ref.segmentId && segment.revision === ref.revision));
-  if (result.decisions !== undefined) requireThat(Array.isArray(result.decisions) && result.decisions.length <= 100 && result.decisions.every(item => item && typeof item.text === 'string' && item.text.trim() && item.text.length <= 8000 && validEvidence(item.evidence)), 'invalid_minutes_decisions', 422);
+  const validEvidence = evidence => Array.isArray(evidence) && evidence.length > 0 && evidence.length <= evidenceLimit && evidence.every(ref => ref && cited(ref));
+  if (result.decisions !== undefined) requireThat(Array.isArray(result.decisions) && result.decisions.length <= 100*count && result.decisions.every(item => item && typeof item.text === 'string' && item.text.trim() && item.text.length <= 8000 && validEvidence(item.evidence)), 'invalid_minutes_decisions', 422);
   if (result.speakerSummaries !== undefined) {
-    requireThat(Array.isArray(result.speakerSummaries) && result.speakerSummaries.length <= 20, 'invalid_speaker_summaries', 422);
+    requireThat(Array.isArray(result.speakerSummaries) && result.speakerSummaries.length <= 20*count, 'invalid_speaker_summaries', 422);
     const identities = new Set();
     for (const summary of result.speakerSummaries) {
       requireThat(summary && typeof summary === 'object', 'invalid_speaker_summaries', 422);
       const key = summary.speakerId || `label:${summary.speaker}`;
       requireThat((summary.speakerId == null || typeof summary.speakerId === 'string') && typeof summary.speaker === 'string' && summary.speaker.trim() && summary.speaker.length <= 80 && typeof summary.summary === 'string' && summary.summary.trim() && summary.summary.length <= 8000 && !identities.has(key) && validEvidence(summary.evidence), 'invalid_speaker_summaries', 422);
-      requireThat(summary.evidence.every(ref => snapshot.some(segment => segment.id === ref.segmentId && segment.revision === ref.revision && segment.speaker === summary.speaker && (summary.speakerId ? segment.speakerId === summary.speakerId : !segment.speakerId))), 'speaker_evidence_mismatch', 422);
+      requireThat(summary.evidence.every(ref => (sources.get(`${ref.segmentId}:${ref.revision}`)?.speaker === summary.speaker && (summary.speakerId ? sources.get(`${ref.segmentId}:${ref.revision}`).speakerId === summary.speakerId : !sources.get(`${ref.segmentId}:${ref.revision}`).speakerId))), 'speaker_evidence_mismatch', 422);
       identities.add(key);
     }
+  }
+  if(newEvidenceOnly){
+    const fresh=new Set(snapshot.filter(segment=>segment.contextOnly!==true).map(segment=>`${segment.id}:${segment.revision}`));
+    const facts=[...result.sections.flatMap(section=>section.items),...(result.actions || []),...(result.decisions || []),...(result.currentDiscussion || []),...(result.highlights || []),...(result.visuals || []).flatMap(visual=>visual.entries)];
+    requireThat(facts.every(item=>item.id===undefined&&item.correctionOf===undefined&&item.stateThroughMs===undefined&&item.relatedTo===undefined),'invalid_minutes_item_identity',422);
+    const items=[...facts,...(result.topics || []),...(result.speakerSummaries || []),...(result.tables || []).flatMap(table=>table.rows)];
+    if(snapshot.some(segment=>segment.contextOnly===true))requireThat(items.every(item=>item.evidence.some(ref=>fresh.has(`${ref.segmentId}:${ref.revision}`))),'minutes_without_new_evidence',422);
   }
   return result;
 }
 export function commitMinutes(record, jobId, result, fence) {
   const job = record.jobs.find(j => j.id === jobId);
   requireThat(job && !record.deleted && job.generation === record.generation && job.fence === fence, 'stale_job', 410);
-  validateMinutes(result, job.snapshot);
+  const windows=job.manifest?.windows.length||1;
+  validateMinutes(result, job.snapshot, job.liveContext,{newEvidenceOnly:true,maxSections:windows>1?50*(windows+1):undefined});
   const usageRecorded=result.usageRecorded;result={...result};delete result.usageRecorded;
   job.runtime = result.runtime || job.runtime;
-  const transcriptChanged = job.scope === 'live' ? (job.liveIncremental && !liveBaseline(record)) || job.snapshot.some(s => !record.segments.some(current => current.id === s.id && current.revision === s.revision)) : job.transcriptRevision !== record.transcriptRevision;
+  const transcriptChanged = job.scope === 'live' ? (job.liveIncremental && !liveBaseline(record)) || !transcriptSnapshotMatches(record,job.snapshot) : job.transcriptRevision !== record.transcriptRevision;
   if ((job.scope === 'live' && record.liveMinutes?.transcriptRevision > job.transcriptRevision) || (job.scope === 'live' && job.liveBaseHash && job.liveBaseHash !== digest(JSON.stringify(record.liveMinutes || null))) || transcriptChanged || job.notesRevision !== record.notesRevision || job.baseMinutesRevision !== record.minutesRevision) {
     job.status = 'stale'; delete job.preview; delete job.partialMinutes; job.snapshot = []; emit(record, 'minutes.stale', { jobId }); return;
   }
   if (job.scope === 'live') {
     const baseline = liveBaseline(record);
     const merged = mergeLiveMinutes(baseline?.template === job.template ? baseline : null, result, job.snapshot);
-    validateMinutes(merged, merged.evidenceSnapshot);
+    validateMinutes(merged, merged.evidenceSnapshot,undefined,{aggregate:true,maxSections:Math.min(25650,(baseline?.sections.length||0)+result.sections.length+1)});
     record.liveMinutes = { ...merged, notesRevision: job.notesRevision, template: job.template, transcriptRevision: job.transcriptRevision, generatedAt: new Date().toISOString() };
     job.status = 'completed'; job.snapshot = []; delete job.preview; delete job.partialMinutes;
     if(!usageRecorded)record.usage.llmTokens += Number.isSafeInteger(result.usageTokens) && result.usageTokens >= 0 ? result.usageTokens : 0;
@@ -241,10 +312,21 @@ export function commitMinutes(record, jobId, result, fence) {
   job.status = 'completed'; job.snapshot = []; delete job.preview; delete job.partialMinutes; if(!usageRecorded)record.usage.llmTokens += Number.isSafeInteger(result.usageTokens) && result.usageTokens >= 0 ? result.usageTokens : 0;
   emit(record, 'minutes.committed', { revision: record.minutesRevision });
 }
+// Meeting time follows the shared source timeline; parallel track usage is separate.
+export function recordingDurationMs(record) {
+  const offsets = new Map(record.sources.map(source => [source.id, source.timelineOffsetMs || 0]));
+  let duration = 0;
+  for (const chunk of record.chunks) {
+    if (offsets.has(chunk.sourceId)) duration = Math.max(duration, offsets.get(chunk.sourceId) + (chunk.sampleOffset + chunk.sampleCount) / 16);
+  }
+  return duration;
+}
 export function publicRecord(record) {
-  const { owner, events, chunks, shares, jobs, minutesHistory, learning, ...rest } = record;
-  return { ...rest,
-    transcription: record.sources.some(source => source.asr?.state === 'failed') && ['queued', 'processing'].includes(record.transcription) ? 'blocked' : record.transcription, ...(learning ? {learning:publicLearning(record)} : {}), segments: record.segments.map(({translationFence,translationLease,...segment})=>segment), sources: record.sources.map(({asr,...source})=>({...source,...(asr ? {asr:{state:asr.state,error:asr.error,retryable:asr.retryable,retryAt:asr.retryAt,transportCode:asr.transportCode,identityWarning:asr.identityWarning,preview:asr.preview,runtime:asr.runtime}} : {})})), audio: record.sources.map(s => receipt(record, s)),
+  const { owner, events, chunks, shares, jobs, minutesHistory, learning, waveforms, ...rest } = record;
+  const errorCodes = [...new Set([...record.sources.filter(source => source.asr?.state === 'failed').map(source => source.asr.error), ...chunks.filter(chunk => chunk.state !== 'done').map(chunk => chunk.error)].filter(Boolean))].sort();
+  const transcriptionIssue = errorCodes.length ? {code: errorCodes[0], identity: digest(JSON.stringify([record.generation, record.transcriptionRetryVersion || 0, errorCodes]))} : undefined;
+  return { ...rest, ...(transcriptionIssue ? {transcriptionIssue} : {}), durationMs: recordingDurationMs(record),
+    transcription: record.sources.some(source => source.asr?.state === 'failed') && ['queued', 'processing'].includes(record.transcription) ? 'blocked' : record.transcription, ...(learning ? {learning:publicLearning(record)} : {}), segments: record.segments.map(({translationFence,translationLease,...segment})=>segment), sources: record.sources.map(({asr,...source})=>({...source,...(asr ? {asr:{state:asr.state,error:asr.error,retryable:asr.retryable,retryAt:asr.retryAt,transportCode:asr.transportCode,identityWarning:asr.identityWarning,preview:asr.preview,translation:asr.translation ? {text:asr.translation.text,sourceText:asr.translation.sourceText,target:asr.translation.target,startMs:asr.translation.startMs,updatedAt:asr.translation.updatedAt,error:asr.translation.error,errorText:asr.translation.errorText} : undefined,runtime:asr.runtime}} : {})})), audio: record.sources.map(s => receipt(record, s)),
     pendingChunks: chunks.filter(c => c.state !== 'done').length,
     minuteVersions: [...(minutesHistory || []), ...(record.minutes ? [record.minutes] : [])].map(m => ({ revision: m.revision, transcriptRevision: m.transcriptRevision, edited: m.edited })),
     jobs: jobs.map(({ snapshot, notes, fence, windowCache, manifest, usageCalls,liveBaseHash,liveContext,liveIncremental, ...job }) => job) };

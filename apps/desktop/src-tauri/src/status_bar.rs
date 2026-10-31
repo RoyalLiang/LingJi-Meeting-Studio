@@ -94,11 +94,11 @@ impl StatusBar {
             ],
         )?;
         let tray = TrayIconBuilder::with_id("lingji-status")
-            .icon(tauri::include_image!("icons/menu-bar.png"))
-            .icon_as_template(true)
+            .icon(if cfg!(target_os = "macos") { tauri::include_image!("icons/menu-bar.png") } else { tauri::include_image!("icons/tray.png") })
+            .icon_as_template(cfg!(target_os = "macos"))
             .tooltip("聆记 · 打开会议或右键查看状态")
             .menu(&menu)
-            .show_menu_on_left_click(false)
+            .show_menu_on_left_click(cfg!(target_os = "linux"))
             .on_tray_icon_event(|tray, event| {
                 if let TrayIconEvent::Click {
                     button: MouseButton::Left,
@@ -116,11 +116,7 @@ impl StatusBar {
                         let _ = w.hide();
                     }
                 }
-                "status-quit" => {
-                    if let Some(w) = app.get_webview_window("main") {
-                        let _ = w.close();
-                    }
-                }
+                "status-quit" => crate::resident::request_quit(app),
                 "status-pause"
                 | "status-resume"
                 | "status-finish"
@@ -136,6 +132,19 @@ impl StatusBar {
                 _ => {}
             })
             .build(app)?;
+        #[cfg(target_os = "macos")]
+        tray.with_inner_tray_icon(|inner| {
+            let Some(mtm) = objc2::MainThreadMarker::new() else { return; };
+            if let Some(image) = inner.ns_status_item().and_then(|item| item.button(mtm)).and_then(|button| button.image()) {
+                // Keep the padded mark aligned with the system-sized menu icons.
+                let mut size = image.size();
+                size.width *= 18.0 / size.height;
+                size.height = 18.0;
+                image.setSize(size);
+                #[cfg(feature = "smoke-test")]
+                assert_eq!(image.size().height, 18.0);
+            }
+        })?;
         Ok(Self {
             tray,
             menu,
@@ -187,6 +196,7 @@ impl StatusBar {
     }
     fn apply_update_presentation(&self, updates: &UpdatePresentation) -> tauri::Result<()> {
         self.update_check.set_text(&updates.check_label)?;
+        self.update_install.set_text(&updates.install_label)?;
         self.update_check.set_enabled(updates.check)?;
         self.update_background.set_enabled(updates.background)?;
         self.update_background.set_checked(updates.auto_download)?;

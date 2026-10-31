@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { completeJson } from '../services/records/src/providers.mjs';
+import { completeJson, generateMinutes } from '../services/records/src/providers.mjs';
 
 async function endpoint(handler, run) {
   const requests = [];
@@ -15,6 +15,20 @@ async function endpoint(handler, run) {
   finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 }
 const credentials = { LLM_MODEL: 'fixture-model', LLM_API_KEY: 'fixture-key' };
+for(const protocol of ['responses','chat-completions'])test(`${protocol} terminal frame completes minutes even when the provider keeps SSE open`,async()=>{
+ const usage={input_tokens:2,output_tokens:1,total_tokens:3};
+ await endpoint((_req,res)=>{
+  res.writeHead(200,{'Content-Type':'text/event-stream'});
+  const frames=protocol==='responses'
+   ? [{type:'response.output_text.delta',delta:'{"ok":true}'},{type:'response.completed',response:{status:'completed',usage}}]
+   : [{choices:[{delta:{content:'{"ok":true}'},finish_reason:'stop'}]},{choices:[],usage},'[DONE]'];
+  for(const frame of frames)res.write(`data: ${typeof frame==='string'?frame:JSON.stringify(frame)}\n\n`);
+  // The terminal marker is the contract; this fixture intentionally leaves HTTP open.
+ },async base=>{
+  const result=await completeJson([],{...credentials,LLM_API_URL:base,LLM_PROTOCOL:protocol},{onDelta:()=>{},timeoutMs:200});
+  assert.equal(result.ok,true);assert.equal(result.usageTokens,3);
+ });
+});
 test('provider token counters remain unknown when absent and preserve an explicitly reported zero', async () => {
  for(const usage of [undefined,{total_tokens:0,input_tokens:0,output_tokens:0},{total_tokens:-1,input_tokens:'12',output_tokens:1.5}]) {
   const reports=[];
@@ -135,5 +149,22 @@ test('a timeout during model streaming is not misreported as invalid JSON', asyn
    signal:controller.signal,
    onDelta:()=>controller.abort(new DOMException('Deadline exceeded','TimeoutError'))
   }),{code:'llm_timeout'});
+ });
+});
+
+for(const protocol of ['chat-completions','responses'])test(`${protocol} live Kimi 3.1 minutes request low reasoning without disabling thinking`,async()=>{
+ await endpoint((_req,res)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(protocol==='responses'?{status:'completed',output_text:'{"title":"会议","sections":[{"heading":"讨论","items":[{"text":"讨论发布","evidence":[{"segmentId":"s1","revision":1}]}]}],"actions":[]}'}:{choices:[{message:{content:'{"title":"会议","sections":[{"heading":"讨论","items":[{"text":"讨论发布","evidence":[{"segmentId":"s1","revision":1}]}]}],"actions":[]}'},finish_reason:'stop'}]}));},async(base,requests)=>{
+  await generateMinutes({scope:'live',mode:'model',snapshot:[{id:'s1',revision:1,text:'讨论发布',startMs:0,endMs:1000}],notes:''},{...credentials,LLM_MODEL:'kimi-k3-1-pro-261024',LLM_API_URL:base,LLM_PROTOCOL:protocol});
+  const body=requests[0].body;assert.equal(protocol==='responses'?body.reasoning?.effort:body.reasoning_effort,'low');assert.equal(body.thinking,undefined);assert.equal(protocol==='responses'?body.max_output_tokens:body.max_completion_tokens,16384);
+ });
+});
+
+for(const protocol of ['chat-completions','responses'])test(`${protocol} preserves final Kimi reasoning and other models' defaults`,async()=>{
+ const answer=JSON.stringify({title:'会议',sections:[{heading:'讨论',items:[{text:'讨论发布',evidence:[{segmentId:'s1',revision:1}]}]}],actions:[]});
+ await endpoint((_req,res)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(protocol==='responses'?{status:'completed',output_text:answer}:{choices:[{message:{content:answer},finish_reason:'stop'}]}));},async(base,requests)=>{
+  for(const [scope,model] of [['final','kimi-k3-1-pro-261024'],['live','fixture-model']])await generateMinutes({scope,mode:'model',snapshot:[{id:'s1',revision:1,text:'讨论发布',startMs:0,endMs:1000}],notes:''},{...credentials,LLM_MODEL:model,LLM_API_URL:base,LLM_PROTOCOL:protocol});
+  for(const request of requests){assert.equal(request.body.reasoning_effort,undefined);assert.equal(request.body.reasoning,undefined);assert.equal(request.body.thinking,undefined);}
+  assert.equal(requests[0].body[protocol==='responses'?'max_output_tokens':'max_completion_tokens'],16384);
+  assert.equal(requests[1].body[protocol==='responses'?'max_output_tokens':'max_completion_tokens'],undefined);
  });
 });

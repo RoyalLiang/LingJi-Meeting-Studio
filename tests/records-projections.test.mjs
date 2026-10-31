@@ -79,7 +79,7 @@ test('binary audio negotiates explicitly, preserves CSRF and identity, and falls
   const source = transpileTypeScript(await readFile(new URL('../apps/web/src/api.ts', import.meta.url), 'utf8')).replace(/^import .*$/gm, '').replace(/export /g, '');
   const requests = [], exports = {};
   vm.runInNewContext(source + '\nObject.assign(exports,{uploadAudio,setAudioTransport,setCsrf});', {
-    exports, crypto: webcrypto, performance, Uint8Array, atob, trace() {},
+    exports, crypto: webcrypto, performance, Uint8Array, atob, AbortSignal, trace() {},
     fetch: async (url, options) => { requests.push({ url, ...options }); return { ok: true, json: async () => ({ watermark: 0 }) }; },
   });
   const bytes = Buffer.alloc(32000, 21), chunk = { sourceId: 'source', epoch: 'epoch', sessionId: 'session', sequence: 0, sampleOffset: 0, sampleCount: 16000, sampleRate: 16000, digest: digest(bytes), pcm: bytes.toString('base64') };

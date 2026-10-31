@@ -1,8 +1,12 @@
+import {modelEndpoint} from './llm.mjs';
 import { DomainError, requireThat } from '../../../packages/records/src/record.mjs';
 
 export function translationConnection(config) {
+  const dedicated = config.DOUBAO_TRANSLATION_API_URL || config.DOUBAO_TRANSLATION_API_KEY || (config.DOUBAO_TRANSLATION_MODEL && config.DOUBAO_TRANSLATION_MODEL !== 'doubao-seed-translation-250915');
+  const seed = config.TRANSLATION_PROVIDER === 'doubao-seed' || ((!config.TRANSLATION_PROVIDER || config.TRANSLATION_PROVIDER === 'auto') && (dedicated || /^https:\/\/ark\.[a-z0-9-]+\.volces\.com\//u.test(config.LLM_API_URL || '')));
+  if (!seed) return { provider:'text-model', url:config.LLM_API_URL, key:config.LLM_API_KEY, model:config.LLM_MODEL };
   const url = config.DOUBAO_TRANSLATION_API_URL || config.LLM_API_URL;
-  return { url, key: config.DOUBAO_TRANSLATION_API_KEY || (url === config.LLM_API_URL ? config.LLM_API_KEY : ''), model: config.DOUBAO_TRANSLATION_MODEL || 'doubao-seed-translation-250915' };
+  return { provider:'doubao-seed', url, key: config.DOUBAO_TRANSLATION_API_KEY || (url === config.LLM_API_URL ? config.LLM_API_KEY : ''), model: config.DOUBAO_TRANSLATION_MODEL || 'doubao-seed-translation-250915' };
 }
 
 // Bound by UTF-8 bytes rather than guessing tokens; never truncate the source.
@@ -23,16 +27,16 @@ export function translationChunks(text, limit = 768) {
   return chunks;
 }
 
-export async function translateSeedText(text, target, config) {
-  const { url, key, model } = translationConnection(config);
+export async function translateSeedText(text, target, config, {timeoutMs=120000}={}) {
+  const { url, key, model } = translationConnection({...config,TRANSLATION_PROVIDER:'doubao-seed'});
   requireThat(url && key && !/^(your[-_]|replace|mock|<|xxx)/i.test(key), 'translation_not_configured', 503);
   requireThat(['zh', 'en', 'ja', 'es', 'fr', 'de'].includes(target), 'invalid_translation_target', 400);
   requireThat(typeof text === 'string' && text.trim() && text.length <= 8000, 'invalid_translation_text', 422);
-  const translated = [], deadline = AbortSignal.timeout(120000);
+  const translated = [], deadline = AbortSignal.timeout(timeoutMs);
   for (const chunk of translationChunks(text)) {
     let response;
     try {
-      response = await fetch(url, { method: 'POST', signal: AbortSignal.any([deadline, AbortSignal.timeout(60000)]), headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      response = await fetch(modelEndpoint(url,'responses'), { method: 'POST', signal: AbortSignal.any([deadline, AbortSignal.timeout(60000)]), headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ model, input: [{ role: 'user', content: [{ type: 'input_text', text: chunk, translation_options: { target_language: target } }] }], store: false, stream: false }) });
     } catch { throw new DomainError('translation_connection_failed', 502); }
     if (!response.ok) throw new DomainError(response.status === 401 ? 'translation_credentials_rejected' : response.status === 429 ? 'provider_rate_limited' : `translation_http_${response.status}`, 502);

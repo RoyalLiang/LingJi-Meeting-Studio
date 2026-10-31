@@ -1,4 +1,4 @@
-import type { SourceKind } from '../model';
+import type { Source, SourceKind } from '../model';
 export interface CaptureSignal {
   sourceId: string; kind: SourceKind; label: string; rms: number; seconds: number;
   status: 'checking' | 'audible' | 'quiet' | 'silent' | 'muted' | 'suspended' | 'ended'; message: string;
@@ -19,4 +19,26 @@ export function signalMessage(signal: CaptureSignal, quietSeconds: number, muted
     : '连续 5 秒没有收到声音；请说一句话，检查系统麦克风权限，或结束录音后切换输入设备' };
   if (signal.rms >= 0.0005) return { status: 'audible' as const, message: '已采到声音' };
   return { status: signal.seconds > 0 ? 'quiet' as const : 'checking' as const, message: signal.seconds > 0 ? '等待声音' : '正在检查音频信号' };
+}
+
+export function capturedDurationMs(savedMs:number,sources:(Pick<Source,'id'|'timelineOffsetMs'> & {epoch?:string})[],signals:Pick<CaptureSignal,'sourceId'|'seconds'>[],local:{sourceId:string;epoch:string;sampleEnd?:number}[] = []) {
+  const starts=new Map(sources.map(source=>[source.id,source]));
+  let duration=savedMs;
+  for(const signal of signals) {const source=starts.get(signal.sourceId);if(source)duration=Math.max(duration,(source.timelineOffsetMs || 0)+signal.seconds*1000);}
+  for(const manifest of local) {
+    const source=starts.get(manifest.sourceId);
+    if(source && (!source.epoch || source.epoch===manifest.epoch)) duration=Math.max(duration,(source.timelineOffsetMs || 0)+(manifest.sampleEnd || 0)/16);
+  }
+  return Math.round(duration);
+}
+
+/** Uploads and native PCM arrive in batches; an active display uses monotonic time. */
+export class RecordingClock {
+  private id=''; private active=false; private base=0; private started=0; private confirmed=0;
+  read(id:string,savedMs:number,active:boolean,now:number) {
+    if(id!==this.id || active!==this.active || !active) { this.id=id;this.active=active;this.base=savedMs;this.confirmed=savedMs;this.started=now; }
+    else if(savedMs>this.confirmed) { this.base=Math.max(this.base,savedMs);this.confirmed=savedMs;this.started=now; }
+    // Interpolate only one audio packet; a stalled source must not become fictitious recording time.
+    return active ? Math.max(savedMs,this.base+Math.min(1000,Math.max(0,now-this.started))) : savedMs;
+  }
 }

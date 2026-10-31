@@ -91,6 +91,7 @@ pub struct UpdatePresentation {
     pub auto_download: bool,
     pub install: bool,
     pub install_visible: bool,
+    pub install_label: String,
 }
 
 pub fn present_update(
@@ -124,6 +125,7 @@ pub fn present_update(
         auto_download,
         install: enabled && install_visible && install_reason.is_none(),
         install_visible,
+        install_label: "重启更新".into(),
     }
 }
 

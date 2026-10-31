@@ -1,4 +1,4 @@
-name: macOS preview release
+name: Desktop preview release
 run-name: Preview ${{ inputs.tag || github.ref_name }} · ${{ github.event_name }}
 
 on:
@@ -9,7 +9,7 @@ on:
       tag:
         description: Existing vX.Y.Z source tag (published tags are never moved)
         required: true
-        default: v0.1.5
+        default: v0.1.32
         type: string
       source_sha:
         description: Expected full source commit; reject a moved tag
@@ -95,42 +95,234 @@ jobs:
       - run: npm run lint && npm run typecheck && npm run check:docs
       - name: Prepare bundled runtime and Web assets for native checks
         run: node scripts/prepare-client-backend.mjs && npm run build:web
-      - run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked
+      - name: Native regression
+        run: |
+          mkdir -p .agent-runtime
+          set +e
+          cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --features smoke-test -- --test-threads=1 2>&1 | tee .agent-runtime/native-ci-tests.log
+          native_status=${PIPESTATUS[0]}
+          set -e
+          if [[ "$native_status" -ne 0 ]]; then
+            node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const tail = readFileSync('.agent-runtime/native-ci-tests.log', 'utf8').slice(-6000);
+          const blocks = tail.match(/[\s\S]{1,1000}/g) || [];
+          for (const [index, block] of blocks.entries()) {
+            const message = block.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
+            console.log(`::error title=Native regression ${index + 1}/${blocks.length}::${message}`);
+          }
+          NODE
+          fi
+          exit "$native_status"
       - name: Build and verify isolated preview package
         env:
           TTS_RELEASE_SOURCE_REF: ${{ needs.verify.outputs.sha }}
           # Keep the configured Finder background/positions and their validation.
           TAURI_BUNDLER_DMG_IGNORE_CI: 'true'
         run: npm run release:macos:preview
-      - name: Add CI provenance and collect five release files
+      - name: Add CI provenance and collect macOS release files
         env:
           RELEASE_VERSION: ${{ needs.verify.outputs.version }}
           SOURCE_SHA: ${{ needs.verify.outputs.sha }}
           WORKFLOW_SHA: ${{ needs.verify.outputs.controller_sha }}
-        run: |
-          node --input-type=module <<'NODE'
-          import {readFile,writeFile,mkdir,copyFile} from 'node:fs/promises';
-          import assert from 'node:assert/strict';
-          const dir='dist/releases/'+process.env.RELEASE_VERSION;
-          const meta=JSON.parse(await readFile(dir+'/release.json','utf8'));
-          assert.equal(meta.sourceRevision,process.env.SOURCE_SHA);
-          assert.equal(meta.sourceDirty,false);
-          meta.ci={repository:process.env.GITHUB_REPOSITORY,runId:process.env.GITHUB_RUN_ID,
-            runUrl:`https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
-            workflowSha:process.env.WORKFLOW_SHA,sourceRevision:process.env.SOURCE_SHA};
-          await writeFile(dir+'/release.json',JSON.stringify(meta,null,2)+'\n');
-          await mkdir('preview-artifacts');
-          for(const name of [meta.artifact,'SHA256SUMS.txt','release.json','package-smoke.json'])await copyFile(dir+'/'+name,'preview-artifacts/'+name);
-          await copyFile(dir+'/安装说明.md','preview-artifacts/INSTALL-macos-arm64.md');
-          NODE
+        run: node scripts/collect-preview-artifacts.mjs macos
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: preview-macos-arm64-${{ needs.verify.outputs.sha }}
           path: preview-artifacts/*
           if-no-files-found: error
           retention-days: 14
+  build_windows:
+    needs: verify
+    runs-on: windows-2025
+    timeout-minutes: 90
+    env:
+      TTS_NATIVE_BACKGROUND_MS: '360000'
+      CARGO_BUILD_JOBS: '2'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24.21.0'
+      - run: rustup toolchain install 1.92.0 --profile minimal; rustup default 1.92.0
+      - run: npm ci
+      - name: Check installer PowerShell syntax
+        shell: pwsh
+        run: |
+          foreach ($script in @('scripts/test-windows-installer.ps1','scripts/test-windows-installer-ui.ps1')) {
+            $tokens=$null; $parseErrors=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $script),[ref]$tokens,[ref]$parseErrors)
+            if ($parseErrors.Count -gt 0) { throw ($parseErrors | Out-String) }
+          }
+      - run: node --test tests/records-desktop-entry.test.mjs tests/records-audio-storage-sync.test.mjs tests/records-release-source.test.mjs tests/records-preview-release.test.mjs
+      - run: npm run build:web
+      - run: node scripts/prepare-client-backend.mjs
+      - name: Restore Windows Rust dependency cache
+        id: rust_cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5, Node 24
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/desktop/src-tauri/target/debug/deps
+            apps/desktop/src-tauri/target/debug/build
+            apps/desktop/src-tauri/target/debug/.fingerprint
+            apps/desktop/src-tauri/target/release/deps
+            apps/desktop/src-tauri/target/release/build
+            apps/desktop/src-tauri/target/release/.fingerprint
+          key: windows-2025-rust192-v1-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}
+          restore-keys: windows-2025-rust192-v1-
+      - name: Native regression
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          New-Item -ItemType Directory -Force .agent-runtime | Out-Null
+          & cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --features smoke-test -- --test-threads=1 2>&1 | Tee-Object .agent-runtime/windows-rust.log
+          $nativeStatus = $LASTEXITCODE
+          if ($nativeStatus -ne 0) {
+            $log = Get-Content .agent-runtime/windows-rust.log -Raw
+            $tail = $log.Substring([Math]::Max(0, $log.Length - 6500))
+            for ($at = 0; $at -lt $tail.Length; $at += 1000) {
+              $part = $tail.Substring($at, [Math]::Min(1000, $tail.Length - $at)).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+              Write-Output "::error title=Windows native diagnostic::$part"
+            }
+          }
+          exit $nativeStatus
+      - name: Build native probe
+        run: cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --features smoke-test
+      - name: Hidden recording and restart replay
+        env:
+          NATIVE_CLIENT_EXECUTABLE: ${{ github.workspace }}\apps\desktop\src-tauri\target\debug\tts-client.exe
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          & node scripts/test-native-client.mjs .agent-runtime/windows-native.json 2>&1 | Tee-Object .agent-runtime/windows-probe.log
+          $probeStatus = $LASTEXITCODE
+          if ($probeStatus -ne 0) {
+            $log = Get-Content .agent-runtime/windows-probe.log -Raw
+            $log = [regex]::Replace($log, '(?im)^.*(?:authorization|cookie|api.?key|password).*$','[redacted diagnostic line]')
+            $tail = $log.Substring([Math]::Max(0, $log.Length - 6500))
+            for ($at = 0; $at -lt $tail.Length; $at += 1000) {
+              $part = $tail.Substring($at, [Math]::Min(1000, $tail.Length - $at)).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+              Write-Output "::error title=Windows probe diagnostic::$part"
+            }
+          }
+          exit $probeStatus
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: always()
+        with:
+          name: windows-native-${{ github.sha }}
+          path: .agent-runtime/windows-native.json
+          if-no-files-found: ignore
+      - name: Build and verify Windows preview installer
+        timeout-minutes: 30
+        env:
+          TTS_RELEASE_SOURCE_REF: ${{ needs.verify.outputs.sha }}
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          & npm run release:windows:preview 2>&1 | Tee-Object .agent-runtime/windows-package.log
+          $status = $LASTEXITCODE
+          if ($status -ne 0) {
+            $log = (Get-Content .agent-runtime/windows-package.log | Where-Object { $_ -notmatch '(?i)authorization|bearer |password|api[_-]?key|cookie|::notice title=LingJi installer ' }) -join "`n"
+            $tail = $log.Substring([Math]::Max(0,$log.Length-7500))
+            for ($at=0;$at -lt $tail.Length;$at+=1000) {
+              $part=$tail.Substring($at,[Math]::Min(1000,$tail.Length-$at)).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+              Write-Output "::error title=Windows package diagnostic::$part"
+            }
+          }
+          exit $status
+      - name: Inspect installer welcome screenshot
+        if: ${{ always() }}
+        run: node scripts/expose-installer-screen.mjs welcome
+      - name: Inspect installer settings screenshot
+        if: ${{ always() }}
+        run: node scripts/expose-installer-screen.mjs settings
+      - name: Inspect installer installing screenshot
+        if: ${{ always() }}
+        run: node scripts/expose-installer-screen.mjs installing
+      - name: Inspect installer finish screenshot
+        if: ${{ always() }}
+        run: node scripts/expose-installer-screen.mjs finish
+      - name: Inspect installer unexpected screenshot
+        if: ${{ always() }}
+        run: node scripts/expose-installer-screen.mjs unexpected
+      - name: Save Windows Rust dependency cache
+        if: ${{ always() && !cancelled() && steps.rust_cache.outcome == 'success' && steps.rust_cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/desktop/src-tauri/target/debug/deps
+            apps/desktop/src-tauri/target/debug/build
+            apps/desktop/src-tauri/target/debug/.fingerprint
+            apps/desktop/src-tauri/target/release/deps
+            apps/desktop/src-tauri/target/release/build
+            apps/desktop/src-tauri/target/release/.fingerprint
+          key: ${{ steps.rust_cache.outputs.cache-primary-key }}
+      - name: Collect Windows release files
+        env:
+          RELEASE_VERSION: ${{ needs.verify.outputs.version }}
+          SOURCE_SHA: ${{ needs.verify.outputs.sha }}
+          WORKFLOW_SHA: ${{ needs.verify.outputs.controller_sha }}
+        run: node scripts/collect-preview-artifacts.mjs windows
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: preview-windows-x64-${{ needs.verify.outputs.sha }}
+          path: preview-artifacts/*
+          if-no-files-found: error
+          retention-days: 14
+  build_linux:
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.21.0'
+          cache: npm
+      - name: Install Linux build and test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev libpipewire-0.3-dev libspa-0.2-dev xvfb xauth
+      - run: rustup toolchain install 1.92.0 --profile minimal && rustup default 1.92.0
+      - run: npm ci
+      - run: node --test tests/records-preview-release.test.mjs tests/records-local-asr.test.mjs tests/records-release-source.test.mjs
+      - run: npm run build:web && node scripts/prepare-client-backend.mjs
+      - name: Linux native regression
+        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --features smoke-test -- --test-threads=1
+      - name: Build, install, verify and uninstall DEB
+        env:
+          TTS_RELEASE_SOURCE_REF: ${{ needs.verify.outputs.sha }}
+        run: npm run release:linux:preview
+      - name: Collect Linux release files
+        env:
+          RELEASE_VERSION: ${{ needs.verify.outputs.version }}
+          SOURCE_SHA: ${{ needs.verify.outputs.sha }}
+          WORKFLOW_SHA: ${{ needs.verify.outputs.controller_sha }}
+        run: node scripts/collect-preview-artifacts.mjs linux
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: preview-linux-x64-${{ needs.verify.outputs.sha }}
+          path: preview-artifacts/*
+          if-no-files-found: error
+          retention-days: 14
   publish:
-    needs: [verify, build]
+    needs: [verify, build, build_windows, build_linux]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -146,7 +338,8 @@ jobs:
           node-version: '26.12.1'
       - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
-          name: preview-macos-arm64-${{ needs.verify.outputs.sha }}
+          pattern: preview-*-${{ needs.verify.outputs.sha }}
+          merge-multiple: true
           path: preview-artifacts
       - name: Verify assets, reconcile draft and publish prerelease
         env:

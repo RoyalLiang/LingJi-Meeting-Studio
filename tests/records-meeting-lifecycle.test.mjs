@@ -17,7 +17,7 @@ async function stopHarness({ backgroundWait = Promise.resolve(), refreshFails = 
     exports: {}, stopping: { current: false }, capture: { current: controller }, activeId: { current: current.id },
     setBusy: value => { state.busy = value; }, setCapturePhase: value => { state.phase = value; },
     setError: value => { state.error = value; }, setRecording: value => { state.recording = value; },
-    setRecord: value => { state.record = value; }, setModal: value => { state.modal = value; },
+    rememberRecord: value => { state.record = value; }, setModal: value => { state.modal = value; },
     api: async (path, method, body) => { state.calls.push({ path, method, body }); return method === 'POST' ? { ...current, capture: 'sealed' } : current; },
     localManifests: async () => [{ sourceId: 'mic', lastSequence: 3 }],
     upload: () => backgroundWait,
@@ -86,4 +86,47 @@ test('meeting controls distinguish ending capture from starting audio or unrelat
   assert.doesNotMatch(saving, /正在接入声音/);
   const starting = await renderControls({ recording: false, busy: true, phase: 'starting' });
   assert.match(starting, /正在接入声音/);
+});
+
+test('ending capture keeps visible summary progress until the final job completes',async()=>{
+ const record={capture:'completed',sources:[],segments:[{id:'s1'}],transcriptRevision:3,pendingChunks:0,autoMinutes:{enabled:true},jobs:[{scope:'final',status:'running',progress:{completed:2,total:5,stage:'window'}}]};
+ const processing=await renderControls({record,recording:false,busy:false});
+ assert.match(processing,/录音已结束，正在后台收尾/);
+ assert.match(processing,/纪要与重点速览/);assert.match(processing,/2\/5/);
+ assert.doesNotMatch(processing,/本场已收好/);
+ record.jobs[0].status='completed';record.minutes={transcriptRevision:3};
+ assert.match(await renderControls({record,recording:false,busy:false}),/本场已收好/);
+});
+
+test('sealed local tail remains visibly processing before packets reach the backend',async()=>{
+ const html=await renderControls({record:{capture:'sealed',sources:[{watermark:1,lastSequence:2}],pendingChunks:0,jobs:[],segments:[]},recording:false,busy:false});
+ assert.match(html,/正在后台收尾/);assert.match(html,/尾段音频/);assert.doesNotMatch(html,/本场已收好/);
+});
+
+test('a preserved manual summary is not reported as failed when its background job becomes stale',async()=>{
+ const record={capture:'completed',sources:[],pendingChunks:0,segments:[{id:'s1'}],transcriptRevision:3,autoMinutes:{enabled:true},minutes:{edited:true,transcriptRevision:3},jobs:[{scope:'final',status:'stale',transcriptRevision:3}]};
+ const html=await renderControls({record,recording:false,busy:false});
+ assert.match(html,/本场已收好/);assert.doesNotMatch(html,/纪要待重试|整理未完成/);
+ record.jobs[0].status='failed';
+ assert.match(await renderControls({record,recording:false,busy:false}),/纪要待重试/);
+});
+
+test('synthesis remains visibly processing after all nodes finish',async()=>{
+ const record={capture:'completed',sources:[],segments:[{id:'s1'}],transcriptRevision:3,pendingChunks:0,autoMinutes:{enabled:true},jobs:[{scope:'final',status:'running',progress:{completed:4,total:4,stage:'synthesis'}}]};
+ const html=await renderControls({record,recording:false,busy:false});
+ assert.match(html,/is-processing/);assert.match(html,/正在汇总会议终稿/);assert.match(html,/4\/4/);assert.doesNotMatch(html,/本场已收好/);
+ record.jobs[0].status='completed';record.minutes={transcriptRevision:3};
+ assert.doesNotMatch(await renderControls({record,recording:false,busy:false}),/is-processing/);
+});
+
+test('exhausted tail transcription requires retry while independent minutes can continue',async()=>{
+ const record={capture:'sealed',transcription:'failed',sources:[],segments:[{id:'s1'}],transcriptRevision:3,pendingChunks:1,autoMinutes:{enabled:true},jobs:[]};
+ const failed=await renderControls({record,recording:false,busy:false});
+ assert.match(failed,/尾段转录待重试/);assert.match(failed,/is-blocked/);assert.match(failed,/音频包等待重试/);assert.doesNotMatch(failed,/个音频包正在处理/);assert.match(failed,/转录已暂停/);assert.doesNotMatch(failed,/is-processing|正在处理尾段转录|将继续更新/);
+ record.jobs.push({scope:'final',status:'running',progress:{completed:2,total:5,stage:'window'}});
+ const summarizing=await renderControls({record,recording:false,busy:false});
+ assert.match(summarizing,/is-processing/);assert.match(summarizing,/2\/5/);assert.match(summarizing,/尾段转录待重试/);assert.doesNotMatch(summarizing,/正在处理尾段转录|将继续更新/);
+ record.jobs=[];record.transcription='queued';
+ const retried=await renderControls({record,recording:false,busy:false});
+ assert.match(retried,/is-processing/);assert.match(retried,/正在处理尾段转录/);assert.doesNotMatch(retried,/尾段转录待重试|is-blocked/);
 });

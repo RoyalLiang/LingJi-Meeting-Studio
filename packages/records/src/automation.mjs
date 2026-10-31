@@ -2,8 +2,8 @@ import { emit, requestMinutes, requireThat } from './record.mjs';
 
 export function setAutomation(record, input, now = Date.now()) {
  requireThat(typeof input.enabled === 'boolean', 'invalid_automation', 400);
- const intervalSeconds = Number(input.intervalSeconds || record.autoMinutes?.intervalSeconds || 30);
- requireThat([15, 30, 60, 120].includes(intervalSeconds), 'invalid_automation_interval', 400);
+ const intervalSeconds = Number(input.intervalSeconds || record.autoMinutes?.intervalSeconds || 90);
+ requireThat([15, 30, 60, 90, 120].includes(intervalSeconds), 'invalid_automation_interval', 400);
  if (input.realtimeAudioConsent === true) record.realtimeAudioConsent = true;
   record.autoMinutes = { ...record.autoMinutes, enabled: input.enabled, intervalSeconds, enabledAt: now };
  if (!input.enabled) for (const job of record.jobs) if (job.automatic && ['queued', 'running'].includes(job.status)) {
@@ -11,35 +11,46 @@ export function setAutomation(record, input, now = Date.now()) {
  }
  emit(record, 'minutes.automation', { enabled: input.enabled });
 }
-export function automaticMinutesAt(record, now = Date.now()) {
- const auto = record.autoMinutes;
- if (!auto?.enabled || record.deleted || !record.segments.length || record.minutes?.edited) return Infinity;
- const scope = record.capture === 'completed' ? 'final' : 'live';
- if(record.jobs.some(j=>['queued','running'].includes(j.status) && (scope==='live' || j.scope!=='live')))return Infinity;
- if (scope === 'final') {
-  const latest=record.jobs.filter(job=>job.scope!=='live' && job.transcriptRevision===record.transcriptRevision && job.notesRevision===record.notesRevision).at(-1);
-  if(!latest)return now;
-  const transient=/^(?:llm_timeout|llm_connection_failed|llm_stream_incomplete|llm_stream_failed|provider_rate_limited|provider_http_5\d\d)$/.test(latest.error || '');
-  const attempt=latest.retryAttempt || 1;
-  if(latest.status!=='failed' || latest.mode!=='model' || !transient || attempt>=3 || latest.baseMinutesRevision!==record.minutesRevision)return Infinity;
-  const failedAt=latest.failedAt ?? (latest.automatic ? auto.lastRequestedAt : undefined) ?? Date.parse(latest.createdAt);
-  return failedAt+15000*2**(attempt-1);
- }
- if (auto.lastRevision === record.transcriptRevision && auto.lastScope === scope) return Infinity;
- return Math.max(auto.enabledAt || Date.parse(record.createdAt), auto.lastRequestedAt || 0) + auto.intervalSeconds * 1000;
-}
-export function queueAutomaticMinutes(record, modelVersion, now = Date.now()) {
- if (automaticMinutesAt(record, now) > now) return;
- const scope = record.capture === 'completed' ? 'final' : 'live';
- const previous=scope==='final' ? record.jobs.filter(job=>job.scope!=='live' && job.transcriptRevision===record.transcriptRevision && job.notesRevision===record.notesRevision).at(-1) : undefined;
- const job = requestMinutes(record, { mode: 'model', scope, automatic: true, modelVersion, ...(previous?.status==='failed' ? {template:previous.template} : {}) });
- if(previous?.status==='failed' && previous.modelVersion===job.modelVersion) {job.retryAttempt=(previous.retryAttempt || 1)+1;job.retryOf=previous.retryOf || previous.id;}
- else job.retryAttempt=1;
- record.autoMinutes = { ...record.autoMinutes, lastRevision: record.transcriptRevision, lastScope: scope, lastRequestedAt: now };
- return job;
+const recoverableMinutesError = /^(?:llm_timeout|llm_connection_failed|llm_stream_incomplete|llm_stream_failed|invalid_llm_response|invalid_minutes_schema|invalid_minutes_topics|minutes_without_new_evidence|provider_rate_limited|provider_http_5\d\d)$/;
+
+function checkpointJob(record, scope) {
+  return record.jobs.filter(job => (scope === 'live' ? job.scope === 'live' : job.scope !== 'live') && job.transcriptRevision === record.transcriptRevision && job.notesRevision === record.notesRevision).at(-1);
 }
 
-// A preview is deliberately limited to visible strings. Evidence is trusted only after full validation.
+export function automaticMinutesAt(record, now = Date.now()) {
+  const auto = record.autoMinutes;
+  if (!auto?.enabled || record.deleted || !record.segments.length || record.minutes?.edited) return Infinity;
+  const scope = record.capture === 'completed' ? 'final' : 'live';
+  if (record.jobs.some(job => ['queued', 'running'].includes(job.status))) return Infinity;
+  const paused = record.capture === 'paused';
+  // A pause remains resumable; catch up only after the saved audio tail has drained.
+  if (paused && (record.sources.some(source => !source.stopped || source.watermark !== source.lastSequence) || record.chunks.some(chunk => chunk.state !== 'done'))) return Infinity;
+  if (scope === 'final' || paused || record.capture === 'sealed' || (auto.lastRevision === record.transcriptRevision && auto.lastScope === scope)) {
+    const latest = checkpointJob(record, scope);
+    if (!latest) return now;
+    const attempt = latest.retryAttempt || 1;
+    if (latest.status !== 'failed' || latest.mode !== 'model' || !recoverableMinutesError.test(latest.error || '') || attempt >= 3 || latest.baseMinutesRevision !== record.minutesRevision) return Infinity;
+    const failedAt = latest.failedAt ?? (latest.automatic ? auto.lastRequestedAt : undefined) ?? Date.parse(latest.createdAt);
+    return failedAt + 15000 * 2 ** (attempt - 1);
+  }
+  const interval=auto.lastRequestedAt==null ? Math.min(auto.intervalSeconds,30) : auto.intervalSeconds;
+  return Math.max(auto.enabledAt || Date.parse(record.createdAt), auto.lastRequestedAt || 0) + interval * 1000;
+}
+
+export function queueAutomaticMinutes(record, modelVersion, now = Date.now()) {
+  if (automaticMinutesAt(record, now) > now) return;
+  const scope = record.capture === 'completed' ? 'final' : 'live';
+  const previous = checkpointJob(record, scope);
+  const job = requestMinutes(record, { mode: 'model', scope, automatic: true, modelVersion, ...(previous?.status === 'failed' ? {template: previous.template} : {}) });
+  if (record.capture === 'paused') job.pausedCheckpoint = true;
+  if (previous?.status === 'failed' && previous.modelVersion === job.modelVersion) {
+    job.retryAttempt = (previous.retryAttempt || 1) + 1;
+    job.retryOf = previous.retryOf || previous.id;
+  } else job.retryAttempt = 1;
+  record.autoMinutes = { ...record.autoMinutes, lastRevision: record.transcriptRevision, lastScope: scope, lastRequestedAt: now };
+  return job;
+}
+
 export function minutesPreview(json) {
  const blocks = []; const pattern = /"(title|heading|text|summary)"\s*:\s*"((?:[^"\\]|\\.)*)("|$)/g;
  for (const match of json.matchAll(pattern)) {

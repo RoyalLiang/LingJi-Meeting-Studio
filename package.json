@@ -1,12 +1,9 @@
 {
   "name": "tts-platform",
   "private": true,
-  "version": "0.1.5",
+  "version": "0.2.6",
   "packageManager": "npm@10.8.1",
   "type": "module",
-  "engines": {
-    "node": ">=26.12.1 <27"
-  },
   "workspaces": [
     "apps/*",
     "services/*",
@@ -21,8 +18,8 @@
     "dev:api": "node ./services/transcript-api/src/server.mjs",
     "dev:ai": "node ./services/ai-worker/src/worker.mjs",
     "db:migrate:transcript": "node ./services/transcript-api/src/migrate.mjs",
-    "lint": "eslint services/records/src packages/records/src scripts tests/records*.mjs apps/web/src/production-server.mjs",
-    "test": "node --test --test-concurrency=1 ./tests/memory-smoke.test.mjs ./tests/provider-and-desktop-preview.test.mjs ./tests/domain-and-components.test.mjs ./tests/records.test.mjs ./tests/records-resilience.test.mjs ./tests/records-providers.test.mjs ./tests/records-streaming.test.mjs ./tests/records-automation.test.mjs ./tests/records-speakers.test.mjs tests/records-recovery.test.mjs ./tests/records-realtime.test.mjs ./tests/records-capture.test.mjs ./tests/records-meeting-lifecycle.test.mjs ./tests/records-meeting-order.test.mjs ./tests/records-startup-performance.test.mjs ./tests/records-minutes-views.test.mjs ./tests/records-workbench-ux.test.mjs ./tests/records-lifecycle.test.mjs ./tests/records-settings-quality.test.mjs ./tests/records-asr-quality.test.mjs ./tests/records-preview-release.test.mjs ./tests/records-live-reading.test.mjs ./tests/records-workspaces.test.mjs ./tests/records-telemetry.test.mjs ./tests/records-projections.test.mjs ./tests/records-queue.test.mjs ./tests/records-minutes-pipeline.test.mjs ./tests/records-native-client.test.mjs ./tests/records-client-update.test.mjs ./tests/records-native-menu.test.mjs ./tests/records-minutes-layout.test.mjs ./tests/records-auth-stability.test.mjs ./tests/records-recording-playback.test.mjs ./tests/records-exports.test.mjs tests/records-playback-transport.test.mjs ./tests/records-toast.test.mjs ./tests/records-feedback-notice.test.mjs ./tests/records-source-share.test.mjs ./tests/records-learning.test.mjs ./tests/records-learning-display.test.mjs ./tests/records-learning-integration.test.mjs ./tests/records-openai-realtime.test.mjs ./tests/records-doubao-audio.test.mjs tests/records-meeting-agent.test.mjs tests/records-agent-api.test.mjs",
+    "lint": "eslint services/records/src packages/records/src scripts tests/records*.mjs apps/web/src/production-server.mjs apps/site/src apps/site/public/share-status.js scripts/benchmark-pi-chain.mjs",
+    "test": "node --test --test-concurrency=1 ./tests/memory-smoke.test.mjs ./tests/provider-and-desktop-preview.test.mjs ./tests/domain-and-components.test.mjs ./tests/records.test.mjs ./tests/records-resilience.test.mjs ./tests/records-providers.test.mjs ./tests/records-streaming.test.mjs ./tests/records-automation.test.mjs ./tests/records-speakers.test.mjs tests/records-recovery.test.mjs ./tests/records-realtime.test.mjs ./tests/records-capture.test.mjs ./tests/records-meeting-lifecycle.test.mjs ./tests/records-meeting-automation.test.mjs ./tests/records-native-meeting-watch.test.mjs ./tests/records-meeting-order.test.mjs ./tests/records-startup-performance.test.mjs ./tests/records-minutes-views.test.mjs ./tests/records-workbench-ux.test.mjs ./tests/records-lifecycle.test.mjs ./tests/records-settings-quality.test.mjs ./tests/records-asr-quality.test.mjs ./tests/records-multilingual-vocabulary.test.mjs ./tests/records-preview-release.test.mjs ./tests/records-live-reading.test.mjs ./tests/records-workspaces.test.mjs ./tests/records-telemetry.test.mjs ./tests/records-projections.test.mjs ./tests/records-queue.test.mjs ./tests/records-minutes-pipeline.test.mjs ./tests/records-minutes-runtime-performance.test.mjs tests/records-minutes-completeness.test.mjs ./tests/records-native-client.test.mjs ./tests/records-client-update.test.mjs ./tests/records-native-menu.test.mjs ./tests/records-minutes-layout.test.mjs ./tests/records-minutes-quality.test.mjs ./tests/records-auth-stability.test.mjs ./tests/records-recording-playback.test.mjs ./tests/records-exports.test.mjs tests/records-playback-transport.test.mjs ./tests/records-transcript-history.test.mjs ./tests/records-toast.test.mjs ./tests/records-feedback-notice.test.mjs ./tests/records-source-share.test.mjs ./tests/records-learning.test.mjs ./tests/records-learning-display.test.mjs ./tests/records-learning-integration.test.mjs ./tests/records-openai-realtime.test.mjs ./tests/records-doubao-audio.test.mjs ./tests/records-playback-waveform.test.mjs ./tests/records-funasr.test.mjs ./tests/records-local-asr.test.mjs ./tests/records-local-asr-pipeline.test.mjs ./tests/records-audio-storage-sync.test.mjs ./tests/records-release-source.test.mjs ./tests/records-desktop-entry.test.mjs ./tests/records-minutes-efficiency.test.mjs ./tests/records-minutes-context.test.mjs tests/records-sensevoice-minutes-smoke.test.mjs ./tests/records-connection-status.test.mjs tests/records-client-reliability.test.mjs ./tests/records-performance-fixes.test.mjs ./tests/records-render-performance.test.mjs ./tests/records-asr-send-deadline.test.mjs ./tests/records-beta.test.mjs ./tests/records-published-site.test.mjs ./tests/records-learning-service.test.mjs ./tests/records-translation-live.test.mjs ./tests/records-meeting-highlights.test.mjs tests/records-meeting-agent.test.mjs tests/records-agent-api.test.mjs tests/records-pi-full-chain.test.mjs",
     "test:smoke": "node --test --test-concurrency=1 ./tests/memory-smoke.test.mjs ./tests/provider-and-desktop-preview.test.mjs ./tests/domain-and-components.test.mjs",
     "test:domain": "node --test ./tests/domain-and-components.test.mjs",
     "test:postgres": "node --test --test-concurrency=1 ./tests/postgres-smoke.test.mjs",
@@ -42,25 +39,30 @@
     "release:client:plan": "node scripts/client-release.mjs plan",
     "release:client:build": "node scripts/client-release.mjs build",
     "evaluate:asr": "node scripts/evaluate-asr.mjs",
+    "evaluate:minutes": "node scripts/evaluate-minutes.mjs",
     "benchmark:startup": "node scripts/benchmark-client-startup.mjs",
     "release:macos:preview": "TTS_RELEASE_CHANNEL=preview node scripts/release-macos-alpha.mjs",
-    "test:client:updates": "node --test tests/records-client-update.test.mjs"
+    "test:client:updates": "node --test tests/records-client-update.test.mjs",
+    "release:windows:preview": "node scripts/release-windows-preview.mjs",
+    "release:linux:preview": "node scripts/release-linux-preview.mjs",
+    "build:site": "node scripts/build-public-site.mjs"
   },
   "dependencies": {
+    "ws": "^8.19.0",
     "@earendil-works/chord": "1.4.0",
     "@earendil-works/pi-ai": "1.4.0",
-    "@earendil-works/pi-durable": "1.4.0",
-    "protobufjs": "^8.0.0",
-    "ws": "^8.19.0"
+    "@earendil-works/pi-durable": "1.4.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@tailwindcss/cli": "^4.2.2",
     "@tauri-apps/cli": "2.12.2",
-    "esbuild": "0.25.12",
     "eslint": "^10.12.0",
     "fake-indexeddb": "^6.2.5",
     "globals": "^17.13.0",
     "tailwindcss": "^4.2.2"
+  },
+  "engines": {
+    "node": ">=26.12.1 <27"
   }
 }

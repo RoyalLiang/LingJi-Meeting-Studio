@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Translate } from '@phosphor-icons/react';
 import { api, messageOf } from '../api';
 import { Select } from './Select';
 import { Toast } from './Toast';
@@ -20,5 +21,5 @@ export function TranslationSettings({ recordId, value, saved }: { recordId: stri
       if (active.current) { setSelected(value); setError(messageOf(error)); }
     } finally { pending.current = false; if (active.current) setBusy(false); }
   }
-  return <div className="settings-section"><h3>本次同步翻译</h3><label>目标语言<Select readOnly={busy} label="翻译目标语言" value={selected} onChange={target => void choose(target)} options={[{value:'',label:'关闭'},{value:'en',label:'English'},{value:'zh',label:'中文'},{value:'ja',label:'日本語'},{value:'es',label:'Español'}]}/></label><p className="fine-print">确认的发言通过豆包翻译模型逐句翻译；失败不影响原文保存。</p><Toast message={error || notice} error={Boolean(error)} dismiss={dismiss}/></div>;
+  return <div className="settings-section settings-inline"><div className="section-title"><Translate size={19}/><h3>自动翻译</h3></div><Select readOnly={busy} label="翻译目标语言" value={selected} onChange={target => void choose(target)} options={[{value:'',label:'关闭'},{value:'en',label:'English'},{value:'zh',label:'中文'},{value:'ja',label:'日本語'},{value:'es',label:'Español'},{value:'fr',label:'Français'},{value:'de',label:'Deutsch'}]}/><Toast message={error || notice} error={Boolean(error)} dismiss={dismiss}/></div>;
 }

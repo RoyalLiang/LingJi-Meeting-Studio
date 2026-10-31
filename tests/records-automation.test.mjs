@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createRecord, requestMinutes, commitMinutes, validateMinutes, addSource, acknowledge, digest, editSegment } from '../packages/records/src/record.mjs';
+import { createRecord, requestMinutes, commitMinutes, validateMinutes, addSource, acknowledge, digest, editSegment, pause, seal, commitTranscript } from '../packages/records/src/record.mjs';
 import { setAutomation, automaticMinutesAt, queueAutomaticMinutes, updateMinutesPreview } from '../packages/records/src/automation.mjs';
 import { createRepository } from '../services/records/src/repository.mjs';
 import { runCycle } from '../services/records/src/worker.mjs';
@@ -13,6 +13,112 @@ import { publicRecord } from '../packages/records/src/record.mjs';
 const segment = {id:'s1',revision:1,text:'决定周五评审',startMs:0,endMs:1000,speaker:'',sourceId:'text-import'};
 const result = {title:'评审',topics:[{title:'评审安排',summary:'确定评审时间',evidence:[{segmentId:'s1',revision:1}]}],sections:[{heading:'决定',items:[{text:'周五评审',evidence:[{segmentId:'s1',revision:1}]}]}],actions:[]};
 function record() { const r=createRecord('fixture');r.segments=[{...segment}];r.transcriptRevision=1;r.capture='recording';return r; }
+
+test('a slow summary continues after stop and the final worker includes the drained audio tail',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'tts-summary-drain-')),repo=await createRepository({root,databaseUrl:''});
+ let release,work,ready;const gate=new Promise(resolve=>{release=resolve;}),started=new Promise(resolve=>{ready=resolve;});
+ try{
+  await saveConfig(root,{LLM_API_URL:'http://fixture.invalid/chat/completions',LLM_API_KEY:'fixture',LLM_MODEL:'fixture-model'},{});
+  const r=record(),source=addSource(r,{kind:'microphone'}),bytes=Buffer.alloc(3200);
+  acknowledge(r,{sessionId:source.sessionId,sourceId:source.id,epoch:source.epoch,sequence:0,sampleOffset:0,sampleCount:1600,sampleRate:16000,digest:digest(bytes),object:'fixture-tail'});
+  setAutomation(r,{enabled:true},Date.now()-31000);await repo.insert(r);
+  const scopes=[];
+  const providers={minutes:async job=>{
+   scopes.push(job.scope);
+   if(job.scope==='live'){ready();await gate;}
+   return {title:job.scope==='live'?'会中完整总结':'最终含尾段总结',sections:[{heading:'内容',items:job.snapshot.filter(s=>!s.contextOnly).map(s=>({text:s.text,evidence:[{segmentId:s.id,revision:s.revision}]}))}],actions:[]};
+  }};
+  work=runCycle(repo,providers,{lane:'minutes'});await started;
+  await repo.change(r.id,value=>seal(value,[{sourceId:source.id,epoch:source.epoch,lastSequence:0}]));
+  assert.equal((await repo.get(r.id)).capture,'sealed');
+  await repo.change(r.id,value=>commitTranscript(value,value.chunks[0].key,'尾段：评审改为周一',value.generation));
+  await runCycle(repo,providers,{lane:'minutes'});
+  assert.deepEqual(scopes,['live']);assert.equal((await repo.get(r.id)).jobs[0].status,'running');
+  release();await work;
+  assert.equal((await repo.get(r.id)).liveMinutes.title,'会中完整总结');
+  await runCycle(repo,providers,{lane:'minutes'});
+  const saved=await repo.get(r.id);
+  assert.deepEqual(scopes,['live','final']);assert.equal(saved.minutes.transcriptRevision,saved.transcriptRevision);
+  assert.ok(saved.minutes.sections.flatMap(section=>section.items).some(item=>item.text.includes('尾段：评审改为周一')));
+  assert.ok(saved.jobs.every(job=>job.status==='completed'));assert.equal(saved.title,'最终含尾段总结');
+ }finally{release();await work;await repo.close();await rm(root,{recursive:true,force:true});}
+});
+test('an exhausted interrupted minutes job reaches failure instead of staying running forever',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'tts-expired-minutes-')),repo=await createRepository({root,databaseUrl:''});
+ try{
+  for(const [status,lease] of [['running',Date.now()-1],['running',undefined],['queued',undefined]]){
+   const r=record();r.capture='completed';
+   const job=requestMinutes(r,{scope:'final',modelVersion:'fixture'});
+   Object.assign(job,{status,lease,attempts:3,fence:'obsolete-worker',preview:[{kind:'item',text:'待核验'}],partialMinutes:result});
+   await repo.insert(r);
+   await runCycle(repo,{minutes:async()=>{assert.fail('attempt budget must stay bounded');}},{lane:'minutes'});
+   const saved=await repo.get(r.id),failed=saved.jobs.find(j=>j.id===job.id);
+   assert.equal(failed.status,'failed');assert.equal(failed.error,'minutes_request_failed');
+   assert.equal(failed.fence,null);assert.deepEqual(failed.snapshot,[]);assert.equal(failed.preview,undefined);assert.equal(failed.partialMinutes,undefined);
+  }
+ }finally{await repo.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('a post-stop timeout retains validated windows and refuses stale or manually protected drafts',async()=>{
+ for(const protection of ['none','notes','transcript','manual','recording']){
+  const root=await mkdtemp(join(tmpdir(),'tts-summary-timeout-')),repo=await createRepository({root,databaseUrl:''});
+  let release,work,ready,calls=0;const gate=new Promise(resolve=>{release=resolve;}),started=new Promise(resolve=>{ready=resolve;});
+  try{
+   const r=record();r.segments=[{...segment,id:'early',startMs:0,endMs:1000},{...segment,id:'late',startMs:400000,endMs:401000}];
+   requestMinutes(r,{scope:'live',mode:'model'});await repo.insert(r);
+   work=runCycle(repo,{minutes:async job=>{
+    if(++calls===2){ready();await gate;throw Object.assign(new Error('timeout'),{code:'llm_timeout'});}
+    const source=job.snapshot.find(s=>!s.contextOnly),evidence=[{segmentId:source.id,revision:source.revision}];
+    return {title:'保留已校验部分',sections:[{heading:'已校验',items:[{text:'第一窗内容',evidence}]}],highlights:[{text:'第一窗重点',evidence}],actions:[]};
+   }},{lane:'minutes'});
+   await started;
+   for(let count=0;count<100 && !(await repo.get(r.id)).jobs[0].partialMinutes;count++)await new Promise(resolve=>setTimeout(resolve,2));
+   assert.equal((await repo.get(r.id)).jobs[0].partialMinutes.highlights[0].text,'第一窗重点');
+   await repo.change(r.id,value=>{
+    if(protection!=='recording')seal(value,[]);
+    if(protection==='notes')value.notesRevision++;
+    if(protection==='transcript')value.segments[0].revision++;
+    if(protection==='manual')value.minutes={edited:true};
+   });
+   release();await work;
+   const saved=await repo.get(r.id);
+   assert.equal(saved.jobs[0].status,'failed');assert.equal(saved.jobs[0].error,'llm_timeout');
+   if(protection==='none'){
+    assert.equal(saved.liveMinutes.highlights[0].text,'第一窗重点');
+    assert.equal(saved.liveMinutes.template,undefined,'a partial cannot mark unfinished transcript windows as covered');
+    assert.ok(requestMinutes(saved,{scope:'live'}).snapshot.every(source=>source.contextOnly===false));
+   }else assert.equal(saved.liveMinutes,null);
+  }finally{release();await work;await repo.close();await rm(root,{recursive:true,force:true});}
+ }
+});
+test('live worker exposes first-window draft while other windows wait and keeps it through transcript appends',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'tts-live-visible-')),repo=await createRepository({root,databaseUrl:''});let release,work,started=0,ready;
+ const gate=new Promise(resolve=>{release=resolve;}),waiting=new Promise(resolve=>{ready=resolve;});
+ try{
+  await saveConfig(root,{LLM_API_URL:'http://fixture.invalid/chat/completions',LLM_API_KEY:'fixture',LLM_MODEL:'fixture-model'},{});
+  const r=record();r.segments=Array.from({length:12},(_,i)=>({...segment,id:'s'+i,startMs:i*1000,endMs:(i+1)*1000,text:'核对接口依赖与发布准备。'.repeat(100)}));
+  setAutomation(r,{enabled:true,intervalSeconds:120},Date.now()-31000);await repo.insert(r);
+  work=runCycle(repo,{minutes:async(job,env,options)=>{
+   if(job.stage==='synthesis')return {title:'汇总',sections:[{heading:'讨论',items:job.summaries.flatMap(s=>s.sections.flatMap(s=>s.items))}],actions:[]};
+   const source=job.snapshot.find(s=>!s.contextOnly);
+   await options.onDelta?.(JSON.stringify({title:'首窗实时草稿'+source.id,sections:[{heading:'当前讨论',items:[{text:'先核对接口依赖'+source.id}]}]}),{firstTokenMs:5});
+   if(++started===2)ready();await gate;
+   return {title:'纪要',sections:[{heading:'讨论',items:[{text:'核对接口依赖',evidence:[{segmentId:source.id,revision:source.revision}]}]}],actions:[]};
+  }},{lane:'minutes'});
+  await waiting;let current;
+  for(let i=0;i<100;i++){current=await repo.get(r.id);if(current.jobs.at(-1).preview?.length)break;await new Promise(resolve=>setTimeout(resolve,5));}
+  assert.equal(current.liveMinutes,null);assert.equal(current.jobs.at(-1).status,'running');assert.ok(current.jobs.at(-1).preview.some(b=>b.text.startsWith('先核对接口依赖')));assert.equal(current.jobs.at(-1).preview.filter(b=>b.kind==='text').length,1,'concurrent windows must not interleave preview JSON');
+  await repo.change(r.id,value=>{value.segments.push({...segment,id:'later'});value.transcriptRevision++;});
+  release();await work;const saved=await repo.get(r.id);assert.equal(saved.jobs.at(-1).status,'completed');assert.ok(saved.liveMinutes.sections.length>0);assert.ok(saved.liveMinutes.transcriptRevision<saved.transcriptRevision);
+ }finally{release();await work;await repo.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('first live minutes starts within thirty seconds while later refreshes keep the configured interval',()=>{
+ const r=record();setAutomation(r,{enabled:true,intervalSeconds:120},1000);
+ assert.equal(automaticMinutesAt(r,1001),31000);assert.equal(queueAutomaticMinutes(r,'fixture',30999),undefined);
+ const job=queueAutomaticMinutes(r,'fixture',31000);assert.ok(job);job.status='completed';r.transcriptRevision++;
+ assert.equal(automaticMinutesAt(r,31001),151000);assert.equal(r.autoMinutes.intervalSeconds,120);
+});
 test('automatic minutes debounce live updates, deduplicate and finalize after drain', () => {
  const r=record();setAutomation(r,{enabled:true,intervalSeconds:30},1000);
  assert.equal(automaticMinutesAt(r,1001),31000);assert.equal(queueAutomaticMinutes(r,'fixture',30999),undefined);
@@ -20,7 +126,8 @@ test('automatic minutes debounce live updates, deduplicate and finalize after dr
  j.fence='f';r.segments.push({...segment,id:'s2'});r.transcriptRevision++;
  commitMinutes(r,j.id,result,'f');assert.equal(r.liveMinutes.title,'评审');assert.equal(r.minutes,null);
  assert.equal(automaticMinutesAt(r,32000),61000);
- r.capture='sealed';assert.equal(queueAutomaticMinutes(r,'fixture',32000),undefined);
+ r.capture='sealed';const tail=queueAutomaticMinutes(r,'fixture',32000);assert.equal(tail.scope,'live');
+ tail.fence='t';const tailResult=JSON.parse(JSON.stringify(result).replaceAll('s1','s2'));commitMinutes(r,tail.id,tailResult,'t');
  r.capture='completed';const final=queueAutomaticMinutes(r,'fixture',32000);assert.equal(final.scope,'final');
  final.fence='z';commitMinutes(r,final.id,result,'z');assert.equal(r.minutes.revision,1);assert.equal(automaticMinutesAt(r,33000),Infinity);
 });
@@ -67,8 +174,8 @@ test('manual final success ends retry scheduling and a fresh manual failure rece
  const third=queueAutomaticMinutes(retryRecord,'fixture',145000);assert.equal(third.retryAttempt,3);third.status='failed';third.error='llm_timeout';third.failedAt=145000;
  assert.equal(automaticMinutesAt(retryRecord,999999),Infinity);
 });
-test('automatic retries preserve human minutes and do not retry invalid configuration or unvalidated output', () => {
- for(const error of ['provider_unauthorized','llm_endpoint_not_api','invalid_minutes_schema','minutes_intermediate_too_large']) {
+test('automatic retries preserve human minutes and do not retry invalid configuration or unsafe evidence', () => {
+ for(const error of ['provider_unauthorized','llm_endpoint_not_api','invalid_minutes_evidence','minutes_intermediate_too_large']) {
   const r=record();r.capture='completed';setAutomation(r,{enabled:true},1000);
   const job=queueAutomaticMinutes(r,'fixture',1000);job.status='failed';job.error=error;
   assert.equal(automaticMinutesAt(r,999999),Infinity,error);
@@ -137,7 +244,7 @@ for(const pipelineOff of [false,true])for(const humanEdit of [false,true])test(`
   res.writeHead(200,{'content-type':'text/event-stream'});res.flushHeaders();
   const usage={prompt_tokens:5,completion_tokens:2,total_tokens:7};
   res.write(`data: ${JSON.stringify({usage})}\n\ndata: ${JSON.stringify({usage})}\n\n`);started();await blocked;
-  res.end(`data: ${JSON.stringify({choices:[{delta:{content:JSON.stringify({...result,tokens:999999,usageTokens:999999,tokenUsage:{totalTokens:999999}})},finish_reason:'stop'}]})}\n\ndata: [DONE]\n\n`);
+  res.write(`data: ${JSON.stringify({choices:[{delta:{content:JSON.stringify({...result,tokens:999999,usageTokens:999999,tokenUsage:{totalTokens:999999}})},finish_reason:'stop'}]})}\n\ndata: [DONE]\n\n`);
  });
  let work;
  try {
@@ -189,11 +296,11 @@ test('translation waiting never delays audio transcript persistence', async () =
 });
 
 
-test('a final minutes job keeps its lease while a longer model request is in flight', async () => {
+for (const capture of ['paused','completed']) test(`a ${capture} completion job keeps its lease while the longer model request is in flight`, async () => {
  const root=await mkdtemp(join(tmpdir(),'tts-final-lease-')),repo=await createRepository({root,databaseUrl:''});
  const originalNow=Date.now;let now=originalNow();Date.now=()=>now;
  let release,started,pending,calls=0;const blocked=new Promise(resolve=>{release=resolve;});const ready=new Promise(resolve=>{started=resolve;});
- const r=record();r.capture='completed';requestMinutes(r);await repo.insert(r);
+ const r=record();r.capture=capture;if(capture==='completed')requestMinutes(r);else{setAutomation(r,{enabled:true},now);queueAutomaticMinutes(r,'fixture',now);}await repo.insert(r);
  try{
   pending=runCycle(repo,{minutes:async()=>{calls++;started();await blocked;return result;}},{lane:'minutes'});
   await ready;
@@ -204,4 +311,185 @@ test('a final minutes job keeps its lease while a longer model request is in fli
   assert.equal((await repo.get(r.id)).jobs[0].fence,fence);
   release();await pending;assert.equal((await repo.get(r.id)).jobs[0].status,'completed');
  }finally{release();await pending;Date.now=originalNow;await repo.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('final minutes automatically recover a malformed model response with bounded retries and edit protection', () => {
+  for (const error of ['invalid_minutes_schema','invalid_llm_response']) {
+    const r=record(); r.capture='completed'; setAutomation(r,{enabled:true},1000);
+    const first=queueAutomaticMinutes(r,'fixture',1000);
+    Object.assign(first,{status:'failed',error,failedAt:1000});
+    assert.equal(automaticMinutesAt(r,1001),16000, `${error} must leave a bounded automatic recovery path`);
+    const second=queueAutomaticMinutes(r,'fixture',16000);
+    assert.equal(second.retryAttempt,2);
+    Object.assign(second,{status:'failed',error,failedAt:16000});
+    const third=queueAutomaticMinutes(r,'fixture',46000);
+    assert.equal(third.retryAttempt,3);
+    Object.assign(third,{status:'failed',error,failedAt:46000});
+    assert.equal(automaticMinutesAt(r,999999),Infinity,'malformed output must not loop or create unlimited paid requests');
+    r.minutes={edited:true};
+    assert.equal(automaticMinutesAt(r,999999),Infinity);
+  }
+});
+
+test('pausing automatically catches up saved content and retries a failed live summary without ending the meeting', () => {
+  const r=record(); r.capture='paused'; setAutomation(r,{enabled:true},1000);
+  const failed=requestMinutes(r,{mode:'model',scope:'live',automatic:true,modelVersion:'fixture'});
+  Object.assign(failed,{status:'failed',error:'invalid_minutes_schema',failedAt:1000,retryAttempt:1});
+  Object.assign(r.autoMinutes,{lastRevision:r.transcriptRevision,lastScope:'live',lastRequestedAt:1000});
+  assert.equal(automaticMinutesAt(r,1001),16000,'pause must not abandon a failed final live batch');
+  const retry=queueAutomaticMinutes(r,'fixture',16000);
+  assert.equal(retry.scope,'live');assert.equal(retry.retryAttempt,2);
+  assert.equal(r.capture,'paused','catch-up must preserve resumable capture');
+  retry.status='running';retry.fence='pause-retry';
+  commitMinutes(r,retry.id,result,'pause-retry');
+  assert.ok(r.liveMinutes);assert.equal(r.minutes,null);
+  assert.equal(automaticMinutesAt(r,17000),Infinity,'an unchanged successful pause checkpoint must not repeat requests');
+});
+
+for (const capture of ['paused','completed']) test(`worker recovers malformed ${capture} minutes after restart and only commits validated content`, async () => {
+  const root=await mkdtemp(join(tmpdir(),'tts-checkpoint-recovery-'));let repo=await createRepository({root,databaseUrl:''});
+  const originalNow=Date.now;let now=originalNow(),calls=0;Date.now=()=>now;
+  const r=record();r.capture=capture;setAutomation(r,{enabled:true},now);await repo.insert(r);
+  const providers={minutes:async()=>++calls===1?{title:'incomplete model response'}:result};
+  try {
+    await saveConfig(root,{LLM_API_URL:'http://fixture.invalid/responses',LLM_API_KEY:'fixture-key',LLM_MODEL:'fixture-model'},{});
+    await runCycle(repo,providers,{lane:'minutes'});
+    let saved=await repo.get(r.id);
+    assert.equal(saved.jobs.at(-1).status,'failed');assert.equal(saved.jobs.at(-1).error,'invalid_minutes_schema');
+    assert.equal(saved.minutes,null);assert.ok(!saved.liveMinutes,'malformed content must never become a saved summary');
+    assert.equal(automaticMinutesAt(saved,now),now+15000);
+    await repo.close();repo=await createRepository({root,databaseUrl:''});now+=15001;
+    await runCycle(repo,providers,{lane:'minutes'});saved=await repo.get(r.id);
+    assert.equal(saved.capture,capture);assert.equal(saved.jobs.at(-1).status,'completed');assert.equal(saved.jobs.at(-1).retryAttempt,2);
+    const document=capture==='paused'?saved.liveMinutes:saved.minutes;
+    assert.equal(document.title,'评审');assert.equal(document.transcriptRevision,saved.transcriptRevision);
+    assert.deepEqual(document.sections,result.sections);
+    await runCycle(repo,providers,{lane:'minutes'});assert.equal(calls,2,'a recovered stable checkpoint must not regenerate again');
+  } finally {Date.now=originalNow;await repo.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('paused catch-up waits for the stop manifest tail to be durably acknowledged and transcribed', () => {
+  const r=record(),source=addSource(r,{kind:'microphone'}),bytes=Buffer.alloc(32000);
+  const packet=sequence=>({sessionId:source.sessionId,sourceId:source.id,epoch:source.epoch,sequence,sampleOffset:sequence*16000,sampleCount:16000,sampleRate:16000,digest:digest(bytes),object:`synthetic-${sequence}`});
+  acknowledge(r,packet(0));commitTranscript(r,r.chunks[0].key,'已录内容',r.generation);
+  pause(r,[{sourceId:source.id,epoch:source.epoch,lastSequence:1}]);setAutomation(r,{enabled:true},1000);
+  assert.ok(r.chunks.every(chunk=>chunk.state==='done'));
+  assert.equal(source.watermark,0);assert.equal(source.lastSequence,1);
+  assert.equal(automaticMinutesAt(r,2000),Infinity,'a local tail absent from the durable server chunks must block catch-up');
+  acknowledge(r,packet(1));
+  assert.equal(automaticMinutesAt(r,2000),Infinity,'durable audio still waits for transcript commit');
+  commitTranscript(r,r.chunks[1].key,'补传尾音',r.generation);
+  const checkpoint=queueAutomaticMinutes(r,'fixture',2000);
+  assert.equal(checkpoint.scope,'live');assert.equal(checkpoint.pausedCheckpoint,true);assert.equal(r.capture,'paused');
+});
+
+test('default minutes interval is ninety seconds and explicit choices survive', () => {
+  const record = createRecord('interval-owner');
+  assert.equal(record.autoMinutes.intervalSeconds, 90);
+  setAutomation(record, {enabled:true,intervalSeconds:15});
+  setAutomation(record, {enabled:true});
+  assert.equal(record.autoMinutes.intervalSeconds, 15);
+  delete record.autoMinutes.intervalSeconds;
+  setAutomation(record, {enabled:true});
+  assert.equal(record.autoMinutes.intervalSeconds, 90);
+});
+
+
+test('received minutes text is flushed while the model pauses, and a cancelled job rejects late flushes',async()=>{
+ for(const cancel of [false,true]){
+  const root=await mkdtemp(join(tmpdir(),'tts-preview-tail-')),repo=await createRepository({root,databaseUrl:''});let release,ready,work;
+  const gate=new Promise(resolve=>{release=resolve;}),received=new Promise(resolve=>{ready=resolve;});
+  try{
+   const r=record();requestMinutes(r,{scope:'live',modelVersion:'fixture'});await repo.insert(r);
+   work=runCycle(repo,{minutes:async(job,env,options)=>{
+    const text=JSON.stringify(result),cut=text.indexOf(':')+1;
+    await options.onDelta(text.slice(0,cut),{firstTokenMs:1});
+    await options.onDelta(text.slice(cut),{firstTokenMs:1});ready();await gate;return result;
+   }},{lane:'minutes'});
+   await received;
+   if(cancel)await repo.change(r.id,value=>{const job=value.jobs.at(-1);job.status='cancelled';job.fence=null;delete job.preview;});
+   await new Promise(resolve=>setTimeout(resolve,1150));
+   const saved=await repo.get(r.id),job=saved.jobs.at(-1);
+   if(cancel){assert.equal(job.preview,undefined);assert.equal(job.status,'cancelled');}
+   else{assert.equal(job.status,'running');assert.ok(job.preview.some(block=>block.text==='周五评审'),'received body must appear before the model completes');assert.equal(saved.liveMinutes,null);}
+   release();await work;
+   assert.equal((await repo.get(r.id)).jobs.at(-1).status,cancel?'cancelled':'completed');
+  }finally{release();await work;await repo.close();await rm(root,{recursive:true,force:true});}
+ }
+});
+
+test('slow draft persistence never blocks reading the minutes stream and final commit drains it',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'tts-preview-isolated-')),repo=await createRepository({root,databaseUrl:''});
+ let releaseWrite,releaseModel,writing,advanced,work,held=false;
+ const writeGate=new Promise(r=>{releaseWrite=r;}),modelGate=new Promise(r=>{releaseModel=r;});
+ const blocked=new Promise(r=>{writing=r;}),readAhead=new Promise(r=>{advanced=r;});
+ const slow=Object.create(repo);
+ slow.change=async(id,mutate,options)=>{
+   let previewChanged=false;
+   const response=await repo.change(id,value=>{
+     const before=JSON.stringify(value.jobs.at(-1)?.preview),result=mutate(value);
+     previewChanged=JSON.stringify(value.jobs.at(-1)?.preview)!==before;
+     return result;
+   },options);
+   if(!held&&previewChanged){held=true;writing();await writeGate;}
+   return response;
+ };
+ try{
+   const r=record();requestMinutes(r,{scope:'live',modelVersion:'fixture'});await repo.insert(r);
+   work=runCycle(slow,{minutes:async(job,env,options)=>{await options.onDelta(JSON.stringify(result),{firstTokenMs:1});advanced();await modelGate;return result;}},{lane:'minutes'});
+   await blocked;
+   assert.equal(await Promise.race([readAhead.then(()=>true),new Promise(r=>setTimeout(()=>r(false),50))]),true,'preview storage must not backpressure provider output');
+ }finally{releaseWrite();releaseModel();if(work)await work;await repo.close();await rm(root,{recursive:true,force:true});}
+});
+
+
+test('new meeting without accepted speech never queues automatic minutes across repeated recovery polls',()=>{
+ const r=createRecord('fixture');setAutomation(r,{enabled:true},1000);
+ for(const capture of ['idle','recording','paused','completed']){
+  r.capture=capture;
+  for(const now of [1000,31000,61000,3600000])assert.equal(queueAutomaticMinutes(r,'fixture',now),undefined);
+ }
+ assert.equal(r.jobs.length,0);
+});
+
+
+test('invalid topic output retries after an interval change without bypassing the retry cap', () => {
+  const r=record();setAutomation(r,{enabled:true,intervalSeconds:30},1000);
+  r.jobs=[{id:'failed-topic',status:'failed',mode:'model',scope:'live',error:'invalid_minutes_topics',transcriptRevision:r.transcriptRevision,notesRevision:r.notesRevision,baseMinutesRevision:r.minutesRevision,retryAttempt:1,failedAt:2000}];
+  r.autoMinutes={...r.autoMinutes,lastRevision:r.transcriptRevision,lastScope:'live',lastRequestedAt:1000};
+  setAutomation(r,{enabled:true,intervalSeconds:120},3000);
+  assert.equal(automaticMinutesAt(r,3000),17000);
+  r.jobs[0].retryAttempt=3;assert.equal(automaticMinutesAt(r,3000),Infinity);
+});
+
+
+test('ninety-second automation is accepted while explicit two-minute meetings remain unchanged',()=>{
+ const r=createRecord('interval90');setAutomation(r,{enabled:true,intervalSeconds:90});assert.equal(r.autoMinutes.intervalSeconds,90);
+ setAutomation(r,{enabled:true,intervalSeconds:120});setAutomation(r,{enabled:true});assert.equal(r.autoMinutes.intervalSeconds,120);
+});
+
+test('sealing requests a fresh tail checkpoint immediately instead of waiting for the live interval',()=>{
+ const now=Date.now(),r=record(),source=addSource(r,{kind:'microphone'}),bytes=Buffer.alloc(3200);
+ acknowledge(r,{sessionId:source.sessionId,sourceId:source.id,epoch:source.epoch,sequence:0,sampleOffset:0,sampleCount:1600,sampleRate:16000,digest:digest(bytes),object:'tail'});
+ setAutomation(r,{enabled:true,intervalSeconds:120},now-120000);
+ Object.assign(r.autoMinutes,{lastRequestedAt:now-1000,lastRevision:1,lastScope:'live'});
+ r.segments.push({...segment,id:'s2',text:'末尾确认评测口径',startMs:1000,endMs:2000});r.transcriptRevision=2;
+ seal(r,[{sourceId:source.id,epoch:source.epoch,lastSequence:0}]);
+ assert.equal(r.capture,'sealed');
+ assert.equal(automaticMinutesAt(r,now),now,'ending bypasses the normal live refresh delay');
+ assert.equal(queueAutomaticMinutes(r,'fixture-model',now)?.scope,'live');
+});
+
+test('the minutes lane prioritizes an ended meeting ahead of another live refresh',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'tts-finish-priority-')),repo=await createRepository({root,databaseUrl:''});
+ const previous=process.env.RECORD_WORKER_CONCURRENCY;process.env.RECORD_WORKER_CONCURRENCY='1';
+ try{
+  const live=record(),ended=record();ended.capture='completed';
+  requestMinutes(live,{scope:'live'});requestMinutes(ended,{scope:'final'});await repo.insert(live);await repo.insert(ended);
+  repo.listWork=async()=>[await repo.get(live.id),await repo.get(ended.id)];
+  const scopes=[];
+  await runCycle(repo,{minutes:async job=>{scopes.push(job.scope);return structuredClone(result);}},{lane:'minutes'});
+  assert.deepEqual(scopes,['final','live']);
+  assert.equal((await repo.get(ended.id)).jobs[0].status,'completed');
+ }finally{if(previous===undefined)delete process.env.RECORD_WORKER_CONCURRENCY;else process.env.RECORD_WORKER_CONCURRENCY=previous;await repo.close();await rm(root,{recursive:true,force:true});}
 });

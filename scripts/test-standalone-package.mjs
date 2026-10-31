@@ -38,7 +38,9 @@ async function launch() {
   assert.ok(executable, 'Set NATIVE_CLIENT_EXECUTABLE or CLIENT_NODE_EXECUTABLE');
   logs = '';
   child = spawn(executable, args, { env: {
+    ...(process.platform==='linux'?{DISPLAY:process.env.DISPLAY,XAUTHORITY:process.env.XAUTHORITY,LIBGL_ALWAYS_SOFTWARE:'1',WEBKIT_DISABLE_DMABUF_RENDERER:'1'}:{}),
     PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: process.env.HOME, TMPDIR: process.env.TMPDIR,
+      ...(process.platform==='win32'?{SystemRoot:process.env.SystemRoot,USERPROFILE:process.env.USERPROFILE,LOCALAPPDATA:process.env.LOCALAPPDATA,APPDATA:process.env.APPDATA,TEMP:process.env.TEMP,TMP:process.env.TMP}:{}),
     TTS_CLIENT_DATA_DIR: data, TTS_RECORD_API_URL: `http://127.0.0.1:${trap.address().port}`,
     TTS_CLIENT_SYNTHETIC: '1', TTS_CLIENT_PROBE_OUTPUT: join(root, 'must-not-exist.json'),
     TTS_UPDATE_TEST_URL: 'http://127.0.0.1:1/manifest', TTS_UPDATE_TEST_EXECUTABLE: '/must-not-be-used',
@@ -65,10 +67,27 @@ async function launch() {
   const result = await fetch(state.url + '/api/bootstrap', { headers });
   assert.equal(result.status, 200);
   const boot = await result.json(); assert.equal(boot.localAccount, true); assert.equal(boot.email, 'local@device.invalid');
+  if(process.env.TTS_VERIFY_BUNDLED_ASR==='1') {
+    assert.equal(boot.providers.asrProvider,'sensevoice-local');
+    assert.equal(boot.providers.asr,true);
+    const settings=await fetch(state.url+'/api/settings/providers',{headers});
+    assert.equal(settings.status,200);
+    const {values}=await settings.json();
+    assert.equal(values.LOCAL_ASR_AVAILABLE,true);assert.equal(values.ASR_PROVIDER,'sensevoice-local');
+    assert.equal('LINGJI_LOCAL_ASR_DIR' in values,false);
+  }
+  if(process.env.TTS_VERIFY_BUNDLED_ASR==='0') {
+    const settings=await fetch(state.url+'/api/settings/providers',{headers});
+    assert.equal(settings.status,200);
+    const {values}=await settings.json();
+    assert.equal(values.LOCAL_ASR_AVAILABLE,false);
+    assert.notEqual(values.ASR_PROVIDER,'sensevoice-local');
+    assert.equal(boot.providers.asr,false,'a fresh cloud-only install requires user credentials');
+  }
   assert.equal((await fetch(state.url + '/api/development-account')).status, 404);
   assert.equal((await fetch(state.url + '/api/auth/register', { method: 'POST' })).status, 404);
   state.headers = headers;
-  assert.equal((await stat(join(data, 'backend'))).mode & 0o777, 0o700);
+  if(process.platform!=='win32') assert.equal((await stat(join(data, 'backend'))).mode & 0o777, 0o700);
   return state;
 }
 async function stop(state) {
@@ -96,11 +115,15 @@ try {
   if (profile) assert.equal(await readFile(join(data, 'profiles.json'), 'utf8'), profile);
   assert.equal(externalRequests, 0); await assert.rejects(stat(join(root, 'must-not-exist.json')), { code: 'ENOENT' });
   await stop(state);
-  const evidence = { timestamp: new Date().toISOString(), packagedApp: Boolean(process.env.NATIVE_CLIENT_EXECUTABLE), independentBackend: true, developerBackendRequests: externalRequests, restartPersistence: true, stableWebviewProfile: Boolean(profile), parentOwnsBackend: true, localAccount: true, devAccountDisabled: true, node: state.node, sqlite: state.sqlite, realAudioDevicesOpened: false, realProvidersInvoked: false };
+  const evidence = { timestamp: new Date().toISOString(), packagedApp: Boolean(process.env.NATIVE_CLIENT_EXECUTABLE), independentBackend: true, bundledAsrConfigured: process.env.TTS_VERIFY_BUNDLED_ASR==='1', developerBackendRequests: externalRequests, restartPersistence: true, stableWebviewProfile: Boolean(profile), parentOwnsBackend: true, localAccount: true, devAccountDisabled: true, node: state.node, sqlite: state.sqlite, realAudioDevicesOpened: false, realProvidersInvoked: false };
   if (process.argv[2]) { const target = resolve(process.argv[2]); await mkdir(dirname(target), { recursive: true }); await writeFile(target, JSON.stringify(evidence, null, 2) + '\n'); }
   console.log(JSON.stringify(evidence));
+} catch (error) {
+  const backendLog = await readFile(join(data, 'backend/runtime.log'), 'utf8').catch(() => '(runtime log unavailable)');
+  console.error('[isolated packaged backend]', backendLog.slice(-6000));
+  throw error;
 } finally {
   if (child && child.exitCode == null) { child.kill('SIGKILL'); }
   await new Promise(resolve => trap.close(resolve));
-  if (process.env.CLIENT_SMOKE_KEEP_DATA === '1') console.log(`Isolated test data: ${root}`); else await rm(root, { recursive: true, force: true });
+  if (process.env.CLIENT_SMOKE_KEEP_DATA === '1') console.log(`Isolated test data: ${root}`); else await rm(root, { recursive: true, force: true, maxRetries:50, retryDelay:100 });
 }

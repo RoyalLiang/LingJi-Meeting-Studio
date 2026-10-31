@@ -14,6 +14,39 @@ function packet(sequence, offset, count = 320) {
   return raw;
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));
+test('widget initial snapshot cannot overwrite a newer recording event',async()=>{
+ const {transform}=await import('esbuild');
+ const source=await readFile(new URL('../apps/web/src/components/RecordingWidget.tsx',import.meta.url),'utf8');
+ const code=(await transform(source.replace(/^import .*$/gm,''),{loader:'tsx',format:'cjs'})).code;
+ const states=[],effects=[],layouts=[],calls=[],actionInputs=[];let cursor=0,receive,resolveSnapshot;
+ const snapshot=new Promise(resolve=>{resolveSnapshot=resolve;}),icon=()=>null;
+ const sandbox={useRecordingDuration:(_id,savedMs)=>savedMs,module:{exports:{}},useState(initial){const i=cursor++;if(!(i in states))states[i]=initial;return[states[i],value=>{states[i]=value;}];},useEffect:fn=>effects.push(fn),useLayoutEffect:fn=>layouts.push(fn),
+  listen:async(_name,handler)=>{receive=handler;return()=>{};},invoke:async(name,input)=>{calls.push(name);if(name==='recording_widget_action')actionInputs.push(input);return name==='recording_widget_state'?snapshot:undefined;},Pause:icon,Play:icon,Stop:icon,ArrowsOutSimple:icon,Microphone:()=>null,MicrophoneSlash:()=>null};
+ sandbox.React={createElement:(tag,props,...children)=>({tag,props,children})};
+ vm.runInNewContext(code,sandbox);sandbox.module.exports.RecordingWidget();effects[0]();await tick();
+ receive({payload:{recording:true,microphoneOn:true,paused:false,canResume:false,busy:false,durationMs:2000,rms:.1}});
+ resolveSnapshot({recording:false,paused:false,canResume:false,busy:false,durationMs:0,rms:0});await tick();
+ assert.equal(states[0].recording,true);assert.equal(states[0].durationMs,2000);
+ cursor=0;const tree=sandbox.module.exports.RecordingWidget();layouts.forEach(fn=>fn());await tick();
+ assert.ok(calls.includes('recording_widget_ready'));
+ const nodes=value=>value&&typeof value==='object'?[value,...(value.children||[]).flat(Infinity).flatMap(nodes)]:[];
+ const microphone=nodes(tree).find(node=>node.props?.['aria-label']==='关闭麦克风');
+ assert.ok(microphone);assert.equal(microphone.props['aria-pressed'],true);assert.equal(microphone.props.disabled,false);
+ assert.equal(microphone.children[0].tag,sandbox.Microphone,'enabled microphone shows its current unmuted state');
+ microphone.props.onClick();await tick();assert.equal(actionInputs.at(-1).action,'microphone');
+ const native=await readFile(new URL('../apps/desktop/src-tauri/src/main.rs',import.meta.url),'utf8');
+ for(const action of ['pause','finish','restore']){
+  const selector=native.match(new RegExp('"'+action+'" => Some\\((.*?)\\),'))?.[1]||'';
+  const labels=[...selector.matchAll(/\[aria-label="([^"]+)"\]/g)].map(match=>match[1]);
+  const button=nodes(tree).find(node=>labels.includes(node.props?.['aria-label']));
+  assert.ok(button,`Native ${action} probe must target the rendered accessible button`);
+  button.props.onClick();await tick();assert.equal(actionInputs.at(-1).action,action);
+ }
+ receive({payload:{recording:true,microphoneOn:false,paused:false,canResume:true,busy:false,durationMs:3661000,rms:0}});
+ cursor=0;const mutedTree=sandbox.module.exports.RecordingWidget(),muted=nodes(mutedTree).find(node=>node.props?.['aria-label']==='开启麦克风');
+ assert.equal(muted.children[0].tag,sandbox.MicrophoneSlash);assert.equal(muted.props['aria-pressed'],false);
+ assert.equal(nodes(mutedTree).find(node=>node.tag==='time').children[0],'01:01:01');
+});
 
 test('native packets enforce sequence, offset, sample count and binary length', () => {
   const decoded = decodeNativePacket(packet(0, 0), 0, 0);
@@ -26,6 +59,7 @@ test('native packets enforce sequence, offset, sample count and binary length', 
 test('native pull applies disk backpressure and stop drains the final packet exactly once', async () => {
   let persist, reads = 0, stopping = false, stops = 0; const saved = [];
   const invoke = async command => {
+    if (command === 'capture_ack') return;
     if (command === 'capture_start') return { id: 'one', label: 'synthetic' };
     if (command === 'capture_stop') { stops++; stopping = true; return; }
     reads++; if (reads === 1) return packet(0, 0);
@@ -51,25 +85,13 @@ test('disconnect drops later packets and never silently changes to another sourc
   await stream.stop(true); assert.equal(saved, 0);
 });
 
-test('native persistence errors stop capture and surface the original failure', async () => {
-  const calls = [], errors = []; const full = new Error('local_audio_capacity_exceeded');
-  const invoke = async (command, args) => {
-    calls.push([command, args]);
-    if (command === 'capture_start') return { id: 'one', label: 'synthetic' };
-    if (command === 'capture_read') return packet(0, 0);
-  };
-  const stream = await openNativeStream(invoke, 'display', 'default', async () => { throw full; }, error => errors.push(error));
-  await assert.rejects(stream.done, error => error === full);
-  assert.equal(errors[0], full); assert.deepEqual(calls.at(-1), ['capture_stop', { id: 'one', discard: true }]);
-});
-
 test('native permission/device failures do not create a simulated stream', async () => {
   const commands = [];
   await assert.rejects(openNativeStream(async command => { commands.push(command); throw new Error('permission denied'); }, 'display', 'default', async () => {}, assert.fail), /permission denied/);
   assert.deepEqual(commands, ['capture_start']);
 });
 
-async function controllerHarness({ beforeStart } = {}) {
+async function controllerHarness({ beforeStart, capacityFailure = false } = {}) {
   const starts = [], uploads = [], sessions = new Map(); let sourceId = 0;
   const invoke = async (command, args) => {
     if (command === 'capture_start') {
@@ -84,6 +106,7 @@ async function controllerHarness({ beforeStart } = {}) {
     if (command === 'capture_stop') { session.stopped = true; session.release?.(args.discard ? new ArrayBuffer(0) : packet(1, 320, 80)); }
   };
   globalThis.nativeControllerFixture = {
+    ensureAudioCapacity: async () => { if(capacityFailure) throw new Error("本机录音缓存空间不足，尚未开始录音"); },
     api: async (_url, _method, body) => ({ id: `source-${sourceId++}`, sessionId: 'session', epoch: `epoch-${sourceId}`, ...body }),
     enqueue: async (id, chunk) => uploads.push({ id, chunk }),
     makeChunk: async (id, epoch, sequence, offset, buffer, sessionId) => ({ sourceId: id, epoch, sequence, sampleOffset: offset, sampleCount: buffer.byteLength / 2, sessionId }),
@@ -94,7 +117,7 @@ async function controllerHarness({ beforeStart } = {}) {
   let code = stripTypeScriptTypes(await readFile(new URL('../apps/web/src/audio/native-controller.ts', import.meta.url), 'utf8'));
   code = code.replace("import { preferredDevice } from './devices';", "const preferredDevice = () => 'default';")
     .replace("import { api } from '../api';", 'const { api } = globalThis.nativeControllerFixture;')
-    .replace("import { enqueue, makeChunk } from './queue';", 'const { enqueue, makeChunk } = globalThis.nativeControllerFixture;')
+    .replace("import { enqueue, makeChunk, ensureAudioCapacity } from './queue';", 'const { enqueue, makeChunk, ensureAudioCapacity } = globalThis.nativeControllerFixture;')
     .replace("from './signal'", `from '${signalUrl}'`)
     .replace("import { startNativeStream } from './native-runtime';", 'const { startNativeStream } = globalThis.nativeControllerFixture;');
   const module = await import(`data:text/javascript;base64,${Buffer.from(code + `\n// fixture ${Math.random()}`).toString('base64')}`);
@@ -216,6 +239,7 @@ test('native capture keeps consecutive audio beyond thirty minutes until explici
   let sequence = 0, stopping = false;
   const count = 16000, total = 35 * 60;
   const stream = await openNativeStream(async command => {
+    if (command === 'capture_ack') return;
     if (command === 'capture_start') return { id: 'long-capture', label: 'synthetic' };
     if (command === 'capture_stop') { stopping = true; return; }
     if (stopping) return new ArrayBuffer(0);
@@ -244,4 +268,47 @@ test('native device failure leaves the other source recording and lets the lost 
   await h.controller.start('display');
   assert.equal(h.controller.sources.length,2);
   await h.controller.stop();
+});
+
+test('a local persistence failure retains and retries the native head and all queued tail packets', async () => {
+  const saved=[], stops=[];let head=0, attempts=0;
+  const invoke=async(command,args)=>{
+    if(command==='capture_start')return{id:'retained',label:'synthetic'};
+    if(command==='capture_stop'){stops.push(args.discard);return;}
+    if(command==='capture_ack'){assert.equal(args.sequence,head);head++;return;}
+    if(command==='capture_read')return head<3?packet(head,head*320):new ArrayBuffer(0);
+  };
+  const stream=await openNativeStream(invoke,'microphone','default',async value=>{
+    if(++attempts===1)throw new Error('temporary local capacity failure');
+    saved.push(value.sequence);
+  },()=>{});
+  await assert.doesNotReject(stream.stop());
+  assert.deepEqual(saved,[0,1,2]);assert.ok(stops.every(discard=>discard===false));assert.equal(head,3);
+});
+
+test('intentional disconnect during local persistence never ACKs a discarded session',async()=>{
+  let release,entered;const gate=new Promise(r=>{release=r;});const ready=new Promise(r=>{entered=r;});const errors=[],acks=[];
+  const stream=await openNativeStream(async(command,args)=>{
+    if(command==='capture_start')return{id:'discarded',label:'synthetic'};
+    if(command==='capture_read')return packet(0,0);
+    if(command==='capture_ack'){acks.push(args);throw new Error('session was removed');}
+  },'microphone','default',async()=>{entered();await gate;},e=>errors.push(e));
+  await ready;const stopped=stream.stop(true);release();await stopped;
+  assert.deepEqual(errors,[]);assert.deepEqual(acks,[]);
+});
+
+test('a lost ACK response retries only the same ACK without saving the audio twice',async()=>{
+ let head=0,acks=0;const saved=[];
+ const stream=await openNativeStream(async(command,args)=>{
+   if(command==='capture_start')return{id:'lost-ack',label:'synthetic'};
+   if(command==='capture_read')return head===0?packet(0,0):new ArrayBuffer(0);
+   if(command==='capture_ack'){acks++;assert.equal(args.sequence,0);if(acks===1){head=1;throw new Error('ACK response lost');}}
+ },'microphone','default',async value=>saved.push(value.sequence),()=>{});
+ await stream.stop();assert.deepEqual(saved,[0]);assert.equal(acks,2);assert.equal(head,1);
+});
+
+
+test('full cache refuses native capture before starting audio producers',async()=>{
+ const h=await controllerHarness({capacityFailure:true});const issues=await h.controller.startMeeting();
+ assert.equal(issues.length,2);assert.equal(h.controller.active,false);assert.equal(h.starts.length,0);assert.equal(h.uploads.length,0);
 });

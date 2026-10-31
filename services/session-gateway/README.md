@@ -70,17 +70,11 @@
   - 需要 `DEEPGRAM_API_KEY` 或 `ASR_API_KEY`
   - 当前已完成 adapter 接入与启动级配置校验
   - 尚未在本仓库内置真实线上凭证做自动化集成测试
-- `doubao-ast`
-  - 火山引擎同声传译 2.0 provider
-  - 需要 `DOUBAO_AST_APP_KEY`、`DOUBAO_AST_ACCESS_KEY`
-  - 可选 `DOUBAO_AST_APP_ID`
-  - 当前已接入官方 proto，并通过官方 Go 示例里的 `test_audio.wav` 完成 Node 侧在线联调
-  - 当前已打通 source subtitle / translation subtitle 文本链路
-  - 当前尚未把返回的 TTS 音频事件持久化进产品层
+旧版豆包 AST 双密钥适配器已在 v0.1.32 移除；记录工作台使用新版豆包 API Key 或其他可用转录服务。
 
 ### Fallback 策略
 
 - 可通过 `ASR_FALLBACK_PROVIDER=mock` 启用 fallback
 - 当主 provider 初始化失败时，gateway 会自动退回 fallback provider
 - 当前回归已覆盖 `deepgram -> mock` 的启动级 fallback 路径
-- 当前回归也已覆盖 `doubao-ast -> mock` 的启动级 fallback 路径
+- 已移除或未知的 provider 明确拒绝，不进入 mock fallback。
