@@ -1,4 +1,53 @@
-# V3：固定飞书导出与独立会议扩展
+# V4：浅色专业的统一会议工作台
+
+2026-10-31。用户已明确选择“白色主体、克制玉绿、清晰紧凑的工作台”。本版重设计整套**隔离原型**的样式和布局，视觉落实仍供用户评审；功能方向保持 V3：Markdown/飞书导出、文档内画板、独立扩展与只读会议助手。
+
+本轮仅本地保存。没有改产品主入口、接入 Pi 或调用真实模型/飞书。
+
+## 统一后的设计语言
+
+- 中性导航与白色工作区，玉绿用于主要操作和选中状态；保留聆记标识。
+- 主标题 24px，内容正文 14px，辅助文字 12–13px；统一间距、边线、圆角与控件状态。
+- 纪要采用阅读区与轻量目录；飞书采用文档预览与配置栏；扩展中心采用一个连续的列表—详情工作区；助手使用等高对话／结果双栏。
+- 手机按任务切换列表／详情、对话／结果、导出设置／预览。切换保留输入，主要操作不被预览控件遮挡。
+- 画板改为根节点向下连接三个主题的清晰树结构，保留 10 个节点；窄屏只在画板内部横向浏览。
+
+[打开新版纪要页](http://127.0.0.1:4187/apps/web/prototypes/minutes-publish/?screen=meeting) · [扩展中心](http://127.0.0.1:4187/apps/web/prototypes/minutes-publish/?screen=skills) · [会议助手](http://127.0.0.1:4187/apps/web/prototypes/minutes-publish/?screen=chat) · [局部设计规范](../../apps/web/prototypes/minutes-publish/DESIGN.md)
+
+### 扩展中心
+
+![统一的列表与详情布局](../evidence/visual-redesign-20261031/04-skills-master-detail.png)
+
+### 会议助手
+
+![等高对话与结果工作区](../evidence/visual-redesign-20261031/06-assistant-desktop.png)
+
+### 手机对话与结果
+
+| 对话 | 分析结果 |
+| --- | --- |
+| ![手机对话](../evidence/visual-redesign-20261031/11-mobile-chat.png) | ![手机分析结果](../evidence/visual-redesign-20261031/12-mobile-result.png) |
+
+其余页面：[纪要](../evidence/visual-redesign-20261031/00-meeting-desktop.png) · [导出窗口](../evidence/visual-redesign-20261031/01-export-dialog.png) · [飞书配置](../evidence/visual-redesign-20261031/02-feishu-settings.png) · [内嵌画板](../evidence/visual-redesign-20261031/03-embedded-board.png) · [插件](../evidence/visual-redesign-20261031/05-plugins-master-detail.png) · [确认](../evidence/visual-redesign-20261031/07-feishu-review.png) · [回执](../evidence/visual-redesign-20261031/08-export-receipt.png)。
+
+手机补充：[技能列表](../evidence/visual-redesign-20261031/09-mobile-skills.png) · [技能详情](../evidence/visual-redesign-20261031/10-mobile-skill-detail.png) · [飞书设置](../evidence/visual-redesign-20261031/13-mobile-feishu-settings.png) · [内嵌画板](../evidence/visual-redesign-20261031/14-mobile-embedded-board.png) · [无遮挡导出操作](../evidence/visual-redesign-20261031/15-mobile-export-action.png)。
+
+## 本轮验证
+
+- 一轮桌面／手机合并审视，一次集中修正与确认；独立 reviewer 对手机操作遮挡和会议身份缺失两项发现复核为 resolved，未发现顶部预览导航引入可见裁切。该结论只覆盖本次评分发现，不宣称完整产品已验收。
+- 1440、768、390px，9 个页面／选项卡，共 27 组没有页面横向溢出；16 张最终截图核对为 1440×1000 或 390×1000。
+- 手机导出、使用 Skill 两个主要按钮中心均可命中自身；对话／结果切换保留输入；输入区焦点轮廓 2px 可见。
+- 关键实测文字对比度 5.03–13.31，主要按钮白字 6.54；桌面对话与结果高度相同。
+- 导出仍只有 Markdown 与飞书两项；流式分析停止／重启通过；画板仍为 1 根、3 主题、6 要点。
+- 模块语法检查通过；taste 源码检查无 FAIL。保留的提示涉及文件／Markdown 内容的等宽字体、文档预览元信息，以及真实对话框／提示浮层的阴影。
+- Impeccable context 启动器权限不足，未运行；已按降级流程直接读取项目资料，并由独立审视与文档角色完成检查和规范记录。未修改全局规则或启动器权限。
+- 没有运行产品完整 Node/Go 回归、构建或发布安装包；真实音频采集、飞书、模型、MCP、Pi 和代码插件运行时不在本轮验证范围。
+
+以下保留 V3 的功能与架构背景；当前视觉请以本节截图及局部 DESIGN.md 为准。
+
+---
+
+# V3 功能与架构背景（保留追溯）
 
 2026-10-31。状态：**proposed，方向设计与隔离原型**。本版按用户最新反馈暂停 Skill/自定义导出，保留飞书云文档，并独立设计 Skill/插件能力。V1/V2 的 Skill 导出方案不再是当前方向，历史截图仍留作追溯。
 
