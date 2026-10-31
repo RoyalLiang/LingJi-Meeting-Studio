@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import { transform } from 'esbuild';
 
 const source = await readFile(new URL('../apps/web/src/App.tsx', import.meta.url), 'utf8');
-const compiled = (await transform(`${source}\nexport const authTestComponents = { Auth, Workspace };`, { loader: 'tsx', jsx: 'automatic', format: 'cjs' })).code;
+const compiled = (await transform(`${source}\nexport const authTestComponents = { Auth, Workspace };`, { loader: 'tsx', jsx: 'automatic', format: 'cjs', define: { 'import.meta.env.DEV': 'false' } })).code;
 const tick = () => new Promise(resolve => setImmediate(resolve));
 function deferred() { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
 
