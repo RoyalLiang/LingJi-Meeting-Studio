@@ -175,7 +175,7 @@ impl Endpoint {
                 }
                 Ok(state) if state == AudioSessionStateInactive => {}
                 Ok(state) if state == AudioSessionStateActive => {
-                    let selected = (|| unsafe {
+                    let selected: Result<bool> = (|| unsafe {
                         let mut pid = 0;
                         let status = (Interface::vtable(session).GetProcessId)(
                             Interface::as_raw(session),
