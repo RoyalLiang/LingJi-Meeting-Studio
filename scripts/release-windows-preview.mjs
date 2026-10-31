@@ -67,10 +67,13 @@ try{
  assert.equal(smoke.realAudioDevicesOpened,false);assert.equal(smoke.realProvidersInvoked,false);
  console.log('Windows packaging: Inspect installer UI');
  await run('pwsh.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',join(frozen,'scripts/test-windows-installer-ui.ps1'),'-Installer',join(stage,artifact),'-Root',join(scratch,'installer-preview'),'-Screenshots',join(root,'.agent-runtime/installer-ui')],frozen);
+ console.log('Windows packaging: Verify cloud-only installation',new Date().toISOString());
  await run('pwsh.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',join(frozen,'scripts/test-windows-installer-ui.ps1'),'-Installer',join(stage,artifact),'-Root',join(scratch,'cloud-only'),'-Screenshots',join(root,'.agent-runtime/installer-ui-cloud'),'-WithoutModel','-ProbeScript',join(frozen,'scripts/test-standalone-package.mjs')],frozen);
  const cloudOnly=JSON.parse(await readFile(join(scratch,'cloud-only/cloud-only-smoke.json')));
  assert.equal(cloudOnly.bundledAsrConfigured,false);assert.equal(cloudOnly.packagedApp,true);
+ console.log('Windows packaging: Verify model-preserving upgrade',new Date().toISOString());
  await run('pwsh.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',join(frozen,'scripts/test-windows-installer-ui.ps1'),'-Installer',join(stage,artifact),'-Root',join(scratch,'upgrade'),'-Screenshots',join(root,'.agent-runtime/installer-ui-upgrade'),'-WithoutModel','-Upgrade'],frozen);
+ console.log('Windows packaging: Verify unchanged-model upgrade',new Date().toISOString());
  await run('pwsh.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',join(frozen,'scripts/test-windows-installer-ui.ps1'),'-Installer',join(stage,artifact),'-Root',join(scratch,'upgrade-default'),'-Screenshots',join(root,'.agent-runtime/installer-ui-upgrade-default'),'-Upgrade'],frozen);
  const upgradeDefault=JSON.parse(await readFile(join(scratch,'upgrade-default/upgrade-model-smoke.json')));
  assert.equal(upgradeDefault.unchangedModelsNotRewritten,true);assert.equal(upgradeDefault.changedResourceUpdated,true);assert.equal(upgradeDefault.singleInstallerWindow,true);
@@ -88,5 +91,6 @@ try{
  await rename(stage,output);
  console.log(JSON.stringify({output,artifact,sourceRevision,sha256:metadata.sha256,platform:'windows',architecture:'x64'}));
 }catch(error){buildFailure=error;throw error;}finally{
+ console.log('Windows packaging: Clean isolated build files',new Date().toISOString());
  for(const path of [stage,scratch]){try{await rm(path,{recursive:true,force:true,maxRetries:20,retryDelay:100});}catch(error){if(!buildFailure)throw error;console.warn('Windows build cleanup:',error.code);}}
 }
