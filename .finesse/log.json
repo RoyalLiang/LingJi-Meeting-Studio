@@ -1,6 +1,25 @@
 [
   {
     "date": "2026-10-31",
+    "page": "extension-center-real-app-preview",
+    "register": "product",
+    "status": "proposed-awaiting-user",
+    "axes": {
+      "palette": "near-white and quiet jade",
+      "type": "system humanist and Chinese system",
+      "layout": "existing React Workspace with flat extension content and right drawers",
+      "engine": "real meeting navigation with local extension preview state",
+      "material": "flat paper"
+    },
+    "dials": {
+      "soul": 6,
+      "spectacle": 1,
+      "density": 7
+    },
+    "brief": "Uniform related container heights and 8px spacing; remove redundant captions. Actual Vite app preview, isolated API meetings, no runtime rollout."
+  },
+  {
+    "date": "2026-10-31",
     "page": "meeting-extension-center-redraw",
     "register": "product",
     "status": "proposed-awaiting-user",

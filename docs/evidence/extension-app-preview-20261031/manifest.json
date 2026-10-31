@@ -1,0 +1,126 @@
+{
+  "runtime": "Node v26.12.1 darwin-arm64",
+  "sources": [
+    {
+      "file": "apps/web/src/App.tsx",
+      "sha256": "77e9a3928aff6ac868ec6bcc5978dc93b0bdf79bf6ae2859942c0ae2657e9f1b"
+    },
+    {
+      "file": "apps/web/src/components/ExtensionCenterPreview.tsx",
+      "sha256": "191dd1726eaeb6b6c1b01ea6312253a7abd43f8d2fa923af74e83b1cd708109f"
+    },
+    {
+      "file": "apps/web/src/components/ExtensionCenterPreview.css",
+      "sha256": "984bb52629a8d157fcd33944fb3ab844ed3bef24d9bf8209ed0a8cb0a1765b23"
+    },
+    {
+      "file": "tests/records-auth-stability.test.mjs",
+      "sha256": "2f854e6fc93c8deac105f5c091a9919f2d78556b42df82d93ce1bd70f3cc037e"
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "01-skills.png",
+      "width": 1440,
+      "height": 960,
+      "sha256": "1767fe362885c2b3b4d57c9ba1ee12109c27711f584e868df807d90a259522b3"
+    },
+    {
+      "file": "02-plugins.png",
+      "width": 1440,
+      "height": 960,
+      "sha256": "a52fef51c3c78d572f3a306c1b474e2f1fccbdb3037946e23ead750461b05efe"
+    },
+    {
+      "file": "03-runs.png",
+      "width": 1440,
+      "height": 960,
+      "sha256": "d0ddf0d1f4744a854cfde467ccad905d84d449b52abdc6a56197d873b6a5512e"
+    },
+    {
+      "file": "04-automation.png",
+      "width": 1440,
+      "height": 960,
+      "sha256": "42c57c84d478ffc0d86f5fc125474bc31647372af8fd2c41c689c58eb2f08227"
+    },
+    {
+      "file": "05-assistant.png",
+      "width": 1440,
+      "height": 960,
+      "sha256": "2f19b89a1fd0e782cf012584846699fa49a4a602d1e01ed1a57c4b12297deb7b"
+    },
+    {
+      "file": "06-meeting-scope.png",
+      "width": 1440,
+      "height": 960,
+      "sha256": "17ef4d22278e75bf62b4ff64feade44918141504d09cc10e3e2d5e3534b82d99"
+    },
+    {
+      "file": "07-task-plan.png",
+      "width": 1440,
+      "height": 960,
+      "sha256": "e1e08ba4dc60906134debcdf286dff8516e2e275cd30be0eee20ab550792ff17"
+    },
+    {
+      "file": "08-skill-detail.png",
+      "width": 1440,
+      "height": 960,
+      "sha256": "a0667e5fafc7432f1c6ae75b987a3a138ecb6729b07f69aabdaf87c3e66789c0"
+    },
+    {
+      "file": "09-plugin-tools.png",
+      "width": 1440,
+      "height": 960,
+      "sha256": "15652e35694d4a764d6d5f62dd7ec5359344b6cd19cd1a5c34eca35a2fd13627"
+    },
+    {
+      "file": "10-run-detail.png",
+      "width": 1440,
+      "height": 960,
+      "sha256": "8da125c588054d2ebc2149f0058dbb7b40f75d392987ec93106b54e8491a2fb6"
+    },
+    {
+      "file": "11-blocked-run.png",
+      "width": 1440,
+      "height": 960,
+      "sha256": "f0579fa0aa84902426c889aa054c59bb879eb84ca100d6c872de3c2f663c4d87"
+    },
+    {
+      "file": "12-rule-editor.png",
+      "width": 1440,
+      "height": 960,
+      "sha256": "8806d17ca84b0ae9b1b6b8ce51dc74e3cb0a32f17ac00d79f43590dcfb6d6c4d"
+    },
+    {
+      "file": "13-mobile-skills.png",
+      "width": 390,
+      "height": 844,
+      "sha256": "9de6984bc20bee0e996e271259f2f8c388dde8cb807f7d2620ff111ba6b3108c"
+    },
+    {
+      "file": "14-tablet-skills.png",
+      "width": 768,
+      "height": 960,
+      "sha256": "fbfbed54544175d54f014ae5c453c275009dc35758e0f4f064ba96af2bea6d38"
+    },
+    {
+      "file": "15-existing-meeting.png",
+      "width": 1440,
+      "height": 960,
+      "sha256": "47cdf141cbc4b1ee040c46873117e45a8a371b58a7a3cb4c6a96bea8283c0000"
+    }
+  ],
+  "browserChecks": {
+    "passed": 63,
+    "failed": 0
+  },
+  "nodeTests": {
+    "passed": 386,
+    "failed": 0
+  },
+  "productionPreviewModuleExcluded": true,
+  "productionAssets": [
+    "index-BGEGtcnE.css",
+    "index-B7K0kObK.js"
+  ]
+}

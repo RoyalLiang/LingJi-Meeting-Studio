@@ -1,0 +1,2448 @@
+{
+  "origin": "http://127.0.0.1:3087/",
+  "environment": "actual React/Vite Workspace and isolated Record API; extension data is local preview only",
+  "checks": [
+    {
+      "name": "layout:1440:skills",
+      "pass": true,
+      "detail": {
+        "headingSingleLine": true,
+        "width": 1440,
+        "doc": 1440,
+        "root": {
+          "x": 264,
+          "y": 64,
+          "w": 1136,
+          "h": 755.3984375,
+          "right": 1400,
+          "bottom": 819.3984375
+        },
+        "rows": {
+          "heights": [
+            92,
+            92,
+            92
+          ],
+          "equal": true
+        },
+        "cards": {
+          "heights": [
+            172,
+            172
+          ],
+          "equal": true
+        },
+        "controls": [
+          {
+            "x": 1300.421875,
+            "y": 100,
+            "w": 99.578125,
+            "h": 36,
+            "right": 1400,
+            "bottom": 136
+          },
+          {
+            "x": 1072,
+            "y": 233.1484375,
+            "w": 208,
+            "h": 36,
+            "right": 1280,
+            "bottom": 269.1484375
+          },
+          {
+            "x": 1288,
+            "y": 233.1484375,
+            "w": 112,
+            "h": 36,
+            "right": 1400,
+            "bottom": 269.1484375
+          }
+        ],
+        "topbar": {
+          "x": 224,
+          "y": 0,
+          "w": 1216,
+          "h": 64,
+          "right": 1440,
+          "bottom": 64
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 224,
+          "h": 960,
+          "right": 224,
+          "bottom": 960
+        }
+      }
+    },
+    {
+      "name": "layout:1440:plugins",
+      "pass": true,
+      "detail": {
+        "headingSingleLine": true,
+        "width": 1440,
+        "doc": 1440,
+        "root": {
+          "x": 264,
+          "y": 64,
+          "w": 1136,
+          "h": 670.890625,
+          "right": 1400,
+          "bottom": 734.890625
+        },
+        "rows": {
+          "heights": [
+            108,
+            108,
+            108
+          ],
+          "equal": true
+        },
+        "cards": {
+          "heights": [],
+          "equal": true
+        },
+        "controls": [
+          {
+            "x": 1303,
+            "y": 100,
+            "w": 97,
+            "h": 36,
+            "right": 1400,
+            "bottom": 136
+          }
+        ],
+        "topbar": {
+          "x": 224,
+          "y": 0,
+          "w": 1216,
+          "h": 64,
+          "right": 1440,
+          "bottom": 64
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 224,
+          "h": 960,
+          "right": 224,
+          "bottom": 960
+        }
+      }
+    },
+    {
+      "name": "layout:1440:runs",
+      "pass": true,
+      "detail": {
+        "headingSingleLine": true,
+        "width": 1440,
+        "doc": 1440,
+        "root": {
+          "x": 264,
+          "y": 64,
+          "w": 1136,
+          "h": 744.1484375,
+          "right": 1400,
+          "bottom": 808.1484375
+        },
+        "rows": {
+          "heights": [
+            88,
+            88,
+            88,
+            88
+          ],
+          "equal": true
+        },
+        "cards": {
+          "heights": [],
+          "equal": true
+        },
+        "controls": [
+          {
+            "x": 1303,
+            "y": 100,
+            "w": 97,
+            "h": 36,
+            "right": 1400,
+            "bottom": 136
+          },
+          {
+            "x": 1288,
+            "y": 349.1484375,
+            "w": 112,
+            "h": 36,
+            "right": 1400,
+            "bottom": 385.1484375
+          }
+        ],
+        "topbar": {
+          "x": 224,
+          "y": 0,
+          "w": 1216,
+          "h": 64,
+          "right": 1440,
+          "bottom": 64
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 224,
+          "h": 960,
+          "right": 224,
+          "bottom": 960
+        }
+      }
+    },
+    {
+      "name": "layout:1440:schedule",
+      "pass": true,
+      "detail": {
+        "headingSingleLine": true,
+        "width": 1440,
+        "doc": 1440,
+        "root": {
+          "x": 264,
+          "y": 64,
+          "w": 1136,
+          "h": 525.1484375,
+          "right": 1400,
+          "bottom": 589.1484375
+        },
+        "rows": {
+          "heights": [],
+          "equal": true
+        },
+        "cards": {
+          "heights": [
+            294,
+            294
+          ],
+          "equal": true
+        },
+        "controls": [
+          {
+            "x": 1291,
+            "y": 100,
+            "w": 109,
+            "h": 36,
+            "right": 1400,
+            "bottom": 136
+          }
+        ],
+        "topbar": {
+          "x": 224,
+          "y": 0,
+          "w": 1216,
+          "h": 64,
+          "right": 1440,
+          "bottom": 64
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 224,
+          "h": 960,
+          "right": 224,
+          "bottom": 960
+        }
+      }
+    },
+    {
+      "name": "layout:1440:assistant",
+      "pass": true,
+      "detail": {
+        "headingSingleLine": true,
+        "width": 1440,
+        "doc": 1440,
+        "root": {
+          "x": 264,
+          "y": 64,
+          "w": 1136,
+          "h": 735.1953125,
+          "right": 1400,
+          "bottom": 799.1953125
+        },
+        "rows": {
+          "heights": [],
+          "equal": true
+        },
+        "cards": {
+          "heights": [],
+          "equal": true
+        },
+        "controls": [],
+        "topbar": {
+          "x": 224,
+          "y": 0,
+          "w": 1216,
+          "h": 64,
+          "right": 1440,
+          "bottom": 64
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 224,
+          "h": 960,
+          "right": 224,
+          "bottom": 960
+        }
+      }
+    },
+    {
+      "name": "layout:1280:skills",
+      "pass": true,
+      "detail": {
+        "headingSingleLine": true,
+        "width": 1280,
+        "doc": 1280,
+        "root": {
+          "x": 264,
+          "y": 64,
+          "w": 976,
+          "h": 755.3984375,
+          "right": 1240,
+          "bottom": 819.3984375
+        },
+        "rows": {
+          "heights": [
+            92,
+            92,
+            92
+          ],
+          "equal": true
+        },
+        "cards": {
+          "heights": [
+            172,
+            172
+          ],
+          "equal": true
+        },
+        "controls": [
+          {
+            "x": 1140.421875,
+            "y": 100,
+            "w": 99.578125,
+            "h": 36,
+            "right": 1240,
+            "bottom": 136
+          },
+          {
+            "x": 912,
+            "y": 233.1484375,
+            "w": 208,
+            "h": 36,
+            "right": 1120,
+            "bottom": 269.1484375
+          },
+          {
+            "x": 1128,
+            "y": 233.1484375,
+            "w": 112,
+            "h": 36,
+            "right": 1240,
+            "bottom": 269.1484375
+          }
+        ],
+        "topbar": {
+          "x": 224,
+          "y": 0,
+          "w": 1056,
+          "h": 64,
+          "right": 1280,
+          "bottom": 64
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 224,
+          "h": 960,
+          "right": 224,
+          "bottom": 960
+        }
+      }
+    },
+    {
+      "name": "layout:1280:plugins",
+      "pass": true,
+      "detail": {
+        "headingSingleLine": true,
+        "width": 1280,
+        "doc": 1280,
+        "root": {
+          "x": 264,
+          "y": 64,
+          "w": 976,
+          "h": 670.890625,
+          "right": 1240,
+          "bottom": 734.890625
+        },
+        "rows": {
+          "heights": [
+            108,
+            108,
+            108
+          ],
+          "equal": true
+        },
+        "cards": {
+          "heights": [],
+          "equal": true
+        },
+        "controls": [
+          {
+            "x": 1143,
+            "y": 100,
+            "w": 97,
+            "h": 36,
+            "right": 1240,
+            "bottom": 136
+          }
+        ],
+        "topbar": {
+          "x": 224,
+          "y": 0,
+          "w": 1056,
+          "h": 64,
+          "right": 1280,
+          "bottom": 64
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 224,
+          "h": 960,
+          "right": 224,
+          "bottom": 960
+        }
+      }
+    },
+    {
+      "name": "layout:1280:runs",
+      "pass": true,
+      "detail": {
+        "headingSingleLine": true,
+        "width": 1280,
+        "doc": 1280,
+        "root": {
+          "x": 264,
+          "y": 64,
+          "w": 976,
+          "h": 744.1484375,
+          "right": 1240,
+          "bottom": 808.1484375
+        },
+        "rows": {
+          "heights": [
+            88,
+            88,
+            88,
+            88
+          ],
+          "equal": true
+        },
+        "cards": {
+          "heights": [],
+          "equal": true
+        },
+        "controls": [
+          {
+            "x": 1143,
+            "y": 100,
+            "w": 97,
+            "h": 36,
+            "right": 1240,
+            "bottom": 136
+          },
+          {
+            "x": 1128,
+            "y": 349.1484375,
+            "w": 112,
+            "h": 36,
+            "right": 1240,
+            "bottom": 385.1484375
+          }
+        ],
+        "topbar": {
+          "x": 224,
+          "y": 0,
+          "w": 1056,
+          "h": 64,
+          "right": 1280,
+          "bottom": 64
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 224,
+          "h": 960,
+          "right": 224,
+          "bottom": 960
+        }
+      }
+    },
+    {
+      "name": "layout:1280:schedule",
+      "pass": true,
+      "detail": {
+        "headingSingleLine": true,
+        "width": 1280,
+        "doc": 1280,
+        "root": {
+          "x": 264,
+          "y": 64,
+          "w": 976,
+          "h": 525.1484375,
+          "right": 1240,
+          "bottom": 589.1484375
+        },
+        "rows": {
+          "heights": [],
+          "equal": true
+        },
+        "cards": {
+          "heights": [
+            294,
+            294
+          ],
+          "equal": true
+        },
+        "controls": [
+          {
+            "x": 1131,
+            "y": 100,
+            "w": 109,
+            "h": 36,
+            "right": 1240,
+            "bottom": 136
+          }
+        ],
+        "topbar": {
+          "x": 224,
+          "y": 0,
+          "w": 1056,
+          "h": 64,
+          "right": 1280,
+          "bottom": 64
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 224,
+          "h": 960,
+          "right": 224,
+          "bottom": 960
+        }
+      }
+    },
+    {
+      "name": "layout:1280:assistant",
+      "pass": true,
+      "detail": {
+        "headingSingleLine": true,
+        "width": 1280,
+        "doc": 1280,
+        "root": {
+          "x": 264,
+          "y": 64,
+          "w": 976,
+          "h": 735.1953125,
+          "right": 1240,
+          "bottom": 799.1953125
+        },
+        "rows": {
+          "heights": [],
+          "equal": true
+        },
+        "cards": {
+          "heights": [],
+          "equal": true
+        },
+        "controls": [],
+        "topbar": {
+          "x": 224,
+          "y": 0,
+          "w": 1056,
+          "h": 64,
+          "right": 1280,
+          "bottom": 64
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 224,
+          "h": 960,
+          "right": 224,
+          "bottom": 960
+        }
+      }
+    },
+    {
+      "name": "layout:1024:skills",
+      "pass": true,
+      "detail": {
+        "headingSingleLine": true,
+        "width": 1024,
+        "doc": 1024,
+        "root": {
+          "x": 224,
+          "y": 64,
+          "w": 772,
+          "h": 755.3984375,
+          "right": 996,
+          "bottom": 819.3984375
+        },
+        "rows": {
+          "heights": [
+            92,
+            92,
+            92
+          ],
+          "equal": true
+        },
+        "cards": {
+          "heights": [
+            172,
+            172
+          ],
+          "equal": true
+        },
+        "controls": [
+          {
+            "x": 896.421875,
+            "y": 100,
+            "w": 99.578125,
+            "h": 36,
+            "right": 996,
+            "bottom": 136
+          },
+          {
+            "x": 668,
+            "y": 233.1484375,
+            "w": 208,
+            "h": 36,
+            "right": 876,
+            "bottom": 269.1484375
+          },
+          {
+            "x": 884,
+            "y": 233.1484375,
+            "w": 112,
+            "h": 36,
+            "right": 996,
+            "bottom": 269.1484375
+          }
+        ],
+        "topbar": {
+          "x": 196,
+          "y": 0,
+          "w": 828,
+          "h": 64,
+          "right": 1024,
+          "bottom": 64
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 196,
+          "h": 960,
+          "right": 196,
+          "bottom": 960
+        }
+      }
+    },
+    {
+      "name": "layout:1024:plugins",
+      "pass": true,
+      "detail": {
+        "headingSingleLine": true,
+        "width": 1024,
+        "doc": 1024,
+        "root": {
+          "x": 224,
+          "y": 64,
+          "w": 772,
+          "h": 670.890625,
+          "right": 996,
+          "bottom": 734.890625
+        },
+        "rows": {
+          "heights": [
+            108,
+            108,
+            108
+          ],
+          "equal": true
+        },
+        "cards": {
+          "heights": [],
+          "equal": true
+        },
+        "controls": [
+          {
+            "x": 899,
+            "y": 100,
+            "w": 97,
+            "h": 36,
+            "right": 996,
+            "bottom": 136
+          }
+        ],
+        "topbar": {
+          "x": 196,
+          "y": 0,
+          "w": 828,
+          "h": 64,
+          "right": 1024,
+          "bottom": 64
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 196,
+          "h": 960,
+          "right": 196,
+          "bottom": 960
+        }
+      }
+    },
+    {
+      "name": "layout:1024:runs",
+      "pass": true,
+      "detail": {
+        "headingSingleLine": true,
+        "width": 1024,
+        "doc": 1024,
+        "root": {
+          "x": 224,
+          "y": 64,
+          "w": 772,
+          "h": 744.1484375,
+          "right": 996,
+          "bottom": 808.1484375
+        },
+        "rows": {
+          "heights": [
+            88,
+            88,
+            88,
+            88
+          ],
+          "equal": true
+        },
+        "cards": {
+          "heights": [],
+          "equal": true
+        },
+        "controls": [
+          {
+            "x": 899,
+            "y": 100,
+            "w": 97,
+            "h": 36,
+            "right": 996,
+            "bottom": 136
+          },
+          {
+            "x": 884,
+            "y": 349.1484375,
+            "w": 112,
+            "h": 36,
+            "right": 996,
+            "bottom": 385.1484375
+          }
+        ],
+        "topbar": {
+          "x": 196,
+          "y": 0,
+          "w": 828,
+          "h": 64,
+          "right": 1024,
+          "bottom": 64
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 196,
+          "h": 960,
+          "right": 196,
+          "bottom": 960
+        }
+      }
+    },
+    {
+      "name": "layout:1024:schedule",
+      "pass": true,
+      "detail": {
+        "headingSingleLine": true,
+        "width": 1024,
+        "doc": 1024,
+        "root": {
+          "x": 224,
+          "y": 64,
+          "w": 772,
+          "h": 525.1484375,
+          "right": 996,
+          "bottom": 589.1484375
+        },
+        "rows": {
+          "heights": [],
+          "equal": true
+        },
+        "cards": {
+          "heights": [
+            294,
+            294
+          ],
+          "equal": true
+        },
+        "controls": [
+          {
+            "x": 887,
+            "y": 100,
+            "w": 109,
+            "h": 36,
+            "right": 996,
+            "bottom": 136
+          }
+        ],
+        "topbar": {
+          "x": 196,
+          "y": 0,
+          "w": 828,
+          "h": 64,
+          "right": 1024,
+          "bottom": 64
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 196,
+          "h": 960,
+          "right": 196,
+          "bottom": 960
+        }
+      }
+    },
+    {
+      "name": "layout:1024:assistant",
+      "pass": true,
+      "detail": {
+        "headingSingleLine": true,
+        "width": 1024,
+        "doc": 1024,
+        "root": {
+          "x": 224,
+          "y": 64,
+          "w": 772,
+          "h": 735.1953125,
+          "right": 996,
+          "bottom": 799.1953125
+        },
+        "rows": {
+          "heights": [],
+          "equal": true
+        },
+        "cards": {
+          "heights": [],
+          "equal": true
+        },
+        "controls": [],
+        "topbar": {
+          "x": 196,
+          "y": 0,
+          "w": 828,
+          "h": 64,
+          "right": 1024,
+          "bottom": 64
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 196,
+          "h": 960,
+          "right": 196,
+          "bottom": 960
+        }
+      }
+    },
+    {
+      "name": "layout:768:skills",
+      "pass": true,
+      "detail": {
+        "headingSingleLine": true,
+        "width": 768,
+        "doc": 768,
+        "root": {
+          "x": 208,
+          "y": 64,
+          "w": 536,
+          "h": 789.3984375,
+          "right": 744,
+          "bottom": 853.3984375
+        },
+        "rows": {
+          "heights": [
+            92,
+            92,
+            92
+          ],
+          "equal": true
+        },
+        "cards": {
+          "heights": [
+            190,
+            190
+          ],
+          "equal": true
+        },
+        "controls": [
+          {
+            "x": 644.421875,
+            "y": 108,
+            "w": 99.578125,
+            "h": 36,
+            "right": 744,
+            "bottom": 144
+          },
+          {
+            "x": 474,
+            "y": 249.1484375,
+            "w": 150,
+            "h": 36,
+            "right": 624,
+            "bottom": 285.1484375
+          },
+          {
+            "x": 632,
+            "y": 249.1484375,
+            "w": 112,
+            "h": 36,
+            "right": 744,
+            "bottom": 285.1484375
+          }
+        ],
+        "topbar": {
+          "x": 184,
+          "y": 0,
+          "w": 584,
+          "h": 64,
+          "right": 768,
+          "bottom": 64
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 184,
+          "h": 960,
+          "right": 184,
+          "bottom": 960
+        }
+      }
+    },
+    {
+      "name": "layout:768:plugins",
+      "pass": true,
+      "detail": {
+        "headingSingleLine": true,
+        "width": 768,
+        "doc": 768,
+        "root": {
+          "x": 208,
+          "y": 64,
+          "w": 536,
+          "h": 686.890625,
+          "right": 744,
+          "bottom": 750.890625
+        },
+        "rows": {
+          "heights": [
+            108,
+            108,
+            108
+          ],
+          "equal": true
+        },
+        "cards": {
+          "heights": [],
+          "equal": true
+        },
+        "controls": [
+          {
+            "x": 647,
+            "y": 108,
+            "w": 97,
+            "h": 36,
+            "right": 744,
+            "bottom": 144
+          }
+        ],
+        "topbar": {
+          "x": 184,
+          "y": 0,
+          "w": 584,
+          "h": 64,
+          "right": 768,
+          "bottom": 64
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 184,
+          "h": 960,
+          "right": 184,
+          "bottom": 960
+        }
+      }
+    },
+    {
+      "name": "layout:768:runs",
+      "pass": true,
+      "detail": {
+        "headingSingleLine": true,
+        "width": 768,
+        "doc": 768,
+        "root": {
+          "x": 208,
+          "y": 64,
+          "w": 536,
+          "h": 760.1484375,
+          "right": 744,
+          "bottom": 824.1484375
+        },
+        "rows": {
+          "heights": [
+            88,
+            88,
+            88,
+            88
+          ],
+          "equal": true
+        },
+        "cards": {
+          "heights": [],
+          "equal": true
+        },
+        "controls": [
+          {
+            "x": 647,
+            "y": 108,
+            "w": 97,
+            "h": 36,
+            "right": 744,
+            "bottom": 144
+          },
+          {
+            "x": 632,
+            "y": 365.1484375,
+            "w": 112,
+            "h": 36,
+            "right": 744,
+            "bottom": 401.1484375
+          }
+        ],
+        "topbar": {
+          "x": 184,
+          "y": 0,
+          "w": 584,
+          "h": 64,
+          "right": 768,
+          "bottom": 64
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 184,
+          "h": 960,
+          "right": 184,
+          "bottom": 960
+        }
+      }
+    },
+    {
+      "name": "layout:768:schedule",
+      "pass": true,
+      "detail": {
+        "headingSingleLine": true,
+        "width": 768,
+        "doc": 768,
+        "root": {
+          "x": 208,
+          "y": 64,
+          "w": 536,
+          "h": 827.1484375,
+          "right": 744,
+          "bottom": 891.1484375
+        },
+        "rows": {
+          "heights": [],
+          "equal": true
+        },
+        "cards": {
+          "heights": [
+            284,
+            284
+          ],
+          "equal": true
+        },
+        "controls": [
+          {
+            "x": 635,
+            "y": 108,
+            "w": 109,
+            "h": 36,
+            "right": 744,
+            "bottom": 144
+          }
+        ],
+        "topbar": {
+          "x": 184,
+          "y": 0,
+          "w": 584,
+          "h": 64,
+          "right": 768,
+          "bottom": 64
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 184,
+          "h": 960,
+          "right": 184,
+          "bottom": 960
+        }
+      }
+    },
+    {
+      "name": "layout:768:assistant",
+      "pass": true,
+      "detail": {
+        "headingSingleLine": true,
+        "width": 768,
+        "doc": 768,
+        "root": {
+          "x": 208,
+          "y": 64,
+          "w": 536,
+          "h": 819.1953125,
+          "right": 744,
+          "bottom": 883.1953125
+        },
+        "rows": {
+          "heights": [],
+          "equal": true
+        },
+        "cards": {
+          "heights": [],
+          "equal": true
+        },
+        "controls": [],
+        "topbar": {
+          "x": 184,
+          "y": 0,
+          "w": 584,
+          "h": 64,
+          "right": 768,
+          "bottom": 64
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 184,
+          "h": 960,
+          "right": 184,
+          "bottom": 960
+        }
+      }
+    },
+    {
+      "name": "layout:390:skills",
+      "pass": true,
+      "detail": {
+        "headingSingleLine": true,
+        "width": 390,
+        "doc": 390,
+        "root": {
+          "x": 20,
+          "y": 116,
+          "w": 350,
+          "h": 988.28125,
+          "right": 370,
+          "bottom": 1104.28125
+        },
+        "rows": {
+          "heights": [
+            104,
+            104,
+            104
+          ],
+          "equal": true
+        },
+        "cards": {
+          "heights": [
+            171,
+            171
+          ],
+          "equal": true
+        },
+        "controls": [
+          {
+            "x": 270.421875,
+            "y": 150,
+            "w": 99.578125,
+            "h": 40,
+            "right": 370,
+            "bottom": 190
+          },
+          {
+            "x": 20,
+            "y": 310.84375,
+            "w": 232,
+            "h": 40,
+            "right": 252,
+            "bottom": 350.84375
+          },
+          {
+            "x": 260,
+            "y": 310.84375,
+            "w": 110,
+            "h": 40,
+            "right": 370,
+            "bottom": 350.84375
+          }
+        ],
+        "topbar": {
+          "x": 0,
+          "y": 68,
+          "w": 390,
+          "h": 48,
+          "right": 390,
+          "bottom": 116
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 390,
+          "h": 68,
+          "right": 390,
+          "bottom": 68
+        }
+      }
+    },
+    {
+      "name": "layout:390:plugins",
+      "pass": true,
+      "detail": {
+        "headingSingleLine": true,
+        "width": 390,
+        "doc": 390,
+        "root": {
+          "x": 20,
+          "y": 116,
+          "w": 350,
+          "h": 708.8671875,
+          "right": 370,
+          "bottom": 824.8671875
+        },
+        "rows": {
+          "heights": [
+            130,
+            130,
+            130
+          ],
+          "equal": true
+        },
+        "cards": {
+          "heights": [],
+          "equal": true
+        },
+        "controls": [
+          {
+            "x": 273,
+            "y": 150,
+            "w": 97,
+            "h": 40,
+            "right": 370,
+            "bottom": 190
+          }
+        ],
+        "topbar": {
+          "x": 0,
+          "y": 68,
+          "w": 390,
+          "h": 48,
+          "right": 390,
+          "bottom": 116
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 390,
+          "h": 68,
+          "right": 390,
+          "bottom": 68
+        }
+      }
+    },
+    {
+      "name": "layout:390:runs",
+      "pass": true,
+      "detail": {
+        "headingSingleLine": true,
+        "width": 390,
+        "doc": 390,
+        "root": {
+          "x": 20,
+          "y": 116,
+          "w": 350,
+          "h": 752.59375,
+          "right": 370,
+          "bottom": 868.59375
+        },
+        "rows": {
+          "heights": [
+            100,
+            100,
+            100,
+            100
+          ],
+          "equal": true
+        },
+        "cards": {
+          "heights": [],
+          "equal": true
+        },
+        "controls": [
+          {
+            "x": 273,
+            "y": 150,
+            "w": 97,
+            "h": 40,
+            "right": 370,
+            "bottom": 190
+          },
+          {
+            "x": 258,
+            "y": 407.59375,
+            "w": 112,
+            "h": 40,
+            "right": 370,
+            "bottom": 447.59375
+          }
+        ],
+        "topbar": {
+          "x": 0,
+          "y": 68,
+          "w": 390,
+          "h": 48,
+          "right": 390,
+          "bottom": 116
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 390,
+          "h": 68,
+          "right": 390,
+          "bottom": 68
+        }
+      }
+    },
+    {
+      "name": "layout:390:schedule",
+      "pass": true,
+      "detail": {
+        "headingSingleLine": true,
+        "width": 390,
+        "doc": 390,
+        "root": {
+          "x": 20,
+          "y": 116,
+          "w": 350,
+          "h": 799.59375,
+          "right": 370,
+          "bottom": 915.59375
+        },
+        "rows": {
+          "heights": [],
+          "equal": true
+        },
+        "cards": {
+          "heights": [
+            284,
+            284
+          ],
+          "equal": true
+        },
+        "controls": [
+          {
+            "x": 261,
+            "y": 150,
+            "w": 109,
+            "h": 40,
+            "right": 370,
+            "bottom": 190
+          }
+        ],
+        "topbar": {
+          "x": 0,
+          "y": 68,
+          "w": 390,
+          "h": 48,
+          "right": 390,
+          "bottom": 116
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 390,
+          "h": 68,
+          "right": 390,
+          "bottom": 68
+        }
+      }
+    },
+    {
+      "name": "layout:390:assistant",
+      "pass": true,
+      "detail": {
+        "headingSingleLine": true,
+        "width": 390,
+        "doc": 390,
+        "root": {
+          "x": 20,
+          "y": 116,
+          "w": 350,
+          "h": 732.984375,
+          "right": 370,
+          "bottom": 848.984375
+        },
+        "rows": {
+          "heights": [],
+          "equal": true
+        },
+        "cards": {
+          "heights": [],
+          "equal": true
+        },
+        "controls": [],
+        "topbar": {
+          "x": 0,
+          "y": 68,
+          "w": 390,
+          "h": 48,
+          "right": 390,
+          "bottom": 116
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 390,
+          "h": 68,
+          "right": 390,
+          "bottom": 68
+        }
+      }
+    },
+    {
+      "name": "layout:320:skills",
+      "pass": true,
+      "detail": {
+        "headingSingleLine": true,
+        "width": 320,
+        "doc": 320,
+        "root": {
+          "x": 20,
+          "y": 116,
+          "w": 280,
+          "h": 988.28125,
+          "right": 300,
+          "bottom": 1104.28125
+        },
+        "rows": {
+          "heights": [
+            104,
+            104,
+            104
+          ],
+          "equal": true
+        },
+        "cards": {
+          "heights": [
+            171,
+            171
+          ],
+          "equal": true
+        },
+        "controls": [
+          {
+            "x": 200.421875,
+            "y": 150,
+            "w": 99.578125,
+            "h": 40,
+            "right": 300,
+            "bottom": 190
+          },
+          {
+            "x": 20,
+            "y": 310.84375,
+            "w": 162,
+            "h": 40,
+            "right": 182,
+            "bottom": 350.84375
+          },
+          {
+            "x": 190,
+            "y": 310.84375,
+            "w": 110,
+            "h": 40,
+            "right": 300,
+            "bottom": 350.84375
+          }
+        ],
+        "topbar": {
+          "x": 0,
+          "y": 68,
+          "w": 320,
+          "h": 48,
+          "right": 320,
+          "bottom": 116
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 320,
+          "h": 68,
+          "right": 320,
+          "bottom": 68
+        }
+      }
+    },
+    {
+      "name": "layout:320:plugins",
+      "pass": true,
+      "detail": {
+        "headingSingleLine": true,
+        "width": 320,
+        "doc": 320,
+        "root": {
+          "x": 20,
+          "y": 116,
+          "w": 280,
+          "h": 727.4609375,
+          "right": 300,
+          "bottom": 843.4609375
+        },
+        "rows": {
+          "heights": [
+            130,
+            130,
+            130
+          ],
+          "equal": true
+        },
+        "cards": {
+          "heights": [],
+          "equal": true
+        },
+        "controls": [
+          {
+            "x": 203,
+            "y": 150,
+            "w": 97,
+            "h": 40,
+            "right": 300,
+            "bottom": 190
+          }
+        ],
+        "topbar": {
+          "x": 0,
+          "y": 68,
+          "w": 320,
+          "h": 48,
+          "right": 320,
+          "bottom": 116
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 320,
+          "h": 68,
+          "right": 320,
+          "bottom": 68
+        }
+      }
+    },
+    {
+      "name": "layout:320:runs",
+      "pass": true,
+      "detail": {
+        "headingSingleLine": true,
+        "width": 320,
+        "doc": 320,
+        "root": {
+          "x": 20,
+          "y": 116,
+          "w": 280,
+          "h": 752.59375,
+          "right": 300,
+          "bottom": 868.59375
+        },
+        "rows": {
+          "heights": [
+            100,
+            100,
+            100,
+            100
+          ],
+          "equal": true
+        },
+        "cards": {
+          "heights": [],
+          "equal": true
+        },
+        "controls": [
+          {
+            "x": 203,
+            "y": 150,
+            "w": 97,
+            "h": 40,
+            "right": 300,
+            "bottom": 190
+          },
+          {
+            "x": 188,
+            "y": 407.59375,
+            "w": 112,
+            "h": 40,
+            "right": 300,
+            "bottom": 447.59375
+          }
+        ],
+        "topbar": {
+          "x": 0,
+          "y": 68,
+          "w": 320,
+          "h": 48,
+          "right": 320,
+          "bottom": 116
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 320,
+          "h": 68,
+          "right": 320,
+          "bottom": 68
+        }
+      }
+    },
+    {
+      "name": "layout:320:schedule",
+      "pass": true,
+      "detail": {
+        "headingSingleLine": true,
+        "width": 320,
+        "doc": 320,
+        "root": {
+          "x": 20,
+          "y": 116,
+          "w": 280,
+          "h": 799.59375,
+          "right": 300,
+          "bottom": 915.59375
+        },
+        "rows": {
+          "heights": [],
+          "equal": true
+        },
+        "cards": {
+          "heights": [
+            284,
+            284
+          ],
+          "equal": true
+        },
+        "controls": [
+          {
+            "x": 191,
+            "y": 150,
+            "w": 109,
+            "h": 40,
+            "right": 300,
+            "bottom": 190
+          }
+        ],
+        "topbar": {
+          "x": 0,
+          "y": 68,
+          "w": 320,
+          "h": 48,
+          "right": 320,
+          "bottom": 116
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 320,
+          "h": 68,
+          "right": 320,
+          "bottom": 68
+        }
+      }
+    },
+    {
+      "name": "layout:320:assistant",
+      "pass": true,
+      "detail": {
+        "headingSingleLine": true,
+        "width": 320,
+        "doc": 320,
+        "root": {
+          "x": 20,
+          "y": 116,
+          "w": 280,
+          "h": 732.984375,
+          "right": 300,
+          "bottom": 848.984375
+        },
+        "rows": {
+          "heights": [],
+          "equal": true
+        },
+        "cards": {
+          "heights": [],
+          "equal": true
+        },
+        "controls": [],
+        "topbar": {
+          "x": 0,
+          "y": 68,
+          "w": 320,
+          "h": 48,
+          "right": 320,
+          "bottom": 116
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 320,
+          "h": 68,
+          "right": 320,
+          "bottom": 68
+        }
+      }
+    },
+    {
+      "name": "search-empty",
+      "pass": true
+    },
+    {
+      "name": "skill-toggle",
+      "pass": true
+    },
+    {
+      "name": "skill-permissions",
+      "pass": true
+    },
+    {
+      "name": "dialog-escape",
+      "pass": true
+    },
+    {
+      "name": "create-local-rule",
+      "pass": true
+    },
+    {
+      "name": "cancel-rule-edit",
+      "pass": true
+    },
+    {
+      "name": "actual-api-meetings",
+      "pass": true
+    },
+    {
+      "name": "plan-does-not-execute",
+      "pass": true
+    },
+    {
+      "name": "return-to-real-meeting",
+      "pass": true
+    },
+    {
+      "name": "app-entry",
+      "pass": true
+    },
+    {
+      "name": "source-escape-discards-draft",
+      "pass": true
+    },
+    {
+      "name": "source-close-discards-draft",
+      "pass": true
+    },
+    {
+      "name": "disable-skill-disables-rule",
+      "pass": true
+    },
+    {
+      "name": "disabled-skill-cannot-enable-rule",
+      "pass": true
+    },
+    {
+      "name": "edit-to-disabled-skill-pauses-rule",
+      "pass": true
+    },
+    {
+      "name": "drawer:1440:skills",
+      "pass": true,
+      "detail": {
+        "dialog": {
+          "x": 960,
+          "y": 0,
+          "right": 1440,
+          "bottom": 960,
+          "h": 960
+        },
+        "header": {
+          "x": 961,
+          "y": 0,
+          "right": 1440,
+          "bottom": 76,
+          "h": 76
+        },
+        "body": {
+          "x": 961,
+          "y": 76,
+          "right": 1440,
+          "bottom": 891,
+          "h": 815
+        },
+        "footer": {
+          "x": 961,
+          "y": 891,
+          "right": 1440,
+          "bottom": 960,
+          "h": 69
+        },
+        "w": 1440,
+        "h": 960
+      }
+    },
+    {
+      "name": "drawer:1440:plugins",
+      "pass": true,
+      "detail": {
+        "dialog": {
+          "x": 960,
+          "y": 0,
+          "right": 1440,
+          "bottom": 960,
+          "h": 960
+        },
+        "header": {
+          "x": 961,
+          "y": 0,
+          "right": 1440,
+          "bottom": 76,
+          "h": 76
+        },
+        "body": {
+          "x": 961,
+          "y": 76,
+          "right": 1440,
+          "bottom": 891,
+          "h": 815
+        },
+        "footer": {
+          "x": 961,
+          "y": 891,
+          "right": 1440,
+          "bottom": 960,
+          "h": 69
+        },
+        "w": 1440,
+        "h": 960
+      }
+    },
+    {
+      "name": "drawer:1440:runs",
+      "pass": true,
+      "detail": {
+        "dialog": {
+          "x": 960,
+          "y": 0,
+          "right": 1440,
+          "bottom": 960,
+          "h": 960
+        },
+        "header": {
+          "x": 961,
+          "y": 0,
+          "right": 1440,
+          "bottom": 76,
+          "h": 76
+        },
+        "body": {
+          "x": 961,
+          "y": 76,
+          "right": 1440,
+          "bottom": 891,
+          "h": 815
+        },
+        "footer": {
+          "x": 961,
+          "y": 891,
+          "right": 1440,
+          "bottom": 960,
+          "h": 69
+        },
+        "w": 1440,
+        "h": 960
+      }
+    },
+    {
+      "name": "drawer:1280:skills",
+      "pass": true,
+      "detail": {
+        "dialog": {
+          "x": 800,
+          "y": 0,
+          "right": 1280,
+          "bottom": 960,
+          "h": 960
+        },
+        "header": {
+          "x": 801,
+          "y": 0,
+          "right": 1280,
+          "bottom": 76,
+          "h": 76
+        },
+        "body": {
+          "x": 801,
+          "y": 76,
+          "right": 1280,
+          "bottom": 891,
+          "h": 815
+        },
+        "footer": {
+          "x": 801,
+          "y": 891,
+          "right": 1280,
+          "bottom": 960,
+          "h": 69
+        },
+        "w": 1280,
+        "h": 960
+      }
+    },
+    {
+      "name": "drawer:1280:plugins",
+      "pass": true,
+      "detail": {
+        "dialog": {
+          "x": 800,
+          "y": 0,
+          "right": 1280,
+          "bottom": 960,
+          "h": 960
+        },
+        "header": {
+          "x": 801,
+          "y": 0,
+          "right": 1280,
+          "bottom": 76,
+          "h": 76
+        },
+        "body": {
+          "x": 801,
+          "y": 76,
+          "right": 1280,
+          "bottom": 891,
+          "h": 815
+        },
+        "footer": {
+          "x": 801,
+          "y": 891,
+          "right": 1280,
+          "bottom": 960,
+          "h": 69
+        },
+        "w": 1280,
+        "h": 960
+      }
+    },
+    {
+      "name": "drawer:1280:runs",
+      "pass": true,
+      "detail": {
+        "dialog": {
+          "x": 800,
+          "y": 0,
+          "right": 1280,
+          "bottom": 960,
+          "h": 960
+        },
+        "header": {
+          "x": 801,
+          "y": 0,
+          "right": 1280,
+          "bottom": 76,
+          "h": 76
+        },
+        "body": {
+          "x": 801,
+          "y": 76,
+          "right": 1280,
+          "bottom": 891,
+          "h": 815
+        },
+        "footer": {
+          "x": 801,
+          "y": 891,
+          "right": 1280,
+          "bottom": 960,
+          "h": 69
+        },
+        "w": 1280,
+        "h": 960
+      }
+    },
+    {
+      "name": "drawer:1024:skills",
+      "pass": true,
+      "detail": {
+        "dialog": {
+          "x": 544,
+          "y": 0,
+          "right": 1024,
+          "bottom": 960,
+          "h": 960
+        },
+        "header": {
+          "x": 545,
+          "y": 0,
+          "right": 1024,
+          "bottom": 76,
+          "h": 76
+        },
+        "body": {
+          "x": 545,
+          "y": 76,
+          "right": 1024,
+          "bottom": 891,
+          "h": 815
+        },
+        "footer": {
+          "x": 545,
+          "y": 891,
+          "right": 1024,
+          "bottom": 960,
+          "h": 69
+        },
+        "w": 1024,
+        "h": 960
+      }
+    },
+    {
+      "name": "drawer:1024:plugins",
+      "pass": true,
+      "detail": {
+        "dialog": {
+          "x": 544,
+          "y": 0,
+          "right": 1024,
+          "bottom": 960,
+          "h": 960
+        },
+        "header": {
+          "x": 545,
+          "y": 0,
+          "right": 1024,
+          "bottom": 76,
+          "h": 76
+        },
+        "body": {
+          "x": 545,
+          "y": 76,
+          "right": 1024,
+          "bottom": 891,
+          "h": 815
+        },
+        "footer": {
+          "x": 545,
+          "y": 891,
+          "right": 1024,
+          "bottom": 960,
+          "h": 69
+        },
+        "w": 1024,
+        "h": 960
+      }
+    },
+    {
+      "name": "drawer:1024:runs",
+      "pass": true,
+      "detail": {
+        "dialog": {
+          "x": 544,
+          "y": 0,
+          "right": 1024,
+          "bottom": 960,
+          "h": 960
+        },
+        "header": {
+          "x": 545,
+          "y": 0,
+          "right": 1024,
+          "bottom": 76,
+          "h": 76
+        },
+        "body": {
+          "x": 545,
+          "y": 76,
+          "right": 1024,
+          "bottom": 891,
+          "h": 815
+        },
+        "footer": {
+          "x": 545,
+          "y": 891,
+          "right": 1024,
+          "bottom": 960,
+          "h": 69
+        },
+        "w": 1024,
+        "h": 960
+      }
+    },
+    {
+      "name": "drawer:768:skills",
+      "pass": true,
+      "detail": {
+        "dialog": {
+          "x": 288,
+          "y": 0,
+          "right": 768,
+          "bottom": 960,
+          "h": 960
+        },
+        "header": {
+          "x": 289,
+          "y": 0,
+          "right": 768,
+          "bottom": 76,
+          "h": 76
+        },
+        "body": {
+          "x": 289,
+          "y": 76,
+          "right": 768,
+          "bottom": 891,
+          "h": 815
+        },
+        "footer": {
+          "x": 289,
+          "y": 891,
+          "right": 768,
+          "bottom": 960,
+          "h": 69
+        },
+        "w": 768,
+        "h": 960
+      }
+    },
+    {
+      "name": "drawer:768:plugins",
+      "pass": true,
+      "detail": {
+        "dialog": {
+          "x": 288,
+          "y": 0,
+          "right": 768,
+          "bottom": 960,
+          "h": 960
+        },
+        "header": {
+          "x": 289,
+          "y": 0,
+          "right": 768,
+          "bottom": 76,
+          "h": 76
+        },
+        "body": {
+          "x": 289,
+          "y": 76,
+          "right": 768,
+          "bottom": 891,
+          "h": 815
+        },
+        "footer": {
+          "x": 289,
+          "y": 891,
+          "right": 768,
+          "bottom": 960,
+          "h": 69
+        },
+        "w": 768,
+        "h": 960
+      }
+    },
+    {
+      "name": "drawer:768:runs",
+      "pass": true,
+      "detail": {
+        "dialog": {
+          "x": 288,
+          "y": 0,
+          "right": 768,
+          "bottom": 960,
+          "h": 960
+        },
+        "header": {
+          "x": 289,
+          "y": 0,
+          "right": 768,
+          "bottom": 76,
+          "h": 76
+        },
+        "body": {
+          "x": 289,
+          "y": 76,
+          "right": 768,
+          "bottom": 891,
+          "h": 815
+        },
+        "footer": {
+          "x": 289,
+          "y": 891,
+          "right": 768,
+          "bottom": 960,
+          "h": 69
+        },
+        "w": 768,
+        "h": 960
+      }
+    },
+    {
+      "name": "drawer:390:skills",
+      "pass": true,
+      "detail": {
+        "dialog": {
+          "x": 0,
+          "y": 0,
+          "right": 390,
+          "bottom": 844,
+          "h": 844
+        },
+        "header": {
+          "x": 0,
+          "y": 0,
+          "right": 390,
+          "bottom": 68,
+          "h": 68
+        },
+        "body": {
+          "x": 0,
+          "y": 68,
+          "right": 390,
+          "bottom": 771,
+          "h": 703
+        },
+        "footer": {
+          "x": 0,
+          "y": 771,
+          "right": 390,
+          "bottom": 844,
+          "h": 73
+        },
+        "w": 390,
+        "h": 844
+      }
+    },
+    {
+      "name": "drawer:390:plugins",
+      "pass": true,
+      "detail": {
+        "dialog": {
+          "x": 0,
+          "y": 0,
+          "right": 390,
+          "bottom": 844,
+          "h": 844
+        },
+        "header": {
+          "x": 0,
+          "y": 0,
+          "right": 390,
+          "bottom": 68,
+          "h": 68
+        },
+        "body": {
+          "x": 0,
+          "y": 68,
+          "right": 390,
+          "bottom": 771,
+          "h": 703
+        },
+        "footer": {
+          "x": 0,
+          "y": 771,
+          "right": 390,
+          "bottom": 844,
+          "h": 73
+        },
+        "w": 390,
+        "h": 844
+      }
+    },
+    {
+      "name": "drawer:390:runs",
+      "pass": true,
+      "detail": {
+        "dialog": {
+          "x": 0,
+          "y": 0,
+          "right": 390,
+          "bottom": 844,
+          "h": 844
+        },
+        "header": {
+          "x": 0,
+          "y": 0,
+          "right": 390,
+          "bottom": 68,
+          "h": 68
+        },
+        "body": {
+          "x": 0,
+          "y": 68,
+          "right": 390,
+          "bottom": 771,
+          "h": 703
+        },
+        "footer": {
+          "x": 0,
+          "y": 771,
+          "right": 390,
+          "bottom": 844,
+          "h": 73
+        },
+        "w": 390,
+        "h": 844
+      }
+    },
+    {
+      "name": "drawer:320:skills",
+      "pass": true,
+      "detail": {
+        "dialog": {
+          "x": 0,
+          "y": 0,
+          "right": 320,
+          "bottom": 844,
+          "h": 844
+        },
+        "header": {
+          "x": 0,
+          "y": 0,
+          "right": 320,
+          "bottom": 68,
+          "h": 68
+        },
+        "body": {
+          "x": 0,
+          "y": 68,
+          "right": 320,
+          "bottom": 771,
+          "h": 703
+        },
+        "footer": {
+          "x": 0,
+          "y": 771,
+          "right": 320,
+          "bottom": 844,
+          "h": 73
+        },
+        "w": 320,
+        "h": 844
+      }
+    },
+    {
+      "name": "drawer:320:plugins",
+      "pass": true,
+      "detail": {
+        "dialog": {
+          "x": 0,
+          "y": 0,
+          "right": 320,
+          "bottom": 844,
+          "h": 844
+        },
+        "header": {
+          "x": 0,
+          "y": 0,
+          "right": 320,
+          "bottom": 68,
+          "h": 68
+        },
+        "body": {
+          "x": 0,
+          "y": 68,
+          "right": 320,
+          "bottom": 771,
+          "h": 703
+        },
+        "footer": {
+          "x": 0,
+          "y": 771,
+          "right": 320,
+          "bottom": 844,
+          "h": 73
+        },
+        "w": 320,
+        "h": 844
+      }
+    },
+    {
+      "name": "drawer:320:runs",
+      "pass": true,
+      "detail": {
+        "dialog": {
+          "x": 0,
+          "y": 0,
+          "right": 320,
+          "bottom": 844,
+          "h": 844
+        },
+        "header": {
+          "x": 0,
+          "y": 0,
+          "right": 320,
+          "bottom": 68,
+          "h": 68
+        },
+        "body": {
+          "x": 0,
+          "y": 68,
+          "right": 320,
+          "bottom": 771,
+          "h": 703
+        },
+        "footer": {
+          "x": 0,
+          "y": 771,
+          "right": 320,
+          "bottom": 844,
+          "h": 73
+        },
+        "w": 320,
+        "h": 844
+      }
+    }
+  ]
+}

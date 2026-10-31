@@ -4,7 +4,9 @@
 
 # 纪要导入与 Skill 发布方案探索（2026-10-30～31）
 
-[扩展中心最新重绘与截图](design/extension-center-redraw-2026-10-31.md)：按用户反馈使用 taste / finesse-ui，改为连续工作面、全幅列表与按需抽屉；五页仍待设计确认。仅本地原型，尚未接入主程序。
+[扩展中心真实应用截图与落地顺序](design/extension-center-app-preview-2026-10-31.md)：已放入现有 React/Vite Workspace 的开发预览，统一间距与同类高度，使用隔离示例数据；等待界面确认，Pi/Skill/MCP 运行底座仍未接入。
+
+[扩展中心最新重绘与截图](design/extension-center-redraw-2026-10-31.md)：按用户反馈使用 taste / finesse-ui，改为连续工作面、全幅列表与按需抽屉；独立原型作为历史稿保留，最新评审以真实应用预览为准。
 
 [Skill / 插件中心、运行调度与设计截图](design/extension-center-2026-10-31.md)及 [Pi Durable 底座提议](adr/0019-meeting-durable-runtime.md)：2026-10-31 新增设计评审稿，先确认页面后接入主程序。包含 Skills、插件与连接、运行记录、自动运行和会议助手；独立原型不代表产品已实现。
 
