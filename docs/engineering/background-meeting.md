@@ -1,4 +1,4 @@
-> v0.2.5 候选新增 Windows Chrome/Edge 与飞书共享音频会话监听；[本轮范围与验证](../evidence/meeting-finish-windows-2026-10-31.md)。
+v0.2.5 已发布，新增 Windows 10/11 Chrome/Edge 与飞书共享音频会话监听；[发布核验与边界](../evidence/preview-v0.2.5-2026-10-31.md)。
 
 # 后台会议联动：浏览器与飞书音频调用
 

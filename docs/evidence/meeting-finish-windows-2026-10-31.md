@@ -1,6 +1,6 @@
-# v0.2.5 候选：标题、会后状态与 Windows 监听
+# v0.2.5：标题、会后状态与 Windows 监听
 
-日期：2026-10-31。源码基线 v0.2.4 / d30da26。本轮尚未发布；[需求与边界](../design/meeting-finish-windows-2026-10-31.md)、[安装说明](../releases/v0.2.5-preview.md)。
+日期：2026-10-31。源码基线 v0.2.4 / d30da26。本轮已发布并完成整包核验，见[发布回执](preview-v0.2.5-2026-10-31.md)；[需求与边界](../design/meeting-finish-windows-2026-10-31.md)、[安装说明](../releases/v0.2.5-preview.md)。
 
 用户确认：v0.2.4、Windows、应用仍打开、ASR＋LLM。后台继续处理，但页面没有提示。因此本轮修复持续可见性与收尾调度，不把它描述为新增的后台取消修复。
 
