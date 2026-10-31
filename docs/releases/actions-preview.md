@@ -36,4 +36,8 @@ DMG 步骤使用 `TAURI_BUNDLER_DMG_IGNORE_CI=true`，让 macOS runner 保留配
 
 已公开 release 和冲突附件一律不覆盖、不删除。若只是 publish 失败，可后台重跑该失败 job，复用同一 run 的已校验附件；重新构建产生不同字节时，不应向旧草稿强行替换附件，应先核对失败回执并选择新的发布版本。
 
+## 发布后核验
+
+自 2026-10-31 起，后续版本测试并发布后，仅检查 Actions 的 verify/build/publish 结果，并通过 GitHub API 核对源码 SHA、标签、Release 状态及附件名称、大小、digest 等元数据，提供 Actions、Release 和安装包链接。不下载附件做额外验证、解包或安装复测，除非用户另行明确要求。缺少摘要等元数据时如实报告，不通过下载补验；回执不得将远端元数据核对描述成下载文件或安装行为验证。
+
 依据：[GitHub push 事件](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#push)、[GitHub runner](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)、[手动运行工作流](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow)、[Release API](https://docs.github.com/en/rest/releases/releases)、[附件 API](https://docs.github.com/en/rest/releases/assets)。
