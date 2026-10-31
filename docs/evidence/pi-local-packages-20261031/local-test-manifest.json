@@ -1,0 +1,42 @@
+{
+  "createdAt": "2026-10-31T12:23:42.655832+00:00",
+  "sourceRevision": "221dc554f331e5b5db700e2faa7b66e3a5823015",
+  "version": "0.2.6",
+  "localOnly": true,
+  "remotePublished": false,
+  "macos": {
+    "architecture": "arm64",
+    "minimumSystemVersion": "14.6",
+    "signing": "ad-hoc",
+    "notarized": false,
+    "launcherIsolatedData": true,
+    "packagedPiHarnessSmokePassed": true,
+    "zipSignatureAndCriticalBytesVerified": true
+  },
+  "windows": {
+    "architecture": "x64",
+    "installerBuilt": false,
+    "reason": "No Windows MSVC host/native installer UI toolchain available; waiting for user build-host details",
+    "sourceKitPrepared": true
+  },
+  "artifacts": [
+    {
+      "name": "Lingji-Pi-0.2.6-221dc55-macos-arm64.dmg",
+      "bytes": 241130678,
+      "sha256": "8063a1bb7e3f099110e9aa38b6163fe404ad71babe343e544e598172ecdf8f4b",
+      "kind": "macos-arm64-test-package"
+    },
+    {
+      "name": "Lingji-Pi-0.2.6-221dc55-macos-arm64.zip",
+      "bytes": 255713846,
+      "sha256": "93011d144aebc92c5b8e21c08624455cebccbe5d437451eb6aaeee91232af017",
+      "kind": "macos-arm64-test-package"
+    },
+    {
+      "name": "Lingji-Pi-221dc55-windows-build-kit.zip",
+      "bytes": 27093546,
+      "sha256": "7fd8e19105d1357e84f5d8186ea18fe9b96b471039ae182e8a919d7c424166fd",
+      "kind": "windows-source-build-kit"
+    }
+  ]
+}

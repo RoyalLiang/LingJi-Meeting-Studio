@@ -1,0 +1,27 @@
+{
+  "sourceRevision": "221dc554f331e5b5db700e2faa7b66e3a5823015",
+  "node": "v26.12.1",
+  "sqlite": "3.54.0",
+  "appBinarySha256": "dfcdfb9b1235dad9bb8cd9de1daefa264c57cf6df51eacfd2d537c0f18f81081",
+  "bundledBackendSourceFilesMatched": 76,
+  "piDependencies": {
+    "@earendil-works/chord": "1.4.0",
+    "@earendil-works/pi-ai": "1.4.0",
+    "@earendil-works/pi-durable": "1.4.0"
+  },
+  "privateConfigurationPaths": [],
+  "defaultPackagedAgentListStatus": 200,
+  "officialPiRuntimeWithFauxProvider": true,
+  "readonlyToolCalls": 1,
+  "fauxModelCalls": 2,
+  "completed": true,
+  "humanMinutesUnchanged": true,
+  "completedTaskSurvivesReopen": true,
+  "idempotentRequestSurvivesReopen": true,
+  "modelCallsAfterReopen": 0,
+  "externalFetchAttempts": 0,
+  "realProvidersInvoked": false,
+  "appLaunched": false,
+  "userAppInstalledOrReplaced": false,
+  "scope": "Synthetic package fixture; completed-task persistence after clean reopen. No live audio, cloud provider, or SIGKILL recovery in this probe."
+}

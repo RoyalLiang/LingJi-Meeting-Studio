@@ -1,0 +1,37 @@
+{
+  "model": "sensevoice-small-2024-07-17-int8",
+  "runtime": "1.13.8",
+  "onnxruntime": "1.28.2",
+  "node": "v26.12.1",
+  "platform": "darwin",
+  "arch": "arm64",
+  "packagedResourcesVerified": true,
+  "nativeInference": true,
+  "pythonRequired": false,
+  "modelDownloadedDuringInference": false,
+  "publicFixturesOnly": true,
+  "realAudioDevicesTested": false,
+  "meetingAccuracyEvaluated": false,
+  "results": [
+    {
+      "language": "zh",
+      "fixtureSha256": "b77f1794fe374a0ba1ee1dc458bfaf9349496cbbfc32780c50ba3c5a7ad8e373",
+      "text": "开饭时间早上9点至下午5点。",
+      "seconds": 5.592,
+      "elapsedMs": 825
+    },
+    {
+      "language": "en",
+      "fixtureSha256": "eb1eb008904465b74c304aad8342e8c7d3c6e61ffe9f66adcaca9cf0f76a93f4",
+      "text": "The tribal chieftain called for the boy and presented him with 50 pieces of code.",
+      "seconds": 7.152,
+      "elapsedMs": 99
+    },
+    {
+      "language": "silence",
+      "text": "",
+      "seconds": 5,
+      "elapsedMs": 14
+    }
+  ]
+}

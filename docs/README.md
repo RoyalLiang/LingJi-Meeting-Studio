@@ -1,3 +1,5 @@
+[Pi 本地真机测试包](engineering/pi-local-packages-2026-10-31.md)：Mac ARM64 本地产物已构建；Windows 安装包等待构建环境，仅提供源码套件。
+
 [Pi 版全链路与性能验证](engineering/pi-full-chain-validation-2026-10-31.md)：基于 v0.2.6 整合，803 项 Node 与真实本地 ASR 对照通过；云 ASR 额度错误单列，当前仅本地候选。
 
 [v0.2.6 全屏、重点内容与后台处理优化](releases/v0.2.6-preview.md)已发布：五项CI与四个附件完整下载核验通过；[发布回执](evidence/preview-v0.2.6-2026-10-31.md) · [界面与验证](evidence/fullscreen-performance-2026-10-31.md)。

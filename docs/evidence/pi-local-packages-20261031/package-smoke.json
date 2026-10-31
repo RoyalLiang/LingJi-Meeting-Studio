@@ -1,0 +1,16 @@
+{
+  "timestamp": "2026-10-31T12:21:14.958Z",
+  "packagedApp": true,
+  "independentBackend": true,
+  "bundledAsrConfigured": true,
+  "developerBackendRequests": 0,
+  "restartPersistence": true,
+  "stableWebviewProfile": true,
+  "parentOwnsBackend": true,
+  "localAccount": true,
+  "devAccountDisabled": true,
+  "node": "v26.12.1",
+  "sqlite": "3.54.0",
+  "realAudioDevicesOpened": false,
+  "realProvidersInvoked": false
+}
