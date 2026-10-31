@@ -1,6 +1,6 @@
-# v0.2.6 候选：全屏与后台处理
+# v0.2.6：全屏与后台处理
 
-日期：2026-10-31。基线 v0.2.5，当前尚未发布。[需求与边界](../design/fullscreen-performance-2026-10-31.md) · [安装说明](../releases/v0.2.6-preview.md)。
+日期：2026-10-31。基线 v0.2.5，已发布并完成整包核验，见[发布回执](preview-v0.2.6-2026-10-31.md)。[需求与边界](../design/fullscreen-performance-2026-10-31.md) · [安装说明](../releases/v0.2.6-preview.md)。
 
 ## 已复现与修复
 
