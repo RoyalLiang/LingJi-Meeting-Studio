@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: pi-test-packages-${{ github.ref }}-${{ contains(github.event.head_commit.message, '[diagnose-pi]') }}
+  group: pi-test-packages-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: false
 
 env:
@@ -23,55 +23,7 @@ env:
   WORKFLOW_SHA: ${{ github.sha }}
 
 jobs:
-  inspect_failure:
-    if: contains(github.event.head_commit.message, '[diagnose-pi]')
-    runs-on: ubuntu-24.04
-    permissions:
-      actions: read
-    steps:
-      - name: Classify failure without exposing log text
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          node --input-type=module <<'NODE'
-          const url=`https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/actions/jobs/124541073358/logs`;
-          const response=await fetch(url,{headers:{Authorization:`Bearer ${process.env.GH_TOKEN}`,Accept:'application/vnd.github+json'}});
-          if(!response.ok)throw new Error(`Diagnostic log request failed: ${response.status}`);
-          const text=(await response.text()).split('\n').slice(-160).join('\n');
-          const markers={
-            dmgLayoutFileMissing:/ENOENT[^\n]*\.DS_Store/.test(text),
-            dmgFileMissing:/ENOENT[^\n]*\.dmg/.test(text),
-            npmError:text.includes('npm error'),
-            spawnCargo:/spawn cargo.*ENOENT/.test(text),
-            spawnNode:/spawn node.*ENOENT/.test(text),
-            spawnNpm:/spawn npm.*ENOENT/.test(text),
-            cwdMissing:/getcwd|uv_cwd/.test(text),
-            processKilled:/SIGKILL|Killed: 9|signal: 9/.test(text),
-            diskFull:/No space left on device/.test(text),
-            networkFailure:/ENOTFOUND|ECONNRESET|ETIMEDOUT/.test(text),
-            nodeStack:/file:\/\/.*\.mjs:/.test(text),
-            rustCompile:text.includes('could not compile'),
-            bundleFailure:text.includes('failed to bundle'),
-            iconMismatch:text.includes('Regenerate '),
-            sourceChanged:text.includes('Inputs changed while taking source snapshot'),
-            packagedAgent:text.includes('Packaged Pi runtime must initialize'),
-            nativeExit:text.includes('Client exited while waiting'),
-            nativeTimeout:text.includes('Timeout:'),
-            backendStart:text.includes('客户端后台启动失败'),
-            signatureFailure:/code object is not signed|invalid signature|codesign exited/.test(text),
-            dmgFailure:/hdiutil exited|failed to build dmg/.test(text),
-          };
-          const codes=Object.fromEntries(['ERR_MODULE_NOT_FOUND','ERR_DLOPEN_FAILED','ERR_ASSERTION','ENOENT','EACCES','ETIMEDOUT','SIGKILL'].map(code=>[code,text.includes(code)]));
-          const locations=[];
-          for(const file of ['release-macos-alpha.mjs','test-standalone-package.mjs','prepare-client-backend.mjs','prepare-local-asr.mjs','test-bundled-asr.mjs','meeting-agent.mjs','server.mjs','local-asr.mjs']){
-            const pattern=new RegExp(file.replaceAll('.','\\.')+':(\\d{1,5}):(\\d{1,4})','g');
-            for(const match of text.matchAll(pattern))locations.push({file,line:Number(match[1]),column:Number(match[2])});
-          }
-          console.log('::notice title=Fixed Pi build diagnostic flags::'+JSON.stringify({markers,codes,locations}));
-          NODE
-
   macos:
-    if: ${{ !contains(github.event.head_commit.message, '[diagnose-pi]') }}
     runs-on: macos-15
     timeout-minutes: 90
     steps:
@@ -106,7 +58,6 @@ jobs:
           retention-days: 14
 
   windows:
-    if: ${{ !contains(github.event.head_commit.message, '[diagnose-pi]') }}
     runs-on: windows-2025
     timeout-minutes: 90
     steps:
@@ -131,6 +82,20 @@ jobs:
       - run: node --test tests/records-desktop-entry.test.mjs tests/records-audio-storage-sync.test.mjs tests/records-release-source.test.mjs tests/records-preview-release.test.mjs
       - run: npm run build:web
       - run: node scripts/prepare-client-backend.mjs
+      - name: Restore existing Windows Rust dependency cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/desktop/src-tauri/target/debug/deps
+            apps/desktop/src-tauri/target/debug/build
+            apps/desktop/src-tauri/target/debug/.fingerprint
+            apps/desktop/src-tauri/target/release/deps
+            apps/desktop/src-tauri/target/release/build
+            apps/desktop/src-tauri/target/release/.fingerprint
+          key: windows-2025-rust192-v1-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}
+          restore-keys: windows-2025-rust192-v1-
       - run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --features smoke-test -- --test-threads=1
       - name: Build and verify Windows test installer
         run: node scripts/release-windows-preview.mjs
