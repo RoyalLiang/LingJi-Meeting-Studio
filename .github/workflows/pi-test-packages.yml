@@ -39,6 +39,8 @@ jobs:
           if(!response.ok)throw new Error(`Diagnostic log request failed: ${response.status}`);
           const text=(await response.text()).split('\n').slice(-160).join('\n');
           const markers={
+            dmgLayoutFileMissing:/ENOENT[^\n]*\.DS_Store/.test(text),
+            dmgFileMissing:/ENOENT[^\n]*\.dmg/.test(text),
             npmError:text.includes('npm error'),
             spawnCargo:/spawn cargo.*ENOENT/.test(text),
             spawnNode:/spawn node.*ENOENT/.test(text),
@@ -90,6 +92,7 @@ jobs:
       - name: Build and verify Mac test DMG
         env:
           TTS_RELEASE_CHANNEL: preview
+          TAURI_BUNDLER_DMG_IGNORE_CI: 'true'
         run: node scripts/release-macos-alpha.mjs
       - name: Collect source and package evidence
         run: |
