@@ -1,3 +1,5 @@
+[Pi Actions 测试包](engineering/pi-actions-test-packages-2026-10-31.md)：Mac 已通过并上传；Windows 安装器构建/验证中，仅测试分支与 Actions 附件，未创建 Release。
+
 [Pi 本地真机测试包](engineering/pi-local-packages-2026-10-31.md)：Mac ARM64 本地产物已构建；Windows 安装包等待构建环境，仅提供源码套件。
 
 [Pi 版全链路与性能验证](engineering/pi-full-chain-validation-2026-10-31.md)：基于 v0.2.6 整合，803 项 Node 与真实本地 ASR 对照通过；云 ASR 额度错误单列，当前仅本地候选。
