@@ -1,6 +1,6 @@
 [package]
 name = "tts-client"
-version = "0.2.4"
+version = "0.2.5"
 description = "TTS desktop client with native audio capture"
 edition = "2021"
 rust-version = "1.90"
@@ -35,6 +35,10 @@ tauri-plugin-single-instance = "=2.5.4"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "=0.6.5"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "=0.62.2", features = ["Win32_Foundation", "Win32_Media_Audio", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Variant", "Win32_System_Threading"] }
+windows-core = "=0.62.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 tauri = { version = "=2.12.3", features = ["tray-icon"] }

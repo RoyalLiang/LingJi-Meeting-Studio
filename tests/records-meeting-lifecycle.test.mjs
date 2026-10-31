@@ -87,3 +87,26 @@ test('meeting controls distinguish ending capture from starting audio or unrelat
   const starting = await renderControls({ recording: false, busy: true, phase: 'starting' });
   assert.match(starting, /正在接入声音/);
 });
+
+test('ending capture keeps visible summary progress until the final job completes',async()=>{
+ const record={capture:'completed',sources:[],segments:[{id:'s1'}],transcriptRevision:3,pendingChunks:0,autoMinutes:{enabled:true},jobs:[{scope:'final',status:'running',progress:{completed:2,total:5,stage:'window'}}]};
+ const processing=await renderControls({record,recording:false,busy:false});
+ assert.match(processing,/录音已结束，正在后台收尾/);
+ assert.match(processing,/纪要与重点速览/);assert.match(processing,/2\/5/);
+ assert.doesNotMatch(processing,/本场已收好/);
+ record.jobs[0].status='completed';record.minutes={transcriptRevision:3};
+ assert.match(await renderControls({record,recording:false,busy:false}),/本场已收好/);
+});
+
+test('sealed local tail remains visibly processing before packets reach the backend',async()=>{
+ const html=await renderControls({record:{capture:'sealed',sources:[{watermark:1,lastSequence:2}],pendingChunks:0,jobs:[],segments:[]},recording:false,busy:false});
+ assert.match(html,/正在后台收尾/);assert.match(html,/尾段音频/);assert.doesNotMatch(html,/本场已收好/);
+});
+
+test('a preserved manual summary is not reported as failed when its background job becomes stale',async()=>{
+ const record={capture:'completed',sources:[],pendingChunks:0,segments:[{id:'s1'}],transcriptRevision:3,autoMinutes:{enabled:true},minutes:{edited:true,transcriptRevision:3},jobs:[{scope:'final',status:'stale',transcriptRevision:3}]};
+ const html=await renderControls({record,recording:false,busy:false});
+ assert.match(html,/本场已收好/);assert.doesNotMatch(html,/纪要待重试|整理未完成/);
+ record.jobs[0].status='failed';
+ assert.match(await renderControls({record,recording:false,busy:false}),/纪要待重试/);
+});

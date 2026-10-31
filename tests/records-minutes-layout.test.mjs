@@ -261,7 +261,7 @@ test('meeting highlights stay closed during capture and retain live content whil
  const during=render({capture:'recording',liveMinutes:live,minutes:null});
  assert.doesNotMatch(during,/class="meeting-highlights"|aria-label="重点速览"/);
  const waiting=render({capture:'sealed',liveMinutes:live,minutes:null,jobs:[{id:'final',scope:'final',status:'running'}]});
- assert.match(waiting,/正在更新会议重点/);assert.match(waiting,/会中重点草稿/);
+ assert.match(waiting,/后台仍在整理纪要与重点速览/);assert.match(waiting,/会中重点草稿/);
  const ended=render({capture:'completed',liveMinutes:live,minutes:final});
  assert.match(ended,/class="meeting-highlights"/);assert.match(ended,/会议最终重点/);assert.match(ended,/会中重点历史/);assert.match(ended,/会中重点草稿/);
 });

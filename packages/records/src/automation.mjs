@@ -25,7 +25,7 @@ export function automaticMinutesAt(record, now = Date.now()) {
   const paused = record.capture === 'paused';
   // A pause remains resumable; catch up only after the saved audio tail has drained.
   if (paused && (record.sources.some(source => !source.stopped || source.watermark !== source.lastSequence) || record.chunks.some(chunk => chunk.state !== 'done'))) return Infinity;
-  if (scope === 'final' || paused || (auto.lastRevision === record.transcriptRevision && auto.lastScope === scope)) {
+  if (scope === 'final' || paused || record.capture === 'sealed' || (auto.lastRevision === record.transcriptRevision && auto.lastScope === scope)) {
     const latest = checkpointJob(record, scope);
     if (!latest) return now;
     const attempt = latest.retryAttempt || 1;

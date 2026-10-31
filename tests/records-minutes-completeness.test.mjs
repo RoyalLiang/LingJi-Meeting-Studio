@@ -27,7 +27,7 @@ test('ending keeps the last validated highlights visible until final minutes and
  const render=()=>renderToStaticMarkup(React.createElement(module.exports.MinutesPanel,{record,busy:false,onClose(){},generate:async()=>{},edit:async()=>true,cite(){},automate:async()=>{},inline:true})).match(/<aside[^>]*aria-label="会议重点"[\s\S]*?<\/aside>/)?.[0] || '';
  for(const capture of ['sealed','completed']){
   record.capture=capture;
-  assert.match(render(),/早期重点仍可查/);assert.match(render(),/正在更新会议重点/);
+  assert.match(render(),/早期重点仍可查/);assert.match(render(),/后台仍在整理纪要与重点速览/);
  }
  record.jobs=[];record.minutes={...minutes('最终总结',record.segments),highlights:[{text:'最终重点',evidence:[ref(record.segments[0])]}]};
  const final=render();assert.match(final,/最终重点/);assert.match(final,/会中重点历史/);assert.match(final,/早期重点仍可查/);

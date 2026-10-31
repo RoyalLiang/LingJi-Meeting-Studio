@@ -1,3 +1,5 @@
+[v0.2.5 候选：重点标题、会后收尾与 Windows 监听](evidence/meeting-finish-windows-2026-10-31.md)，尚未发布。
+
 [v0.2.4 滚动总结、学习设置与后台联动](releases/v0.2.4-preview.md)已发布：五项 CI 与四个附件完整下载校验通过；[发布回执](evidence/preview-v0.2.4-2026-10-31.md) · [实现与边界](evidence/rolling-summary-2026-10-30.md)。
 
 # 聆记文档导航

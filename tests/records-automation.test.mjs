@@ -126,7 +126,8 @@ test('automatic minutes debounce live updates, deduplicate and finalize after dr
  j.fence='f';r.segments.push({...segment,id:'s2'});r.transcriptRevision++;
  commitMinutes(r,j.id,result,'f');assert.equal(r.liveMinutes.title,'评审');assert.equal(r.minutes,null);
  assert.equal(automaticMinutesAt(r,32000),61000);
- r.capture='sealed';assert.equal(queueAutomaticMinutes(r,'fixture',32000),undefined);
+ r.capture='sealed';const tail=queueAutomaticMinutes(r,'fixture',32000);assert.equal(tail.scope,'live');
+ tail.fence='t';const tailResult=JSON.parse(JSON.stringify(result).replaceAll('s1','s2'));commitMinutes(r,tail.id,tailResult,'t');
  r.capture='completed';const final=queueAutomaticMinutes(r,'fixture',32000);assert.equal(final.scope,'final');
  final.fence='z';commitMinutes(r,final.id,result,'z');assert.equal(r.minutes.revision,1);assert.equal(automaticMinutesAt(r,33000),Infinity);
 });
@@ -465,4 +466,30 @@ test('invalid topic output retries after an interval change without bypassing th
 test('ninety-second automation is accepted while explicit two-minute meetings remain unchanged',()=>{
  const r=createRecord('interval90');setAutomation(r,{enabled:true,intervalSeconds:90});assert.equal(r.autoMinutes.intervalSeconds,90);
  setAutomation(r,{enabled:true,intervalSeconds:120});setAutomation(r,{enabled:true});assert.equal(r.autoMinutes.intervalSeconds,120);
+});
+
+test('sealing requests a fresh tail checkpoint immediately instead of waiting for the live interval',()=>{
+ const now=Date.now(),r=record(),source=addSource(r,{kind:'microphone'}),bytes=Buffer.alloc(3200);
+ acknowledge(r,{sessionId:source.sessionId,sourceId:source.id,epoch:source.epoch,sequence:0,sampleOffset:0,sampleCount:1600,sampleRate:16000,digest:digest(bytes),object:'tail'});
+ setAutomation(r,{enabled:true,intervalSeconds:120},now-120000);
+ Object.assign(r.autoMinutes,{lastRequestedAt:now-1000,lastRevision:1,lastScope:'live'});
+ r.segments.push({...segment,id:'s2',text:'末尾确认评测口径',startMs:1000,endMs:2000});r.transcriptRevision=2;
+ seal(r,[{sourceId:source.id,epoch:source.epoch,lastSequence:0}]);
+ assert.equal(r.capture,'sealed');
+ assert.equal(automaticMinutesAt(r,now),now,'ending bypasses the normal live refresh delay');
+ assert.equal(queueAutomaticMinutes(r,'fixture-model',now)?.scope,'live');
+});
+
+test('the minutes lane prioritizes an ended meeting ahead of another live refresh',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'tts-finish-priority-')),repo=await createRepository({root,databaseUrl:''});
+ const previous=process.env.RECORD_WORKER_CONCURRENCY;process.env.RECORD_WORKER_CONCURRENCY='1';
+ try{
+  const live=record(),ended=record();ended.capture='completed';
+  requestMinutes(live,{scope:'live'});requestMinutes(ended,{scope:'final'});await repo.insert(live);await repo.insert(ended);
+  repo.listWork=async()=>[await repo.get(live.id),await repo.get(ended.id)];
+  const scopes=[];
+  await runCycle(repo,{minutes:async job=>{scopes.push(job.scope);return structuredClone(result);}},{lane:'minutes'});
+  assert.deepEqual(scopes,['final','live']);
+  assert.equal((await repo.get(ended.id)).jobs[0].status,'completed');
+ }finally{if(previous===undefined)delete process.env.RECORD_WORKER_CONCURRENCY;else process.env.RECORD_WORKER_CONCURRENCY=previous;await repo.close();await rm(root,{recursive:true,force:true});}
 });
