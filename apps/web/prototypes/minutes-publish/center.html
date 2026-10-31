@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>聆记 · Skill 与插件中心设计预览</title>
+  <link rel="stylesheet" href="./preview.css"><link rel="stylesheet" href="./center.css">
+</head>
+<body class="center-prototype">
+<div class="workspace">
+  <aside class="sidebar">
+    <a class="brand" href="./center.html"><img src="../../../desktop/assets/lingji-brand-mark.svg" width="36" height="36" alt=""><div><b>聆记</b><small>会议工作台</small></div></a>
+    <div class="workspace-name">产品与设计 <span>⌄</span></div>
+    <div class="nav-label">工作空间</div>
+    <a class="nav-item" href="./?screen=meeting"><span data-icon="meeting"></span>全部会议 <small>3</small></a>
+    <button class="nav-item" data-view="assistant"><span data-icon="chat"></span>会议助手</button>
+    <button class="nav-item c-nav-active" data-view="skills"><span data-icon="grid"></span>扩展中心</button>
+    <div class="nav-label recent">最近会议</div>
+    <a class="meeting-link" href="./?screen=meeting"><span>产品体验周会</span><small>10 月 30 日 · 42 分钟</small></a>
+    <a class="meeting-link" href="./?screen=meeting"><span>移动端体验评审</span><small>10 月 29 日 · 28 分钟</small></a>
+    <a class="meeting-link" href="./?screen=meeting"><span>用户访谈复盘</span><small>10 月 28 日 · 35 分钟</small></a>
+    <div class="sidebar-bottom"><div class="c-engine"><span class="c-dot"></span><div>任务执行服务<small>设计状态 · 本地设备</small></div><button class="c-icon-button" data-view="runs" aria-label="查看运行记录"><span data-icon="arrow"></span></button></div><div class="account"><span class="avatar">林</span><div>林知夏<small>个人工作空间 · 演示</small></div></div></div>
+  </aside>
+  <main>
+    <header class="topbar"><div class="c-breadcrumb"><span class="c-mobile-logo">聆记</span><span>工作空间</span><span> / </span><b id="breadcrumb">扩展中心</b></div><div class="topbar-actions"><span class="preview-badge">设计预览 · 示例数据</span><button class="c-proto-link" id="prev" aria-label="上一预览页">←</button><span id="page-label"></span><button class="c-proto-link" id="next" aria-label="下一预览页">→</button></div></header>
+    <div id="center"></div>
+    <footer class="c-footer"><span>交互原型 · 安装、连接与运行仅作演示，刷新恢复</span><span>Pi Durable 底座方案 / 尚未接入主程序</span></footer>
+  </main>
+</div>
+<dialog id="center-dialog" aria-labelledby="dialog-title"></dialog>
+<div id="center-toast" role="status" aria-live="polite" hidden></div>
+<script type="module" src="./center.mjs"></script>
+</body>
+</html>

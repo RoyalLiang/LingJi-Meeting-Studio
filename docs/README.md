@@ -4,6 +4,8 @@
 
 # 纪要导入与 Skill 发布方案探索（2026-10-30～31）
 
+[Skill / 插件中心、运行调度与设计截图](design/extension-center-2026-10-31.md)及 [Pi Durable 底座提议](adr/0019-meeting-durable-runtime.md)：2026-10-31 新增设计评审稿，先确认页面后接入主程序。包含 Skills、插件与连接、运行记录、自动运行和会议助手；独立原型不代表产品已实现。
+
 [可行性研究](research/minutes-feishu-skill-publishing-2026-10-30.md)、[浅色专业工作台：统一视觉与布局](design/minutes-publishing-preview-2026-10-30.md)、[Pi harness 可行性](research/pi-harness-extension-feasibility-2026-10-31.md)、[proposed ADR](adr/0017-minutes-publishing-skills.md)。Skill 导出路径已暂停；保留飞书云文档，Skill/插件独立设计。Pi已通过8项隔离会议调度fixture，尚未接入主程序；真实飞书与MCP联调仍待验证。
 
 # v0.1.5 豆包音频纪要发布准备（2026-10-22）

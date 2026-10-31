@@ -1,0 +1,301 @@
+{
+  "date": "2026-10-31",
+  "scope": "isolated UI, memory-only sample data",
+  "browser": "ego-lite",
+  "checks": [
+    {
+      "name": "skills layout at 1440",
+      "passed": true
+    },
+    {
+      "name": "plugins layout at 1440",
+      "passed": true
+    },
+    {
+      "name": "runs layout at 1440",
+      "passed": true
+    },
+    {
+      "name": "schedule layout at 1440",
+      "passed": true
+    },
+    {
+      "name": "assistant layout at 1440",
+      "passed": true
+    },
+    {
+      "name": "skills layout at 768",
+      "passed": true
+    },
+    {
+      "name": "plugins layout at 768",
+      "passed": true
+    },
+    {
+      "name": "runs layout at 768",
+      "passed": true
+    },
+    {
+      "name": "schedule layout at 768",
+      "passed": true
+    },
+    {
+      "name": "assistant layout at 768",
+      "passed": true
+    },
+    {
+      "name": "skills layout at 390",
+      "passed": true
+    },
+    {
+      "name": "plugins layout at 390",
+      "passed": true
+    },
+    {
+      "name": "runs layout at 390",
+      "passed": true
+    },
+    {
+      "name": "schedule layout at 390",
+      "passed": true
+    },
+    {
+      "name": "assistant layout at 390",
+      "passed": true
+    },
+    {
+      "name": "search empty state",
+      "passed": true
+    },
+    {
+      "name": "search match",
+      "passed": true
+    },
+    {
+      "name": "install disabled before acknowledgement",
+      "passed": true
+    },
+    {
+      "name": "install updates list and detail",
+      "passed": true
+    },
+    {
+      "name": "disabled skill cannot start",
+      "passed": true
+    },
+    {
+      "name": "tool permission switch state",
+      "passed": true
+    },
+    {
+      "name": "permissions do not leak across plugins",
+      "passed": true
+    },
+    {
+      "name": "manage selected plugin",
+      "passed": true
+    },
+    {
+      "name": "connection revoke reflected",
+      "passed": true
+    },
+    {
+      "name": "blocked run can cancel",
+      "passed": true
+    },
+    {
+      "name": "rerun disabled skill requires enable",
+      "passed": true
+    },
+    {
+      "name": "rerun keeps original skill",
+      "passed": true
+    },
+    {
+      "name": "missing exact version is blocked",
+      "passed": true
+    },
+    {
+      "name": "restore preserves old version",
+      "passed": true
+    },
+    {
+      "name": "cancelling does not claim stopped",
+      "passed": true
+    },
+    {
+      "name": "cancel propagates to visible terminal state",
+      "passed": true
+    },
+    {
+      "name": "rule disable state",
+      "passed": true
+    },
+    {
+      "name": "new rule created disabled",
+      "passed": true
+    },
+    {
+      "name": "new rule explicit enable",
+      "passed": true
+    },
+    {
+      "name": "assistant requires scope confirmation",
+      "passed": true
+    },
+    {
+      "name": "cancel scope retains question",
+      "passed": true
+    },
+    {
+      "name": "stop generation",
+      "passed": true
+    },
+    {
+      "name": "mobile list to detail",
+      "passed": true
+    },
+    {
+      "name": "mobile back returns list",
+      "passed": true
+    },
+    {
+      "name": "mobile reference pane",
+      "passed": true
+    }
+  ],
+  "metrics": [
+    {
+      "view": "skills",
+      "width": 1440,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": []
+    },
+    {
+      "view": "plugins",
+      "width": 1440,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": []
+    },
+    {
+      "view": "runs",
+      "width": 1440,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": []
+    },
+    {
+      "view": "schedule",
+      "width": 1440,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": []
+    },
+    {
+      "view": "assistant",
+      "width": 1440,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": []
+    },
+    {
+      "view": "skills",
+      "width": 768,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": []
+    },
+    {
+      "view": "plugins",
+      "width": 768,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": []
+    },
+    {
+      "view": "runs",
+      "width": 768,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": []
+    },
+    {
+      "view": "schedule",
+      "width": 768,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": []
+    },
+    {
+      "view": "assistant",
+      "width": 768,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": []
+    },
+    {
+      "view": "skills",
+      "width": 390,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": []
+    },
+    {
+      "view": "plugins",
+      "width": 390,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": []
+    },
+    {
+      "view": "runs",
+      "width": 390,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": []
+    },
+    {
+      "view": "schedule",
+      "width": 390,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": []
+    },
+    {
+      "view": "assistant",
+      "width": 390,
+      "overflow": false,
+      "h1": 1,
+      "errors": [],
+      "externalResources": []
+    }
+  ],
+  "validatedAssets": {
+    "apps/web/prototypes/minutes-publish/center.html": "441249639fab8fbd084448c9fedaa1e54f275e5993b83144d582490d4f6a531d",
+    "apps/web/prototypes/minutes-publish/center.css": "13034e141223481fa70918e1e629c5ac0d7487ffb043be8b17bdd9c8c3df3f03",
+    "apps/web/prototypes/minutes-publish/center.mjs": "bbc5167dd77c9c601da7bb81495927ab51d36b48245180758f99779af1dc4f12"
+  },
+  "subsequentChanges": [
+    {
+      "path": "apps/web/prototypes/minutes-publish/center.css",
+      "sha256": "b65700c7dba42056be0a98f213cd6f19842fd23ae313f6e165a534c9934dfc8a",
+      "change": "641–1150px toolbar now matches the list column width; final visual audit found the prior tablet search frame under the detail pane. Static CSS fix only, not re-captured after returning the browser to user control."
+    }
+  ]
+}

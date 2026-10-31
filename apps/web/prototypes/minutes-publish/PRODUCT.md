@@ -2,6 +2,8 @@
 
 本文件仅约束本目录的独立 HTML/CSS/ESM 原型。它不替代项目产品说明，也不表示主入口已采用这些界面。
 
+2026-10-31 新增 `center.html` / `center.css` / `center.mjs`：Skill/插件中心与 Pi Durable 调度设计评审，仍为独立原型。最新分期和截图见 [中心设计](../../../../docs/design/extension-center-2026-10-31.md)。`index.html` 的旧扩展页面保留用于比较；本轮中心评审以 `center.html` 为准。
+
 ## 已确认的约束
 
 - 面向会议内容的整理、回顾与有来源的问答；保留现有聆记标识。
