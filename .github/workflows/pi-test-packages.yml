@@ -23,42 +23,25 @@ env:
   WORKFLOW_SHA: ${{ github.sha }}
 
 jobs:
-  inspect_windows:
-    if: contains(github.event.head_commit.message, '[inspect-windows]')
+  installer_hashes:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    permissions:
-      actions: read
     steps:
-      - name: Read fixed Windows package progress flags
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '26.12.1'
+      - run: sudo apt-get update && sudo apt-get install -y nsis
+      - name: Compile exact resource hashes with real NSIS
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          node --input-type=module <<'NODE'
-          let response;
-          for(let attempt=0;attempt<18;attempt++){
-            response=await fetch(`https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/actions/jobs/124541073532/logs`,{headers:{Authorization:`Bearer ${process.env.GH_TOKEN}`,Accept:'application/vnd.github+json'}});
-            if(response.ok)break;
-            await response.body?.cancel();
-            if(attempt<17)await new Promise(resolve=>setTimeout(resolve,25000));
-          }
-          if(!response.ok){console.log('::notice title=Fixed Windows build progress::'+JSON.stringify({logsAvailable:false}));process.exit(0);}
-          const text=await response.text();
-          const markers={
-            rustCompilation:text.includes('Compiling '),
-            releaseFinished:/Finished .*release.*profile/.test(text),
-            bundling:text.includes('Bundling '),
-            webviewDownload:/Downloading.*WebView2/i.test(text),
-            silentProbe:text.includes('Windows packaging: Verify silent installation'),
-            uiProbe:text.includes('Windows packaging: Inspect installer UI'),
-            cancelled:text.includes('The operation was canceled'),
-          };
-          const codes=Object.fromEntries(['ERR_MODULE_NOT_FOUND','ERR_DLOPEN_FAILED','ERR_ASSERTION','ENOENT','EACCES','ETIMEDOUT','SIGKILL'].map(code=>[code,text.includes(code)]));
-          console.log('::notice title=Fixed Windows build progress::'+JSON.stringify({logsAvailable:true,markers,codes}));
-          NODE
+          NSIS_REQUIRE_COMPILER: '1'
+        run: node --test tests/records-installer-hashes.test.mjs
 
   macos:
-    if: ${{ !contains(github.event.head_commit.message, '[inspect-windows]') }}
+    if: ${{ !contains(github.event.head_commit.message, '[windows-only]') }}
     runs-on: macos-15
     timeout-minutes: 90
     steps:
@@ -93,7 +76,7 @@ jobs:
           retention-days: 14
 
   windows:
-    if: ${{ !contains(github.event.head_commit.message, '[inspect-windows]') }}
+    needs: installer_hashes
     runs-on: windows-2025
     timeout-minutes: 90
     steps:
@@ -119,6 +102,7 @@ jobs:
       - run: npm run build:web
       - run: node scripts/prepare-client-backend.mjs
       - name: Restore existing Windows Rust dependency cache
+        id: rust_cache
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25
         with:
           path: |
@@ -134,7 +118,22 @@ jobs:
           restore-keys: windows-2025-rust192-v1-
       - run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --features smoke-test -- --test-threads=1
       - name: Build and verify Windows test installer
+        timeout-minutes: 45
         run: node scripts/release-windows-preview.mjs
+      - name: Save verified dependency cache after package diagnostics
+        if: ${{ always() && !cancelled() && steps.rust_cache.outcome == 'success' && steps.rust_cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/desktop/src-tauri/target/debug/deps
+            apps/desktop/src-tauri/target/debug/build
+            apps/desktop/src-tauri/target/debug/.fingerprint
+            apps/desktop/src-tauri/target/release/deps
+            apps/desktop/src-tauri/target/release/build
+            apps/desktop/src-tauri/target/release/.fingerprint
+          key: ${{ steps.rust_cache.outputs.cache-primary-key }}
       - name: Collect source and package evidence
         shell: pwsh
         run: |
