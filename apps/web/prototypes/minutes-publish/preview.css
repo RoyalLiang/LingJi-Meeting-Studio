@@ -10,3 +10,5 @@
 @media(prefers-reduced-motion:reduce){*{animation:none!important;scroll-behavior:auto!important}}
 
 .draft-empty{padding:80px 15px;text-align:center;color:var(--muted)}.draft-empty h3{font-size:16px;font-weight:500}.draft-empty p{font-size:12px;margin-top:15px}.draft-empty small{display:block;font-size:11px;margin-top:25px}
+
+.extension-tabs{display:flex;gap:24px;margin:0 32px 22px;border-bottom:1px solid #cfddd3}.extension-tabs button{border:0;border-bottom:2px solid transparent;background:none;color:var(--muted);padding:8px 0 13px;font-size:13px}.extension-tabs button.active{color:var(--accent);border-color:var(--accent);font-weight:600}.extension-tabs small{font-size:11px;color:var(--muted);font-weight:400;margin-left:8px}.capability-list{font-size:12px;line-height:2.2;padding-left:17px;margin:13px 0 22px;color:#526f5b}@media(max-width:1200px){.extension-tabs{margin:0 24px 20px}}@media(max-width:700px){.extension-tabs{margin:0 18px 18px;gap:20px}.extension-tabs small{display:block;margin:4px 0 0}.extension-tabs button{font-size:13px}}

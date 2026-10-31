@@ -1,107 +1,99 @@
-# 纪要导出与 Skill 流式聊天：完整流程预览
+# V3：固定飞书导出与独立会议扩展
 
-状态：**proposed，第二版方案与独立交互原型**。2026-10-31 按用户反馈重设计。本轮尚未接入产品主程序、真实模型、飞书或 MCP。会议数据、技能包、流式输出和平台回执均为本地演示；示例 Markdown 可以实际下载到本机。
+2026-10-31。状态：**proposed，方向设计与隔离原型**。本版按用户最新反馈暂停 Skill/自定义导出，保留飞书云文档，并独立设计 Skill/插件能力。V1/V2 的 Skill 导出方案不再是当前方向，历史截图仍留作追溯。
 
-## 用户已明确的产品边界
+本轮没有修改产品主入口、接入真实飞书或模型，也没有安装 Pi。所有会议、安装、流式结果与平台回执均为本地模拟；Markdown 示例可实际下载。
 
-- 纪要页只保留一个“导出”入口，进入后才提供 **Markdown 导出 / 飞书导出 / 自定义导出** 三个选项。
-- 飞书导出以云文档为目标；**画板是文档内的组件**，不能作为单独发布分类。正文、内嵌画板、表格和引用一起预览、一起确认。
-- 自定义导出依赖程序内置的 Skill 宿主能力。Skill 有独立管理页，可以查看来源、版本、兼容性、使用能力，并安装、启用或停用。
-- 自定义导出必须使用**流式聊天**，允许多轮整理、停止生成、检查与编辑草稿，再确认导出。旧版分步表单方案被本版替代。
+## 导出与扩展各有入口
 
-## 从导出入口走到回执
+| 位置 | 当前方案 |
+| --- | --- |
+| 纪要页 → 导出 | 仅 Markdown 导出、飞书导出；移除自定义/Skill 导出选项与跳转 |
+| 飞书导出 | 固定云文档导入，可在正文中勾选纪要画板；保留版本、人工修订和引用 |
+| 纪要页 → 会议助手 | 选择已启用的 Skill 和读取范围，做复盘、风险梳理或问答，不外发 |
+| 设置 → 扩展中心 → Skills | 查看来源、版本、指引与兼容性，安装、启停，在所选会议中使用 |
+| 扩展中心 → 插件与连接 | 独立管理会议内容工具、资料检索提议和飞书连接的能力与状态 |
 
 ```mermaid
 flowchart LR
-  A[会议纪要：导出] --> B{导出方式}
-  B --> M[Markdown：下载文件]
-  B --> F[飞书：配置云文档及画板组件]
-  B --> C[自定义：选择已启用 Skill]
-  S[设置：技能管理与安装] --> C
-  C --> H[流式聊天：逐步整理]
-  H --> D[草稿预览与人工编辑]
-  D --> H
-  D --> R[核对内容、目标与写入范围]
-  F --> R
-  R --> X[本次明确确认]
-  X --> P[执行导出并核对结果]
-  P --> E[回执或失败恢复]
+  R[所选会议及版本快照] --> E[固定导出]
+  E --> M[Markdown 文件]
+  E --> F[飞书云文档及内嵌画板]
+  R --> A[独立会议助手]
+  S[Skill：方法与知识] --> A
+  P[受控工具：只读所选内容] --> A
+  A --> D[独立分析及引用]
+  H[可选 pi-agent-core] -.后续隔离验证.-> A
 ```
 
-| 页面或状态 | 核心内容与下一步 |
-| --- | --- |
-| 会议纪要 | 保留现有阅读结构，只增加统一导出入口；不常驻平台或 Skill 导出分类 |
-| 导出选择 | 三种方式同一窗口展示，说明本地下载、云文档导入和 Skill 聊天的区别 |
-| 飞书配置 | 选择文件夹和标题；可勾选正文中的纪要画板；选择行动候选、引用与人工笔记 |
-| 技能管理 | 内置示例与本地技能包列表；检查来源、版本、兼容性和使用能力；安装、启用、停用；平台连接独立管理 |
-| 选择 Skill | 只展示已安装且启用的技能；确定本场内容范围和初始要求；无可用技能时引导管理 |
-| 流式聊天 | 桌面左侧对话逐步输出、右侧显示导出草稿，窄屏上下排布；可以停止、继续调整或编辑；第一版未完成时禁止确认导出 |
-| 人工草稿保护 | 后续生成先作为建议展示，由用户选择采用或保留人工稿；不自动覆盖 |
-| 检查与确认 | 核对草稿、来源版本、目标、内容范围；修改标题或目标后旧确认失效 |
-| 执行与回执 | 按阶段显示结果；明确资源是否创建；真实实现需保存资源 ID、内容摘要与回执 |
-| 失败与重试 | 原型只模拟写入前失败；仅计划未变化时可重试同一计划。真实未知写入结果先核对远端，不能盲目创建副本 |
+飞书导出不依赖 Skill 安装、分析草稿、会话结果或 pi。助手读取范围与导出内容分别维护；助手中勾选笔记或修改分析，不能隐含加入纪要导出。助手也不提供发布、导出或执行命令按钮。
 
-## 浏览器中直接查看
+## Skill、插件与引擎分别设计
 
-在仓库根目录运行：
+- Skill 是处理方法与知识，首批用会议复盘、风险/决策梳理、术语解释三个例子。安装指引不授予程序或平台权限。
+- 插件提供受控程序能力或 UI；原生工具、MCP 连接与第三方代码插件分别标记来源与运行条件。首批工具只读用户选定的会议快照。
+- 飞书连接是独立授权的固定导出能力，不注册进会议助手的工具集合。
+- 引擎负责模型、循环、事件与取消。产品数据、会话 UI、工具授权、业务校验及外部写入仍由聆记负责。
+- 后续可能增加“采用为笔记”等本地写入建议，但需要独立设计确认与人工稿保护。本版只提供独立分析，不回写纪要。
+
+相关架构为 [proposed ADR 0018](../adr/0018-independent-extensions-and-pi-runtime.md)。这不是已实现的插件运行时、权限系统或兼容承诺。
+
+## pi harness 的结论
+
+建议按需求递进：
+
+| 方式 | 适用情形 | 当前结论 |
+| --- | --- | --- |
+| 先不用 Pi | 固定的会议问答、摘要或风险分析 | 可复用现有后端，依赖少；本轮不新增运行时 |
+| `pi-agent-core` | 明确需要多轮领域工具、流式事件和取消 | 值得做隔离验证，显式注册少量会议只读工具 |
+| 完整 `pi-coding-agent` harness | 确实需要完整会话树、资源/技能生态及其扩展机制 | 暂不默认接入会议产品，需要处理额外工具、持久化和配置发现 |
+
+[固定版本的一手研究](../research/pi-harness-extension-feasibility-2026-10-31.md)核实了当前官方仓库、包名和 MCP/SDK 差别。该结论没有运行时实测背书。当前终端 Node 22.14.0 低于本次 Pi 1.4.0 声明的 ≥22.19，未来验证应使用隔离环境，不默改系统或产品运行时。
+
+第一条验证只做“所选会议问答”，对比现有模型调用与 core：能流式、能取消、能追溯引用、不能访问其他会议，且原纪要不变。不要先把完整编码 CLI 放进 Web 后端。
+
+## 查看当前预览
+
+仓库根目录一条命令启动：
 
 ```sh
 python3 -m http.server 4187 --bind 127.0.0.1
 ```
 
-[从导出窗口开始](http://127.0.0.1:4187/apps/web/prototypes/minutes-publish/?screen=export) · [技能管理](http://127.0.0.1:4187/apps/web/prototypes/minutes-publish/?screen=skills) · [自定义导出起点](http://127.0.0.1:4187/apps/web/prototypes/minutes-publish/?screen=select) · [聊天完成态预览](http://127.0.0.1:4187/apps/web/prototypes/minutes-publish/?screen=chat)
+[导出入口](http://127.0.0.1:4187/apps/web/prototypes/minutes-publish/?screen=export) · [Skills](http://127.0.0.1:4187/apps/web/prototypes/minutes-publish/?screen=skills) · [插件与连接](http://127.0.0.1:4187/apps/web/prototypes/minutes-publish/?screen=skills&tab=plugins) · [会议助手](http://127.0.0.1:4187/apps/web/prototypes/minutes-publish/?screen=select)
 
-点击“自定义导出 → 选择 Skill → 开始流式聊天”查看真实发生的本地模拟输出。聊天完成后可以继续发送要求或编辑右侧草稿。“压缩成三点简报”等示例使用固定模板展示草稿变化，不代表真实 LLM 的指令理解质量。聊天要求不会附加进对外文档。
+底部深色切换器只是原型工具，不是产品导航。安装、启停、连接与分析只保存在本页内存，刷新恢复。技能安装窗口只展示固定示例包，不解析任意上传包或执行脚本。直接打开回执页是预置状态。
 
-底部深色切换器属于原型工具，可快速查看八个页面，支持键盘左右键。直接打开确认或回执页面只是展示预置状态。安装与启停只保存在本页内存，刷新恢复；安装窗口展示固定示例包，没有解析任意用户包或执行脚本。
+### 导出只保留 Markdown 与飞书
 
-原型代码位于 `apps/web/prototypes/minutes-publish/`，没有接入主程序路由或构建入口。
+![收敛后的导出入口](../evidence/minutes-extension-direction-20261031/01-export-options.png)
 
-## 查看全流程截图
+### 独立 Skills
 
-### 统一导出入口
+![独立 Skill 管理与会议能力](../evidence/minutes-extension-direction-20261031/03-skills-center.png)
 
-![Markdown、飞书与自定义三种导出方式](../evidence/minutes-export-flow-20261031/01-export-options.png)
+### 插件与连接
 
-### 技能管理
+![插件、连接与能力范围](../evidence/minutes-extension-direction-20261031/04-plugins-connections.png)
 
-![程序内置技能管理页](../evidence/minutes-export-flow-20261031/03-skills.png)
+### 只读会议助手
 
-### 自定义导出：流式聊天
+![与导出分开的会议助手](../evidence/minutes-extension-direction-20261031/05-meeting-assistant.png)
 
-![第一版生成中的流式聊天](../evidence/minutes-export-flow-20261031/06-chat-streaming.png)
+其他预览：[纪要页双入口](../evidence/minutes-extension-direction-20261031/00-meeting.png) · [飞书云文档及画板](../evidence/minutes-extension-direction-20261031/02-feishu-document.png) · [飞书确认](../evidence/minutes-extension-direction-20261031/06-feishu-confirm.png) · [回执](../evidence/minutes-extension-direction-20261031/07-feishu-receipt.png) · [Skill 安装](../evidence/minutes-extension-direction-20261031/08-skill-install.png) · [手机扩展中心](../evidence/minutes-extension-direction-20261031/09-mobile-extensions.png) · [手机会议助手](../evidence/minutes-extension-direction-20261031/10-mobile-assistant.png)。
 
-### 草稿完成后继续聊天或检查导出
+## 本地证据与限制
 
-![聊天与草稿预览](../evidence/minutes-export-flow-20261031/07-chat-draft.png)
+本轮源码检查、浏览器验证、当前提交及推送情况见本轮交付说明；截图与模拟状态不能替代飞书租户、真实模型、权限隔离或 Pi 验证。官方飞书能力依据仍见[先前一手研究](../research/minutes-feishu-skill-publishing-2026-10-30.md)。当前工作区运行代码基线是 `315e38a`，研究提交未改产品运行实现，其他分支/版本不由此推断。
 
-其他页面与状态：
+旧版完整聊天导出原型留存在 `fe14937`；当前以本版的两类导出和独立扩展为准。
 
-- [会议页](../evidence/minutes-export-flow-20261031/00-meeting.png) · [飞书文档与画板组件](../evidence/minutes-export-flow-20261031/02-feishu-document.png)
-- [安装技能](../evidence/minutes-export-flow-20261031/04-skill-install.png) · [选择技能与内容](../evidence/minutes-export-flow-20261031/05-custom-skill.png)
-- [检查与确认](../evidence/minutes-export-flow-20261031/08-review.png) · [回执](../evidence/minutes-export-flow-20261031/09-receipt.png)
-- [失败恢复](../evidence/minutes-export-flow-20261031/10-failure.png) · [人工编辑保护](../evidence/minutes-export-flow-20261031/11-manual-draft.png) · [无可用技能](../evidence/minutes-export-flow-20261031/12-empty-skills.png)
-- [手机聊天](../evidence/minutes-export-flow-20261031/13-mobile-chat.png) · [手机导出](../evidence/minutes-export-flow-20261031/14-mobile-export.png) · [手机技能管理](../evidence/minutes-export-flow-20261031/15-mobile-skills.png)
+### 当前原型检查结果
 
-## 实施可行性与新增工作
-
-飞书文档转换及文档内原生树的官方依据见[一手研究](../research/minutes-feishu-skill-publishing-2026-10-30.md)。Skill 格式、MCP 工具覆盖、OAuth 与脚本兼容性边界沿用研究结论。用户反馈确定了产品交互，不代表实现已批准或联调已通过。
-
-浏览器首版建议后端提供 Skill 目录与安装存储、按需加载指引与参考资料、已有模型配置的调用适配、流式会话、草稿版本和导出执行。浏览器只显示对话与草稿；凭据仍在后端。聊天内容、草稿和外部执行计划分别保存，模型文字不能直接触发写入。具体架构处于 [proposed ADR 0017](../adr/0017-minutes-publishing-skills.md)。
-
-现有 `ExportDialog.tsx` 可承接三种纪要导出入口，`markdown-export.mjs` 可复用人工修订优先、版本和引用快照，`minutes-views.ts` 可复用主题及表格归属。当前工作区基线 `315e38a` 的 Record/Web 没有已核实的 Skill 宿主与 MCP 发布会话，不能只添加一个聊天窗口就称为完成。
-
-实施前需确定首批受支持的 Skill 类型和模型协议。首版可支持无脚本的指引包与远程 MCP；脚本、本地文件和 stdio 另行设计宿主兼容与权限。飞书租户授权、真实树渲染、真实模型流式和工具调用、断线恢复与跨企业分发仍需独立验证。
-
-## 本地验证
-
-- 模块语法与断言通过：10 个树节点、2 项行动候选、2 个内置技能示例；示例聊天可以改变草稿结构，内部要求不混入导出正文。
-- ego lite 验证统一三选项入口、画板嵌入同一文档、Skill 安装确认、启停与空列表、安装后可选，以及范围变化不丢失输入要求。
-- 验证流式逐步输出、停止与重新生成、第一版未完成禁用导出、人工编辑保留与新建议待采用。
-- 验证确认初始禁用、显式勾选后启用、修改标题或目标使确认失效、模拟失败、原计划重试与回执。
-- 实际下载示例 Markdown，核对人工编辑文本仍被保留。
-- 八个页面分别检查 768px 和 390px，共 16 组，无页面横向溢出；桌面截图目视检查。画板局部可以横向浏览。
-- taste-skill 源码检查 0 FAIL、1 WARN：阴影只用于浮动切换器、提示与对话框。使用 ego lite 验证浏览器，没有启动其他浏览器检查器。
-- 未修改产品运行代码，未运行产品完整 Node/Go 回归；未构建安装包、发布产品版本、连接真实模型或实际外发纪要。
-
-第一版研究与截图保留于本地提交 `70f8be9`；本版以用户最新反馈为准。
+- 模块语法检查与断言通过；taste-skill 源码检查 0 FAIL、1 WARN（阴影仅用于浮动控件与对话框）。
+- ego lite 验证导出选项只有两种；会议助手没有导出跳转；画板 10 个节点仍位于同一云文档组件中。
+- 验证所有 Skill 和会议内容工具停用时，固定飞书导出仍可走到确认与模拟回执；内容工具停用时不能启动会议助手。
+- 验证安装需勾选，安装后可选；助手笔记范围与导出范围独立。实际下载示例 Markdown，确认没有混入人工编辑的助手分析或助手单独选中的笔记。
+- 飞书导出仍需明确确认，修改目标标题使旧确认失效。
+- 8 个预览页及插件选项卡分别检查 768px、390px，共 18 组，无页面横向溢出；共保存 11 张当前方向截图。
+- 未安装 Pi、更新 Node、加载第三方代码插件或访问真实模型/飞书。未改产品运行代码，未运行产品完整 Node/Go 回归、未构建或发布安装包。
