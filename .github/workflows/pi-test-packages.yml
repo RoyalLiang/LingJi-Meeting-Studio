@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: pi-test-packages-${{ github.ref }}
+  group: pi-test-packages-${{ github.ref }}-${{ contains(github.event.head_commit.message, '[diagnose-pi]') }}
   cancel-in-progress: false
 
 env:
@@ -23,7 +23,44 @@ env:
   WORKFLOW_SHA: ${{ github.sha }}
 
 jobs:
+  inspect_failure:
+    if: contains(github.event.head_commit.message, '[diagnose-pi]')
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+    steps:
+      - name: Classify failure without exposing log text
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node --input-type=module <<'NODE'
+          const url=`https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/actions/jobs/124541073358/logs`;
+          const response=await fetch(url,{headers:{Authorization:`Bearer ${process.env.GH_TOKEN}`,Accept:'application/vnd.github+json'}});
+          if(!response.ok)throw new Error(`Diagnostic log request failed: ${response.status}`);
+          const text=await response.text();
+          const markers={
+            rustCompile:text.includes('could not compile'),
+            bundleFailure:text.includes('failed to bundle'),
+            iconMismatch:text.includes('Regenerate '),
+            sourceChanged:text.includes('Inputs changed while taking source snapshot'),
+            packagedAgent:text.includes('Packaged Pi runtime must initialize'),
+            nativeExit:text.includes('Client exited while waiting'),
+            nativeTimeout:text.includes('Timeout:'),
+            backendStart:text.includes('客户端后台启动失败'),
+            signatureFailure:/code object is not signed|invalid signature|codesign exited/.test(text),
+            dmgFailure:/hdiutil exited|failed to build dmg/.test(text),
+          };
+          const codes=Object.fromEntries(['ERR_MODULE_NOT_FOUND','ERR_DLOPEN_FAILED','ERR_ASSERTION','ENOENT','EACCES','ETIMEDOUT','SIGKILL'].map(code=>[code,text.includes(code)]));
+          const locations=[];
+          for(const file of ['release-macos-alpha.mjs','test-standalone-package.mjs','prepare-client-backend.mjs','prepare-local-asr.mjs','test-bundled-asr.mjs','meeting-agent.mjs','server.mjs','local-asr.mjs']){
+            const pattern=new RegExp(file.replaceAll('.','\\.')+':(\\d{1,5}):(\\d{1,4})','g');
+            for(const match of text.matchAll(pattern))locations.push({file,line:Number(match[1]),column:Number(match[2])});
+          }
+          console.log('::notice title=Fixed Pi build diagnostic flags::'+JSON.stringify({markers,codes,locations}));
+          NODE
+
   macos:
+    if: ${{ !contains(github.event.head_commit.message, '[diagnose-pi]') }}
     runs-on: macos-15
     timeout-minutes: 90
     steps:
@@ -57,6 +94,7 @@ jobs:
           retention-days: 14
 
   windows:
+    if: ${{ !contains(github.event.head_commit.message, '[diagnose-pi]') }}
     runs-on: windows-2025
     timeout-minutes: 90
     steps:
