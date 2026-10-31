@@ -115,12 +115,17 @@ export function seal(record, manifest) {
   if (record.capture === 'completed') return;
   record.capture = 'sealed'; emit(record, 'capture.sealed'); finalize(record);
 }
+export function transcriptSnapshotMatches(record, snapshot) {
+  const revisions = new Map(record.segments.map(segment => [segment.id, segment.revision]));
+  return snapshot.every(segment => revisions.has(segment.id) && revisions.get(segment.id) === segment.revision);
+}
+
 export function preserveMinutesProgress(record, job) {
   const partial=job.partialMinutes,baseline=liveBaseline(record);
   if(!['sealed','completed'].includes(record.capture) || job.scope!=='live' || !partial || record.deleted || record.minutes?.edited || job.generation!==record.generation || job.notesRevision!==record.notesRevision || job.baseMinutesRevision!==record.minutesRevision
     || (job.liveBaseHash && job.liveBaseHash!==digest(JSON.stringify(record.liveMinutes || null)))
     || ((record.liveMinutes || record.minutes) && !(baseline && job.liveIncremental))
-    || !partial.evidenceSnapshot?.every(segment=>record.segments.some(current=>current.id===segment.id && current.revision===segment.revision)))return;
+    || !partial.evidenceSnapshot || !transcriptSnapshotMatches(record,partial.evidenceSnapshot))return;
   const parts=(baseline?.evidenceSnapshot.length || 0)+(job.progress?.completed || 1);
   validateMinutes(partial,partial.evidenceSnapshot,undefined,{aggregate:true,aggregateParts:Math.max(1,parts),maxSections:Math.min(25650,(baseline?.sections.length || 0)+20*(job.manifest?.windows.length || 1)+1)});
   // A citation can span unfinished windows; this partial must not become an incremental coverage baseline.
@@ -285,7 +290,7 @@ export function commitMinutes(record, jobId, result, fence) {
   validateMinutes(result, job.snapshot, job.liveContext,{newEvidenceOnly:true,maxSections:windows>1?50*(windows+1):undefined});
   const usageRecorded=result.usageRecorded;result={...result};delete result.usageRecorded;
   job.runtime = result.runtime || job.runtime;
-  const transcriptChanged = job.scope === 'live' ? (job.liveIncremental && !liveBaseline(record)) || job.snapshot.some(s => !record.segments.some(current => current.id === s.id && current.revision === s.revision)) : job.transcriptRevision !== record.transcriptRevision;
+  const transcriptChanged = job.scope === 'live' ? (job.liveIncremental && !liveBaseline(record)) || !transcriptSnapshotMatches(record,job.snapshot) : job.transcriptRevision !== record.transcriptRevision;
   if ((job.scope === 'live' && record.liveMinutes?.transcriptRevision > job.transcriptRevision) || (job.scope === 'live' && job.liveBaseHash && job.liveBaseHash !== digest(JSON.stringify(record.liveMinutes || null))) || transcriptChanged || job.notesRevision !== record.notesRevision || job.baseMinutesRevision !== record.minutesRevision) {
     job.status = 'stale'; delete job.preview; delete job.partialMinutes; job.snapshot = []; emit(record, 'minutes.stale', { jobId }); return;
   }

@@ -48,7 +48,6 @@
 .meeting-highlights li small { display:block; margin-top:5px; color:var(--ink-2); font-size:11px; }
 .meeting-highlights-questions { border-left:1px solid var(--border); padding-left:30px; }
 .meeting-highlights-questions h4,.meeting-highlights-questions li::marker { color:var(--warn); }
-.meeting-highlights-actions { grid-column:1/-1; padding-top:20px; border-top:1px solid var(--border); }
 .meeting-highlights .muted,.meeting-highlights-state { font-size:13px; line-height:1.8; }
 .meeting-highlights-state { margin:0 0 16px; }
 .meeting-highlights-state:last-child { margin-bottom:0; }

@@ -1,0 +1,78 @@
+{
+  "baselineTag": "v0.2.5",
+  "fixture": "synthetic-components-and-600-segment-pipeline",
+  "viewportBefore": [
+    {
+      "viewport": 1920,
+      "shell": 1720,
+      "workspace": 1446,
+      "overflow": false
+    },
+    {
+      "viewport": 2560,
+      "shell": 1720,
+      "workspace": 1446,
+      "overflow": false
+    }
+  ],
+  "viewportAfter": [
+    {
+      "viewport": 1920,
+      "shell": 1888,
+      "workspace": 1614,
+      "overflow": false,
+      "statusWhiteSpace": "normal",
+      "statusClipped": false,
+      "hasNextSteps": false,
+      "statusText": "正在汇总会议终稿与重点速览（4/4 个节点），可继续使用应用。"
+    },
+    {
+      "viewport": 2560,
+      "shell": 2528,
+      "workspace": 2254,
+      "overflow": false,
+      "statusWhiteSpace": "normal",
+      "statusClipped": false,
+      "hasNextSteps": false,
+      "statusText": "正在汇总会议终稿与重点速览（4/4 个节点），可继续使用应用。"
+    },
+    {
+      "viewport": 1280,
+      "shell": 1248,
+      "workspace": 974,
+      "overflow": false,
+      "statusWhiteSpace": "normal",
+      "statusClipped": false,
+      "hasNextSteps": false,
+      "statusText": "正在汇总会议终稿与重点速览（4/4 个节点），可继续使用应用。"
+    },
+    {
+      "viewport": 390,
+      "shell": 390,
+      "workspace": 390,
+      "overflow": false,
+      "statusWhiteSpace": "normal",
+      "statusClipped": false,
+      "hasNextSteps": false,
+      "statusText": "正在汇总会议终稿与重点速览（4/4 个节点），可继续使用应用。"
+    }
+  ],
+  "sourceLookup": {
+    "segments": 600,
+    "windows": 4,
+    "beforeIdReads": 1983300,
+    "afterIdReads": 6600
+  },
+  "realProvidersTested": false,
+  "realWindowsFullscreenTested": false,
+  "modelLatencySpeedupClaimed": false,
+  "failedTailUi": {
+    "transcription": "failed",
+    "processing": false,
+    "retryHintVisible": true,
+    "tooltipSaysAwaitingRetry": true,
+    "mobileStatusClipped": false,
+    "independentMinutesProgressPreserved": true,
+    "queuedRetryRestoresProcessing": true
+  }
+}

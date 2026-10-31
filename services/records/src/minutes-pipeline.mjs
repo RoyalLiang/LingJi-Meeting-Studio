@@ -7,7 +7,7 @@ import { ruleIntents } from '../../../packages/records/src/intents.mjs';
 import { telemetry } from './telemetry.mjs';
 import { createHash } from 'node:crypto';
 import {compactMinutesPayload} from './minutes-wire.mjs';
-import { requireThat, validateMinutes, emit } from '../../../packages/records/src/record.mjs';
+import { requireThat, validateMinutes, emit, transcriptSnapshotMatches } from '../../../packages/records/src/record.mjs';
 import { meteredMinutesCall } from './minutes-usage.mjs';
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const size = value => Buffer.byteLength(JSON.stringify(value));
@@ -111,7 +111,7 @@ function currentJob(record,claim){
   requireThat(job && !record.deleted && record.generation===claim.generation && job.fence===claim.fence && job.status==='running','stale_job',410);
   const liveAdvanced=claim.scope==='live' && record.liveMinutes?.transcriptRevision>claim.transcriptRevision;
   const baselineChanged=claim.scope==='live' && claim.liveBaseHash && hash(record.liveMinutes || null)!==claim.liveBaseHash;
-  const changed=claim.scope==='live' ? claim.snapshot.some(s=>!record.segments.some(current=>current.id===s.id&&current.revision===s.revision)) : record.transcriptRevision!==claim.transcriptRevision;
+  const changed=claim.scope==='live' ? !transcriptSnapshotMatches(record,claim.snapshot) : record.transcriptRevision!==claim.transcriptRevision;
   requireThat(!liveAdvanced && !baselineChanged && !(claim.liveIncremental && !liveBaseline(record)) && !changed && record.notesRevision===claim.notesRevision && record.minutesRevision===claim.baseMinutesRevision,'minutes_snapshot_changed',409);
   return job;
 }
@@ -137,7 +137,10 @@ export async function runMinutesPipeline(repo,recordId,claim,config,generate,opt
     job.progress={completed:0,total:manifest.windows.length,stage:'windows'};
   });
   async function execute(key,input,stage,preview=false){
-    await repo.change(recordId,record=>{const job=currentJob(record,claim);job.lease=Date.now()+(minutesTimeoutMs(claim)+60000);});
+    await repo.change(recordId,record=>{
+      const job=currentJob(record,claim);job.lease=Date.now()+(minutesTimeoutMs(claim)+60000);
+      if(job.progress.stage!==stage){job.progress.stage=stage;emit(record,'minutes.progress',{jobId:job.id,completed:job.progress.completed,total:job.progress.total,stage});}
+    });
     let result=cache.get(key);
     if(result){validateMinutes(result,claim.snapshot,claim.liveContext,{newEvidenceOnly:true});reused++;}
     else if(inFlight.has(key)){result=await inFlight.get(key);reused++;}

@@ -25,9 +25,12 @@ test('a meeting with no final minutes shows the real waiting or empty state',()=
  assert.match(render({minutes:null,job:undefined}),/尚未生成最终纪要/);
  assert.match(render({minutes:null,job:{status:'failed'}}),/尚无最终重点/);
 });
-test('topic summaries are used when highlights are absent and explicit actions retain owner and due time',()=>{
- const html=render({minutes:{...minutes,highlights:[],topics:[{summary:'完整主题结论。',evidence:[]}],actions:[{text:'核对测试配置。',owner:'负责人甲',due:'下次会议'}]}});
- for(const text of ['完整主题结论','核对测试配置','负责人甲','下次会议'])assert.ok(html.includes(text));
+test('focus keeps topic summaries and omits next steps while preserving action data',()=>{
+ const value={...minutes,highlights:[],topics:[{summary:'完整主题结论。',evidence:[]}],actions:[{text:'核对测试配置。',owner:'负责人甲',due:'下次会议'}]};
+ const html=render({minutes:value});
+ assert.ok(html.includes('完整主题结论'));
+ for(const text of ['下一步','核对测试配置','负责人甲','下次会议'])assert.ok(!html.includes(text));
+ assert.equal(value.actions.length,1);
  assert.match(html,/收起为一行/);assert.match(html,/aria-expanded="true"/);
 });
 

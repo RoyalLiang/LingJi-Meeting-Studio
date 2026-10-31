@@ -110,3 +110,23 @@ test('a preserved manual summary is not reported as failed when its background j
  record.jobs[0].status='failed';
  assert.match(await renderControls({record,recording:false,busy:false}),/纪要待重试/);
 });
+
+test('synthesis remains visibly processing after all nodes finish',async()=>{
+ const record={capture:'completed',sources:[],segments:[{id:'s1'}],transcriptRevision:3,pendingChunks:0,autoMinutes:{enabled:true},jobs:[{scope:'final',status:'running',progress:{completed:4,total:4,stage:'synthesis'}}]};
+ const html=await renderControls({record,recording:false,busy:false});
+ assert.match(html,/is-processing/);assert.match(html,/正在汇总会议终稿/);assert.match(html,/4\/4/);assert.doesNotMatch(html,/本场已收好/);
+ record.jobs[0].status='completed';record.minutes={transcriptRevision:3};
+ assert.doesNotMatch(await renderControls({record,recording:false,busy:false}),/is-processing/);
+});
+
+test('exhausted tail transcription requires retry while independent minutes can continue',async()=>{
+ const record={capture:'sealed',transcription:'failed',sources:[],segments:[{id:'s1'}],transcriptRevision:3,pendingChunks:1,autoMinutes:{enabled:true},jobs:[]};
+ const failed=await renderControls({record,recording:false,busy:false});
+ assert.match(failed,/尾段转录待重试/);assert.match(failed,/is-blocked/);assert.match(failed,/音频包等待重试/);assert.doesNotMatch(failed,/个音频包正在处理/);assert.match(failed,/转录已暂停/);assert.doesNotMatch(failed,/is-processing|正在处理尾段转录|将继续更新/);
+ record.jobs.push({scope:'final',status:'running',progress:{completed:2,total:5,stage:'window'}});
+ const summarizing=await renderControls({record,recording:false,busy:false});
+ assert.match(summarizing,/is-processing/);assert.match(summarizing,/2\/5/);assert.match(summarizing,/尾段转录待重试/);assert.doesNotMatch(summarizing,/正在处理尾段转录|将继续更新/);
+ record.jobs=[];record.transcription='queued';
+ const retried=await renderControls({record,recording:false,busy:false});
+ assert.match(retried,/is-processing/);assert.match(retried,/正在处理尾段转录/);assert.doesNotMatch(retried,/尾段转录待重试|is-blocked/);
+});
