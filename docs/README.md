@@ -4,7 +4,7 @@
 
 # 纪要导入与 Skill 发布方案探索（2026-10-30～31）
 
-[可行性研究](research/minutes-feishu-skill-publishing-2026-10-30.md)、[浅色专业工作台：统一视觉与布局](design/minutes-publishing-preview-2026-10-30.md)、[Pi harness 可行性](research/pi-harness-extension-feasibility-2026-10-31.md)、[proposed ADR](adr/0017-minutes-publishing-skills.md)。Skill 导出路径已暂停；保留飞书云文档，Skill/插件独立设计。仅研究与原型，尚未接入真实飞书、Pi 或 MCP。
+[可行性研究](research/minutes-feishu-skill-publishing-2026-10-30.md)、[浅色专业工作台：统一视觉与布局](design/minutes-publishing-preview-2026-10-30.md)、[Pi harness 可行性](research/pi-harness-extension-feasibility-2026-10-31.md)、[proposed ADR](adr/0017-minutes-publishing-skills.md)。Skill 导出路径已暂停；保留飞书云文档，Skill/插件独立设计。Pi已通过8项隔离会议调度fixture，尚未接入主程序；真实飞书与MCP联调仍待验证。
 
 # v0.1.5 豆包音频纪要发布准备（2026-10-22）
 

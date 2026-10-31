@@ -1,0 +1,95 @@
+{
+  "date": "2026-10-31",
+  "node": "v26.12.1",
+  "platform": "darwin",
+  "arch": "arm64",
+  "packages": {
+    "chord": "1.4.0",
+    "pi-ai": "1.4.0",
+    "pi-durable": "1.4.0"
+  },
+  "fixtureSourceSha256": "bb7b0e0e0531cf1f5bf5c3a6f4e7853a0133242f5a48f22427cb7cae190b9d84",
+  "lockSha256": "82eaad70a9394996e7ddcd82493deea314f8b1711ef9c50d74f1affb0d5f1aa5",
+  "officialFauxProvider": true,
+  "fixtureOnly": true,
+  "realMeetings": false,
+  "realProviders": false,
+  "mcpTransportTested": false,
+  "productionIntegrated": false,
+  "fetchAttempts": 0,
+  "results": [
+    {
+      "name": "meeting_skill_and_citations",
+      "layer": "pi-native + explicit fixture host policy",
+      "passed": true,
+      "selectedMeetings": 2,
+      "successfulToolResultsDelivered": 2,
+      "deniedOutOfScope": true,
+      "revokedAccessDenied": true,
+      "invalidAndEmptyCitationRejected": true,
+      "transcriptAndSegmentChangesStale": true,
+      "staleDraftProtectedByHost": true,
+      "codingTools": 0
+    },
+    {
+      "name": "busy_queue_and_request_deduplication",
+      "layer": "pi-native",
+      "passed": true,
+      "calls": 2,
+      "duplicateSubmissionReused": true,
+      "queuedWhileBusy": true
+    },
+    {
+      "name": "tool_parallel_and_sequential_modes",
+      "layer": "pi-native; not a global agent quota",
+      "passed": true,
+      "parallel": 2,
+      "sequential": 1
+    },
+    {
+      "name": "parent_abort_propagates_to_subagent",
+      "layer": "pi-native",
+      "passed": true,
+      "childCreated": true,
+      "liveTasksBeforeAbort": 3,
+      "childObservedAbort": true,
+      "parentStatus": "unanswered",
+      "liveTasksAfterAbort": 0
+    },
+    {
+      "name": "noncooperative_plugin_requires_host_isolation",
+      "layer": "observed Pi boundary",
+      "passed": true,
+      "cancellationIsCooperative": true,
+      "stopWaitedForPluginReturn": true,
+      "hardTimeoutProvidedByPi": false
+    },
+    {
+      "name": "cooperative_deadline",
+      "layer": "host timer + Pi abort propagation",
+      "passed": true,
+      "deadlineSuppliedByHost": true,
+      "cooperativeWorkStopped": true
+    },
+    {
+      "name": "plugin_version_pinning_and_missing_definition",
+      "layer": "Pi registry + explicit host version names",
+      "passed": true,
+      "persistedAcrossReopen": true,
+      "missingOldVersion": "blocked/missing_task",
+      "restoredOldVersion": 1,
+      "newTaskVersion": 2,
+      "versionNamingSuppliedByHost": true
+    },
+    {
+      "name": "sqlite_checkpoint_sigkill_resume",
+      "layer": "pi-native; virtual clock, no external side effect",
+      "passed": true,
+      "killedWith": "SIGKILL",
+      "resumedFromCommittedCheckpoint": true,
+      "completionNotReplayedOnReopen": true,
+      "powerLossTested": false
+    }
+  ],
+  "reports": []
+}
