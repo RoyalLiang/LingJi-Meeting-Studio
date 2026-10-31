@@ -2,34 +2,35 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>聆记 · 导入与发布方案预览</title>
+  <title>聆记 · 导出与 Skill 聊天流程预览</title>
   <link rel="stylesheet" href="./preview.css">
 </head>
 <body>
-  <!-- Throwaway prototype: three contextual publication views; no backend, credentials or external writes. -->
-  <div class="prototype-notice"><span>聆记 · 方案预览</span><span>虚构会议数据 · 所有安装、连接与发布均为演示</span><a href="../../../../docs/research/minutes-feishu-skill-publishing-2026-10-30.md">可行性研究 ↗</a></div>
+  <div class="prototype-notice"><b>聆记 · 流程原型</b><span>示例会议 · 流式回复、技能安装和平台导出均为本地模拟</span><a href="../../../../docs/design/minutes-publishing-preview-2026-10-30.md">方案与全流程 ↗</a></div>
   <div class="workspace">
     <aside class="sidebar">
-      <div class="brand"><img src="../../../desktop/assets/lingji-brand-mark.svg" alt="" width="36" height="36"><div><b>聆记</b><small>MEETING STUDIO</small></div></div>
+      <div class="brand"><img src="../../../desktop/assets/lingji-brand-mark.svg" width="36" height="36" alt=""><div><b>聆记</b><small>MEETING STUDIO</small></div></div>
       <div class="workspace-name">产品与设计 <span>⌄</span></div>
       <div class="nav-label">工作空间</div>
-      <a class="nav-item" href="?variant=doc"><span class="icon" data-icon="record"></span>全部会议 <small>3</small></a>
-      <div class="nav-label recent">最近会议 <span>＋</span></div>
-      <a class="meeting-link selected" href="?variant=doc"><span>产品体验周会</span><small>10 月 30 日 · 42 分钟</small></a>
+      <button class="nav-item" data-go="meeting"><span data-icon="record" class="icon"></span>全部会议 <small>3</small></button>
+      <div class="nav-label recent">最近会议</div>
+      <button class="meeting-link selected" data-go="meeting"><span>产品体验周会</span><small>10 月 30 日 · 42 分钟</small></button>
       <div class="meeting-link muted"><span>移动端体验评审</span><small>10 月 29 日 · 28 分钟</small></div>
       <div class="meeting-link muted"><span>用户访谈复盘</span><small>10 月 28 日 · 35 分钟</small></div>
-      <div class="sidebar-bottom"><a class="nav-item" href="?variant=skill"><span class="icon" data-icon="puzzle"></span>技能与连接 <span class="new-label">探索</span></a><div class="account"><span class="avatar">林</span><div>林知夏<small>个人工作空间 · 演示</small></div><span>⌄</span></div></div>
+      <div class="sidebar-bottom"><button class="nav-item" data-go="skills"><span data-icon="puzzle" class="icon"></span>技能管理 <small>设置</small></button><div class="account"><span class="avatar">林</span><div>林知夏<small>个人工作空间 · 演示</small></div></div></div>
     </aside>
     <main>
-      <header class="topbar"><div class="breadcrumb">产品与设计 <span>/</span> 产品体验周会</div><span class="saved"><i></i> 已保存 · 演示数据</span></header>
-      <section class="meeting-heading"><div><div class="eyebrow">2026 年 10 月 30 日，星期五</div><h1>产品体验周会</h1><p><span>42 分钟</span><span>林知夏、陈屿、周宁</span><span class="status">会议已结束</span></p></div><div class="heading-actions"><button class="button" id="review-button"><span class="icon" data-icon="play"></span>回看纪要</button><button class="button primary" id="publish-button"><span class="icon" data-icon="upload"></span>导入与发布</button></div></section>
-      <nav class="view-tabs" aria-label="方案场景"><a href="?variant=doc" data-variant="doc"><span class="icon" data-icon="doc"></span>飞书云文档</a><a href="?variant=skill" data-variant="skill"><span class="icon" data-icon="puzzle"></span>Skill 引导发布</a><span>纪要 v3 <span class="divider">/</span> 转录 v12 · 人工修订</span></nav>
-      <div id="scene"></div>
-      <footer class="workspace-footer"><span>方案原型 · 尚未接入飞书或 MCP</span><span>只发布本次选择的内容；原始录音不在范围内</span></footer>
+      <header class="topbar"><div id="breadcrumb">产品与设计 / 产品体验周会</div><div><span class="saved">纪要 v3 · 转录 v12 · 人工修订</span><button class="plain mobile-settings" data-go="skills">技能管理</button></div></header>
+      <div id="app"></div>
+      <footer>方案原型 · 不会调用模型、飞书或 MCP · 原始录音与完整逐字稿不在本次导出范围</footer>
     </main>
   </div>
-  <div class="prototype-switcher" aria-label="切换预览"><button id="previous" aria-label="上一个预览">←</button><span id="variant-label"></span><button id="next" aria-label="下一个预览">→</button></div>
-  <dialog id="confirm-dialog" aria-labelledby="confirm-title"><div class="dialog-head"><div><small>发布前确认 · 演示</small><h2 id="confirm-title">确认导入到飞书</h2></div><button class="icon-button" id="close-dialog" aria-label="关闭确认窗口">×</button></div><div id="confirm-body"></div><label class="consent"><input id="consent" type="checkbox">我已核对目标位置与本次发布内容</label><div class="dialog-footer"><button class="button" id="cancel-dialog">返回预览</button><button class="button primary" id="confirm-publish" disabled>模拟确认导入</button></div></dialog>
+  <div class="prototype-switcher"><button id="previous" aria-label="上一个流程页">←</button><span id="screen-label"></span><button id="next" aria-label="下一个流程页">→</button></div>
+  <dialog id="export-dialog" aria-labelledby="export-title"><div class="dialog-head"><div><small>产品体验周会 · 纪要 v3</small><h2 id="export-title">导出纪要</h2></div><button class="icon-button" data-close="export-dialog" aria-label="关闭导出">×</button></div><p class="subtitle">选择这次纪要的导出方式。</p><div class="export-options"><button class="export-option" id="markdown-export"><span class="option-icon" data-icon="doc"></span><div><b>Markdown 导出</b><p>保存 .md 文件，保留结构、表格与引用。</p></div><span>↗</span></button><button class="export-option" id="feishu-export"><span class="option-icon" data-icon="doc"></span><div><b>飞书导出</b><p>导入云文档，可在正文中插入纪要画板。</p></div><span>→</span></button><button class="export-option" id="custom-export"><span class="option-icon" data-icon="puzzle"></span><div><b>自定义导出 <small>使用 Skill</small></b><p>通过流式聊天整理内容，再确认导出。</p></div><span>→</span></button></div><div class="dialog-note">只导出当前选择的内容，不会自动发送群消息或创建任务。</div></dialog>
+  <dialog id="install-dialog" aria-labelledby="install-title"><div class="dialog-head"><div><small>技能管理 / 安装预览</small><h2 id="install-title">安装技能包</h2></div><button class="icon-button" data-close="install-dialog" aria-label="关闭安装">×</button></div><p class="subtitle">示例：feishu-team-brief / v0.1.0</p><pre class="manifest">feishu-team-brief/
+  SKILL.md
+  references/publishing-guide.md</pre><div class="check-line">格式检查通过 · 仅指引与参考资料</div><p class="dialog-note">此示例需要读取所选纪要、生成草稿，并在确认后创建飞书文档。安装不授予平台权限。依赖脚本或本地 MCP 的包需另行检查兼容性。</p><label class="consent"><input id="install-consent" type="checkbox">已核对示例来源及所需能力</label><button class="button primary full-width" id="install-confirm" disabled>模拟安装到技能库</button></dialog>
+  <dialog id="editor-dialog" aria-labelledby="editor-title"><div class="dialog-head"><h2 id="editor-title">编辑导出草稿</h2><button class="icon-button" data-close="editor-dialog" aria-label="关闭编辑">×</button></div><label class="field">Markdown 内容<textarea id="draft-editor" rows="14"></textarea></label><p class="dialog-note">人工修改会保存为新的草稿版本。后续聊天生成的内容会先作为建议展示。</p><button class="button primary" id="save-editor">保存草稿</button></dialog>
   <div id="toast" role="status" aria-live="polite" hidden></div>
   <script type="module" src="./preview.mjs"></script>
 </body>
