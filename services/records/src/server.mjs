@@ -1,3 +1,4 @@
+import { createMeetingAgentRuntime } from './meeting-agent.mjs';
 import { audioMinutesEnabled } from './config.mjs';
 import { testDoubaoAudio } from './doubao-audio-minutes.mjs';
 import {learningRoutes} from './learning-routes.mjs';
@@ -58,6 +59,12 @@ export function exportRecord(record, format = 'markdown') {
 }
 export async function createRecordServer(options = {}) {
   const repo = options.repo || await createRepository(options); const auth = await createAuth(repo, { seedDevelopment: !options.repo, ...options });
+  let agentError = 'agent_storage_unavailable';
+  const agent = await createMeetingAgentRuntime({repo, ...options.agentOptions}).catch(error => {
+    if (['agent_runtime_busy','agent_storage_upgrade_required'].includes(error.code)) agentError=error.code;
+    console.error('[meeting-agent]', agentError);
+    return null;
+  });
   const learningEnabled=async()=>{const config=await readConfig(repo.root);return config.RECORD_LEARNING_ENABLED==='true'||(config.RECORD_LEARNING_ENABLED!=='false'&&Boolean(options.localAccount));};
   const deltaEnabled=options.deltaEnabled ?? (process.env.RECORD_DELTA_ENABLED!=='false');
   const streams = new Set(); const attempts = new Map();
@@ -130,6 +137,19 @@ export async function createRecordServer(options = {}) {
       }
       if (path === '/api/deletions' && req.method === 'GET') {
         send(res, 200, { deletions: (await repo.list()).filter(r => r.owner === user.id && r.deleted).map(r => ({ id: r.id, cleanup: r.cleanup || 'pending' })) }); return;
+      }
+      if (path === '/api/agent/tasks') {
+        requireThat(agent, agentError, 503);
+        if (req.method === 'GET') { send(res, 200, {tasks:await agent.list(user.id)}); return; }
+        if (req.method === 'POST') { send(res, 202, await agent.request(user.id, await readBody(req, 20000))); return; }
+        throw new DomainError('not_found', 404);
+      }
+      const agentRoute = path.match(/^\/api\/agent\/tasks\/([A-Za-z0-9_-]{1,128})(\/cancel)?$/);
+      if (agentRoute) {
+        requireThat(agent, agentError, 503);
+        if (req.method === 'GET' && !agentRoute[2]) { send(res, 200, await agent.get(user.id,agentRoute[1])); return; }
+        if (req.method === 'POST' && agentRoute[2]) { send(res, 200, await agent.cancel(user.id,agentRoute[1])); return; }
+        throw new DomainError('not_found', 404);
       }
       if (await workspaceRoutes({ req, res, path, repo, user, readBody, send })) return;
       if (path === '/api/records' && req.method === 'POST') {
@@ -327,7 +347,7 @@ export async function createRecordServer(options = {}) {
   });
   server.requestTimeout = 30000; server.headersTimeout = 15000;
   return { repo, server, localSession: () => auth.localSession?.(), start: () => new Promise(resolve => server.listen(options.port ?? Number(process.env.RECORD_API_PORT || 3030), options.host || '127.0.0.1', () => resolve(server.address()))),
-    stop: async () => { for (const stream of streams) stream.end(); await new Promise(resolve => server.close(resolve)); await repo.close(); } };
+    stop: async () => { for (const stream of streams) stream.end(); await new Promise(resolve => server.close(resolve)); await agent?.close(); await repo.close(); } };
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const app = await createRecordServer(); console.log('[record-api]', await app.start());

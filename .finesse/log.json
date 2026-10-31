@@ -1,6 +1,25 @@
 [
   {
     "date": "2026-10-31",
+    "page": "meeting-agent-center",
+    "register": "product",
+    "status": "implemented-local",
+    "axes": {
+      "palette": "near-white and quiet jade",
+      "type": "system humanist and Chinese system",
+      "layout": "existing Workspace with real tasks and right result drawers",
+      "engine": "Pi task states and read-only result references",
+      "material": "flat paper"
+    },
+    "dials": {
+      "soul": 6,
+      "spectacle": 1,
+      "density": 7
+    },
+    "brief": "Keep every existing meeting capability; replace the DEV design preview entry with real persisted meeting-agent tasks. External skill/MCP/automation not implemented."
+  },
+  {
+    "date": "2026-10-31",
     "page": "extension-center-real-app-preview",
     "register": "product",
     "status": "proposed-awaiting-user",

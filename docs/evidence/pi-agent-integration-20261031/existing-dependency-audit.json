@@ -1,0 +1,69 @@
+{
+  "baselineVersion": "8.0.0",
+  "currentVersion": "8.0.0",
+  "introducedByPi": false,
+  "severity": "critical",
+  "via": [
+    {
+      "title": "Arbitrary code execution in protobufjs",
+      "url": "https://github.com/advisories/GHSA-xq3m-2v4x-88gg",
+      "range": ">=8.0.0 <8.0.1"
+    },
+    {
+      "title": "protobuf.js: Code injection through bytes field defaults in generated toObject code",
+      "url": "https://github.com/advisories/GHSA-66ff-xgx4-vchm",
+      "range": ">=8.0.0 <=8.0.1"
+    },
+    {
+      "title": "protobuf.js: Denial of service from crafted field names in generated code",
+      "url": "https://github.com/advisories/GHSA-2pr8-phx7-x9h3",
+      "range": ">=8.0.0 <=8.0.1"
+    },
+    {
+      "title": "protobuf.js: Prototype injection in generated message constructors",
+      "url": "https://github.com/advisories/GHSA-fx83-v9x8-x52w",
+      "range": ">=8.0.0 <=8.0.1"
+    },
+    {
+      "title": "protobuf.js: Code generation gadget after prototype pollution",
+      "url": "https://github.com/advisories/GHSA-75px-5xx7-5xc7",
+      "range": ">=8.0.0 <=8.0.1"
+    },
+    {
+      "title": "protobuf.js: Process-wide denial of service through unsafe option paths",
+      "url": "https://github.com/advisories/GHSA-jvwf-75h9-cwgg",
+      "range": ">=8.0.0 <=8.0.1"
+    },
+    {
+      "title": "protobuf.js: Denial of service through unbounded protobuf recursion",
+      "url": "https://github.com/advisories/GHSA-685m-2w69-288q",
+      "range": ">=8.0.0 <=8.0.1"
+    },
+    {
+      "title": "protobufjs has overlong UTF-8 decoding",
+      "url": "https://github.com/advisories/GHSA-q6x5-8v7m-xcrf",
+      "range": ">=8.0.0 <=8.0.1"
+    },
+    {
+      "title": "protobufjs: Denial of Service via unbounded recursive JSON descriptor expansion",
+      "url": "https://github.com/advisories/GHSA-jggg-4jg4-v7c6",
+      "range": ">=8.0.0 <8.2.0"
+    },
+    {
+      "title": "protobufjs: Denial of service through unbounded Any expansion during JSON conversion",
+      "url": "https://github.com/advisories/GHSA-wcpc-wj8m-hjx6",
+      "range": ">=8.0.0 <=8.4.0"
+    },
+    {
+      "title": "protobufjs : Schema-derived names can shadow runtime-significant properties",
+      "url": "https://github.com/advisories/GHSA-f38q-mgvj-vph7",
+      "range": ">=8.0.0 <=8.5.0"
+    },
+    {
+      "title": "protobufjs: Denial of Service via infinite loop in .proto option parsing",
+      "url": "https://github.com/advisories/GHSA-j3f2-48v5-ccww",
+      "range": ">=8.0.0 <=8.6.5"
+    }
+  ],
+  "unresolved": true
+}

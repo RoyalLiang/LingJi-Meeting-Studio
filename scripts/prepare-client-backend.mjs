@@ -51,7 +51,7 @@ export async function prepareClientBackend({ root = project, cacheRoot = join(pr
   await mkdir(join(backend,'tools/neohorse'),{recursive:true});
   for(const file of ['learning_data.py','build_learning_round.py','predict_learning.py','score_learning.py','finalize_learning_round.py','train_lora.py','intent_inputs.py','build_dataset.py','intent_policy.json','quantized_runtime.py','train_head.py'])await copyFile(join(root,'tools/neohorse',file),join(backend,'tools/neohorse',file));
   const lock = JSON.parse(await readFile(join(root, 'package-lock.json'), 'utf8'));
-  const modules = new Map(), pending = ['ws', 'protobufjs'];
+  const modules = new Map(), pending = Object.keys(lock.packages[''].dependencies || {});
   while (pending.length) {
     const name = pending.shift();
     if (modules.has(name)) continue;

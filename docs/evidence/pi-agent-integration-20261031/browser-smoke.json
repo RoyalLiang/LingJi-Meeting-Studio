@@ -1,0 +1,148 @@
+{
+  "checks": [
+    {
+      "name": "existing-meeting-actions",
+      "pass": true
+    },
+    {
+      "name": "existing-export-dialog",
+      "pass": true
+    },
+    {
+      "name": "existing-share-dialog",
+      "pass": true
+    },
+    {
+      "name": "existing-minutes-settings",
+      "pass": true
+    },
+    {
+      "name": "existing-workspace-overview",
+      "pass": true
+    },
+    {
+      "name": "existing-provider-settings",
+      "pass": true
+    },
+    {
+      "name": "layout:1440:1",
+      "pass": true
+    },
+    {
+      "name": "layout:1440:2",
+      "pass": true
+    },
+    {
+      "name": "layout:1440:3",
+      "pass": true
+    },
+    {
+      "name": "layout:1440:4",
+      "pass": true
+    },
+    {
+      "name": "layout:1440:5",
+      "pass": true
+    },
+    {
+      "name": "layout:1280:1",
+      "pass": true
+    },
+    {
+      "name": "layout:1280:2",
+      "pass": true
+    },
+    {
+      "name": "layout:1280:3",
+      "pass": true
+    },
+    {
+      "name": "layout:1280:4",
+      "pass": true
+    },
+    {
+      "name": "layout:1280:5",
+      "pass": true
+    },
+    {
+      "name": "layout:1024:1",
+      "pass": true
+    },
+    {
+      "name": "layout:1024:2",
+      "pass": true
+    },
+    {
+      "name": "layout:1024:3",
+      "pass": true
+    },
+    {
+      "name": "layout:1024:4",
+      "pass": true
+    },
+    {
+      "name": "layout:1024:5",
+      "pass": true
+    },
+    {
+      "name": "layout:768:1",
+      "pass": true
+    },
+    {
+      "name": "layout:768:2",
+      "pass": true
+    },
+    {
+      "name": "layout:768:3",
+      "pass": true
+    },
+    {
+      "name": "layout:768:4",
+      "pass": true
+    },
+    {
+      "name": "layout:768:5",
+      "pass": true
+    },
+    {
+      "name": "layout:390:1",
+      "pass": true
+    },
+    {
+      "name": "layout:390:2",
+      "pass": true
+    },
+    {
+      "name": "layout:390:3",
+      "pass": true
+    },
+    {
+      "name": "layout:390:4",
+      "pass": true
+    },
+    {
+      "name": "layout:390:5",
+      "pass": true
+    },
+    {
+      "name": "layout:320:1",
+      "pass": true
+    },
+    {
+      "name": "layout:320:2",
+      "pass": true
+    },
+    {
+      "name": "layout:320:3",
+      "pass": true
+    },
+    {
+      "name": "layout:320:4",
+      "pass": true
+    },
+    {
+      "name": "layout:320:5",
+      "pass": true
+    }
+  ]
+}

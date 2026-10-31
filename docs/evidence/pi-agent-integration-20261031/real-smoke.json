@@ -1,0 +1,46 @@
+{
+  "status": "completed",
+  "error": null,
+  "taskId": "8",
+  "sources": [
+    {
+      "recordId": "fd666ccd-4626-454e-ae75-801aa0cfc2f4",
+      "title": "合成会议 · Pi 接入冒烟",
+      "transcriptRevision": 1,
+      "minutesRevision": 0
+    }
+  ],
+  "result": {
+    "summary": "会议确定于本周五下午三点进行扩展中心设计评审；王静将在周四下班前准备好评审材料。该记录注明为完全合成的测试会议，并非真实会议记录。",
+    "decisions": [
+      {
+        "text": "本周五下午三点进行扩展中心设计评审。",
+        "evidence": [
+          {
+            "recordId": "fd666ccd-4626-454e-ae75-801aa0cfc2f4",
+            "segmentId": "a4906405-7fcb-48ca-89c4-87c33f82090e",
+            "revision": 1
+          }
+        ]
+      }
+    ],
+    "actions": [
+      {
+        "text": "在周四下班前准备扩展中心设计评审材料。",
+        "evidence": [
+          {
+            "recordId": "fd666ccd-4626-454e-ae75-801aa0cfc2f4",
+            "segmentId": "d4eba87b-8ac6-4aa2-9a4e-bda4456b16b3",
+            "revision": 1
+          }
+        ],
+        "owner": "王静"
+      }
+    ]
+  },
+  "originalMinutesUntouched": true,
+  "transcriptRevision": 1,
+  "stale": false,
+  "provider": "existing configured Responses model",
+  "data": "synthetic only"
+}

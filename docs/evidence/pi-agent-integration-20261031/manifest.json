@@ -1,0 +1,91 @@
+{
+  "baseline": "9eddc5d",
+  "node": "v26.12.1",
+  "sources": [
+    {
+      "file": "package.json",
+      "sha256": "84dc44b9c98a3a60bba9c796c228174bd3ddbc71e7ee5aa67739d6d992333d8f"
+    },
+    {
+      "file": "package-lock.json",
+      "sha256": "d63402dec3f7fd006dcf0c5e95c4cba810532af3f2aee0a1d8b5add1c6a0a55a"
+    },
+    {
+      "file": "scripts/prepare-client-backend.mjs",
+      "sha256": "301adbd06c7e9553110cfcd1b4da6e806052285e189588844a544e6c5ef60bd6"
+    },
+    {
+      "file": "services/records/src/server.mjs",
+      "sha256": "660be696d1e88fc621d83ca276f63fbf133425f7f73d94e029ddf60ce138804e"
+    },
+    {
+      "file": "services/records/src/meeting-agent.mjs",
+      "sha256": "93c382a6d657269510eb5084c285b6c643d79f1c9cd07a56de5a62b258a3511a"
+    },
+    {
+      "file": "apps/web/src/App.tsx",
+      "sha256": "e7265c5f927d7765b5331f1ba6ce99b729e8405972481b103b81b93d4a9779d5"
+    },
+    {
+      "file": "apps/web/src/components/MeetingAgentCenter.tsx",
+      "sha256": "9d3191a0e5e42d47d65047adb83f77290d6043375d8e8e2b7361efbca5b24a56"
+    },
+    {
+      "file": "apps/web/src/components/MeetingAgentCenter.css",
+      "sha256": "cb5e5f02985052a883e89a07d683aeb48444a3b95e37dab1bd979910423c2117"
+    },
+    {
+      "file": "tests/records-auth-stability.test.mjs",
+      "sha256": "b5b7c2de16e4efddcf5f4d0c0bf9baaa15135568fb6a293070a2ddbf4d6ec48b"
+    },
+    {
+      "file": "tests/records-agent-api.test.mjs",
+      "sha256": "646d70a63f26b6c1da39513d1d0d6f5623341d6a54fd44f014ac5b66c1d6dcf6"
+    },
+    {
+      "file": "tests/records-meeting-agent.test.mjs",
+      "sha256": "4816a57519f3dd8a011baa5f7e66da9fdbb08926f32f917e64310d9d21c5bbed"
+    }
+  ],
+  "nodeWorkspaceTests": {
+    "pass": 403,
+    "fail": 0,
+    "includesUncommittedUserPlaybackTest": true
+  },
+  "rustTests": {
+    "pass": 21,
+    "fail": 0
+  },
+  "browserTests": {
+    "pass": 36,
+    "fail": 0
+  },
+  "realProvider": "Responses; synthetic transcript only",
+  "screenshots": [
+    {
+      "file": "01-real-task-list.png",
+      "width": 1440,
+      "height": 960,
+      "sha256": "25a3805203414cbe5004c60718aa4c22ff554bd84382979f84250ee711c5f153"
+    },
+    {
+      "file": "02-real-model-result.png",
+      "width": 1440,
+      "height": 960,
+      "sha256": "4efc936b9d17d6be3dc2b14aabcd0486fd5de9004d95968d9bb633c7fb978213"
+    },
+    {
+      "file": "03-mobile-result.png",
+      "width": 390,
+      "height": 844,
+      "sha256": "0950113bb92a4fb1926db76788ff5400dc14ab90b72cbe89c8005405c2579e7d"
+    }
+  ],
+  "distribution": "local-only; no release/install",
+  "cleanStagedSnapshotTests": {
+    "pass": 402,
+    "fail": 0,
+    "excludesUserDirtyFiles": true
+  },
+  "cleanSourceMatchIgnoringEofBlankLines": true
+}
