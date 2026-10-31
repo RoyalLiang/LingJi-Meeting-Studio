@@ -17,6 +17,29 @@ async function temporary(fn) {
   const root = await mkdtemp(join(tmpdir(), 'meeting-providers-'));
   try { await fn(root); } finally { await rm(root, {recursive:true, force:true}); }
 }
+
+test('reasoning strength persists publicly and rejects unsupported values',()=>temporary(async root=>{
+  const saved=await saveConfig(root,{LLM_REASONING_EFFORT:'high'},{});
+  assert.equal(saved.LLM_REASONING_EFFORT,'high');
+  assert.equal((await readConfig(root,{})).LLM_REASONING_EFFORT,'high');
+  await assert.rejects(saveConfig(root,{LLM_REASONING_EFFORT:'ultra'},{}),/invalid_llm_reasoning_effort/);
+}));
+
+test('explicit reasoning strength overrides automatic Kimi live policy in both protocols',async()=>{
+  const {generateMinutes}=await import('../services/records/src/providers.mjs');
+  const original=globalThis.fetch,evidence=[{segmentId:'s1',revision:1}];
+  const output={title:'合成纪要',sections:[{heading:'要点',items:[{text:'合成内容',evidence}]}],actions:[]};
+  try {
+    for(const protocol of ['responses','chat-completions'])for(const scope of ['live','final'])for(const effort of ['high','max','default','auto']){
+      let body;
+      globalThis.fetch=async(_url,request)=>{body=JSON.parse(request.body);return new Response(JSON.stringify(protocol==='responses'?{output_text:JSON.stringify(output)}:{choices:[{message:{content:JSON.stringify(output)}}]}));};
+      await generateMinutes({template:'meeting',scope,snapshot:[{id:'s1',revision:1,text:'合成内容'}]},
+        {LLM_API_URL:'https://unused.invalid',LLM_API_KEY:'synthetic-key',LLM_MODEL:'kimi-k3-1-pro-261024',LLM_PROTOCOL:protocol,LLM_REASONING_EFFORT:effort});
+      const actual=protocol==='responses'?body.reasoning?.effort:body.reasoning_effort;
+      assert.equal(actual,effort==='auto'?(scope==='live'?'low':undefined):effort==='default'?undefined:effort);
+    }
+  }finally{globalThis.fetch=original;}
+});
 test('new model base addresses default to Responses and explicit Chat endpoints remain compatible', () => {
   const config=normalizeConfig({LLM_API_URL:'https://models.example/v1'});
   assert.equal(config.LLM_PROTOCOL,'responses');
@@ -25,10 +48,13 @@ test('new model base addresses default to Responses and explicit Chat endpoints 
   assert.equal(legacy.LLM_PROTOCOL,'chat-completions');
   assert.equal(normalizeConfig({LLM_API_URL:'https://models.example/v1',LLM_PROTOCOL:'chat-completions'}).LLM_PROTOCOL,'chat-completions');
 });
-test('legacy Doubao credentials enable the workbench; persisted settings hot reload and never return keys', async () => temporary(async root => {
+test('removed AST credentials cannot enable recognition; persisted settings never return keys', async () => temporary(async root => {
   const legacy = {DOUBAO_AST_SECRET:'valid-app',DOUBAO_AST_ACCESS_TOKEN:'valid-token'};
-  assert.equal(providerStatus(legacy).asr,true);
-  assert.equal(providerStatus(legacy).asrProvider,'doubao-ast');
+  assert.equal(providerStatus(legacy).asr,false);
+  assert.equal(providerStatus(legacy).asrProvider,'doubao');
+  assert.equal(providerStatus({...legacy,ASR_PROVIDER:'doubao-ast'}).asr,false);
+  assert.equal(providerStatus({...legacy,ASR_PROVIDER:'doubao-ast'}).asrProvider,'doubao');
+  await assert.rejects(saveConfig(root,{ASR_PROVIDER:'doubao-ast'},{}),/invalid_asr_provider/);
   assert.equal(providerStatus({}).asrProvider,'doubao');
   assert.equal(providerStatus({DOUBAO_API_KEY:'your-key'}).asr,false);
   await saveConfig(root,{DOUBAO_API_KEY:'voice-secret',LLM_API_KEY:'model-secret',DOUBAO_ASR_URL:'wss://speech.example.test/asr'},{});

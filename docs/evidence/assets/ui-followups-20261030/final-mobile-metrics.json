@@ -1,0 +1,54 @@
+{
+  "open": {
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "scroll": {
+      "x": 0,
+      "y": 296.09375,
+      "width": 390,
+      "height": 547.90625
+    },
+    "card": {
+      "x": 8,
+      "y": 308.09375,
+      "width": 374,
+      "height": 367.8671875
+    },
+    "trigger": {
+      "x": 332.20001220703125,
+      "y": 402.20001220703125,
+      "width": 39.600006103515625,
+      "height": 39.600006103515625
+    },
+    "pageWidth": 390,
+    "theme": "dark"
+  },
+  "closed": {
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "scroll": {
+      "x": 0,
+      "y": 296.09375,
+      "width": 390,
+      "height": 547.90625
+    },
+    "card": null,
+    "trigger": {
+      "x": 330,
+      "y": 400,
+      "width": 44,
+      "height": 44
+    },
+    "pageWidth": 390,
+    "theme": "dark"
+  },
+  "focusRestored": true,
+  "reduced": {
+    "duration": "0s",
+    "animation": "none"
+  }
+}

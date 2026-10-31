@@ -1,0 +1,41 @@
+{
+  "tag": "v0.1.14",
+  "sourceSha": "e5cf04e2ebc8a87c1417b2524c68f58fe2d78325",
+  "runId": "39964988275",
+  "sourceFiles": 231,
+  "sourceManifestSha256": "6b152f6b17781b36daf019679b297e923fb558497c12b80dcd660b6145aaa50e",
+  "assets": [
+    {
+      "name": "INSTALL-macos-arm64.md",
+      "bytes": 922,
+      "sha256": "a189bb52202367e84edc6492251801bca3e2464a282931e80509b577adcea432",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.14/INSTALL-macos-arm64.md"
+    },
+    {
+      "name": "Lingji-0.1.14-macos-arm64.dmg",
+      "bytes": 47473448,
+      "sha256": "70d02569f819abd2f193ee3427d41b1874923b819f1ffcc40002dc27c6058f57",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.14/Lingji-0.1.14-macos-arm64.dmg"
+    },
+    {
+      "name": "package-smoke.json",
+      "bytes": 389,
+      "sha256": "1df83e23a1a3044218ba7ef7b0643f3c40515861625ea36e7136d4fbcebac957",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.14/package-smoke.json"
+    },
+    {
+      "name": "release.json",
+      "bytes": 39208,
+      "sha256": "3b47e6b015f73b576007cf5e5f2e32ef01984648147b37d4206534be523d2d6f",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.14/release.json"
+    },
+    {
+      "name": "SHA256SUMS.txt",
+      "bytes": 96,
+      "sha256": "c0b5454b70d2be941d55449d672930d2d3f0a2ed41300d6cbf684a0c16dd50bf",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.14/SHA256SUMS.txt"
+    }
+  ],
+  "dmgSha256": "70d02569f819abd2f193ee3427d41b1874923b819f1ffcc40002dc27c6058f57",
+  "dmgBytes": 47473448
+}

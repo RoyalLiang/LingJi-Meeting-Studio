@@ -1,0 +1,19 @@
+{
+  "node": "v24.21.0",
+  "platform": "darwin",
+  "arch": "arm64",
+  "meetings": 100,
+  "segmentsPerMeeting": 120,
+  "recoveryWrites": 0,
+  "recoveryMs": 24,
+  "readinessMs": [
+    50,
+    26,
+    23
+  ],
+  "medianReadinessMs": 26,
+  "workers": false,
+  "realAudioDevices": false,
+  "realProviders": false,
+  "scope": "backend readiness on synthetic history; excludes native window, WebView and full cold startup"
+}

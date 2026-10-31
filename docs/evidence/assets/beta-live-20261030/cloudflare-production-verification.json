@@ -1,0 +1,13 @@
+{
+  "deploymentId": "dfb1cabe-aee7-44e0-b674-b6679bca6212",
+  "project": "lingji-meeting-studio-beta",
+  "publishingConfigured": true,
+  "sha": "0613e9487f136969c44ddf64d1b507453c2f4197",
+  "sharingChecks": {
+    "d1Read": true,
+    "expiry": true,
+    "revocation": true
+  },
+  "url": "https://lingji-meeting-studio-beta.pages.dev",
+  "verifiedAt": "2026-10-30T08:02:14.756Z"
+}

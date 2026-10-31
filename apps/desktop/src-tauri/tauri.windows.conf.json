@@ -1,0 +1,26 @@
+{
+  "bundle": {
+    "targets": [
+      "nsis"
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "offlineInstaller",
+        "silent": true
+      },
+      "nsis": {
+        "template": "installer/installer.nsi",
+        "installerHooks": "installer/lingji-theme.nsh",
+        "installerIcon": "icons/icon.ico",
+        "installMode": "currentUser",
+        "languages": [
+          "SimpChinese"
+        ],
+        "displayLanguageSelector": false
+      }
+    },
+    "resources": {
+      "installer/UPSTREAM-LICENSE-MIT": "licenses/tauri-installer-MIT.txt"
+    }
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "source": "actual Ego browser, isolated synthesized meeting",
+  "checks": [
+    {
+      "name": "final highlights show corrected Monday schedule",
+      "passed": true
+    },
+    {
+      "name": "highlights collapse",
+      "passed": true
+    },
+    {
+      "name": "highlights expand",
+      "passed": true
+    },
+    {
+      "name": "highlights hide",
+      "passed": true
+    },
+    {
+      "name": "highlights reopen",
+      "passed": true
+    },
+    {
+      "name": "transcript opens and includes final audio",
+      "passed": true
+    },
+    {
+      "name": "transcript closes",
+      "passed": true
+    },
+    {
+      "name": "exact highlight segment revision references",
+      "passed": true
+    },
+    {
+      "name": "original audio Range playback endpoint",
+      "passed": true
+    },
+    {
+      "name": "Pi completed result shows final corrected decision",
+      "passed": true
+    },
+    {
+      "name": "Pi source reference returns to original meeting",
+      "passed": true
+    },
+    {
+      "name": "390px meeting viewport without horizontal document overflow",
+      "passed": true
+    }
+  ],
+  "api": {
+    "transcriptRevision": 3,
+    "minutesRevision": 1,
+    "segments": [
+      {
+        "id": "bc2e8d89-b1bb-4856-bfc0-4f60225a86db",
+        "revision": 1
+      }
+    ],
+    "refs": [
+      {
+        "segmentId": "bc2e8d89-b1bb-4856-bfc0-4f60225a86db",
+        "revision": 1
+      },
+      {
+        "segmentId": "bc2e8d89-b1bb-4856-bfc0-4f60225a86db",
+        "revision": 1
+      }
+    ],
+    "audioStatus": 206,
+    "wavHeader": "RIFF"
+  },
+  "responsive": {
+    "width": 390,
+    "scrollWidth": 390,
+    "highlightVisible": true
+  }
+}

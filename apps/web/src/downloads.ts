@@ -1,6 +1,6 @@
 import { ApiError, serviceFetch } from './api';
 export async function fetchDownload(href: string, signal?: AbortSignal) {
-  const response = await serviceFetch(href, { credentials: 'same-origin', cache: 'no-store', signal });
+  const response = await serviceFetch(href, { credentials: 'same-origin', cache: 'no-store', signal }, 0);
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
     throw new ApiError(data.error || 'download_failed', response.status);

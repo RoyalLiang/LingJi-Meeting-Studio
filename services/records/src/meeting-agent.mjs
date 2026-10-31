@@ -70,14 +70,17 @@ function acquireLock(root) {
 }
 
 export async function createMeetingAgentRuntime({ repo, env = process.env, models: injectedModels, model: injectedModel, timeoutMs = 120000, retentionPollMs = 1000, openJobStorage = openNodeSqliteStorage } = {}) {
-  requireThat(repo?.root && typeof repo.get === 'function', 'invalid_agent_request', 400);
+  requireThat(repo?.root && typeof repo.get === 'function' && typeof repo.getRecordAccess === 'function', 'invalid_agent_request', 400);
   const unlock = await acquireLock(repo.root);
   let harness, closed = false, closing = false, failed = false, retentionTimer;
   let operations = Promise.resolve();
-  const jobs = new Map(), directory = join(repo.root, 'meeting-agent-jobs');
+  const jobs = new Map(), sourceHashes = new Map(), directory = join(repo.root, 'meeting-agent-jobs');
   const enqueue = operation => { const result = operations.then(operation); operations = result.catch(() => {}); return result; };
   const selectedModel = injectedModels ? { models: injectedModels, model: injectedModel } : configuredModels(repo.root, env, timeoutMs);
   const registry = createRegistry();
+  function snapshot(record) {
+    return { recordId: record.id, title: record.title, transcriptRevision: record.transcriptRevision, minutesRevision: record.minutesRevision, minutes: structuredClone(record.minutes), segments: record.segments.map(segment => ({ id: segment.id, revision: segment.revision, text: segment.text, speaker: segment.speaker || '', startMs: segment.startMs, endMs: segment.endMs })) };
+  }
   async function authorized(input) {
     const current = [];
     for (const id of input.sourceIds) {
@@ -86,6 +89,30 @@ export async function createMeetingAgentRuntime({ repo, env = process.env, model
       requireThat(record.owner === input.ownerId, 'agent_scope_denied', 403); current.push(record);
     }
     return current;
+  }
+  async function accessMap(ids) {
+    return new Map((await repo.getRecordAccess([...new Set(ids)])).map(record => [record.id, record]));
+  }
+  function authorizedAccess(input, access) {
+    return input.sourceIds.map(id => {
+      const record = access.get(id);
+      requireThat(record && record.kind === 'record' && !record.deleted && Date.parse(record.deleteAt) > Date.now(), 'agent_source_unavailable', 410);
+      requireThat(record.owner === input.ownerId, 'agent_scope_denied', 403);
+      return record;
+    });
+  }
+  async function currentSourceHashes(input, access) {
+    const records = authorizedAccess(input, access);
+    return Promise.all(records.map(async record => {
+      const cached = sourceHashes.get(record.id);
+      if (cached?.version === record.version) return cached.hash;
+      const entry = { version: record.version, hash: (async () => {
+        const current = (await authorized({ ownerId: input.ownerId, sourceIds: [record.id] }))[0];
+        return hash(snapshot(current));
+      })() };
+      sourceHashes.set(record.id, entry);
+      try { return await entry.hash; } catch (error) { if (sourceHashes.get(record.id) === entry) sourceHashes.delete(record.id); throw error; }
+    }));
   }
   function openJob(key, create = false) {
     if (jobs.has(key)) return jobs.get(key);
@@ -194,14 +221,16 @@ export async function createMeetingAgentRuntime({ repo, env = process.env, model
     }
     async function purgeUnavailable() {
       const index = await harness.snapshot(Index, context);
+      const access = await accessMap((index?.requests || []).filter(item => !item.purgedAt).flatMap(item => item.sourceIds));
       for (const item of index?.requests || []) {
         let code = item.purgeCode;
         if (!item.purgedAt) {
-          try { await authorized(item); } catch (error) { if (!blockedCodes.has(error.code)) throw error; code = error.code; }
+          try { authorizedAccess(item, access); } catch (error) { if (!blockedCodes.has(error.code)) throw error; code = error.code; }
           if (!code) continue;
           const task = await harness.getTask(item.taskId, context);
           if (task.state.status !== 'terminal') { await harness.abortTask(item.taskId, context); await harness.waitForTask(item.taskId, context); }
           await harness.commit(async tx => { const state = await tx.doc(Index), current = state.requests.find(row => row.taskId === item.taskId); current.purgedAt = new Date().toISOString(); current.purgeCode = code; }, context);
+          for (const id of item.sourceIds) sourceHashes.delete(id);
         }
         await removeJob(item.jobKey);
       }
@@ -214,7 +243,7 @@ export async function createMeetingAgentRuntime({ repo, env = process.env, model
     async function failClosed() {
       failed = true; await harness.close(context); await closeJobs();
     }
-    async function publicTask(task) {
+    async function publicTask(task, access) {
       const input = task.input, state = task.state, outcome = state.status === 'terminal' ? state.outcome : undefined;
       const item = (await harness.snapshot(Index, context)).requests.find(item => item.taskId === task.id);
       const updatedAt = item.purgedAt || outcome?.result?.completedAt || outcome?.error?.detail?.completedAt || (state.checkpoint?.deadline ? new Date(state.checkpoint.deadline - timeoutMs).toISOString() : input.createdAt);
@@ -223,13 +252,11 @@ export async function createMeetingAgentRuntime({ repo, env = process.env, model
       const job = await openJob(input.jobKey), payload = await job.harness.snapshot(Payload, context), data = payload.data;
       let status = task.abortRequested && !outcome ? 'cancelling' : outcome ? ({ completed: 'completed', aborted: 'cancelled' }[outcome.status] || (outcome.error?.detail?.blocked ? 'blocked' : 'failed')) : ['queued', 'prepare'].includes(state.checkpoint?.phase) || state.status === 'waiting' ? 'queued' : 'running';
       let error = outcome?.error ? safeError({ code: outcome.error.message }) : undefined, result = outcome?.status === 'completed' ? payload.result : undefined, stale = false;
-      try { const current = await authorized(input); stale = current.some((record, i) => hash(snapshot(record)) !== data.sourceHashes[i]); }
+      try { const current = await currentSourceHashes(input, access || await accessMap(input.sourceIds)); stale = current.some((value, i) => value !== data.sourceHashes[i]); }
       catch (failure) { status = 'blocked'; error = safeError(failure); result = undefined; }
       return { ...base, status, prompt: data.prompt, sources: data.sources, preview: result?.summary || '', ...(result ? { result } : {}), ...(error ? { error } : {}), stale };
     }
-    function snapshot(record) {
-      return { recordId: record.id, title: record.title, transcriptRevision: record.transcriptRevision, minutesRevision: record.minutesRevision, minutes: structuredClone(record.minutes), segments: record.segments.map(segment => ({ id: segment.id, revision: segment.revision, text: segment.text, speaker: segment.speaker || '', startMs: segment.startMs, endMs: segment.endMs })) };
-    }
+
     const runtime = {
       async request(ownerId, input) {
         requireThat(input?.scopeConfirmed === true, 'agent_scope_required', 400);
@@ -255,7 +282,7 @@ export async function createMeetingAgentRuntime({ repo, env = process.env, model
         } catch (error) { await removeJob(jobKey); throw error; }
         harness.resume(); return publicTask(await indexed(ownerId, id));
       },
-      async list(ownerId) { const index = await harness.snapshot(Index, context); return Promise.all((index?.requests || []).filter(item => item.ownerId === ownerId).slice().reverse().map(async item => publicTask(await indexed(ownerId, item.taskId)))); },
+      async list(ownerId) { const index = await harness.snapshot(Index, context), items = (index?.requests || []).filter(item => item.ownerId === ownerId).slice().reverse(), access = await accessMap(items.filter(item => !item.purgedAt).flatMap(item => item.sourceIds)); return Promise.all(items.map(async item => publicTask(await indexed(ownerId, item.taskId), access))); },
       async get(ownerId, id) { return publicTask(await indexed(ownerId, id)); },
       async cancel(ownerId, id) { const task = await indexed(ownerId, id); if (!task.state.outcome) await harness.abortTask(task.id, context); return publicTask(await indexed(ownerId, id)); },
     };

@@ -1,8 +1,35 @@
-export type UpdateStatus = { phase: string; currentVersion: string; version?: string | null; notes?: string | null; downloaded: number; total?: number | null; error?: string | null };
+export type UpdateStatus = { phase: string; currentVersion: string; version?: string | null; notes?: string | null; downloaded: number; total?: number | null; error?: string | null; installer?: boolean };
 export type UpdatePreferences = { autoCheck: boolean; autoDownload: boolean; autoInstall: false };
 export type UpdatePolicy = 'manual' | 'check' | 'background';
 export type UpdateActivity = { authenticated: boolean; recording: boolean; paused: boolean; busy: boolean; queueBusy: boolean; pendingBytes: number; pendingCount: number };
 export const defaultUpdatePreferences: UpdatePreferences = { autoCheck: true, autoDownload: false, autoInstall: false };
+
+export function updateReleaseItems(notes?: string | null): string[] {
+  if (!notes) return [];
+  const text = notes.replace(/\r\n?/g, '\n').trim();
+  const section = text.match(/(?:^|\n)(#{1,3})[ \t]+(?:版本改动与修复|本版变化|本版行为|修复与设置|更新内容|Changes|What's new|Release notes)[ \t]*\n/i);
+  // Structured release bodies must name a changes section; never fall back to installation/checksum metadata.
+  const content = section
+    ? text.slice(section.index! + section[0].length).split(new RegExp(`\\n#{1,${section[1].length}}[ \\t]`), 1)[0]
+    : (/^#{1,3}[ \t]/m.test(text) ? '' : text);
+  const items: string[] = [];
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || /^#{1,6}\s|^```/.test(trimmed)) continue;
+    const item = trimmed.replace(/^\s*(?:[-*+] |\d+[.)] )/, '').replace(/\[([^\]]+)\]\([^\n)]*\)/g, '$1').replace(/`([^`]+)`|\*\*([^*]+)\*\*/g, '$1$2');
+    if (/^\s*(?:[-*+] |\d+[.)] )/.test(line) || !items.length) items.push(item);
+    else items[items.length - 1] += ` ${item}`;
+  }
+  return items;
+}
+
+export function updateDownloadProgress(status: Pick<UpdateStatus, 'downloaded' | 'total'>) {
+  const downloaded = Number.isFinite(status.downloaded) ? Math.max(0, status.downloaded) : 0;
+  const total = typeof status.total === 'number' && Number.isFinite(status.total) && status.total > 0 ? status.total : null;
+  const bytes = (size: number) => size < 1024 ? `${Math.floor(size)} B` : size < 1024 * 1024 ? `${(size / 1024).toFixed(1)} KB` : `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  return { percent: total === null ? null : Math.floor(Math.min(downloaded / total, 1) * 100), complete: total !== null && downloaded >= total,
+    size: total === null ? `已下载 ${bytes(downloaded)}` : `${bytes(Math.min(downloaded, total))} / ${bytes(total)}` };
+}
 export function normalizeUpdatePreferences(value: unknown): UpdatePreferences {
   const saved = value && typeof value === 'object' ? value as Partial<UpdatePreferences> : {};
   const autoCheck = saved.autoCheck !== false;
@@ -34,7 +61,7 @@ type Dependencies = {
 export class ClientUpdates {
   status: UpdateStatus = { phase: 'idle', currentVersion: '', downloaded: 0 };
   private dependencies: Dependencies;
-  private operating = false; private nextCheck = 0;
+  private operating = false; private nextCheck = 0; private nextDownload = 0;
   constructor(dependencies: Dependencies) { this.dependencies = dependencies; }
   apply(status: UpdateStatus) { this.status = status; this.dependencies.changed(status); }
   async initialize() { this.apply(await this.dependencies.invoke('update_status') as UpdateStatus); }
@@ -48,7 +75,14 @@ export class ClientUpdates {
     } finally { this.operating = false; }
   }
   async check() { if (this.status.phase !== 'disabled') await this.request('update_check'); }
+  async preferencesChanged(now: number) { this.nextCheck = 0; this.nextDownload = 0; await this.tick(now); }
   async download() { if (this.status.phase === 'available') await this.request('update_download'); }
+  async downloadAndInstall() {
+    if (this.operating) return;
+    if (!['available','ready'].includes(this.status.phase)) await this.check();
+    if (this.status.phase === 'available') await this.download();
+    if (this.status.phase === 'ready') await this.install();
+  }
   async menuAction(action: string) {
     if (this.operating || this.status.phase === 'disabled' || ['checking', 'downloading', 'preparing', 'installing'].includes(this.status.phase)) return;
     if (action === 'status-update-check') {
@@ -89,6 +123,9 @@ export class ClientUpdates {
       this.nextCheck = now + 6 * 60 * 60 * 1000; await this.check();
       if (this.status.error) this.nextCheck = now + 15 * 60 * 1000;
     }
-    if (preferences.autoDownload && this.status.phase === 'available' && !this.status.error) await this.download();
+    if (preferences.autoDownload && this.status.phase === 'available' && now >= this.nextDownload) {
+      this.nextDownload = now + 15 * 60 * 1000;
+      await this.download();
+    }
   }
 }

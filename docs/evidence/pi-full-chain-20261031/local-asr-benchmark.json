@@ -1,0 +1,455 @@
+{
+  "schema": "pi-real-native-asr-benchmark/v1",
+  "at": "2026-10-31T10:37:33.581Z",
+  "baseline": "2a8275d",
+  "node": "v26.12.1",
+  "audioDir": "/private/tmp/lingji-pi-real-chain-xwEQKu",
+  "asrDir": "/Users/eddie/.codex/worktrees/pi-chain-regression/TTS/apps/desktop/src-tauri/resources/client-backend/local-asr",
+  "runs": [
+    {
+      "mode": "baseline",
+      "node": "v26.12.1",
+      "audioSha256": [
+        "3124307b48cc3f2c5d9ab68842b4acc9692feb9d595f30f25bd7c1697276d8b4",
+        "1977802da3abeb3fbdb4b4135ec1dae5ed99a3d2b5a5aa9ee4c732b921cc9bee",
+        "8ea46d2ffa49d9c44469df7cac40616d6c53c4dc270209512112e99f9c1e4f5c"
+      ],
+      "audioSeconds": 11.814437499999999,
+      "asrDir": "/Users/eddie/.codex/worktrees/pi-chain-regression/TTS/apps/desktop/src-tauri/resources/client-backend/local-asr",
+      "rows": [
+        {
+          "sample": 0,
+          "phase": "cold-warmup",
+          "asrMs": 915.0777499999999,
+          "uploadMs": [
+            16.517415999999997,
+            11.724625000000003,
+            11.138915999999995
+          ],
+          "chainMs": 955.838291,
+          "transcriptEqual": true,
+          "persisted": true,
+          "segmentCount": 1
+        },
+        {
+          "sample": 1,
+          "phase": "warm",
+          "asrMs": 158.64674999999988,
+          "uploadMs": [
+            10.385790999999926,
+            10.604916000000003,
+            10.064792000000125
+          ],
+          "chainMs": 190.6557089999999,
+          "transcriptEqual": true,
+          "persisted": true,
+          "segmentCount": 1
+        },
+        {
+          "sample": 2,
+          "phase": "warm",
+          "asrMs": 153.60908300000006,
+          "uploadMs": [
+            8.41879199999994,
+            10.124874999999975,
+            10.80008399999997
+          ],
+          "chainMs": 184.03025000000002,
+          "transcriptEqual": true,
+          "persisted": true,
+          "segmentCount": 1
+        },
+        {
+          "sample": 3,
+          "phase": "warm",
+          "asrMs": 152.80883299999982,
+          "uploadMs": [
+            11.080708999999842,
+            10.09695899999997,
+            9.828292000000147
+          ],
+          "chainMs": 184.72370899999987,
+          "transcriptEqual": true,
+          "persisted": true,
+          "segmentCount": 1
+        },
+        {
+          "sample": 4,
+          "phase": "warm",
+          "asrMs": 153.20812499999988,
+          "uploadMs": [
+            9.792042000000038,
+            10.023124999999936,
+            10.896208999999999
+          ],
+          "chainMs": 184.81629199999998,
+          "transcriptEqual": true,
+          "persisted": true,
+          "segmentCount": 1
+        }
+      ],
+      "nativeAsr": true,
+      "cloudCalls": false,
+      "minutesDisabled": true,
+      "data": "OS synthesized speech only"
+    },
+    {
+      "mode": "candidate",
+      "node": "v26.12.1",
+      "audioSha256": [
+        "3124307b48cc3f2c5d9ab68842b4acc9692feb9d595f30f25bd7c1697276d8b4",
+        "1977802da3abeb3fbdb4b4135ec1dae5ed99a3d2b5a5aa9ee4c732b921cc9bee",
+        "8ea46d2ffa49d9c44469df7cac40616d6c53c4dc270209512112e99f9c1e4f5c"
+      ],
+      "audioSeconds": 11.814437499999999,
+      "asrDir": "/Users/eddie/.codex/worktrees/pi-chain-regression/TTS/apps/desktop/src-tauri/resources/client-backend/local-asr",
+      "rows": [
+        {
+          "sample": 0,
+          "phase": "cold-warmup",
+          "asrMs": 895.0985840000001,
+          "uploadMs": [
+            12.634125000000012,
+            11.831792000000007,
+            11.475583
+          ],
+          "chainMs": 932.566458,
+          "transcriptEqual": true,
+          "persisted": true,
+          "segmentCount": 1
+        },
+        {
+          "sample": 1,
+          "phase": "warm",
+          "asrMs": 153.79654200000004,
+          "uploadMs": [
+            9.873666999999841,
+            13.474707999999964,
+            10.368208000000095
+          ],
+          "chainMs": 188.604916,
+          "transcriptEqual": true,
+          "persisted": true,
+          "segmentCount": 1
+        },
+        {
+          "sample": 2,
+          "phase": "warm",
+          "asrMs": 149.01254100000006,
+          "uploadMs": [
+            10.983416999999918,
+            9.979540999999926,
+            10.864666999999827
+          ],
+          "chainMs": 181.70995900000003,
+          "transcriptEqual": true,
+          "persisted": true,
+          "segmentCount": 1
+        },
+        {
+          "sample": 3,
+          "phase": "warm",
+          "asrMs": 152.62091600000008,
+          "uploadMs": [
+            9.347332999999935,
+            10.170624999999973,
+            10.154917000000069
+          ],
+          "chainMs": 183.3784579999999,
+          "transcriptEqual": true,
+          "persisted": true,
+          "segmentCount": 1
+        },
+        {
+          "sample": 4,
+          "phase": "warm",
+          "asrMs": 151.45433400000002,
+          "uploadMs": [
+            12.150624999999991,
+            9.83179199999995,
+            7.8472499999998035
+          ],
+          "chainMs": 182.0328340000001,
+          "transcriptEqual": true,
+          "persisted": true,
+          "segmentCount": 1
+        }
+      ],
+      "nativeAsr": true,
+      "cloudCalls": false,
+      "minutesDisabled": true,
+      "data": "OS synthesized speech only"
+    },
+    {
+      "mode": "candidate",
+      "node": "v26.12.1",
+      "audioSha256": [
+        "3124307b48cc3f2c5d9ab68842b4acc9692feb9d595f30f25bd7c1697276d8b4",
+        "1977802da3abeb3fbdb4b4135ec1dae5ed99a3d2b5a5aa9ee4c732b921cc9bee",
+        "8ea46d2ffa49d9c44469df7cac40616d6c53c4dc270209512112e99f9c1e4f5c"
+      ],
+      "audioSeconds": 11.814437499999999,
+      "asrDir": "/Users/eddie/.codex/worktrees/pi-chain-regression/TTS/apps/desktop/src-tauri/resources/client-backend/local-asr",
+      "rows": [
+        {
+          "sample": 0,
+          "phase": "cold-warmup",
+          "asrMs": 986.8927919999999,
+          "uploadMs": [
+            14.014332999999993,
+            10.940084000000013,
+            10.353207999999995
+          ],
+          "chainMs": 1023.736959,
+          "transcriptEqual": true,
+          "persisted": true,
+          "segmentCount": 1
+        },
+        {
+          "sample": 1,
+          "phase": "warm",
+          "asrMs": 158.94629099999997,
+          "uploadMs": [
+            10.365291999999954,
+            10.601708000000144,
+            8.930832999999893
+          ],
+          "chainMs": 190.20333400000004,
+          "transcriptEqual": true,
+          "persisted": true,
+          "segmentCount": 1
+        },
+        {
+          "sample": 2,
+          "phase": "warm",
+          "asrMs": 157.89333399999987,
+          "uploadMs": [
+            10.746041999999989,
+            11.126042000000098,
+            9.714582999999948
+          ],
+          "chainMs": 190.75074999999993,
+          "transcriptEqual": true,
+          "persisted": true,
+          "segmentCount": 1
+        },
+        {
+          "sample": 3,
+          "phase": "warm",
+          "asrMs": 158.80995800000005,
+          "uploadMs": [
+            9.238708000000088,
+            10.304875000000038,
+            10.640499999999975
+          ],
+          "chainMs": 190.28279199999997,
+          "transcriptEqual": true,
+          "persisted": true,
+          "segmentCount": 1
+        },
+        {
+          "sample": 4,
+          "phase": "warm",
+          "asrMs": 161.16862500000002,
+          "uploadMs": [
+            9.488833999999997,
+            10.876875000000155,
+            9.025708000000122
+          ],
+          "chainMs": 191.82683299999985,
+          "transcriptEqual": true,
+          "persisted": true,
+          "segmentCount": 1
+        }
+      ],
+      "nativeAsr": true,
+      "cloudCalls": false,
+      "minutesDisabled": true,
+      "data": "OS synthesized speech only"
+    },
+    {
+      "mode": "baseline",
+      "node": "v26.12.1",
+      "audioSha256": [
+        "3124307b48cc3f2c5d9ab68842b4acc9692feb9d595f30f25bd7c1697276d8b4",
+        "1977802da3abeb3fbdb4b4135ec1dae5ed99a3d2b5a5aa9ee4c732b921cc9bee",
+        "8ea46d2ffa49d9c44469df7cac40616d6c53c4dc270209512112e99f9c1e4f5c"
+      ],
+      "audioSeconds": 11.814437499999999,
+      "asrDir": "/Users/eddie/.codex/worktrees/pi-chain-regression/TTS/apps/desktop/src-tauri/resources/client-backend/local-asr",
+      "rows": [
+        {
+          "sample": 0,
+          "phase": "cold-warmup",
+          "asrMs": 1053.945583,
+          "uploadMs": [
+            11.890957999999998,
+            13.742666999999997,
+            11.86854200000002
+          ],
+          "chainMs": 1093.3874580000002,
+          "transcriptEqual": true,
+          "persisted": true,
+          "segmentCount": 1
+        },
+        {
+          "sample": 1,
+          "phase": "warm",
+          "asrMs": 163.295167,
+          "uploadMs": [
+            12.198708000000124,
+            10.595374999999876,
+            8.870583000000124
+          ],
+          "chainMs": 196.14787499999989,
+          "transcriptEqual": true,
+          "persisted": true,
+          "segmentCount": 1
+        },
+        {
+          "sample": 2,
+          "phase": "warm",
+          "asrMs": 159.3637080000001,
+          "uploadMs": [
+            10.450665999999956,
+            11.184333000000152,
+            9.650334000000157
+          ],
+          "chainMs": 193.16599999999994,
+          "transcriptEqual": true,
+          "persisted": true,
+          "segmentCount": 1
+        },
+        {
+          "sample": 3,
+          "phase": "warm",
+          "asrMs": 159.25708400000008,
+          "uploadMs": [
+            10.513791999999967,
+            9.79379199999994,
+            10.151375000000144
+          ],
+          "chainMs": 190.74037500000009,
+          "transcriptEqual": true,
+          "persisted": true,
+          "segmentCount": 1
+        },
+        {
+          "sample": 4,
+          "phase": "warm",
+          "asrMs": 160.6049169999999,
+          "uploadMs": [
+            9.974667000000181,
+            10.959458999999924,
+            10.754916999999978
+          ],
+          "chainMs": 193.5029159999999,
+          "transcriptEqual": true,
+          "persisted": true,
+          "segmentCount": 1
+        }
+      ],
+      "nativeAsr": true,
+      "cloudCalls": false,
+      "minutesDisabled": true,
+      "data": "OS synthesized speech only"
+    }
+  ],
+  "baselineResult": {
+    "coldAsr": {
+      "count": 2,
+      "p50Ms": 915.0777499999999,
+      "p95Ms": 1053.945583,
+      "minMs": 915.0777499999999,
+      "maxMs": 1053.945583
+    },
+    "warmAsr": {
+      "count": 8,
+      "p50Ms": 158.64674999999988,
+      "p95Ms": 163.295167,
+      "minMs": 152.80883299999982,
+      "maxMs": 163.295167
+    },
+    "warmChain": {
+      "count": 8,
+      "p50Ms": 190.6557089999999,
+      "p95Ms": 196.14787499999989,
+      "minMs": 184.03025000000002,
+      "maxMs": 196.14787499999989
+    },
+    "warmUploads": {
+      "count": 24,
+      "p50Ms": 10.151375000000144,
+      "p95Ms": 11.184333000000152,
+      "minMs": 8.41879199999994,
+      "maxMs": 12.198708000000124
+    }
+  },
+  "candidateResult": {
+    "coldAsr": {
+      "count": 2,
+      "p50Ms": 895.0985840000001,
+      "p95Ms": 986.8927919999999,
+      "minMs": 895.0985840000001,
+      "maxMs": 986.8927919999999
+    },
+    "warmAsr": {
+      "count": 8,
+      "p50Ms": 153.79654200000004,
+      "p95Ms": 161.16862500000002,
+      "minMs": 149.01254100000006,
+      "maxMs": 161.16862500000002
+    },
+    "warmChain": {
+      "count": 8,
+      "p50Ms": 188.604916,
+      "p95Ms": 191.82683299999985,
+      "minMs": 181.70995900000003,
+      "maxMs": 191.82683299999985
+    },
+    "warmUploads": {
+      "count": 24,
+      "p50Ms": 10.170624999999973,
+      "p95Ms": 12.150624999999991,
+      "minMs": 7.8472499999998035,
+      "maxMs": 13.474707999999964
+    }
+  },
+  "gates": [
+    {
+      "metric": "warmAsr",
+      "percentile": "p50Ms",
+      "baselineMs": 158.64674999999988,
+      "candidateMs": 153.79654200000004,
+      "maximumMs": 298.30843749999985,
+      "pass": true
+    },
+    {
+      "metric": "warmAsr",
+      "percentile": "p95Ms",
+      "baselineMs": 163.295167,
+      "candidateMs": 161.16862500000002,
+      "maximumMs": 354.11895875,
+      "pass": true
+    },
+    {
+      "metric": "coldAsr",
+      "percentile": "p95Ms",
+      "baselineMs": 1053.945583,
+      "candidateMs": 986.8927919999999,
+      "maximumMs": 2080.9183745,
+      "pass": true
+    },
+    {
+      "metric": "warmUploads",
+      "percentile": "p95Ms",
+      "baselineMs": 11.184333000000152,
+      "candidateMs": 12.150624999999991,
+      "maximumMs": 23.98041625000019,
+      "pass": true
+    }
+  ],
+  "realProviders": "local SenseVoice only; cloud disabled",
+  "warmup": "first real transcription per process reported as cold, excluded from warm stats",
+  "comparability": "same native model and PCM; AB/BA fresh processes, 1 cold+4 warm each, all 20 transcripts equal previous real-chain fixture"
+}

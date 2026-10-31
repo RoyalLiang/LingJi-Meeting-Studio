@@ -1,0 +1,64 @@
+{
+  "schema": "backend-storage-probe/v1",
+  "source": "v0.1.43 source 2a4e02f5 (parent supplied)",
+  "environment": {
+    "node": "v24.21.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M4 Pro"
+  },
+  "method": "Warm sequential isolated SQLite WAL/FULL; compressed aggregate; fabricated one-second chunk metadata; 1 warmup and 7 samples. No provider, user audio, HTTP or real UI measurement.",
+  "results": [
+    {
+      "chunks": 8400,
+      "sourceCount": 2,
+      "timelineMinutes": 70,
+      "donePerSource": 4200,
+      "pendingPerSource": 0,
+      "segments": 1680,
+      "aggregateBytes": 5771509,
+      "get": {
+        "p50Ms": 11.4,
+        "sampleMaxMs": 11.75
+      },
+      "noOp": {
+        "p50Ms": 31.77,
+        "sampleMaxMs": 34.96
+      },
+      "emit": {
+        "p50Ms": 39.66,
+        "sampleMaxMs": 42.98
+      }
+    },
+    {
+      "chunks": 8400,
+      "sourceCount": 2,
+      "timelineMinutes": 70,
+      "donePerSource": 2100,
+      "pendingPerSource": 2100,
+      "segments": 840,
+      "aggregateBytes": 5447267,
+      "get": {
+        "p50Ms": 8.12,
+        "sampleMaxMs": 11.67
+      },
+      "noOp": {
+        "p50Ms": 29.93,
+        "sampleMaxMs": 32.98
+      },
+      "emit": {
+        "p50Ms": 129.59,
+        "sampleMaxMs": 136.72
+      }
+    }
+  ],
+  "listWork": {
+    "p50Ms": 8.44,
+    "sampleMaxMs": 10.82
+  },
+  "list": {
+    "p50Ms": 18.66,
+    "sampleMaxMs": 20.43
+  },
+  "baselineCommit": "d95edd86e0384e5fb93342a2237cbce053373b7d"
+}

@@ -1,0 +1,15 @@
+{
+  "imageVerified": true,
+  "signatureVerified": true,
+  "architecture": "arm64",
+  "version": "0.1.7",
+  "bundleVersion": "0.1.29",
+  "bundleIdentifier": "com.tts.meeting",
+  "minimumSystemVersion": "14.6",
+  "doubaoModuleMatchesSource": true,
+  "doubaoModuleSha256": "4819b3f3b382a73e1a23ba7fdb1ae13509c6ec224fc946aa3c147470dfbdfc70",
+  "applicationInstalled": false,
+  "applicationLaunched": false,
+  "realAudioDevicesOpened": false,
+  "sourceSha": "d7ec7fa55e38e37052c64dc25d199b652e51928c"
+}

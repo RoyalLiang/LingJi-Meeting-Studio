@@ -1,0 +1,14 @@
+{
+  "baseline": "2a8275d",
+  "node": "v26.12.1",
+  "provider": "sensevoice-local",
+  "sameAudio": true,
+  "audioSha256": [
+    "3124307b48cc3f2c5d9ab68842b4acc9692feb9d595f30f25bd7c1697276d8b4",
+    "1977802da3abeb3fbdb4b4135ec1dae5ed99a3d2b5a5aa9ee4c732b921cc9bee",
+    "8ea46d2ffa49d9c44469df7cac40616d6c53c4dc270209512112e99f9c1e4f5c"
+  ],
+  "transcript": "这是一次合成测试会议，我们决定周五下午3点进行设计评审。华静负责在周四下班前准备评审材料，录音结束前补充评审改到下周一下午3点。",
+  "sameTranscript": true,
+  "asrMs": 905.417375
+}

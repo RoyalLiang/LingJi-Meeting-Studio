@@ -1,0 +1,26 @@
+{
+  "tag": "v0.2.1",
+  "source": "9254089c132d62d762829fd14946908c13cffa2b",
+  "verifiedAt": "2026-10-30T07:31:41.524Z",
+  "assets": [
+    {
+      "name": "Lingji-0.2.1-macos-arm64.dmg",
+      "bytes": 218595625,
+      "sha256": "dcb3a690716f42847bee257ae4881ca22fe4dcccae10efba79d4bd199af8e83c",
+      "verified": true
+    },
+    {
+      "name": "Lingji-0.2.1-windows-x64-setup.exe",
+      "bytes": 407397007,
+      "sha256": "705ad2864b5e9c95fa95992302d84b7bed6e749471d3d227a7112ddd48532b4f",
+      "verified": true
+    },
+    {
+      "name": "Lingji-0.2.1-linux-amd64.deb",
+      "bytes": 221815468,
+      "sha256": "ddbc20e6c1007767cf879a59a83543e2df976e07995ea6c3772714f7f582a17c",
+      "verified": true
+    }
+  ],
+  "errors": []
+}

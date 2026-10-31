@@ -1,10 +1,37 @@
-.minutes-tree.is-compact .minutes-branch { padding-bottom:25px; }
-.minutes-tree.is-compact .minutes-branch:last-child { padding-bottom:0; }
-.minutes-tree.is-compact .branch-toggle { padding-block:8px; }
-.minutes-tree.is-compact .branch-children { padding-top:12px; gap:11px; }
-.minutes-tree.is-compact .branch-node { padding:10px 17px; }
-.minutes-tree.is-compact .branch-node .citations { margin-top:6px; }
-.minutes-tree.is-compact .branch-table { width:100%; padding:0; background:transparent; }
-.minutes-tree.is-compact .branch-table .summary-tables { margin:0; min-width:0; }
-.minutes-tree.is-compact .branch-table .summary-table { margin:0; }
-.minutes-preview-option { margin-top:14px; }
+.minutes-reading{width:100%;min-width:0}.minutes-highlights{margin:0 0 28px;padding:20px 22px;border:1px solid var(--border);border-radius:12px;background:color-mix(in srgb,var(--accent) 3%,var(--bg))}.minutes-highlights h4{font-size:14px;margin:0 0 14px;font-weight:650}.minutes-highlights ul{list-style:none;padding:0;margin:0;display:grid;gap:14px}.minutes-highlights li{padding-left:14px;border-left:2px solid color-mix(in srgb,var(--accent) 40%,var(--border))}.minutes-highlights p{margin:0;font-size:15px;line-height:1.8;color:var(--ink-1);overflow-wrap:anywhere}.minutes-tree.is-compact .minutes-branch{padding-bottom:28px}.minutes-tree.is-compact .minutes-branch:last-child{padding-bottom:0}.minutes-tree.is-compact .branch-toggle{padding-block:8px}.minutes-tree.is-compact .branch-toggle span{font-size:15px}.minutes-tree.is-compact .branch-children{padding-top:14px;gap:12px;width:100%;box-sizing:border-box}.minutes-tree.is-compact .branch-node{padding:12px 17px;width:100%;box-sizing:border-box;background:color-mix(in srgb,var(--branch-color) 5%,var(--bg))}.minutes-tree.is-compact .branch-node p{font-size:14px;line-height:1.85}.minutes-tree.is-compact .branch-summary{background:var(--branch-bg);border:0;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--branch-color) 10%,transparent)}.minutes-tree.is-compact .branch-summary p{font-size:15px;font-weight:500}.point-label{font-weight:650;color:var(--branch-color)}.branch-node[data-kind="risk"] .point-label{color:light-dark(#92571d,#e9bd7d)}.minutes-tree.is-compact .branch-node .citations{margin-top:6px}.minutes-tree.is-compact .branch-table{width:100%;padding:0;background:transparent}.minutes-tree.is-compact .branch-table .summary-tables,.minutes-tree.is-compact .branch-table .summary-table{margin:0;min-width:0}.minutes-preview-option{margin-top:14px}@media(max-width:560px){.minutes-highlights{padding:16px}.minutes-tree.is-compact .branch-node{padding:11px 13px}.minutes-tree.is-compact .branch-toggle span{font-size:14px}}@media(pointer:coarse){.citations.is-compact .citation-entry{min-height:44px}}
+
+.minutes-tree.is-compact .minutes-branch>h4{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:15px;padding:0;min-height:40px}.minutes-branch>h4>small{font:11px var(--mono);color:var(--ink-3)}
+.minute-speakers{display:block;width:fit-content;max-width:100%;margin:0 0 4px auto;text-align:right;color:var(--ink-3);font-size:11px;line-height:1.5;overflow-wrap:anywhere}
+
+/* Paint connectors behind cards and continue the trunk under the topic node. */
+.minutes-tree.is-compact .minutes-branch{border-left:0}
+.minutes-tree.is-compact .branch-children{position:relative;isolation:isolate;border-left:0;margin:0 0 0 18px;width:calc(100% - 18px);padding-top:18px}
+.minutes-tree.is-compact .branch-children>*{position:relative}
+.minutes-tree.is-compact .branch-children>*::before{content:'';position:absolute;z-index:-1;left:calc(-1 * var(--branch-indent));top:-12px;bottom:-12px;width:2px;height:auto;border:0;border-radius:0;background:var(--branch-line);pointer-events:none}
+.minutes-tree.is-compact .branch-children>*:first-child::before{top:-26px}
+.minutes-tree.is-compact .branch-children>*:last-child::before{bottom:calc(50% + 12px)}
+.minutes-tree.is-compact .branch-children>*::after{content:'';position:absolute;z-index:-1;left:calc(-1 * var(--branch-indent));top:calc(50% - 12px);width:calc(var(--branch-indent) + 8px);height:12px;box-sizing:border-box;border-left:2px solid var(--branch-line);border-bottom:2px solid var(--branch-line);border-bottom-left-radius:12px;pointer-events:none}
+.minutes-tree.is-compact .minutes-branch>h4{width:auto;max-width:100%;margin:0;padding:0;line-height:1.6}
+.minutes-branch>h4>span{min-width:0;overflow-wrap:anywhere;width:fit-content;padding:8px 12px;border:1px solid color-mix(in srgb,var(--branch-color) 12%,transparent);border-radius:8px;color:var(--branch-color);background:var(--branch-bg)}
+.minutes-branch>h4>small{flex:none;white-space:nowrap}
+
+.minutes-tree .branch-node { position: relative; }
+.minutes-tree.is-compact .branch-node:not(.branch-table){display:flex;align-items:center;min-height:60px;padding:16px 17px}
+.minutes-tree.is-compact .branch-node>.minute-speakers{position:absolute;top:4px;right:17px;max-width:calc(100% - 34px);margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px;line-height:12px}
+.minutes-tree.is-compact .branch-node>p{flex:1;margin:0}
+@media(max-width:560px){.minutes-tree.is-compact .branch-node:not(.branch-table){padding:16px 13px}.minutes-tree.is-compact .branch-node>.minute-speakers{right:13px;max-width:calc(100% - 26px)}}
+
+.minutes-tree.is-compact .branch-node.branch-points{display:block}
+.branch-point{position:relative;padding:14px 0}
+.branch-point:first-child{padding-top:0}.branch-point:last-child{padding-bottom:0}
+.branch-point+.branch-point{border-top:1px solid color-mix(in srgb,var(--branch-color) 12%,transparent)}
+.branch-point p{margin:0;line-height:1.85}
+.branch-discussion>summary{cursor:pointer;font-size:13px;color:var(--ink-2);padding:4px 0}
+.branch-discussion>summary:focus-visible{outline:2px solid var(--focus-ring);outline-offset:4px}
+.branch-discussion .branch-point{margin-top:12px}
+.branch-content{display:grid;gap:16px;margin:16px 0 0 calc(var(--branch-indent) + 18px);min-width:0}
+.branch-content .summary-tables,.branch-content .summary-table{margin:0;min-width:0}
+
+/* Continue the shared spine through rich content and the gap before the next topic. */
+.minutes-tree.is-compact>.minutes-branch:not(:last-child)::before{content:'';position:absolute;left:18px;top:0;bottom:0;width:2px;background:var(--branch-line);pointer-events:none}
+.minutes-tree.is-compact>.minutes-branch:not(:first-child)>h4::before{content:'';position:absolute;z-index:-1;left:18px;top:0;bottom:0;width:2px;background:var(--branch-line);pointer-events:none}

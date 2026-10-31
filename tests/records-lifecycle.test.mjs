@@ -151,3 +151,31 @@ test('HTTP quick record, persisted pause/resume, end and later title editing', a
     assert.notEqual((await call('/records', 'POST', {})).data.id, id);
   } finally { await app.stop(); await rm(root, { recursive: true, force: true }); }
 });
+
+test('ending an unnamed meeting preserves a validated in-flight live draft before final generation',()=>{
+ const r=records.createRecord('fixture'),source=records.addSource(r,{kind:'microphone'});
+ records.acknowledge(r,chunk(source));records.commitTranscript(r,r.chunks[0].key,'发布评审安排',r.generation);
+ const job=records.requestMinutes(r,{scope:'live',mode:'model'});job.status='running';job.fence='live-worker';
+ const draft={title:'发布评审安排',sections:[{heading:'安排',items:[{text:'保留会中已显示要点',evidence:[{segmentId:r.segments[0].id,revision:1}]}]}],actions:[],evidenceSnapshot:structuredClone(r.segments),transcriptRevision:r.transcriptRevision};
+ job.partialMinutes=draft;
+ assert.equal(r.title,'未命名会议');records.seal(r,manifest(r));
+ assert.equal(r.capture,'completed');assert.equal(job.partialMinutes.sections[0].items[0].text,'保留会中已显示要点');assert.equal(r.liveMinutes,null);
+ const final=records.requestMinutes(r,{scope:'final',mode:'model'});assert.ok(final);assert.equal(job.partialMinutes.sections[0].items[0].text,'保留会中已显示要点');
+ assert.notEqual(r.title,'未命名会议');assert.equal(job.status,'running');assert.equal(job.fence,'live-worker');
+ records.commitMinutes(r,job.id,draft,job.fence);assert.equal(job.status,'completed');assert.equal(r.liveMinutes.title,'发布评审安排');
+});
+
+test('ending preserves a multiwindow draft from one transcript while rejecting edited evidence',()=>{
+ for(const changed of [false,true]){
+  const r=records.createRecord('fixture'),source=records.addSource(r,{kind:'microphone'});
+  records.acknowledge(r,chunk(source));records.commitTranscript(r,r.chunks[0].key,'长段会议转录',r.generation);
+  const job=records.requestMinutes(r,{scope:'live',mode:'model'});job.status='running';job.fence='live-worker';job.progress={completed:7,total:8};
+  const draft={title:'多窗讨论',sections:Array.from({length:21},(_,i)=>({heading:`议题${i}`,items:[{text:`已核验内容${i}`,evidence:[{segmentId:r.segments[0].id,revision:1}]}]})),actions:[],evidenceSnapshot:structuredClone(r.segments),transcriptRevision:r.transcriptRevision};
+  records.validateMinutes(draft,draft.evidenceSnapshot,undefined,{aggregate:true,aggregateParts:7});job.partialMinutes=draft;
+  if(changed){r.segments[0].revision++;r.transcriptRevision++;}
+  records.seal(r,manifest(r));assert.equal(r.capture,'completed');
+  assert.equal(r.liveMinutes,null,'stopping must not replace the active worker baseline');assert.equal(job.partialMinutes.sections.length,21);
+  const result={title:'完整讨论',sections:[{heading:'完整讨论',items:[{text:'完整结果',evidence:[{segmentId:job.snapshot[0].id,revision:1}]}]}],actions:[]};
+  records.commitMinutes(r,job.id,result,job.fence);assert.equal(job.status,changed?'stale':'completed');if(changed)assert.equal(r.liveMinutes,null);else assert.equal(r.liveMinutes.title,'完整讨论');
+ }
+});

@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFile} from 'node:fs/promises';
 import {stripTypeScriptTypes} from 'node:module';
-import {IDBFactory,IDBKeyRange,IDBObjectStore} from 'fake-indexeddb';
-const source=stripTypeScriptTypes(await readFile(new URL('../apps/web/src/audio/queue.ts',import.meta.url),'utf8')).replace(/^import .*;$/gm,'').replaceAll('export ','')+'\nObject.assign(exports,{setLocalQueueBackend,enqueue,drainQueue,setQueueRecords,pendingCount,localManifests,clearRecordAudio,queueStats});';
+import {IDBFactory,IDBKeyRange,IDBObjectStore,IDBIndex} from 'fake-indexeddb';
+const source=stripTypeScriptTypes(await readFile(new URL('../apps/web/src/audio/queue.ts',import.meta.url),'utf8')).replace(/^import .*;$/gm,'').replaceAll('export ','')+'\nObject.assign(exports,{setLocalQueueBackend,ensureAudioCapacity,enqueue,drainQueue,setQueueRecords,pendingCount,localManifests,clearRecordAudio,queueStats,downloadPendingAudio,updateQueueState});';
 class ApiError extends Error{constructor(status){super('api');this.status=status;}}
 function harness(indexedDB=new IDBFactory(),api=async()=>{},sessionStorage){
-  const exports={};const navigator={onLine:true};vm.runInNewContext(source,{exports,indexedDB,IDBKeyRange,ApiError,api,uploadAudio:(path,chunk)=>api(path,'POST',chunk),navigator,sessionStorage,performance,trace(){},traceEnabled:()=>false,setTimeout,Blob,URL,console});return{...exports,indexedDB,navigator};
+  const exports={},downloads=[];const navigator={onLine:true};const document={createElement:()=>({click(){}})};const downloadURL={createObjectURL:blob=>{downloads.push(blob);return "blob:fixture";},revokeObjectURL(){}};vm.runInNewContext(source,{exports,indexedDB,IDBKeyRange,ApiError,api,uploadAudio:(path,chunk)=>api(path,'POST',chunk),navigator,sessionStorage,performance,trace(){},traceEnabled:()=>false,setTimeout,Blob,URL:downloadURL,document,console});return{...exports,indexedDB,navigator,downloads};
 }
 const chunk=(sourceId='mic',sequence=0,extra={})=>({sessionId:'s',sourceId,epoch:'e',sequence,sampleOffset:sequence*1600,sampleCount:1600,sampleRate:16000,digest:'a'.repeat(64),pcm:'AA==',...extra});
 async function legacy(indexedDB){await new Promise((resolve,reject)=>{const open=indexedDB.open('meeting-studio-audio',1);open.onupgradeneeded=()=>{open.result.createObjectStore('chunks',{keyPath:'key'});open.result.createObjectStore('manifests',{keyPath:'key'});};open.onsuccess=()=>{const db=open.result,tx=db.transaction(['chunks','manifests'],'readwrite');tx.objectStore('chunks').put({key:'r:mic:e:0',recordId:'r',chunk:chunk(),bytes:3200,createdAt:1});tx.objectStore('manifests').put({key:'r:mic',recordId:'r',sourceId:'mic',epoch:'e',lastSequence:0});tx.oncomplete=()=>{db.close();resolve();};};open.onerror=()=>reject(open.error);});}
@@ -16,8 +16,8 @@ test('v1 migration preserves pending payloads, recovery, exact byte cap and dupl
   assert.equal(await h.pendingCount(),1);assert.equal((await h.queueStats()).bytes,3200);assert.equal((await h.localManifests('r'))[0].lastSequence,0);
   await h.enqueue('r',chunk());assert.equal((await h.queueStats()).bytes,3200);
   await assert.rejects(h.enqueue('r',chunk('mic',0,{digest:'b'.repeat(64)})),/冲突/);assert.equal(await h.pendingCount(),1);
-  await h.enqueue('other',chunk('mic',0,{sampleCount:(48*1024*1024-3200)/2}));await assert.rejects(h.enqueue('r',chunk('mic',1)),/48 MB/);
-  assert.equal((await h.queueStats()).bytes,48*1024*1024);await h.clearRecordAudio('other');assert.equal((await h.queueStats()).bytes,3200);
+  await h.enqueue('other',chunk('mic',0,{sampleCount:(512*1024*1024-3200)/2}));await assert.rejects(h.enqueue('r',chunk('mic',1)),/缓存空间不足/);
+  assert.equal((await h.queueStats()).bytes,512*1024*1024);await h.clearRecordAudio('other');assert.equal((await h.queueStats()).bytes,3200);
   const recovered=harness(indexedDB);recovered.setQueueRecords(['r']);assert.equal(await recovered.pendingCount(),1);await recovered.drainQueue();assert.equal(await h.pendingCount(),0);assert.equal((await h.queueStats()).bytes,0);
 });
 test('bounded drain keeps source order and progresses other sources after failures',async()=>{
@@ -95,10 +95,10 @@ test('new packets wake a running drain while a different source is waiting for i
   });
   h.setQueueRecords(['meeting']);await h.enqueue('meeting',chunk('mic'));await h.enqueue('meeting',chunk('tab'));
   const background=h.drainQueue();await first;
-  await h.enqueue('meeting',chunk('tab',1));const joined=h.drainQueue();
+  await h.enqueue('meeting',chunk('tab',1));
   try{
     assert.equal(await Promise.race([next.then(()=>true),new Promise(resolve=>setTimeout(()=>resolve(false),200))]),true,'newly saved packets should not await the unrelated source');
-  }finally{releaseSlow();await Promise.all([background,joined]);}
+  }finally{releaseSlow();await Promise.all([background]);}
   assert.equal(await h.pendingCount('meeting'),0);
 });
 
@@ -131,4 +131,117 @@ test('storage selection failure still waits for an active source before rejectin
     releaseSlow();assert.match((await draining)?.message||'',/synthetic storage failure/);
   }finally{releaseSlow();await draining;IDBObjectStore.prototype.index=original;}
   assert.equal(await h.pendingCount('meeting'),0);
+});
+
+
+test('seventy minutes of dual-source PCM can be retained locally while the service is offline', async()=>{
+  const h=harness();h.setQueueRecords(['long']);h.navigator.onLine=false;
+  for(const id of ['display','microphone'])for(let i=0;i<280;i++)await h.enqueue('long',chunk(id,i,{sampleCount:240000,sampleOffset:i*240000}));
+  assert.equal((await h.queueStats()).bytes,268800000);assert.equal(await h.pendingCount('long'),560);
+  assert.equal((await h.localManifests('long')).length,2);
+});
+
+test('freeing storage retries capacity estimation without losing the held native head',async()=>{
+  const h=harness();h.setQueueRecords(['r']);let usage=100*1024*1024;
+  h.navigator.storage={estimate:async()=>({quota:100*1024*1024,usage})};
+  await assert.rejects(h.enqueue('r',chunk()),/缓存空间不足/);
+  usage=0;await h.enqueue('r',chunk());assert.equal(await h.pendingCount('r'),1);
+  assert.equal((await h.localManifests('r'))[0].sampleEnd,1600);
+});
+
+test('old v2 manifests recover local PCM end from their last pending packet without a new capture',async()=>{
+ const idb=new IDBFactory(),h=harness(idb);h.setQueueRecords(['old']);
+ await h.enqueue('old',chunk('display',279,{sampleOffset:70*60*16000-1600}));
+ await new Promise((resolve,reject)=>{const open=idb.open('meeting-studio-audio',2);open.onsuccess=()=>{
+   const db=open.result,tx=db.transaction('manifests','readwrite'),store=tx.objectStore('manifests'),get=store.get('old:display');
+   get.onsuccess=()=>{const old=get.result;delete old.sampleEnd;store.put(old);};tx.oncomplete=()=>{db.close();resolve();};tx.onerror=()=>reject(tx.error);
+ };open.onerror=()=>reject(open.error);});
+ assert.equal((await h.localManifests('old'))[0].sampleEnd,70*60*16000);
+ assert.equal(await h.pendingCount('old'),1);
+});
+
+
+test('pending audio backup reads one payload at a time and preserves the recovery format',async()=>{
+ const h=harness();h.setQueueRecords(['backup']);await h.enqueue('backup',chunk('mic'));await h.enqueue('backup',chunk('mic',1));
+ const getAll=IDBObjectStore.prototype.getAll;
+ IDBObjectStore.prototype.getAll=function(...args){if(this.name==='chunks')assert.fail('backup must not materialize the entire PCM store');return getAll.apply(this,args);};
+ try{await h.downloadPendingAudio('backup');}finally{IDBObjectStore.prototype.getAll=getAll;}
+ const backup=JSON.parse(await h.downloads[0].text());assert.equal(backup.format,'meeting-audio-backup/v1');assert.equal(backup.recordId,'backup');assert.deepEqual(backup.chunks.map(c=>c.sequence),[0,1]);assert.equal(backup.manifests[0].lastSequence,1);
+ assert.equal(await h.pendingCount('backup'),2,'a backup never deletes durable audio');
+});
+
+
+test('old 48 MiB backlog permits a new meeting and a genuinely full queue recovers without deleting data',async()=>{
+ const h=harness();h.setQueueRecords(['old','new']);h.navigator.onLine=false;
+ await h.enqueue('old',chunk('display',0,{sampleCount:48*1024*1024/2}));
+ await h.ensureAudioCapacity();await h.enqueue('new',chunk());
+ assert.equal(await h.pendingCount('old'),1);assert.equal(await h.pendingCount('new'),1);
+ await h.enqueue('old',chunk('display',1,{sampleCount:(512*1024*1024-48*1024*1024-3200)/2}));
+ await assert.rejects(h.ensureAudioCapacity(),/尚未开始录音/);
+ assert.equal(await h.pendingCount('new'),1);
+ h.navigator.onLine=true;await h.drainQueue();await h.ensureAudioCapacity();
+ await h.enqueue('new',chunk('mic',1));assert.equal(await h.pendingCount('new'),1);
+});
+
+test('queue wakeups cannot starve an already selected audio packet',async()=>{
+ const original=IDBIndex.prototype.openCursor,joined=[];let queries=0,selectedAtUpload=0;
+ const h=harness(new IDBFactory(),async()=>{selectedAtUpload=queries;});
+ await h.enqueue('r',chunk());h.setQueueRecords(['r']);
+ IDBIndex.prototype.openCursor=function(...args){
+  const request=original.apply(this,args);
+  if(this.name==='lane'&&++queries<=6)joined.push(h.drainQueue());
+  return request;
+ };
+ try{await h.drainQueue();await Promise.all(joined);assert.equal(selectedAtUpload,1,'safety polls must not discard a ready upload and starve persistence');}
+ finally{IDBIndex.prototype.openCursor=original;}
+});
+
+test('an empty background queue scan does not report saving audio',async()=>{
+ const original=IDBIndex.prototype.openCursor,h=harness();h.setQueueRecords(['r']);
+ let releaseHead;const ready=new Promise(resolve=>{
+  IDBIndex.prototype.openCursor=function(...args){
+   const request=original.apply(this,args);
+   if(this.name!=='lane')return request;
+   return new Proxy(request,{get:(target,key)=>Reflect.get(target,key,target),set(target,key,value){
+    if(key==='onsuccess'){target.onsuccess=event=>{releaseHead=()=>value.call(target,event);resolve();};return true;}
+    return Reflect.set(target,key,value,target);
+   }});
+  };
+ });
+ let draining;
+ try{draining=h.drainQueue();await ready;const state=await h.updateQueueState();assert.equal(state.pendingCount,0);assert.equal(state.pendingBytes,0);assert.equal(state.queueBusy,false);}
+ finally{releaseHead?.();IDBIndex.prototype.openCursor=original;await draining;}
+});
+
+test('finished meeting drains durable tail and unlocks original audio before ASR completes',async()=>{
+ const {mkdtemp,rm}=await import('node:fs/promises'),{tmpdir}=await import('node:os'),{join}=await import('node:path');
+ const {createHash}=await import('node:crypto'),{createRecordServer}=await import('../services/records/src/server.mjs');
+ const root=await mkdtemp(join(tmpdir(),'finished-audio-')),app=await createRecordServer({root,databaseUrl:'',port:0,seedDevelopment:false});
+ try{
+  const address=await app.start(),base=`http://127.0.0.1:${address.port}/api`;
+  const login=await fetch(base+'/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'finish-audio@example.test',password:'fixture-password'})});
+  const session=await login.json(),headers={'Content-Type':'application/json',Cookie:login.headers.get('set-cookie').split(';')[0],'X-CSRF-Token':session.csrf};
+  const post=async(path,body)=>{const response=await fetch(base+path,{method:'POST',headers,body:JSON.stringify(body)});assert.ok(response.ok,await response.clone().text());return response.json();};
+  const record=await post('/records',{retainAudio:true}),source=await post(`/records/${record.id}/sources`,{kind:'microphone'});
+  const h=harness(new IDBFactory(),(path,_method,body)=>post(path,body)),pcm=Buffer.alloc(3200,12);
+  for(let sequence=0;sequence<6;sequence++)await h.enqueue(record.id,chunk(source.id,sequence,{sessionId:source.sessionId,epoch:source.epoch,digest:createHash('sha256').update(pcm).digest('hex'),pcm:pcm.toString('base64')}));
+  h.setQueueRecords([record.id]);
+  await post(`/records/${record.id}/seal`,{sources:[{sourceId:source.id,epoch:source.epoch,lastSequence:5}]});
+  await h.drainQueue();
+  const saved=await (await fetch(base+`/records/${record.id}`,{headers})).json();
+  assert.equal(saved.sources[0].watermark,5);assert.equal(saved.sources[0].lastSequence,5);assert.equal(saved.sources[0].stopped,true);assert.equal(saved.pendingChunks,6,'ASR is separate from persisted audio');
+  const playbackCode=stripTypeScriptTypes(await readFile(new URL('../apps/web/src/audio/recording-playback.ts',import.meta.url),'utf8'));
+  const {recordingPlaybackState}=await import(`data:text/javascript;base64,${Buffer.from(playbackCode).toString('base64')}`);
+  assert.equal(recordingPlaybackState(saved).available,true,'save indicator clears when every tail packet is durable');
+  const audio=await fetch(base+`/records/${record.id}/audio/${source.id}`,{headers});assert.equal(audio.status,200);assert.equal((await audio.arrayBuffer()).byteLength,44+6*pcm.length);
+  const queue=await h.updateQueueState();assert.equal(queue.pendingCount,0);assert.equal(queue.pendingBytes,0);assert.equal(queue.queueBusy,false);
+ }finally{await app.stop();await rm(root,{recursive:true,force:true});}
+});
+
+
+test('empty pending backup returns an explicit no-op without a bogus download',async()=>{
+ const h=harness();h.setQueueRecords(['empty-backup']);
+ assert.equal(await h.downloadPendingAudio('empty-backup'),false);assert.equal(h.downloads.length,0);
+ await h.enqueue('empty-backup',chunk());assert.equal(await h.downloadPendingAudio('empty-backup'),true);
+ assert.equal(await h.pendingCount('empty-backup'),1,'backup must leave real queued data untouched');
 });

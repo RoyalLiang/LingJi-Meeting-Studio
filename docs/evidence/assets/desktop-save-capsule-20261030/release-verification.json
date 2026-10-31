@@ -1,0 +1,86 @@
+{
+  "tag": "v0.2.2",
+  "source": "aa78dcffbfec62e972c93a8cc1c8da3b28444cbb",
+  "runId": "41059428166",
+  "metadataSource": "public Release asset list and pinned preview-update.json; REST API rate-limited",
+  "verifiedAt": "2026-10-30T13:46:12.120569+00:00",
+  "assets": [
+    {
+      "name": "Lingji-0.2.2-macos-arm64.dmg",
+      "bytes": 218591776,
+      "sha256": "49a67787b0eb41a67670b58cc1bb237bf01148f369eeb656aae4d49a01df36c2",
+      "verified": true
+    },
+    {
+      "name": "Lingji-0.2.2-windows-x64-setup.exe",
+      "bytes": 407348817,
+      "sha256": "dcefc859ca293f77bebd18f2c5d4a692466bdabfef1ba4883ea8908a6e271557",
+      "verified": true
+    },
+    {
+      "name": "Lingji-0.2.2-linux-amd64.deb",
+      "bytes": 221824294,
+      "sha256": "2500018c9d82157daf0640640b4fb70b630ee917dc704d2be8cdc14dc9bcee71",
+      "verified": true
+    },
+    {
+      "name": "preview-update.json",
+      "bytes": 4782,
+      "sha256": "6f548d0e9bfd3bf95b09c4e382ead15518de798a6c29e28ca27e766ed4efc341",
+      "verified": true
+    }
+  ],
+  "errors": [],
+  "actions": {
+    "source": "aa78dcffbfec62e972c93a8cc1c8da3b28444cbb",
+    "tag": "v0.2.2",
+    "run": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/41059428166",
+    "status": "success",
+    "jobs": [
+      {
+        "name": "verify",
+        "duration": "12s",
+        "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/41059428166/job/124075136605",
+        "conclusion": "success"
+      },
+      {
+        "name": "build",
+        "duration": "12m 30s",
+        "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/41059428166/job/124075234625",
+        "conclusion": "success"
+      },
+      {
+        "name": "build_windows",
+        "duration": "39m 58s",
+        "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/41059428166/job/124075234267",
+        "conclusion": "success"
+      },
+      {
+        "name": "build_linux",
+        "duration": "10m 18s",
+        "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/41059428166/job/124075234330",
+        "conclusion": "success"
+      },
+      {
+        "name": "publish",
+        "duration": "1m 4s",
+        "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/41059428166/job/124093793312",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "releaseAssetList": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/expanded_assets/v0.2.2",
+  "pages": {
+    "run": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/41059427939",
+    "source": "aa78dcffbfec62e972c93a8cc1c8da3b28444cbb",
+    "conclusion": "success",
+    "health": {
+      "/": 200,
+      "/example": 200,
+      "/api/site-status": {
+        "status": 200,
+        "publishing": true
+      }
+    }
+  }
+}

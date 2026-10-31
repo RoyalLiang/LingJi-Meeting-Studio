@@ -68,3 +68,23 @@ test('HTTP authentication, CSRF, owner isolation, text import and deletion', asy
     await runCycle(app.repo); assert.equal((await app.repo.get(id)).cleanup, 'completed');
   } finally { await app.stop(); await rm(root, { recursive: true }); }
 });
+
+test('manual restart fences an interrupted minutes job without weakening finalization', () => {
+  const record = createRecord('restart-owner');
+  record.capture = 'completed';
+  record.transcriptRevision = 1;
+  record.segments = [{id:'restart-segment',revision:1,text:'先完成评审，再安排上线。',startMs:0,endMs:2000,sourceId:'mic'}];
+  const old = requestMinutes(record);
+  old.status = 'running'; old.fence = 'old-worker'; old.lease = Date.now() + 60000;
+  const next = requestMinutes(record, {retry:true});
+  assert.notEqual(next.id, old.id);
+  assert.equal(old.status, 'cancelled');
+  assert.equal(old.fence, null);
+  assert.throws(() => commitMinutes(record, old.id, {}, 'old-worker'), /stale_job/);
+  assert.equal(next.status, 'queued');
+  record.capture = 'paused';
+  assert.throws(() => requestMinutes(record, {retry:true}), /record_not_finalized/);
+  const live = requestMinutes(record, {scope:'live',retry:true});
+  assert.equal(live.scope, 'live');
+  assert.equal(next.status, 'cancelled');
+});

@@ -67,5 +67,5 @@ export function MicrophoneTest({ disabled, refresh }: { disabled: boolean; refre
       resources.current.timer = window.setTimeout(() => { setMessage(heard ? '测试完成：麦克风有声音。' : '未收到声音。请切换输入设备，并检查系统隐私设置中的麦克风权限。'); stop(); }, 8000);
     } catch (error) { if (token === resources.current.token) { setMessage(messageOf(error)); stop(); } }
   }
-  return <div className="microphone-test"><Button disabled={disabled} onClick={() => testing ? stop() : void start()}>{testing ? <Square size={16}/> : <Microphone size={16}/>} {testing ? '停止测试' : '测试麦克风 · 不上传音频'}</Button>{message && <p role="status">{message}</p>}{testing && <div className="source-signal-meter"><i style={{ transform: `scaleX(${level})` }}/></div>}</div>;
+  return <div className="microphone-test"><Button disabled={disabled} onClick={() => testing ? stop() : void start()}>{testing ? <Square size={16}/> : <Microphone size={16}/>} {testing ? '停止测试' : '测试麦克风'}</Button>{message && <p role="status">{message}</p>}{testing && <div className="source-signal-meter"><i style={{ transform: `scaleX(${level})` }}/></div>}</div>;
 }

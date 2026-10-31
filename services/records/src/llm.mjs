@@ -1,4 +1,4 @@
-import { normalizeConfig, configured } from './config.mjs';
+import { normalizeConfig, configured, reasoningEfforts } from './config.mjs';
 import { DomainError, requireThat } from '../../../packages/records/src/record.mjs';
 import { tokenUsage as readTokenUsage } from '../../../packages/records/src/usage.mjs';
 
@@ -6,7 +6,16 @@ const outputText = response => response.output_text || (response.output || []).f
 
 // One interface hides Chat Completions / Responses and buffered / SSE transports.
 // Deltas are provisional; only the returned JSON may enter domain validation.
-export async function completeModelJson(messages, input = process.env, { onDelta, onUsage, onRequest, signal, timeoutMs = 120000 } = {}) {
+export function modelEndpoint(address, protocol) {
+ try {
+  const url=new URL(address);
+  if(url.search||!/^\/v\d+\/?$/.test(url.pathname))return address;
+  url.pathname=url.pathname.replace(/\/$/,'')+(protocol==='responses'?'/responses':'/chat/completions');
+  return url.href;
+ } catch { return address; }
+}
+
+export async function completeModelJson(messages, input = process.env, { onDelta, onUsage, onRequest, signal, jsonSchema, reasoningEffort, maxOutputTokens, timeoutMs = 120000 } = {}) {
   const env = normalizeConfig(input), responses = env.LLM_PROTOCOL === 'responses';
   requireThat(configured(env.LLM_API_KEY) && env.LLM_MODEL, 'minutes_not_configured', 503);
   const streaming = typeof onDelta === 'function', started = Date.now();
@@ -14,6 +23,14 @@ export async function completeModelJson(messages, input = process.env, { onDelta
   const body = responses
     ? { model: env.LLM_MODEL, input: messages, store: false, text: { format: { type: 'json_object' } }, stream: streaming }
     : { model: env.LLM_MODEL, messages, response_format: { type: 'json_object' }, stream: streaming, ...(streaming ? { stream_options: { include_usage: true } } : {}) };
+  const effort=reasoningEffort ?? env.LLM_REASONING_EFFORT;
+  requireThat(reasoningEfforts.includes(effort),'invalid_llm_reasoning_effort',400);
+  if(!['auto','default'].includes(effort)){if(responses)body.reasoning={effort};else body.reasoning_effort=effort;}
+  if(maxOutputTokens!==undefined){requireThat(Number.isSafeInteger(maxOutputTokens)&&maxOutputTokens>0&&maxOutputTokens<=131072,'invalid_llm_token_budget',500);body[responses?'max_output_tokens':'max_completion_tokens']=maxOutputTokens;}
+  if(jsonSchema && env.LLM_STRUCTURED_OUTPUTS === 'true'){
+    const format={type:'json_schema',name:'meeting_minutes',schema:jsonSchema,strict:true};
+    if(responses)body.text.format=format;else body.response_format={type:'json_schema',json_schema:{name:format.name,schema:jsonSchema,strict:true}};
+  }
   let usage = {};
   const reportUsage=async input=>{
     const incoming=readTokenUsage(input);let changed=false;
@@ -22,7 +39,7 @@ export async function completeModelJson(messages, input = process.env, { onDelta
   };
   let response;
   if(onRequest)await onRequest();
-  try { response = await fetch(env.LLM_API_URL, { method: 'POST', signal: requestSignal, headers: { Authorization: `Bearer ${env.LLM_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); }
+  try { response = await fetch(modelEndpoint(env.LLM_API_URL,env.LLM_PROTOCOL), { method: 'POST', signal: requestSignal, headers: { Authorization: `Bearer ${env.LLM_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); }
   catch { throw new DomainError(requestSignal.reason?.name === 'TimeoutError' ? 'llm_timeout' : 'llm_connection_failed', 502); }
   if (!response.ok) {
     let result; try { result=await response.json(); } catch { /* Upstream bodies may contain sensitive details. */ }
@@ -45,6 +62,7 @@ export async function completeModelJson(messages, input = process.env, { onDelta
       const result = JSON.parse(source);
       await reportUsage(result.usage);
       requireThat(!responses || !result.status || result.status === 'completed', 'llm_stream_incomplete', 502);
+      requireThat(responses || !['length','content_filter'].includes(result.choices?.[0]?.finish_reason), 'llm_stream_incomplete', 502);
       await append(responses ? outputText(result) : result.choices?.[0]?.message?.content);
       completed = true;
     } else {
@@ -71,13 +89,13 @@ export async function completeModelJson(messages, input = process.env, { onDelta
         }
       }
       try {
-        while (true) {
+        while (!completed) {
           const next = await reader.read(); if (next.done) break;
           bytesRead += next.value.length; requireThat(bytesRead <= 4000000, 'llm_response_too_large', 502);
           buffer = (buffer + decoder.decode(next.value, { stream: true })).replace(/\r\n/g, '\n');
-          let boundary; while ((boundary = buffer.indexOf('\n\n')) >= 0) { const value = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 2); await frame(value); }
+          let boundary; while ((boundary = buffer.indexOf('\n\n')) >= 0) { const value = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 2); await frame(value); if(completed)break; }
         }
-        buffer += decoder.decode(); if (buffer.trim()) await frame(buffer);
+        if(!completed){buffer += decoder.decode(); if (buffer.trim()) await frame(buffer);}
       } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
       requireThat(completed && finishReason !== 'length' && finishReason !== 'content_filter', 'llm_stream_incomplete', 502);
     }

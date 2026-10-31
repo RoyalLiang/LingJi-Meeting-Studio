@@ -1,0 +1,79 @@
+{
+  "observedAt": "2026-10-30T09:44:58.899034+00:00",
+  "origin": "https://rookiecode.com",
+  "customDomainStatus": "active",
+  "ssl": "enabled",
+  "dns": {
+    "beforeRecords": 10,
+    "afterRecords": 10,
+    "otherNineUnchanged": true,
+    "rootCname": "lingji-meeting-studio-beta.pages.dev"
+  },
+  "anonymousRequestsWithForgedAccessHeader": [
+    {
+      "check": "root",
+      "http": "200",
+      "exit": 0
+    },
+    {
+      "check": "status",
+      "http": "200",
+      "exit": 0
+    },
+    {
+      "check": "publisher",
+      "http": "401",
+      "exit": 0
+    },
+    {
+      "check": "publish",
+      "http": "401",
+      "exit": 0
+    },
+    {
+      "check": "invalid-share",
+      "http": "404",
+      "exit": 0
+    }
+  ],
+  "publishingConfigured": true,
+  "headers": {
+    "root": {
+      "csp": true,
+      "noReferrer": true,
+      "noStore": false
+    },
+    "publisher": {
+      "csp": false,
+      "noReferrer": true,
+      "noStore": true
+    },
+    "publish": {
+      "csp": false,
+      "noReferrer": true,
+      "noStore": true
+    },
+    "invalid-share": {
+      "csp": true,
+      "noReferrer": true,
+      "noStore": true
+    }
+  },
+  "githubOAuth": {
+    "realBrowserLogin": true,
+    "allowedLogin": "RoyalLiang",
+    "allowedUserId": "26199801",
+    "requestedScopes": []
+  },
+  "browserUploadRoundTrip": {
+    "verifiedAt": "2026-10-30T11:11:52.165920+00:00",
+    "fixtureOnly": true,
+    "fileSelection": true,
+    "fullPreview": true,
+    "confirmedPublish": true,
+    "browserRead": true,
+    "anonymousReadHttp": 200,
+    "portalRevocation": true,
+    "anonymousAfterRevocationHttp": 404
+  }
+}

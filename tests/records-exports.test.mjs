@@ -1,10 +1,11 @@
+import { sharedMinutes } from '../packages/records/src/shared-content.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { exportMinutesMarkdown, attachmentHeader } from '../services/records/src/markdown-export.mjs';
-import { createRecordServer } from '../services/records/src/server.mjs';
+import { createRecordServer, exportRecord } from '../services/records/src/server.mjs';
 import { createRecord, digest } from '../packages/records/src/record.mjs';
 const ref={segmentId:'saved',revision:1};
 function fixture() {
@@ -21,7 +22,7 @@ function fixture() {
 }
 test('Markdown exports complete saved minutes with frozen evidence, Unicode and proper tables',()=>{
   const text=exportMinutesMarkdown(fixture());
-  for(const section of ['# 发布与验收计划','转录版本 3 · 纪要版本 2 · 人工修订','讨论主题','关键决策','验收表','发言人总结','行动候选','负责人：待确认','人工核对','[^1]: saved@1 01:01 发言人1 — 周五完成验收'])assert.ok(text.includes(section),section);
+  for(const section of ['# 发布与验收计划','转录版本 3 · 纪要版本 2 · 人工修订','讨论主题','关键决策','验收表','发言人总结','行动候选','负责人：待确认','人工核对','[^1]: saved@1 01:01 说话人1 — 周五完成验收'])assert.ok(text.includes(section),section);
   assert.ok(text.includes('A\\|B 测试'));
   assert.doesNotMatch(text,/后来修改后的文本|无关的私密原文/);
   assert.equal((text.match(/\[\^1\]:/g)||[]).length,1);
@@ -49,4 +50,14 @@ test('HTTP minutes export keeps access checks and rejects absent minutes before 
     assert.equal((await fetch(url)).status,401);
     const ownerId=`user:${digest('exports@example.test')}`;assert.equal((await app.repo.get(created.id)).owner,ownerId);
   } finally {await app.stop();await rm(root,{recursive:true,force:true});}
+});
+
+test('action exports retain project and uncertainty context',()=>{
+ const record=createRecord('owner');record.capture='completed';record.minutesRevision=1;
+ const evidence=[{segmentId:'s1',revision:1}];
+ record.minutes={title:'项目',sections:[],topics:[{id:'a',title:'项目A'}],actions:[{text:'提交报告',topicId:'a',label:'范围',kind:'question',status:'pending',owner:null,due:null,evidence}]};
+ assert.equal(sharedMinutes(record.minutes).actions[0].status,'pending');
+ const candidate=JSON.parse(exportRecord(record,'issues')).candidates[0];
+ assert.match(candidate.title,/待确认.*项目A.*范围.*提交报告/);
+ assert.match(exportRecord(record,'ics'),/SUMMARY:.*待确认.*项目A.*范围.*提交报告/);
 });

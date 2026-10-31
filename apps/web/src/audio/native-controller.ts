@@ -2,7 +2,7 @@ import type { Source } from '../model';
 import type { CaptureKind, CaptureIssue, CaptureController as BrowserController } from './capture';
 import { preferredDevice } from './devices';
 import { api } from '../api';
-import { enqueue, makeChunk } from './queue';
+import { enqueue, makeChunk, ensureAudioCapacity } from './queue';
 import { pcmSignal, signalMessage, type CaptureSignal } from './signal';
 import { startNativeStream } from './native-runtime';
 import type { NativeStream } from './native-stream';
@@ -30,6 +30,7 @@ export class NativeCaptureController {
     this.connecting.set(kind, promise); return promise;
   }
   private async connect(kind: CaptureKind, deviceId: string) {
+    await ensureAudioCapacity();
     const recordId = await this.args[0];
     let resolveSource!: (source: Source) => void, rejectSource!: (error: unknown) => void;
     const ready = new Promise<Source>((resolve, reject) => { resolveSource = resolve; rejectSource = reject; });
@@ -41,7 +42,7 @@ export class NativeCaptureController {
       const signal = this.streams.get(kind)?.signal;
       const { rms } = pcmSignal(packet.buffer), seconds = packet.buffer.byteLength / 32000;
       if (signal) {
-        signal.rms = rms; signal.seconds += seconds; quiet = rms >= 0.0005 ? 0 : quiet + seconds;
+        signal.rms = rms; signal.seconds = Math.max(signal.seconds, (packet.sampleOffset + packet.buffer.byteLength / 2) / 16000); quiet = rms >= 0.0005 ? 0 : quiet + seconds;
         Object.assign(signal, signalMessage(signal, quiet, false, 'running'));
         if (kind === 'display' && quiet >= 5) signal.message = '连续 5 秒没有收到系统播放声音，请播放会议声音并检查系统音频权限。';
         this.args[1](rms); this.report();
@@ -50,9 +51,9 @@ export class NativeCaptureController {
         const chunk = await makeChunk(source.id, source.epoch, packet.sequence, packet.sampleOffset, packet.buffer, source.sessionId);
         if (!dropped) { await enqueue(recordId, chunk); this.args[3](); }
       } catch (error) { persistenceFailed = true; throw error; }
-    }, error => {
+    }, (error, retaining) => {
       failure = error;
-      if (persistenceFailed) { this.args[2](error); void this.stop().catch(() => {}); return; }
+      if (persistenceFailed || retaining) { this.args[2](error); void this.stop().catch(() => {}); return; }
       const entry = this.streams.get(kind);
       if (!entry) return; // Connection failures are reported by start/startMeeting.
       entry.dropped = true; this.streams.delete(kind);

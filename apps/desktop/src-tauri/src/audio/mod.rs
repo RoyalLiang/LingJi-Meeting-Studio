@@ -1,3 +1,5 @@
+mod packet_queue;
+use packet_queue::PacketQueue;
 pub mod pipeline;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, Sample};
@@ -27,7 +29,7 @@ struct Capture {
     kind: String,
     stop: Arc<AtomicBool>,
     discard: Arc<AtomicBool>,
-    receiver: Mutex<Receiver<Vec<u8>>>,
+    receiver: Arc<PacketQueue>,
     error: Arc<Mutex<Option<String>>>,
 }
 #[derive(Default)]
@@ -148,6 +150,18 @@ where T: cpal::SizedSample, f32: FromSample<T> {
     }
 }
 
+fn handle_stream_error(event: cpal::Error, error: &Mutex<Option<String>>, stop: &AtomicBool, warned: &AtomicBool) {
+    // CPAL keeps the stream running for these notifications and still delivers audio.
+    if matches!(event.kind(), cpal::ErrorKind::Xrun | cpal::ErrorKind::DeviceChanged | cpal::ErrorKind::RealtimeDenied) {
+        if !warned.swap(true, Ordering::Relaxed) {
+            eprintln!("[lingji-audio-warning] {event}；采集继续，缓冲波动可能造成短暂音频缺口。");
+        }
+        return;
+    }
+    *error.lock().unwrap() = Some(format!("音频设备停止：{event}"));
+    stop.store(true, Ordering::Release);
+}
+
 fn input_stream<T>(
     device: &cpal::Device,
     config: &cpal::StreamConfig,
@@ -161,15 +175,20 @@ where
 {
     let failure = error.clone();
     let failed = stop.clone();
-    device.build_input_stream(*config, move |data: &[T], _| { queue_input(&sender, data, &error, &stop); }, move |e| { *failure.lock().unwrap() = Some(format!("音频设备停止：{e}")); failed.store(true, Ordering::Release); }, None)
+    let warned = AtomicBool::new(false);
+    device.build_input_stream(*config, move |data: &[T], _| { queue_input(&sender, data, &error, &stop); }, move |e| { handle_stream_error(e, &failure, &failed, &warned); }, None)
         .map_err(|e| e.to_string())
 }
 
-fn send_packets(sender: &SyncSender<Vec<u8>>, packets: Vec<Vec<u8>>) -> Result<(), String> {
-    for packet in packets {
-        sender
-            .try_send(packet)
-            .map_err(|_| "本地持久化积压，原生采集已停止。已保存的音频仍可补传。".to_string())?;
+fn send_packets(sender: &PacketQueue, packets: Vec<Vec<u8>>) -> Result<(), String> {
+    for packet in packets { sender.push(&packet)?; }
+    Ok(())
+}
+
+fn finish_capture(packets: &PacketQueue, mut pipeline: Pipeline, frames: Receiver<Vec<f32>>, discard: bool) -> Result<(), String> {
+    if !discard {
+        for data in frames.try_iter() { send_packets(packets, pipeline.push(&data)?)?; }
+        send_packets(packets, pipeline.finish()?)?;
     }
     Ok(())
 }
@@ -180,11 +199,17 @@ impl Captures {
     }
     #[cfg(feature = "smoke-test")]
     pub fn synthetic(&self, kind: &str) -> Result<Started, String> {
+        self.synthetic_source(kind, None)
+    }
+
+    #[cfg(feature = "smoke-test")]
+    fn synthetic_source(&self, kind: &str, frame_limit: Option<(usize, mpsc::SyncSender<()>)>) -> Result<Started, String> {
         let id = format!("fixture-{}", self.next.fetch_add(1, Ordering::Relaxed));
         let stop = Arc::new(AtomicBool::new(false));
         let discard = Arc::new(AtomicBool::new(false));
         let error = Arc::new(Mutex::new(None));
-        let (packets, receiver) = mpsc::sync_channel(8);
+        let packets = Arc::new(PacketQueue::new()?);
+        let receiver = packets.clone();
         let mut sessions = self.sessions.lock().unwrap();
         if sessions.values().any(|s| s.kind == kind) {
             return Err("此合成音源已接入".into());
@@ -195,15 +220,17 @@ impl Captures {
                 kind: kind.into(),
                 stop: stop.clone(),
                 discard: discard.clone(),
-                receiver: Mutex::new(receiver),
+                receiver,
                 error: error.clone(),
             }),
         );
         std::thread::spawn(move || {
+            let _writer = packets.writer();
             let result = (|| {
                 let mut pipe = Pipeline::new(48_000, 2)?;
                 let mut offset = 0;
-                while !stop.load(Ordering::Acquire) {
+                let mut frames = 0;
+                while !stop.load(Ordering::Acquire) && frame_limit.as_ref().is_none_or(|(limit, _)| frames < *limit) {
                     let data: Vec<f32> = (0..960)
                         .flat_map(|n| {
                             let v = ((offset + n) as f32 * 440.0 * std::f32::consts::TAU
@@ -215,7 +242,13 @@ impl Captures {
                         .collect();
                     send_packets(&packets, pipe.push(&data)?)?;
                     offset += 960;
-                    std::thread::sleep(Duration::from_millis(20));
+                    frames += 1;
+                    if frame_limit.is_none() { std::thread::sleep(Duration::from_millis(20)); }
+                }
+                if let Some((_, ready)) = frame_limit {
+                    ready.send(()).map_err(|_| "合成测试调用已结束")?;
+                    // The test controls stop explicitly so the real stop path must flush the tail.
+                    while !stop.load(Ordering::Acquire) { std::thread::sleep(Duration::from_millis(1)); }
                 }
                 if !discard.load(Ordering::Acquire) {
                     send_packets(&packets, pipe.finish()?)?;
@@ -243,7 +276,8 @@ impl Captures {
         let stop = Arc::new(AtomicBool::new(false));
         let discard = Arc::new(AtomicBool::new(false));
         let error = Arc::new(Mutex::new(None));
-        let (packets, receiver) = mpsc::sync_channel(8);
+        let packets = Arc::new(PacketQueue::new()?);
+        let receiver = packets.clone();
         let (ready, started) = mpsc::sync_channel(1);
         sessions.insert(
             id.clone(),
@@ -251,7 +285,7 @@ impl Captures {
                 kind: kind.into(),
                 stop: stop.clone(),
                 discard: discard.clone(),
-                receiver: Mutex::new(receiver),
+                receiver,
                 error: error.clone(),
             }),
         );
@@ -261,6 +295,7 @@ impl Captures {
         let worker_kind = kind.to_string();
         let selected = selected.map(str::to_string);
         std::thread::spawn(move || {
+            let _writer = packets.writer();
             let result = (|| {
                 let host = audio_host(worker_kind == "display")?;
                 let devices = if worker_kind == "microphone" {
@@ -329,13 +364,7 @@ impl Captures {
                     }
                 }
                 drop(stream);
-                if !worker_discard.load(Ordering::Acquire) && worker_error.lock().unwrap().is_none()
-                {
-                    for data in frames.try_iter() {
-                        send_packets(&packets, pipeline.push(&data)?)?;
-                    }
-                    send_packets(&packets, pipeline.finish()?)?;
-                }
+                finish_capture(&packets, pipeline, frames, worker_discard.load(Ordering::Acquire))?;
                 Ok::<(), String>(())
             })();
             if let Err(message) = result {
@@ -367,12 +396,14 @@ impl Captures {
             .cloned()
             .ok_or("采集已结束")?;
         // WASAPI/PipeWire may provide no packets while the output is idle. An idle output is not a failed device.
-        let result = session.receiver.lock().unwrap().recv();
+        let result = session.receiver.pending();
         match result {
-            Ok(bytes) => Ok(bytes),
-            Err(_) => {
+            Ok(Some(bytes)) => Ok(bytes),
+            result => {
                 session.stop.store(true, Ordering::Release);
+                session.receiver.cancel();
                 self.sessions.lock().unwrap().remove(id);
+                if let Err(error) = result { return Err(error); }
                 if let Some(error) = session.error.lock().unwrap().take() {
                     Err(error)
                 } else {
@@ -382,11 +413,17 @@ impl Captures {
         }
     }
 
+    pub fn acknowledge(&self, id: &str, sequence: u32, sample_offset: u32, sample_count: u32) -> Result<(), String> {
+        let session = self.sessions.lock().unwrap().get(id).cloned().ok_or("采集已结束")?;
+        session.receiver.acknowledge(sequence, sample_offset, sample_count)
+    }
+
     pub fn stop(&self, id: &str, discard: bool) -> Result<(), String> {
         let mut sessions = self.sessions.lock().unwrap();
         if let Some(session) = sessions.get(id) {
             session.discard.store(discard, Ordering::Release);
             session.stop.store(true, Ordering::Release);
+            if discard { session.receiver.cancel(); }
         }
         if discard {
             sessions.remove(id);
@@ -398,6 +435,7 @@ impl Captures {
         for session in self.sessions.lock().unwrap().values() {
             session.discard.store(true, Ordering::Release);
             session.stop.store(true, Ordering::Release);
+            session.receiver.cancel();
         }
     }
 }
@@ -411,6 +449,41 @@ impl Drop for Captures {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn recoverable_stream_warning_keeps_the_same_available_audio() {
+        for kind in [cpal::ErrorKind::Xrun, cpal::ErrorKind::DeviceChanged, cpal::ErrorKind::RealtimeDenied] {
+            let (sender, receiver) = raw_input_channel();
+            let stop = AtomicBool::new(false);
+            let warned = AtomicBool::new(false);
+            let error = Mutex::new(None);
+            // WASAPI reports a discontinuity before delivering the available buffer.
+            handle_stream_error(kind.into(), &error, &stop, &warned);
+            queue_input(&sender, &[0.25f32, -0.25], &error, &stop);
+            assert!(!stop.load(Ordering::Acquire), "recoverable {kind:?} must not disconnect system audio");
+            assert!(error.lock().unwrap().is_none());
+            assert_eq!(receiver.try_recv().unwrap(), vec![0.25, -0.25]);
+            assert!(warned.load(Ordering::Relaxed));
+        }
+    }
+
+    #[test]
+    fn fatal_stream_errors_still_stop_and_do_not_accept_more_audio() {
+        for kind in [cpal::ErrorKind::DeviceNotAvailable, cpal::ErrorKind::PermissionDenied, cpal::ErrorKind::StreamInvalidated, cpal::ErrorKind::BackendError] {
+            let (sender, receiver) = raw_input_channel();
+            let stop = AtomicBool::new(false);
+            let warned = AtomicBool::new(false);
+            let error = Mutex::new(None);
+            handle_stream_error(kind.into(), &error, &stop, &warned);
+            queue_input(&sender, &[0.25f32], &error, &stop);
+            assert!(stop.load(Ordering::Acquire));
+            assert!(error.lock().unwrap().as_ref().unwrap().starts_with("音频设备停止："));
+            assert!(receiver.try_recv().is_err());
+            handle_stream_error(cpal::ErrorKind::Xrun.into(), &error, &stop, &warned);
+            assert!(stop.load(Ordering::Acquire), "a warning must not restart a failed device");
+            assert!(error.lock().unwrap().is_some());
+        }
+    }
+
     #[test]
     fn short_input_stall_retains_ordered_audio_without_stopping_capture() {
         let (sender, receiver) = raw_input_channel();
@@ -431,6 +504,41 @@ mod tests {
     }
 
     #[test]
+    fn capture_errors_preserve_preaccepted_raw_frames_and_resampler_tail() {
+        for overflow in [true, false] {
+            let packets = PacketQueue::new().unwrap();
+            let mut pipeline = Pipeline::new(48_000, 2).unwrap();
+            send_packets(&packets, pipeline.push(&vec![0.25; 4_800 * 2]).unwrap()).unwrap();
+            let (sender, frames) = raw_input_channel();
+            let stop = AtomicBool::new(false);
+            let error = Mutex::new(None);
+            for _ in 0..256 { queue_input(&sender, &[0.25f32; 960], &error, &stop); }
+            if overflow { queue_input(&sender, &[0.25f32; 960], &error, &stop); }
+            else { handle_stream_error(cpal::ErrorKind::DeviceNotAvailable.into(), &error, &stop, &AtomicBool::new(false)); }
+            assert!(stop.load(Ordering::Acquire));
+            finish_capture(&packets, pipeline, frames, false).unwrap();
+            packets.close();
+            let mut samples = 0;
+            while let Some(packet) = packets.pending().unwrap() {
+                let read = |at| u32::from_le_bytes(packet[at..at + 4].try_into().unwrap());
+                samples += read(8); packets.acknowledge(read(0), read(4), read(8)).unwrap();
+            }
+            assert_eq!(samples, 42_560);
+            assert!(error.lock().unwrap().is_some(), "the capture failure must still be reported");
+        }
+    }
+
+    #[test]
+    fn explicit_discard_skips_tail_and_encoding_failures_still_fail() {
+        let packets = PacketQueue::new().unwrap();
+        let (sender, frames) = raw_input_channel(); sender.send(vec![0.25; 960]).unwrap();
+        finish_capture(&packets, Pipeline::new(48_000, 2).unwrap(), frames, true).unwrap();
+        packets.close(); assert!(packets.pending().unwrap().is_none());
+        let (sender, frames) = raw_input_channel(); sender.send(vec![0.25]).unwrap();
+        assert!(finish_capture(&PacketQueue::new().unwrap(), Pipeline::new(48_000, 2).unwrap(), frames, false).is_err());
+    }
+
+    #[test]
     fn prolonged_input_stall_stops_explicitly_with_a_bounded_queue() {
         let (sender, receiver) = raw_input_channel();
         let stop = AtomicBool::new(false);
@@ -444,15 +552,47 @@ mod tests {
     }
 
     #[test]
-    fn bounded_queue_reports_overflow_without_reordering_saved_packets() {
-        let (sender, receiver) = mpsc::sync_channel(2);
-        let error = send_packets(&sender, vec![vec![1], vec![2], vec![3]]).unwrap_err();
-        assert!(error.contains("已停止"));
-        assert_eq!(
-            receiver.try_iter().collect::<Vec<_>>(),
-            vec![vec![1], vec![2]]
-        );
+    fn frontend_delay_preserves_all_audio_instead_of_stopping_at_ninth_packet() {
+        let packets = PacketQueue::new().unwrap();
+        let expected: Vec<Vec<u8>> = (0..180u32).map(|i| [i.to_le_bytes().as_slice(), (i*16000).to_le_bytes().as_slice(), 16000u32.to_le_bytes().as_slice(), &vec![42;32000]].concat()).collect();
+        send_packets(&packets, expected.clone()).unwrap();
+        packets.close();
+        for packet in expected {
+            assert_eq!(packets.pending().unwrap(), Some(packet.clone()));
+            packets.acknowledge(u32::from_le_bytes(packet[..4].try_into().unwrap()), u32::from_le_bytes(packet[4..8].try_into().unwrap()), 16000).unwrap();
+        }
+        assert!(packets.pending().unwrap().is_none());
     }
+    #[cfg(feature = "smoke-test")]
+    #[test]
+    fn native_capture_survives_delayed_frontend_reads_and_drains_on_stop() {
+        let captures = Captures::default();
+        let (ready, produced) = mpsc::sync_channel(0);
+        let started = captures.synthetic_source("display", Some((560, ready))).unwrap();
+        let session = captures.sessions.lock().unwrap()[&started.id].clone();
+        produced.recv_timeout(Duration::from_secs(120)).expect("finite source must reach its stop barrier");
+        assert!(captures.active());
+        assert!(session.error.lock().unwrap().is_none());
+        assert!(session.receiver.buffered_bytes() > 10 * (32_000 + 12), "finite producer must accumulate beyond the old queue before any read");
+        captures.stop(&started.id, false).unwrap();
+        assert!(captures.active(), "unacknowledged native audio must still block installation");
+        let (mut sequence, mut offset) = (0u32, 0u32);
+        loop {
+            let packet = captures.read(&started.id).unwrap();
+            if packet.is_empty() { break; }
+            let field = |at| u32::from_le_bytes(packet[at..at + 4].try_into().unwrap());
+            assert_eq!(field(0), sequence);
+            assert_eq!(field(4), offset);
+            assert_eq!(packet.len(), 12 + field(8) as usize * 2);
+            captures.acknowledge(&started.id, sequence, offset, field(8)).unwrap();
+            sequence += 1;
+            offset += field(8);
+        }
+        assert!(offset >= 9 * pipeline::RATE, "must preserve audio beyond the old eight-packet limit");
+        assert_eq!(offset, 560 * (960 * pipeline::RATE / 48_000), "every finite source sample and the final tail must drain");
+        assert!(!captures.active());
+    }
+
     #[test]
     fn automatic_microphone_avoids_virtual_defaults_and_requires_explicit_unknown_input() {
         let mut devices = vec![Input {

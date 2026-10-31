@@ -1,12 +1,13 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "聆记",
-  "version": "0.1.5",
+  "version": "0.2.6",
   "identifier": "com.tts.meeting",
   "build": {
     "frontendDist": "../../web/dist"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [],
     "security": {
       "capabilities": []
@@ -23,7 +24,8 @@
     "macOS": {
       "minimumSystemVersion": "14.6",
       "infoPlist": "Info.plist",
-      "entitlements": "Entitlements.plist"
+      "entitlements": "Entitlements.plist",
+      "bundleVersion": "0.2.6"
     },
     "resources": {
       "resources/client-backend/": "client-backend/",

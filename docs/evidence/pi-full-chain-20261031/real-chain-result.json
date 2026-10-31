@@ -1,0 +1,98 @@
+{
+  "status": "passed",
+  "asrProvider": "sensevoice-local",
+  "minutesMode": "asr-llm",
+  "data": "three OS synthesized utterances; no existing meetings",
+  "audioSeconds": 11.8144375,
+  "metrics": {
+    "uploadMs": [
+      17.636916999999812,
+      0.8835840000001554,
+      11.708292000000029,
+      11.148832999999968
+    ],
+    "asrMs": 1341.087125,
+    "minutesMs": 6224.5064999999995,
+    "piMs": 7048.070375000001
+  },
+  "recordId": "470a1d73-0572-4504-a714-be4ca60bdf29",
+  "taskId": "8",
+  "transcriptRevision": 3,
+  "transcript": "这是一次合成测试会议，我们决定周五下午3点进行设计评审。华静负责在周四下班前准备评审材料，录音结束前补充评审改到下周一下午3点。",
+  "highlights": [
+    {
+      "text": "设计评审由周五下午3点改到下周一下午3点。",
+      "evidence": [
+        {
+          "segmentId": "bc2e8d89-b1bb-4856-bfc0-4f60225a86db",
+          "revision": 1
+        }
+      ]
+    },
+    {
+      "text": "华静需在周四下班前准备评审材料。",
+      "evidence": [
+        {
+          "segmentId": "bc2e8d89-b1bb-4856-bfc0-4f60225a86db",
+          "revision": 1
+        }
+      ]
+    }
+  ],
+  "decisions": [
+    {
+      "text": "设计评审安排在下周一下午3点进行。",
+      "evidence": [
+        {
+          "segmentId": "bc2e8d89-b1bb-4856-bfc0-4f60225a86db",
+          "revision": 1
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "text": "准备设计评审材料。",
+      "owner": "华静",
+      "due": "周四下班前",
+      "evidence": [
+        {
+          "segmentId": "bc2e8d89-b1bb-4856-bfc0-4f60225a86db",
+          "revision": 1
+        }
+      ]
+    }
+  ],
+  "minutesRevision": 1,
+  "piResult": {
+    "summary": "会议先提出“周五下午3点进行设计评审”，但录音结束前更正为“下周一下午3点”。因此，最终评审时间以下周一下午3点为准。华静仍需在周四下班前准备评审材料。",
+    "decisions": [
+      {
+        "text": "设计评审最终安排在下周一下午3点，取代此前提出的周五下午3点。原文：“我们决定周五下午3点进行设计评审……录音结束前补充评审改到下周一下午3点。”",
+        "evidence": [
+          {
+            "recordId": "470a1d73-0572-4504-a714-be4ca60bdf29",
+            "segmentId": "bc2e8d89-b1bb-4856-bfc0-4f60225a86db",
+            "revision": 1
+          }
+        ]
+      }
+    ],
+    "actions": [
+      {
+        "text": "在周四下班前准备设计评审材料。原文：“华静负责在周四下班前准备评审材料。”",
+        "evidence": [
+          {
+            "recordId": "470a1d73-0572-4504-a714-be4ca60bdf29",
+            "segmentId": "bc2e8d89-b1bb-4856-bfc0-4f60225a86db",
+            "revision": 1
+          }
+        ],
+        "owner": "华静"
+      }
+    ]
+  },
+  "originalMinutesUntouched": true,
+  "citationsValidated": true,
+  "duplicateAudioAck": true
+}

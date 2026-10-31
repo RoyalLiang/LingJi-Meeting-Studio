@@ -21,7 +21,7 @@ async function fixture(work, respond) {
     if (respond) return respond(body, res);
     const content = body.input.at(-1).content;
     const data = JSON.parse(content.at(-1).text), refs = data.transcript || [];
-    const result = refs.length ? { title: '音频纪要', sections: [{ heading: '讨论', items: refs.map(segment => ({ text: segment.text, evidence: [{ segmentId: segment.id, revision: segment.revision }] })) }], actions: [] } : { ok: true };
+    const result = data.task === 'transcribe' ? { text: '小林下周三提交测试结果，上线待定。' } : refs.length ? { title: '音频纪要', sections: [{ heading: '讨论', items: refs.map(segment => ({ text: segment.text, evidence: [{ segmentId: segment.id, revision: segment.revision }] })) }], actions: [] } : { ok: true };
     const text = JSON.stringify(result);
     if (body.stream) {
       res.writeHead(200, { 'Content-Type': 'text/event-stream' });
@@ -174,3 +174,88 @@ test('Doubao resumes using the frozen job model after settings change', async ()
   assert.equal(requests[0].model, 'original-model');
   assert.equal(result.runtime.model, 'original-model');
 }));
+
+test('audio-only mode needs no independent ASR credentials and completes traceable final minutes', async () => fixture(async (repo, config, requests) => {
+  config = { ...config, MINUTES_MODE: 'doubao-audio-only', DOUBAO_API_KEY: '', ASR_API_KEY: '' };
+  const { record, source } = await recorded(repo, config);
+  assert.equal(providerStatus(config).asr, true);
+  await repo.change(record.id, r => seal(r, [{ sourceId: source.id, epoch: source.epoch, lastSequence: 0 }]));
+  await runCycle(repo, {}, { lane: 'audio' });
+  const transcript = await repo.get(record.id);
+  assert.equal(transcript.chunks[0].state, 'done');
+  assert.equal(transcript.segments[0].text, '小林下周三提交测试结果，上线待定。');
+  await runCycle(repo, {}, { lane: 'minutes' });
+  const final = await repo.get(record.id);
+  assert.equal(final.minutes?.runtime.inputMode, 'doubao-audio-only');
+  assert.equal(final.minutes.transcriptRevision, final.transcriptRevision);
+  assert.equal(requests.length, 2, 'one audio transcription and one audio minutes request');
+  assert.ok(requests.every(r => r.model === config.LLM_MODEL && r.input.at(-1).content.some(c => c.type === 'input_audio')));
+}));
+
+const onlyConfig = config => ({ ...config, MINUTES_MODE:'doubao-audio-only', DOUBAO_API_KEY:'', ASR_API_KEY:'' });
+const sealAudio = (repo, record) => repo.change(record.id, r => seal(r, r.sources.map(s => ({sourceId:s.id,epoch:s.epoch,lastSequence:s.watermark}))));
+
+test('audio-only capture waits for per-record raw audio consent without consuming attempts', async () => fixture(async (repo, config, requests) => {
+  const { record } = await recorded(repo, onlyConfig(config), {consent:false});
+  await sealAudio(repo,record); await runCycle(repo,{}, {lane:'audio'});
+  const after=await repo.get(record.id);
+  assert.equal(requests.length,0); assert.equal(after.chunks[0].attempts,0); assert.equal(after.segments.length,0);
+}));
+test('audio-only batches continuous chunks, drains the stopped tail and meters each request once', async () => fixture(async (repo, config, requests) => {
+  const { record,source,bytes }=await recorded(repo,onlyConfig(config));
+  await runCycle(repo,{}, {lane:'audio'}); assert.equal(requests.length,0,'one live second waits for a bounded batch');
+  const object=await repo.putAudio(record.id,bytes);
+  for(let sequence=1;sequence<17;sequence++) await repo.change(record.id,r=>acknowledge(r,{...object,sessionId:source.sessionId,sourceId:source.id,epoch:source.epoch,sequence,sampleOffset:sequence*16000,sampleCount:16000,sampleRate:16000,digest:digest(bytes)}));
+  await runCycle(repo,{}, {lane:'audio'});
+  let after=await repo.get(record.id);assert.equal(requests.length,1);assert.equal(after.segments[0].endMs,15000);
+  assert.equal(after.chunks.filter(c=>c.state==='done').length,15);
+  await sealAudio(repo,record);await runCycle(repo,{}, {lane:'audio'});
+  after=await repo.get(record.id);
+  assert.deepEqual(after.segments.map(s=>[s.startMs,s.endMs]),[[0,15000],[15000,17000]]);
+  assert.equal(after.capture,'completed');assert.equal(after.usage.audioTranscriptionMeter.requests,2);
+  assert.equal(after.usage.audioTranscriptionMeter.totalTokens,60);assert.equal(after.usage.llmTokens,60);
+  await runCycle(repo,{}, {lane:'audio'});assert.equal(requests.length,2,'done chunks must never be resent');
+}));
+test('audio-only model failures preserve charged usage and cannot turn into ASR or mock success', async () => fixture(async (repo,config,requests)=>{
+  const {record}=await recorded(repo,onlyConfig(config));await sealAudio(repo,record);await runCycle(repo,{}, {lane:'audio'});
+  const after=await repo.get(record.id);assert.equal(requests.length,1);assert.equal(after.segments.length,0);
+  assert.equal(after.chunks[0].error,'provider_rate_limited');assert.equal(after.chunks[0].state,'pending');assert.equal(after.usage.llmTokens,3);
+},(_body,res)=>{res.writeHead(429,{'Content-Type':'application/json'});res.end(JSON.stringify({error:{code:'RateLimit'},usage:{total_tokens:3}}));}));
+test('audio-only rejects invented transcript schema while keeping reported model usage', async () => fixture(async (repo,config)=>{
+  const {record}=await recorded(repo,onlyConfig(config));await sealAudio(repo,record);await runCycle(repo,{}, {lane:'audio'});
+  const after=await repo.get(record.id);assert.equal(after.chunks[0].error,'invalid_asr_response');assert.equal(after.segments.length,0);assert.equal(after.usage.llmTokens,30);
+},(_body,res)=>{res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({output_text:'{"text":42}',usage:{total_tokens:30}}));}));
+test('audio-only late response cannot commit after its batch fence changes', async ()=>{
+  let release,entered;const waiting=new Promise(resolve=>{entered=resolve;});
+  await fixture(async(repo,config)=>{
+    const {record}=await recorded(repo,onlyConfig(config));await sealAudio(repo,record);
+    const work=runCycle(repo,{}, {lane:'audio'});await waiting;
+    await repo.change(record.id,r=>{r.chunks[0].fence='new-owner';});release();await work;
+    const after=await repo.get(record.id);assert.equal(after.segments.length,0);assert.equal(after.usage.llmTokens,30,'the old response still consumed tokens');
+  },async(_body,res)=>{entered();await new Promise(resolve=>{release=resolve;});res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({output_text:'{"text":"旧结果"}',usage:{total_tokens:30}}));});
+});
+for(const attempts of [1,5]) test(`switching to audio-only requires explicit retry after independent ASR attempt ${attempts}`,  async()=>fixture(async(repo,config,requests)=>{
+ const {record}=await recorded(repo,onlyConfig(config));await sealAudio(repo,record);
+ await repo.change(record.id,r=>{r.transcription='failed';r.chunks[0].attempts=attempts;r.chunks[0].error='doubao_asr_45000292';r.sources[0].asr={state:'failed',error:'doubao_asr_45000292',retryable:false,attempts};});
+ await runCycle(repo,{}, {lane:'audio'});assert.equal(requests.length,0,'switching must not silently reprocess all failed history');
+ await repo.change(record.id,r=>{r.chunks[0].attempts=0;r.chunks[0].retryAt=0;r.sources[0].asr.attempts=0;r.sources[0].asr.retryAt=0;r.transcription='queued';});
+ await runCycle(repo,{}, {lane:'audio'});const after=await repo.get(record.id);
+ assert.equal(after.chunks[0].state,'done');assert.equal(after.sources[0].asr.provider,'doubao-audio-only');assert.equal(after.sources[0].asr.error,undefined);
+}));
+
+test('audio-only bounds tiny-chunk batches and concurrent object reads',async()=>fixture(async(repo,config,requests)=>{
+ const {record,source}=await recorded(repo,onlyConfig(config)),bytes=Buffer.alloc(2),object=await repo.putAudio(record.id,bytes);
+ await repo.change(record.id,r=>{const base=r.chunks[0];r.chunks=Array.from({length:1000},(_,i)=>({...base,...object,key:`${source.sessionId}:${source.id}:${source.epoch}:${i}`,sequence:i,sampleOffset:i,sampleCount:1,digest:digest(bytes)}));r.usage.samples=1000;r.sources[0].watermark=999;});
+ await sealAudio(repo,record);const read=repo.readAudio.bind(repo);let active=0,maximum=0;
+ repo.readAudio=async key=>{active++;maximum=Math.max(maximum,active);try{await new Promise(resolve=>setImmediate(resolve));return await read(key);}finally{active--;}};
+ await runCycle(repo,{}, {lane:'audio'});const after=await repo.get(record.id);
+ assert.equal(requests.length,1);assert.equal(after.chunks.filter(c=>c.state==='done').length,128);assert.ok(maximum<=4,`read fanout ${maximum}`);
+}));
+test('audio-only pending response respects withdrawn raw-audio consent without consuming attempts',async()=>{
+ let release,entered;const waiting=new Promise(resolve=>{entered=resolve;});
+ await fixture(async(repo,config)=>{
+  const {record}=await recorded(repo,onlyConfig(config));await sealAudio(repo,record);
+  const work=runCycle(repo,{}, {lane:'audio'});await waiting;await repo.change(record.id,r=>{r.realtimeAudioConsent=false;});release();await work;
+  const after=await repo.get(record.id);assert.equal(after.segments.length,0);assert.equal(after.chunks[0].state,'pending');assert.equal(after.chunks[0].attempts,0);assert.equal(after.chunks[0].lease,undefined);assert.equal(after.usage.llmTokens,30);
+ },async(_body,res)=>{entered();await new Promise(resolve=>{release=resolve;});res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({output_text:'{"text":"已发出的响应"}',usage:{total_tokens:30}}));});
+});

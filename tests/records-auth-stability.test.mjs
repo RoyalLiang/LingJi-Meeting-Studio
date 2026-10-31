@@ -11,7 +11,7 @@ function deferred() { let resolve, reject; const promise = new Promise((yes, no)
 
 // Execute the real components with deterministic React hooks. Network completion
 // is held at each boundary, so repeated submit events run before React rerenders.
-function harness(api) {
+function harness(api, {search='',modules={}} = {}) {
   const slots = [], effects = []; let cursor = 0;
   const useState = initial => {
     const index = cursor++; if (!(index in slots)) slots[index] = typeof initial === 'function' ? initial() : initial;
@@ -28,10 +28,10 @@ function harness(api) {
   const exports = {};
   const sandbox = {
     module: { exports }, exports,
-    require: name => name === 'react' ? { useState, useRef, useEffect, useCallback, lazy: () => component } : name === 'react/jsx-runtime' ? {
+    require: name => name === 'react' ? { memo:component=>component, useState, useRef, useEffect, useCallback, lazy: () => component } : name === 'react/jsx-runtime' ? {
       jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }), Fragment: Symbol('fragment')
-    } : name === './api' ? { api, ApiError: class ApiError extends Error { constructor(message, status) { super(message); this.status = status; } }, setCsrf() {}, setAudioTransport() {}, messageOf: error => error.message } : generic,
-    location: { pathname: '/', search: '' }, localStorage: { getItem: () => null }, navigator: { onLine: true },
+    } : name === './useClientUpdates' ? { useClientUpdates: () => ({native:false,status:{phase:'idle',currentVersion:'0.1.47',downloaded:0}}) } : name === './api' ? { api, ApiError: class ApiError extends Error { constructor(message, status) { super(message); this.status = status; } }, setCsrf() {}, setAudioTransport() {}, messageOf: error => error.message } : modules[name] || generic,
+    location: { pathname: '/', search }, localStorage: { getItem: () => null }, navigator: { onLine: true },
     URLSearchParams, AbortController, document: { documentElement: { dataset: {} } },
     FormData: class { constructor(form) { this.form = form; } *[Symbol.iterator]() { yield* Object.entries(this.form); } },
   };
@@ -96,4 +96,68 @@ test('workspace bootstrap deduplicates requests without replacing login with a l
   response.resolve({ csrf: 'test-csrf', providers: { fixture: true }, email: 'test@example.com' });
   await Promise.all([first, second]);
   page = h.render('Workspace'); assert.equal(page.props.className, 'app-shell');
+});
+
+test('Pi center keeps the main workspace mounted and returns to its directory through the shared selection path', async () => {
+  const h=harness(path=>{
+    if(path==='/bootstrap')return Promise.resolve({csrf:'test-csrf',providers:{fixture:true},email:'test@example.com'});
+    if(path==='/records')return Promise.resolve({records:[]});
+    if(path==='/workspaces')return Promise.resolve({workspaces:[]});
+    throw new Error(`unexpected path ${path}`);
+  });
+  h.render('Workspace');
+  h.effects.find(effect=>effect.toString().includes('loadBoot'))();await tick();
+  let page=h.render('Workspace');
+  const entry=find(page,item=>item.props?.className?.includes('extension-entry'));
+  assert.ok(entry,'the real Pi center has an independent workspace entry');
+  entry.props.onClick();page=h.render('Workspace');
+  assert.equal(page.props.className,'app-shell meeting-agent-shell');
+  const center=find(page,item=>Array.isArray(item.props?.records)&&typeof item.props?.openRecord==='function');
+  assert.ok(center,'the center receives the same real record list and selection callback');
+  assert.equal(find(page,item=>item.props?.className?.includes('directory-home-link')).props.className.includes('selected'),false);
+  find(page,item=>item.props?.className?.includes('directory-home-link')).props.onClick();
+  page=h.render('Workspace');
+  assert.equal(page.props.className,'app-shell');
+  assert.equal(find(page,item=>Array.isArray(item.props?.records)&&typeof item.props?.openRecord==='function'),undefined);
+  assert.equal(find(page,item=>item.props?.className?.includes('directory-home-link')).props.className.includes('selected'),true);
+});
+
+test('native resume returns from Pi center to the same paused meeting without bypassing capture guards', async () => {
+  const started=deferred(),controllers=[];let secure=false,nativeMenu,subscription;
+  const paused={id:'paused-record',title:'暂停的会议',capture:'paused',transcription:'completed',language:'zh',sources:[],segments:[],notes:'',notesRevision:0,minutes:null,liveMinutes:null,minutesRevision:0,minuteVersions:[],transcriptRevision:0,cursor:'1',jobs:[],pendingChunks:0,retainAudio:true,retentionDays:30,deleteAt:'2026-11-30T00:00:00Z',usage:{samples:0,llmTokens:0}};
+  const list=[{id:paused.id,title:paused.title,capture:'paused',hasMinutes:false,createdAt:'2026-10-31T00:00:00Z',seconds:0}];
+  class AudioDevice {
+    constructor(id){this.recordId=id;this.active=false;controllers.push(this);}
+    async startMeeting(){await started.promise;this.active=true;return [];}
+    async stop(){this.active=false;}
+  }
+  const h=harness(path=>{
+    if(path==='/bootstrap')return Promise.resolve({csrf:'test-csrf',providers:{asr:true},email:'test@example.com'});
+    if(path==='/records')return Promise.resolve({records:list});
+    if(path==='/workspaces')return Promise.resolve({workspaces:[]});
+    if(path===`/records/${paused.id}`)return Promise.resolve({...paused,capture:controllers.some(controller=>controller.active)?'recording':'paused',cursor:'2'});
+    throw new Error(`unexpected path ${path}`);
+  },{search:`?record=${paused.id}`,modules:{
+    './useNativeMenuBar':{useNativeMenuBar:(state,actions)=>{nativeMenu={state,actions};}},
+    './record-subscription':{subscribeToRecord:options=>{subscription=options;return()=>{};}},
+    './audio/controller':{CaptureController:AudioDevice,capabilities:()=>({secure,worklet:true})},
+  }});
+  h.render('Workspace');h.effects.find(effect=>effect.toString().includes('loadBoot'))();await tick();
+  h.render('Workspace');
+  h.effects.findLast(effect=>effect.toString().includes('recordCache.current.get(id)'))();
+  h.effects.findLast(effect=>effect.toString().includes('subscribeToRecord'))();
+  subscription.onRecord(paused);
+  let page=h.render('Workspace');
+  find(page,item=>item.props?.className?.includes('extension-entry')).props.onClick();
+  page=h.render('Workspace');assert.equal(page.props.className,'app-shell meeting-agent-shell');
+  nativeMenu.actions.resume();await tick();page=h.render('Workspace');
+  assert.equal(controllers.length,0,'unavailable audio capability must still prevent capture');
+  assert.equal(page.props.className,'app-shell meeting-agent-shell','a refused capture does not change the current view');
+  secure=true;nativeMenu.actions.resume();
+  assert.equal(controllers.length,1);assert.equal(controllers[0].recordId,paused.id,'resume reuses the selected meeting instead of creating one');
+  started.resolve();await tick();page=h.render('Workspace');
+  assert.equal(nativeMenu.state.recording,true,'the real Workspace resume path has started capture');
+  assert.equal(page.props.className,'app-shell','resuming must reveal the meeting controls');
+  assert.ok(find(page,item=>item.props?.className==='meeting-header glass'));
+  assert.equal(find(page,item=>Array.isArray(item.props?.records)&&typeof item.props?.openRecord==='function'),undefined);
 });

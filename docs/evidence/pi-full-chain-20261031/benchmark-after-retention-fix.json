@@ -1,0 +1,566 @@
+{
+  "schema": "pi-chain-benchmark/v1",
+  "baseline": "2a8275d",
+  "at": "2026-10-31T10:05:52.242Z",
+  "node": "v26.12.1",
+  "rounds": [
+    {
+      "mode": "baseline",
+      "node": "v26.12.1",
+      "samples": 12,
+      "moduleImportMs": 38.971416000000005,
+      "firstReadinessMs": 36.88129199999999,
+      "startup": {
+        "samples": 5,
+        "p50Ms": 6.694874999999996,
+        "p95Ms": 9.611457999999999,
+        "maxMs": 9.611457999999999
+      },
+      "health": {
+        "samples": 50,
+        "p50Ms": 1.1562910000000102,
+        "p95Ms": 1.6536669999999845,
+        "maxMs": 2.17866699999999
+      },
+      "timings": {
+        "pcmDurableAck": {
+          "samples": 12,
+          "p50Ms": 9.137750000000096,
+          "p95Ms": 11.850500000000011,
+          "maxMs": 11.850500000000011
+        },
+        "transcriptPersisted": {
+          "samples": 12,
+          "p50Ms": 23.182750000000055,
+          "p95Ms": 24.062999999999988,
+          "maxMs": 24.062999999999988
+        },
+        "minutesAndHighlightsPersisted": {
+          "samples": 12,
+          "p50Ms": 18.902874999999995,
+          "p95Ms": 19.252499999999998,
+          "maxMs": 19.252499999999998
+        },
+        "chain": {
+          "samples": 12,
+          "p50Ms": 51.416665999999964,
+          "p95Ms": 55.35520900000006,
+          "maxMs": 55.35520900000006
+        },
+        "providerWait": {
+          "samples": 12,
+          "p50Ms": 34.02150000000006,
+          "p95Ms": 34.50087499999995,
+          "maxMs": 34.50087499999995
+        },
+        "hostOverhead": {
+          "samples": 12,
+          "p50Ms": 17.58141599999999,
+          "p95Ms": 21.180834000000004,
+          "maxMs": 21.180834000000004
+        }
+      },
+      "providerDelayMs": 15,
+      "piProviderCalls": 0,
+      "idleRetentionReads": 0,
+      "retentionObservationMs": 10,
+      "assertions": {
+        "pcmDurable": true,
+        "transcriptPersisted": true,
+        "minutesPersisted": true,
+        "highlightsCited": true
+      },
+      "scope": "in-process durable PCM acknowledgement and actual pipeline persistence; HTTP health only; startup distributions exclude module import (reported separately) and native capture or real provider"
+    },
+    {
+      "mode": "idle",
+      "node": "v26.12.1",
+      "samples": 12,
+      "moduleImportMs": 130.911959,
+      "firstReadinessMs": 44.917249999999996,
+      "startup": {
+        "samples": 5,
+        "p50Ms": 7.967040999999995,
+        "p95Ms": 9.549000000000007,
+        "maxMs": 9.549000000000007
+      },
+      "health": {
+        "samples": 50,
+        "p50Ms": 1.1974589999999807,
+        "p95Ms": 1.651625000000024,
+        "maxMs": 1.8834580000000187
+      },
+      "timings": {
+        "pcmDurableAck": {
+          "samples": 12,
+          "p50Ms": 9.06737499999997,
+          "p95Ms": 12.11349999999993,
+          "maxMs": 12.11349999999993
+        },
+        "transcriptPersisted": {
+          "samples": 12,
+          "p50Ms": 23.543542000000002,
+          "p95Ms": 24.379875000000084,
+          "maxMs": 24.379875000000084
+        },
+        "minutesAndHighlightsPersisted": {
+          "samples": 12,
+          "p50Ms": 19.031833000000006,
+          "p95Ms": 20.741041999999993,
+          "maxMs": 20.741041999999993
+        },
+        "chain": {
+          "samples": 12,
+          "p50Ms": 52.427332999999976,
+          "p95Ms": 57.010208000000034,
+          "maxMs": 57.010208000000034
+        },
+        "providerWait": {
+          "samples": 12,
+          "p50Ms": 34.16991600000006,
+          "p95Ms": 34.813125000000014,
+          "maxMs": 34.813125000000014
+        },
+        "hostOverhead": {
+          "samples": 12,
+          "p50Ms": 18.352458999999612,
+          "p95Ms": 22.812373999999977,
+          "maxMs": 22.812373999999977
+        }
+      },
+      "providerDelayMs": 15,
+      "piProviderCalls": 2,
+      "idleRetentionReads": 0,
+      "retentionObservationMs": 2200,
+      "assertions": {
+        "pcmDurable": true,
+        "transcriptPersisted": true,
+        "minutesPersisted": true,
+        "highlightsCited": true
+      },
+      "scope": "in-process durable PCM acknowledgement and actual pipeline persistence; HTTP health only; startup distributions exclude module import (reported separately) and native capture or real provider"
+    },
+    {
+      "mode": "loaded",
+      "node": "v26.12.1",
+      "samples": 12,
+      "moduleImportMs": 133.718709,
+      "firstReadinessMs": 44.384833000000015,
+      "startup": {
+        "samples": 5,
+        "p50Ms": 7.8436249999999745,
+        "p95Ms": 9.55920900000001,
+        "maxMs": 9.55920900000001
+      },
+      "health": {
+        "samples": 50,
+        "p50Ms": 1.1940839999999753,
+        "p95Ms": 1.6962089999999534,
+        "maxMs": 2.023541000000023
+      },
+      "timings": {
+        "pcmDurableAck": {
+          "samples": 12,
+          "p50Ms": 11.065624999999955,
+          "p95Ms": 17.018749999999955,
+          "maxMs": 17.018749999999955
+        },
+        "transcriptPersisted": {
+          "samples": 12,
+          "p50Ms": 21.52804100000003,
+          "p95Ms": 27.641000000000076,
+          "maxMs": 27.641000000000076
+        },
+        "minutesAndHighlightsPersisted": {
+          "samples": 12,
+          "p50Ms": 17.251207999999906,
+          "p95Ms": 19.721874999999955,
+          "maxMs": 19.721874999999955
+        },
+        "chain": {
+          "samples": 12,
+          "p50Ms": 51.76383299999998,
+          "p95Ms": 57.5451250000001,
+          "maxMs": 57.5451250000001
+        },
+        "providerWait": {
+          "samples": 12,
+          "p50Ms": 31.23862500000007,
+          "p95Ms": 33.77354200000002,
+          "maxMs": 33.77354200000002
+        },
+        "hostOverhead": {
+          "samples": 12,
+          "p50Ms": 20.316207999999733,
+          "p95Ms": 26.306500000000028,
+          "maxMs": 26.306500000000028
+        }
+      },
+      "providerDelayMs": 15,
+      "piProviderCalls": 40,
+      "idleRetentionReads": 0,
+      "retentionObservationMs": 2200,
+      "assertions": {
+        "pcmDurable": true,
+        "transcriptPersisted": true,
+        "minutesPersisted": true,
+        "highlightsCited": true
+      },
+      "scope": "in-process durable PCM acknowledgement and actual pipeline persistence; HTTP health only; startup distributions exclude module import (reported separately) and native capture or real provider"
+    },
+    {
+      "mode": "loaded",
+      "node": "v26.12.1",
+      "samples": 12,
+      "moduleImportMs": 130.772291,
+      "firstReadinessMs": 44.547500000000014,
+      "startup": {
+        "samples": 5,
+        "p50Ms": 7.81716700000004,
+        "p95Ms": 9.712959000000012,
+        "maxMs": 9.712959000000012
+      },
+      "health": {
+        "samples": 50,
+        "p50Ms": 1.1699580000000083,
+        "p95Ms": 1.754333000000031,
+        "maxMs": 1.9779160000000502
+      },
+      "timings": {
+        "pcmDurableAck": {
+          "samples": 12,
+          "p50Ms": 10.137500000000045,
+          "p95Ms": 16.663291999999956,
+          "maxMs": 16.663291999999956
+        },
+        "transcriptPersisted": {
+          "samples": 12,
+          "p50Ms": 23.23658300000011,
+          "p95Ms": 27.981917000000067,
+          "maxMs": 27.981917000000067
+        },
+        "minutesAndHighlightsPersisted": {
+          "samples": 12,
+          "p50Ms": 16.68395899999996,
+          "p95Ms": 17.527082999999948,
+          "maxMs": 17.527082999999948
+        },
+        "chain": {
+          "samples": 12,
+          "p50Ms": 52.8968329999999,
+          "p95Ms": 61.28583299999991,
+          "maxMs": 61.28583299999991
+        },
+        "providerWait": {
+          "samples": 12,
+          "p50Ms": 31.042999999999893,
+          "p95Ms": 33.3191260000001,
+          "maxMs": 33.3191260000001
+        },
+        "hostOverhead": {
+          "samples": 12,
+          "p50Ms": 21.61737600000015,
+          "p95Ms": 28.524957999999742,
+          "maxMs": 28.524957999999742
+        }
+      },
+      "providerDelayMs": 15,
+      "piProviderCalls": 40,
+      "idleRetentionReads": 0,
+      "retentionObservationMs": 2200,
+      "assertions": {
+        "pcmDurable": true,
+        "transcriptPersisted": true,
+        "minutesPersisted": true,
+        "highlightsCited": true
+      },
+      "scope": "in-process durable PCM acknowledgement and actual pipeline persistence; HTTP health only; startup distributions exclude module import (reported separately) and native capture or real provider"
+    },
+    {
+      "mode": "idle",
+      "node": "v26.12.1",
+      "samples": 12,
+      "moduleImportMs": 127.029834,
+      "firstReadinessMs": 43.53708400000002,
+      "startup": {
+        "samples": 5,
+        "p50Ms": 7.601083000000017,
+        "p95Ms": 9.279833999999994,
+        "maxMs": 9.279833999999994
+      },
+      "health": {
+        "samples": 50,
+        "p50Ms": 1.1037080000000117,
+        "p95Ms": 1.6680000000000064,
+        "maxMs": 2.038916999999998
+      },
+      "timings": {
+        "pcmDurableAck": {
+          "samples": 12,
+          "p50Ms": 9.425917000000027,
+          "p95Ms": 10.595792000000074,
+          "maxMs": 10.595792000000074
+        },
+        "transcriptPersisted": {
+          "samples": 12,
+          "p50Ms": 25.085458000000017,
+          "p95Ms": 27.696707999999944,
+          "maxMs": 27.696707999999944
+        },
+        "minutesAndHighlightsPersisted": {
+          "samples": 12,
+          "p50Ms": 18.17304200000001,
+          "p95Ms": 20.032249999999976,
+          "maxMs": 20.032249999999976
+        },
+        "chain": {
+          "samples": 12,
+          "p50Ms": 54.132041999999956,
+          "p95Ms": 60.51466700000003,
+          "maxMs": 60.51466700000003
+        },
+        "providerWait": {
+          "samples": 12,
+          "p50Ms": 32.851541999999995,
+          "p95Ms": 34.20770800000014,
+          "maxMs": 34.20770800000014
+        },
+        "hostOverhead": {
+          "samples": 12,
+          "p50Ms": 20.734958000000006,
+          "p95Ms": 26.306958999999893,
+          "maxMs": 26.306958999999893
+        }
+      },
+      "providerDelayMs": 15,
+      "piProviderCalls": 2,
+      "idleRetentionReads": 0,
+      "retentionObservationMs": 2200,
+      "assertions": {
+        "pcmDurable": true,
+        "transcriptPersisted": true,
+        "minutesPersisted": true,
+        "highlightsCited": true
+      },
+      "scope": "in-process durable PCM acknowledgement and actual pipeline persistence; HTTP health only; startup distributions exclude module import (reported separately) and native capture or real provider"
+    },
+    {
+      "mode": "baseline",
+      "node": "v26.12.1",
+      "samples": 12,
+      "moduleImportMs": 40.66820800000001,
+      "firstReadinessMs": 36.180209000000005,
+      "startup": {
+        "samples": 5,
+        "p50Ms": 6.459417000000002,
+        "p95Ms": 7.995207999999991,
+        "maxMs": 7.995207999999991
+      },
+      "health": {
+        "samples": 50,
+        "p50Ms": 1.0902920000000051,
+        "p95Ms": 1.6564160000000072,
+        "maxMs": 2.00158399999998
+      },
+      "timings": {
+        "pcmDurableAck": {
+          "samples": 12,
+          "p50Ms": 9.419416999999953,
+          "p95Ms": 16.318249999999978,
+          "maxMs": 16.318249999999978
+        },
+        "transcriptPersisted": {
+          "samples": 12,
+          "p50Ms": 23.837999999999965,
+          "p95Ms": 25.584791999999993,
+          "maxMs": 25.584791999999993
+        },
+        "minutesAndHighlightsPersisted": {
+          "samples": 12,
+          "p50Ms": 19.251958000000002,
+          "p95Ms": 19.999000000000024,
+          "maxMs": 19.999000000000024
+        },
+        "chain": {
+          "samples": 12,
+          "p50Ms": 54.91229199999998,
+          "p95Ms": 59.06654200000003,
+          "maxMs": 59.06654200000003
+        },
+        "providerWait": {
+          "samples": 12,
+          "p50Ms": 33.80641700000001,
+          "p95Ms": 34.255498999999986,
+          "maxMs": 34.255498999999986
+        },
+        "hostOverhead": {
+          "samples": 12,
+          "p50Ms": 20.775750000000016,
+          "p95Ms": 25.64958400000006,
+          "maxMs": 25.64958400000006
+        }
+      },
+      "providerDelayMs": 15,
+      "piProviderCalls": 0,
+      "idleRetentionReads": 0,
+      "retentionObservationMs": 10,
+      "assertions": {
+        "pcmDurable": true,
+        "transcriptPersisted": true,
+        "minutesPersisted": true,
+        "highlightsCited": true
+      },
+      "scope": "in-process durable PCM acknowledgement and actual pipeline persistence; HTTP health only; startup distributions exclude module import (reported separately) and native capture or real provider"
+    }
+  ],
+  "checks": [
+    {
+      "mode": "idle",
+      "metric": "startup",
+      "baselineP95Ms": 9.611457999999999,
+      "candidateP95Ms": 9.549000000000007,
+      "allowedP95Ms": 27.0143225,
+      "pass": true
+    },
+    {
+      "mode": "idle",
+      "metric": "health",
+      "baselineP95Ms": 1.6564160000000072,
+      "candidateP95Ms": 1.6680000000000064,
+      "allowedP95Ms": 7.070520000000009,
+      "pass": true
+    },
+    {
+      "mode": "idle",
+      "metric": "pcmDurableAck",
+      "baselineP95Ms": 16.318249999999978,
+      "candidateP95Ms": 12.11349999999993,
+      "allowedP95Ms": 25.397812499999972,
+      "pass": true
+    },
+    {
+      "mode": "idle",
+      "metric": "transcriptPersisted",
+      "baselineP95Ms": 25.584791999999993,
+      "candidateP95Ms": 27.696707999999944,
+      "allowedP95Ms": 36.98098999999999,
+      "pass": true
+    },
+    {
+      "mode": "idle",
+      "metric": "minutesAndHighlightsPersisted",
+      "baselineP95Ms": 19.999000000000024,
+      "candidateP95Ms": 20.741041999999993,
+      "allowedP95Ms": 29.99875000000003,
+      "pass": true
+    },
+    {
+      "mode": "idle",
+      "metric": "chain",
+      "baselineP95Ms": 59.06654200000003,
+      "candidateP95Ms": 60.51466700000003,
+      "allowedP95Ms": 78.83317750000003,
+      "pass": true
+    },
+    {
+      "mode": "idle",
+      "metric": "hostOverhead",
+      "baselineP95Ms": 25.64958400000006,
+      "candidateP95Ms": 26.306958999999893,
+      "allowedP95Ms": 37.06198000000008,
+      "pass": true
+    },
+    {
+      "mode": "loaded",
+      "metric": "startup",
+      "baselineP95Ms": 9.611457999999999,
+      "candidateP95Ms": 9.712959000000012,
+      "allowedP95Ms": 27.0143225,
+      "pass": true
+    },
+    {
+      "mode": "loaded",
+      "metric": "health",
+      "baselineP95Ms": 1.6564160000000072,
+      "candidateP95Ms": 1.754333000000031,
+      "allowedP95Ms": 7.070520000000009,
+      "pass": true
+    },
+    {
+      "mode": "loaded",
+      "metric": "pcmDurableAck",
+      "baselineP95Ms": 16.318249999999978,
+      "candidateP95Ms": 17.018749999999955,
+      "allowedP95Ms": 25.397812499999972,
+      "pass": true
+    },
+    {
+      "mode": "loaded",
+      "metric": "transcriptPersisted",
+      "baselineP95Ms": 25.584791999999993,
+      "candidateP95Ms": 27.981917000000067,
+      "allowedP95Ms": 36.98098999999999,
+      "pass": true
+    },
+    {
+      "mode": "loaded",
+      "metric": "minutesAndHighlightsPersisted",
+      "baselineP95Ms": 19.999000000000024,
+      "candidateP95Ms": 19.721874999999955,
+      "allowedP95Ms": 29.99875000000003,
+      "pass": true
+    },
+    {
+      "mode": "loaded",
+      "metric": "chain",
+      "baselineP95Ms": 59.06654200000003,
+      "candidateP95Ms": 61.28583299999991,
+      "allowedP95Ms": 78.83317750000003,
+      "pass": true
+    },
+    {
+      "mode": "loaded",
+      "metric": "hostOverhead",
+      "baselineP95Ms": 25.64958400000006,
+      "candidateP95Ms": 28.524957999999742,
+      "allowedP95Ms": 37.06198000000008,
+      "pass": true
+    },
+    {
+      "mode": "idle-retention",
+      "metric": "full-record-body-reads",
+      "allowedReads": 0,
+      "candidateReads": 0,
+      "pass": true
+    }
+  ],
+  "retention": {
+    "baseline": "no Pi runtime",
+    "observedCandidateReads": [
+      {
+        "mode": "idle",
+        "reads": 0,
+        "ms": 2200
+      },
+      {
+        "mode": "loaded",
+        "reads": 0,
+        "ms": 2200
+      },
+      {
+        "mode": "loaded",
+        "reads": 0,
+        "ms": 2200
+      },
+      {
+        "mode": "idle",
+        "reads": 0,
+        "ms": 2200
+      }
+    ],
+    "note": "counts full repo.get calls during idle polling; nonzero is an explicit retained-body scan concern, independent of timing gates"
+  },
+  "realProviders": false,
+  "realMeetingData": false,
+  "thresholds": "p95 <= min(absolute cap, baseline p95*1.25+5ms slack (startup +15ms)); 2 independent rounds, each 2 warmups+12 measured chains by default"
+}

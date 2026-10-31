@@ -1,0 +1,101 @@
+{
+  "version": "0.1.30",
+  "tag": "v0.1.30",
+  "sourceRevision": "46d45a8e71de0d821d34d098110a88825cc2ca03",
+  "workflowRevision": "46d45a8e71de0d821d34d098110a88825cc2ca03",
+  "macOSBundleVersion": "0.1.52",
+  "publishedAt": "2026-10-27T11:50:09Z",
+  "verifiedAt": "2026-10-27T11:58:38.944972+00:00",
+  "releaseUrl": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.30",
+  "workflowRunUrl": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/40494259772",
+  "jobs": [
+    {
+      "id": 122155584899,
+      "name": "verify",
+      "conclusion": "success",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/40494259772/job/122155584899"
+    },
+    {
+      "id": 122155659059,
+      "name": "build",
+      "conclusion": "success",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/40494259772/job/122155659059"
+    },
+    {
+      "id": 122155659066,
+      "name": "build_windows",
+      "conclusion": "success",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/40494259772/job/122155659066"
+    },
+    {
+      "id": 122155659220,
+      "name": "build_linux",
+      "conclusion": "success",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/40494259772/job/122155659220"
+    },
+    {
+      "id": 122171690724,
+      "name": "publish",
+      "conclusion": "success",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/40494259772/job/122171690724"
+    }
+  ],
+  "assets": [
+    {
+      "name": "Lingji-0.1.30-macos-arm64.dmg",
+      "sha256": "5f7370709fc680eeaf90c187fbdba56c9ece0a3ff7cd4c527874f36e8d5211df",
+      "bytes": 219565122,
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.30/Lingji-0.1.30-macos-arm64.dmg",
+      "downloadVerified": true
+    },
+    {
+      "name": "Lingji-0.1.30-windows-x64-setup.exe",
+      "sha256": "29e9e4de43ca3685425aa08dace7b74f43bb9fa27b8fd8397804fe40a61947a8",
+      "bytes": 407698114,
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.30/Lingji-0.1.30-windows-x64-setup.exe",
+      "downloadVerified": true
+    },
+    {
+      "name": "Lingji-0.1.30-linux-amd64.deb",
+      "sha256": "ef6265a41053c1409fc965c25d1e8390526517ceeaaf144d9261d8b711972999",
+      "bytes": 222650826,
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.30/Lingji-0.1.30-linux-amd64.deb",
+      "downloadVerified": true
+    }
+  ],
+  "visibleDownloadEntries": [
+    "/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.30/Lingji-0.1.30-linux-amd64.deb",
+    "/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.30/Lingji-0.1.30-macos-arm64.dmg",
+    "/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.30/Lingji-0.1.30-windows-x64-setup.exe",
+    "/RoyalLiang/LingJi-Meeting-Studio/archive/refs/tags/v0.1.30.zip",
+    "/RoyalLiang/LingJi-Meeting-Studio/archive/refs/tags/v0.1.30.tar.gz"
+  ],
+  "sourceArchive": {
+    "sourceRevision": "46d45a8e71de0d821d34d098110a88825cc2ca03",
+    "files": 775,
+    "archiveSha256": "413be72c1132dc44bfe99655a12c4c11da639c34af34e392acc2baf9f896e7bc",
+    "tag": "v0.1.30",
+    "fullSourceVerified": true
+  },
+  "localValidation": {
+    "nodeVersion": "24.21.0",
+    "nodeTestsPassed": 537,
+    "focusedTestsPassed": 30,
+    "lint": true,
+    "typecheck": true,
+    "webBuild": true,
+    "docsReferences": true
+  },
+  "validationLimits": {
+    "linuxBaseline": "Ubuntu 24.04 x64",
+    "realAudioDevicesTested": false,
+    "realMeetingAccuracyEvaluated": false,
+    "freshMachineInteractiveInstallTested": false,
+    "otherLinuxDistributionsTested": false,
+    "productionPgS3Tested": false
+  },
+  "preservedFailedTags": [
+    "v0.1.28",
+    "v0.1.29"
+  ]
+}

@@ -11,23 +11,6 @@ import {
   startWebPreviewServer
 } from "./helpers/stack.mjs";
 
-function withEnvSnapshot(keys, callback) {
-  const previousValues = new Map(keys.map((key) => [key, process.env[key]]));
-
-  return (async () => {
-    try {
-      return await callback();
-    } finally {
-      for (const [key, value] of previousValues.entries()) {
-        if (value === undefined) {
-          delete process.env[key];
-        } else {
-          process.env[key] = value;
-        }
-      }
-    }
-  })();
-}
 
 test("gateway uses the default provider path when no ASR provider is configured", async () => {
   await runWithStack(
@@ -104,73 +87,7 @@ test("gateway rejects deepgram provider when API key is missing", async () => {
   }
 });
 
-test("gateway rejects doubao-ast provider when required env is missing", async () => {
-  await withEnvSnapshot([
-    "DOUBAO_AST_APP_ID",
-    "DOUBAO_AST_ACCESS_TOKEN",
-    "DOUBAO_AST_SECRET",
-    "DOUBAO_AST_RESOURCE_ID"
-  ], async () => {
-    delete process.env.DOUBAO_AST_APP_ID;
-    delete process.env.DOUBAO_AST_ACCESS_TOKEN;
-    delete process.env.DOUBAO_AST_SECRET;
-    delete process.env.DOUBAO_AST_RESOURCE_ID;
 
-    const gateway = await createGatewayServer({
-      port: 4733,
-      asrProvider: "doubao-ast"
-    });
-
-    await assert.rejects(
-      async () => {
-        await gateway.start();
-      },
-      /doubao|app.?id|token|secret|resource/i
-    );
-  });
-});
-
-test("gateway recognizes doubao-ast as a named provider option", async () => {
-  await withEnvSnapshot([
-    "DOUBAO_AST_APP_ID",
-    "DOUBAO_AST_ACCESS_TOKEN",
-    "DOUBAO_AST_SECRET",
-    "DOUBAO_AST_RESOURCE_ID"
-  ], async () => {
-    process.env.DOUBAO_AST_APP_ID = "test-app-id";
-    process.env.DOUBAO_AST_ACCESS_TOKEN = "test-access-token";
-    process.env.DOUBAO_AST_SECRET = "test-secret";
-    process.env.DOUBAO_AST_RESOURCE_ID = "volc.service_type.10053";
-
-    const gateway = await createGatewayServer({
-      port: 4736,
-      asrProvider: "doubao-ast"
-    });
-
-    let started = false;
-    let startError = null;
-
-    try {
-      await gateway.start();
-      started = true;
-    } catch (error) {
-      startError = error;
-    } finally {
-      if (started) {
-        await gateway.stop();
-      }
-    }
-
-    assert.ok(started || startError, "gateway should either start or fail after recognizing doubao-ast");
-
-    if (startError) {
-      assert.doesNotMatch(
-        String(startError.message ?? startError),
-        /unsupported asr provider/i
-      );
-    }
-  });
-});
 
 test("gateway falls back to mock when deepgram is configured but unavailable", async () => {
   const previousDeepgramApiKey = process.env.DEEPGRAM_API_KEY;
@@ -226,51 +143,6 @@ test("gateway falls back to mock when deepgram is configured but unavailable", a
   }
 });
 
-test("gateway falls back to mock when doubao-ast is configured but unavailable", async () => {
-  await withEnvSnapshot([
-    "DOUBAO_AST_APP_ID",
-    "DOUBAO_AST_ACCESS_TOKEN",
-    "DOUBAO_AST_SECRET",
-    "DOUBAO_AST_RESOURCE_ID"
-  ], async () => {
-    delete process.env.DOUBAO_AST_APP_ID;
-    delete process.env.DOUBAO_AST_ACCESS_TOKEN;
-    delete process.env.DOUBAO_AST_SECRET;
-    delete process.env.DOUBAO_AST_RESOURCE_ID;
-
-    await runWithStack(
-      {
-        apiPort: 4737,
-        gatewayPort: 4738,
-        storageBackend: "memory",
-        gatewayOptions: {
-          asrProvider: "doubao-ast",
-          asrFallbackProvider: "mock"
-        }
-      },
-      async ({ apiBaseUrl, gatewayBaseUrl }) => {
-        const gatewayHealth = await fetchGatewayHealth(gatewayBaseUrl);
-        const session = await createSession(apiBaseUrl, {
-          title: "Doubao Fallback Flow"
-        });
-
-        const accepted = await ingestText(
-          gatewayBaseUrl,
-          session.id,
-          "hello fallback provider review the roadmap"
-        );
-        const replay = await fetchReplay(apiBaseUrl, session.id);
-
-        assert.equal(gatewayHealth.asrProvider, "doubao-ast");
-        assert.equal(gatewayHealth.fallbackProvider, "mock");
-        assert.equal(gatewayHealth.activeProvider, "mock");
-        assert.equal(accepted.accepted, true);
-        assert.equal(replay.segments.length, 1);
-        assert.equal(replay.translations.length, 1);
-      }
-    );
-  });
-});
 
 test("desktop shell preview serves an interactive HTML entrypoint", async (t) => {
   const preview = await startDesktopPreviewServer({
@@ -430,4 +302,9 @@ test("workspace layout exposes three-column product surfaces", async (t) => {
   } finally {
     await Promise.all(previews.filter(Boolean).map((preview) => preview.stop()));
   }
+});
+
+test('removed AST gateway provider is rejected even with a mock fallback', async () => {
+  const gateway = await createGatewayServer({port: 0, asrProvider: 'doubao-ast', asrFallbackProvider: 'mock'});
+  await assert.rejects(() => gateway.start(), /Unsupported ASR provider/);
 });

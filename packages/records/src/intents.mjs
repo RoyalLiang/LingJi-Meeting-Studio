@@ -4,7 +4,11 @@ const kinds = new Set(['decision', 'action', 'proposal', 'question', 'withdrawal
 export function ruleIntents(snapshot) {
   return { items: snapshot.flatMap(segment => {
     const text = segment.text;
-    const kind = /取消|撤回|作废|不再|不要|不用|不需要|暂不|别发|不执行/.test(text) ? 'withdrawal' : /[？?]|是否|怎么|为什么/.test(text) ? 'question' : /建议|提议|不如|可以考虑/.test(text) ? 'proposal' : /决定|确定|达成一致|同意采用|就按/.test(text) ? 'decision' : /负责|跟进|待办|下一步|请.{1,30}(完成|提交|确认)|我来/.test(text) ? 'action' : null;
+    const kind = /[？?]|是否|怎么|为什么|(?:…|\.\.\.)\s*$/.test(text) ? 'question'
+      : /如果|假如|假设|要是|除非|前提|可能|也许|暂定|备选|建议|提议|不如|可以考虑|据说|听说|客户说|有人说/.test(text) ? 'proposal'
+      : /取消|撤回|作废|(?:不再|不要|不用|暂不|别).{0,8}(?:发|执行|上线|发布|安排|提交|推进|采用)/.test(text) ? 'withdrawal'
+      : /决定|确定|达成一致|同意采用|就按/.test(text) ? 'decision'
+      : /负责|跟进|待办|下一步|请.{1,30}(完成|提交|确认)|我来/.test(text) ? 'action' : null;
     return kind ? [{ kind, text: text.slice(0, 2000), evidence: [{ segmentId: segment.id, revision: segment.revision }] }] : [];
   }).slice(-50) };
 }

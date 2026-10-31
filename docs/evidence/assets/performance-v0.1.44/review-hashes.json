@@ -1,0 +1,37 @@
+{
+  "backend": {
+    "reviewedSha256": {
+      "services/records/src/repository.mjs": "2af9649c656bc6acddc9ed185edc870749b43009c3c43a06466b50c302a6e0dd",
+      "services/records/src/projections.mjs": "df03313ad54aaaf8b8ab37e9dcfb64a56035e40829b9c22a88f8db15794648d1",
+      "services/records/src/workspace-worker.mjs": "f9032f5c44ea9abac06f2c531e97ad12ead4e39fe49668e519c7b172a9d6937a",
+      "services/records/src/worker.mjs": "f053c27dfa112b6e375e0e91b2124900f6821d426ebe53bcac3ad5e9f216778b",
+      "services/records/src/learning-worker.mjs": "a95b74d19dfeae70ad5af82e47cb86129bbf53803285fad0e0710ca7b3453895",
+      "packages/records/src/workspaces.mjs": "c002d9f978b69a4d1dd4bb04f0d00af1b498783db0277aaa14eeb25dce958c81",
+      "tests/records-performance-fixes.test.mjs": "03b97125037521cc55eec125b2a558b21fcb82f9de63de6b635770cf3e73874a"
+    },
+    "remainingConfirmedP1P2": 0
+  },
+  "network": {
+    "reviewedSha256": {
+      "services/records/src/doubao.mjs": "07cf57577dd80a6e8677200fda7d30f20b0b3f87b8613c12950dae064b4b2836",
+      "apps/desktop/src-tauri/src/audio/mod.rs": "c837dbd85ec501513310b8dadeb950b877afa30489a18db8298e76e5438f9d4a",
+      "tests/records-asr-send-deadline.test.mjs": "c9e0110b30ceef8a6a1cc40569a25c191c327e2556ca4843052d5a103d04cc43"
+    },
+    "remainingConfirmedP1P2": 0
+  },
+  "frontend": {
+    "reviewedSha256": {
+      "apps/web/src/App.tsx": "651134343bff7b463d43e5530c614dab46b47f9be24eeff898058fadc6eedbcd",
+      "apps/web/src/record-subscription.ts": "2cb3cb784e0d674f3ebfde78fe2a07bbbf2f0c2be24c754eb5bcf7175c83a641",
+      "apps/web/src/components/Transcript.tsx": "58da50ae1388cdea199bdf5754d3d82828b828ba4b1c1f7d3cfebb2e0eaf7fb4",
+      "apps/web/src/components/Minutes.tsx": "0a64b66dc0fb5d7b5342d435ecbe5357c887cf68068268dd191e5d673f1f60ad",
+      "apps/web/src/components/MinutesViews.tsx": "5e6308464425b88429de0a7a73ce8d9466e785e524dc69cdf588d3743ee06ed1",
+      "packages/records/src/minutes-speakers.mjs": "2c4c1f49ddddd009967839fae5cd23bbf4dbf06e407207b4376a7582db0d5b86",
+      "tests/records-render-performance.test.mjs": "8e415b92f79796d136dd2e1347c1759ed60da5c42ebc61fdebe6218fe04658f5",
+      "tests/records-minutes-layout.test.mjs": "46e71c31431714d40c86839514c2615a8cb8c757dd224338238dd11d4b102d2c",
+      "tests/records-transcript-history.test.mjs": "fa2dd68bed909813bc3a2f2a31179b728e182648b1a78cb6b7e02c1e397fe2c3",
+      "tests/records-realtime.test.mjs": "b1b4b098993aaa7aa5b97008d1c08f8da17fc32a860c283ed4a4f92dc628aff3"
+    },
+    "remainingConfirmedP1P2": 0
+  }
+}

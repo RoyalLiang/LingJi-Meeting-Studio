@@ -1,0 +1,44 @@
+{
+  "wide": {
+    "overflow": false,
+    "rows": [
+      {
+        "centerDelta": 0,
+        "indent": 54,
+        "layer": "-1",
+        "overlap": 8,
+        "trunkInset": 18
+      },
+      {
+        "centerDelta": -0.00390625,
+        "indent": 54,
+        "layer": "-1",
+        "overlap": 8,
+        "trunkInset": 18
+      },
+      {
+        "centerDelta": -0.00390625,
+        "indent": 54,
+        "layer": "-1",
+        "overlap": 8,
+        "trunkInset": 18
+      }
+    ],
+    "titleBackground": "color(srgb 0.887451 0.920784 0.903922)",
+    "trunkStartsBeforeTitleBottom": true,
+    "usage": "已保存录音50:00模型用量46,449 token纪要输入 / 输出40,311 / 6,138缓存输入 0 · 推理输出 761",
+    "width": 1280
+  },
+  "narrow": {
+    "background": "color(srgb 0.887451 0.920784 0.903922)",
+    "centers": [
+      0,
+      0,
+      -0.00390625
+    ],
+    "overflow": false,
+    "usage": "已保存录音50:00模型用量46,449 token纪要输入 / 输出40,311 / 6,138缓存输入 0 · 推理输出 761",
+    "width": 496
+  },
+  "passed": true
+}

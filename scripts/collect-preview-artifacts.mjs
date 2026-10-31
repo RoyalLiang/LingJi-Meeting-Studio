@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {readFile,writeFile,mkdir,copyFile} from 'node:fs/promises';
+import {join} from 'node:path';
+const windows=process.argv[2]==='windows',linux=process.argv[2]==='linux';
+assert.ok(windows||linux||process.argv[2]==='macos');
+const directory=join('dist/releases',process.env.RELEASE_VERSION,...(windows?['windows-x64']:linux?['linux-x64']:[]));
+const metadataName=windows?'release-windows-x64.json':linux?'release-linux-x64.json':'release.json';
+const meta=JSON.parse(await readFile(join(directory,metadataName),'utf8'));
+assert.equal(meta.sourceRevision,process.env.SOURCE_SHA);assert.equal(meta.sourceDirty,false);assert.equal(meta.frozenSourceBuild,true);
+meta.ci={repository:process.env.GITHUB_REPOSITORY,runId:process.env.GITHUB_RUN_ID,runUrl:`https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,workflowSha:process.env.WORKFLOW_SHA,sourceRevision:process.env.SOURCE_SHA};
+await writeFile(join(directory,metadataName),JSON.stringify(meta,null,2)+'\n');
+await mkdir('preview-artifacts',{recursive:true});
+const names=linux?[meta.artifact,'SHA256SUMS-linux-x64.txt',metadataName,'package-smoke-linux-x64.json']:windows?[meta.artifact,'SHA256SUMS-windows-x64.txt',metadataName,'package-smoke-windows-x64.json','INSTALL-windows-x64.md']:[meta.artifact,'SHA256SUMS.txt',metadataName,'package-smoke.json'];
+for(const name of names)await copyFile(join(directory,name),join('preview-artifacts',name));
+if(!windows&&!linux)await copyFile(join(directory,'安装说明.md'),'preview-artifacts/INSTALL-macos-arm64.md');

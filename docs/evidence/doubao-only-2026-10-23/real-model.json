@@ -1,0 +1,37 @@
+{
+  "ok": true,
+  "syntheticOnly": true,
+  "realMeetingAudioSent": false,
+  "independentAsrCredentialsConfigured": false,
+  "model": "doubao-seed-2-1-lite-260915",
+  "audioSeconds": 17.3689375,
+  "segments": 2,
+  "chunks": 18,
+  "transcriptRevision": 18,
+  "transcriptionMs": 6881,
+  "totalMs": 49430,
+  "transcriptionMeter": {
+    "requests": 2,
+    "reportedRequests": 2,
+    "inputTokens": 594,
+    "outputTokens": 226,
+    "totalTokens": 820
+  },
+  "totalLlmTokens": 7976,
+  "evidenceRefs": 4,
+  "versionRefsValidated": true,
+  "calls": [
+    {
+      "model": "doubao-seed-2-1-lite-260915",
+      "audioItems": 1
+    },
+    {
+      "model": "doubao-seed-2-1-lite-260915",
+      "audioItems": 1
+    },
+    {
+      "model": "doubao-seed-2-1-lite-260915",
+      "audioItems": 1
+    }
+  ]
+}

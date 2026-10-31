@@ -1,0 +1,11 @@
+{
+  "asrProvider": "doubao",
+  "capture": "sealed",
+  "transcription": "failed",
+  "transcriptRevision": 0,
+  "code": "doubao_asr_45000292",
+  "applicationClassification": "quota exceeded",
+  "audioData": "three system synthesized utterances",
+  "mockFallback": false,
+  "billingConsoleChecked": false
+}

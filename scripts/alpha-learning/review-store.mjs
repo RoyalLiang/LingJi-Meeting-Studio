@@ -150,7 +150,7 @@ export function trainingPlan(cases) {
   const meetings = new Set();
   const counts = { intent: 0, asr: 0 },
     labels = [],
-    evaluation = { intent: 0, asr: 0 };
+    evaluation = { intent: 0, asr: 0 }, evaluationBySplit = { dev:{intent:0,asr:0}, test:{intent:0,asr:0} };
   for (const row of cases) {
     if (
       !row.reviewer?.trim() ||
@@ -176,7 +176,7 @@ export function trainingPlan(cases) {
       ),
     );
     if (row.split === "train") counts[row.family]++;
-    else if (row.blindReview === true) evaluation[row.family]++;
+    else if (row.blindReview === true) { evaluation[row.family]++; if(evaluationBySplit[row.split])evaluationBySplit[row.split][row.family]++; }
   }
   labels.sort((a, b) => a.sample_id.localeCompare(b.sample_id));
   const planHash = createHash("sha256")
@@ -188,6 +188,7 @@ export function trainingPlan(cases) {
     ready,
     counts,
     evaluation: evaluation.intent + evaluation.asr,
+    evaluationBySplit,
     meetings: meetings.size,
     labels,
     message: `仅使用 ${meetings.size} 场会议的人工确认标签：训练意图 ${counts.intent} 条、转录候选 ${counts.asr} 条；独立盲标评测 ${evaluation.intent + evaluation.asr} 条。${ready ? "" : " 两类任务均需至少一条可训练的人工标签。"}`,

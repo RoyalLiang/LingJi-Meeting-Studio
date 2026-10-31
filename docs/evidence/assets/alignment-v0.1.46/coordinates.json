@@ -1,0 +1,63 @@
+{
+  "before": [
+    {
+      "borderLeft": 1,
+      "elbowX": 316,
+      "kind": "branch-node branch-summary",
+      "trunkX": 316
+    },
+    {
+      "borderLeft": 0,
+      "elbowX": 315,
+      "kind": "branch-node",
+      "trunkX": 315
+    },
+    {
+      "borderLeft": 0,
+      "elbowX": 315,
+      "kind": "branch-node",
+      "trunkX": 315
+    }
+  ],
+  "wide": [
+    {
+      "borderLeft": 0,
+      "centerDelta": 0,
+      "elbowX": 367,
+      "kind": "branch-node branch-summary",
+      "trunkX": 367
+    },
+    {
+      "borderLeft": 0,
+      "centerDelta": -0.00390625,
+      "elbowX": 367,
+      "kind": "branch-node",
+      "trunkX": 367
+    },
+    {
+      "borderLeft": 0,
+      "centerDelta": -0.00390625,
+      "elbowX": 367,
+      "kind": "branch-node",
+      "trunkX": 367
+    }
+  ],
+  "narrow": [
+    {
+      "elbowX": 56,
+      "kind": "branch-node branch-summary",
+      "trunkX": 56
+    },
+    {
+      "elbowX": 56,
+      "kind": "branch-node",
+      "trunkX": 56
+    },
+    {
+      "elbowX": 56,
+      "kind": "branch-node",
+      "trunkX": 56
+    }
+  ],
+  "passed": true
+}

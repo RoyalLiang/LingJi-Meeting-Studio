@@ -1,0 +1,2911 @@
+{
+  "sourceRevision": "2a4e02f5aa35da8a7088e96fa66ac30739c243e0",
+  "documentationHeadAtStart": "e65802aa577f9785d3bac48635f2bae373aad69d",
+  "method": "Four independent AI views; file rows identify focused semantic call paths, not whole-file or whole-repository completion. Generated backend bundles/assets/docs excluded from code-unit enumeration.",
+  "counts": {
+    "reviewed-scope": 73,
+    "not-reviewed": 243,
+    "excluded": 40
+  },
+  "files": [
+    {
+      "path": "apps/desktop/assets/macos-installer.html",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/desktop/src-tauri/build.rs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/desktop/src-tauri/installer/native-ui/tests.cpp",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/desktop/src-tauri/installer/native-ui/theme.cpp",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/audio/mod.rs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "network",
+        "architecture/root"
+      ],
+      "reviewedFunctions": [
+        "Captures.read/acknowledge/stop",
+        "Captures.start worker cleanup",
+        "Captures.start/read/acknowledge/stop/stop_all",
+        "handle_stream_error",
+        "input_stream",
+        "queue_input",
+        "raw_input_channel",
+        "send_packets"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "network",
+          "description": "ARC-01跨方向独立复核；未采集真实设备、未测发生概率"
+        },
+        {
+          "reviewer": "architecture/root",
+          "description": "Focused call paths above; not every line or target-platform runtime."
+        }
+      ]
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/audio/packet_queue.rs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "network",
+        "architecture/root"
+      ],
+      "reviewedFunctions": [
+        "PacketQueue.new/push/pending/acknowledge/close/cancel",
+        "WriterGuard",
+        "WriterGuard.drop",
+        "push/pending/acknowledge/close/cancel"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "network",
+          "description": "原生收尾反证上下文；未做磁盘故障/跨进程崩溃恢复实验"
+        },
+        {
+          "reviewer": "architecture/root",
+          "description": "Focused call paths above; not every line or target-platform runtime."
+        }
+      ]
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/audio/pipeline.rs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "architecture/root"
+      ],
+      "reviewedFunctions": [
+        "Pipeline.push/process/packets/finish"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "architecture/root",
+          "description": "Focused call paths above; not every line or target-platform runtime."
+        }
+      ]
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/config.rs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/download_probe.js",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/downloads.rs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/local_backend.rs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "architecture/root"
+      ],
+      "reviewedFunctions": [
+        "LocalBackend.start/stop/drop"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "architecture/root",
+          "description": "Focused call paths above; not every line or target-platform runtime."
+        }
+      ]
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/main.rs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "architecture/root"
+      ],
+      "reviewedFunctions": [
+        "capture_start/read/ack/stop IPC authorization and blocking dispatch"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "architecture/root",
+          "description": "Focused call paths above; not every line or target-platform runtime."
+        }
+      ]
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/menu_status.rs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/preview_updates.rs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/probe.js",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/proxy.rs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "network"
+      ],
+      "reviewedFunctions": [
+        "handle",
+        "new_with_session",
+        "update_barrier"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "network",
+          "description": "49-259相关转发/安全/流式路径；未动态验证Rust HTTP客户端断开取消传播"
+        }
+      ]
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/recording_widget.rs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/resident.rs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "architecture/root"
+      ],
+      "reviewedFunctions": [
+        "request_quit/confirm_quit/finish_update"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "architecture/root",
+          "description": "Focused call paths above; not every line or target-platform runtime."
+        }
+      ]
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/status_bar.rs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/update_gate.rs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/update_probe.js",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/updates.rs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/desktop/src/i18n.js",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/desktop/src/mock-client.mjs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/desktop/src/overlay.html",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/desktop/src/overlay.js",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/desktop/src/preview-channel.js",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/desktop/src/shell-server.mjs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/desktop/src/shell.generated.css",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/desktop/src/shell.html",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/desktop/src/shell.js",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "apps/desktop/src/shell.tailwind.css",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/index.html",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/public/audio-worklet.js",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/App.tsx",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend",
+        "network"
+      ],
+      "reviewedFunctions": [
+        "Workspace（相关状态、订阅、计时、渲染调用）",
+        "Workspace：loadBoot网络配置、record订阅、online/offline事件、upload互斥",
+        "controllerFor（meter/signal回调）",
+        "stopCapture"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "仅定点审查订阅接入、MinutesPanel/TranscriptHistory调用、录音计时与信号更新；未全审Workspace所有会话/设置/权限操作，未运行完整App真实多源录音。"
+        },
+        {
+          "reviewer": "network",
+          "description": "仅149-223、249-275及相关调用定位；其余界面与状态交前端专家"
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/api.ts",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "network"
+      ],
+      "reviewedFunctions": [
+        "api",
+        "readServiceJson",
+        "request",
+        "serviceFetch",
+        "uploadAudio"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "network",
+          "description": "未逐条核实所有业务错误文案；未对外网执行HTTP"
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/audio/capture.ts",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/audio/controller.ts",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/audio/devices.ts",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/audio/native-controller.ts",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "network"
+      ],
+      "reviewedFunctions": [
+        "disconnect",
+        "pause",
+        "start/connect",
+        "startMeeting",
+        "stop"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "network",
+          "description": "未做真实设备或WebView2硬件测试"
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/audio/native-runtime.ts",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/audio/native-stream.ts",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "network"
+      ],
+      "reviewedFunctions": [
+        "decodeNativePacket",
+        "openNativeStream/stop"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "network",
+          "description": "未接真实原生设备；故障链静态审查"
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/audio/playback-transport.ts",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend"
+      ],
+      "reviewedFunctions": [
+        "PlaybackClock.read",
+        "PlaybackScrub（调用及finish清理路径）",
+        "PlaybackTransport（配置、seek和pause相关路径）"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "定点源码和既有纯模拟回归覆盖；并非逐行全审全部transport方法，未实际播放多音轨。"
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/audio/playback-waveform.ts",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend"
+      ],
+      "reviewedFunctions": [
+        "mergeWaveforms",
+        "parsePlaybackTime",
+        "waveformSeekTime",
+        "waveformTicks"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "已审固定峰值上界及纯函数，既有回归通过；未进行真实长音频解码或网络吞吐测量。"
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/audio/queue.ts",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "network"
+      ],
+      "reviewedFunctions": [
+        "drainQueue/run",
+        "heads",
+        "updateQueueState",
+        "并发上传调用端与lane顺序"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "network",
+          "description": "仅98-159、198-202和上下文；IDB迁移/空间估计/下载未完整复审，未动态测量公平性"
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/audio/recognition-status.ts",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/audio/recording-playback.ts",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/audio/signal.ts",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/citation-context.ts",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/client-updates.ts",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/client.js",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "apps/web/src/components/AudioPlayer.css",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/AudioPlayer.tsx",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend"
+      ],
+      "reviewedFunctions": [
+        "AudioPlayer",
+        "PlaybackControls（paint、波形加载、rAF与卸载effects）",
+        "SavedWaveform"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "已审192峰值渲染、source key、abort及动画清理；20轮probe未实际播放音频；解码、设备驱动、WAV Range吞吐和实际播放时GPU未测。"
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/components/Brand.css",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/Brand.tsx",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/CaptureSetup.tsx",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/CaptureSignals.tsx",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/CitationContext.css",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/CitationContext.tsx",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/CitationSources.tsx",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend"
+      ],
+      "reviewedFunctions": [
+        "CitationSources"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "已审去重缓存、compact展开与按钮生成；未实测全部引用展开时的长时DOM/辅助技术表现。"
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/components/ClientUpdates.tsx",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/CloseButton.css",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/ConnectionStatus.tsx",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/ContentFollowAction.tsx",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/CorrectionSuggestions.tsx",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend"
+      ],
+      "reviewedFunctions": [
+        "CorrectionSuggestions（visible/active、Toast与父组件调用依赖）"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "本轮仅复核折叠时错误浮层与挂载状态；词表/模型校对、候选偏移和HTTP权限算法未在本轮重审。"
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/components/CurrentDiscussion.css",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/CurrentDiscussion.tsx",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend"
+      ],
+      "reviewedFunctions": [
+        "CurrentDiscussion",
+        "DiscussionPulse"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "已审动画上界、reduced-motion、取消及状态更新依赖；未做真实WebView2动画/GPU测量。"
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/components/DeviceSettings.tsx",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/ExportDialog.tsx",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/FeedbackNotice.tsx",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend"
+      ],
+      "reviewedFunctions": [
+        "FeedbackNotice",
+        "FeedbackNotice.dismiss",
+        "acknowledged"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "已审默认浮层、关闭与持久化确认调用；未枚举所有业务故障重开策略。"
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/components/Insights.tsx",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/LearningReview.css",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/LearningReview.tsx",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/LiveTranscriptText.tsx",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend"
+      ],
+      "reviewedFunctions": [
+        "LiveTranscriptText"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "已审追加动画定时器、分字和清理；未穷举所有混语/emoji及真实ASR高频partial。"
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/components/MeetingControls.tsx",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/MeetingFinish.tsx",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/MicrophoneTest.tsx",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/MinuteSpeakers.tsx",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend"
+      ],
+      "reviewedFunctions": [
+        "MinuteSpeakers"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "已审引用到编号Map的渲染计算；编号领域语义与未知身份算法未在本轮重新全审。"
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/components/Minutes.css",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/Minutes.tsx",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend",
+        "architecture/root"
+      ],
+      "reviewedFunctions": [
+        "MinutesPanel tree rendering and edit draft",
+        "MinutesPanel（相关状态、reader派生、view挂载、draft创建及textarea onChange）"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "已审重复渲染、编辑复制、跟随与挂载清理；未全审生成/历史版本/保存协议、所有交互和模型语义。"
+        },
+        {
+          "reviewer": "architecture/root",
+          "description": "Focused call paths above; not every line or target-platform runtime."
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/components/MinutesUsage.tsx",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/MinutesViews.tsx",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend"
+      ],
+      "reviewedFunctions": [
+        "Branch",
+        "DecisionMinutes（渲染调用路径）",
+        "MinutesTree",
+        "Point",
+        "SpeakerMinutes（渲染调用路径）"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "重点量化AI树形视图；发言人/决策视图未单独做大型数据测量，未穷举业务归组语义。"
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/components/MinutesVisuals.tsx",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend"
+      ],
+      "reviewedFunctions": [
+        "MinutesVisuals"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "已审SVG/DOM渲染和无后台动画循环；未单独量化大型图表及真实GPU/paint成本。"
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/components/Notes.tsx",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/ProcessingProgress.tsx",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/ProviderSettings.tsx",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/RecordTitle.tsx",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/RecordingPlayback.tsx",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend"
+      ],
+      "reviewedFunctions": [
+        "RecordingPlayback"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "已审播放入口及AudioPlayer参数身份；原音服务可用性和完整HTTP播放链路由其他/既有测试覆盖，不属本轮新性能复现。"
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/components/RecordingWidget.css",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/RecordingWidget.tsx",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/ScrollToTop.tsx",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend"
+      ],
+      "reviewedFunctions": [
+        "ScrollToTop"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "已审scroll监听及清理；未量化完整页面滚动/paint。"
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/components/Select.css",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/Select.tsx",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend"
+      ],
+      "reviewedFunctions": [
+        "Select（popover定位、全局监听和清理effects）"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "已审资源生命周期；未全审全部键盘选择、嵌套dialog与定位边界。"
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/components/ShareDialog.css",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/ShareDialog.tsx",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/SharedMeeting.css",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/SharedMeeting.tsx",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/SummaryCharts.tsx",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/SummaryTables.tsx",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend"
+      ],
+      "reviewedFunctions": [
+        "Table",
+        "Table.copy"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "定点审查表格行渲染、剪贴板反馈与Toast；SummaryTables包装器及大量宽表格未完整性能测量。"
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/components/Toast.css",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/Toast.tsx",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend"
+      ],
+      "reviewedFunctions": [
+        "Toast",
+        "createToastTimer",
+        "getToastDuration",
+        "promoteToast"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "已审计时暂停/恢复、优先级popover与清理并做20轮卸载；未穷举所有嵌套modal/辅助技术组合或长时heap。"
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/components/TopicMap.tsx",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/Transcript.tsx",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend",
+        "architecture/root"
+      ],
+      "reviewedFunctions": [
+        "Transcript",
+        "Transcript rendering and topic evidence scan",
+        "TranscriptHistory",
+        "TranscriptHistory hidden snapshot"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "已审隐藏快照、portal、草稿保留、全文派生和主题证据扫描；未全量验证编辑/纠错服务端业务；未测试屏幕阅读器及长时heap。"
+        },
+        {
+          "reviewer": "architecture/root",
+          "description": "Focused call paths above; not every line or target-platform runtime."
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/components/TranscriptionNotice.tsx",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/TranslationPanel.tsx",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/TranslationSettings.tsx",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/VocabularySettings.tsx",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/WorkspaceDialogs.tsx",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/WorkspaceHome.tsx",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/minutes-tree.css",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/minutes-visuals.css",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/components/ui.tsx",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend"
+      ],
+      "reviewedFunctions": [
+        "Button（相关调用）",
+        "Modal"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "已审Modal焦点、cancel传播、show/close清理及卸载probe；ui.tsx其余导出未逐一复核。"
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/components/useContentFollow.ts",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend"
+      ],
+      "reviewedFunctions": [
+        "useContentFollow",
+        "useContentFollow.align（及effect清理）"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "已审scroll/observer/rAF/window-document监听生命周期并做20轮卸载；未穷举滚动意图、持久化位置与真实长页布局。"
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/components/useTranscriptFollow.ts",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend"
+      ],
+      "reviewedFunctions": [
+        "useTranscriptFollow"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "已审代理到useContentFollow的调用；未做真实设备滚动、键盘及后台窗口全场景验收。"
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/downloads.ts",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/i18n.js",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/index.html",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/main.tsx",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend"
+      ],
+      "reviewedFunctions": [
+        "模块初始化：webview2/recording-capsule-mode分支及createRoot"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "已审Windows+Tauri降级条件；未实际运行Windows WebView2。"
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/minutes-usage.ts",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/minutes-views.ts",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend"
+      ],
+      "reviewedFunctions": [
+        "currentMinutesJob",
+        "summaryTables（相关构造）",
+        "topicBranches",
+        "topicTableLayout"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "定点审查布局/归组与缓存依赖；speakerViews、decisionItems及其余导出未逐一完整复审。"
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/model.ts",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/production-server.mjs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/provider-settings.ts",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/record-subscription.ts",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend",
+        "network",
+        "architecture/root"
+      ],
+      "reviewedFunctions": [
+        "applyRecordDelta",
+        "subscribeToRecord",
+        "subscribeToRecord.connect",
+        "subscribeToRecord.dispose",
+        "subscribeToRecord.refresh",
+        "subscribeToRecord.retry",
+        "subscribeToRecord/connect/retry/failed/refresh/dispose"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "已语义审查当前订阅生命周期与增量应用；真实高频SSE、真实网络断连及完整App重连压力未测。"
+        },
+        {
+          "reviewer": "network",
+          "description": "未做真实浏览器半开SSE/长时间断网压测"
+        },
+        {
+          "reviewer": "architecture/root",
+          "description": "Focused call paths above; not every line or target-platform runtime."
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/server.mjs",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "apps/web/src/share-content.ts",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/styles.css",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend"
+      ],
+      "reviewedFunctions": [
+        ".webview2降级规则（1012-1014）",
+        "相关reduced-motion/transparency和backdrop规则"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "仅定点语义复核，非全CSS审查；浏览器性能probe未加载生产CSS，未测paint/GPU。"
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/telemetry.ts",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/useClientUpdates.ts",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/useNativeMenuBar.ts",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/useRecordingDuration.ts",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend"
+      ],
+      "reviewedFunctions": [
+        "useRecordingDuration"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "已审计时采样、按秒状态更新和interval清理；未做Windows时钟/后台节流实测。"
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/useRecordingWidget.ts",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend"
+      ],
+      "reviewedFunctions": [
+        "useRecordingWidget"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "已审前端报告依赖、定时器和清理；未审原生悬浮窗实现、实际IPC耗时和Windows表现。"
+        }
+      ]
+    },
+    {
+      "path": "apps/web/src/viewer.html",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/viewer.js",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/src/workspace-model.ts",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "apps/web/vite.config.ts",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "eslint.config.mjs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "packages/domain/src/events/index.mjs",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "packages/domain/src/index.d.ts",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "packages/domain/src/index.mjs",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "packages/domain/src/models/audio-chunk.mjs",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "packages/domain/src/models/session.mjs",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "packages/domain/src/models/transcript.mjs",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "packages/domain/src/services/draft-service.mjs",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "packages/domain/src/services/replay-shaping.mjs",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "packages/domain/src/values/language.mjs",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "packages/records/src/asr-evaluation.mjs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "packages/records/src/automation.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "backend"
+      ],
+      "reviewedFunctions": [
+        "automaticMinutesAt: due、退避与 scope 判定",
+        "setAutomation: enabled/取消处理"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "backend",
+          "description": [
+            "未完整语义审查 queueAutomaticMinutes/updateMinutesPreview；未复现停用后在途调用是否被及时取消。"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "packages/records/src/intents.mjs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "packages/records/src/learning-display.mjs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "packages/records/src/learning.mjs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "packages/records/src/live-minutes.mjs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "packages/records/src/minutes-quality.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend"
+      ],
+      "reviewedFunctions": [
+        "manualMinutesContent（canonical内容提取及分块）"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "仅核实编辑fixture与payload规范化；未全审纠错、撤回及所有共享输出语义。"
+        }
+      ]
+    },
+    {
+      "path": "packages/records/src/minutes-speakers.mjs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "packages/records/src/minutes-structure.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend"
+      ],
+      "reviewedFunctions": [
+        "validateMinutesStructure（sections/topics/evidence相关容量）"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "仅核实fixture结构边界；未全审所有表格/visual质量规则和安全语义。"
+        }
+      ]
+    },
+    {
+      "path": "packages/records/src/record-title.mjs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "packages/records/src/record.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend",
+        "backend",
+        "network"
+      ],
+      "reviewedFunctions": [
+        "acknowledge",
+        "acknowledge/receipt: 标识、重复块、相邻时序、watermark 路径",
+        "addSource",
+        "commitMinutes: 完成清理、历史保留分支",
+        "commitMinutes（多窗口maxSections与aggregate校验调用）",
+        "commitTranscript: 块状态与转录提交入口",
+        "createRecord",
+        "createRecord/addSource",
+        "recordingDurationMs/publicRecord",
+        "requestMinutes: 快照、去重、取消和 jobs 保留",
+        "seal（生产函数探针输入与结果）",
+        "stopSources/pause/seal/finalize: manifest/尾部完成和状态边界",
+        "validateMinutes（230-284附近）"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "仅为核实相同fixture合法容量定点阅读；未全审纪要状态机、提交完整语义或服务端性能。"
+        },
+        {
+          "reviewer": "backend",
+          "description": [
+            "未穷尽 validateMinutes 与完整纪要提交/人工修订保护逻辑；commitTranscript/commitMinutes 为局部路径审查，不能视为领域文件全审。"
+          ]
+        },
+        {
+          "reviewer": "network",
+          "description": "仅协议/探针路径；其他领域函数交架构/后端专家"
+        }
+      ]
+    },
+    {
+      "path": "packages/records/src/shared-content.mjs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "packages/records/src/speakers.mjs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "packages/records/src/translation.mjs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "packages/records/src/usage.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "backend"
+      ],
+      "reviewedFunctions": [
+        "beginMinutesUsage",
+        "tokenUsage",
+        "updateMinutesUsage"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "backend",
+          "description": [
+            "未做计量溢出、重复流帧、已删会议与取消后回传的组合测试。"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "packages/records/src/vocabulary.mjs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "packages/records/src/workspaces.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "backend"
+      ],
+      "reviewedFunctions": [
+        "analysisSnapshot/requestWorkspaceAnalysis",
+        "belongsToScope/retainedRecords",
+        "inputHash"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "backend",
+          "description": [
+            "未全审 overview/statistics 聚合和 validateWorkspaceAnalysis；未验证日历/时区或跨目录完整性。"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "packages/shared-types/src/index.ts",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "scripts/alpha-learning/intake.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/alpha-learning/providers.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/alpha-learning/review-assets/app.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/alpha-learning/review-assets/index.html",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/alpha-learning/review-assets/style.css",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/alpha-learning/review-server.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/alpha-learning/review-store.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/alpha-learning/run.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/benchmark-client-startup.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/benchmark-client-storage.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/benchmark-minutes-efficiency.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/benchmark-record-aggregate.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/benchmark-record-feed.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/benchmark-record-transport.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/check-docs.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/client-release-contract.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/client-release.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/collect-preview-artifacts.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/dev.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "architecture/root"
+      ],
+      "reviewedFunctions": [
+        "main child process entry points and stop"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "architecture/root",
+          "description": "Focused call paths above; not every line or target-platform runtime."
+        }
+      ]
+    },
+    {
+      "path": "scripts/evaluate-asr.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/evaluate-minutes.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/expose-installer-screen.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/installer-background.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/prepare-client-backend.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/prepare-installer-fonts.py",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/prepare-installer-theme.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/prepare-local-asr.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/publish-client-release.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/publish-preview-release.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/recover-audio.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/release-linux-preview.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/release-macos-alpha.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/release-source.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/release-windows-preview.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/test-bundled-asr.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/test-client-updater.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/test-native-client.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/test-native-download.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/test-native-package.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/test-record-queue-browser.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "scripts/test-standalone-package.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "services/ai-worker/src/worker.mjs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "services/engine-go/cmd/server/main.go",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "services/engine-go/internal/application/service.go",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "services/engine-go/internal/domain/domain_test.go",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "services/engine-go/internal/domain/interpretation/language.go",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "services/engine-go/internal/domain/knowledge/summary.go",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "services/engine-go/internal/domain/session/session.go",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "services/engine-go/internal/domain/stream/audio_chunk.go",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "services/engine-go/internal/domain/transcription/transcript.go",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "services/engine-go/internal/infrastructure/asr/provider.go",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "services/engine-go/internal/infrastructure/broadcaster/broadcaster.go",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "services/engine-go/internal/infrastructure/storage/memory.go",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "services/engine-go/internal/interfaces/http/handler.go",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "services/records/src/asr-recovery.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "network"
+      ],
+      "reviewedFunctions": [
+        "canRecoverSpeechSource",
+        "canStartSpeechSource",
+        "retryableSpeechError"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "network",
+          "description": "静态检查现有退避与租约保护；未测多worker接管"
+        }
+      ]
+    },
+    {
+      "path": "services/records/src/asr-terms.mjs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "services/records/src/audio-minutes.mjs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "services/records/src/audio-storage-sync.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "backend"
+      ],
+      "reviewedFunctions": [
+        "flushAudioObject"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "backend",
+          "description": [
+            "已审文件/目录同步的分支目的；未做 Windows、慢盘、断电或崩溃耐久性验证。"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "services/records/src/audio-wav.mjs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "services/records/src/auth.mjs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "services/records/src/client-update.mjs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "services/records/src/config.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "backend"
+      ],
+      "reviewedFunctions": [
+        "configured/normalizeConfig/readConfig: 默认值、Provider 选择及读取入口（局部）"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "backend",
+          "description": [
+            "未审完整配置保存、URL/密钥字段校验及迁移；没有读取真实配置文件或密钥。"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "services/records/src/desktop-backend.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "backend",
+        "network",
+        "architecture/root"
+      ],
+      "reviewedFunctions": [
+        "createDesktopBackend：lane循环/stop",
+        "recoverLocalWork: 中断租约、job、translation 恢复路径",
+        "startDesktopBackend loops and stop",
+        "startDesktopBackend: 压缩仓库创建、lane 循环、stop",
+        "入口停止处理: 退出期限与信号挂接"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "backend",
+          "description": [
+            "未完整审查 recoverTemporaryAudio/migrateBundledAsr；未启动真实桌面后端、原生桥接或升级恢复流程。"
+          ]
+        },
+        {
+          "reviewer": "network",
+          "description": "仅98-120与相关recover定位；启动/模型安装/账号迁移未全审"
+        },
+        {
+          "reviewer": "architecture/root",
+          "description": "Focused call paths above; not every line or target-platform runtime."
+        }
+      ]
+    },
+    {
+      "path": "services/records/src/doubao-audio-minutes.mjs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "services/records/src/doubao-model-transcription.mjs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "services/records/src/doubao.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "network",
+        "architecture/root"
+      ],
+      "reviewedFunctions": [
+        "createDoubaoSpeakerStream write/end/close",
+        "createDoubaoSpeakerStream/write/end/close",
+        "decodeAsrFrame",
+        "encodeAsrFrame",
+        "transcribeDoubaoAsr"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "network",
+          "description": "本机WS停读/恢复/关闭对照；真实供应商、真实丢包、外部额度未测"
+        },
+        {
+          "reviewer": "architecture/root",
+          "description": "Focused call paths above; not every line or target-platform runtime."
+        }
+      ]
+    },
+    {
+      "path": "services/records/src/funasr-transcription.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "backend"
+      ],
+      "reviewedFunctions": [
+        "batchEnd",
+        "processFunasrAudio: 批次 claim/owns/release、读取、尾块增长和配置重检"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "backend",
+          "description": [
+            "未穷尽函数尾部提交/失败重试分支及 work 的调度组合；未运行 FunASR/SenseVoice。"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "services/records/src/funasr.mjs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "services/records/src/learning-routes.mjs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "services/records/src/learning-worker.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "backend"
+      ],
+      "reviewedFunctions": [
+        "runLearningCycle: listWork/list(learning-training) 外层派发"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "backend",
+          "description": [
+            "未审 processLearningRecord/processLearningTraining、训练、标注和评估核心；仅外层调度语义覆盖。"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "services/records/src/llm.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "backend",
+        "network"
+      ],
+      "reviewedFunctions": [
+        "completeModelJson/frame/append/reportUsage",
+        "completeModelJson: requestSignal/deadline、非流式和 SSE 读取、onDelta/onUsage、上限与完成判定",
+        "modelEndpoint"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "backend",
+          "description": [
+            "未调用真实模型；未重放所有 SSE 帧变体、超大错误体、主动取消与断网。"
+          ]
+        },
+        {
+          "reviewer": "network",
+          "description": "静态HTTP/SSE timeout/完成/限额审查；未运行外部模型、未完整审Schema/生成质量"
+        }
+      ]
+    },
+    {
+      "path": "services/records/src/local-asr-worker.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "backend"
+      ],
+      "reviewedFunctions": [
+        "stdin 关闭后的退出路径",
+        "stdin 请求处理回调: VAD/recognizer 推理、语言元数据与错误返回"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "backend",
+          "description": [
+            "仅审推理调用与协议尾部路径；模型初始化、实际 native 行为和所有输入校验未穷尽。"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "services/records/src/local-asr.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "backend"
+      ],
+      "reviewedFunctions": [
+        "LocalAsrClient: start/transcribe/close 的队列、进程和定时器生命周期",
+        "openLocalAsr/transcribeLocalAsr/closeLocalAsr",
+        "verifyLocalAsrAssets: 资源校验与流式摘要路径"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "backend",
+          "description": [
+            "未读取或加载实际模型资源，未启动原生 ASR；未量测排队期限、推理时延或多录音公平性。"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "services/records/src/markdown-export.mjs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "services/records/src/minutes-deadline.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "backend"
+      ],
+      "reviewedFunctions": [
+        "minutesTimeoutMs"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "backend",
+          "description": [
+            "请求期限分支已审；未将请求期限等同整场任务期限，也未验证真实超时中止。"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "services/records/src/minutes-pipeline.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "backend"
+      ],
+      "reviewedFunctions": [
+        "currentJob",
+        "runMinutesPipeline.execute: 续租、缓存复用/保存、计量与部分结果",
+        "runMinutesPipeline.mapWindows: 有界并发、失败后停止派发与等待在途调用",
+        "runMinutesPipeline: synthesis 分组和输出整合路径（局部）",
+        "runMinutesPipeline: 历史缓存扫描/manifest 写入"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "backend",
+          "description": [
+            "未完整语义审查 buildMinutesManifest、keepWindowDiscussion 及全部语义合并；未验证长期缓存/堆增长、取消或整场总期限。"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "services/records/src/minutes-prompts.mjs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "services/records/src/minutes-usage.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "backend"
+      ],
+      "reviewedFunctions": [
+        "meteredMinutesCall"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "backend",
+          "description": [
+            "已审 onRequest/onUsage 持久化与返回计量；未做取消后回传、多路使用量竞态实验。"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "services/records/src/minutes-wire.mjs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "services/records/src/openai-realtime.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "network"
+      ],
+      "reviewedFunctions": [
+        "openRealtime/exchange/ready/audio/respond/close",
+        "pcm24k"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "network",
+          "description": "静态超时/取消/完成屏障检查；未对接真实Realtime或模拟其完整协议"
+        }
+      ]
+    },
+    {
+      "path": "services/records/src/projections.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "backend",
+        "network"
+      ],
+      "reviewedFunctions": [
+        "deriveProjection",
+        "projectionDelta",
+        "visibleSnapshot"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "backend",
+          "description": [
+            "未穷尽所有领域字段增删组合；未验证 PG JSON 表达式索引和大量事件查询计划。"
+          ]
+        },
+        {
+          "reviewer": "network",
+          "description": "静态delta协议上下文；性能测量交后端专家"
+        }
+      ]
+    },
+    {
+      "path": "services/records/src/providers.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "backend"
+      ],
+      "reviewedFunctions": [
+        "checkedFetch: deadline 与响应读取边界",
+        "completeJson",
+        "generateMinutes: 预算、options、fixture、验证入口（局部）",
+        "providerStatus",
+        "transcribe: 调用入口与返回文字契约（局部）"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "backend",
+          "description": [
+            "未全审全部 ASR provider 分支、translateText/analyzeIntents 和 schema；没有真实供应商测试。"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "services/records/src/realtime-minutes.mjs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "services/records/src/repository.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "backend",
+        "network",
+        "architecture/root"
+      ],
+      "reviewedFunctions": [
+        "createRepository: decode/get/list/listSummaries/eventsAfter/listWork/insert/changeMany/change",
+        "createRepository: putAudio/readAudio/cleanAudio/close",
+        "createRepository: writeSqliteValue/writeSqliteProjection/writePgProjection",
+        "eventsAfter",
+        "get/change",
+        "listSummaries/listWork调用契约",
+        "listWork",
+        "projection writes",
+        "schedule",
+        "writeSqliteValue"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "backend",
+          "description": [
+            "未运行 PostgreSQL/S3 分支、跨进程写锁与崩溃恢复；未穷尽建库/投影修复迁移失败路径。"
+          ]
+        },
+        {
+          "reviewer": "network",
+          "description": "仅90-120与相关导航；存储/事务/PG/S3完整实现交后端专家"
+        },
+        {
+          "reviewer": "architecture/root",
+          "description": "Focused call paths above; not every line or target-platform runtime."
+        }
+      ]
+    },
+    {
+      "path": "services/records/src/s3.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "backend"
+      ],
+      "reviewedFunctions": [
+        "createS3Objects: bucket 启用与 versioning 检查",
+        "对象 read/put/clean/close: 摘要、条件写、分页和批量删除路径"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "backend",
+          "description": [
+            "静态局部覆盖；未运行 S3、核实 SDK 隐含超时或验证断网/重试/一致性。"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "services/records/src/seed-translation.mjs",
+      "status": "not-reviewed",
+      "reason": "Not semantically reviewed in this risk-led pass; retained for next batch."
+    },
+    {
+      "path": "services/records/src/server.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "frontend",
+        "backend",
+        "network"
+      ],
+      "reviewedFunctions": [
+        "SSE events路由",
+        "createRecordServer: audio GET 的 Range/背压/断开和 waveform 缓存",
+        "createRecordServer: audio POST 的 preflight/putAudio/acknowledge",
+        "createRecordServer: events GET 的 poll/busy/draining/cleanup",
+        "createRecordServer: owned/changeOwned 和返回序列化",
+        "createRecordServer: requestTimeout/headersTimeout/stop",
+        "minutes PATCH：bodyLimit与validateMinutes调用（311-312、348-359）",
+        "readBytes/readBody/readAudio",
+        "readBytes/readBody/readAudio: 请求大小与读取边界",
+        "seal/pause/retry/delete路由",
+        "stop",
+        "音频上传durable ACK路由"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "frontend",
+          "description": "仅核实服务器可信冻结稿额度及真实HTTP保存；未全审其他路由、认证或后端并发性能。"
+        },
+        {
+          "reviewer": "backend",
+          "description": [
+            "未完整语义审查全部 CRUD、分享、导出、设置、学习路由；未做真实 HTTP 并发、慢请求、SSE 慢读或断开竞态实验。"
+          ]
+        },
+        {
+          "reviewer": "network",
+          "description": "仅28-50、244-289、299-330、370-395；其他API/安全/导出未全审"
+        }
+      ]
+    },
+    {
+      "path": "services/records/src/speaker-streams.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "backend",
+        "network",
+        "architecture/root"
+      ],
+      "reviewedFunctions": [
+        "busy/lease/fence/error transitions",
+        "closeSpeakerStreams",
+        "processSource",
+        "processSpeakerSources/processSource",
+        "processSpeakerSources: 容量、claim/fence、续租、发送顺序、preview 合并、完成/失败清理",
+        "streamsFor",
+        "streamsFor/closeSpeakerStreams"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "backend",
+          "description": [
+            "未运行真实 WebSocket、供应商重连、慢发送、预览高频或跨会议竞争测试。"
+          ]
+        },
+        {
+          "reviewer": "network",
+          "description": "busy/过期lease/seal使用生产函数探针；真实供应商turn质量未测"
+        },
+        {
+          "reviewer": "architecture/root",
+          "description": "Focused call paths above; not every line or target-platform runtime."
+        }
+      ]
+    },
+    {
+      "path": "services/records/src/storage-codec.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "backend"
+      ],
+      "reviewedFunctions": [
+        "decodeStorage",
+        "encodeStorage"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "backend",
+          "description": [
+            "已语义审查同步压缩、大小与摘要检查；未做畸形数据/极限压缩率模糊测试。"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "services/records/src/telemetry.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "backend"
+      ],
+      "reviewedFunctions": [
+        "createTelemetry: event/measure、事件有界保留与关闭失败隔离"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "backend",
+          "description": [
+            "未全审 snapshot 统计、monitorEventLoopDelay 的长期生命周期；未将探针数据当作生产遥测。"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "services/records/src/vocabulary.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "backend"
+      ],
+      "reviewedFunctions": [
+        "loadVocabulary/recordAsrConfig"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "backend",
+          "description": [
+            "未全审 correctionCandidates 模型调用/纠错验证；本轮只审 worker 音频配置路径的词表读取开销。"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "services/records/src/waveform.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "backend"
+      ],
+      "reviewedFunctions": [
+        "recordingWaveform: 八路读取、取消/失败与逐块峰值归纳",
+        "waveformKey/validWaveform"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "backend",
+          "description": [
+            "仅静态语义覆盖；未做极长原音、并发缓存或音频完整性复测。"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "services/records/src/worker.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "backend",
+        "network",
+        "architecture/root"
+      ],
+      "reviewedFunctions": [
+        "audio/minutes/translation dispatch",
+        "per-candidate completion Promise.all",
+        "runCycle",
+        "runCycle.processCandidate/processAudio",
+        "runCycle: translation/intents/minutes claim、preview 合并、错误和提交分支",
+        "runCycle: 到期清理、原音清理和每 lane 并发",
+        "runCycle：audio分支与候选并发循环",
+        "startWorker",
+        "startWorker：独立lane循环与关闭"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "backend",
+          "description": [
+            "注入转录复现仅覆盖 audio lane 的选页公平性；未对全部 Provider/多进程抢租约/停机竞态做端到端测试。"
+          ]
+        },
+        {
+          "reviewer": "network",
+          "description": "仅26-92、194-218；纪要/意图/翻译/学习细节交后端专家"
+        },
+        {
+          "reviewer": "architecture/root",
+          "description": "Focused call paths above; not every line or target-platform runtime."
+        }
+      ]
+    },
+    {
+      "path": "services/records/src/workspace-routes.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "backend"
+      ],
+      "reviewedFunctions": [
+        "requireWorkspace",
+        "workspaceRoutes: 读取 records、分析 ID 与请求分析入口（局部）"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "backend",
+          "description": [
+            "未全审词表、目录 CRUD、权限失败和其他路由；本文件只计所列入口的局部语义覆盖。"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "services/records/src/workspace-worker.mjs",
+      "status": "reviewed-scope",
+      "reviewers": [
+        "backend",
+        "architecture/root"
+      ],
+      "reviewedFunctions": [
+        "processWorkspaceAnalysis",
+        "processWorkspaceAnalysis: job 枚举、inputHash、终态过滤",
+        "processWorkspaceAnalysis: running 验证、Abort、preview 写入（局部）"
+      ],
+      "remainingScope": [
+        {
+          "reviewer": "backend",
+          "description": [
+            "已用真实 worker 验证终态闲置扫描；未穷尽结果提交、异常收尾和实际请求取消分支。"
+          ]
+        },
+        {
+          "reviewer": "architecture/root",
+          "description": "Focused call paths above; not every line or target-platform runtime."
+        }
+      ]
+    },
+    {
+      "path": "services/session-gateway/src/components/asr-orchestrator-component.mjs",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "services/session-gateway/src/components/audio-ingest-component.mjs",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "services/session-gateway/src/components/broadcaster-component.mjs",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "services/session-gateway/src/components/transcript-api-client.mjs",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "services/session-gateway/src/components/translation-component.mjs",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "services/session-gateway/src/providers/deepgram-asr-provider.mjs",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "services/session-gateway/src/providers/index.mjs",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "services/session-gateway/src/providers/mock-asr-provider.mjs",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "services/session-gateway/src/server.mjs",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "services/transcript-api/sql/schema.sql",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "services/transcript-api/src/application/services.mjs",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "services/transcript-api/src/migrate.mjs",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "services/transcript-api/src/server.mjs",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "services/transcript-api/src/storage/memory-store.mjs",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "services/transcript-api/src/storage/postgres-store.mjs",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "services/transcript-api/src/store.mjs",
+      "status": "excluded",
+      "reason": "Legacy/experimental path outside v0.1.43 React/Record/Tauri default entry; not a claim of correctness."
+    },
+    {
+      "path": "tests/domain-and-components.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/helpers/stack.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/memory-smoke.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/postgres-smoke.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/provider-and-desktop-preview.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-asr-quality.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-audio-storage-sync.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-auth-stability.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-automation.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-capture.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-client-reliability.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-client-update.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-connection-status.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-desktop-entry.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-doubao-audio.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-exports.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-feedback-notice.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-funasr.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-learning-display.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-learning-integration.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-learning.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-lifecycle.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-live-reading.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-local-asr-pipeline.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-local-asr.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-meeting-lifecycle.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-meeting-order.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-minutes-completeness.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-minutes-context.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-minutes-efficiency.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-minutes-layout.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-minutes-pipeline.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-minutes-quality.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-minutes-views.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-multilingual-vocabulary.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-native-client.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-native-menu.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-openai-realtime.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-playback-transport.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-playback-waveform.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-postgres.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-preview-release.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-projections.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-providers.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-queue.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-realtime.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-recording-playback.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-recovery.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-release-source.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-resilience.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-sensevoice-minutes-smoke.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-settings-quality.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-source-share.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-speakers.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-startup-performance.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-startup.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-streaming.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-telemetry.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-toast.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-transcript-history.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-workbench-ux.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records-workspaces.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tests/records.test.mjs",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tools/neohorse/build_dataset.py",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tools/neohorse/build_learning_round.py",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tools/neohorse/dataset_fixture_reviews.py",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tools/neohorse/download_model.py",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tools/neohorse/evaluate_dataset.py",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tools/neohorse/finalize_learning_round.py",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tools/neohorse/intent_inputs.py",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tools/neohorse/learning_data.py",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tools/neohorse/predict_learning.py",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tools/neohorse/prepare_intents.py",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tools/neohorse/quantized_runtime.py",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tools/neohorse/score_learning.py",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tools/neohorse/serve.py",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tools/neohorse/smoke.py",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tools/neohorse/test_build_dataset.py",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tools/neohorse/test_learning_data.py",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tools/neohorse/train_head.py",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    },
+    {
+      "path": "tools/neohorse/train_lora.py",
+      "status": "not-reviewed",
+      "reason": "Tests/tooling/release paths not audited end to end; selected executed probes/regressions are reported separately."
+    }
+  ]
+}

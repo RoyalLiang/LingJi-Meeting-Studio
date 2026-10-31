@@ -1,0 +1,20 @@
+{
+  "sourceRevision": "eaf3c0afe8fef55544ce7ca961afe31daca37df7",
+  "actionsRun": 40204022613,
+  "windowsJob": 121201029868,
+  "images": {
+    "welcome": {
+      "bytes": 26436,
+      "sha256": "ec5abf20167ce3f68f2dcdc65d7ac61ae0825ed28e7fc17dfdf1090f9908e247"
+    },
+    "installing": {
+      "bytes": 23363,
+      "sha256": "ff485318f276ba99c3f08020b8d53c21de60747a544c109f4c32699858d7bb1b"
+    },
+    "finish": {
+      "bytes": 24933,
+      "sha256": "da4de7b8757405388fe24acfda4781414f8a019405e1c4f7791a9fd352759fdb"
+    }
+  },
+  "physicalDevicesTested": false
+}

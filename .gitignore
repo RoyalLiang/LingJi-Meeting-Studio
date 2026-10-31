@@ -18,3 +18,11 @@ temp/
 # codex-agent-rules runtime
 .agent-runtime/
 # end codex-agent-rules runtime
+
+# Generated native installer painter
+apps/desktop/src-tauri/installer/generated/
+
+# Local design direction and generated deployment receipts
+.taste-skill/
+cloudflare-publication-receipt.json
+.wrangler/

@@ -6,7 +6,7 @@ import { stripTypeScriptTypes } from 'node:module';
 import { transpileTypeScript } from './helpers/typescript.mjs';
 import { transform } from 'esbuild';
 
-async function quickRecordHarness({ active, issues }) {
+async function quickRecordHarness({ active, issues, minutesMode = 'asr-llm' }) {
   const app = await readFile(new URL('../apps/web/src/App.tsx', import.meta.url), 'utf8');
   const start = app.indexOf('  async function quickRecord()');
   const end = app.indexOf('  async function startCapture(', start);
@@ -14,11 +14,11 @@ async function quickRecordHarness({ active, issues }) {
   const compiled = (await transform(app.slice(start, end) + '\nexports.quickRecord = quickRecord;', { loader: 'ts' })).code;
   const state = { modal: undefined, error: '', recording: false, issues: [], created: null, starts: 0 };
   const controller = { active, startMeeting: async () => { state.starts++; return issues; }, stop: async () => { controller.active = false; } };
-  const sandbox = { exports: {}, recording: false, busy: false, scope: 'all', boot: { providers: { minutes: true } }, captureAllowed: () => true,
+  const sandbox = { exports: {}, recording: false, busy: false, scope: 'all', boot: { providers: { minutes: true, minutesMode } }, captureAllowed: () => true,
     capture: { current: null }, activeId: { current: '' }, controllerFor: () => controller,
     api: async (_path, method, body) => method === 'POST' ? (state.created = body, { id: 'quick-fixture' }) : { records: [{ id: 'quick-fixture' }] },
     setError: value => { state.error = value; }, setCaptureIssues: value => { state.issues = value; }, setBusy() {}, setCapturePhase() {},
-    selectRecord() {}, setRecord() {}, setQueueRecords() {}, loadList: async () => {}, refresh: async () => {},
+    selectRecord() {}, rememberRecord() {}, setQueueRecords() {}, loadList: async () => {}, refresh: async () => {},
     setModal: value => { state.modal = value; }, setRecording: value => { state.recording = value; }, messageOf: error => error.message,
   };
   vm.runInNewContext(compiled, sandbox);
@@ -34,6 +34,7 @@ test('quick recording keeps a working microphone active without opening source s
   assert.equal(h.state.error, '系统音频权限被拒绝', 'partial failure must remain visible without interrupting working capture');
   assert.equal(h.state.issues.length, 1);
   assert.equal(h.state.created.retainAudio, true);
+  assert.equal(h.state.created.autoMinutes, true, 'legacy text mode keeps automatic minutes');
 });
 
 test('quick recording opens explicit recovery only when no requested audio source could start', async () => {
@@ -56,7 +57,7 @@ async function microphoneActionHarness({ failure = null, meetingIssues = [], ini
   const start = app.indexOf('  async function startCapture('), end = app.indexOf('  async function onImport(', start);
   assert.ok(start >= 0 && end > start);
   const compiled = (await transform(app.slice(start, end) + '\nexports.actions = {startCapture,toggleMicrophone};', { loader: 'ts' })).code;
-  const state = { modal: initialModal, recording: true, issues: [], error: '', starts: [], meetingStarts: 0, disconnects: [], refreshes: 0 };
+  const state = { modal: initialModal, agentOpen: true, recording: true, issues: [], error: '', starts: [], meetingStarts: 0, disconnects: [], refreshes: 0 };
   const controller = { active: true, sources: [{ kind: 'display' }, ...(existingMicrophone ? [{kind:'microphone'}] : [])],
     async start(kind) { state.starts.push(kind); if (failure) throw failure; const source={kind}; this.sources.push(source); return source; },
     async startMeeting() { state.meetingStarts++; return meetingIssues; },
@@ -64,7 +65,7 @@ async function microphoneActionHarness({ failure = null, meetingIssues = [], ini
   };
   const sandbox = { exports: {}, setCapturePhase() {}, record: {id:'fixture',capture:'recording'}, busy: false, modal: initialModal,
     captureAllowed:()=>true, capture:{current:controller}, controllerFor:()=>controller,
-    setError:value=>{state.error=value;}, dismissToast(){}, setBusy(){},
+    setError:value=>{state.error=value;}, dismissToast(){}, setBusy(){}, setAgentOpen:value=>{state.agentOpen=value;},
     setCaptureIssues:value=>{state.issues=value;}, setRecording:value=>{state.recording=value;},
     setModal:value=>{state.modal=value;}, refresh:async()=>{state.refreshes++;}, messageOf:error=>error.message,
     quickRecord:assert.fail, stopCapture:assert.fail, showToast(){},
@@ -90,18 +91,20 @@ test('starting an existing meeting keeps partial failures inline without forcing
   assert.equal(h.state.error,'麦克风暂时无法使用');
   assert.equal(h.state.meetingStarts,1);
   assert.equal(h.state.recording,true);
+  assert.equal(h.state.agentOpen,false,'starting an existing meeting reveals its recording controls');
 });
 
 test('enable microphone starts directly and a successful explicit recovery closes its source chooser', async () => {
   const h=await microphoneActionHarness(); await h.toggleMicrophone();
   assert.deepEqual(h.state.starts,['microphone']);assert.equal(h.state.modal,null);
+  assert.equal(h.state.agentOpen,false,'direct microphone recovery leaves the agent center');
   const recovery=await microphoneActionHarness({initialModal:'capture'});await recovery.startCapture('microphone');
   assert.equal(recovery.state.modal,null);assert.equal(recovery.state.error,'');
   const off=await microphoneActionHarness({existingMicrophone:true});await off.toggleMicrophone();
   assert.deepEqual(off.state.disconnects,['microphone']);assert.equal(off.state.modal,null);
 });
 
-async function captureHarness({ noDisplayAudio = false, micFailure = false, displayDenied = false, displayUnsupported = false, recordId = 'record', chunkWait, displayVideo = false, enqueueFailure = false } = {}) {
+async function captureHarness({ noDisplayAudio = false, micFailure = false, displayDenied = false, displayUnsupported = false, recordId = 'record', chunkWait, displayVideo = false, enqueueFailure = false, capacityFailure = false } = {}) {
   let source = await readFile(new URL('../apps/web/src/audio/capture.ts', import.meta.url), 'utf8');
   source = transpileTypeScript(source).replace(/^import .*$/gm, '').replace(/export /g, '');
   const signalSource = stripTypeScriptTypes(await readFile(new URL('../apps/web/src/audio/signal.ts', import.meta.url), 'utf8')).replace(/^import .*$/gm, '').replace(/export /g, '');
@@ -124,7 +127,7 @@ async function captureHarness({ noDisplayAudio = false, micFailure = false, disp
       getUserMedia: async () => { calls.push('microphone'); if (micFailure) throw new Error('麦克风权限被拒绝'); return calls.filter(call => call === 'microphone').length === 1 ? mic : stream('测试麦克风'); },
       getDisplayMedia: displayUnsupported ? undefined : async options => { calls.push({ display: options }); if (displayDenied) throw new DOMException('Permission denied', 'NotAllowedError'); return display; },
     } },
-    preferredDevice: () => 'default', inputDevices: async () => [], microphoneConstraints: () => ({}),
+    ensureAudioCapacity: async () => { if(capacityFailure) throw new Error('本机录音缓存空间不足，尚未开始录音'); }, preferredDevice: () => 'default', inputDevices: async () => [], microphoneConstraints: () => ({}),
     api: async (_url, _method, input) => ({ id: `source-${input.kind}-${++sourceNumber}`, sessionId: 'session', epoch: 'epoch', ...input }),
     makeChunk: async (...args) => { await chunkWait; return { sourceId: args[0], sequence: args[2], sampleOffset: args[3], buffer: args[4] }; }, enqueue: async (_id, chunk) => { if(enqueueFailure) throw new Error("本机存储空间不足"); uploads.push(chunk); }, drainQueue: async () => {},
   };
@@ -487,4 +490,47 @@ test('source loss never claims audio was saved after tail persistence fails', as
   assert.ok(h.errors.some(({error})=>error.message==='本机存储空间不足'));
   assert.equal(h.errors.some(({continuing})=>continuing===true),false,'failed persistence must not produce a recoverable saved-audio notice');
   await h.controller.stop();
+});
+
+for (const minutesMode of ['doubao-audio', 'openai-realtime', 'doubao-audio-only']) test(`quick recording starts without meeting form in ${minutesMode}`, async () => {
+  const h = await quickRecordHarness({ active: true, issues: [], minutesMode });
+  assert.equal(h.state.starts, 1, `quick click opened ${h.state.modal} instead of starting capture`);
+  assert.equal(h.state.recording, true);
+  assert.equal(h.state.created.title, undefined);
+  assert.equal(h.state.created.autoMinutes, false, 'audio upload needs separate per-meeting consent');
+  assert.equal(h.state.created.realtimeAudioConsent, false, 'quick capture cannot grant undisclosed audio upload consent');
+});
+
+test('capsule clock uses queued PCM per source without double counting tracks or resumed sessions', async () => {
+  const source=stripTypeScriptTypes(await readFile(new URL('../apps/web/src/audio/signal.ts',import.meta.url),'utf8')).replace(/^import .*$/gm,'').replace(/export /g,'');
+  const sandbox={exports:{}};vm.runInNewContext(source+'\nexports.clock=capturedDurationMs;',sandbox);
+  const clock=sandbox.exports.clock;
+  const sources=[{id:'mic',timelineOffsetMs:90000},{id:'display',timelineOffsetMs:90000}];
+  assert.equal(clock(110000,sources,[{sourceId:'mic',seconds:30},{sourceId:'display',seconds:32}]),122000);
+  assert.equal(clock(122000,sources,[]),122000);
+  assert.equal(clock(7000,sources,[{sourceId:'other-record',seconds:500}]),7000);
+  assert.equal(clock(0,[{id:'mic'}],[{sourceId:'mic',seconds:1.234567}]),1235);
+  assert.equal(clock(0,[{id:'mic',timelineOffsetMs:.5}],[{sourceId:'mic',seconds:1.234567}]),1235);
+  assert.equal(clock(1234.6,[],[]),1235);
+});
+
+
+test('full cache stops browser setup before a source or worklet exists and releases permissions',async()=>{
+ const h=await captureHarness({capacityFailure:true});const issues=await h.controller.startMeeting();
+ assert.equal(issues.length,2);assert.equal(h.controller.active,false);assert.equal(h.controller.sources.length,0);
+ assert.equal(h.nodes.length,0);assert.equal(h.contexts.length,0);
+ assert.equal(h.display.audioTrack.readyState,'ended');assert.equal(h.mic.audioTrack.readyState,'ended');
+ assert.equal(h.errors.length,0);
+});
+
+test('persistence failure is visible while stop is still waiting for retained audio',async()=>{
+ const app=await readFile(new URL('../apps/web/src/App.tsx',import.meta.url),'utf8');
+ const code=(await transform(app.slice(app.indexOf('  function controllerFor('),app.indexOf('  async function quickRecord('))+'\nexports.factory=controllerFor;',{loader:'ts'})).code;
+ let release;const held=new Promise(resolve=>{release=resolve;});const state={error:'',recording:true};
+ class Controller{constructor(...args){this.args=args;this.active=true;}}
+ const sandbox={exports:{},CaptureController:Controller,capture:{current:null},setRecording:v=>state.recording=v,setError:v=>state.error=v,messageOf:e=>e.message,
+  stopCapture:()=>{state.error='';return held;},upload(){},setSignals(){}};
+ vm.runInNewContext(code,sandbox);const controller=sandbox.exports.factory('r');sandbox.capture.current=controller;
+ try{controller.args[2](new Error('本机缓存已满，正在保留未确认音频'));assert.equal(state.recording,false);assert.match(state.error,/本机缓存已满/);}
+ finally{release();await new Promise(resolve=>setImmediate(resolve));}
 });

@@ -1,0 +1,12 @@
+{
+  "published": true,
+  "tag": "v0.1.16",
+  "sourceRevision": "f9f36175d58b63a1cddcdf0835855a14e8be3896",
+  "runId": "40101029050",
+  "files": 10,
+  "sourceFiles": 291,
+  "sourceManifest": "0cb27ede9ab38747379a907d31f652795d5a0f8b655d2a5ebeeddc49296d6fe4",
+  "macSha256": "61bd082fff7e0aac79091ecf1b1b98d4460ce21d2abe7c648bac051560ce0da8",
+  "windowsSha256": "032ec19cead8497c74483fcfd2c465b45b739324eea3f6dfb8d7816c6b7b3b89",
+  "release": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.16"
+}

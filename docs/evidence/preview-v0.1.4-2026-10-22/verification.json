@@ -1,0 +1,95 @@
+{
+  "version": "0.1.4",
+  "sourceRevision": "cba5dc82941770f9decedc21e8777cfe5bbf9b7b",
+  "runId": 39766317446,
+  "runUrl": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/39766317446",
+  "releaseUrl": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.1.4",
+  "sourceFilesMatched": 221,
+  "allJobsSuccess": true,
+  "allFiveAssetsDownloadedAndHashed": true,
+  "assets": [
+    {
+      "name": "SHA256SUMS.txt",
+      "bytes": 95,
+      "sha256": "5fa5add4474a3b9995fc7e013304a5158f4ed9978fe9ebbc9e4a1a7a78280353",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.4/SHA256SUMS.txt"
+    },
+    {
+      "name": "package-smoke.json",
+      "bytes": 389,
+      "sha256": "e4392f15ee050cc58401b01a5fa3531a220bd5f99cfa52c8cc4aa7c0bbe49e8c",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.4/package-smoke.json"
+    },
+    {
+      "name": "INSTALL-macos-arm64.md",
+      "bytes": 3014,
+      "sha256": "f0c13f0e1f57ab1c3c845f9da320507d34e658c46f41c2294ef191a13d977b79",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.4/INSTALL-macos-arm64.md"
+    },
+    {
+      "name": "release.json",
+      "bytes": 37564,
+      "sha256": "95ff0dce014116e2afb3a59f331d6174b79a1281f6671fd88ab07051d4a822c4",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.4/release.json"
+    },
+    {
+      "name": "Lingji-0.1.4-macos-arm64.dmg",
+      "bytes": 47457342,
+      "sha256": "b594796843c5196efb728af25a164081df6a9e4278f47390254c211edbb867e6",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.1.4/Lingji-0.1.4-macos-arm64.dmg"
+    }
+  ],
+  "signing": "ad-hoc",
+  "notarized": false,
+  "localNodeTests": 375,
+  "browserCheck": "actual React + two synthetic WAV sources",
+  "freshMachineInstallationTested": false,
+  "userMeetingsChanged": false,
+  "observedAt": "2026-10-22T11:08:10.309681+00:00",
+  "releaseId": 420615113,
+  "publishedAt": "2026-10-22T11:03:26Z",
+  "jobs": [
+    {
+      "id": 119782542685,
+      "name": "verify",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-22T10:52:16Z",
+      "completed_at": "2026-10-22T10:52:27Z"
+    },
+    {
+      "id": 119782636322,
+      "name": "build",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-22T10:52:30Z",
+      "completed_at": "2026-10-22T11:03:09Z"
+    },
+    {
+      "id": 119787061147,
+      "name": "publish",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-22T11:03:11Z",
+      "completed_at": "2026-10-22T11:03:30Z"
+    }
+  ],
+  "signatureAudit": {
+    "version": "0.1.4",
+    "bundleVersion": "0.1.26",
+    "signature": "ad-hoc",
+    "teamIdentifier": null,
+    "codesignIntegrityVerified": true,
+    "gatekeeperAssessmentExitCode": 3,
+    "gatekeeperAccepted": false,
+    "applicationExecuted": false,
+    "applicationInstalled": false,
+    "volumeReadOnly": true,
+    "volumeDetached": true
+  },
+  "validationLimits": [
+    "User Mac / Tauri WebKit not tested",
+    "Real meeting long audio not tested",
+    "Developer ID signing and Apple notarization blocked by missing account"
+  ]
+}

@@ -1,31 +1,37 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod audio;
+mod meeting_watch;
 mod config;
 mod downloads;
 mod local_backend;
 mod menu_status;
 mod proxy;
-#[cfg(target_os = "macos")]
+mod resident;
+mod recording_widget;
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 mod status_bar;
 mod update_gate;
 mod updates;
-use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc,
-};
+mod preview_updates;
+use std::sync::Arc;
 use tauri::{
     ipc::{CapabilityBuilder, Response},
     Emitter, Manager, State, WebviewUrl, WebviewWindow,
 };
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
+
+#[cfg(target_os = "windows")]
+const RECORDING_BROWSER_ARGS: &str = "--disable-background-timer-throttling";
 
 struct Client {
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     menu_bar: status_bar::StatusBar,
     origin: String,
+    #[cfg(target_os = "macos")]
+    store_id: [u8; 16],
+    #[cfg(not(target_os = "macos"))]
+    profile: std::path::PathBuf,
     captures: Arc<audio::Captures>,
-    ready: AtomicBool,
-    close_serial: AtomicU64,
+    resident: resident::Resident,
     _lock: std::fs::File,
     _backend: Option<local_backend::LocalBackend>,
     updates: updates::Updates,
@@ -44,6 +50,12 @@ fn authorize(window: &WebviewWindow, state: &Client) -> Result<(), String> {
         return Err("客户端权限被拒绝".into());
     }
     Ok(())
+}
+
+#[tauri::command]
+fn meeting_watch_configure(window: WebviewWindow, state: State<'_, Client>, watch: State<'_, meeting_watch::MeetingWatch>, enabled: bool, browser: bool, feishu: bool, token: String) -> Result<bool, String> {
+    authorize(&window, &state)?;
+    watch.configure(window.app_handle().clone(),enabled,browser,feishu,token)
 }
 
 #[tauri::command]
@@ -85,6 +97,12 @@ async fn capture_read(
 }
 
 #[tauri::command]
+fn capture_ack(window: WebviewWindow, state: State<'_, Client>, id: String, sequence: u32, sample_offset: u32, sample_count: u32) -> Result<(), String> {
+    authorize(&window, &state)?;
+    state.captures.acknowledge(&id, sequence, sample_offset, sample_count)
+}
+
+#[tauri::command]
 fn capture_stop(
     window: WebviewWindow,
     state: State<'_, Client>,
@@ -113,19 +131,19 @@ fn client_status(
     report: menu_status::Report,
 ) -> Result<(), String> {
     authorize(&window, &state)?;
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     state.menu_bar.report(report);
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     let _ = report;
     Ok(())
 }
 
 fn menu_has_pending(state: &Client) -> bool {
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     {
         state.menu_bar.has_pending()
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
         let _ = state;
         false
@@ -133,30 +151,92 @@ fn menu_has_pending(state: &Client) -> bool {
 }
 
 #[tauri::command]
-fn client_ready(window: WebviewWindow, state: State<'_, Client>) -> Result<(), String> {
+async fn client_ready(window: WebviewWindow, state: State<'_, Client>) -> Result<(), String> {
     authorize(&window, &state)?;
-    state.ready.store(true, Ordering::Release);
+    state.resident.ready();
+    #[cfg(target_os="macos")]
+    preview_updates::finish_handoff(window.app_handle());
+    // A failed prewarm is retried before a recording can hide the main window.
+    let _=recording_widget::prepare(window.app_handle(), &state);
     Ok(())
 }
 
 #[cfg(feature = "smoke-test")]
 #[tauri::command]
-fn client_probe(
+async fn client_probe(
     window: WebviewWindow,
     state: State<'_, Client>,
     result: serde_json::Value,
-) -> Result<(), String> {
+) -> Result<serde_json::Value, String> {
     authorize(&window, &state)?;
+    if let Some(action) = result.get("residentAction").and_then(|value| value.as_str()) {
+        match action {
+            "close" => window.close().map_err(|e| e.to_string())?,
+            "restore" => resident::show(window.app_handle()),
+            "snapshot" => {},
+            _ => return Err("unknown resident probe action".into()),
+        }
+        return Ok(serde_json::json!({"visible":window.is_visible().map_err(|e|e.to_string())?,"nativeActive":state.captures.active()}));
+    }
+    if let Some(action) = result.get("widgetAction").and_then(|value| value.as_str()) {
+        match action {
+            "hold-ready" => window.state::<recording_widget::RecordingWidget>().hold_ready(),
+            "release-ready" => recording_widget::release_held_ready(window.app_handle()).await?,
+            "native-close" => window.close().map_err(|e|e.to_string())?,
+            "native-minimize" => window.minimize().map_err(|e|e.to_string())?,
+            "native-restore" => {window.unminimize().map_err(|e|e.to_string())?;window.show().map_err(|e|e.to_string())?;window.set_focus().map_err(|e|e.to_string())?;},
+            _ => {},
+        }
+        let widget = window.app_handle().get_webview_window("recording-widget");
+        if let Some(floating) = &widget {
+            let selector = match action {
+                "displace" => {
+                    let position = floating.outer_position().map_err(|e| e.to_string())?;
+                    floating.set_position(tauri::PhysicalPosition::new(position.x + 73, position.y + 41)).map_err(|e| e.to_string())?;
+                    None
+                },
+                "snapshot" | "hold-ready" | "release-ready" | "native-restore" | "native-minimize" | "native-close" => None,
+                "pause" => Some(r#".capsule-actions button[aria-label="暂停录音"], .capsule-actions button[aria-label="继续录音"]"#),
+                "finish" => Some(r#".capsule-actions button[aria-label="结束并整理"]"#),
+                "restore" => Some(r#".capsule-actions button[aria-label="返回主窗口"]"#),
+                _ => return Err("unknown widget probe action".into()),
+            };
+            if let Some(selector) = selector {
+                floating.eval(&format!("(()=>{{let tries=0;const click=()=>{{const button=document.querySelector({});if(button&&!button.disabled)button.click();else if(++tries<100)setTimeout(click,50);}};click();}})()", serde_json::to_string(selector).unwrap())).map_err(|e| e.to_string())?;
+            }
+        }
+        let placement = widget.as_ref().and_then(|floating| {
+            let monitor = window.current_monitor().ok()??;
+            let position = floating.outer_position().ok()?;
+            let size = floating.outer_size().ok()?;
+            let area = monitor.work_area();
+            Some(serde_json::json!({
+                "topGap": (position.y - area.position.y) as f64 / monitor.scale_factor(),
+                "centerOffset": (position.x as f64 + size.width as f64 / 2.0 - area.position.x as f64 - area.size.width as f64 / 2.0) / monitor.scale_factor(),
+                "width": size.width as f64 / monitor.scale_factor(),
+            }))
+        });
+        let widget_state = window.state::<recording_widget::RecordingWidget>();
+        return Ok(serde_json::json!({"placement":placement,"ready":widget_state.ready(),"widgetRecording":widget_state.recording(), "widgetLogicalHeight":widget.as_ref().and_then(|w|Some(w.inner_size().ok()?.height as f64/w.scale_factor().ok()?)), "widgetDurationMs":widget_state.duration_ms(), "canResume":widget_state.can_resume(), "widgetVisible":widget.as_ref().is_some_and(|w|w.is_visible().unwrap_or(false)), "mainVisible":window.is_visible().map_err(|e|e.to_string())?, "mainMinimized":window.is_minimized().map_err(|e|e.to_string())?}));
+    }
     if let Some(activity) = result.get("updateActivity") {
         state
             .updates
             .gate
             .report(serde_json::from_value(activity.clone()).map_err(|e| e.to_string())?);
-        return Ok(());
+        return Ok(serde_json::Value::Null);
     }
     let path =
         std::env::var("TTS_CLIENT_PROBE_OUTPUT").map_err(|_| "probe output not configured")?;
-    std::fs::write(path, serde_json::to_vec_pretty(&result).unwrap()).map_err(|e| e.to_string())
+    std::fs::write(path, serde_json::to_vec_pretty(&result).unwrap()).map_err(|e| e.to_string())?;
+    if std::env::var_os("TTS_CLIENT_PROBE_AUTO_EXIT").is_some() {
+        let app=window.app_handle().clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            resident::probe_exit(&app);
+        });
+    }
+    Ok(serde_json::Value::Null)
 }
 
 #[tauri::command]
@@ -166,22 +246,7 @@ async fn client_close(
     force: bool,
 ) -> Result<(), String> {
     authorize(&window, &state)?;
-    if state.updates.gate.installing() {
-        return Err("更新正在安装，请稍候".into());
-    }
-    state.close_serial.fetch_add(1, Ordering::AcqRel);
-    if force || state.captures.active() || menu_has_pending(&state) {
-        let dialog = window.dialog().message("录音或补传尚未完成。请先在会议中暂停或结束，并等待补传完成。\n强制关闭会停止原生采集，尚未保存的末尾音频可能丢失。已持久化的片段会在重启并重新登录同一服务后保留。").title("录音尚未完成")
-            .buttons(MessageDialogButtons::OkCancelCustom("强制关闭".into(), "留在会议".into()));
-        if !tauri::async_runtime::spawn_blocking(move || dialog.blocking_show())
-            .await
-            .map_err(|e| e.to_string())?
-        {
-            return Ok(());
-        }
-    }
-    state.captures.stop_all();
-    window.destroy().map_err(|e| e.to_string())
+    resident::confirm_quit(&window, force).await
 }
 
 #[tauri::command]
@@ -236,13 +301,22 @@ async fn update_install(window: WebviewWindow, state: State<'_, Client>) -> Resu
 }
 
 fn main() {
-    let builder = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // Explicit profile overrides are separate development/test instances.
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    let builder = if std::env::var_os("TTS_CLIENT_DATA_DIR").is_none() {
+        builder.plugin(tauri_plugin_single_instance::init(|app, _, _| resident::show(app)))
+    } else { builder };
+    let builder = builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build());
     #[cfg(feature = "smoke-test")]
     let builder = builder.invoke_handler(tauri::generate_handler![
+        recording_widget::recording_widget_update, recording_widget::recording_widget_state, recording_widget::recording_widget_ready, recording_widget::recording_widget_action,
+        meeting_watch_configure,
         capture_start,
         capture_read,
+        capture_ack,
         capture_stop,
         capture_inputs,
         client_ready,
@@ -257,8 +331,11 @@ fn main() {
     ]);
     #[cfg(not(feature = "smoke-test"))]
     let builder = builder.invoke_handler(tauri::generate_handler![
+        recording_widget::recording_widget_update, recording_widget::recording_widget_state, recording_widget::recording_widget_ready, recording_widget::recording_widget_action,
+        meeting_watch_configure,
         capture_start,
         capture_read,
+        capture_ack,
         capture_stop,
         capture_inputs,
         client_ready,
@@ -283,31 +360,42 @@ fn main() {
             let handle = app.handle().clone();
             let assets = Arc::new(move |path: &str| handle.asset_resolver().get(if path == "/" { "/index.html" } else { path }.to_string())
                 .map(|asset| (asset.bytes, asset.mime_type)));
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             let menu_api_origin = api_url.clone();
             let proxy = proxy::Proxy::new_with_session(api_url, origin.clone(), assets, backend.as_ref().map(|local| local.cookie.as_str()))?;
             let startup_url = proxy.startup_url();
             let api = proxy.clone();
             let cache = directory.join("updates"); std::fs::create_dir_all(&cache)?;
-            let updates = updates::Updates::new(app.package_info().version.to_string(), cache);
+            let updates = updates::Updates::new(app.package_info().version.to_string(), cache, app.config().product_name.as_deref() == Some("聆记 Preview"));
             let listener = binding.listener;
             tauri::async_runtime::spawn(async move {
                 let listener = tokio::net::TcpListener::from_std(listener).expect("client loopback listener");
                 if let Err(e) = axum::serve(listener, proxy.router()).await { eprintln!("client proxy stopped: {e}"); }
             });
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             let menu_bar = status_bar::StatusBar::new(app.handle(), &menu_api_origin)?;
+            app.manage(recording_widget::RecordingWidget::default());
+            app.manage(meeting_watch::MeetingWatch::default());
             app.manage(Client {
+                #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+                menu_bar,
                 #[cfg(target_os = "macos")]
-                menu_bar, origin: origin.clone(), captures: Arc::new(audio::Captures::default()), ready: AtomicBool::new(false), close_serial: AtomicU64::new(0), _lock: binding._lock, _backend: backend, updates, api });
+                store_id,
+                #[cfg(not(target_os = "macos"))]
+                profile: profile.clone(),
+                origin: origin.clone(), captures: Arc::new(audio::Captures::default()), resident: resident::Resident::default(), _lock: binding._lock, _backend: backend, updates, api });
             app.add_capability(CapabilityBuilder::new("local-capture").window("main").local(false).remote(format!("{origin}/*"))
-                .permission("allow-capture-start").permission("allow-capture-read").permission("allow-capture-stop").permission("allow-capture-inputs")
-                .permission("allow-client-close").permission("allow-client-ready").permission("allow-client-status").permission("allow-update-status").permission("allow-update-activity").permission("allow-update-check").permission("allow-update-download").permission("allow-update-install")
+                .permission("allow-meeting-watch-configure").permission("allow-capture-start").permission("allow-capture-read").permission("allow-capture-ack").permission("allow-capture-stop").permission("allow-capture-inputs")
+                .permission("allow-recording-widget-update").permission("allow-client-close").permission("allow-client-ready").permission("allow-client-status").permission("allow-update-status").permission("allow-update-activity").permission("allow-update-check").permission("allow-update-download").permission("allow-update-install")
                 .permission("core:event:allow-listen").permission("core:event:allow-unlisten"))?;
+            app.add_capability(CapabilityBuilder::new("recording-widget").window("recording-widget").local(false).remote(format!("{origin}/*"))
+                .permission("allow-recording-widget-state").permission("allow-recording-widget-ready").permission("allow-recording-widget-action")
+                .permission("core:event:allow-listen").permission("core:event:allow-unlisten").permission("core:window:allow-start-dragging"))?;
             #[cfg(feature = "smoke-test")]
             app.add_capability(CapabilityBuilder::new("probe-only").window("main").local(false).remote(format!("{origin}/*")).permission("allow-client-probe"))?;
             let client_origin = origin.clone(); let nav_handle = app.handle().clone();
             let builder = tauri::WebviewWindowBuilder::new(app, "main", WebviewUrl::External(startup_url.parse()?))
+                .background_throttling(tauri::utils::config::BackgroundThrottlingPolicy::Disabled)
                 .title("聆记 · Meeting Studio").inner_size(1280.0, 900.0).min_inner_size(760.0, 600.0)
                 .on_navigation(move |url| url.origin().ascii_serialization() == client_origin && !nav_handle.state::<Client>().captures.active() && !nav_handle.state::<Client>().updates.gate.installing())
                 .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
@@ -344,16 +432,19 @@ fn main() {
                     } else if !case.is_empty() {
                         let script = format!("window.__updateCase={};{}", serde_json::to_string(&case).unwrap(), include_str!("update_probe.js"));
                         let _ = window.eval(&script);
-                    } else { let _ = window.eval(include_str!("probe.js")); }
+                    } else { let background_ms = std::env::var("TTS_NATIVE_BACKGROUND_MS").ok().and_then(|value| value.parse::<u64>().ok()).unwrap_or(9000).clamp(9000,600000);
+ let _ = window.eval(&format!("window.__nativeBackgroundMs={background_ms};{}", include_str!("probe.js"))); }
                 }
             });
             #[cfg(target_os = "macos")]
             let builder = builder.data_store_identifier(store_id);
             #[cfg(not(target_os = "macos"))]
             let builder = builder.data_directory(profile.clone());
+            #[cfg(target_os = "windows")]
+            let builder = builder.additional_browser_args(RECORDING_BROWSER_ARGS);
             let _ = (profile, store_id);
             builder.build()?;
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             {
                 let handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
@@ -369,26 +460,37 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                let state = window.state::<Client>();
-                if state.ready.load(Ordering::Acquire) || state.captures.active() {
-                    api.prevent_close(); let serial = state.close_serial.fetch_add(1, Ordering::AcqRel) + 1;
-                    let _ = window.emit("client-close-requested", ());
-                    let window = window.clone();
-                    tauri::async_runtime::spawn(async move {
-                        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-                        if window.state::<Client>().updates.gate.installing() { return; }
-                        if window.state::<Client>().close_serial.load(Ordering::Acquire) != serial { return; }
-                        let dialog = window.dialog().message("会议页面未响应关闭请求。强制关闭可能丢失尚未保存的末尾音频；已保存的片段会保留。")
-                            .buttons(MessageDialogButtons::OkCancelCustom("强制关闭".into(), "取消".into()));
-                        if tauri::async_runtime::spawn_blocking(move || dialog.blocking_show()).await.unwrap_or(false) {
-                            window.state::<Client>().captures.stop_all(); let _ = window.destroy();
-                        }
-                    });
+            if window.label()=="main" && window.is_minimized().unwrap_or(false) && matches!(event, tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Focused(false)) {
+                recording_widget::main_hidden(window.app_handle());
+            }
+            if window.label()=="main" && window.is_visible().unwrap_or(false) {
+                let focused=matches!(event,tauri::WindowEvent::Focused(true));
+                let resized=matches!(event,tauri::WindowEvent::Resized(_));
+                if focused || (resized && !window.is_minimized().unwrap_or(false)) {
+                    recording_widget::main_shown(window.app_handle());
                 }
             }
+            if window.label()=="recording-widget" && matches!(event,tauri::WindowEvent::CloseRequested{..}) {
+                if let tauri::WindowEvent::CloseRequested{api,..}=event{api.prevent_close();}
+                resident::show(window.app_handle());
+            }
+
+            if window.label() == "main" && matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event { api.prevent_close(); }
+                let _recording_hidden=recording_widget::main_hidden(window.app_handle());
+                #[cfg(any(target_os = "macos", target_os = "windows"))]
+                { let _ = window.hide(); }
+                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+                { if _recording_hidden {let _=window.hide();} else {resident::request_quit(window.app_handle());} }
+            }
         })
-        .run(client_context()).expect("TTS desktop runtime");
+        .build(client_context()).expect("TTS desktop runtime")
+        .run(|app, event| match event {
+            tauri::RunEvent::ExitRequested { api, .. } => resident::exit_requested(app, api),
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen { .. } => resident::show(app),
+            _ => {}
+        });
 }
 
 fn client_context() -> tauri::Context<tauri::Wry> {

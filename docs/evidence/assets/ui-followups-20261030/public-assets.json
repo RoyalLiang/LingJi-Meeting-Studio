@@ -1,0 +1,30 @@
+{
+  "checkedAt": "2026-10-30T16:15:24.621Z",
+  "source": "public rendered expanded_assets/v0.2.3",
+  "assets": [
+    {
+      "name": "Lingji-0.2.3-linux-amd64.deb",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.2.3/Lingji-0.2.3-linux-amd64.deb",
+      "href": "/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.2.3/Lingji-0.2.3-linux-amd64.deb",
+      "digest": "b21696ae13223086262a81ec29555e9279c2061fe710f10b8940e020aa5b2e9b"
+    },
+    {
+      "name": "Lingji-0.2.3-macos-arm64.dmg",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.2.3/Lingji-0.2.3-macos-arm64.dmg",
+      "href": "/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.2.3/Lingji-0.2.3-macos-arm64.dmg",
+      "digest": "ac0dff1e2e536f6dad90cf64aef48229155a922b408f1e7fea4c01c88988c57c"
+    },
+    {
+      "name": "Lingji-0.2.3-windows-x64-setup.exe",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.2.3/Lingji-0.2.3-windows-x64-setup.exe",
+      "href": "/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.2.3/Lingji-0.2.3-windows-x64-setup.exe",
+      "digest": "84d3cd730c998ef8260f20416bb854ea186a44dc99ec947fcf30bc9780492e31"
+    },
+    {
+      "name": "preview-update.json",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.2.3/preview-update.json",
+      "href": "/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.2.3/preview-update.json",
+      "digest": "5f2feb457882f0e44805642334cb2c247b4c9031c519e10db04e212426f0fdfa"
+    }
+  ]
+}

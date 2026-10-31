@@ -1,49 +1,48 @@
-import type { Evidence, Minutes, MinutesItem, RecordDetail, SpeakerSummary, SummaryTable, Topic } from './model';
+import { minutesActionText } from '../../../packages/records/src/minutes-quality.mjs';
+import { speakerLabels } from '../../../packages/records/src/minutes-speakers.mjs';
+import type { Evidence, Minutes, MinutesItem, RecordDetail, SpeakerSummary, SummaryTable, Topic, Segment } from './model';
 
 export function currentMinutesJob(record: Pick<RecordDetail,'capture'|'jobs'|'transcriptRevision'>) {
   const ended=record.capture==='completed' || record.capture==='sealed';
-  return record.jobs.filter(job=>job.status!=='cancelled' && (!ended || job.scope!=='live'))
-    .filter(job=>!['failed','stale'].includes(job.status) || job.transcriptRevision===record.transcriptRevision).at(-1);
+  const jobs=record.jobs.filter(job=>job.status!=='cancelled')
+    .filter(job=>!['failed','stale'].includes(job.status) || job.transcriptRevision===record.transcriptRevision || (!ended && job.scope==='live'));
+  if(!ended)return jobs.at(-1);
+  return jobs.filter(job=>['queued','running'].includes(job.status)).at(-1) || jobs.filter(job=>job.scope!=='live').at(-1) || jobs.filter(job=>job.scope==='live' && job.status==='failed').at(-1);
 }
 
 export function topicBranches(minutes: Minutes): (Topic & { items: MinutesItem[] })[] {
-  const items = minutes.sections.flatMap(section => section.items);
   if (!minutes.topics?.length) return minutes.sections.map(section => ({ title: section.heading, summary: '', evidence: section.items.flatMap(item => item.evidence), items: section.items }));
-  const firstTopic = new Map<string, number>();
-  minutes.topics.forEach((topic, index) => topic.evidence.forEach(ref => {
-    const key = `${ref.segmentId}:${ref.revision}`;
-    if (!firstTopic.has(key)) firstTopic.set(key, index);
-  }));
-  const groups = minutes.topics.map(() => [] as MinutesItem[]), other: MinutesItem[] = [];
-  for (const item of items) {
-    let owner = Infinity;
-    for (const ref of item.evidence) owner = Math.min(owner, firstTopic.get(`${ref.segmentId}:${ref.revision}`) ?? Infinity);
-    if (owner === Infinity) other.push(item); else groups[owner].push(item);
+  const key = (ref: Evidence) => `${ref.segmentId}:${ref.revision}`;
+  const topics = minutes.topics, groups = topics.map(() => [] as MinutesItem[]), other = new Map<string, MinutesItem[]>();
+  for (const section of minutes.sections) for (const item of section.items) {
+    const candidates=topics.flatMap((topic,index)=>(item.topicId?topic.id===item.topicId:topic.title===section.heading)?[index]:[]);
+    if(candidates.length===1){
+      const index=candidates[0];
+      groups[index].push(section.heading===topics[index].title?item:{...item,label:[section.heading,item.label].filter(Boolean).join(' · ')});
+    }
+    else other.set(section.heading,[...(other.get(section.heading)||[]),item]);
   }
-  const branches = minutes.topics.map((topic, index) => {
-    return { ...topic, items: groups[index].filter(item => item.text !== topic.summary) };
-  });
-  if (other.length) branches.push({ title: '其他讨论要点', summary: '', evidence: other.flatMap(item => item.evidence), items: other });
+  const union = (refs: Evidence[]) => [...new Map(refs.map(ref => [key(ref), ref])).values()];
+  const branches = topics.map((topic,index)=>({...topic,evidence:union([...topic.evidence,...groups[index].flatMap(item=>item.evidence)]),items:groups[index]}));
+  for (const [title,items] of other) branches.push({title,summary:'',evidence:union(items.flatMap(item=>item.evidence)),items});
   return branches;
 }
 
 export function summaryTables(minutes: Minutes): SummaryTable[] {
-  if (minutes.tables?.length) return minutes.tables;
-  return minutes.actions.length ? [{
-    title: '行动候选汇总', columns: ['事项', '负责人', '时间'],
-    rows: minutes.actions.map(action => ({
-      cells: [action.text, action.owner || '待确认', action.due || '待确认'], evidence: action.evidence,
-    })),
-  }] : [];
+  const tables = minutes.tables || [];
+  if (!minutes.actions.length) return tables;
+  const hasOwner = minutes.actions.some(action => action.owner?.trim()), hasDue = minutes.actions.some(action => action.due?.trim());
+  return [...tables, { title: '行动候选汇总', columns: ['事项', ...(hasOwner ? ['负责人'] : []), ...(hasDue ? ['时间'] : [])], rows: minutes.actions.map(action => ({ cells: [minutesActionText(action,minutes.topics), ...(hasOwner ? [action.owner || '未明确'] : []), ...(hasDue ? [action.due || '未明确'] : [])], evidence: action.evidence })) }];
 }
 
-/** Explicit model ownership keeps a whole table in its topic; legacy rows use exact source revisions. */
 export function topicTableLayout(minutes: Minutes) {
   const branches = topicBranches(minutes).map(branch => ({ ...branch, tables: [] as SummaryTable[] }));
   const key = (ref: Evidence) => `${ref.segmentId}:${ref.revision}`;
   const sources = new Map<string, number>();
   const topicIds = new Map<string, number>();
+  const topicCount=minutes.topics?.length||branches.length;
   branches.forEach((branch, index) => {
+    if(index>=topicCount)return;
     if (branch.id) topicIds.set(branch.id, topicIds.has(branch.id) ? -1 : index);
     for (const ref of [...branch.evidence, ...branch.items.flatMap(item => item.evidence)]) {
       const source = key(ref), previous = sources.get(source);
@@ -102,3 +101,5 @@ export function speakerViews(minutes: Minutes): (SpeakerSummary & { method: 'sum
 export function decisionItems(minutes: Minutes): MinutesItem[] {
   return minutes.decisions || minutes.sections.filter(section => /决定|决策|共识/.test(section.heading)).flatMap(section => section.items);
 }
+
+export { speakerLabels };

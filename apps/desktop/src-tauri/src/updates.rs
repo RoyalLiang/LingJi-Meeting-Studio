@@ -8,6 +8,7 @@ use std::{
 };
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_updater::{Update, UpdaterExt};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
 const MAX_DOWNLOAD: u64 = 256 * 1024 * 1024;
 #[derive(Clone, Serialize)]
@@ -20,6 +21,7 @@ pub struct Status {
     pub downloaded: u64,
     pub total: Option<u64>,
     pub error: Option<String>,
+    pub installer: bool,
 }
 struct Downloaded {
     path: PathBuf,
@@ -52,6 +54,7 @@ struct State {
     downloaded: Option<Downloaded>,
     operating: bool,
     auto_download: bool,
+    preview: Option<crate::preview_updates::Release>,
 }
 #[derive(Clone)]
 pub struct Updates {
@@ -60,6 +63,7 @@ pub struct Updates {
     endpoint: Option<String>,
     pubkey: Option<String>,
     cache: PathBuf,
+    preview_channel: bool,
 }
 struct Operation(Arc<Mutex<State>>);
 impl Drop for Operation {
@@ -69,7 +73,7 @@ impl Drop for Operation {
 }
 
 impl Updates {
-    pub fn new(current_version: String, cache: PathBuf) -> Self {
+    pub fn new(current_version: String, cache: PathBuf, preview_channel: bool) -> Self {
         let endpoint = option_env!("TTS_UPDATER_ENDPOINT")
             .filter(|value| !value.is_empty())
             .map(str::to_string);
@@ -81,7 +85,8 @@ impl Updates {
             std::env::var("TTS_UPDATE_TEST_URL").ok().or(endpoint),
             std::env::var("TTS_UPDATE_TEST_PUBLIC_KEY").ok().or(pubkey),
         );
-        let configured = endpoint.is_some() && pubkey.is_some();
+        let preview_channel = preview_channel && endpoint.is_none() && pubkey.is_none();
+        let configured = preview_channel || (endpoint.is_some() && pubkey.is_some());
         Self {
             state: Arc::new(Mutex::new(State {
                 status: Status {
@@ -92,16 +97,19 @@ impl Updates {
                     downloaded: 0,
                     total: None,
                     error: None,
+                    installer: preview_channel,
                 },
                 update: None,
                 downloaded: None,
                 operating: false,
                 auto_download: false,
+                preview: None,
             })),
             gate: Gate::default(),
             endpoint,
             pubkey,
             cache,
+            preview_channel,
         }
     }
     pub fn status(&self) -> Status {
@@ -114,21 +122,34 @@ impl Updates {
         let state = self.state.lock().unwrap();
         let prepared = prepared_download(
             &state.status,
-            state.update.as_ref().map(|update| update.version.as_str()),
+            state
+                .update
+                .as_ref()
+                .map(|update| update.version.as_str())
+                .or_else(|| {
+                    state
+                        .preview
+                        .as_ref()
+                        .map(|release| release.version.as_str())
+                }),
             state
                 .downloaded
                 .as_ref()
                 .map(|download| (download.path.as_path(), download.bytes)),
         );
-        crate::menu_status::present_update(
+        let mut view = crate::menu_status::present_update(
             &state.status.phase,
-            self.endpoint.is_some() && self.pubkey.is_some(),
+            self.preview_channel || (self.endpoint.is_some() && self.pubkey.is_some()),
             state.operating,
             self.gate.fresh(),
             state.auto_download,
             prepared,
             self.gate.reason(native_active),
-        )
+        );
+        if self.preview_channel {
+            view.install_label = "打开安装包".into();
+        }
+        view
     }
     fn emit(&self, app: &AppHandle) {
         let _ = app.emit("client-update-state", self.status());
@@ -149,6 +170,34 @@ impl Updates {
         self.emit(app);
     }
     async fn check_inner(&self, app: &AppHandle) -> Result<(), String> {
+        if self.preview_channel {
+            self.phase(app, "checking", None);
+            let release = crate::preview_updates::check(&self.status().current_version).await?;
+            let mut state = self.state.lock().unwrap();
+            if release.as_ref().map(|r| (&r.version, &r.digest))
+                != state.preview.as_ref().map(|r| (&r.version, &r.digest))
+            {
+                if let Some(old) = state.downloaded.take() {
+                    let _ = std::fs::remove_file(old.path);
+                }
+                state.status.downloaded = 0;
+                state.status.total = None;
+            }
+            state.status.version = release.as_ref().map(|r| r.version.clone());
+            state.status.notes = release.as_ref().and_then(|r| r.notes.clone());
+            state.status.phase = if state.downloaded.is_some() {
+                "ready"
+            } else if release.is_some() {
+                "available"
+            } else {
+                "current"
+            }
+            .into();
+            state.preview = release;
+            drop(state);
+            self.emit(app);
+            return Ok(());
+        }
         let endpoint = self
             .endpoint
             .as_ref()
@@ -224,7 +273,7 @@ impl Updates {
         if let Err(error) = self.check_inner(app).await {
             self.phase(
                 app,
-                if self.endpoint.is_none() || self.pubkey.is_none() {
+                if !self.preview_channel && (self.endpoint.is_none() || self.pubkey.is_none()) {
                     "disabled"
                 } else {
                     "error"
@@ -236,6 +285,40 @@ impl Updates {
         Ok(self.status())
     }
     async fn download_inner(&self, app: &AppHandle) -> Result<(), String> {
+        if self.preview_channel {
+            let release = self
+                .state
+                .lock()
+                .unwrap()
+                .preview
+                .clone()
+                .ok_or("请先检查更新")?;
+            self.phase(app, "downloading", None);
+            let mut last = Instant::now() - Duration::from_secs(1);
+            let path = crate::preview_updates::download(&release, &self.cache, |count| {
+                if last.elapsed() < Duration::from_millis(150) {
+                    return;
+                }
+                let mut state = self.state.lock().unwrap();
+                state.status.downloaded = count;
+                state.status.total = Some(release.size);
+                drop(state);
+                self.emit(app);
+                last = Instant::now();
+            })
+            .await?;
+            let mut state = self.state.lock().unwrap();
+            state.downloaded = Some(Downloaded {
+                path,
+                digest: release.digest,
+                bytes: release.size,
+            });
+            state.status.downloaded = release.size;
+            state.status.total = Some(release.size);
+            drop(state);
+            self.phase(app, "ready", None);
+            return Ok(());
+        }
         let mut update = self
             .state
             .lock()
@@ -306,6 +389,34 @@ impl Updates {
     ) -> Result<(), String> {
         let _operation = self.operation()?;
         let permit = self.gate.install(captures.active())?;
+        #[cfg(feature="smoke-test")]
+        let fixture = !self.preview_channel && std::env::var_os("TTS_UPDATE_TEST_EXECUTABLE").is_some();
+        #[cfg(not(feature="smoke-test"))]
+        let fixture = false;
+        let confirmation=app.clone();
+        let accepted=fixture || tauri::async_runtime::spawn_blocking(move || confirmation.dialog().message("退出聆记并安装更新？已保存的录音和会议数据将保留。安装期间请勿关机。")
+            .title("安装版本更新").buttons(MessageDialogButtons::OkCancelCustom("退出并安装".into(),"暂不安装".into())).blocking_show()).await.map_err(|e|e.to_string())?;
+        if !accepted {self.phase(app,"ready",None);return Ok(());}
+
+        if self.preview_channel {
+            let (path, digest, bytes) = {
+                let state = self.state.lock().unwrap();
+                let downloaded = state.downloaded.as_ref().ok_or("请先下载安装包")?;
+                (downloaded.path.clone(), downloaded.digest, downloaded.bytes)
+            };
+            let result = async {
+                proxy.update_barrier().await?;
+                crate::preview_updates::verify(&path, bytes, &digest)?;
+                permit.validate(captures.active())?;
+                let handoff=crate::preview_updates::open(app, &path, self.status().version.as_deref().unwrap_or(""), || permit.validate(captures.active()))?;
+                self.phase(app,"installing",None);
+                if let Err(error)=crate::resident::finish_update(app) {handoff.cancel();return Err(error);}
+                Ok(())
+            }
+            .await;
+            if result.is_err() {self.phase(app, "ready", result.as_ref().err().cloned());}
+            return result;
+        }
         #[cfg(target_os = "linux")]
         if std::env::var_os("APPIMAGE").is_none() {
             return Err("此 Linux 安装格式需要通过系统包管理器更新".into());
@@ -387,6 +498,7 @@ mod tests {
             downloaded: 4,
             total: Some(4),
             error: None,
+            installer: false,
         };
         assert!(!prepared_download(&status, Some("1.1.0"), Some((&path, 4))));
         std::fs::write(&path, b"test").unwrap();

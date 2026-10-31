@@ -1,15 +1,19 @@
+import { automaticMinutesAt } from '../../../packages/records/src/automation.mjs';
 import {queueLearningReview} from '../../../packages/records/src/learning.mjs';
 // Private bundled runtime entry; never imports a developer .env or starts Vite.
 import { randomBytes } from 'node:crypto';
-import { mkdir, writeFile, opendir, rm } from 'node:fs/promises';
+import { mkdir, writeFile, opendir, rm, realpath } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { createRepository } from './repository.mjs';
 import { createRecordServer } from './server.mjs';
 import { runCycle } from './worker.mjs';
+import { closeRealtime } from './realtime-minutes.mjs';
 import { closeSpeakerStreams } from './speaker-streams.mjs';
 import { emit } from '../../../packages/records/src/record.mjs';
+import { readConfig, saveConfig, defaults } from './config.mjs';
+import { closeLocalAsr, openLocalAsr, localAsrConfigured } from './local-asr.mjs';
 
 export async function recoverTemporaryAudio(root) {
   let pending;
@@ -33,9 +37,34 @@ export async function recoverTemporaryAudio(root) {
   }
 }
 
+export async function migrateBundledAsr(repo) {
+  const config = await readConfig(repo.root);
+  // Only migrate the old, unauthenticated default loopback deployment. Preserve
+  // cloud providers and deliberately configured private/custom FunASR services.
+  if (!localAsrConfigured(config) || config.ASR_PROVIDER !== 'funasr' || config.FUNASR_API_URL !== defaults.FUNASR_API_URL || config.FUNASR_MODEL !== 'sensevoice' || config.FUNASR_API_KEY) return false;
+  for (const record of await repo.list()) {
+    if (record.deleted || !record.sources.some(source => source.asr?.provider === 'funasr' && source.asr.state === 'failed')) continue;
+    await repo.change(record.id, r => {
+      const sources = new Set(r.sources.filter(source => source.asr?.provider === 'funasr' && source.asr.state === 'failed').map(source => source.id));
+      for (const chunk of r.chunks) if (sources.has(chunk.sourceId) && chunk.state !== 'done' && !chunk.expired) { chunk.attempts = 0; chunk.retryAt = 0; delete chunk.error; }
+      for (const source of r.sources) if (sources.has(source.id)) source.asr = { provider: 'sensevoice-local', state: 'queued', attempts: 0 };
+      r.transcription = 'queued'; r.transcriptionRetryVersion = (r.transcriptionRetryVersion || 0) + 1;
+      emit(r, 'transcription.local-model-migrated');
+    });
+  }
+  // Commit the provider only after every record is recovered. On interruption,
+  // the old configuration lets startup repeat this idempotent migration.
+  await saveConfig(repo.root, { ASR_PROVIDER: 'sensevoice-local' });
+  return true;
+}
+
 export async function recoverLocalWork(repo) {
   for (const record of await repo.list()) {
     if (record.deleted) continue;
+    const minutesAt = automaticMinutesAt(record);
+    if (['paused', 'completed'].includes(record.capture) && minutesAt < (record.nextWorkAt ?? Infinity)) {
+      await repo.change(record.id, current => emit(current, 'minutes.recovery-scheduled'));
+    }
     // Avoid serializing and rebuilding projections for unchanged history.
     if(record.capture==='completed' && process.env.RECORD_LEARNING_ENABLED!=='false' && queueLearningReview(record,true))await repo.change(record.id,r=>{if(queueLearningReview(r,true))emit(r,'learning.queued');});
     const interrupted = record.jobs.some(job => job.status === 'running') || record.chunks.some(chunk => chunk.lease) || record.intentLease || record.sources.some(source => source.asr?.state === 'running' || source.asr?.lease) || record.segments.some(segment => segment.translationLease);
@@ -73,31 +102,35 @@ export async function startDesktopBackend({ root, port = 0, workers = true } = {
   const version = sqlite.split('.').map(Number);
   if (version[0] < 3 || (version[0] === 3 && (version[1] < 51 || (version[1] === 51 && version[2] < 3)))) throw new Error('client_sqlite_runtime_too_old');
   const repo = await createRepository({ root, databaseUrl: '', s3: { bucket: '' }, compressAggregates: true, compressAudio: true });
+  await migrateBundledAsr(repo);
   await recoverLocalWork(repo);
   const app = await createRecordServer({ repo, port, host: '127.0.0.1', seedDevelopment: false, localAccount: true });
   const address = await app.start();
   const session = await app.localSession();
   const state = { pid: process.pid, url: `http://127.0.0.1:${address.port}`, node: process.version, sqlite, startedAt: new Date().toISOString() };
   await writeFile(join(root, 'runtime-state.json'), JSON.stringify(state) + '\n', { mode: 0o600 });
+  openLocalAsr();
   let stopping = false;
-  const loops = workers ? ['audio', 'minutes', 'translation', 'intents', 'workspace', 'learning'].map(lane => (async () => {
+  const loops = workers ? ['audio', 'realtime', 'minutes', 'translation', 'translation-live', 'translation-preview', 'intents', 'workspace', 'learning'].map(lane => (async () => {
     while (!stopping) {
       try { await runCycle(repo, {}, { lane }); } catch (error) { console.error('[client-worker]', error.code || error.name); }
       if (!stopping) await new Promise(resolve => setTimeout(resolve, lane === 'audio' ? 100 : 250));
     }
   })()) : [];
   return { repo, sqlite, url: `http://127.0.0.1:${address.port}`, session,
-    async stop() { stopping = true; for (const record of await repo.list()) closeSpeakerStreams(repo, record.id); await Promise.all(loops); await app.stop(); },
+    async stop() { stopping = true; await closeLocalAsr(); for (const record of await repo.list()) closeSpeakerStreams(repo, record.id); await Promise.all(loops); closeRealtime(repo); await app.stop(); },
   };
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+// Node resolves module paths; argv can retain Windows 8.3 paths or directory aliases.
+if (process.argv[1] && await realpath(process.argv[1]).catch(() => null) === fileURLToPath(import.meta.url)) {
   let backend;
   try {
     if (!process.argv[2]) throw new Error('client_data_root_required');
     backend = await startDesktopBackend({ root: resolve(process.argv[2]), workers: true });
     console.log(JSON.stringify({ protocol: 1, url: backend.url, cookie: backend.session, sqlite: backend.sqlite, nonce: randomBytes(8).toString('hex') }));
   } catch (error) { console.error('[client-backend]', error.code || error.message || error.name); process.exit(1); }
+  openLocalAsr();
   let stopping = false;
   const stop = async () => {
     if (stopping) return; stopping = true;

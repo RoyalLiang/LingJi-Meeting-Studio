@@ -5,9 +5,30 @@ export function setAudioTransport(value?: string) { binaryAudio = value === 'pcm
 let csrf = '';
 export const setCsrf = (token: string) => { csrf = token; };
 const messages: Record<string, string> = {
+  invalid_minutes_topics: '纪要主题结构未通过校验，已有内容保留，可重新整理。',
+  minutes_without_new_evidence: '本轮纪要未包含有效的新内容，已有纪要保留，可重新整理。',
+  invalid_translation_provider: '请选择自动、当前文字模型或豆包 Seed 翻译。',
+  invalid_vocabulary: '词表格式无效：每集最多 12000 字符，两集合计最多 200 条，每项最多 50 字、8 个别名。', vocabulary_revision_conflict: '词表已变更，请重新打开设置或检查纠错后重试。', invalid_correction: '纠错候选与当前词表或原文不一致，请重新检查。', invalid_corrections: '模型返回的候选不符合原文或词表，未修改转录。', invalid_recognition_language: '识别语言无效，请重新选择。', recognition_language_busy: '请暂停录音并等待当前音频处理完成后切换识别语言。',
+
+  invalid_llm_reasoning_effort: '推理强度无效，请在模型设置中重新选择。',
+  local_asr_assets_missing: '本地模型未安装或资源缺失。请选择云端转录服务，或重新安装并勾选本地模型。已保存的录音不受影响。',
+  local_asr_assets_invalid: '本地语音模型校验未通过，请重新安装完整安装包后重试。已保存的录音不受影响。',
+  local_asr_unavailable: '本地转录引擎已中断，可重新处理。录音已保留，应用会自动重新启动引擎。',
+  local_asr_timeout: '本地转录处理超时，可稍后重新处理。录音已保留。',
+  local_asr_inference_failed: '本地模型未能处理这段音频，可重新处理。录音已保留。',
+  local_asr_invalid_response: '本地转录引擎返回异常，可重新处理。录音已保留。',
+  local_asr_shutdown: '应用正在退出，未完成转录将在下次启动后继续。',
+  funasr_not_configured: '请在设置中填写 FunASR 转录地址和识别模型。',
+  funasr_service_unavailable: 'FunASR 服务暂不可用，请先启动本机服务或检查私有服务连接，再重新处理。录音已保留。',
+  funasr_credentials_rejected: 'FunASR 服务拒绝了密钥，请检查服务认证配置。',
+  funasr_endpoint_unavailable: 'FunASR 转录接口不存在，请使用完整的 /v1/audio/transcriptions 地址。',
+  funasr_compatible_endpoint_required: 'FunASR 需要兼容转录地址，路径以 /v1/audio/transcriptions 结尾。',
+  invalid_funasr_response: 'FunASR 未返回有效转录，请检查服务和模型版本。录音已保留。',
+  invalid_funasr_audio: '转录音频格式异常，录音已保留，请重新处理。',
+  doubao_asr_45000292: '豆包语音识别配额超限，请在语音服务控制台检查额度后重试（45000292）。',
   service_unavailable: '记录服务暂时不可用，正在尝试恢复连接。',
   invalid_response: '记录服务返回不完整，操作结果尚未确认，请恢复连接后检查。',
-  translation_not_configured: '请在设置中配置豆包翻译模型与服务连接。',
+  translation_not_configured: '请在设置中配置文字模型或豆包翻译连接。',
   translation_connection_failed: '翻译连接失败，请检查翻译服务地址后重试。',
   translation_credentials_rejected: '翻译密钥被拒绝，请核对对应服务。',
   translation_incomplete: '翻译未完整返回，原文已保留，可重试。',
@@ -35,7 +56,9 @@ const messages: Record<string, string> = {
   llm_timeout: '模型整理超过处理时限，转录已保留，可稍后重新整理或使用更快的模型。',
   invalid_llm_response: '模型未返回有效的 JSON 结果，请检查模型与协议后重新整理。',
   configuration_admin_required: '当前账户无权修改服务配置，请联系维护者。',
+  invalid_meeting_automation: '请至少选择浏览器或飞书作为联动目标。',
   invalid_provider_url: '地址格式不正确。语音使用 wss://，纪要使用 https://。',
+  invalid_learning_service_config: '请同时填写 SSH 主机和远端绝对目录，或将两项都留空。',
   invalid_asr_hotwords: '术语总长最多 100 字，每词最多 50 字，请精简后重试。',
 
   login_required: '请先登录。', invalid_credentials: '邮箱或密码不正确。', password_length_10_128: '密码需要 10 至 128 个字符。',
@@ -70,10 +93,12 @@ async function request<T>(path: string, method: string, body: BodyInit | undefin
 }
 export const messageOf = (error: unknown) => error instanceof Error ? error.message : '操作失败，请重试。';
 
-export async function serviceFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  try { return await fetch(input, init); }
+export async function serviceFetch(input: RequestInfo | URL, init?: RequestInit, timeoutMs = 30000): Promise<Response> {
+  const deadline = timeoutMs > 0 ? AbortSignal.timeout(timeoutMs) : undefined;
+  const signal = deadline && init?.signal ? AbortSignal.any([init.signal, deadline]) : deadline || init?.signal;
+  try { return await fetch(input, { ...init, signal }); }
   catch (error) {
-    if ((error as { name?: string })?.name === 'AbortError') throw error;
+    if (init?.signal?.aborted || ((error as Error)?.name === 'AbortError' && !deadline?.aborted)) throw error;
     throw new ApiError('service_unavailable', 0);
   }
 }
@@ -83,5 +108,5 @@ export async function readServiceJson<T>(response: Response): Promise<T> {
     if (!data || typeof data !== 'object') throw new Error('invalid_json_shape');
     return data as T;
   }
-  catch { throw new ApiError(response.status >= 500 ? 'service_unavailable' : 'invalid_response', response.status); }
+  catch (error) { throw new ApiError(response.status >= 500 || ['AbortError','TimeoutError'].includes((error as Error)?.name) ? 'service_unavailable' : 'invalid_response', response.status); }
 }

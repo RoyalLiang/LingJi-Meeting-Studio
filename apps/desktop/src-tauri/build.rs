@@ -2,8 +2,14 @@ fn main() {
     println!("cargo:rerun-if-env-changed=TTS_UPDATER_ENDPOINT");
     println!("cargo:rerun-if-env-changed=TTS_UPDATER_PUBLIC_KEY");
     const COMMANDS: &[&str] = &[
+        "meeting_watch_configure",
         "capture_start",
+        "recording_widget_update",
+        "recording_widget_state",
+        "recording_widget_ready",
+        "recording_widget_action",
         "capture_read",
+        "capture_ack",
         "capture_stop",
         "capture_inputs",
         "client_close",
@@ -16,8 +22,14 @@ fn main() {
         "update_install",
     ];
     const PROBE_COMMANDS: &[&str] = &[
+        "meeting_watch_configure",
         "capture_start",
+        "recording_widget_update",
+        "recording_widget_state",
+        "recording_widget_ready",
+        "recording_widget_action",
         "capture_read",
+        "capture_ack",
         "capture_stop",
         "capture_inputs",
         "client_close",

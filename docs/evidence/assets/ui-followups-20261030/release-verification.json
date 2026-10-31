@@ -1,0 +1,76 @@
+{
+  "checkedAt": "2026-10-30T16:19:31.255396+00:00",
+  "sourceRevision": "d17d15811564201c403da65bfbd89dd5c7407912",
+  "tag": "v0.2.3",
+  "tagObject": "6aed8f2c8e82ea8f46f3c55df3daa90fcc916895",
+  "runId": 41082592947,
+  "pagesRunId": 41082592857,
+  "releaseUrl": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.2.3",
+  "statusSource": "Public rendered Actions and Release HTML after anonymous REST rate limit",
+  "jobs": [
+    {
+      "text": "verify\n10s",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/41082592947/job/124155311280",
+      "labels": [
+        "completed successfully: "
+      ]
+    },
+    {
+      "text": "build\n13m 10s",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/41082592947/job/124155422098",
+      "labels": [
+        "completed successfully: "
+      ]
+    },
+    {
+      "text": "build_windows\n32m 4s",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/41082592947/job/124155422013",
+      "labels": [
+        "completed successfully: "
+      ]
+    },
+    {
+      "text": "build_linux\n9m 18s",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/41082592947/job/124155421817",
+      "labels": [
+        "completed successfully: "
+      ]
+    },
+    {
+      "text": "publish\n1m 28s",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/41082592947/job/124172458885",
+      "labels": [
+        "completed successfully: "
+      ]
+    }
+  ],
+  "assets": [
+    {
+      "name": "Lingji-0.2.3-linux-amd64.deb",
+      "bytes": 221816236,
+      "sha256": "b21696ae13223086262a81ec29555e9279c2061fe710f10b8940e020aa5b2e9b",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.2.3/Lingji-0.2.3-linux-amd64.deb"
+    },
+    {
+      "name": "Lingji-0.2.3-macos-arm64.dmg",
+      "bytes": 218593841,
+      "sha256": "ac0dff1e2e536f6dad90cf64aef48229155a922b408f1e7fea4c01c88988c57c",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.2.3/Lingji-0.2.3-macos-arm64.dmg"
+    },
+    {
+      "name": "Lingji-0.2.3-windows-x64-setup.exe",
+      "bytes": 407419377,
+      "sha256": "84d3cd730c998ef8260f20416bb854ea186a44dc99ec947fcf30bc9780492e31",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.2.3/Lingji-0.2.3-windows-x64-setup.exe"
+    },
+    {
+      "name": "preview-update.json",
+      "bytes": 4604,
+      "sha256": "5f2feb457882f0e44805642334cb2c247b4c9031c519e10db04e212426f0fdfa",
+      "url": "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v0.2.3/preview-update.json"
+    }
+  ],
+  "fullFilesDownloaded": true,
+  "matchedPublicDigests": true,
+  "matchedManifest": true
+}

@@ -1,0 +1,25 @@
+{
+  "open": {
+    "viewport": {
+      "width": 1280,
+      "height": 800
+    },
+    "scroll": {
+      "y": 93,
+      "height": 690,
+      "width": 972
+    },
+    "card": {
+      "x": 307,
+      "y": 109,
+      "width": 940
+    }
+  },
+  "closed": {
+    "y": 93,
+    "height": 690
+  },
+  "focusRestored": true,
+  "defaultSeconds": 90,
+  "defaultLabel": "每 1 分半 · 默认"
+}
