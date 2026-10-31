@@ -13,8 +13,14 @@ export function MeetingControls({ record, recording, busy, phase = 'idle', ready
   const paused = record.capture === 'paused';
   const repairing = paused && record.sources.some(s => s.watermark !== s.lastSequence);
   const microphoneOn = signals.some(signal => signal.kind === 'microphone');
-  const title = recording ? '对话正在被记住' : ended ? '本场已收好，留住每一个共识' : paused ? '先停一停，随时接着聊' : '想说的，现在就记';
-  const description = repairing ? '音频补传完成后即可继续。' : progress || (record.pendingChunks > 0 ? '正在处理音频…' : recording ? '正在聆听' : '');
+  const job = record.jobs?.filter(job=>['queued','running'].includes(job.status)).at(-1);
+  const latest = record.jobs?.filter(job=>job.status!=='cancelled').at(-1);
+  const failed = ['failed','stale'].includes(latest?.status || '') && latest?.transcriptRevision===record.transcriptRevision && !(latest?.status==='stale' && record.minutes?.edited);
+  const awaitingSummary = record.autoMinutes?.enabled && Boolean(record.segments?.length) && !record.minutes?.edited && (!record.minutes || record.minutes.transcriptRevision!==record.transcriptRevision) && !failed;
+  const finishing = ended && (record.capture==='sealed' || record.pendingChunks > 0 || Boolean(job) || awaitingSummary);
+  const nodes = job?.progress?.total ? `（${job.progress.completed}/${job.progress.total} 个节点${job.progress.stage==='synthesis' ? '，正在汇总' : ''}）` : '';
+  const title = recording ? '对话正在被记住' : finishing ? '录音已结束，正在后台收尾' : ended && failed ? '录音已结束，纪要待重试' : ended ? '本场已收好，留住每一个共识' : paused ? '先停一停，随时接着聊' : '想说的，现在就记';
+  const description = repairing ? '音频补传完成后即可继续。' : progress || (finishing ? record.pendingChunks > 0 ? `正在处理尾段转录（${record.pendingChunks} 个音频包），纪要与重点速览将继续更新。` : record.capture==='sealed' ? '正在补传与转录已保存的尾段音频，已开启的总结会继续更新。' : job?.status==='queued' ? '纪要与重点速览已排队，可继续使用应用。' : `正在整理纪要与重点速览${nodes}，可继续使用应用。` : ended && failed ? '整理未完成，已保存的转录和重点仍可查看。' : record.pendingChunks > 0 ? '正在处理音频…' : recording ? '正在聆听' : '');
   return <section className="meeting-controls glass" aria-label="会议录音控制">
     <div className="meeting-controls-main">
       <div className="capture-status"><span className={`record-indicator ${recording ? 'on' : ''}`}><Record size={22} weight="fill"/></span><div><b>{title}</b>{description && <small role="status" title={record.pendingChunks > 0 ? `${record.pendingChunks} 个音频包正在处理` : undefined}>{description}</small>}</div></div>

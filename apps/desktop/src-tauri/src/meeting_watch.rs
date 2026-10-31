@@ -28,7 +28,7 @@ impl MeetingWatch {
         feishu: bool,
         token: String,
     ) -> Result<bool, String> {
-        if !cfg!(target_os = "macos") {
+        if !cfg!(any(target_os = "macos", target_os = "windows")) {
             return Ok(false);
         }
         let mut current = self.token.lock().map_err(|_| "监听状态不可用")?;
@@ -94,13 +94,31 @@ fn selected(bundle: &str, browser: bool, feishu: bool) -> bool {
     ];
     (browser && BROWSERS.contains(&bundle)) || (feishu && FEISHU.contains(&bundle))
 }
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn sample(_browser: bool, _feishu: bool) -> Result<(bool, bool), String> {
     Err("unsupported".into())
 }
 #[cfg(target_os = "macos")]
 fn sample(browser: bool, feishu: bool) -> Result<(bool, bool), String> {
     macos::sample(browser, feishu)
+}
+
+#[cfg(any(test, target_os = "windows"))]
+fn selected_windows(path: &str, browser: bool, feishu: bool) -> bool {
+    let name = path
+        .rsplit(['\\', '/'])
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    (browser && ["chrome.exe", "msedge.exe"].contains(&name.as_str()))
+        || (feishu && ["feishu.exe", "lark.exe"].contains(&name.as_str()))
+}
+#[cfg(target_os = "windows")]
+#[path = "meeting_watch_windows.rs"]
+mod windows;
+#[cfg(target_os = "windows")]
+fn sample(browser: bool, feishu: bool) -> Result<(bool, bool), String> {
+    windows::sample(browser, feishu)
 }
 
 #[cfg(target_os = "macos")]
@@ -229,6 +247,30 @@ mod macos {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn windows_targets_use_exact_executable_names_and_selected_categories() {
+        assert!(selected_windows(
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            true,
+            false
+        ));
+        assert!(selected_windows(
+            r"C:\Users\Test\Feishu\Feishu.exe",
+            false,
+            true
+        ));
+        assert!(selected_windows(r"C:\Apps\MSedge.EXE", true, false));
+        assert!(!selected_windows(r"C:\Apps\chrome.exe", false, true));
+        for path in [
+            "tts-client.exe",
+            "chrome-helper.exe",
+            "notchrome.exe",
+            "Feishu.exe.bak",
+            "chrome.exe/other.exe",
+        ] {
+            assert!(!selected_windows(path, true, true));
+        }
+    }
     #[test]
     fn targets_exclude_self_safari_and_notification_helpers() {
         assert!(selected("com.google.Chrome.helper", true, false));

@@ -35,3 +35,14 @@ test('controlled compact state keeps concise failure status without duplicating 
  const html=render({collapsed:true,job:{status:'failed'}});
  assert.match(html,/整理未完成，转录已保留/);assert.match(html,/aria-expanded="false"/);assert.doesNotMatch(html,/完整错误详情|meeting-highlights-content/);
 });
+
+test('the focus headline follows the synthesized topic title rather than the first rolling fact',()=>{
+ const first='合成场景：本轮称响应时间已控制在3秒以内，但P90降幅存在53%与45%两种口径。';
+ for(const title of ['推理评测口径与训练资源复核','模型发布进展与评测口径复核']){
+  const value={...minutes,title,highlights:[{text:first,evidence:[]},{text:'模型已发布，评测口径仍待核实。',evidence:[]}],topics:[{title:'推理评测',summary:first,evidence:[]},{title:'模型发布',summary:'确认发布进展',evidence:[]}]};
+  const html=render({minutes:value,ended:false});
+  assert.match(html,new RegExp('class="meeting-highlights-lead">'+title+'<'));
+  assert.ok(html.includes('<li>'+first+'</li>'),'the former first point must remain in the list');
+  assert.match(render({minutes:value,collapsed:true}),new RegExp('meeting-highlights-inline-lead">'+title+'<'));
+ }
+});

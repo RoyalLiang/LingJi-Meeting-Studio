@@ -31,6 +31,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
   if (lane === 'workspace') { await processWorkspaceAnalysis(repo, config, providers); return; }
   if (lane === 'realtime' || lane === 'all') await reconcileRealtime(repo, config);
   const records = await repo.listWork({ lane });
+  if (lane === 'minutes') records.sort((a,b)=>Number(['sealed','completed'].includes(b.capture))-Number(['sealed','completed'].includes(a.capture)));
   async function processCandidate(candidate) {
     if (lane !== 'all' && lane !== 'audio' && lane !== 'realtime' && (candidate.deleted || Date.parse(candidate.deleteAt) < Date.now())) return;
     if (candidate.deleted && candidate.cleanup === 'completed' && Date.now() - (candidate.cleanupAt || 0) < 600000) return;
