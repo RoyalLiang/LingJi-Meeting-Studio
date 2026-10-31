@@ -1,0 +1,655 @@
+{
+  "date": "2026-10-31",
+  "scope": "local source and generated backend resources; not a published or installed application",
+  "baselineRevision": "1f8f09cf2caac51d279fb956001d54f9197211a9",
+  "runtime": {
+    "node": "v26.12.1",
+    "v8": "14.6.202.34-node.40",
+    "openssl": "3.5.9",
+    "sqlite": "3.54.0",
+    "fts5": true,
+    "arch": "arm64"
+  },
+  "archiveChecksums": {
+    "node-v26.12.1-darwin-arm64.tar.xz": "18830bf448fe187c650dc28c98aa8c968ed1d40b6dd032c081e70a384a1bf660",
+    "node-v26.12.1-darwin-x64.tar.xz": "69316aaafb4dfcb25ac7b9a460f5c60928a37580284fde410144d0e6c8672d0f",
+    "node-v26.12.1-linux-x64.tar.xz": "6170b2d474e1c626f43cff3adc118df9fe3b573258a4fc3d850c8dbc6b079bbd",
+    "node-v26.12.1-win-x64.zip": "b3efd5c70cba3308ed46e7e699a9b8aac075bbc6b027fcb39c84c31acc25e2b4"
+  },
+  "validation": {
+    "workingTreeNodeTests": {
+      "passed": 386,
+      "failed": 0,
+      "includesPreexistingUserPlaybackChanges": true
+    },
+    "node24BaselineTests": {
+      "passed": 386,
+      "failed": 0
+    },
+    "lint": true,
+    "typecheck": true,
+    "webBuild": true,
+    "backendPrepareAndIsolatedImport": true,
+    "rustTests": {
+      "passed": 21,
+      "failed": 0
+    },
+    "standaloneBackend": {
+      "timestamp": "2026-10-31T02:56:35.770Z",
+      "packagedApp": false,
+      "independentBackend": true,
+      "developerBackendRequests": 0,
+      "restartPersistence": true,
+      "stableWebviewProfile": false,
+      "parentOwnsBackend": true,
+      "localAccount": true,
+      "devAccountDisabled": true,
+      "node": "v26.12.1",
+      "sqlite": "3.54.0",
+      "realAudioDevicesOpened": false,
+      "realProvidersInvoked": false
+    },
+    "runtimeUpgrade": [
+      {
+        "node": "v24.21.0",
+        "phase": "create",
+        "passed": true
+      },
+      {
+        "node": "v26.12.1",
+        "phase": "upgrade",
+        "passed": true
+      },
+      {
+        "node": "v24.21.0",
+        "phase": "verify",
+        "passed": true
+      }
+    ],
+    "stagedSnapshot": {
+      "nodeTestsPassed": 385,
+      "nodeTestsFailed": 0,
+      "checks": [
+        {
+          "check": "tests",
+          "exit": 0
+        },
+        {
+          "check": "lint",
+          "exit": 0
+        },
+        {
+          "check": "helper-lint",
+          "exit": 0
+        },
+        {
+          "check": "typecheck",
+          "exit": 0
+        },
+        {
+          "check": "build-web",
+          "exit": 0
+        }
+      ],
+      "validatedPatchSha256": "6b97e5ad9b16a91d2ab1d011e54e3df7f1a0e02575bdc742fc25f9a4f5ee69b3",
+      "excludesPreexistingUserPlaybackChanges": true
+    },
+    "independentReview": {
+      "blockingFindings": 0,
+      "codePatchSha256": "94628443fdde40fbaae3dd974cd434df1d3f4793eb8819494d9d556f55746277",
+      "scope": "own runtime/config/test-loader changes only; user playback experiment excluded"
+    }
+  },
+  "performance": {
+    "method": "three alternating runs per Node version and scenario; median of per-run metrics; synthetic meetings only",
+    "medians": {
+      "24.21.0": {
+        "backendReadinessMs": 29,
+        "compressedWriteP50Ms": 35.25970899999993,
+        "commitToSseP50Ms": 100.69983400000001
+      },
+      "26.12.1": {
+        "backendReadinessMs": 26,
+        "compressedWriteP50Ms": 32.65383299999996,
+        "commitToSseP50Ms": 101.04812499999991
+      }
+    },
+    "runs": [
+      {
+        "attempt": 1,
+        "node": "24.21.0",
+        "scenario": "startup",
+        "data": {
+          "node": "v24.21.0",
+          "platform": "darwin",
+          "arch": "arm64",
+          "meetings": 100,
+          "segmentsPerMeeting": 120,
+          "recoveryWrites": 0,
+          "recoveryMs": 25,
+          "readinessMs": [
+            58,
+            29,
+            27
+          ],
+          "medianReadinessMs": 29,
+          "workers": false,
+          "realAudioDevices": false,
+          "realProviders": false,
+          "scope": "backend readiness on synthetic history; excludes native window, WebView and full cold startup"
+        }
+      },
+      {
+        "attempt": 1,
+        "node": "26.12.1",
+        "scenario": "startup",
+        "data": {
+          "node": "v26.12.1",
+          "platform": "darwin",
+          "arch": "arm64",
+          "meetings": 100,
+          "segmentsPerMeeting": 120,
+          "recoveryWrites": 0,
+          "recoveryMs": 24,
+          "readinessMs": [
+            55,
+            26,
+            24
+          ],
+          "medianReadinessMs": 26,
+          "workers": false,
+          "realAudioDevices": false,
+          "realProviders": false,
+          "scope": "backend readiness on synthetic history; excludes native window, WebView and full cold startup"
+        }
+      },
+      {
+        "attempt": 1,
+        "node": "24.21.0",
+        "scenario": "storage",
+        "data": {
+          "timestamp": "2026-10-31T02:45:05.694Z",
+          "scenario": "synthetic 120min/7200 chunks/1440 segments, 10 metadata writes; no real recordings",
+          "variants": [
+            {
+              "compressed": false,
+              "sqliteBytes": 8351744,
+              "writeP50Ms": 43.89812499999999,
+              "writeMaxMs": 55.634874999999994
+            },
+            {
+              "compressed": true,
+              "sqliteBytes": 634880,
+              "writeP50Ms": 35.37308399999995,
+              "writeMaxMs": 41.84704199999999
+            }
+          ],
+          "sqliteSavedPercent": 92.39823442864149,
+          "audio": [
+            {
+              "kind": "silence",
+              "inputBytes": 32000,
+              "storedBytes": 198,
+              "compressed": true
+            },
+            {
+              "kind": "tone",
+              "inputBytes": 32000,
+              "storedBytes": 1148,
+              "compressed": true
+            },
+            {
+              "kind": "noise",
+              "inputBytes": 32000,
+              "storedBytes": 32000,
+              "compressed": false
+            }
+          ],
+          "limits": "Fixture evidence only; audio entropy and real speech were not measured."
+        }
+      },
+      {
+        "attempt": 1,
+        "node": "26.12.1",
+        "scenario": "storage",
+        "data": {
+          "timestamp": "2026-10-31T02:45:06.604Z",
+          "scenario": "synthetic 120min/7200 chunks/1440 segments, 10 metadata writes; no real recordings",
+          "variants": [
+            {
+              "compressed": false,
+              "sqliteBytes": 8351744,
+              "writeP50Ms": 43.811874999999986,
+              "writeMaxMs": 51.142042000000004
+            },
+            {
+              "compressed": true,
+              "sqliteBytes": 634880,
+              "writeP50Ms": 33.13920899999994,
+              "writeMaxMs": 35.364250000000084
+            }
+          ],
+          "sqliteSavedPercent": 92.39823442864149,
+          "audio": [
+            {
+              "kind": "silence",
+              "inputBytes": 32000,
+              "storedBytes": 198,
+              "compressed": true
+            },
+            {
+              "kind": "tone",
+              "inputBytes": 32000,
+              "storedBytes": 1148,
+              "compressed": true
+            },
+            {
+              "kind": "noise",
+              "inputBytes": 32000,
+              "storedBytes": 32000,
+              "compressed": false
+            }
+          ],
+          "limits": "Fixture evidence only; audio entropy and real speech were not measured."
+        }
+      },
+      {
+        "attempt": 1,
+        "node": "24.21.0",
+        "scenario": "transport",
+        "data": {
+          "audioPayload": {
+            "jsonBytes": 42971,
+            "binaryBytes": 32294,
+            "savedPercent": 24.846989830350697
+          },
+          "timestamp": "2026-10-31T02:45:07.730Z",
+          "scenario": "isolated SQLite commit-to-SSE, immediately after heartbeat",
+          "samples": 5,
+          "p50Ms": 100.69983400000001,
+          "maxMs": 100.99391700000001,
+          "realAudioDevices": false,
+          "realProviders": false
+        }
+      },
+      {
+        "attempt": 1,
+        "node": "26.12.1",
+        "scenario": "transport",
+        "data": {
+          "audioPayload": {
+            "jsonBytes": 42971,
+            "binaryBytes": 32294,
+            "savedPercent": 24.846989830350697
+          },
+          "timestamp": "2026-10-31T02:45:08.874Z",
+          "scenario": "isolated SQLite commit-to-SSE, immediately after heartbeat",
+          "samples": 5,
+          "p50Ms": 101.76358399999992,
+          "maxMs": 103.44458299999997,
+          "realAudioDevices": false,
+          "realProviders": false
+        }
+      },
+      {
+        "attempt": 2,
+        "node": "24.21.0",
+        "scenario": "startup",
+        "data": {
+          "node": "v24.21.0",
+          "platform": "darwin",
+          "arch": "arm64",
+          "meetings": 100,
+          "segmentsPerMeeting": 120,
+          "recoveryWrites": 0,
+          "recoveryMs": 24,
+          "readinessMs": [
+            50,
+            25,
+            24
+          ],
+          "medianReadinessMs": 25,
+          "workers": false,
+          "realAudioDevices": false,
+          "realProviders": false,
+          "scope": "backend readiness on synthetic history; excludes native window, WebView and full cold startup"
+        }
+      },
+      {
+        "attempt": 2,
+        "node": "26.12.1",
+        "scenario": "startup",
+        "data": {
+          "node": "v26.12.1",
+          "platform": "darwin",
+          "arch": "arm64",
+          "meetings": 100,
+          "segmentsPerMeeting": 120,
+          "recoveryWrites": 0,
+          "recoveryMs": 24,
+          "readinessMs": [
+            55,
+            26,
+            25
+          ],
+          "medianReadinessMs": 26,
+          "workers": false,
+          "realAudioDevices": false,
+          "realProviders": false,
+          "scope": "backend readiness on synthetic history; excludes native window, WebView and full cold startup"
+        }
+      },
+      {
+        "attempt": 2,
+        "node": "24.21.0",
+        "scenario": "storage",
+        "data": {
+          "timestamp": "2026-10-31T02:45:10.463Z",
+          "scenario": "synthetic 120min/7200 chunks/1440 segments, 10 metadata writes; no real recordings",
+          "variants": [
+            {
+              "compressed": false,
+              "sqliteBytes": 8351744,
+              "writeP50Ms": 43.873625000000004,
+              "writeMaxMs": 56.08116699999999
+            },
+            {
+              "compressed": true,
+              "sqliteBytes": 634880,
+              "writeP50Ms": 35.25970899999993,
+              "writeMaxMs": 40.283416999999986
+            }
+          ],
+          "sqliteSavedPercent": 92.39823442864149,
+          "audio": [
+            {
+              "kind": "silence",
+              "inputBytes": 32000,
+              "storedBytes": 198,
+              "compressed": true
+            },
+            {
+              "kind": "tone",
+              "inputBytes": 32000,
+              "storedBytes": 1148,
+              "compressed": true
+            },
+            {
+              "kind": "noise",
+              "inputBytes": 32000,
+              "storedBytes": 32000,
+              "compressed": false
+            }
+          ],
+          "limits": "Fixture evidence only; audio entropy and real speech were not measured."
+        }
+      },
+      {
+        "attempt": 2,
+        "node": "26.12.1",
+        "scenario": "storage",
+        "data": {
+          "timestamp": "2026-10-31T02:45:11.364Z",
+          "scenario": "synthetic 120min/7200 chunks/1440 segments, 10 metadata writes; no real recordings",
+          "variants": [
+            {
+              "compressed": false,
+              "sqliteBytes": 8351744,
+              "writeP50Ms": 44.316666,
+              "writeMaxMs": 53.194
+            },
+            {
+              "compressed": true,
+              "sqliteBytes": 634880,
+              "writeP50Ms": 32.65383299999996,
+              "writeMaxMs": 36.62195799999995
+            }
+          ],
+          "sqliteSavedPercent": 92.39823442864149,
+          "audio": [
+            {
+              "kind": "silence",
+              "inputBytes": 32000,
+              "storedBytes": 198,
+              "compressed": true
+            },
+            {
+              "kind": "tone",
+              "inputBytes": 32000,
+              "storedBytes": 1148,
+              "compressed": true
+            },
+            {
+              "kind": "noise",
+              "inputBytes": 32000,
+              "storedBytes": 32000,
+              "compressed": false
+            }
+          ],
+          "limits": "Fixture evidence only; audio entropy and real speech were not measured."
+        }
+      },
+      {
+        "attempt": 2,
+        "node": "24.21.0",
+        "scenario": "transport",
+        "data": {
+          "audioPayload": {
+            "jsonBytes": 42971,
+            "binaryBytes": 32294,
+            "savedPercent": 24.846989830350697
+          },
+          "timestamp": "2026-10-31T02:45:12.502Z",
+          "scenario": "isolated SQLite commit-to-SSE, immediately after heartbeat",
+          "samples": 5,
+          "p50Ms": 101.30912500000011,
+          "maxMs": 101.64879099999996,
+          "realAudioDevices": false,
+          "realProviders": false
+        }
+      },
+      {
+        "attempt": 2,
+        "node": "26.12.1",
+        "scenario": "transport",
+        "data": {
+          "audioPayload": {
+            "jsonBytes": 42971,
+            "binaryBytes": 32294,
+            "savedPercent": 24.846989830350697
+          },
+          "timestamp": "2026-10-31T02:45:13.650Z",
+          "scenario": "isolated SQLite commit-to-SSE, immediately after heartbeat",
+          "samples": 5,
+          "p50Ms": 101.04812499999991,
+          "maxMs": 102.1088749999999,
+          "realAudioDevices": false,
+          "realProviders": false
+        }
+      },
+      {
+        "attempt": 3,
+        "node": "24.21.0",
+        "scenario": "startup",
+        "data": {
+          "node": "v24.21.0",
+          "platform": "darwin",
+          "arch": "arm64",
+          "meetings": 100,
+          "segmentsPerMeeting": 120,
+          "recoveryWrites": 0,
+          "recoveryMs": 24,
+          "readinessMs": [
+            51,
+            29,
+            24
+          ],
+          "medianReadinessMs": 29,
+          "workers": false,
+          "realAudioDevices": false,
+          "realProviders": false,
+          "scope": "backend readiness on synthetic history; excludes native window, WebView and full cold startup"
+        }
+      },
+      {
+        "attempt": 3,
+        "node": "26.12.1",
+        "scenario": "startup",
+        "data": {
+          "node": "v26.12.1",
+          "platform": "darwin",
+          "arch": "arm64",
+          "meetings": 100,
+          "segmentsPerMeeting": 120,
+          "recoveryWrites": 0,
+          "recoveryMs": 22,
+          "readinessMs": [
+            48,
+            20,
+            21
+          ],
+          "medianReadinessMs": 21,
+          "workers": false,
+          "realAudioDevices": false,
+          "realProviders": false,
+          "scope": "backend readiness on synthetic history; excludes native window, WebView and full cold startup"
+        }
+      },
+      {
+        "attempt": 3,
+        "node": "24.21.0",
+        "scenario": "storage",
+        "data": {
+          "timestamp": "2026-10-31T02:45:15.115Z",
+          "scenario": "synthetic 120min/7200 chunks/1440 segments, 10 metadata writes; no real recordings",
+          "variants": [
+            {
+              "compressed": false,
+              "sqliteBytes": 8351744,
+              "writeP50Ms": 40.49529100000001,
+              "writeMaxMs": 48.60929200000001
+            },
+            {
+              "compressed": true,
+              "sqliteBytes": 634880,
+              "writeP50Ms": 31.728834000000006,
+              "writeMaxMs": 37.837999999999965
+            }
+          ],
+          "sqliteSavedPercent": 92.39823442864149,
+          "audio": [
+            {
+              "kind": "silence",
+              "inputBytes": 32000,
+              "storedBytes": 198,
+              "compressed": true
+            },
+            {
+              "kind": "tone",
+              "inputBytes": 32000,
+              "storedBytes": 1148,
+              "compressed": true
+            },
+            {
+              "kind": "noise",
+              "inputBytes": 32000,
+              "storedBytes": 32000,
+              "compressed": false
+            }
+          ],
+          "limits": "Fixture evidence only; audio entropy and real speech were not measured."
+        }
+      },
+      {
+        "attempt": 3,
+        "node": "26.12.1",
+        "scenario": "storage",
+        "data": {
+          "timestamp": "2026-10-31T02:45:15.939Z",
+          "scenario": "synthetic 120min/7200 chunks/1440 segments, 10 metadata writes; no real recordings",
+          "variants": [
+            {
+              "compressed": false,
+              "sqliteBytes": 8351744,
+              "writeP50Ms": 39.507667000000026,
+              "writeMaxMs": 46.98637500000001
+            },
+            {
+              "compressed": true,
+              "sqliteBytes": 634880,
+              "writeP50Ms": 29.43937500000004,
+              "writeMaxMs": 34.19950000000006
+            }
+          ],
+          "sqliteSavedPercent": 92.39823442864149,
+          "audio": [
+            {
+              "kind": "silence",
+              "inputBytes": 32000,
+              "storedBytes": 198,
+              "compressed": true
+            },
+            {
+              "kind": "tone",
+              "inputBytes": 32000,
+              "storedBytes": 1148,
+              "compressed": true
+            },
+            {
+              "kind": "noise",
+              "inputBytes": 32000,
+              "storedBytes": 32000,
+              "compressed": false
+            }
+          ],
+          "limits": "Fixture evidence only; audio entropy and real speech were not measured."
+        }
+      },
+      {
+        "attempt": 3,
+        "node": "24.21.0",
+        "scenario": "transport",
+        "data": {
+          "audioPayload": {
+            "jsonBytes": 42971,
+            "binaryBytes": 32294,
+            "savedPercent": 24.846989830350697
+          },
+          "timestamp": "2026-10-31T02:45:17.085Z",
+          "scenario": "isolated SQLite commit-to-SSE, immediately after heartbeat",
+          "samples": 5,
+          "p50Ms": 100.655667,
+          "maxMs": 102.18674999999996,
+          "realAudioDevices": false,
+          "realProviders": false
+        }
+      },
+      {
+        "attempt": 3,
+        "node": "26.12.1",
+        "scenario": "transport",
+        "data": {
+          "audioPayload": {
+            "jsonBytes": 42971,
+            "binaryBytes": 32294,
+            "savedPercent": 24.846989830350697
+          },
+          "timestamp": "2026-10-31T02:45:18.224Z",
+          "scenario": "isolated SQLite commit-to-SSE, immediately after heartbeat",
+          "samples": 5,
+          "p50Ms": 100.61412499999997,
+          "maxMs": 101.19400000000002,
+          "realAudioDevices": false,
+          "realProviders": false
+        }
+      }
+    ]
+  },
+  "notValidated": [
+    "Windows/Linux/macOS Intel runtime execution",
+    "native WebView cold startup",
+    "real audio devices and real ASR/LLM",
+    "remote CI, publication and installed-client replacement",
+    "Pi execution, plugin compatibility and recovery experiments"
+  ]
+}

@@ -1,84 +1,134 @@
-# Pi harness 用于独立会议助手的可行性
+# Pi 作为会议执行底座的可行性
 
-核验日期：2026-10-31（Asia/Shanghai）。状态：**proposed，尚未集成**。
+核验日期：2026-10-31（Asia/Shanghai）。状态：**proposed，仅本地研究，尚未集成**。
 
-当前边界：暂停 Skill/自定义导出路线；保留 Markdown 与飞书云文档导出，画板只作为飞书文档中的组件。独立的 Skill/插件能力用于选中会议的复盘、问答、风险与知识提炼，不承担纪要外发。本报告只读取官方资料、包元数据和选定源码，没有安装 Pi、运行其代码或调用真实模型。
+## 以会议任务为中心评估 durable，而非引入编码助手
 
-## 建议先保留现有导出器，再用 agent-core 做小范围验证
+引入 Pi 的目的，是复用 agent 的工具循环、任务管理、排队、取消和故障恢复，减少聆记自行维护后台链路的工作。会议助手的核心任务是会后复盘、跨**用户所选会议**问答、决策/风险/行动候选提炼，以及受控查询会议资料。是否减少实际延迟或提高稳定性，需要同一任务、同一模型和相同故障条件的验证；本报告不声称已经获得这些收益。
 
-Pi 可嵌入聆记，但不建议直接把完整编码助手装进会议产品。若近期只需要固定的纪要分析与问答，先沿用既有模型调用即可；确认需要多轮工具调度、流式状态与取消后，再验证 `pi-agent-core`。完整 harness 的技能加载、会话树、压缩与扩展生态有价值，但同时带来文件、进程、配置发现和持久化等额外所有权。
+**建议以 `pi-durable` 作为后续 fixture spike 的主要候选，同时保留现有后端的数据、权限与模型配置所有权。** 它比 `agent-core` 更贴近持久任务调度需求；但 1.4.0 明确为 Experimental，API 可在版本间无预告变化。`coding-agent` SDK 更适合复用现成 Skill/extension 资源加载和单会话管理，不能因此推断其扩展与 durable registry 直接兼容。[D: README L3–7、L104、L127、L226–243]
 
-| 选择 | 得到什么 | 聆记仍需负责什么 | 当前建议 |
-| --- | --- | --- | --- |
-| 暂不引入 Pi | 复用现有后端、模型配置与会议资料 | 固定分析流程、流式响应与领域授权 | 当前最小落地路线 |
-| `pi-agent-core` | 工具循环、事件、状态、上下文转换、取消与调度钩子 | Record 权限、持久化、引用、预算、Skill 注册与 UI | 值得做独立、非生产的小验证 |
-| `pi-coding-agent` 完整 SDK/RPC | 再加会话树、压缩、资源发现、技能/扩展和可选 MCP | 隔离默认能力、重做 Web UI 适配、数据与凭据边界 | 暂不作为产品默认运行时 |
+这不是批准集成、迁移或新增产品界面的决定。本轮不调用真实模型，不使用真实会议资料，不改变现有录音、ASR、实时转录、纪要生成或导出流程。Markdown 与飞书云文档导出保持既有边界，画板仍仅作为飞书文档组件；独立会议助手不持有外发能力。
 
-这是针对聆记当前范围的设计判断，不是性能、质量或迁移成本实测结论。
+## 版本证据以官方 1.4.0 发布包为准
 
-## “Pi harness”对应的官方项目已迁移名称
+官方身份为 [earendil-works/pi](https://github.com/earendil-works/pi)，历史 `badlogic/pi-mono` 地址重定向到该仓库。本轮从官方 npm registry 读取元数据，检查并下载 1.4.0 包。此前固定的 `35dfa757…` 是历史源码观察点，**不用于给本次发布包的新功能挂行号**：其 durable README 与 1.4.0 发布包实测存在差异。
 
-官网是 [pi.dev](https://pi.dev/)，其源码链接指向 `earendil-works/pi`；历史地址 `badlogic/pi-mono` 当前重定向到这个仓库，并非选取第三方 fork。核验固定到提交 [`35dfa757378bd7a8570670e99c2687bdd1039a06`](https://github.com/earendil-works/pi/commit/35dfa757378bd7a8570670e99c2687bdd1039a06)，GitHub API 返回该提交时间为 `2026-10-30T23:17:56Z`。[原仓库入口](https://github.com/badlogic/pi-mono)、[当前官方仓库](https://github.com/earendil-works/pi)
+以下引用标识指向版本明确的官方发布制品。行号指制品解包后的对应文档，不指 GitHub 当前 main。
 
-以下固定提交中的版本与核验时 npm 官方 registry `latest` 一致；“一致”不等于已经验证 npm 包内全部文件与该源码提交逐字相同。
-
-| 包 | 版本 | 用途与约束 |
+| 标识 | 官方版本制品 | 本地可复查文件 |
 | --- | --- | --- |
-| [`@earendil-works/pi-agent-core`](https://github.com/earendil-works/pi/blob/35dfa757378bd7a8570670e99c2687bdd1039a06/packages/agent/package.json) | 1.4.0 | Agent 运行时；MIT；声明 Node ≥22.19 |
-| [`@earendil-works/pi-ai`](https://github.com/earendil-works/pi/blob/35dfa757378bd7a8570670e99c2687bdd1039a06/packages/ai/package.json) | 1.4.0 | 模型与供应商适配；MIT；声明 Node ≥22.19 |
-| [`@earendil-works/pi-coding-agent`](https://github.com/earendil-works/pi/blob/35dfa757378bd7a8570670e99c2687bdd1039a06/packages/coding-agent/package.json) | 1.4.0 | 完整 harness、SDK 与 CLI；MIT；声明 Node ≥22.19 |
-| [`@earendil-works/pi-mcp`](https://github.com/earendil-works/pi/blob/35dfa757378bd7a8570670e99c2687bdd1039a06/packages/mcp/package.json) | 1.4.0 | 独立 MCP 客户端；MIT；声明 Node ≥22.19 |
+| A | [pi-agent-core 1.4.0 tgz](https://registry.npmjs.org/@earendil-works/pi-agent-core/-/pi-agent-core-1.4.0.tgz) | `/private/tmp/pi-size-study/core/node_modules/@earendil-works/pi-agent-core/README.md` |
+| C | [pi-coding-agent 1.4.0 tgz](https://registry.npmjs.org/@earendil-works/pi-coding-agent/-/pi-coding-agent-1.4.0.tgz) | `/private/tmp/pi-size-study/full/node_modules/@earendil-works/pi-coding-agent/` 下 `docs/sdk.md`、`docs/skills.md`、`docs/security.md`、`docs/mcp.md` |
+| D | [pi-durable 1.4.0 tgz](https://registry.npmjs.org/@earendil-works/pi-durable/-/pi-durable-1.4.0.tgz) | `/private/tmp/pi-size-study/durable/node_modules/@earendil-works/pi-durable/README.md` |
+| H | [chord 1.4.0 tgz](https://registry.npmjs.org/@earendil-works/chord/-/chord-1.4.0.tgz) | `/private/tmp/pi-size-study/durable/node_modules/@earendil-works/chord/README.md` |
+| M | [pi-mcp 1.4.0 tgz](https://registry.npmjs.org/@earendil-works/pi-mcp/-/pi-mcp-1.4.0.tgz) | `/private/tmp/pi-size-study/full/node_modules/@earendil-works/pi-mcp/README.md` |
 
-发布元数据可在 [agent-core registry](https://registry.npmjs.org/@earendil-works/pi-agent-core/latest)、[coding-agent registry](https://registry.npmjs.org/@earendil-works/pi-coding-agent/latest)、[pi-ai registry](https://registry.npmjs.org/@earendil-works/pi-ai/latest)、[pi-mcp registry](https://registry.npmjs.org/@earendil-works/pi-mcp/latest) 复查。旧 `@mariozechner/*` 示例不能直接当成本次新接入契约。MIT 要求保留相应版权和许可说明；打包时还需核对依赖及分发清单，不能把顶层许可当成全部依赖的统一许可。[官方 LICENSE](https://github.com/earendil-works/pi/blob/35dfa757378bd7a8570670e99c2687bdd1039a06/LICENSE)
+[registry 元数据](https://registry.npmjs.org/@earendil-works/pi-durable/1.4.0)和本地 `/private/tmp/pi-size-study/metadata.json` 记录版本、制品 URL、压缩/展开尺寸与依赖；三个目录各保留 `package-lock.json`。后续验证应固定直接包版本、依赖锁和制品 integrity，而不是启动时取 latest。MIT 顶层许可不代表依赖许可全部相同，分发前仍需生成实际依赖清单。
 
-## core 能提供工具循环，但不自带会议产品的数据边界
+## 三条路线复用的层级不同
 
-**已读官方源码。** `Agent` 默认工具列表是空数组；它提供状态与事件、工具执行、`beforeToolCall`/`afterToolCall`、上下文转换、请求准备和取消等接口。默认工具执行模式为并行，也可按工具或运行配置顺序执行。这使聆记可以只注册会议领域工具，而不提供文件或 shell 工具。[Agent 源码](https://github.com/earendil-works/pi/blob/35dfa757378bd7a8570670e99c2687bdd1039a06/packages/agent/src/agent.ts#L83)、[core 使用说明](https://github.com/earendil-works/pi/blob/35dfa757378bd7a8570670e99c2687bdd1039a06/packages/agent/README.md)
+| 路线 | 已有官方能力 | 仍需聆记负责 | 对会议产品的意义 |
+| --- | --- | --- | --- |
+| `agent-core` + `pi-ai` | 单 agent 模型/工具循环、状态事件、steer/follow-up、并发工具、取消、上下文转换钩子 | 持久会话、压缩策略、任务状态、崩溃恢复、资源/Skill 管理、授权 | 较轻，但容易重新自建本次希望减少的 harness 层 |
+| `coding-agent` SDK | 上述循环及 AgentSession、持久 SessionManager、会话树、压缩、自动重试、Skill/extension 资源加载、显式启用的 MCP | 领域工具、受控资源来源、跨会话调度/恢复、产品权限与隔离 | 若既有 Skill 生态兼容优先，可作为比较对象；不直接启用编码工具 |
+| `pi-durable` | 持久 conversation/task、inbox、scheduler、child tasks/子 agent、task graph、恢复、registry extension/task/hook 生命周期、压缩 | 产品 admission/并发预算、会议授权与快照、Skill 适配、可信代码边界、宿主重开及存储运维 | 本次后台管理目标最接近；Experimental 是主要采用风险 |
 
-`pi-ai` 提供统一供应商接口、模型集合、自定义 provider 和流式调用。core 可注入 `streamFn`，也有面向浏览器后端代理的 `streamProxy` 示例。它不是新的模型服务，不会自动提高纪要质量；模型可用性、上下文长度和成本仍取决于实际供应商与任务。[模型适配文档](https://github.com/earendil-works/pi/blob/35dfa757378bd7a8570670e99c2687bdd1039a06/packages/ai/README.md#browser-usage)、[core 代理示例](https://github.com/earendil-works/pi/blob/35dfa757378bd7a8570670e99c2687bdd1039a06/packages/agent/README.md#proxy-usage)
+core 默认可并行执行工具，结果仍按模型源顺序进入上下文；steering/follow-up 是单会话的输入调度，不是持久多 agent supervisor。[A: README L111–114、L169–182、L392–427]
 
-**建议边界。** 保留聆记现有 Record、转录修订、纪要与人工编辑的所有权；助手读取冻结的选中会议快照，输出独立的分析结果与片段引用。Pi 会话消息不能成为第二份正式纪要，也不接管录音、ASR、实时转录协议或后台纪要生成。模型选择和凭据继续由聆记后端管理，不读取用户机器上的 Pi 全局登录配置。
+SDK 的 AgentSession 明确拥有一个 conversation、模型/工具、队列、压缩与 extension runtime；SessionManager 管理持久或内存 entry tree。`prompt()` 等待包括自动重试的运行结束；流中再次输入必须选择 steer/follow-up；`abort()` 等待空闲。`dispose()` 取消工作并移除监听。[C: docs/sdk.md L28–70] 发布 JS 的 `dist/core/agent-session.js` L3037–3141 还明确实现重试分类、预算、指数退避和取消；这是发布 JS 行号，不是源 TS 行号。
 
-首个候选工具集可限定为 `read_selected_minutes`、`search_selected_transcript`、`read_cited_segments`。这些是建议的聆记领域接口，不是 Pi 已有工具。服务端从当前用户与绑定的 Record 推导可读范围，每次校验权限；模型传入的 Record ID、文件路径或 URL 不能扩大范围。第一阶段不注册任何发布、写文件、命令执行、任意网络访问或跨会议搜索工具。
+不能笼统说“Pi 没有持久任务/多 agent 调度”：durable 1.4.0 已有真实 task scheduler 与子任务/子会话所有权。也不能反过来把 durable 的恢复保证归给 core 或 SDK。[D: README L127、L638–712]
 
-## 完整 harness 的默认行为需要显式收紧
+## Skill、插件资源与运行任务要分别管理
 
-**已读官方源码与文档。** `createAgentSession()` 默认使用持久会话、文件 settings、标准资源发现与当前工作目录。默认内置工具是 `read`、`bash`、`edit`、`write`；可用 `tools`、`noTools`、`excludeTools`、自定义 `ResourceLoader` 与内存管理器替换这些选择。`noTools: "builtin"` 仍保留扩展/自定义工具，不能把它误读成完全禁用外部能力。[SDK 文档](https://github.com/earendil-works/pi/blob/35dfa757378bd7a8570670e99c2687bdd1039a06/packages/coding-agent/docs/sdk.md)、[SDK 工具选择源码](https://github.com/earendil-works/pi/blob/35dfa757378bd7a8570670e99c2687bdd1039a06/packages/coding-agent/src/core/sdk.ts#L63)
+**Skill 是工作指令与辅助资料，不是一个执行进程。** coding-agent 在启动时提供 Skill 名称/说明，任务需要时再加载完整指令；Skill 可携带脚本、引用和资产，支持 Agent Skills 规范。模型可能漏加载相关 Skill；强制选择需显式调用。`allowed-tools` 在该文档中仍标 Experimental，不能据此认为已构成强制安全隔离。[C: docs/skills.md L3–7、L41–65、L69–85]
 
-官方有 `createReadOnlyTools` / `createReadOnlyToolDefinitions`，包括文件读取和检索工具，但它表示对宿主文件系统的只读操作，不等于“只能读取选中会议”。把文件工具换成 Record API 才能表达本产品范围。[内置工具定义](https://github.com/earendil-works/pi/blob/35dfa757378bd7a8570670e99c2687bdd1039a06/packages/coding-agent/src/core/tools/index.ts#L162)
+coding-agent 的 `ResourceLoader` 供应 extensions、skills、templates、themes 和 context。CLI 默认加载 codemode、tool_search 与 MCP；SDK 不会自动加载，需要显式 factory 和绑定扩展生命周期。[C: docs/sdk.md L98–116] 因此“支持 Skill/MCP”不等于产品已经有插件安装政策、任务配额、权限收敛和崩溃恢复。
 
-官方安全说明明确：Pi 以启动账户的权限读、写和执行，不逐次要求工具批准；扩展、安装器和子进程也在同一权限下运行，除非有操作系统或虚拟化隔离。项目 trust 控制加载资源，不是文件、进程或网络沙箱。工具调用钩子可以实现审批流，但不能约束同进程恶意插件直接调用 Node API。[安全说明](https://github.com/earendil-works/pi/blob/35dfa757378bd7a8570670e99c2687bdd1039a06/packages/coding-agent/docs/security.md)
+durable registry 中的 extension 可以提供 tools、sections、hooks、wraps、tasks；conversation 保存 extension 名称，定义由进程安装。按名称替换或卸载时，已启动工作继续使用拿到的旧实现，下一 phase 才用新代码；重开进程后必须重新安装定义。[D: README L226–243、L467–472] 这适合冻结版本后运行会议任务，但不能用热替换默认实现来保证任务全程版本一致。
 
-因此完整 harness 若后续试验，应使用产品独占的配置、资源加载器与会话存储，明确的领域工具白名单，并将不可信代码放在真正隔离的进程/环境内。仅隐藏 `bash` 按钮、给提示词写“只读”或监听 `tool_call` 都不足以隔离任意 TypeScript 插件。
+**设计建议：** 首期仅接受产品审核的说明型会议 Skill，显式选择固定版本，将其指令转为 durable 的受控 instructions/section，并绑定允许的领域 tools。这个适配由聆记实现；不声称可以直接导入 coding-agent 任意 Skill/package/TypeScript extension。Skill 内脚本不默认执行。可执行插件单独审核、固定版本；不可信代码需要进程/操作系统隔离，同进程 hook 不能阻止其直接使用 Node API。[C: docs/security.md；D: README L226–243]
 
-## MCP 现在已内置，但 SDK 不会自动启用
+插件目录建议记录 `pluginId/version/integrity/capabilities/compatibleHarnessVersion`；每个任务固定 `skillId/version`、extension 集合及模型配置版本。升级只作用于新任务；老任务恢复时加载原版本定义，缺失时显示 blocked，不悄悄换版本。这里的目录、版本策略与兼容校验是**产品设计**，不是 Pi 自动提供的产品能力。
 
-**官方当前能力。** CLI 已将 MCP、codemode 和 tool_search 作为内置扩展加载；SDK 会话不自动加载这些内置扩展，需要显式创建 factory、交给资源加载器，并绑定扩展生命周期。历史上“Pi 不支持 MCP”的结论已不适用于此版本。[SDK MCP 说明](https://github.com/earendil-works/pi/blob/35dfa757378bd7a8570670e99c2687bdd1039a06/packages/coding-agent/docs/sdk.md#codemode-mcp)
+## durable 可承担哪些运行管理
 
-完整 harness 的 MCP 支持 stdio 与 Streamable HTTP，工具可 direct、deferred 或 codemode 暴露。每次 MCP 工具调用经过工具管线；服务器给出的 `readOnlyHint` 等注解仍是服务器声明，不能代替聆记的域内授权。该版本不渲染 MCP Apps 资源。[MCP 接入文档](https://github.com/earendil-works/pi/blob/35dfa757378bd7a8570670e99c2687bdd1039a06/packages/coding-agent/docs/mcp.md)
+| 关注点 | 发布包已说明的能力 | 产品需补的最小策略 |
+| --- | --- | --- |
+| 排队 | busy conversation inbox；follow-up、steer、reject；可撤回 queued submission；失败后队列仍保留 | UI 说明排队/加入当前工作区别；任务去重、队列上限、优先级 |
+| 并发 | 多 conversation、child tasks、嵌套工具；task graph 显示所有权/状态 | 用户/模型/资料源总并发和 token/费用预算；不要默认每场会都开子 agent |
+| 取消 | conversation abort、submission withdrawal；所有权自底向上取消；后台任务有独立边界 | 默认为前台所属任务，用户取消应覆盖该任务子树；避免随意设置 background |
+| 超时 | model stream timeout 配置；codemode timeout 与 replay 语义 | 总任务 deadline、单工具 timeout、MCP timeout；下游必须遵守 abort，超时不代表外部副作用撤销 |
+| 失败恢复 | 中断工作保留 pending；resume 调度；crash-loop limit 默认 5 后 parked；可 retryTask | 宿主启动重新安装版本/打开存储；呈现 parked/blocked；限次恢复，不无限静默重试 |
+| 副作用 | nested call 按 key 重附着；工具标记 replay safe/unsafe | 每个外部写操作自己提供幂等键，不能把 safe replay 当 exactly-once |
+| 故障隔离 | task/tool/hook 故障分域；beforeTool 失败阻止调用；存储错误关闭 Harness | 数据库瞬态重试策略、重开、错误呈现；插件执行不等于安全沙箱 |
+| 观察 | taskGraph/watchTaskGraph、持久 inbox/live 状态；watch 慢消费者合并帧 | 任务状态映射给既有服务事件；重连读取当前状态，不能假设 watch 重放所有事件 |
 
-独立 `pi-mcp` 可与 core 自行组合，提供客户端、传输与 OAuth 子集；其 README 声明支持的协议版本到 `2025-11-25`，不是自动支持所有后续 MCP 修订或 sampling、tasks 等全部能力。接入目标服务要实际协商验证，不因“支持 MCP”就推断兼容任意服务。首个会议助手验证无需启用 MCP/codemode。[pi-mcp 范围与限制](https://github.com/earendil-works/pi/blob/35dfa757378bd7a8570670e99c2687bdd1039a06/packages/mcp/README.md)
+对应精确证据：[D: README L127、L164、L216–222、L325–353、L368、L413、L490–521、L638–712、L823–835]。SQLite 的 WAL `synchronous=NORMAL` 承诺进程崩溃恢复，但最新提交可能在断电/宿主失败时丢失；不是无条件 RPO=0。[D: README L765] 关闭仍需等待正在执行的代码响应 abort，插件无响应会拖延关闭。[D: README L835]
 
-## Web 与桌面都能做宿主，界面仍由聆记掌握
+## 最小会议工具集只暴露领域能力
 
-完整 SDK 面向 Node/Bun 进程；RPC 是子进程 stdin/stdout JSONL，不是可直接暴露给浏览器的 HTTP API。它支持流式事件、提示、停止、状态和扩展对话框转发；`prompt` 接受成功不代表任务结束，应区分会话事件和最终停止状态。普通子进程隔离也不自动限制文件与网络权限。[SDK](https://github.com/earendil-works/pi/blob/35dfa757378bd7a8570670e99c2687bdd1039a06/packages/coding-agent/docs/sdk.md)、[RPC 契约](https://github.com/earendil-works/pi/blob/35dfa757378bd7a8570670e99c2687bdd1039a06/packages/coding-agent/docs/rpc.md)
+以下都是**建议新增的产品适配接口**，不是 Pi 内置工具。无需注册 `read/bash/edit/write`，也不让模型直接使用数据库、任意文件路径或 URL。
 
-扩展可注册工具、命令、上下文钩子和 `ctx.ui` 交互，但其自定义组件主要面向终端 UI，不能直接当 React 面板使用；部分 TUI 能力在 RPC 下不可用或降级。浏览器优先方案应保留 React 界面，由后端运行 core，并用现有服务协议向前端转发受控事件；桌面以后可复用同样边界。不要为了接入 harness 先让用户安装 CLI。[扩展接口](https://github.com/earendil-works/pi/blob/35dfa757378bd7a8570670e99c2687bdd1039a06/packages/coding-agent/docs/extensions.md)、[模式与 UI 限制](https://github.com/earendil-works/pi/blob/35dfa757378bd7a8570670e99c2687bdd1039a06/packages/coding-agent/docs/cli-integration.md)
+| 工具 | 返回/副作用 | 服务端硬约束 |
+| --- | --- | --- |
+| `list_selected_meetings` | 本任务冻结的会议 ID、标题、转录/纪要版本、可用材料元信息 | 不发现未选择会议，不返回无权会议 |
+| `query_meeting_evidence` | 在所选快照内检索片段与受控资料引用 | 所有 meetingId 属于任务授权范围；分页、字符/token 限额；资料只读 |
+| `read_meeting_segments` | 按引用读取指定版本片段、时间范围和必要相邻上下文 | 校验 meetingId、transcriptRevision、segmentId；无效引用显式失败 |
+| `save_analysis_draft` | 保存独立的复盘/问答/决策/风险/行动候选，带证据引用 | taskId+artifactKey 幂等；验证结构与引用；不改正式纪要或人工字段 |
 
-## 独立扩展中心可以保留，但不恢复 Skill 导出
+会后复盘和跨所选会议问答使用同一组读取工具，差异放在审核过的 Skill 指令与结果 schema。跨会决策合并必须保留每条来源，冲突意见不能用模型摘要抹平。行动输出是候选，不创建工单、不发邮件、不推送飞书。用户选择“采纳”走产品的显式事务/API，未来“外发”另需独立授权和幂等审计；本轮不设计或启用外发工具。
 
-建议界面用“会议助手/扩展”作为独立入口，允许选择“会议复盘”“质疑与风险”“内容问答”“知识提炼”。结果留在助手会话中，显示依据与范围；是否采纳进正式纪要另由用户操作。Markdown 与飞书导出始终走固定导出对话框，助手不持有外发工具。
+会议资料 MCP 是 `query_meeting_evidence` 的一种后端来源适配：预先配置服务、方法白名单、凭据域、资料范围、分页、超时与结果大小限制。先将服务响应规范化为带来源的 evidence，再交模型，不把服务器声明的只读注解当产品授权。coding-agent SDK 的 MCP 工厂不能直接假定能用于 durable；可以评估独立 `pi-mcp` 客户端接入领域适配层，但需实际协议/取消验证。[C: docs/sdk.md L116；C: docs/mcp.md；M: README]
 
-Pi 的 package 可包含 skills、prompt templates、themes 和可执行 extensions；npm、git、本地来源均可安装，不能把 package 等同于纯提示模板。第一阶段只接入产品审核的说明型 Skill 与领域工具配置，不自动导入用户机器上的全部 Pi 插件；任意代码插件需要独立的隔离与供应链方案。[官方 package 格式](https://github.com/earendil-works/pi/blob/35dfa757378bd7a8570670e99c2687bdd1039a06/packages/coding-agent/docs/packages.md)
+## 冻结引用与权限，保护人工编辑
 
-## 若继续，先用一个非生产验证回答是否值得引入
+**建议任务输入契约：** 服务端生成 `taskId`、调用者/租户、所选会议集合、每场 `transcriptRevision` 与 `minutesRevision`、资料源版本/快照摘要、Skill/插件版本、模型配置版本、期限和预算。会议范围是服务端绑定的 capability，不是模型参数。每次工具调用重新校验当前访问权；任务期间撤销权限立即阻断后续读取并取消任务，缓存结果也遵循数据访问政策。
 
-这是建议，尚未执行：在独立实验目录固定 `1.4.0` 与依赖锁，后端实例只注册三个选中会议只读工具；不加载全局 settings、目录技能、MCP、codemode 或第三方代码。用同一批脱敏会议对比“现有固定调用”和“core 工具循环”。
+**建议引用契约：** 每个主张包含 `meetingId/transcriptRevision/segmentId/startMs/endMs` 与可验证摘录或内容摘要；资料引用另含 sourceId/version/location。保存前服务端核实引用属于冻结版本与授权集合。压缩只能减少发给模型的上下文，不得丢失持久 artifact 的证据映射；durable 压缩保留旧 entry 只能证明其会话历史还在，不能替代会议转录版本存档。[D: README L550–565]
 
-验证通过标准：引用能回到正确片段与修订；拒绝跨 Record、任意文件和 URL 请求；重复与取消不会回写纪要或继续后台运行；长上下文、错误恢复、并发会话隔离和总调用预算可控。比较回答质量、完整任务延迟、token/费用、开发与维护代价，再决定是否保留依赖。无需为第一轮验证同时引入完整 harness、pi-durable 或技能市场。
+**建议结果契约：** 助手产物存为独立 draft 与版本，记录生成配置和 evidence；人工编辑保存单独 revision。后台重跑创建新版本，不能覆盖人工修订。采纳进正式纪要时用 expectedRevision/compare-and-set；若原纪要或转录已变化，标记 stale 并要求重新核对，不静默重基。Pi 的 conversation 文档不是第二套正式纪要数据库。
 
-**证据限制。** 本轮确认了官方身份、固定源码、版本元数据、默认工具/会话与扩展/MCP 契约；没有验证包内制品一致性、浏览器构建、聆记 Node 运行时兼容、供应商链路、实际权限隔离、性能与纪要效果。现有项目文档只用于识别集成边界，没有据历史文档宣称当前运行环境已满足这些条件。[聆记当前状态文档](../engineering/current-state.md)
+建议展示状态为 `queued → running → completed`，并允许 `cancel_requested → cancelled`、`failed`、`blocked`、`stale`。这是产品状态映射，不应直接冒充 durable 原生枚举。taskGraph 的 pending/running/waiting/completing 与 blocked/parked 原因需保留作诊断；“模型运行结束”也不等于产物已校验/持久化成功。[D: README L216–222、L704–712]
 
-## 本地运行时核查补充
+## 接入既有后端，保留薄而明确的产品层
 
-父代理于 2026-10-31 执行 `node -v`，当前交互终端为 **v22.14.0**，低于本报告核验的 Pi 1.4.0 包声明 Node ≥22.19。因此当前终端不能视为已满足 Pi 的声明运行条件；未来 spike 应使用隔离且满足要求的 Node 环境，不默认修改系统 Node、产品打包运行时或依赖。本轮未安装或启动 Pi。
+后续设计可在当前后端加入会议任务适配器：接收已鉴权的任务输入，建立冻结快照，提交 durable conversation/task，再将状态映射到既有前端服务事件。领域 tools 调用现有 Record/转录/纪要/资料接口，模型凭据只由后端配置传入，不扫描用户 Pi 全局配置。浏览器和桌面复用此边界，不要求安装 Pi CLI，不新增终端界面。
+
+Pi 负责循环、inbox、任务所有权与可恢复执行；聆记负责身份/会议授权、快照、证据、draft 事务、人工版本、任务 admission/预算，以及启动时恢复和观测。为进程崩溃可靠恢复，不应先在 Pi 外再造同职能的自有持久队列；是否需要多个 worker 或远程协调应等真实部署需求出现后决定。durable 是否适合当前数据库/单进程生命周期，仍需 spike 验证，不能由包说明代替集成证据。
+
+## 安装包预算以未裁剪生产闭包为起点
+
+实测官方 1.4.0，隔离目录 `npm install --ignore-scripts --omit=dev --save-exact`；未省略 optional，但锁中无 optional 包。统计只包括 `node_modules` 普通文件；gzip 为本地 tar.gz level9，不是 DMG 压缩率，不包括 Node、用户数据和正式应用代码。top-level tgz 直接下载测量，闭包 gzip 重新打包测量。
+
+| 路线 | 顶层 tgz / 展开字节 | 生产包数 | 完整文件 MiB | 完整 gzip MiB | 理论裁剪文件 / gzip MiB |
+| --- | --- | ---:| ---:| ---:| ---:|
+| core+ai | 899,037 / 4,575,298 | 88 | 66.65 | 11.56 | 27.20 / 4.54 |
+| coding-agent SDK | 7,612,554 / 23,419,059 | 121 | 107.11 | 23.40 | 50.30 / 10.75 |
+| durable | 801,973 / 3,516,915 | 93 | 76.01 | 14.08 | 32.08 / 6.09 |
+
+理论裁剪仅移除 `.map/.ts/.md/.markdown` 与 docs/tests/examples 等路径，没有运行验证，**不是可发布的裁剪方案**。动态加载、provider SDK、WASM、extension 资源与 package exports 不能凭 tree shaking 假设全部可移除。full 内含六个平台 TUI `.node` 共177,976 B，以及 QuickJS/Photon生产 WASM约2.52MB；durable也含两份生产 WASM约2.52MB。core无 `.node/.wasm`。安装时未执行 scripts，只能确认包里已带这些文件，不能证明运行资产完整。
+
+和当前桌面准备脚本使用的依赖闭包相比，同版本可去重七包（long、undici-types、五个 @protobufjs 子包）合计319,503文件字节，约0.305MiB；ws/protobufjs/@types/node版本不同，不能直接按同版本去重。此差额不改变预算量级。锁与精确数值留在 `/private/tmp/pi-size-study/{metadata.json,sizes.jsonl,measure.py}` 及各 route 的 lockfile。最终签名安装包增量须走实际打包验证。
+
+## 后续 fixture spike 只回答采用前的关键问题
+
+这是**下一步提案，尚未执行**。建立隔离实验目录、锁定 durable1.4.0和依赖，使用合成三场会议与一个本地假 MCP 资料源；模型采用明确的 fixture provider，不能把结果当真实模型质量或性能。对照可保留一个 coding-agent SDK +同领域工具的样例，检验 Skill 适配收益；无需先造插件市场或 UI。
+
+1. 两种审核 Skill 完成会后复盘和跨选中会议问答；输出可验证决策/风险/行动候选，引用不越会议与版本范围。
+2. busy 排队、并发限额、撤回、子任务取消及总 deadline；下游故意忽略 abort 时记录不能强制完成的边界。
+3. 在模型流、工具结果提交前后终止宿主，再重开；验证重附着、幂等保存、unsafe side effect不重放、parked/blocked可观察。SQLite进程崩溃结果不外推断电保证。
+4. 任务运行时升级插件，确认旧任务仍用冻结版本；缺失旧版本显式 blocked；Skill或资料包含越权指令仍被服务端权限拒绝。
+5. 人工改纪要后任务完成，旧任务只形成 stale独立draft；后台重跑不覆盖人工内容；访问权撤销后工具和结果读取受阻。
+6. 比较维护代码量、可诊断状态、恢复行为、调用/费用预算及真实环境下后续完整任务延迟。只有fixture不会证明ASR/LLM质量、真实MCP兼容或供应商稳定性。
+
+采用门槛：领域适配足够薄、恢复和取消符合预期、没有第二套正式纪要、引用与人工保护有效，且团队能承担 Experimental API 的升级验证。未达门槛时继续沿用现有后端，不为引入依赖而引入依赖。
+
+## 运行时事实分层保留
+
+- **历史测量环境：** 本轮隔离安装使用交互终端 Node v22.14.0 / npm11.8.0；Pi声明 Node≥22.19.0，安装有engine警告。成功下载与解析不能视为运行兼容验证；未执行 Pi。
+- **产品原有打包环境：** 原有桌面准备脚本与生成资源已核实内置 Node v24.21.0，所以Pi预算无需附带第二份Node或Electron。该事实与交互终端版本不同。
+- **本轮产品更新：** 源码与本机生成的后端资源已升级到 Node v26.12.1 / SQLite3.54.0；本地工作树386项Node回归、21项Rust回归、静态检查、Web构建及隔离后台启动/重启通过。合成性能与跨版本数据检查见[运行时升级证据](../evidence/node26-runtime-2026-10-31.json)。未替换已安装客户端或发布远端版本，也未据此验证Pi兼容性。
+
+本轮只做官方资料与制品研究及静态尺寸测量，没有集成Pi、运行真实模型/会议/MCP、执行恢复实验或新增UI。尺寸与官方契约不能代替产品验收证据。

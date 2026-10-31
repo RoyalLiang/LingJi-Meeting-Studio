@@ -2,7 +2,7 @@
 
 ## 开发与模型
 
-Node 22.14+、npm，执行 `npm ci`、`npm run dev`。访问 [工作台](http://127.0.0.1:3000)。Web 3000、Record API 3030、后台处理器同时运行。`Ctrl+C` 关闭本次启动的子进程。
+先使用 Node 版本管理器选择 `.nvmrc` 中的 Node 26.12.1，再执行 `npm ci`、`npm run dev`。访问 [工作台](http://127.0.0.1:3000)。Web 3000、Record API 3030、后台处理器同时运行。`Ctrl+C` 关闭本次启动的子进程。桌面安装包内置运行时，无需改动系统 Node。
 
 也可以在项目根目录使用 Makefile：首次运行 `make install`，之后执行 `make` 或 `make dev` 即可启动三个服务。`make help` 查看全部命令。
 
@@ -36,7 +36,7 @@ ASR 默认使用豆包，兼容 `DEEPGRAM_API_KEY`（模型可调），或完整
 
 ## 持久部署
 
-默认 `.data/records` 内的 SQLite、音频与本地开发签名密钥都必须保留。SQLite 使用 FULL/WAL，Node 22.14 的内置 SQLite API 仍有实验警告。迁移前备份数据库及音频，不复制正在写入的单独 sqlite 文件作为一致备份。
+默认 `.data/records` 内的 SQLite、音频与本地开发签名密钥都必须保留。SQLite 使用 FULL/WAL；本轮随包 Node 26.12.1 对应 SQLite 3.54.0。迁移前备份数据库及音频，不复制正在写入的单独 sqlite 文件作为一致备份。
 
 Postgres 设置 `RECORD_DATABASE_URL`，启动创建独立 `record_aggregates` 表与到期任务索引。API 和 worker 共用行锁、相同领域提交及同一个数据库。生产迁移应由单独步骤先执行建表，避免多个新实例同时做 DDL。本轮未验真实 PG。
 

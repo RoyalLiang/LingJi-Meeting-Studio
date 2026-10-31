@@ -38,7 +38,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: '24.21.0'
+          node-version: '26.12.1'
       - run: node --test tests/records-preview-release.test.mjs
       - id: source
         env:
@@ -85,7 +85,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: '24.21.0'
+          node-version: '26.12.1'
           cache: npm
       - name: Require Apple Silicon runner
         run: test "$(uname -m)" = arm64 && node -e "if(process.arch!=='arm64')process.exit(1)"
@@ -143,7 +143,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: '24.21.0'
+          node-version: '26.12.1'
       - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
           name: preview-macos-arm64-${{ needs.verify.outputs.sha }}

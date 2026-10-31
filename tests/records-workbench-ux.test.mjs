@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFile} from 'node:fs/promises';
-import {stripTypeScriptTypes} from 'node:module';
-const source=await Promise.all(['api.ts','downloads.ts','provider-settings.ts'].map(async file=>stripTypeScriptTypes(await readFile(new URL(`../apps/web/src/${file}`,import.meta.url),'utf8'),{mode:'transform'}).replace(/^import .*$/gm,'').replace(/export /g,'')));
+import {transpileTypeScript} from './helpers/typescript.mjs';
+const source=await Promise.all(['api.ts','downloads.ts','provider-settings.ts'].map(async file=>transpileTypeScript(await readFile(new URL(`../apps/web/src/${file}`,import.meta.url),'utf8')).replace(/^import .*$/gm,'').replace(/export /g,'')));
 function harness(fetch){const sandbox={exports:{},fetch,URL,location:{origin:'https://studio.example'},performance:{now:()=>0},trace:()=>{}};vm.runInNewContext(source.join('\n')+'\nObject.assign(exports,{fetchDownload,protocolForAddress,api});',sandbox);return sandbox.exports;}
 test('backup reads authenticated response before returning a named download and preserves HTTP errors',async()=>{
   const blob={size:200};let request;
@@ -27,7 +27,7 @@ test('downloads preserve Unicode meeting filenames and fall back for malformed e
   assert.equal((await h("attachment; filename=\"meeting.wav\"; filename*=UTF-8''%XX.wav").fetchDownload('/api/records/r/audio/s?download=1')).filename,'meeting.wav');
 });
 
-const followSource=stripTypeScriptTypes(await readFile(new URL('../apps/web/src/components/useContentFollow.ts',import.meta.url),'utf8'),{mode:'transform'}).replace(/^import .*$/gm,'').replace(/export /g,'');
+const followSource=transpileTypeScript(await readFile(new URL('../apps/web/src/components/useContentFollow.ts',import.meta.url),'utf8')).replace(/^import .*$/gm,'').replace(/export /g,'');
 function followHarness(){
   const slots=[],pending=[],frames=new Map(),listeners=new Map(),windowListeners=new Map();
   let cursor=0,nextFrame=0,resize,api,props={update:'initial',paused:false,enabled:true};

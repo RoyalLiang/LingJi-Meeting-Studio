@@ -47,7 +47,7 @@ export function previewNotes({tag,commit,workflowSha,metadata,runUrl,guide=''}) 
   const changes=guide.replace(/\r\n/g,'\n').split('\n## 本版变化\n')[1]?.split('\n## ')[0].trim()
     || '本版变更请参阅随包 INSTALL-macos-arm64.md。';
   return `公开测试版：源码 + macOS Apple Silicon 测试安装包。\n\n`+
-    `### 下载与安装\nmacOS 14.6+、Apple Silicon（M 系列）。下载 ${metadata.artifact}，按 INSTALL-macos-arm64.md 安装，并用 SHA256SUMS.txt 校验。内置 Node 24 后台，无需另装运行时。\n\n`+
+    `### 下载与安装\nmacOS 14.6+、Apple Silicon（M 系列）。下载 ${metadata.artifact}，按 INSTALL-macos-arm64.md 安装，并用 SHA256SUMS.txt 校验。内置 Node 后台，无需另装运行时。\n\n`+
     `**ad-hoc 签名，未进行 Developer ID 签名及 Apple 公证。** Preview 与 Alpha 使用相同应用标识；先结束录制、等待补传、退出并备份，勿同时运行。\n\n`+
     `### 本版变化\n${changes}\n\n`+
     `### Actions 构建与验证\n由 [GitHub Actions](${runUrl}) 在 macOS ARM runner 构建。构建阶段运行 Node/Rust 回归、ESLint、类型与文档检查；DMG、arm64、签名结构、包内后台及隔离启动/重启检查通过。实际执行记录以该 run 为准。\n\n`+

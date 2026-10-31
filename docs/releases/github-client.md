@@ -64,7 +64,7 @@ git push origin client-v0.1.0
 
 macOS 最低版本仍为 14.6。首轮不宣称支持 Windows/Linux ARM、Linux 的所有发行版或 Wayland/PulseAudio 组合。需要对应系统的安装、采集、暂停/停止、离线补传和升级测试。Linux 首轮按 Ubuntu 24.04 或兼容环境设定构建基线（glibc 2.39，PipeWire 至少 0.3.53）；不宣称产物可以直接运行于 Ubuntu 22.04。CPAL 0.18.2 启用 PipeWire 的 v0_3_53 接口，而 Ubuntu 22.04 默认开发包为 0.3.48，见[Ubuntu 官方包](https://packages.ubuntu.com/en/jammy-updates/libpipewire-0.3-dev)。
 
-CI 使用 Node 24、Rust 1.92.0、lockfile、`npm ci` 和 Cargo `--locked`；依赖的 GitHub Actions 固定到完整 commit SHA。每个目标记录源码 SHA、版本、工具版本、文件大小和 SHA-256。macOS CFBundleVersion 按 GitHub run number 单调编码；保留工作流运行序列，不复用旧值。当前不宣称逐字节可复现构建。
+CI 固定 Node 26.12.1、Rust 1.92.0、lockfile、`npm ci` 和 Cargo `--locked`；依赖的 GitHub Actions 固定到完整 commit SHA。每个目标记录源码 SHA、版本、工具版本、文件大小和 SHA-256。macOS CFBundleVersion 按 GitHub run number 单调编码；保留工作流运行序列，不复用旧值。当前不宣称逐字节可复现构建。
 
 构建步骤不启用 `smoke-test`，只有签名构建步骤拿到对应密钥。汇总脚本要求四个目标齐全、源码和版本一致、OS 签名已验证，重新计算所有字节的哈希，并用 `minisign` 验证 updater 签名和可信版本注释。只有制品、签名与元数据上传为 Actions artifact，构建配置和私钥不上传。
 

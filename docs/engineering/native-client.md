@@ -4,7 +4,7 @@
 
 ## 启动与构建
 
-Apple Silicon Alpha 5 内置 **Node 24.21.0、SQLite 3.53.4、Record API 和 worker**。打开应用时由原生进程启动独立后台，退出时关闭其子进程；无需启动 Web 开发服务或在本机安装 Node。版本、缓存校验和依赖复制由 `scripts/prepare-client-backend.mjs` 管理。目前随包运行时的构建路径只覆盖 macOS arm64；Windows/Linux 的独立后台发行包仍待适配验证。
+本轮源码将内置运行时固定为 **Node 26.12.1、SQLite 3.54.0、Record API 和 worker**，仅本地升级，尚未发布或替换已安装客户端。打开应用时由原生进程启动独立后台，退出时关闭其子进程；无需启动 Web 开发服务或在本机安装 Node。版本、官方 SHA-256 和依赖复制由 `scripts/prepare-client-backend.mjs` 管理，已配置 macOS arm64/x64、Linux x64、Windows x64 的运行时校验和；本轮本机只验证 macOS arm64，其他平台仍待各自环境验证。
 
 在项目根目录安装依赖，再启动或构建客户端：
 
