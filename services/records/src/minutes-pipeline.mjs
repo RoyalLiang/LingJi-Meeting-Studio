@@ -56,7 +56,7 @@ export function buildMinutesManifest(job,config={},budget=inputBudget(config)){
   snapshot.forEach((segment,index)=>{
     const timed=Number.isFinite(segment.startMs)&&Number.isFinite(segment.endMs)&&segment.endMs>segment.startMs;
     const next=timed?Math.floor(segment.startMs/windowMs):undefined;
-    if(current.length && (timed ? next!==bucket || (audioMinutesEnabled(config) && current[0].sourceId !== segment.sourceId) : !single && (index+snapshotOffset)%24===0))flush();
+    if(current.length && !(single&&job.scope==='final'&&!audioMinutesEnabled(config)) && (timed ? next!==bucket || (audioMinutesEnabled(config) && current[0].sourceId !== segment.sourceId) : !single && (index+snapshotOffset)%24===0))flush();
     bucket=next;add(segment);
   });flush();
   if(job.scope==='live'&&snapshot.some(segment=>segment.contextOnly!==true)){

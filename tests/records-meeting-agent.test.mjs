@@ -248,3 +248,13 @@ test('Pi hash cache invalidates exactly after source writes without requiring an
   assert.equal((await runtime.get('owner', task.id)).stale, false); assert.equal(bodies, 2);
   assert.deepEqual((await runtime.get('owner', task.id)).result, result(records)); assert.equal(bodies, 2);
 });
+
+test('duplicated minutes evidence does not reject a normal full meeting or alter frozen source hashes',async t=>{
+ const f=await fixture(t),record=f.records[0];
+ record.segments=Array.from({length:200},(_,i)=>({id:`long-${i}`,revision:1,text:'会议讨论内容'.repeat(20),startMs:i*1000,endMs:(i+1)*1000}));
+ record.minutes={title:'会议',sections:[],actions:[],evidenceSnapshot:structuredClone(record.segments)};
+ await f.repo.change(record.id,value=>Object.assign(value,record));
+ let wire;const p=provider([reads([record]),context=>{wire=JSON.stringify(context.messages.find(item=>item.role==='toolResult'));return message(JSON.stringify(result([record])));}]);
+ const runtime=await f.open(p),task=await runtime.request('owner',request([record],'normal-long'));
+ const done=await settled(runtime,task.id);assert.equal(done.status,'completed',JSON.stringify(done));assert.equal(wire.split(record.segments[0].text).length-1,200);assert.equal((await runtime.get('owner',task.id)).stale,false);
+});

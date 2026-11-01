@@ -3,7 +3,6 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { api, messageOf } from '../api';
 import { Button } from './ui';
 import {CapabilitySwitch} from './CapabilitySwitch';
-import { ExternalLink } from './ExternalLink';
 import './FeishuExport.css';
 export type FeishuConnectionValue={authMode:'app';appId:string;hasSecret:boolean;enabled:boolean;connected:boolean;connection:{state:string;reconnectAttempts:number};scopes:string[]};
 const endpoint='/integrations/feishu';
@@ -22,7 +21,7 @@ export function FeishuConnection({onChange,disabled=false}:{onChange:(value:Feis
   </div>
     {editing&&value&&<form className="feishu-config" onSubmit={save}>
       <label>App ID<input name="appId" required defaultValue={value.appId} pattern="cli_[a-fA-F0-9]{16}" placeholder="cli_…" disabled={busy||disabled}/></label><label>App Secret<input name="appSecret" type="password" required={!value.hasSecret} autoComplete="new-password" placeholder={value.hasSecret?'已保存；留空保留':'应用凭据中的 Secret'} disabled={busy||disabled}/></label>
-      <details><summary>应用权限</summary><p className="fine-print feishu-scopes">{value.scopes.join('、')}</p></details><div className="feishu-actions"><ExternalLink href="https://open.feishu.cn/app">开发者后台</ExternalLink><ExternalLink href="https://open.feishu.cn/document/server-side-sdk/nodejs-sdk/handling-events">接入指南</ExternalLink><Button variant="primary" disabled={busy||disabled}>保存配置</Button></div>
+      <details><summary>应用权限</summary><p className="fine-print feishu-scopes">{value.scopes.join('、')}</p></details><div className="feishu-actions"><Button variant="primary" disabled={busy||disabled}>保存配置</Button></div>
     </form>}
     {error&&<FeedbackNotice key={error} message={error} error/>}
   </div>;

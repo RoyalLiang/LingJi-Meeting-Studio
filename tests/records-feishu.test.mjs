@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { createRecordServer } from '../services/records/src/server.mjs';
 import { feishuBlocks, feishuFolder, createFeishu } from '../services/records/src/integrations/feishu.mjs';
 import { exportMinutesMarkdown } from '../services/records/src/markdown-export.mjs';
+import {feishuBoard} from '../services/records/src/integrations/feishu-board.mjs';
 import { createSecretStore } from '../services/records/src/integrations/secret-store.mjs';
 
 const documentId='docFixture123456';
@@ -25,6 +26,9 @@ function provider(){
     if(url.endsWith('/docx/v1/documents')){if(flags.createTimeout)throw new Error('network lost');return Response.json({code:0,data:{document:{document_id:documentId}}});}
     if(url.includes('/descendant?')){if(flags.writeFail)return Response.json({code:1770001,msg:'private-upstream-message'},{status:400});return Response.json({code:0,data:{block_id_relations:[{temporary_block_id:'heading',block_id:'remote-heading'}]}});}
     if(url.endsWith('/metas/batch_query'))return Response.json({code:0,data:{metas:[{doc_token:documentId,doc_type:'docx',title:'人工核对的会议纪要',url:`https://fixture.feishu.cn/docx/${documentId}`}],failed_list:[]}});
+    if(url.includes('/children?'))return Response.json({code:0,data:{children:[{block_type:43,board:{token:'boardFixture123456789012'}}]}});
+    if(url.includes('/whiteboards/')&&url.includes('/nodes?'))return Response.json({code:0,data:{ids:JSON.parse(body).nodes.map(node=>node.id)}});
+    if(url.includes('/members/transfer_owner?'))return Response.json({code:0,data:{}});
     throw new Error('Unexpected fixture URL');
   }};
   remote.sdkFactory=async({appId,appSecret:secret,signal})=>{
@@ -233,4 +237,45 @@ test('disabling before a first configuration insert remains disabled after servi
   assert.notEqual((await configuring).status,200);h.app.repo.insert=original;
   const conn=(await h.app.repo.list('feishu-connection'))[0],service=await createFeishu(h.app.repo,{sdkFactory:h.remote.sdkFactory});
   try{assert.equal((await service.settings(conn.owner)).enabled,false);assert.equal(h.remote.connections.length,0);}finally{await service.close();}
+});
+
+test('saving unchanged credentials preserves an approved automation rule across reload and restart',async t=>{
+  const h=await harness(t);await h.connect();
+  await h.request('/integrations/feishu/automation','PUT',{enabled:true,folderToken:'folderFixture123',includeNotes:true,includeEvidence:false,confirmed:true});
+  const before=(await h.app.repo.list('feishu-connection'))[0].generation;
+  await h.request('/integrations/feishu','PUT',{appId:'cli_a1b2c3d4e5f67890',appSecret:''});
+  assert.equal((await h.app.repo.list('feishu-connection'))[0].generation,before);
+  let policy=(await h.request('/integrations/feishu/automation')).body;
+  assert.equal(policy.enabled,true);assert.equal(policy.connectionChanged,false);assert.equal(policy.includeNotes,true);
+  const conn=(await h.app.repo.list('feishu-connection'))[0],service=await createFeishu(h.app.repo,{sdkFactory:h.remote.sdkFactory,autoPollMs:60000});
+  try{policy=await service.automation(conn.owner);assert.equal(policy.enabled,true);assert.equal(policy.connectionChanged,false);assert.equal(policy.folderToken,'folderFixture123');}finally{await service.close();}
+});
+
+test('member destination and editable board are frozen and published before ownership transfer',async t=>{
+ const h=await harness(t);await h.connect();
+ const preview=await h.request(`/records/${h.recordId}/feishu/preview`,'POST',{title:'人工核对的会议纪要',folderToken:'',destinationEmail:'member@example.test',includeBoard:true,includeNotes:false,includeEvidence:true});
+ assert.equal(preview.status,201);assert.equal(preview.body.destinationEmail,'member@example.test');assert.ok(preview.body.boardNodes.length>1);
+ await h.request(`/integrations/feishu/exports/${preview.body.id}/publish`,'POST',{confirmed:true});
+ const receipt=await h.wait(preview.body.id);assert.equal(receipt.status,'succeeded');
+ const urls=h.remote.calls.map(c=>c.url),nodes=urls.findIndex(url=>url.includes('/whiteboards/')&&url.includes('/nodes?')),transfer=urls.findIndex(url=>url.includes('/members/transfer_owner?'));
+ assert.ok(nodes>0);assert.ok(transfer>nodes);assert.match(h.remote.calls[transfer].body,/member@example.test/);
+ assert.match(urls[transfer],/stay_put=false/);
+ const invalid=await h.request(`/records/${h.recordId}/feishu/preview`,'POST',{title:'test',folderToken:'folderFixture123',destinationEmail:'member@example.test',includeBoard:false,includeNotes:false,includeEvidence:false});assert.equal(invalid.status,400);
+});
+
+
+test('board keeps legacy and ambiguous topics from claiming unrelated sections or tables',()=>{
+ const minutes={title:'会议',topics:[{title:'A'},{title:'B'},{id:'dup',title:'C'},{id:'dup',title:'D'}],sections:[{heading:'独立章节',items:[{text:'未归属内容'},{text:'含歧义内容',topicId:'dup'}]}],tables:[{title:'独立表格',columns:['值'],rows:[{cells:['原始值']}]}]};
+ const nodes=feishuBoard(minutes),byText=new Map(nodes.map(node=>[node.text.text,node]));
+ assert.equal(byText.get('未归属内容').mind_map_node.parent_id,byText.get('独立章节').id);
+ assert.equal(byText.get('含歧义内容').mind_map_node.parent_id,byText.get('独立章节').id);
+ assert.equal(byText.get('独立表格').mind_map_node.parent_id,nodes[0].id);
+});
+
+
+test('disabled automation retains its saved board and destination choices',async t=>{
+ const h=await harness(t);await h.connect();
+ const policy={enabled:true,folderToken:'',destinationEmail:'member@example.test',includeBoard:false,includeNotes:true,includeEvidence:false,confirmed:true};
+ await h.request('/integrations/feishu/automation','PUT',policy);await h.request('/integrations/feishu/automation','PUT',{enabled:false});
+ const saved=(await h.request('/integrations/feishu/automation')).body;assert.equal(saved.configured,true);assert.equal(saved.enabled,false);assert.equal(saved.includeBoard,false);assert.equal(saved.destinationEmail,policy.destinationEmail);assert.equal(saved.includeNotes,true);
 });

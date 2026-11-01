@@ -14,13 +14,14 @@ export function topicBranches(minutes: Minutes): (Topic & { items: MinutesItem[]
   if (!minutes.topics?.length) return minutes.sections.map(section => ({ title: section.heading, summary: '', evidence: section.items.flatMap(item => item.evidence), items: section.items }));
   const key = (ref: Evidence) => `${ref.segmentId}:${ref.revision}`;
   const topics = minutes.topics, groups = topics.map(() => [] as MinutesItem[]), other = new Map<string, MinutesItem[]>();
+  const ids=new Map<string,number>(),titles=new Map<string,number>();
+  topics.forEach((topic,index)=>{if(topic.id)ids.set(topic.id,ids.has(topic.id)?-1:index);titles.set(topic.title,titles.has(topic.title)?-1:index);});
   for (const section of minutes.sections) for (const item of section.items) {
-    const candidates=topics.flatMap((topic,index)=>(item.topicId?topic.id===item.topicId:topic.title===section.heading)?[index]:[]);
-    if(candidates.length===1){
-      const index=candidates[0];
+    const index=(item.topicId?ids.get(item.topicId):titles.get(section.heading))??-1;
+    if(index>=0){
       groups[index].push(section.heading===topics[index].title?item:{...item,label:[section.heading,item.label].filter(Boolean).join(' · ')});
     }
-    else other.set(section.heading,[...(other.get(section.heading)||[]),item]);
+    else {const items=other.get(section.heading)||[];items.push(item);other.set(section.heading,items);}
   }
   const union = (refs: Evidence[]) => [...new Map(refs.map(ref => [key(ref), ref])).values()];
   const branches = topics.map((topic,index)=>({...topic,evidence:union([...topic.evidence,...groups[index].flatMap(item=>item.evidence)]),items:groups[index]}));

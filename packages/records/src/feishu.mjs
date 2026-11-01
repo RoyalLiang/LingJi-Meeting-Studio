@@ -1,1 +1,1 @@
-export const FEISHU_SCOPES=['docx:document:create','docx:document:write_only','docx:document.block:convert','drive:drive.metadata:readonly'];
+export const FEISHU_SCOPES=['docx:document:create','docx:document:write_only','docx:document.block:convert','drive:drive.metadata:readonly','board:whiteboard:node:create','docs:permission.member:transfer'];

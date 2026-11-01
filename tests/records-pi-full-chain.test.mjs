@@ -1,3 +1,4 @@
+import {meetingSourceWire} from '../services/records/src/meeting-agent-wire.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -151,7 +152,7 @@ test('HTTP audio to worker minutes/highlights to Pi preserves drain, evidence, p
         assert.equal(tools.length, 1); assert.equal(tools[0].toolName, 'read_selected_meeting'); assert.equal(tools[0].isError, false);
         const snapshot = JSON.parse(tools[0].content.find(item => item.type === 'text').text);
         assert.equal(snapshot.recordId, id); assert.equal(snapshot.transcriptRevision, record.transcriptRevision);
-        assert.deepEqual(snapshot.minutes, humanMinutes); assert.deepEqual(snapshot.segments.map(segment => segment.text), texts);
+        assert.deepEqual(snapshot.minutes, JSON.parse(JSON.stringify(meetingSourceWire({minutes:humanMinutes,segments:record.segments}).minutes))); assert.deepEqual(snapshot.segments.map(segment => segment.text), texts);
         assert.deepEqual(snapshot.segments.map(segment => [segment.id, segment.revision]), record.segments.map(segment => [segment.id, segment.revision]));
         return message(JSON.stringify(output));
       }];

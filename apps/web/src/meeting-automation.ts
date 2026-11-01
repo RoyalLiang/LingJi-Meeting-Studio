@@ -2,6 +2,8 @@ export type MeetingActivity = {sampledAt:number;receivedAt?:number;active:boolea
 export type MeetingReport = {id:string;recording:boolean;paused:boolean;busy:boolean};
 type Pending = {kind:'start'|'stop';since:number;due:number;recordId:string};
 
+const START_MS=4000,STOP_MS=10000;
+
 export function createMeetingAutomation() {
   let owned='',suppressed=false,quietAt:number|null=null,lastAt:number|null=null,pending:Pending|null=null,acting=false;
   return {
@@ -14,14 +16,14 @@ export function createMeetingAutomation() {
       if(signal.error || gap || stale){pending=null;quietAt=null;return null;}
       if(acting)return null;
       if(signal.active)quietAt=null;
-      else {quietAt??=signal.sampledAt;if(signal.sampledAt-quietAt>=30000)suppressed=false;}
+      else {quietAt??=signal.sampledAt;if(signal.sampledAt-quietAt>=STOP_MS)suppressed=false;}
       if(owned && (!report.recording || report.id!==owned)){owned='';suppressed=true;pending=null;}
       if(!owned && (report.recording || report.paused)){
         pending=null;if(signal.active)suppressed=true;return null;
       }
       const kind=owned ? (!signal.active ? 'stop' : null) : (signal.active && !suppressed && !report.busy ? 'start' : null);
       if(!kind){pending=null;return null;}
-      if(pending?.kind!==kind)pending={kind,since:signal.sampledAt,due:signal.sampledAt+(kind==='start'?10000:30000),recordId:owned};
+      if(pending?.kind!==kind)pending={kind,since:signal.sampledAt,due:signal.sampledAt+(kind==='start'?START_MS:STOP_MS),recordId:owned};
       if(signal.sampledAt<pending.due || report.busy)return null;
       acting=true;return pending;
     },

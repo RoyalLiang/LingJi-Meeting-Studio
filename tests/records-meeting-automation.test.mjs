@@ -11,55 +11,50 @@ const idle={id:'',recording:false,paused:false,busy:false};
 const recording={id:'auto-record',recording:true,paused:false,busy:false};
 const sample=(engine,at,active,report=idle,error)=>engine.sample({sampledAt:at,active,error},report);
 const tick=(engine,from,to,active,report=idle)=>{let result;for(let at=from;at<=to;at+=2000)result=sample(engine,at,active,report);return result;};
-function started(){const engine=createMeetingAutomation();assert.equal(tick(engine,0,10000,true)?.kind,'start');engine.started(recording.id);return engine;}
+function started(){const engine=createMeetingAutomation();assert.equal(tick(engine,0,4000,true)?.kind,'start');engine.started(recording.id);return engine;}
 
-test('short notifications do not start a meeting and sustained IO starts only once',()=>{
- const engine=createMeetingAutomation();tick(engine,0,4000,true);assert.equal(sample(engine,6000,false),null);
- assert.equal(tick(engine,8000,18000,true)?.kind,'start');assert.equal(sample(engine,20000,true),null);
- engine.started('auto-record');assert.equal(sample(engine,22000,true,recording),null);
+test('four seconds of activity starts once while short notifications do not start',()=>{
+ const engine=createMeetingAutomation();tick(engine,0,2000,true);assert.equal(sample(engine,4000,false),null);
+ assert.equal(tick(engine,6000,10000,true)?.kind,'start');assert.equal(sample(engine,12000,true),null);
+ engine.started(recording.id);assert.equal(sample(engine,14000,true,recording),null);
 });
-test('only all selected IO ending for thirty seconds stops an automatically owned meeting',()=>{
- const engine=started();tick(engine,12000,30000,true,recording);assert.equal(engine.pending,null,'silent but running IO stays active');
- assert.equal(tick(engine,32000,60000,false,recording),null);const decision=sample(engine,62000,false,recording);
- assert.equal(decision.kind,'stop');assert.equal(decision.recordId,'auto-record');
- engine.stopped();assert.equal(sample(engine,64000,true,idle),null);
+test('ten seconds without IO stops only an automatically owned meeting',()=>{
+ const engine=started();tick(engine,6000,12000,true,recording);assert.equal(engine.pending,null);
+ assert.equal(tick(engine,14000,22000,false,recording),null);assert.equal(sample(engine,24000,false,recording)?.kind,'stop');
+ engine.stopped();assert.equal(sample(engine,26000,true),null);
 });
-test('IO returning during the end grace period cancels the end candidate',()=>{
- const engine=started();tick(engine,12000,30000,false,recording);assert.equal(sample(engine,32000,true,recording),null);assert.equal(engine.pending,null);
+test('IO returning before the stop deadline cancels the candidate',()=>{
+ const engine=started();tick(engine,6000,14000,false,recording);assert.equal(sample(engine,16000,true,recording),null);assert.equal(engine.pending,null);
 });
-test('manual meetings, manual pause and manual stop cannot be overridden',()=>{
+test('manual recording pause and stop are never overridden',()=>{
  for(const report of [{...recording,id:'manual'},{...idle,id:'manual',paused:true}]){
-  const engine=createMeetingAutomation();assert.equal(tick(engine,0,20000,true,report),null);assert.equal(tick(engine,22000,50000,true,idle),null);
+  const engine=createMeetingAutomation();assert.equal(tick(engine,0,8000,true,report),null);assert.equal(tick(engine,10000,20000,true),null);
  }
- const engine=started();sample(engine,12000,true,idle);assert.equal(tick(engine,14000,40000,true,idle),null);
+ const engine=started();sample(engine,6000,true,idle);assert.equal(tick(engine,8000,18000,true),null);
 });
-test('unknown samples, resume gaps and clock rollback restart the safety grace period',()=>{
- const engine=started();tick(engine,12000,30000,false,recording);
- sample(engine,32000,false,recording,'unavailable');assert.equal(engine.pending,null);
- assert.equal(tick(engine,34000,62000,false,recording),null);
- assert.equal(sample(engine,120000,false,recording),null);assert.equal(engine.pending,null);
- assert.equal(sample(engine,100000,false,recording),null);assert.equal(engine.pending,null);
+test('unknown samples resume gaps and rollback reset the entire grace period',()=>{
+ const engine=started();tick(engine,6000,14000,false,recording);sample(engine,16000,false,recording,'unavailable');assert.equal(engine.pending,null);
+ assert.equal(tick(engine,18000,26000,false,recording),null);assert.equal(sample(engine,60000,false,recording),null);assert.equal(engine.pending,null);
+ assert.equal(sample(engine,50000,false,recording),null);assert.equal(engine.pending,null);
 });
-test('cancelling start suppresses the current activity and cancelling stop hands the recording to the user',()=>{
- const engine=createMeetingAutomation();sample(engine,0,true);engine.cancel();assert.equal(tick(engine,2000,30000,true),null);
- tick(engine,32000,64000,false);assert.equal(tick(engine,66000,76000,true)?.kind,'start');
- const running=started();sample(running,12000,false,recording);running.cancel();assert.equal(tick(running,14000,60000,false,recording),null);
+test('cancel suppresses activity, ten quiet seconds rearm, and cancelling stop hands ownership to user',()=>{
+ const engine=createMeetingAutomation();sample(engine,0,true);engine.cancel();assert.equal(tick(engine,2000,12000,true),null);
+ tick(engine,14000,24000,false);assert.equal(tick(engine,26000,30000,true)?.kind,'start');
+ const running=started();sample(running,6000,false,recording);running.cancel();assert.equal(tick(running,8000,22000,false,recording),null);
 });
 test('changing the viewed record never ends a different meeting',()=>{
- const engine=started();assert.equal(tick(engine,12000,50000,false,{...recording,id:'other'}),null);
+ const engine=started();assert.equal(tick(engine,6000,22000,false,{...recording,id:'other'}),null);
 });
-test('changing listening targets retains ownership while restarting the end grace period',()=>{
- const engine=started();tick(engine,12000,30000,false,recording);engine.reconfigure();
- assert.equal(tick(engine,32000,60000,false,recording),null);
- const decision=sample(engine,62000,false,recording);assert.equal(decision.kind,'stop');assert.equal(decision.recordId,'auto-record');
+test('changing targets retains ownership but restarts the stop grace period',()=>{
+ const engine=started();tick(engine,6000,14000,false,recording);engine.reconfigure();assert.equal(tick(engine,16000,24000,false,recording),null);
+ assert.equal(sample(engine,26000,false,recording)?.kind,'stop');
 });
-test('failed automatic starts do not retry against a still-active application',()=>{
- const engine=createMeetingAutomation();tick(engine,0,10000,true);engine.started();assert.equal(tick(engine,12000,60000,true),null);
+test('failed automatic starts do not retry against current activity',()=>{
+ const engine=createMeetingAutomation();tick(engine,0,4000,true);engine.started();assert.equal(tick(engine,6000,24000,true),null);
 });
-test('queued native events delivered after a frozen renderer cannot trigger immediate recording',()=>{
- const engine=createMeetingAutomation();
- for(let at=0;at<=20000;at+=2000)assert.equal(engine.sample({sampledAt:at,receivedAt:120000,active:true},idle),null);
- assert.equal(tick(engine,120000,130000,true),null);assert.equal(sample(engine,132000,true)?.kind,'start');
+test('queued stale native events cannot trigger immediate recording',()=>{
+ const engine=createMeetingAutomation();for(let at=0;at<=20000;at+=2000)assert.equal(engine.sample({sampledAt:at,receivedAt:120000,active:true},idle),null);
+ assert.equal(tick(engine,120000,124000,true),null);assert.equal(sample(engine,126000,true)?.kind,'start');
 });
 test('background automation defaults off, requires a target, and persists independent target choices',async()=>{
  const root=await mkdtemp(join(tmpdir(),'meeting-auto-config-'));

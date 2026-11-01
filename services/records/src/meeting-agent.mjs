@@ -9,6 +9,7 @@ import { Harness, AssistantEntry, defineDoc, defineTask, defineTool, defineExten
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
 import { DomainError, requireThat } from '../../../packages/records/src/record.mjs';
 import { readConfig, configured } from './config.mjs';
+import {meetingSourceWire} from './meeting-agent-wire.mjs';
 import { completeModelJson } from './llm.mjs';
 
 const skill = { id: 'meeting-review', version: '1.0.0' };
@@ -124,13 +125,13 @@ export async function createMeetingAgentRuntime({ repo, extensions, env = proces
       if (!create) await access(path);
       let jobHarness;
       const read = defineTool({ name: 'read_selected_meeting', description: 'Read the frozen snapshot of one explicitly selected meeting. No other meetings are available.',
-      parameters: Type.Object({ recordId: Type.String() }), replay: 'safe', execute: async (args, api, toolContext) => {
+      parameters: Type.Object({ recordId: Type.String() }), outputLimits:{maxBytes:240000,maxLines:10000}, replay: 'safe', execute: async (args, api, toolContext) => {
         const { data } = await jobHarness.snapshot(Payload, toolContext);
         await authorized(data);
         const snapshot = data.snapshots.find(item => item.recordId === args.recordId);
         requireThat(snapshot, 'agent_scope_denied', 403);
         await api.commit(async tx => { const payload = await tx.doc(Payload); if (!payload.readIds.includes(args.recordId)) payload.readIds.push(args.recordId); }, toolContext);
-        return { output: [{ type: 'text', text: JSON.stringify(snapshot) }] };
+        return { output: [{ type: 'text', text: JSON.stringify(meetingSourceWire(snapshot)) }] };
       } });
       const remote = extensions ? defineTool({name:'call_selected_mcp',description:'Call a user-selected, approved remote read-only MCP tool. Only IDs/names listed in this task are allowed. input is a JSON object encoded as a string.',
         parameters:Type.Object({pluginId:Type.String(),toolName:Type.String(),input:Type.String({maxLength:20000})}),replay:'unsafe',execute:async(args,_api,toolContext)=>{
@@ -280,7 +281,7 @@ export async function createMeetingAgentRuntime({ repo, extensions, env = proces
         const extensionScope=await extensions?.snapshot(ownerId,input);
         const snapshots = [];
         for (const id of recordIds) { const record = await repo.get(id); requireThat(record && record.kind === 'record' && !record.deleted && Date.parse(record.deleteAt) > Date.now(), 'agent_source_unavailable', 410); requireThat(record.owner === ownerId, 'agent_scope_denied', 403); snapshots.push(snapshot(record,input.includeNotes===true)); }
-        const sourceSize=JSON.stringify(snapshots).length;
+        const sourceSize=JSON.stringify(snapshots.map(meetingSourceWire)).length;
         requireThat(sourceSize<=60000&&sourceSize+JSON.stringify({extensions:extensionScope||null,prompt}).length<=100000,'agent_input_too_large',413);
         const createdAt = new Date().toISOString(), jobKey = randomUUID(), sources = snapshots.map(({recordId,title,transcriptRevision,minutesRevision}) => ({recordId,title,transcriptRevision,minutesRevision}));
         const job = await openJob(jobKey, true);

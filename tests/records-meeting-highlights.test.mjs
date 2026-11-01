@@ -15,7 +15,7 @@ const render=props=>renderToStaticMarkup(React.createElement(sandbox.exports.ren
 
 test('failed regeneration preserves available highlights without embedding the failure toast',()=>{
  const html=render({job:{status:'failed'}});
- assert.match(html,/已有重点不因重试失败而丢失/);assert.match(html,/上次整理的重点/);
+ assert.match(html,/已有重点不因重试失败而丢失/);assert.doesNotMatch(html,/上次整理的重点|个节点|正在更新会议重点/);
  assert.doesNotMatch(html,/模型整理超过处理时限|feedback-toast/);
  assert.doesNotMatch(html,/<footer|基于本场|本场没有明确安排|最终重点尚未整理完成/);
 });

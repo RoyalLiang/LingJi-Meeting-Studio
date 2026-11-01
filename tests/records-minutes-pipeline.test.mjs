@@ -769,3 +769,13 @@ test('preserved process facts keep their project heading when one source discuss
   assert.ok(retained.length>0);assert.ok(retained.every(section=>section.heading.includes('项目乙')&&section.items.every(item=>item.topicId!=='project-a')));
  }finally{await f.close();}
 });
+
+test('sparse long final text meeting fits one call without losing any source',async()=>{
+ const f=await fixture(50);
+ try{
+  await f.repo.change(f.record.id,record=>{record.segments.forEach((segment,i)=>Object.assign(segment,{text:`第${i+1}项讨论。`,startMs:i*60000,endMs:i*60000+1000}));});
+  const claim=await f.claim(),manifest=buildMinutesManifest(claim,config);assert.equal(manifest.windows.length,1);
+  let calls=0;const result=await runMinutesPipeline(f.repo,f.record.id,claim,config,async job=>{calls++;assert.equal(job.snapshot.length,50);return summarize(job);});
+  assert.equal(calls,1);assert.equal(result.coverage.segments,50);
+ }finally{await f.close();}
+});

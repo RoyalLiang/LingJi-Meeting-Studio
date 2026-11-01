@@ -21,3 +21,17 @@ test('tree cards keep speakers and content without a source icon row',()=>{
  assert.match(html,/Summary/);assert.match(html,/Detail/);assert.match(html,/说话人1/);
  assert.doesNotMatch(html,/citation-entry/);assert.equal(minutes.topics[0].evidence[0],ref);
 });
+
+const {MarkdownPreview}=await load('apps/web/src/components/MarkdownPreview.tsx');
+test('export preview renders headings lists tables emphasis and references safely',()=>{
+ const html=renderToStaticMarkup(React.createElement(MarkdownPreview,{text:'# 标题\n\n## 结论\n- **已确认**内容[^1]\n\n| 对象 | 数值 |\n| --- | --- |\n| A | 2 |\n\n[^1]: 原文 <img src=x onerror=alert(1)>'}));
+ assert.match(html,/<h2>标题<\/h2>/);assert.match(html,/<strong>已确认<\/strong>/);assert.match(html,/<table>/);assert.match(html,/<sup>/);assert.doesNotMatch(html,/<img|onerror="/);assert.match(html,/&lt;img/);
+});
+
+const {topicBranches}=await load('apps/web/src/minutes-views.ts');
+test('topic grouping indexes topics once on thousands of unmatched items',()=>{
+ let reads=0;const topics=Array.from({length:30},(_,i)=>({id:`t${i}`,get title(){reads++;return `Topic${i}`;},summary:'',evidence:[]}));
+ const items=Array.from({length:3000},(_,i)=>({text:`item${i}`,evidence:[]}));
+ const branches=topicBranches({topics,sections:[{heading:'Other',items}],actions:[]});
+ assert.equal(branches.at(-1).items.length,3000);assert.equal(branches.at(-1).items[0],items[0]);assert.ok(reads<3100,`topic title reads: ${reads}`);
+});

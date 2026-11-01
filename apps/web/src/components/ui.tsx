@@ -23,11 +23,12 @@ export function Button({ children, variant = 'secondary', className = '', title,
       addEventListener('scroll',hide,true);addEventListener('resize',hide);document.addEventListener('keydown',key,true);
       };
     const enter=()=>{timer=window.setTimeout(show,300);},key=(e:KeyboardEvent)=>{if(e.key==='Escape'&&popup.matches(':popover-open')){hide();e.preventDefault();e.stopPropagation();}};
+    const focus=()=>{if(anchor.matches(':focus-visible'))show();};
     const toggled=()=>{if(!popup.matches(':popover-open'))hide();};
     popup.addEventListener('toggle',toggled);
     anchor.addEventListener('pointerenter',enter);anchor.addEventListener('pointerleave',hide);
-    anchor.addEventListener('focus',show);anchor.addEventListener('blur',hide);anchor.addEventListener('click',hide);
-    return()=>{hide();popup.removeEventListener('toggle',toggled);anchor.removeEventListener('pointerenter',enter);anchor.removeEventListener('pointerleave',hide);anchor.removeEventListener('focus',show);anchor.removeEventListener('blur',hide);anchor.removeEventListener('click',hide);};
+    anchor.addEventListener('focus',focus);anchor.addEventListener('blur',hide);anchor.addEventListener('click',hide);
+    return()=>{hide();popup.removeEventListener('toggle',toggled);anchor.removeEventListener('pointerenter',enter);anchor.removeEventListener('pointerleave',hide);anchor.removeEventListener('focus',focus);anchor.removeEventListener('blur',hide);anchor.removeEventListener('click',hide);};
   },[label]);
   return <button className={`button ${variant} ${className}`} data-tooltip={label} {...props} ref={button} aria-describedby={[props['aria-describedby'],label?id:undefined].filter(Boolean).join(' ')||undefined}>{children}{label&&<span ref={tip} id={id} role="tooltip" popover="manual" className="button-tooltip">{label}</span>}</button>;
 }

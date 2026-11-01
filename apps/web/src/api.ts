@@ -29,6 +29,8 @@ const messages: Record<string, string> = {
 
   feishu_connection_failed:'SDK 长连接未建立，请检查应用凭据、网络及飞书后台的长连接配置。',
   invalid_feishu_config:'飞书配置无效，请检查企业自建应用的 App ID 和 App Secret。',
+  invalid_feishu_member:'请填写有效的成员飞书邮箱。',
+  invalid_feishu_destination:'成员云文档与文件夹只能选择一种导出位置。',
   invalid_feishu_folder:'请填写飞书文件夹链接或有效的文件夹 token。',
   feishu_not_configured:'请先配置飞书应用。', feishu_not_connected:'请先连接飞书。',
   feishu_callback_busy:'授权回调端口不可用，请关闭其他授权窗口或修改回调端口。',
