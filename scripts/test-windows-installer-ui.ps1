@@ -67,7 +67,8 @@ $setup=Start-Process -FilePath $Installer -ArgumentList "/D=$install" -PassThru
 $script:handle=[IntPtr]::Zero
 function Wait-Page([string]$text,[int]$seconds=30) {
  $names=@();$lastReadError=$null
- for($i=0;$i -lt $seconds*5;$i++) {
+ $pageClock=[System.Diagnostics.Stopwatch]::StartNew()
+ while($pageClock.Elapsed.TotalSeconds -lt $seconds) {
   $setup.Refresh()
   if($setup.HasExited){throw "Installer exited before $text ($($setup.ExitCode))"}
   if($setup.MainWindowHandle -ne [IntPtr]::Zero){$script:handle=$setup.MainWindowHandle}
@@ -84,11 +85,21 @@ function Wait-Page([string]$text,[int]$seconds=30) {
    }
    if($names -contains $text){return}
   }
-  Start-Sleep -Milliseconds 200
+  Start-Sleep -Milliseconds 500
  }
- Write-Host ('::notice title=Installer last page::'+(($names | Where-Object {$_} | Select-Object -First 25) -join ' | '))
- if($lastReadError){Write-Host ('::notice title=Installer last UI read::'+$lastReadError)}
  try {Capture-Page 'unexpected'}catch{Write-Host ('::warning title=Installer capture::'+$_.Exception.Message)}
+  # A page can finish while diagnostic capture brings the window forward.
+  $setup.Refresh()
+  if($setup.HasExited){throw "Installer exited before $text ($($setup.ExitCode))"}
+  if($setup.MainWindowHandle -ne [IntPtr]::Zero){$script:handle=$setup.MainWindowHandle}
+  try {
+    $rootElement=[System.Windows.Automation.AutomationElement]::FromHandle($script:handle)
+    $elements=$rootElement.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)
+    $names=@($elements | ForEach-Object {$_.Current.Name})
+    if($names -contains $text){return}
+  }catch{$lastReadError=$_.Exception.Message}
+  Write-Host ('::notice title=Installer last page::'+(($names | Where-Object {$_} | Select-Object -First 25) -join ' | '))
+ if($lastReadError){Write-Host ('::notice title=Installer last UI read::'+$lastReadError)}
  throw "Installer page missing: $text"
 }
 function Wait-RunningPrompt {
@@ -206,7 +217,7 @@ function Capture-Page([string]$name,[IntPtr]$target=[IntPtr]::Zero,[switch]$Them
  $progressRoot=[System.Windows.Automation.AutomationElement]::FromHandle($script:handle)
  $progressCondition=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty,'正在安装聆记')
  if($null -ne $progressRoot.FindFirst([System.Windows.Automation.TreeScope]::Descendants,$progressCondition)){Capture-Page 'installing'}
- Wait-Page '聆记已准备就绪' 180
+ Wait-Page '聆记已准备就绪' 300
  Capture-Page 'finish'
  Uncheck-Checkbox '完成后启动聆记'
 
