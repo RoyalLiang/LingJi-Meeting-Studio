@@ -5,13 +5,6 @@ export function setAudioTransport(value?: string) { binaryAudio = value === 'pcm
 let csrf = '';
 export const setCsrf = (token: string) => { csrf = token; };
 const messages: Record<string, string> = {
-  feishu_https_callback_required:'请在应用配置中保存 HTTPS 回调地址，并在飞书后台登记相同地址后重新连接。',
-  feishu_relay_unavailable:'授权回调服务暂不可用，请检查网络后重新连接。已有会议内容保留在本机。',
-  feishu_relay_rate_limited:'授权请求过于频繁，请稍后重新连接。',
-  feishu_authorization_denied:'飞书授权未获同意，请重新连接并完成授权。',
-  feishu_oauth_expired:'本次授权已过期或取消，请重新连接。',
-  feishu_oauth_invalid:'授权结果校验未通过，请重新连接。',
-  feishu_authorization_busy:'当前待授权请求过多，请稍后重试。',
   pi_minutes_failed:'纪要引擎未完成本次生成，已有纪要保留，请重试。',
   feishu_automation_changed:'自动导出设置已变更，本次任务已停止后续写入。',
   invalid_feishu_automation:'自动导出设置无效，请重新检查。',
@@ -34,13 +27,13 @@ const messages: Record<string, string> = {
   remote_redirect_rejected:'服务返回了重定向，请填写最终 HTTPS 地址。',
   remote_unavailable:'远程服务暂时不可用，请稍后重试。',remote_response_too_large:'远程响应超过大小限制，已停止读取。',
 
-  invalid_feishu_config:'飞书配置无效，请检查 App ID、App Secret 和回调地址。',
+  feishu_connection_failed:'SDK 长连接未建立，请检查应用凭据、网络及飞书后台的长连接配置。',
+  invalid_feishu_config:'飞书配置无效，请检查企业自建应用的 App ID 和 App Secret。',
   invalid_feishu_folder:'请填写飞书文件夹链接或有效的文件夹 token。',
   feishu_not_configured:'请先配置飞书应用。', feishu_not_connected:'请先连接飞书。',
-  feishu_reauthorize:'飞书授权已失效，请重新连接。', feishu_connection_changed:'飞书连接已变更，请重新预览并确认导出。',
   feishu_callback_busy:'授权回调端口不可用，请关闭其他授权窗口或修改回调端口。',
-  feishu_permission_required:'飞书权限不足，请检查应用已发布的权限、用户授权及目标目录权限。',
-  feishu_request_rejected:'飞书拒绝了请求，请检查应用配置、授权及目标位置。',
+  feishu_permission_required:'飞书权限不足，请检查应用已发布的应用权限及目标目录权限。',
+  feishu_request_rejected:'飞书拒绝了请求，请检查应用配置、应用权限及目标位置。',
   feishu_rate_limited:'飞书请求过于频繁，请稍后重试。', feishu_unavailable:'暂时无法连接飞书，请稍后重试。',
   feishu_preview_stale:'纪要或笔记已变更，请返回重新预览并确认。',
   feishu_document_too_large:'内容超过单次飞书导出范围，请缩小纪要范围。',

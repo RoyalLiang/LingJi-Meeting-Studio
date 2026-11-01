@@ -221,7 +221,7 @@ test('failed minutes recovery stays floating and independent of the highlights c
   assert.match(html,/整理未完成/);
   assert.match(html,/toast feedback-toast glass[^"]*minutes-failure-toast/);
   assert.doesNotMatch(html,/class="[^"]*is-inline[^"]*minutes-failure-toast/);
-  assert.equal((html.match(/整理未完成/g)||[]).length,1);
+  assert.equal((html.match(/<span[^>]*>整理未完成/g)||[]).length,1);
   assert.match(html,/重新整理/);
 });
 

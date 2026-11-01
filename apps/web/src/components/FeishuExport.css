@@ -1,7 +1,6 @@
 .feishu-export{display:grid;gap:16px;min-width:0;color:var(--ink-1)}
 .meeting-agent-center>.feishu-export{padding-top:28px}
-.feishu-connection,.feishu-actions,.feishu-receipt-title{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
-.feishu-connection p{font-size:13px;color:var(--ink-3);margin:5px 0 0;overflow-wrap:anywhere}
+.feishu-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .feishu-export a{color:var(--accent);text-underline-offset:3px}
 .feishu-config,.feishu-receipt{display:grid;gap:14px;border:1px solid var(--border);border-radius:var(--r-sm);padding:18px;background:var(--panel-2);min-width:0}
 .feishu-export label:not(.checkbox-label){display:grid;gap:8px;font-size:13px;font-weight:600;min-width:0}
@@ -9,9 +8,31 @@
 .feishu-scopes{overflow-wrap:anywhere;line-height:1.6}
 .feishu-scope{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .feishu-preview{max-height:38vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-family:inherit;font-size:13px;line-height:1.8;background:var(--bg);border:1px solid var(--border);padding:16px;margin:0;border-radius:var(--r-sm)}
-.feishu-receipt-title span{font-size:12px;color:var(--ink-3)}
 .feishu-history{border-top:1px solid var(--border);padding-top:12px;font-size:13px}
 .feishu-history summary{cursor:pointer;color:var(--ink-3)}
 .feishu-history-item{display:flex;justify-content:space-between;gap:12px;width:100%;text-align:left;border:0;border-bottom:1px solid var(--border);background:transparent;color:var(--ink-1);padding:12px 0;cursor:pointer}
 .feishu-history-item span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media(max-width:600px){.feishu-scope{grid-template-columns:1fr}.feishu-config,.feishu-receipt{padding:12px}.feishu-actions{align-items:stretch}.feishu-actions .btn{min-height:42px}}
+
+.collaboration-tools{display:grid;gap:14px;min-width:0}
+.collaboration-tools>h2{font-size:16px;margin:0}
+.collaboration-tool{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0;border-bottom:1px solid var(--border);min-width:0}
+.collaboration-tool-config{display:flex;align-items:center;gap:12px;min-width:0;text-align:left;border:0;padding:0;background:transparent;color:var(--ink-1);cursor:pointer;border-radius:var(--r-sm)}
+.collaboration-tool-config strong{font-size:15px}
+.collaboration-tool-config:focus-visible{outline:2px solid var(--accent);outline-offset:5px}
+.collaboration-tool-config:disabled{cursor:default}
+.collaboration-tool-icon{display:grid;place-items:center;flex:0 0 36px;width:36px;height:36px;background:var(--panel-2);color:var(--accent);font-size:17px;font-weight:600;border-radius:var(--r-sm)}
+
+.collaboration-health{display:inline-block;flex:0 0 7px;width:7px;height:7px;border-radius:50%;background:var(--ink-3)}
+.collaboration-health.healthy{background:var(--up)}
+.collaboration-health.pending{background:var(--warn)}
+.collaboration-health.error{background:var(--down)}
+.collaboration-health.disabled,.collaboration-health.unconfigured{opacity:.45}
+
+.feishu-progress{display:flex;align-items:center;gap:10px;min-height:64px;padding:12px 0;color:var(--ink-2)}
+.feishu-progress.succeeded{color:var(--up)}
+.feishu-progress.failed,.feishu-progress.partial,.feishu-progress.unknown{color:var(--down)}
+.feishu-progress>a,.feishu-progress>.btn{margin-left:auto;font-size:13px}
+.feishu-progress-spinner{animation:feishu-progress-turn 1s linear infinite}
+@keyframes feishu-progress-turn{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.feishu-progress-spinner{animation:none}}

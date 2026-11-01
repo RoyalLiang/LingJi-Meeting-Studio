@@ -71,7 +71,7 @@ test('failed bootstrap reports the error on the existing login form and permits 
   let page = h.render('Auth', props);
   await form(page).props.onSubmit({ preventDefault() {}, currentTarget: {} });
   page = h.render('Auth', props);
-  assert.equal(find(page, item => item.props?.role === 'alert')?.props.children, '会议空间暂时不可用');
+  assert.equal(find(page, item => item.props?.error === true)?.props.message, '会议空间暂时不可用');
   assert.equal(find(page, item => item.props?.type === 'submit').props.disabled, false);
   await form(page).props.onSubmit({ preventDefault() {}, currentTarget: {} });
   assert.equal(posts, 2); assert.equal(readyCalls, 2);

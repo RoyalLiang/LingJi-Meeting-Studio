@@ -1,3 +1,4 @@
+import {FeedbackNotice} from './FeedbackNotice';
 import type { Minutes } from "../model";
 import { Brand } from './Brand';
 import { MinutesTree, DecisionMinutes } from './MinutesViews';
@@ -6,7 +7,7 @@ import './SharedMeeting.css';
 export interface SharedMeetingData { title: string; minutes: Minutes | null;  }
 
 export function SharedMeeting({ data, error }: { data?: SharedMeetingData; error: string }) {
-  return <main className="shared-page glass shared-meeting"><Brand/><p className="kicker">只读会议分享</p>{error ? <p role="alert">{error}</p> : !data ? <p role="status">正在读取分享…</p> : <>
+  return <main className="shared-page glass shared-meeting"><Brand/><p className="kicker">只读会议分享</p>{error ? <><p>暂时无法打开这份分享。</p><FeedbackNotice key={error} message={error} error/></> : !data ? <p role="status">正在读取分享…</p> : <>
     <header className="shared-meeting-heading"><h1>{data.title}</h1></header>
     {data.minutes ? <>
       <MinutesTree minutes={data.minutes} cite={()=>{}}/>

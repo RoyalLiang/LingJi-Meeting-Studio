@@ -1,7 +1,0 @@
-{
-  "name": "lingji-feishu-auth",
-  "pages_build_output_dir": "./dist",
-  "compatibility_date": "2026-11-01",
-  "vars": {"LINGJI_FEISHU_RELAY_ID":"lingji-feishu-auth-v1"},
-  "d1_databases": [{"binding":"DB","database_name":"lingji-feishu-auth-transactions","database_id":"00000000-0000-0000-0000-000000000000","migrations_dir":"migrations"}]
-}

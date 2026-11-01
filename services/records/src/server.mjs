@@ -31,7 +31,7 @@ import { sharedMinutes } from '../../../packages/records/src/shared-content.mjs'
 import { exportMinutesMarkdown, attachmentHeader } from './markdown-export.mjs';
 import { createExtensions } from './integrations/extensions.mjs';
 import { extensionRoutes } from './integrations/extension-routes.mjs';
-import { createFeishu, FEISHU_CALLBACK } from './integrations/feishu.mjs';
+import { createFeishu } from './integrations/feishu.mjs';
 import { feishuRoutes } from './integrations/feishu-routes.mjs';
 
 async function readBytes(request, max = 600000) {
@@ -124,7 +124,6 @@ export async function createRecordServer(options = {}) {
     res.once('finish', () => telemetry.event('http.complete', { traceId, durationMs:performance.now()-started, outcome:res.statusCode<400?'ok':'error', bytes:Number(res.getHeader('Content-Length')) }));
     try {
       const url = new URL(req.url, 'http://localhost'), path = url.pathname;
-      if (path === FEISHU_CALLBACK && req.method === 'GET') { await feishu.callbackResponse(req,res); return; }
       if (path === '/api/health') { await repo.list('health-probe'); send(res, 200, { ok: true, service: 'records', storage: repo.backend, audioStorage: repo.audioBackend }); return; }
       requireThat(path.startsWith('/api/'), 'not_found', 404);
       requireThat(!options.localAccount || !/^\/api\/auth\/(register|login|logout)$/.test(path), 'not_found', 404);

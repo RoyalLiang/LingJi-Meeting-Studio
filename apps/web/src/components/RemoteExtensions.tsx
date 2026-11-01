@@ -1,3 +1,4 @@
+import {FeedbackNotice} from './FeedbackNotice';
 import { useRef, useState, type FormEvent } from 'react';
 import { api, messageOf } from '../api';
 import { Button } from './ui';
@@ -38,6 +39,6 @@ export function RemoteExtensions({type,items,changed}:{type:'skill'|'mcp';items:
         <Button variant="ghost" disabled={busy} onClick={()=>void perform(async()=>{await api(`/extensions/${encodeURIComponent(item.id)}`,'DELETE');changed();})}>移除</Button></div>
     </article>)}
     <p className="fine-print">升级、停用或移除会阻止未完成任务继续使用该扩展；已完成结果保留当时版本。飞书导出单独授权，不作为助手工具。</p>
-    {notice&&<p className="notice" role="status">{notice}</p>}{error&&<p className="error" role="alert">{error}</p>}
+    {notice&&<FeedbackNotice key={notice} message={notice} warning={false}/>}{error&&<FeedbackNotice key={error} message={error} error/>}
   </section>;
 }

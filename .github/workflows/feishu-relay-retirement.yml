@@ -1,0 +1,36 @@
+name: Retire Feishu authorization relay
+on:
+  push:
+    branches: [main]
+    paths: ['scripts/retire-feishu-relay.mjs', '.github/workflows/feishu-relay-retirement.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: cloudflare-feishu-relay-production
+  cancel-in-progress: false
+jobs:
+  retire:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '26.12.1'
+      - run: git merge-base --is-ancestor HEAD origin/main
+      - run: npm ci --ignore-scripts
+      - run: node --test tests/records-feishu-retirement.test.mjs
+      - run: node scripts/retire-feishu-relay.mjs
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      - if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: feishu-relay-retirement-receipt
+          path: feishu-relay-retirement-receipt.json
+          if-no-files-found: ignore

@@ -71,3 +71,10 @@ test('minutes failure forwards its floating presentation class without inline la
   assert.equal(shown.props.inline,false);
   assert.equal(shown.props.persistent,true);
 });
+
+test('errors retain alert priority while routine confirmations use the shared timer',()=>{
+  const failure=notice()({message:'导出失败',error:true});
+  assert.equal(failure.props.error,true);assert.equal(failure.props.persistent,true);
+  const success=notice()({message:'配置已保存',warning:false});
+  assert.equal(success.props.persistent,false);assert.equal(success.props.inline,false);
+});

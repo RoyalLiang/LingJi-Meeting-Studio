@@ -1,3 +1,4 @@
+import {FeedbackNotice} from './FeedbackNotice';
 import { useState } from 'react';
 import { version } from '../../../../package.json';
 import type { UpdateStatus } from '../client-updates';
@@ -33,7 +34,7 @@ export function ClientUpdatesPanel({ updates }: { updates: ReturnType<typeof use
         <span style={{width:progress.percent === null ? '30%' : `${progress.percent}%`}}/>
       </div>
     </div>}
-    {status.error && <p className="inline-error" role="alert">{status.error}</p>}
+    {status.error && <FeedbackNotice key={status.error} message={status.error} error/>}
     {status.phase === 'ready' && installReason && <p className="fine-print" role="status">{installReason}</p>}
     {items.length > 0 && <Button type="button" variant="ghost" className="update-notes-trigger" aria-haspopup="dialog" onClick={()=>setNotesOpen(true)}>更新内容</Button>}
     {notesOpen && <Modal className="update-notes-modal" title="更新内容" onClose={()=>setNotesOpen(false)}><ul className="update-notes-list">{items.map((item,index)=><li key={index}>{item}</li>)}</ul></Modal>}

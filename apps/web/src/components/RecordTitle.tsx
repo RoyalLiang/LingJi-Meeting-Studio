@@ -1,3 +1,4 @@
+import {FeedbackNotice} from './FeedbackNotice';
 import { useState } from 'react';
 import { PencilSimple } from '@phosphor-icons/react';
 import { Button, Modal } from './ui';
@@ -8,6 +9,6 @@ export function RecordTitle({ title, save }: { title: string; save: (title: stri
     {open && <Modal title="给对话一个名字" initialFocus="field" onClose={() => { if (!saving) setOpen(false); }}><form onSubmit={async event => {
       event.preventDefault(); if (!value.trim()) return; setSaving(true); setError('');
       try { if (await save(value.trim())) setOpen(false); } catch { setError('标题未能保存，请检查连接后重试。'); } finally { setSaving(false); }
-    }}><label>会议标题<input autoFocus value={value} onChange={event => setValue(event.target.value)} maxLength={160} required placeholder="例如：产品方向讨论" disabled={saving}/></label>{error && <p className="inline-error" role="alert">{error}</p>}<Button variant="primary" type="submit" disabled={saving || !value.trim()}>{saving ? '正在保存…' : '保存标题'}</Button></form></Modal>}
+    }}><label>会议标题<input autoFocus value={value} onChange={event => setValue(event.target.value)} maxLength={160} required placeholder="例如：产品方向讨论" disabled={saving}/></label>{error && <FeedbackNotice key={error} message={error} error/>}<Button variant="primary" type="submit" disabled={saving || !value.trim()}>{saving ? '正在保存…' : '保存标题'}</Button></form></Modal>}
   </>;
 }

@@ -1,3 +1,4 @@
+import {FeedbackNotice} from './FeedbackNotice';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Translate, Pause, Play, ArrowRight, ArrowClockwise } from '@phosphor-icons/react';
 import type { RecordDetail, Segment } from '../model';
@@ -36,7 +37,7 @@ export function TranslationPanel({ record, ready, close, configure, save, inspec
   const state=!ready?'未配置翻译服务':record.translationTarget?'实时翻译中':'翻译已暂停';
   const sourceLabel=record.language==='auto'?'自动识别':({zh:'中文',en:'English',ja:'日本語',es:'Español',fr:'Français',de:'Deutsch'}[record.language] || '原文');
   const content=<><div className="translation-toolbar"><div className="translation-language-row"><span className="translation-source-language">{sourceLabel}</span><ArrowRight size={17} aria-hidden="true"/><Select label="实时翻译目标语言" disabled={busy || !ready} value={target} onChange={value=>void choose(value)} options={[{value:'en',label:'English'},{value:'zh',label:'中文'},{value:'ja',label:'日本語'},{value:'es',label:'Español'},{value:'fr',label:'Français'},{value:'de',label:'Deutsch'}]}/><Button className="translation-toggle" disabled={busy || !ready} aria-label={record.translationTarget?'暂停翻译':'继续翻译'} title={record.translationTarget?'暂停翻译':'继续翻译'} onClick={()=>void choose(record.translationTarget?'':target)}>{record.translationTarget?<Pause size={18}/>:<Play size={18}/>}</Button></div><div className="translation-state-row"><Status>{state}</Status><label className="checkbox-label"><input type="checkbox" checked={showOriginal} onChange={event=>setShowOriginal(event.target.checked)}/>显示原文</label></div></div>
-    {error && <p className="translation-action-error" role="alert">{error}</p>}
+    {error && <FeedbackNotice key={error} message={error} error/>}
     {record.translationTarget && segments.length>translated.length && <div className="translation-backlog">{segments.length-translated.length} 条原文待翻译<span>新发言优先</span></div>}
     <div className="translation-content" data-follow-scroll="translation" aria-label="实时译文滚动区" tabIndex={0}><section ref={follow.root} className="translation-segments" aria-label="实时译文">
       {!ready?<div className="translation-empty"><Translate size={28}/><h3>连接翻译服务</h3><p>配置可用服务后，即可开始实时翻译。</p><Button variant="primary" onClick={configure}>打开模型设置</Button></div>:<>
