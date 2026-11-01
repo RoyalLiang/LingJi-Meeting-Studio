@@ -52,10 +52,12 @@ export async function createRepository(options = {}) {
   if (databaseUrl) {
     const { Pool } = await import('pg'); pool = new Pool({ connectionString: databaseUrl });
     await pool.query('CREATE TABLE IF NOT EXISTS record_aggregates (id text PRIMARY KEY, data jsonb NOT NULL)');
+    await pool.query("CREATE INDEX IF NOT EXISTS record_kind_owner ON record_aggregates ((data->>'kind'),(data->>'owner'))");
     await pool.query("CREATE INDEX IF NOT EXISTS record_work_due ON record_aggregates (((data->>'nextWorkAt')::bigint)) WHERE data->>'kind'='record'");
   } else {
     const { DatabaseSync } = await import('node:sqlite'); db = new DatabaseSync(join(root, 'records.sqlite'));
     db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS aggregates (id TEXT PRIMARY KEY, data TEXT NOT NULL)');
+    db.exec("CREATE INDEX IF NOT EXISTS aggregate_kind_owner ON aggregates(json_extract(data, '$.kind'),json_extract(data, '$.owner'))");
     db.exec("CREATE INDEX IF NOT EXISTS work_due ON aggregates(json_extract(data, '$.nextWorkAt'))");
     db.exec('CREATE TABLE IF NOT EXISTS aggregate_payloads(id TEXT PRIMARY KEY, payload BLOB NOT NULL)');
     if (options.compressAggregates) db.exec('PRAGMA wal_autocheckpoint=256; PRAGMA journal_size_limit=16777216');
@@ -130,6 +132,24 @@ export async function createRepository(options = {}) {
   const workCursors = new Map(), legacyAnalysisInputs = new Map();
   const repository = {
     root, backend: pool ? 'postgres' : 'sqlite', audioBackend: objects ? 's3' : 'filesystem',
+    async listMetadata(kind, owner, fields, {recordId, status, limit=200}={}) {
+      requireThat(typeof kind==='string'&&typeof owner==='string'&&Array.isArray(fields)&&fields.length<=40&&fields.every(key=>/^[A-Za-z][A-Za-z0-9]*$/.test(key))&&Number.isSafeInteger(limit)&&limit>0&&limit<=1000,'invalid_metadata_query',500);
+      const keys=[...new Set(['id','kind','owner',...fields])];
+      if(pool){
+        const values=[kind,owner],where=["data->>'kind'=$1","data->>'owner'=$2"];
+        if(recordId){values.push(recordId);where.push(`data->>'recordId'=$${values.length}`);}
+        if(status){values.push(status);where.push(`data->>'status'=$${values.length}`);}
+        values.push(limit);
+        const json=keys.flatMap(key=>[`'${key}'`,`data->'${key}'`]).join(',');
+        return (await pool.query(`SELECT jsonb_build_object(${json}) AS data FROM record_aggregates WHERE ${where.join(' AND ')} ORDER BY data->>'createdAt' DESC LIMIT $${values.length}`,values)).rows.map(row=>row.data);
+      }
+      const values=[kind,owner],where=["json_extract(data,'$.kind')=?","json_extract(data,'$.owner')=?"];
+      if(recordId){values.push(recordId);where.push("json_extract(data,'$.recordId')=?");}
+      if(status){values.push(status);where.push("json_extract(data,'$.status')=?");}
+      values.push(limit);
+      const json=keys.flatMap(key=>[`'${key}'`,`json_extract(data,'$.${key}')`]).join(',');
+      return db.prepare(`SELECT json_object(${json}) AS data FROM aggregates WHERE ${where.join(' AND ')} ORDER BY json_extract(data,'$.createdAt') DESC LIMIT ?`).all(...values).map(row=>JSON.parse(row.data));
+    },
     async get(id) { return decode(pool ? (await pool.query('SELECT data FROM record_aggregates WHERE id=$1', [id])).rows[0]
       : db.prepare('SELECT data FROM aggregates WHERE id=?').get(id)); },
     // Access checks never decode/inflate transcript or minutes bodies. The projection

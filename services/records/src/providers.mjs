@@ -10,6 +10,7 @@ import { minutesInstructions, minutesSchema, normalizeMinutesOutput } from './mi
 import { doubaoAudioConfigured } from './doubao-audio-minutes.mjs';
 import { translationConnection, translateSeedText } from './seed-translation.mjs';
 import { completeModelJson } from './llm.mjs';
+import { completeMinutesWithPi } from './pi-minutes.mjs';
 import { compactMinutesPayload, compactMinutesSchema } from './minutes-wire.mjs';
 import { normalizeConfig, configured } from './config.mjs';
 import { ruleIntents } from '../../../packages/records/src/intents.mjs';
@@ -87,7 +88,7 @@ export async function generateMinutes(job, env = process.env, options = {}) {
   requireThat(JSON.stringify(wire.payload).length < 180000, 'transcript_exceeds_model_budget', 422);
   const modelOptions={...options,timeoutMs:minutesTimeoutMs(job),jsonSchema:compactMinutesSchema(minutesSchema)};
   if(/^kimi-k3[.-]1-pro(?:-|$)/i.test(env.LLM_MODEL)){modelOptions.maxOutputTokens=16384;if(job.scope==='live'&&(!env.LLM_REASONING_EFFORT||env.LLM_REASONING_EFFORT==='auto'))modelOptions.reasoningEffort='low';}
-  const result=wire.restore(await completeJson([{ role: 'system', content: minutesInstructions({...job,compactEvidence:true}) }, { role: 'user', content: JSON.stringify(wire.payload) }], env, modelOptions));
+  const result=wire.restore(await completeMinutesWithPi([{ role: 'system', content: minutesInstructions({...job,compactEvidence:true}) }, { role: 'user', content: JSON.stringify(wire.payload) }], env, modelOptions));
   const validationSnapshot=job.validationSnapshot || job.snapshot;
   normalizeMinutesOutput(result);
   groundSpeakerSummaries(result,validationSnapshot);

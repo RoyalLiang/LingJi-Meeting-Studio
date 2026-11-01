@@ -2,6 +2,7 @@
 mod audio;
 mod meeting_watch;
 mod config;
+mod integration_links;
 mod downloads;
 mod local_backend;
 mod menu_status;
@@ -50,6 +51,12 @@ fn authorize(window: &WebviewWindow, state: &Client) -> Result<(), String> {
         return Err("客户端权限被拒绝".into());
     }
     Ok(())
+}
+
+#[tauri::command]
+fn integration_open(window: WebviewWindow, state: State<'_, Client>, url: String) -> Result<(), String> {
+    authorize(&window, &state)?;
+    integration_links::open(&url)
 }
 
 #[tauri::command]
@@ -313,6 +320,7 @@ fn main() {
     #[cfg(feature = "smoke-test")]
     let builder = builder.invoke_handler(tauri::generate_handler![
         recording_widget::recording_widget_update, recording_widget::recording_widget_state, recording_widget::recording_widget_ready, recording_widget::recording_widget_action,
+        integration_open,
         meeting_watch_configure,
         capture_start,
         capture_read,
@@ -332,6 +340,7 @@ fn main() {
     #[cfg(not(feature = "smoke-test"))]
     let builder = builder.invoke_handler(tauri::generate_handler![
         recording_widget::recording_widget_update, recording_widget::recording_widget_state, recording_widget::recording_widget_ready, recording_widget::recording_widget_action,
+        integration_open,
         meeting_watch_configure,
         capture_start,
         capture_read,
@@ -385,7 +394,7 @@ fn main() {
                 profile: profile.clone(),
                 origin: origin.clone(), captures: Arc::new(audio::Captures::default()), resident: resident::Resident::default(), _lock: binding._lock, _backend: backend, updates, api });
             app.add_capability(CapabilityBuilder::new("local-capture").window("main").local(false).remote(format!("{origin}/*"))
-                .permission("allow-meeting-watch-configure").permission("allow-capture-start").permission("allow-capture-read").permission("allow-capture-ack").permission("allow-capture-stop").permission("allow-capture-inputs")
+                .permission("allow-integration-open").permission("allow-meeting-watch-configure").permission("allow-capture-start").permission("allow-capture-read").permission("allow-capture-ack").permission("allow-capture-stop").permission("allow-capture-inputs")
                 .permission("allow-recording-widget-update").permission("allow-client-close").permission("allow-client-ready").permission("allow-client-status").permission("allow-update-status").permission("allow-update-activity").permission("allow-update-check").permission("allow-update-download").permission("allow-update-install")
                 .permission("core:event:allow-listen").permission("core:event:allow-unlisten"))?;
             app.add_capability(CapabilityBuilder::new("recording-widget").window("recording-widget").local(false).remote(format!("{origin}/*"))

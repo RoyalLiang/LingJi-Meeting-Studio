@@ -1,0 +1,11 @@
+import { isTauri, invoke } from '@tauri-apps/api/core';
+import { useState, type ReactNode } from 'react';
+import { messageOf } from '../api';
+
+export function ExternalLink({href,children}:{href:string;children:ReactNode}) {
+  const [error,setError]=useState('');
+  return <><a href={href} target="_blank" rel="noopener noreferrer" onClick={event=>{
+    if(!isTauri())return;
+    event.preventDefault();setError('');void invoke('integration_open',{url:href}).catch(failure=>setError(messageOf(failure)));
+  }}>{children}</a>{error&&<span className="error" role="alert">{error}</span>}</>;
+}

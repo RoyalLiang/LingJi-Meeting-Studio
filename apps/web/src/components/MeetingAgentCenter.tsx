@@ -1,22 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowClockwise, ArrowRight, ArrowUpRight, CalendarBlank, CaretRight, Check, FileText, Plus, ShieldCheck, Sparkle, Stack, Stop, WarningCircle } from '@phosphor-icons/react';
+import { ArrowClockwise, ArrowRight, ArrowUpRight,  CaretRight, Check, FileText, Plus, ShieldCheck, Sparkle, Stack, Stop, WarningCircle } from '@phosphor-icons/react';
 import { api, ApiError } from '../api';
 import type { RecordListItem } from '../model';
 import { Button, Modal } from './ui';
 import { Select } from './Select';
 import './MeetingAgentCenter.css';
+import { FeishuAutomation } from './FeishuAutomation';
+import { RemoteExtensions, type InstalledExtension } from './RemoteExtensions';
 
 type View = 'skills' | 'plugins' | 'runs' | 'schedule' | 'assistant';
 type TaskStatus = 'queued' | 'running' | 'blocked' | 'cancelling' | 'cancelled' | 'completed' | 'failed';
 type Evidence = { recordId:string; segmentId:string; revision:number };
 type Task = {
   id:string; requestId:string; status:TaskStatus; createdAt:string; updatedAt:string; prompt:string;
-  skill:{id:'meeting-review';version:'1.0.0'};
+  skill:{id:string;version:string;name?:string};
+  progress?:{read:number;total:number}; includeNotes?:boolean; plugins?:{id:string;name:string;version:string}[];
   sources:{recordId:string;title:string;transcriptRevision:number;minutesRevision:number}[];
   preview:string; result?:{summary:string;decisions:{text:string;evidence:Evidence[]}[];actions:{text:string;owner?:string;evidence:Evidence[]}[]};
   error?:string; stale:boolean;
 };
-type RequestBody = { recordIds:string[]; prompt:string; requestId:string; scopeConfirmed:true };
+type RequestBody = { recordIds:string[]; prompt:string; requestId:string; scopeConfirmed:true;skillId:string;skillVersion:string;pluginVersions:Record<string,string>;pluginIds:string[];includeNotes:boolean;remoteToolsConfirmed:true };
 type Submission = { body:RequestBody; attempted:boolean; conflict:boolean };
 type Drawer = { kind:'skill'|'plugin'|'sources'|'confirm'|'task'; id?:string };
 const navigation:{id:View;label:string}[] = [
@@ -25,6 +28,10 @@ const navigation:{id:View;label:string}[] = [
 const labels:Record<TaskStatus,string> = {queued:'排队中',running:'整理中',blocked:'等待处理',cancelling:'正在取消',cancelled:'已取消',completed:'已完成',failed:'失败'};
 const working = (task:Task) => ['queued','running','cancelling'].includes(task.status);
 const safeMessages:Record<string,string> = {
+  extension_disabled:'所选扩展已停用，请重新选择。', extension_version_changed:'扩展版本或权限已变更，请重新确认。',
+  extension_not_found:'所选扩展已移除，请重新选择。',mcp_scope_required:'远程工具未获本次范围授权。',
+  mcp_tool_failed:'远程工具调用失败，请检查连接。',mcp_connection_failed:'远程工具连接失败。',remote_unavailable:'远程服务暂不可用。',
+
   agent_scope_required:'请确认会议读取范围及模型发送授权。',
   invalid_agent_request:'请检查会议范围与整理目标，最多选择 8 场会议，目标不超过 2000 字。',
   agent_scope_denied:'无权读取所选会议，请重新选择可访问的会议。',
@@ -53,7 +60,7 @@ function safeError(error:unknown) {
 function checkedTask(value:Task):Task {
   if (!value || typeof value.id !== 'string' || typeof value.requestId !== 'string' || !Object.hasOwn(labels,value.status) ||
       typeof value.createdAt !== 'string' || typeof value.updatedAt !== 'string' || typeof value.stale !== 'boolean' ||
-      value.skill?.id !== 'meeting-review' || value.skill?.version !== '1.0.0' || typeof value.prompt !== 'string' || typeof value.preview !== 'string' || !Array.isArray(value.sources) ||
+      typeof value.skill?.id !== 'string' || typeof value.skill?.version !== 'string' || typeof value.prompt !== 'string' || typeof value.preview !== 'string' || !Array.isArray(value.sources) ||
       !value.sources.every(source => source && typeof source.recordId === 'string' && typeof source.title === 'string' && Number.isInteger(source.transcriptRevision) && Number.isInteger(source.minutesRevision))) throw new ApiError('invalid_response',502);
   if (value.result && (typeof value.result.summary !== 'string' || !Array.isArray(value.result.decisions) || !Array.isArray(value.result.actions) ||
       ![...value.result.decisions,...value.result.actions].every(item => item && typeof item.text === 'string' && Array.isArray(item.evidence) && item.evidence.every(evidence =>
@@ -62,7 +69,7 @@ function checkedTask(value:Task):Task {
 }
 function sameRequest(task:Task,body:RequestBody) {
   const ids=task.sources.map(source=>source.recordId).sort(),selected=[...body.recordIds].sort();
-  return task.prompt===body.prompt && ids.length===selected.length && ids.every((id,index)=>id===selected[index]);
+  return task.prompt===body.prompt && task.skill.id===body.skillId && task.skill.version===body.skillVersion && (task.plugins||[]).every(item=>body.pluginVersions[item.id]===item.version) && Boolean(task.includeNotes)===body.includeNotes && JSON.stringify((task.plugins||[]).map(item=>item.id).sort())===JSON.stringify([...body.pluginIds].sort()) && ids.length===selected.length && ids.every((id,index)=>id===selected[index]);
 }
 function when(value:string) {
   const date=new Date(value);
@@ -73,10 +80,10 @@ function EvidenceLinks({items,task,open}:{items:Evidence[];task:Task;open:(id:st
 }
 function TaskContent({task,open}:{task:Task;open:(id:string)=>void}) {
   return <>
-    <div className="ma-task-state"><span className={`ma-state ${task.status}`}>{labels[task.status]}</span><span>会议复盘 v1.0.0 · {task.sources.length} 场会议</span></div>
+    <div className="ma-task-state"><span className={`ma-state ${task.status}`}>{labels[task.status]}</span><span>{task.skill.name||'会议复盘'} · {task.skill.version.slice(0,12)} · {task.sources.length} 场会议</span></div>
     {task.stale&&<p className="ma-notice warning"><WarningCircle size={16}/>会议内容已有更新，此处保留运行时引用的版本。</p>}
     {task.error&&<p className="ma-notice error" role="alert"><WarningCircle size={16}/>{safeError(task.error)}</p>}
-    <section><h3>整理目标</h3><p className="ma-preserve">{task.prompt}</p></section>
+    {working(task)&&task.progress&&<p className="ma-read-progress">已读取 {task.progress.read}/{task.progress.total} 场会议，正在生成独立结果。</p>}<section><h3>整理目标</h3><p className="ma-preserve">{task.prompt}</p></section>
     <section><h3>会议范围</h3><div className="ma-sources">{task.sources.map(source=><button type="button" key={source.recordId} onClick={()=>open(source.recordId)}><FileText size={15}/><span>{source.title}<small>转录 v{source.transcriptRevision} · 纪要 v{source.minutesRevision}</small></span><ArrowUpRight size={13}/></button>)}</div></section>
     {task.result?<section className="ma-result"><h3>独立整理结果</h3><p className="ma-preserve">{task.result.summary}</p><h4>决策</h4>{task.result.decisions.length?task.result.decisions.map((item,index)=><article key={index}><p>{item.text}</p><EvidenceLinks items={item.evidence} task={task} open={open}/></article>):<p className="ma-muted">本次没有形成决策条目。</p>}<h4>行动候选</h4>{task.result.actions.length?task.result.actions.map((item,index)=><article key={index}><p>{item.text}{item.owner&&<span className="ma-owner"> · {item.owner}</span>}</p><EvidenceLinks items={item.evidence} task={task} open={open}/></article>):<p className="ma-muted">本次没有形成行动候选。</p>}<p className="ma-result-note">结果独立保存，行动候选待人工确认。</p></section>:
       task.preview?<section><h3>{working(task)?'正在生成草稿':'未完成的草稿'}</h3><p className="ma-preview ma-preserve">{task.preview}</p></section>:
@@ -84,6 +91,9 @@ function TaskContent({task,open}:{task:Task;open:(id:string)=>void}) {
   </>;
 }
 export default function MeetingAgentCenter({records,openRecord}:{records:RecordListItem[];openRecord:(id:string)=>void}) {
+  const [extensions,setExtensions]=useState<InstalledExtension[]>([]),[extensionRefresh,setExtensionRefresh]=useState(0),[extensionError,setExtensionError]=useState('');
+  const [skillId,setSkillId]=useState('meeting-review'),[pluginIds,setPluginIds]=useState<string[]>([]),[includeNotes,setIncludeNotes]=useState(false);
+  useEffect(()=>{let active=true;api<{extensions:InstalledExtension[]}>('/extensions').then(value=>{if(active){setExtensions(value.extensions);setExtensionError('');}}).catch(()=>{if(active)setExtensionError('暂时无法读取扩展，请重试。');});return()=>{active=false;};},[extensionRefresh]);
   const [view,setView]=useState<View>('skills'),[drawer,setDrawer]=useState<Drawer|null>(null);
   const [tasks,setTasks]=useState<Task[]>([]),[loading,setLoading]=useState(true),[loadError,setLoadError]=useState(''),[detailError,setDetailError]=useState('');
   const [filter,setFilter]=useState('all'),[activeId,setActiveId]=useState(''),[refresh,setRefresh]=useState(0);
@@ -95,6 +105,11 @@ export default function MeetingAgentCenter({records,openRecord}:{records:RecordL
   function setPending(next:Submission|null) { pendingRef.current=next;setPendingState(next); }
   function storeTasks(next:Task[]) { tasksRef.current=next;setTasks(next); }
   function upsert(task:Task) { storeTasks([task,...tasksRef.current.filter(item=>item.id!==task.id)].sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))); }
+  useEffect(()=>{
+    if(pendingRef.current)return;
+    setPluginIds(ids=>ids.filter(id=>extensions.some(item=>item.id===id&&item.type==='mcp'&&item.enabled)));
+    setSkillId(id=>id==='meeting-review'||extensions.some(item=>item.id===id&&item.type==='skill'&&item.enabled)?id:'meeting-review');
+  },[extensions,pending]);
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;mutation.current?.abort();detailRequest.current?.abort();};},[]);
   useEffect(()=>{
     if (pendingRef.current) return;
@@ -137,7 +152,7 @@ export default function MeetingAgentCenter({records,openRecord}:{records:RecordL
     if (!pending) {
       if (!chosen.length||chosen.length>8||prompt.trim().length<1||prompt.trim().length>2000) return;
       if (!globalThis.crypto?.randomUUID) {setSubmitError('当前环境无法生成安全请求标识，请在受支持的浏览器或客户端中重试。');return;}
-      setPending({body:{recordIds:chosen.map(record=>record.id),prompt:prompt.trim(),requestId:crypto.randomUUID(),scopeConfirmed:true},attempted:false,conflict:false});
+      setPending({body:{recordIds:chosen.map(record=>record.id),prompt:prompt.trim(),requestId:crypto.randomUUID(),scopeConfirmed:true,skillId,skillVersion:skillId==='meeting-review'?'1.0.0':extensions.find(item=>item.id===skillId)?.version||'',pluginVersions:Object.fromEntries(extensions.filter(item=>pluginIds.includes(item.id)).map(item=>[item.id,item.version])),pluginIds,includeNotes,remoteToolsConfirmed:true},attempted:false,conflict:false});
       setConfirmed(false);
     }
     setDrawer({kind:'confirm'});
@@ -168,29 +183,34 @@ export default function MeetingAgentCenter({records,openRecord}:{records:RecordL
   return <section className="meeting-agent-center" aria-label="扩展中心">
     <header className="ma-heading"><h1>扩展中心</h1>{view==='runs'&&<Button onClick={()=>navigate('assistant')}><Plus size={16}/>新建任务</Button>}</header>
     <nav className="ma-navigation" aria-label="扩展中心导航">{navigation.map(item=><button type="button" key={item.id} aria-current={view===item.id?'page':undefined} onClick={()=>navigate(item.id)}>{item.label}</button>)}</nav>
-    {view==='skills'&&<><div className="ma-toolbar"><h2>内置 Skill <span>1</span></h2></div><article className="ma-capability"><div className="ma-icon"><Stack size={22}/></div><button type="button" className="ma-item-name" onClick={()=>setDrawer({kind:'skill'})}><strong>会议复盘</strong><span>整理会议共识、决策与行动候选，保留来源引用。</span></button><span className="ma-muted">v1.0.0</span><span className="ma-state">内置</span><Button variant="ghost" aria-label="查看会议复盘" onClick={()=>setDrawer({kind:'skill'})}><CaretRight size={17}/></Button></article></>}
-    {view==='plugins'&&<><div className="ma-toolbar"><h2>内置工具 <span>1</span></h2></div><article className="ma-capability"><div className="ma-icon"><FileText size={22}/></div><button type="button" className="ma-item-name" onClick={()=>setDrawer({kind:'plugin'})}><strong>会议资料</strong><span>只读本次选择的会议文字与来源引用。</span></button><span className="ma-muted">聆记</span><span className="ma-state">按任务授权</span><Button variant="ghost" aria-label="查看会议资料工具" onClick={()=>setDrawer({kind:'plugin'})}><CaretRight size={17}/></Button></article><div className="ma-permission"><ShieldCheck size={20}/><div><strong>运行前确认会议范围</strong><p>不读取其他会议，不修改纪要，不对外写入。</p></div></div></>}
-    {view==='schedule'&&<div className="ma-empty"><CalendarBlank size={30}/><h2>自动化尚未接入</h2><p>当前可在会议助手中手动发起任务。</p><Button onClick={()=>navigate('assistant')}>打开会议助手<ArrowRight size={15}/></Button></div>}
+    {extensionError&&<p className="ma-notice error" role="alert">{extensionError}<Button onClick={()=>setExtensionRefresh(value=>value+1)}>重试</Button></p>}
+    {view==='skills'&&<><div className="ma-toolbar"><h2>内置 Skill <span>1</span></h2></div><article className="ma-capability"><div className="ma-icon"><Stack size={22}/></div><button type="button" className="ma-item-name" onClick={()=>setDrawer({kind:'skill'})}><strong>会议复盘</strong><span>整理会议共识、决策与行动候选，保留来源引用。</span></button><span className="ma-muted">v1.0.0</span><span className="ma-state">内置</span><Button variant="ghost" aria-label="查看会议复盘" onClick={()=>setDrawer({kind:'skill'})}><CaretRight size={17}/></Button></article><RemoteExtensions type="skill" items={extensions.filter(item=>item.type==='skill')} changed={()=>setExtensionRefresh(value=>value+1)}/></>}
+    {view==='plugins'&&<><div className="ma-toolbar"><h2>内置工具 <span>1</span></h2></div><article className="ma-capability"><div className="ma-icon"><FileText size={22}/></div><button type="button" className="ma-item-name" onClick={()=>setDrawer({kind:'plugin'})}><strong>会议资料</strong><span>只读本次选择的会议文字与来源引用。</span></button><span className="ma-muted">聆记</span><span className="ma-state">按任务授权</span><Button variant="ghost" aria-label="查看会议资料工具" onClick={()=>setDrawer({kind:'plugin'})}><CaretRight size={17}/></Button></article><div className="ma-permission"><ShieldCheck size={20}/><div><strong>运行前确认会议范围</strong><p>不读取其他会议，不修改纪要，不对外写入。</p></div></div><RemoteExtensions type="mcp" items={extensions.filter(item=>item.type==='mcp')} changed={()=>setExtensionRefresh(value=>value+1)}/></>}
+    {view==='schedule'&&<FeishuAutomation/>}
     {view==='runs'&&<>
       <div className="ma-run-summary">{[{name:'进行中',count:tasks.filter(working).length},{name:'等待处理',count:tasks.filter(task=>['blocked','failed'].includes(task.status)).length},{name:'已完成',count:tasks.filter(task=>task.status==='completed').length}].map(item=><div key={item.name}><span>{item.name}</span><strong>{loading?'—':item.count}</strong></div>)}</div>
       <div className="ma-toolbar"><h2>全部任务 <span>{loading?'':tasks.length}</span></h2><div className="ma-tools"><Select label="筛选任务状态" value={filter} onChange={setFilter} options={[{value:'all',label:'全部状态'},{value:'active',label:'进行中'},{value:'attention',label:'等待处理'},{value:'completed',label:'已完成'}]}/><Button variant="ghost" aria-label="刷新任务" onClick={()=>setRefresh(value=>value+1)}><ArrowClockwise size={16}/></Button></div></div>
       {loadError&&<p className="ma-notice error" role="alert"><WarningCircle size={16}/>{loadError}<Button onClick={()=>setRefresh(value=>value+1)}>重试</Button></p>}
-      {loading?<div className="ma-empty" role="status">正在加载任务…</div>:!visible.length?<div className="ma-empty"><Stack size={30}/><h2>{tasks.length?'没有匹配的任务':loadError?'暂时无法读取任务':'还没有运行任务'}</h2><p>{loadError?'恢复连接后刷新列表。':'选择会议和整理目标，开始第一次复盘。'}</p>{!loadError&&<Button onClick={()=>navigate('assistant')}>新建任务<ArrowRight size={15}/></Button>}</div>:<div className="ma-run-table"><div className="ma-table-head"><span>任务</span><span>状态</span><span>会议范围</span><span>更新时间</span><span/></div>{visible.map(task=><button type="button" className="ma-run-row" key={task.id} onClick={()=>void showTask(task.id)}><div><strong>{task.prompt}</strong><span>会议复盘 · v1.0.0{task.stale?' · 来源已更新':''}</span></div><span className={`ma-state ${task.status}`}>{labels[task.status]}</span><span>{task.sources.length} 场会议</span><time dateTime={task.updatedAt}>{when(task.updatedAt)}</time><CaretRight size={16}/></button>)}</div>}
+      {loading?<div className="ma-empty" role="status">正在加载任务…</div>:!visible.length?<div className="ma-empty"><Stack size={30}/><h2>{tasks.length?'没有匹配的任务':loadError?'暂时无法读取任务':'还没有运行任务'}</h2><p>{loadError?'恢复连接后刷新列表。':'选择会议和整理目标，开始第一次复盘。'}</p>{!loadError&&<Button onClick={()=>navigate('assistant')}>新建任务<ArrowRight size={15}/></Button>}</div>:<div className="ma-run-table"><div className="ma-table-head"><span>任务</span><span>状态</span><span>会议范围</span><span>更新时间</span><span/></div>{visible.map(task=><button type="button" className="ma-run-row" key={task.id} onClick={()=>void showTask(task.id)}><div><strong>{task.prompt}</strong><span>{task.skill.name||'会议复盘'} · {task.skill.version.slice(0,12)}{task.stale?' · 来源已更新':''}</span></div><span className={`ma-state ${task.status}`}>{labels[task.status]}</span><span>{task.sources.length} 场会议</span><time dateTime={task.updatedAt}>{when(task.updatedAt)}</time><CaretRight size={16}/></button>)}</div>}
     </>}
     {view==='assistant'&&<div className="ma-assistant">
       <div className="ma-assistant-start"><div className="ma-assistant-mark"><Sparkle size={28}/></div><h2>从讨论到下一步</h2><p>选择会议，整理你关心的内容。</p></div>
-      <form className="ma-composer" onSubmit={event=>{event.preventDefault();prepare();}}><div className="ma-composer-tools"><Button type="button" disabled={Boolean(pending)} onClick={showSources}><FileText size={16}/>{chosen.length?`${chosen.length} 场会议`:'选择会议'}<CaretRight size={14}/></Button><Select label="使用 Skill" value="meeting-review" readOnly options={[{value:'meeting-review',label:'会议复盘'}]}/></div><textarea aria-label="整理目标" maxLength={2000} placeholder="希望从这些会议中整理什么？" value={prompt} disabled={Boolean(pending)} onChange={event=>setPrompt(event.target.value)}/><div className="ma-composer-bottom"><span>{pending?'保留上次确认的会议与目标':`只读会议文字 · ${prompt.length}/2000`}</span><Button variant="primary" type="submit" disabled={posting||(!pending&&(!chosen.length||chosen.length>8||!prompt.trim()))}>{pending?'继续确认':'确认运行'}<ArrowRight size={16}/></Button></div></form>
+      <form className="ma-composer" onSubmit={event=>{event.preventDefault();prepare();}}><div className="ma-composer-tools"><Button type="button" disabled={Boolean(pending)} onClick={showSources}><FileText size={16}/>{chosen.length?`${chosen.length} 场会议`:'选择会议'}<CaretRight size={14}/></Button><Select label="使用 Skill" disabled={Boolean(pending)} value={skillId} onChange={setSkillId} options={[{value:'meeting-review',label:'会议复盘'},...extensions.filter(item=>item.type==='skill'&&item.enabled).map(item=>({value:item.id,label:item.name}))]}/></div><textarea aria-label="整理目标" maxLength={2000} placeholder="希望从这些会议中整理什么？" value={prompt} disabled={Boolean(pending)} onChange={event=>setPrompt(event.target.value)}/><div className="ma-composer-bottom"><span>{pending?'保留上次确认的会议与目标':`只读会议文字 · ${prompt.length}/2000`}</span><Button variant="primary" type="submit" disabled={posting||(!pending&&(!chosen.length||chosen.length>8||!prompt.trim()))}>{pending?'继续确认':'确认运行'}<ArrowRight size={16}/></Button></div></form>
+      <div className="ma-extension-scope"><div className="ma-prompt-templates">{['整理共识、决策和下一步','梳理风险、分歧与待确认事项','核对每项决策的依据'].map(value=><Button key={value} disabled={Boolean(pending)} onClick={()=>setPrompt(value)}>{value}</Button>)}</div>
+        <label className="checkbox-label"><input type="checkbox" disabled={Boolean(pending)} checked={includeNotes} onChange={event=>setIncludeNotes(event.target.checked)}/><span>读取已保存的随手笔记<small>默认只读取会议文字；笔记仅用于本次独立分析</small></span></label>
+        {extensions.filter(item=>item.type==='mcp'&&item.enabled).map(item=><label className="checkbox-label" key={item.id}><input type="checkbox" disabled={Boolean(pending)||(!pluginIds.includes(item.id)&&pluginIds.length>=3)} checked={pluginIds.includes(item.id)} onChange={event=>setPluginIds(ids=>event.target.checked?[...ids,item.id]:ids.filter(id=>id!==item.id))}/><span>{item.name}<small>允许本次任务将必要的所选文字发送至 {item.url}，调用已批准的只读工具</small></span></label>)}
+      </div>
       {!available.length&&<p className="ma-empty-inline">当前目录暂无可读取的会议文字。请先完成一场会议的转录。</p>}
       {!!chosen.length&&<div className="ma-selected-sources">{chosen.map(record=><button type="button" key={record.id} onClick={()=>openRecord(record.id)}><FileText size={13}/>{record.title}<ArrowUpRight size={12}/></button>)}</div>}
       {submitError&&<p className="ma-notice error" role="alert"><WarningCircle size={16}/>{submitError}</p>}
-      {active&&<div className="ma-active-task"><div className="ma-result-heading"><h2>当前任务</h2><Button variant="ghost" onClick={()=>void showTask(active.id)}>查看详情<CaretRight size={15}/></Button></div>{detailError&&<p className="ma-notice error" role="alert">{detailError}</p>}<TaskContent task={active} open={openRecord}/>{['queued','running','blocked'].includes(active.status)&&<div className="ma-task-actions"><Button disabled={Boolean(cancelling)} onClick={()=>void cancel(active)}><Stop size={14}/>{cancelling===active.id?'正在请求取消…':'取消任务'}</Button></div>}</div>}
+      {active&&<div className="ma-active-task"><div className="ma-result-heading"><h2>当前任务</h2><Button onClick={()=>{setSelected(active.sources.map(source=>source.recordId));setSkillId(active.skill.id);setIncludeNotes(Boolean(active.includeNotes));setPluginIds([]);setPrompt('');}}>沿用范围再提问</Button><Button variant="ghost" onClick={()=>void showTask(active.id)}>查看详情<CaretRight size={15}/></Button></div>{detailError&&<p className="ma-notice error" role="alert">{detailError}</p>}<TaskContent task={active} open={openRecord}/>{['queued','running','blocked'].includes(active.status)&&<div className="ma-task-actions"><Button disabled={Boolean(cancelling)} onClick={()=>void cancel(active)}><Stop size={14}/>{cancelling===active.id?'正在请求取消…':'取消任务'}</Button></div>}</div>}
     </div>}
     {drawer&&<div className="ma-layer"><Modal title={drawerTitle} explicitCloseOnly={posting} onClose={()=>{if(!posting)setDrawer(null);}}>
       <div className="ma-drawer-content">
         {drawer.kind==='skill'&&<><div className="ma-identity"><div className="ma-icon"><Stack size={24}/></div><div><strong>会议复盘</strong><span>v1.0.0 · 聆记内置</span></div></div><section><h3>能力</h3><p>基于所选会议文字整理共识、决策与行动候选；结论保留来源引用。</p></section><section><h3>权限</h3><ul className="ma-check-list"><li><Check size={15}/>只读本次选择的会议文字</li><li><Check size={15}/>发送到已配置的纪要模型</li><li><Check size={15}/>保存独立结果，不回写纪要</li></ul></section></>}
         {drawer.kind==='plugin'&&<><div className="ma-identity"><div className="ma-icon"><FileText size={24}/></div><div><strong>会议资料</strong><span>聆记内置 · 只读工具</span></div></div><section><h3>读取范围</h3><p>仅限当前账户在任务中选择的会议转录、纪要文字及来源引用。</p></section><section><h3>能力边界</h3><p>不读取原始音频，不访问其他会议，不修改纪要，不对外写入。</p></section></>}
         {drawer.kind==='sources'&&<><p className="ma-muted">选择 1–8 场已有转录的会议。</p><div className="ma-source-list">{records.map(record=>{const disabled=record.capture==='recording'||record.segments===0||(!draftSelected.includes(record.id)&&draftSelected.length>=8);return <label key={record.id} className={disabled?'is-disabled':''}><input type="checkbox" disabled={disabled} checked={draftSelected.includes(record.id)} onChange={()=>setDraftSelected(ids=>ids.includes(record.id)?ids.filter(id=>id!==record.id):[...ids,record.id])}/><FileText size={18}/><span><strong>{record.title}</strong><small>{record.capture==='recording'?'正在记录，完成后可选':record.segments?`${record.segments} 段转录 · ${record.hasMinutes?'已有纪要':'尚无纪要'}`:'尚无转录文字'}</small></span></label>;})}</div>{!records.length&&<div className="ma-empty">当前目录没有会议</div>}</>}
-        {drawer.kind==='confirm'&&pending&&<><section><h3>整理目标</h3><p className="ma-preserve">{pending.body.prompt}</p></section><section><h3>会议范围 <span>{pendingTitles.length}</span></h3><div className="ma-confirm-sources">{pendingTitles.map(record=><div key={record.id}><FileText size={16}/>{record.title}</div>)}</div></section><section><h3>使用能力</h3><dl className="ma-properties"><div><dt>Skill</dt><dd>会议复盘 v1.0.0</dd></div><div><dt>读取</dt><dd>所选会议文字与引用</dd></div><div><dt>模型</dt><dd>已配置的纪要模型</dd></div><div><dt>输出</dt><dd>独立结果，不改纪要、不外发</dd></div></dl></section><label className="ma-consent"><input type="checkbox" checked={confirmed} disabled={posting||pending.attempted} onChange={event=>setConfirmed(event.target.checked)}/><span>确认只读以上会议文字，并发送到已配置的纪要模型进行整理。</span></label>{submitError&&<p className="ma-notice error" role="alert"><WarningCircle size={16}/>{submitError}</p>}{pending.attempted&&<p className="ma-muted ma-retry-note">重试会复用同一请求。放弃重试不会取消服务端可能已收到的任务；请先核对运行任务，避免重复运行。</p>}</>}
+        {drawer.kind==='confirm'&&pending&&<><section><h3>整理目标</h3><p className="ma-preserve">{pending.body.prompt}</p></section><section><h3>会议范围 <span>{pendingTitles.length}</span></h3><div className="ma-confirm-sources">{pendingTitles.map(record=><div key={record.id}><FileText size={16}/>{record.title}</div>)}</div></section><section><h3>使用能力</h3><dl className="ma-properties"><div><dt>Skill</dt><dd>{pending.body.skillId==='meeting-review'?'会议复盘':extensions.find(item=>item.id===pending.body.skillId)?.name||'已选 Skill'} · {pending.body.skillVersion.slice(0,12)}</dd></div><div><dt>读取</dt><dd>所选会议文字与引用{pending.body.includeNotes?'、随手笔记':''}</dd></div><div><dt>模型</dt><dd>已配置的纪要模型</dd></div><div><dt>输出</dt><dd>独立结果，不改纪要{pending.body.pluginIds.length?'；允许所选远程只读工具接收本次文字':'，不调用远程插件'}</dd></div></dl></section>{!!pending.body.pluginIds.length&&<section className="ma-confirm-plugins"><h3>本次允许的远程工具</h3><ul>{pending.body.pluginIds.map(id=>{const item=extensions.find(value=>value.id===id);return <li key={id}><strong>{item?.name||'所选插件'}</strong><p>{item?.url}</p><small>{item?.approvedTools?.join('、')} · 版本 {pending.body.pluginVersions[id]?.slice(0,12)}</small></li>;})}</ul></section>}<label className="ma-consent"><input type="checkbox" checked={confirmed} disabled={posting||pending.attempted} onChange={event=>setConfirmed(event.target.checked)}/><span>确认只读以上范围，并发送到已配置的纪要模型{pending.body.pluginIds.length?'及本次选择的远程工具':''}进行整理。</span></label>{submitError&&<p className="ma-notice error" role="alert"><WarningCircle size={16}/>{submitError}</p>}{pending.attempted&&<p className="ma-muted ma-retry-note">重试会复用同一请求。放弃重试不会取消服务端可能已收到的任务；请先核对运行任务，避免重复运行。</p>}</>}
         {drawer.kind==='task'&&<>{detailError&&<p className="ma-notice error" role="alert"><WarningCircle size={16}/>{detailError}</p>}{active?<TaskContent task={active} open={openRecord}/>:!detailError&&<p className="ma-empty-inline" role="status">正在读取任务…</p>}</>}
       </div>
       <div className="ma-drawer-footer">

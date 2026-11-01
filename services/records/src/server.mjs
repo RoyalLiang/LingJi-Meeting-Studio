@@ -29,6 +29,10 @@ import { testRealtime, realtimeEnabled } from './realtime-minutes.mjs';
 import { providerStatus, transcribe, completeJson, waveHeader } from './providers.mjs';
 import { sharedMinutes } from '../../../packages/records/src/shared-content.mjs';
 import { exportMinutesMarkdown, attachmentHeader } from './markdown-export.mjs';
+import { createExtensions } from './integrations/extensions.mjs';
+import { extensionRoutes } from './integrations/extension-routes.mjs';
+import { createFeishu, FEISHU_CALLBACK } from './integrations/feishu.mjs';
+import { feishuRoutes } from './integrations/feishu-routes.mjs';
 
 async function readBytes(request, max = 600000) {
   let size = 0; const chunks = [];
@@ -67,8 +71,10 @@ export function exportRecord(record, format = 'markdown') {
 }
 export async function createRecordServer(options = {}) {
   const repo = options.repo || await createRepository(options); const auth = await createAuth(repo, { seedDevelopment: !options.repo, ...options });
+  const feishu = await createFeishu(repo, options.feishuOptions);
+  const extensions = await createExtensions(repo, {localAccount:Boolean(options.localAccount),...options.extensionOptions});
   let agentError = 'agent_storage_unavailable';
-  const agent = await createMeetingAgentRuntime({repo, ...options.agentOptions}).catch(error => {
+  const agent = await createMeetingAgentRuntime({repo, extensions, ...options.agentOptions}).catch(error => {
     if (['agent_runtime_busy','agent_storage_upgrade_required'].includes(error.code)) agentError=error.code;
     console.error('[meeting-agent]', agentError);
     return null;
@@ -118,6 +124,7 @@ export async function createRecordServer(options = {}) {
     res.once('finish', () => telemetry.event('http.complete', { traceId, durationMs:performance.now()-started, outcome:res.statusCode<400?'ok':'error', bytes:Number(res.getHeader('Content-Length')) }));
     try {
       const url = new URL(req.url, 'http://localhost'), path = url.pathname;
+      if (path === FEISHU_CALLBACK && req.method === 'GET') { await feishu.callbackResponse(req,res); return; }
       if (path === '/api/health') { await repo.list('health-probe'); send(res, 200, { ok: true, service: 'records', storage: repo.backend, audioStorage: repo.audioBackend }); return; }
       requireThat(path.startsWith('/api/'), 'not_found', 404);
       requireThat(!options.localAccount || !/^\/api\/auth\/(register|login|logout)$/.test(path), 'not_found', 404);
@@ -150,6 +157,8 @@ export async function createRecordServer(options = {}) {
       const user = await auth.user(req);
       if (path === '/api/client/update-barrier' && req.method === 'GET') { send(res, 200, await clientUpdateBarrier(repo, user.id)); return; }
       if (!['GET', 'HEAD'].includes(req.method)) auth.checkCsrf(req, user);
+      if (await feishuRoutes({req,res,path,user,feishu,readBody,send})) return;
+      if (await extensionRoutes({req,res,path,user,extensions,readBody,send})) return;
       if (path === '/api/auth/logout' && req.method === 'POST') {
         await repo.change(user.id, u => { u.authVersion++; }); send(res, 200, { ok: true }, { 'Set-Cookie': auth.clear() }); return;
       }
@@ -456,7 +465,7 @@ export async function createRecordServer(options = {}) {
   });
   server.requestTimeout = 30000; server.headersTimeout = 15000;
   return { repo, server, localSession: () => auth.localSession?.(), start: () => new Promise(resolve => server.listen(options.port ?? Number(process.env.RECORD_API_PORT || 3030), options.host || '127.0.0.1', () => resolve(server.address()))),
-    stop: async () => { for (const stream of streams) stream.end(); await new Promise(resolve => server.close(resolve)); await agent?.close(); await repo.close(); } };
+    stop: async () => { for (const stream of streams) stream.end(); await new Promise(resolve => server.close(resolve)); await feishu.close(); await agent?.close(); await repo.close(); } };
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const app = await createRecordServer(); console.log('[record-api]', await app.start());
