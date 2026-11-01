@@ -21,7 +21,7 @@ export async function deployFeishuRelay({env=process.env,fetcher=fetch,run=comma
     const metadata=await api(account+`/d1/database/${id}`);
     if(metadata.uuid!==id||metadata.name!==relayDatabase)throw new Error('Refusing to modify a database with a different identity.');
     const tables=await api(account+`/d1/database/${id}/query`,'POST',{sql:"SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",params:[]});
-    const allowed=new Set(['_cf_METADATA','d1_migrations','oauth_transactions','oauth_rate_limits']);
+    const allowed=new Set(['_cf_KV','_cf_METADATA','d1_migrations','oauth_transactions','oauth_rate_limits']);
     if(tables.flatMap(item=>item.results||[]).some(item=>!allowed.has(item.name)))throw new Error('Refusing to modify a database containing unrelated tables.');
   }
   let project=await api(projectPath,'GET',undefined,true);

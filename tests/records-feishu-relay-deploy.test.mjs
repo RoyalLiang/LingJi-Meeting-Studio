@@ -14,7 +14,7 @@ test('relay deployment refuses foreign Pages resources and redacts provider erro
 });
 async function deployment(t,{dns='permission',foreignBinding=false}={}){
   const root=await mkdtemp(join(tmpdir(),'lingji-relay-deploy-'));await mkdir(join(root,'apps/feishu-relay'),{recursive:true});t.after(()=>rm(root,{recursive:true,force:true}));
-  const sqlite=new DatabaseSync(':memory:');sqlite.exec(await readFile(new URL('../apps/feishu-relay/migrations/0001_transactions.sql',import.meta.url),'utf8'));t.after(()=>sqlite.close());
+  const sqlite=new DatabaseSync(':memory:');sqlite.exec('CREATE TABLE _cf_KV (key TEXT PRIMARY KEY, value BLOB) WITHOUT ROWID;');sqlite.exec(await readFile(new URL('../apps/feishu-relay/migrations/0001_transactions.sql',import.meta.url),'utf8'));t.after(()=>sqlite.close());
   const DB={withSession(){return this;},prepare(sql){return{bind(...params){return{async first(){return sqlite.prepare(sql).get(...params)||null;},async run(){return{meta:{changes:Number(sqlite.prepare(sql).run(...params).changes)}};}};}};}};
   const worker=createFeishuRelay(),workerEnv={DB,LINGJI_FEISHU_RELAY_ID:RELAY_ID,FEISHU_RELAY_KEY:randomBytes(32).toString('base64url')},requests=[],commands=[];
   const project={subdomain:relayProject+'.pages.dev',deployment_configs:{production:{env_vars:{LINGJI_FEISHU_RELAY_ID:{value:RELAY_ID},FEISHU_RELAY_KEY:{type:'secret_text'}},d1_databases:{DB:{id:foreignBinding?'foreign-database':'database-1'}}}},canonical_deployment:{id:'deployment-1',deployment_trigger:{metadata:{commit_hash:env.GITHUB_SHA}}}};
@@ -63,4 +63,9 @@ test('scheduled cleanup removes expired code ciphertext even without a later cal
 test('cleanup refuses a foreign DB binding before any deletion request',async t=>{
   const h=await deployment(t,{foreignBinding:true});await assert.rejects(deployFeishuRelay({...h,env,cleanup:true}),/different identity/);
   assert.ok(!h.requests.some(request=>request.method!=='GET'));
+});
+test('deployment refuses unrelated tables while allowing D1 reserved tables',async t=>{
+  const h=await deployment(t);h.sqlite.exec('CREATE TABLE unrelated (value TEXT)');
+  await assert.rejects(deployFeishuRelay({...h,env}),/unrelated tables/);
+  assert.equal(h.commands.length,0);assert.ok(!h.requests.some(request=>request.method==='PATCH'));
 });
