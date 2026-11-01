@@ -30,7 +30,7 @@ async function deployment(t,{dns='permission',foreignBinding=false}={}){
     if(path.endsWith('/domains/auth.rookiecode.com'))result={name:'auth.rookiecode.com',status:'pending'};
     else if(path.endsWith('/domains'))result=[{name:'auth.rookiecode.com'}];
     else if(path.endsWith('/dns_records'))result=[{type:'TXT',content:'unrelated-record'}];
-    else if(path==='/zones')result=[{id:'zone-1'}];
+    else if(path==='/zones')result=dns==='invisible'?[]:[{id:'zone-1'}];
     else if(path.endsWith('/query')){const query=JSON.parse(options.body);result=/^SELECT/i.test(query.sql)?[{results:sqlite.prepare(query.sql).all(...query.params)}]:[{results:[],meta:{changes:Number(sqlite.prepare(query.sql).run(...query.params).changes)}}];}
     else if(path.endsWith('/d1/database'))result=[{name:relayDatabase,uuid:'database-1'}];
     else if(path.includes('/d1/database/')){const id=path.split('/').at(-1);result={uuid:id,name:id==='database-1'?relayDatabase:'unrelated-database'};}
@@ -68,4 +68,9 @@ test('deployment refuses unrelated tables while allowing D1 reserved tables',asy
   const h=await deployment(t);h.sqlite.exec('CREATE TABLE unrelated (value TEXT)');
   await assert.rejects(deployFeishuRelay({...h,env}),/unrelated tables/);
   assert.equal(h.commands.length,0);assert.ok(!h.requests.some(request=>request.method==='PATCH'));
+});
+test('invisible DNS zone produces a permission gap receipt after a healthy Pages deployment',async t=>{
+  const h=await deployment(t,{dns:'invisible'}),receipt=await deployFeishuRelay({...h,env});
+  assert.equal(receipt.transport.callback,true);assert.equal(receipt.dnsNeedsPermission,true);
+  assert.equal(receipt.canonicalTransport,null);assert.ok(!h.requests.some(request=>request.path.includes('/dns_records')));
 });

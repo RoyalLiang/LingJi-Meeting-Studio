@@ -55,11 +55,15 @@ export async function deployFeishuRelay({env=process.env,fetcher=fetch,run=comma
   const domains=await api(projectPath+'/domains');if(!domains.some(item=>item.name===relayDomain))await api(projectPath+'/domains','POST',{name:relayDomain});
   let dnsConfigured=false,dnsNeedsPermission=false;
   try{
-    const zones=await api('/zones?name=rookiecode.com');if(zones.length!==1)throw new Error('Expected exactly one rookiecode.com zone.');
+    const zones=await api('/zones?name=rookiecode.com');
+    if(!zones.length)dnsNeedsPermission=true;
+    else{
+    if(zones.length!==1)throw new Error('Expected exactly one rookiecode.com zone.');
     const path=`/zones/${zones[0].id}/dns_records`,records=await api(path+`?name=${relayDomain}`),target=project.subdomain.toLowerCase();
     if(records.length){if(records.length!==1||records[0].type!=='CNAME'||records[0].content.toLowerCase().replace(/\.$/,'')!==target)throw new Error('Refusing to replace an unrelated auth DNS record.');}
     else await api(path,'POST',{type:'CNAME',name:relayDomain,content:target,proxied:true,ttl:1,comment:'Lingji Feishu callback relay v1'});
     dnsConfigured=true;
+    }
   }catch(error){if(![401,403].includes(error.status))throw error;dnsNeedsPermission=true;}
   let canonicalTransport;
   if(dnsConfigured)for(let attempt=0;attempt<12;attempt++){try{canonicalTransport=await verifyFeishuRelay('https://'+relayDomain,{fetcher,sourceSha:env.GITHUB_SHA});break;}catch{await new Promise(resolve=>setTimeout(resolve,5000));}}
