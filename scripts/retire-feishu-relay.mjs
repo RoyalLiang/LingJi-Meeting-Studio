@@ -13,7 +13,7 @@ export async function retireFeishuRelay({env=process.env,fetcher=fetch,run=comma
   async function api(path='',method='GET',optional=false){
     const response=await fetcher(base+path,{method,headers:{Authorization:`Bearer ${env.CLOUDFLARE_API_TOKEN}`},signal:AbortSignal.timeout(30000)});
     if(optional&&response.status===404)return null;
-    const body=await response.json();if(!response.ok||!body.success)throw new Error(`Relay retirement API HTTP ${response.status}`);return body.result;
+    const body=await response.json();if(!response.ok||!body.success)throw new Error(`Relay retirement ${method} ${path||'/project'} HTTP ${response.status}; codes ${(body.errors||[]).map(item=>item.code).join(',')}`);return body.result;
   }
   let project=await api('','GET',true);
   if(!project)return {project:projectName,sourceSha:env.GITHUB_SHA,absent:true};
@@ -39,7 +39,7 @@ export async function retireFeishuRelay({env=process.env,fetcher=fetch,run=comma
   // Historical deployment URLs also serve workers; remove only this marked project's superseded deployments.
   let removed=0;
   for(let page=0;page<50;page++){
-    const old=(await api('/deployments?per_page=100&page=1')).filter(item=>item.id!==current.id);
+    const old=(await api('/deployments?per_page=20&page=1')).filter(item=>item.id!==current.id);
     if(!old.length)return {project:projectName,sourceSha:env.GITHUB_SHA,deploymentId:current.id,checks,canonical,removedDeployments:removed,databaseRetained:true};
     for(const item of old){if(!/^[a-f0-9-]{36}$/i.test(item.id))throw new Error('Invalid deployment identity.');await api(`/deployments/${item.id}?force=true`,'DELETE');removed++;}
   }

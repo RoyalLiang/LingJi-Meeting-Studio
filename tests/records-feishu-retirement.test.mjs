@@ -21,3 +21,8 @@ test('retired worker answers every method with 410 and contains no OAuth runtime
   const worker=vm.runInNewContext('('+retiredWorker.replace('export default','').replace(/;$/,'')+')',{Response});
   for(const method of ['GET','POST','DELETE']){const result=await worker.fetch(new Request('https://example.test/callback',{method}));assert.equal(result.status,410);assert.equal(result.headers.get('x-lingji-relay'),'retired');}
 });
+test('retirement API failures identify the operation without logging credentials or response contents',async()=>{
+  await assert.rejects(retireFeishuRelay({env,fetcher:async()=>Response.json({success:false,errors:[{code:1001,message:'private-response'}]},{status:400})}),error=>{
+    assert.match(error.message,/GET \/project HTTP 400; codes 1001/);assert.doesNotMatch(error.message,/test-token|private-response/);return true;
+  });
+});
