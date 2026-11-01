@@ -22,7 +22,7 @@ function provider(){
   const calls=[],flags={};
   return {calls,flags,async fetch(url,options){
     const body=options.body?String(options.body):'';calls.push({url,body,headers:options.headers});
-    if(url==='https://accounts.feishu.cn/oauth/v3/token'){if(flags.oauthError)return Response.json({error:'invalid_client',error_description:'private-oauth-details'},{status:400});const value={code:0,access_token:accessToken,expires_in:7200,refresh_token:'fixture-refresh-private',refresh_token_expires_in:604800,scope:FEISHU_SCOPES.join(' ')};if(flags.oauthNoCode)delete value.code;return Response.json(value);}
+    if(url==='https://accounts.feishu.cn/oauth/v3/token'){assert.match(options.headers['Content-Type'],/^application\/json/);assert.ok(JSON.parse(body).grant_type);if(flags.oauthGate)await flags.oauthGate;if(flags.oauthError)return Response.json({error:'invalid_client',error_description:'private-oauth-details'},{status:400});const value={code:0,access_token:accessToken,expires_in:7200,refresh_token:'fixture-refresh-private',refresh_token_expires_in:604800,scope:FEISHU_SCOPES.join(' ')};if(flags.oauthNoCode)delete value.code;return Response.json(value);}
     if(url.endsWith('/authen/v1/user_info'))return Response.json({code:0,data:{open_id:'fixture-open-id',tenant_key:'fixture-tenant',name:'本地测试用户'}});
     if(url.endsWith('/blocks/convert')){if(flags.convertGate)await flags.convertGate;return Response.json({code:0,data:{first_level_block_ids:['heading'],blocks:[{block_id:'heading',parent_id:'readonly',block_type:3,heading1:{elements:[{text_run:{content:'发布计划'}}]}}]}});}
     if(url.endsWith('/docx/v1/documents')){if(flags.createTimeout)throw new Error('network lost');return Response.json({code:0,data:{document:{document_id:documentId}}});}
@@ -46,8 +46,8 @@ async function harness(t,{autoPollMs=100}={}){
     assert.equal(url.searchParams.get('scope'),FEISHU_SCOPES.join(' '));
     const returned=await fetch(`${base}/integrations/feishu/callback?state=${url.searchParams.get('state')}&code=fixture-code`);
     assert.equal(returned.status,expected);assert.doesNotMatch(await returned.text(),/fixture-code|fixture-app-secret|fixture-access-token|private-oauth-details/);if(expected!==200)return;
-    const exchange=new URLSearchParams(remote.calls.filter(call=>call.url.endsWith('/oauth/v3/token')).at(-1).body);
-    assert.equal(createHash('sha256').update(exchange.get('code_verifier')).digest('base64url'),url.searchParams.get('code_challenge'));
+    const exchange=JSON.parse(remote.calls.filter(call=>call.url.endsWith('/oauth/v3/token')).at(-1).body);
+    assert.equal(createHash('sha256').update(exchange.code_verifier).digest('base64url'),url.searchParams.get('code_challenge'));
     assert.equal((await fetch(`${base}/integrations/feishu/callback?state=${url.searchParams.get('state')}&code=fixture-code`)).status,400);
   }
   const preview=()=>request(`/records/${created.body.id}/feishu/preview`,'POST',{title:'人工核对的会议纪要',folderToken:'',includeNotes:false,includeEvidence:true});
@@ -116,6 +116,22 @@ test('automatic export excludes already-ended meetings, sends final minutes once
 });
 
 test('OAuth v3 accepts success without code and rejects OAuth error fields without leaking details',async t=>{const h=await harness(t);h.remote.flags.oauthNoCode=true;await h.connect();assert.equal((await h.request('/integrations/feishu')).body.connected,true);h.remote.flags.oauthError=true;await h.connect(400);assert.equal((await h.request('/integrations/feishu')).body.connected,false);});
+
+test('direct HTTPS cancellation and reauthorization fence an old code exchange',async t=>{
+  for(const action of ['cancel','reauthorize']){
+    const h=await harness(t);await h.request('/integrations/feishu','PUT',{appId:'cli_fixture_app',appSecret,redirectUri:`${h.base.replace('http:','https:')}/integrations/feishu/callback`});
+    const started=await h.request('/integrations/feishu/authorize','POST',{}),state=new URL(started.body.url).searchParams.get('state');let release;
+    h.remote.flags.oauthGate=new Promise(resolve=>{release=resolve;});const callback=fetch(`${h.base}/integrations/feishu/callback?state=${state}&code=old-code`);
+    let next;
+    try{for(let i=0;i<100&&!h.remote.calls.some(call=>call.url.endsWith('/oauth/v3/token'));i++)await new Promise(resolve=>setTimeout(resolve,5));
+      assert.ok(h.remote.calls.some(call=>call.url.endsWith('/oauth/v3/token')));
+      if(action==='cancel')assert.equal((await h.request('/integrations/feishu/authorize/cancel','POST',{})).status,200);
+      else next=await h.request('/integrations/feishu/authorize','POST',{});
+    }finally{release();}
+    assert.equal((await callback).status,400);assert.equal((await h.request('/integrations/feishu')).body.connected,false);
+    if(next){const current=new URL(next.body.url).searchParams.get('state');assert.equal((await fetch(`${h.base}/integrations/feishu/callback?state=${current}&code=new-code`)).status,200);assert.equal((await h.request('/integrations/feishu')).body.connected,true);}
+  }
+});
 
 test('automatic export waits for current final minutes and does not send stale human drafts or failed final jobs',async t=>{
   const h=await harness(t,{autoPollMs:60000});await h.connect();await h.request('/integrations/feishu/automation','PUT',{enabled:true,confirmed:true,folderToken:'',includeNotes:false,includeEvidence:true});

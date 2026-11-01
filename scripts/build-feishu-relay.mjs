@@ -1,0 +1,11 @@
+import {build} from 'esbuild';
+import {mkdir,rm,writeFile} from 'node:fs/promises';
+import {resolve} from 'node:path';
+import assert from 'node:assert/strict';
+const root=resolve(import.meta.dirname,'..'),out=resolve(root,'apps/feishu-relay/dist');
+await rm(out,{recursive:true,force:true});await mkdir(out,{recursive:true});
+const result=await build({entryPoints:[resolve(root,'apps/feishu-relay/src/entry.mjs')],outfile:resolve(out,'_worker.js'),bundle:true,format:'esm',platform:'browser',target:'es2022',minify:true,metafile:true,define:{'import.meta.env':JSON.stringify({RELAY_REVISION:process.env.GITHUB_SHA||'local'})}});
+assert.deepEqual(Object.values(result.metafile.outputs)[0].exports,['default']);
+await writeFile(resolve(out,'_routes.json'),JSON.stringify({version:1,include:['/*'],exclude:[]}));
+await writeFile(resolve(out,'index.html'),'<!doctype html><meta charset="utf-8"><title>聆记 · 飞书授权</title>授权服务尚未配置');
+console.log('Feishu callback relay built.');

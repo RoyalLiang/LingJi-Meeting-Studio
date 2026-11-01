@@ -10,6 +10,7 @@ export async function feishuRoutes({req,res,path,user,feishu,readBody,send}) {
     return true;
   }
   if(path===`${base}/authorize`&&req.method==='POST'){send(res,200,await feishu.authorize(user.id));return true;}
+  if(path===`${base}/authorize/cancel`&&req.method==='POST'){send(res,200,await feishu.cancelAuthorization(user.id));return true;}
   if(path===`${base}/automation`){if(req.method==='GET')send(res,200,await feishu.automation(user.id));else if(req.method==='PUT')send(res,200,await feishu.saveAutomation(user.id,await readBody(req,4000)));else throw new DomainError('not_found',404);return true;}
   const item=path.match(/^\/api\/integrations\/feishu\/exports\/([a-f0-9-]{36})(\/publish)?$/);
   if(item){

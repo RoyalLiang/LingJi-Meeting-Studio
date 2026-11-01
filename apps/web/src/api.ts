@@ -5,6 +5,13 @@ export function setAudioTransport(value?: string) { binaryAudio = value === 'pcm
 let csrf = '';
 export const setCsrf = (token: string) => { csrf = token; };
 const messages: Record<string, string> = {
+  feishu_https_callback_required:'请在应用配置中保存 HTTPS 回调地址，并在飞书后台登记相同地址后重新连接。',
+  feishu_relay_unavailable:'授权回调服务暂不可用，请检查网络后重新连接。已有会议内容保留在本机。',
+  feishu_relay_rate_limited:'授权请求过于频繁，请稍后重新连接。',
+  feishu_authorization_denied:'飞书授权未获同意，请重新连接并完成授权。',
+  feishu_oauth_expired:'本次授权已过期或取消，请重新连接。',
+  feishu_oauth_invalid:'授权结果校验未通过，请重新连接。',
+  feishu_authorization_busy:'当前待授权请求过多，请稍后重试。',
   pi_minutes_failed:'纪要引擎未完成本次生成，已有纪要保留，请重试。',
   feishu_automation_changed:'自动导出设置已变更，本次任务已停止后续写入。',
   invalid_feishu_automation:'自动导出设置无效，请重新检查。',

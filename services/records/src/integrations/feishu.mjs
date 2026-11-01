@@ -1,11 +1,11 @@
-import http from 'node:http';
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { DomainError, digest, requireThat } from '../../../../packages/records/src/record.mjs';
 import { exportMinutesMarkdown, minutesForExport } from '../markdown-export.mjs';
 import { createSecretStore } from './secret-store.mjs';
 
-export const FEISHU_CALLBACK = '/api/integrations/feishu/callback';
-export const FEISHU_SCOPES = ['docx:document:create', 'docx:document:write_only', 'docx:document.block:convert', 'drive:drive.metadata:readonly', 'contact:user.base:readonly', 'offline_access'];
+import {FEISHU_CALLBACK,FEISHU_SCOPES,FEISHU_REDIRECT_URI,FEISHU_AUTHORIZE_URL,FEISHU_TOKEN_URL} from '../../../../packages/records/src/feishu-oauth.mjs';
+import {openFeishuRelay} from './feishu-relay.mjs';
+export {FEISHU_CALLBACK,FEISHU_SCOPES};
 const api = 'https://open.feishu.cn/open-apis';
 const autoId = owner => `feishu-auto:${digest(owner)}`;
 const exportFields=['recordId','title','folderToken','includeNotes','includeEvidence','source','fingerprint','status','stage','createdAt','updatedAt','documentId','url','error','automatic'];
@@ -57,9 +57,11 @@ function exportSnapshot(record, input) {
 
 const publicExport = value => Object.fromEntries(['id','recordId','title','folderToken','includeNotes','includeEvidence','source','fingerprint','status','stage','createdAt','updatedAt','documentId','url','error','automatic'].filter(key => value[key] !== undefined && value[key] !== null).map(key => [key,['includeNotes','includeEvidence','automatic'].includes(key)?Boolean(value[key]):value[key]]));
 
-export async function createFeishu(repo, {fetch:fetcher = globalThis.fetch, now = Date.now, autoPollMs=30000} = {}) {
+export async function createFeishu(repo, {fetch:fetcher = globalThis.fetch, now = Date.now, autoPollMs=30000, relayFetch=globalThis.fetch, relayPollMs=1500} = {}) {
   const secrets = await createSecretStore(repo.root), pending = new Map(), refreshes = new Map(), jobs = new Set(), stopping = new AbortController();
-  let listener, listenerTimer,autoBusy=false,autoTimer,autoWork;
+  let autoBusy=false,autoTimer,autoWork;
+  const authorizations=new Map();
+  function retire(owner){for(const [state,entry]of pending)if(entry.owner===owner){pending.delete(state);entry.controller?.abort();void entry.relay?.close();}authorizations.delete(owner);}
   const runningOwners=new Map();
   const connections=new Map();
   const connectionSignal=(owner,generation)=>{const key=`${owner}|${generation}`;if(!connections.has(key))connections.set(key,new AbortController());return connections.get(key).signal;};
@@ -75,13 +77,13 @@ export async function createFeishu(repo, {fetch:fetcher = globalThis.fetch, now 
     requireThat(current.generation === conn.generation, 'feishu_connection_changed', 409);
     current.credentials = secrets.seal(current.id, credentials);
   });
-  async function request(url, {token, body, form, write = false, signal} = {}) {
+  async function request(url, {token, body, write = false, signal} = {}) {
     let response, data;
     try {
-      response = await fetcher(url, {method:body || form ? 'POST' : 'GET', redirect:'error',
+      response = await fetcher(url, {method:body ? 'POST' : 'GET', redirect:'error',
         signal:AbortSignal.any([stopping.signal, AbortSignal.timeout(20000),...(signal?[signal]:[])]),
-        headers:{...(token ? {Authorization:`Bearer ${token}`} : {}), 'Content-Type':form ? 'application/x-www-form-urlencoded' : 'application/json; charset=utf-8'},
-        ...(form ? {body:new URLSearchParams(form).toString()} : body ? {body:JSON.stringify(body)} : {})});
+        headers:{...(token ? {Authorization:`Bearer ${token}`} : {}), 'Content-Type':'application/json; charset=utf-8'},
+        ...(body ? {body:JSON.stringify(body)} : {})});
       const text = await response.text();
       requireThat(text.length <= 10 * 1024 * 1024, 'feishu_invalid_response', 502);
       data = JSON.parse(text);
@@ -89,7 +91,7 @@ export async function createFeishu(repo, {fetch:fetcher = globalThis.fetch, now 
     } catch {
       const error = new DomainError(write ? 'feishu_write_unknown' : 'feishu_unavailable', 502); error.uncertain = write; throw error;
     }
-    const oauth=url==='https://accounts.feishu.cn/oauth/v3/token';
+    const oauth=url===FEISHU_TOKEN_URL;
     if (!response.ok || (oauth ? Boolean(data.error)||(data.code!==undefined&&data.code!==0) : data.code!==0)) {
       const permission = response.status === 403 || [99991663,99991672,99991679].includes(data.code);
       const error = new DomainError(response.status === 429 || data.code === 99991400 ? 'feishu_rate_limited' : permission ? 'feishu_permission_required' : 'feishu_request_rejected', 502);
@@ -104,7 +106,7 @@ export async function createFeishu(repo, {fetch:fetcher = globalThis.fetch, now 
       const credentials = open(conn);
       if (credentials.expiresAt > now()+60000) return credentials.accessToken;
       requireThat(credentials.refreshToken && credentials.refreshExpiresAt > now(), 'feishu_reauthorize', 409);
-      const token = await request('https://accounts.feishu.cn/oauth/v3/token', {signal:connectionSignal(owner,conn.generation),form:{grant_type:'refresh_token', client_id:conn.appId, client_secret:credentials.appSecret, refresh_token:credentials.refreshToken}});
+      const token = await request('https://accounts.feishu.cn/oauth/v3/token', {signal:connectionSignal(owner,conn.generation),body:{grant_type:'refresh_token', client_id:conn.appId, client_secret:credentials.appSecret, refresh_token:credentials.refreshToken}});
       requireThat(string(token.access_token, 16000) && token.access_token && Number.isFinite(token.expires_in), 'feishu_reauthorize', 502);
       await saveCredentials(conn, {...credentials, accessToken:token.access_token, expiresAt:now()+token.expires_in*1000,
         refreshToken:token.refresh_token || credentials.refreshToken, refreshExpiresAt:token.refresh_token ? now()+token.refresh_token_expires_in*1000 : credentials.refreshExpiresAt});
@@ -113,9 +115,9 @@ export async function createFeishu(repo, {fetch:fetcher = globalThis.fetch, now 
     refreshes.set(owner, task); try { return await task; } finally { if(refreshes.get(owner)===task)refreshes.delete(owner); }
   }
   async function settings(owner) {
-    const conn = await load(owner);
-    return {appId:conn?.appId || '', hasSecret:Boolean(conn?.credentials), redirectUri:conn?.redirectUri || `http://127.0.0.1:41891${FEISHU_CALLBACK}`,
-      connected:Boolean(conn?.connected), identity:conn?.connected ? conn.identity : null, scopes:FEISHU_SCOPES};
+    const conn=await load(owner),redirectUri=conn?.redirectUri||FEISHU_REDIRECT_URI,status=authorizations.get(owner);
+    return {appId:conn?.appId||'',hasSecret:Boolean(conn?.credentials),redirectUri,recommendedRedirectUri:FEISHU_REDIRECT_URI,relayManaged:redirectUri===FEISHU_REDIRECT_URI,requiresCallbackUpdate:redirectUri.startsWith('http:'),
+      authorization:status?{status:status.status,error:status.error||null}:{status:'idle',error:null},connected:Boolean(conn?.connected),identity:conn?.connected?conn.identity:null,scopes:FEISHU_SCOPES};
   }
   async function configure(owner, input) {
     requireThat(input && typeof input === 'object' && !Array.isArray(input), 'invalid_feishu_config', 400);
@@ -124,34 +126,43 @@ export async function createFeishu(repo, {fetch:fetcher = globalThis.fetch, now 
     const appSecret = input.appSecret === '' && current ? open(current).appSecret : input.appSecret;
     requireThat(string(appSecret,2048) && appSecret.length >= 8 && !/[\r\n]/.test(appSecret), 'invalid_feishu_config', 400);
     let redirect; try { redirect = new URL(input.redirectUri); } catch { throw new DomainError('invalid_feishu_config',400); }
-    requireThat(redirect.pathname === FEISHU_CALLBACK && !redirect.search && !redirect.hash && !redirect.username && !redirect.password &&
-      (redirect.protocol === 'https:' || (redirect.protocol === 'http:' && redirect.hostname === '127.0.0.1' && redirect.port)), 'invalid_feishu_config',400);
+    requireThat(redirect.protocol==='https:' && redirect.pathname===FEISHU_CALLBACK && !redirect.search && !redirect.hash && !redirect.username && !redirect.password,'invalid_feishu_config',400);
     const next = {id:connectionId(owner),kind:'feishu-connection',owner,appId:input.appId,redirectUri:redirect.href,generation:randomUUID(),connected:false};
     next.credentials = secrets.seal(next.id,{appSecret});
     if (current) await repo.change(next.id,value=>Object.assign(value,next)); else await repo.insert(next);
-    abortConnection(owner);
+    abortConnection(owner);retire(owner);
     for (const [state, entry] of pending) if(entry.owner === owner) pending.delete(state);
     return settings(owner);
   }
-  async function callback(url) {
-    const state = url.searchParams.get('state'), entry = pending.get(state);
-    requireThat(entry && entry.expires > now(), 'feishu_oauth_expired',400); pending.delete(state);
-    requireThat(!url.searchParams.has('error'), 'feishu_authorization_denied',400);
-    const code = url.searchParams.get('code'); requireThat(string(code,4096) && code, 'feishu_oauth_invalid',400);
-    const conn = await load(entry.owner); requireThat(conn?.generation === entry.generation, 'feishu_connection_changed',409);
-    const credentials = open(conn);
-    const token = await request('https://accounts.feishu.cn/oauth/v3/token',{signal:connectionSignal(entry.owner,entry.generation),form:{grant_type:'authorization_code',client_id:conn.appId,client_secret:credentials.appSecret,redirect_uri:conn.redirectUri,code,code_verifier:entry.verifier}});
-    requireThat(string(token.access_token,16000) && token.access_token && Number.isFinite(token.expires_in), 'feishu_invalid_response',502);
-    const result = await request(`${api}/authen/v1/user_info`,{token:token.access_token,signal:connectionSignal(entry.owner,entry.generation)});
-    requireThat(result.data?.open_id && result.data?.tenant_key, 'feishu_invalid_response',502);
+  async function completeAuthorization(entry,code){
+    const active=()=>requireThat(pending.get(entry.state)===entry&&!entry.controller.signal.aborted&&entry.expires>now(),'feishu_oauth_expired',409);
+    active();
+    const conn=await load(entry.owner);requireThat(conn?.generation===entry.generation,'feishu_connection_changed',409);
+    const credentials=open(conn);
+    const signal=AbortSignal.any([connectionSignal(entry.owner,entry.generation),entry.controller.signal]);
+    const token=await request(FEISHU_TOKEN_URL,{signal,body:{grant_type:'authorization_code',client_id:conn.appId,client_secret:credentials.appSecret,redirect_uri:conn.redirectUri,code,code_verifier:entry.verifier}});
+    active();
+    requireThat(string(token.access_token,16000)&&token.access_token&&Number.isFinite(token.expires_in),'feishu_invalid_response',502);
+    const result=await request(`${api}/authen/v1/user_info`,{token:token.access_token,signal});
+    requireThat(result.data?.open_id&&result.data?.tenant_key,'feishu_invalid_response',502);
     await repo.change(conn.id,current=>{
-      requireThat(current.generation === entry.generation,'feishu_connection_changed',409);
-      current.credentials = secrets.seal(conn.id,{...credentials,accessToken:token.access_token,expiresAt:now()+token.expires_in*1000,
-        refreshToken:token.refresh_token || '',refreshExpiresAt:now()+(token.refresh_token_expires_in || 0)*1000});
-      current.generation = randomUUID();
-      current.connected = true; current.identity = {name:String(result.data.name || '').slice(0,80),openId:result.data.open_id,tenantKey:result.data.tenant_key};
+      active();requireThat(current.authorizationAttempt===digest(entry.state),'feishu_oauth_expired',409);
+      requireThat(current.generation===entry.generation,'feishu_connection_changed',409);
+      current.credentials=secrets.seal(conn.id,{...credentials,accessToken:token.access_token,expiresAt:now()+token.expires_in*1000,refreshToken:token.refresh_token||'',refreshExpiresAt:now()+(token.refresh_token_expires_in||0)*1000});
+      delete current.authorizationAttempt;current.generation=randomUUID();current.connected=true;current.identity={name:String(result.data.name||'').slice(0,80),openId:result.data.open_id,tenantKey:result.data.tenant_key};
     });
-    abortConnection(entry.owner);
+    connections.get(`${entry.owner}|${entry.generation}`)?.abort();refreshes.delete(entry.owner);
+    if(authorizations.get(entry.owner)?.state===entry.state)authorizations.delete(entry.owner);
+  }
+  async function callback(url){
+    const state=url.searchParams.get('state'),entry=pending.get(state);
+    requireThat(entry&&!entry.relay&&!entry.exchanging&&entry.expires>now(),'feishu_oauth_expired',400);entry.exchanging=true;
+    try{
+      requireThat(!url.searchParams.has('error'),'feishu_authorization_denied',400);
+      const code=url.searchParams.get('code');requireThat(string(code,4096)&&code,'feishu_oauth_invalid',400);
+      await completeAuthorization(entry,code);
+    }catch(error){if(authorizations.get(entry.owner)?.state===state)authorizations.set(entry.owner,{state,status:'failed',error:error instanceof DomainError?error.code:'feishu_unavailable',expires:now()+600000});throw error;}
+    finally{if(pending.get(state)===entry)pending.delete(state);entry.controller.abort();}
   }
   async function callbackResponse(req,res) {
     let ok=false;
@@ -161,27 +172,35 @@ export async function createFeishu(repo, {fetch:fetcher = globalThis.fetch, now 
     res.end(`<meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>聆记 · 飞书授权</title><style>body{font:16px system-ui;padding:10vh 8vw;color:#244637;background:#f2f6f2}h1{font-size:24px}</style><h1>${ok?'飞书已连接':'未完成飞书授权'}</h1><p>${ok?'可以关闭此页，返回聆记继续导出。':'请返回聆记检查应用权限与回调地址，然后重新授权。'}</p>`);
   }
   async function authorize(owner) {
-    const conn=await load(owner); requireThat(conn?.credentials,'feishu_not_configured',409);
-    for(const [state,entry] of pending)if(entry.expires<=now()||entry.owner===owner)pending.delete(state);
+    const conn=await load(owner);requireThat(conn?.credentials,'feishu_not_configured',409);
+    requireThat(conn.redirectUri.startsWith('https:'),'feishu_https_callback_required',409);
+    retire(owner);
+    for(const [state,entry]of pending)if(entry.expires<=now()){pending.delete(state);entry.controller?.abort();void entry.relay?.close();}
+    for(const [id,value]of authorizations)if(value.expires<=now())authorizations.delete(id);
     requireThat(pending.size<100,'feishu_authorization_busy',429);
-    const redirect=new URL(conn.redirectUri);
-    if(redirect.protocol==='http:'){
-      if(listener)requireThat(listener.address()?.port===Number(redirect.port),'feishu_callback_busy',409);
-      else {
-        listener=http.createServer(callbackResponse);
-        try { await new Promise((resolve,reject)=>{listener.once('error',reject);listener.listen(Number(redirect.port),'127.0.0.1',resolve);}); }
-        catch { listener=undefined; throw new DomainError('feishu_callback_busy',409); }
-      }
-      clearTimeout(listenerTimer); listenerTimer=setTimeout(()=>{listener?.close();listener=undefined;},11*60000);listenerTimer.unref();
+    if(authorizations.size>=100)authorizations.delete(authorizations.keys().next().value);
+    const state=randomBytes(32).toString('base64url'),verifier=randomBytes(48).toString('base64url'),controller=new AbortController();
+    const challenge=createHash('sha256').update(verifier).digest('base64url'),entry={owner,state,generation:conn.generation,verifier,expires:now()+600000,controller};
+    pending.set(state,entry);authorizations.set(owner,{state,status:'waiting',expires:entry.expires});
+    try{
+      await repo.change(conn.id,current=>{requireThat(pending.get(state)===entry&&!controller.signal.aborted,'feishu_oauth_expired',409);requireThat(current.generation===conn.generation,'feishu_connection_changed',409);current.authorizationAttempt=digest(state);});
+      requireThat(pending.get(state)===entry&&!controller.signal.aborted,'feishu_oauth_expired',409);
+    }catch(error){pending.delete(state);controller.abort();if(authorizations.get(owner)?.state===state)authorizations.set(owner,{state,status:'failed',error:error.code||'feishu_unavailable',expires:now()+600000});throw error;}
+    if(conn.redirectUri===FEISHU_REDIRECT_URI){
+      try{entry.relay=await openFeishuRelay({state,challenge,clientId:conn.appId,signal:AbortSignal.any([stopping.signal,controller.signal]),fetcher:relayFetch,now,pollMs:relayPollMs});entry.expires=entry.relay.expiresAt;}
+      catch(error){pending.delete(state);if(authorizations.get(owner)?.state===state)authorizations.set(owner,{state,status:'failed',error:error.code||'feishu_relay_unavailable',expires:now()+600000});throw error;}
+      const task=(async()=>{
+        try{const code=await entry.relay.wait();requireThat(pending.get(state)===entry&&entry.expires>now(),'feishu_oauth_expired',409);entry.exchanging=true;await completeAuthorization(entry,code);}
+        catch(error){pending.delete(state);if(authorizations.get(owner)?.state===state)authorizations.set(owner,{state,status:'failed',error:error instanceof DomainError?error.code:'feishu_relay_unavailable',expires:now()+600000});}
+        finally{if(pending.get(state)===entry)pending.delete(state);entry.controller.abort();await entry.relay.close();}
+      })();jobs.add(task);void task.finally(()=>jobs.delete(task));
     }
-    const state=randomBytes(32).toString('base64url'),verifier=randomBytes(48).toString('base64url');
-    pending.set(state,{owner,generation:conn.generation,verifier,expires:now()+10*60000});
-    const url=new URL('https://accounts.feishu.cn/open-apis/authen/v1/authorize');
-    url.search=new URLSearchParams({client_id:conn.appId,response_type:'code',redirect_uri:conn.redirectUri,scope:FEISHU_SCOPES.join(' '),prompt:'consent',state,
-      code_challenge:createHash('sha256').update(verifier).digest('base64url'),code_challenge_method:'S256'}).toString();
-    return {url:url.href,expiresAt:now()+10*60000};
+    const url=new URL(FEISHU_AUTHORIZE_URL);
+    url.search=new URLSearchParams({client_id:conn.appId,response_type:'code',redirect_uri:conn.redirectUri,scope:FEISHU_SCOPES.join(' '),prompt:'consent',state,code_challenge:challenge,code_challenge_method:'S256'}).toString();
+    return {url:url.href,expiresAt:entry.expires};
   }
-  async function disconnect(owner){abortConnection(owner);const conn=await load(owner);if(conn)await repo.change(conn.id,value=>{value.credentials=secrets.seal(value.id,{appSecret:open(value).appSecret});value.connected=false;delete value.identity;value.generation=randomUUID();});for(const [state,entry]of pending)if(entry.owner===owner)pending.delete(state);return settings(owner);}
+  async function cancelAuthorization(owner){const attempts=new Set([...pending.values()].filter(entry=>entry.owner===owner).map(entry=>digest(entry.state)));const status=authorizations.get(owner);if(status)attempts.add(digest(status.state));retire(owner);const conn=await load(owner);if(conn)await repo.change(conn.id,current=>{if(attempts.has(current.authorizationAttempt))delete current.authorizationAttempt;});return settings(owner);}
+  async function disconnect(owner){abortConnection(owner);retire(owner);const conn=await load(owner);if(conn)await repo.change(conn.id,value=>{value.credentials=secrets.seal(value.id,{appSecret:open(value).appSecret});value.connected=false;delete value.identity;value.generation=randomUUID();});for(const [state,entry]of pending)if(entry.owner===owner)pending.delete(state);return settings(owner);}
   async function ownedRecord(owner,id){const record=await repo.get(id);requireThat(record?.kind==='record'&&record.owner===owner&&!record.deleted&&Date.parse(record.deleteAt)>now(),'record_not_found',404);return record;}
   async function ownedExport(owner,id){const value=await repo.get(id);requireThat(value?.kind==='feishu-export'&&value.owner===owner,'not_found',404);await ownedRecord(owner,value.recordId);return value;}
   async function preview(owner,recordId,input,automatic=false,id=randomUUID(),rule){
@@ -274,8 +293,8 @@ export async function createFeishu(repo, {fetch:fetcher = globalThis.fetch, now 
     }finally{autoBusy=false;}
   }
   autoTimer=setInterval(()=>{if(!autoBusy)autoWork=automaticTick().catch(()=>{});},Math.max(100,autoPollMs));autoTimer.unref();
-  return {settings,configure,authorize,disconnect,callbackResponse,preview,publish,get,automation,saveAutomation,automaticTick,
+  return {settings,configure,authorize,cancelAuthorization,disconnect,callbackResponse,preview,publish,get,automation,saveAutomation,automaticTick,
     async list(owner,recordId){await ownedRecord(owner,recordId);return (await history(owner,recordId,10)).map(publicExport);},
-    async close(){clearInterval(autoTimer);stopping.abort();await autoWork;clearTimeout(listenerTimer);listener?.close();pending.clear();await Promise.allSettled(jobs);}
+    async close(){clearInterval(autoTimer);stopping.abort();await autoWork;for(const owner of [...new Set([...pending.values()].map(entry=>entry.owner))])retire(owner);pending.clear();await Promise.allSettled(jobs);}
   };
 }
