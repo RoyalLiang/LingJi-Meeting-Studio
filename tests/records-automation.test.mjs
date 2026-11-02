@@ -64,7 +64,7 @@ test('a post-stop timeout retains validated windows and refuses stale or manuall
   const root=await mkdtemp(join(tmpdir(),'tts-summary-timeout-')),repo=await createRepository({root,databaseUrl:''});
   let release,work,ready,calls=0;const gate=new Promise(resolve=>{release=resolve;}),started=new Promise(resolve=>{ready=resolve;});
   try{
-   const r=record();r.segments=[{...segment,id:'early',startMs:0,endMs:1000},{...segment,id:'late',startMs:400000,endMs:401000}];
+   const r=record();r.segments=[{...segment,id:'early',text:'讨论事项。'.repeat(1000),startMs:0,endMs:1000},{...segment,id:'late',text:'讨论事项。'.repeat(1000),startMs:400000,endMs:401000}];
    requestMinutes(r,{scope:'live',mode:'model'});await repo.insert(r);
    work=runCycle(repo,{minutes:async job=>{
     if(++calls===2){ready();await gate;throw Object.assign(new Error('timeout'),{code:'llm_timeout'});}

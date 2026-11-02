@@ -18,10 +18,10 @@ test('final synthesis retains the latest validated withdrawal and honors a root 
       await f.repo.change(f.record.id,record=>{
         const old=record.segments[0],evidence=[{segmentId:old.id,revision:1}];
         record.capture='recording';record.liveMinutes={title:'上线安排',template:'meeting',notesRevision:0,transcriptRevision:1,sections:[{heading:'安排',items:[{id:'plan',text:'周五上线',evidence}]}],decisions:[{id:'plan',text:'周五上线',evidence}],actions:[],evidenceSnapshot:[old]};
-        record.segments.push({...old,id:'new-early',text:'周五上线待确认',startMs:200000,endMs:201000},{...old,id:'new-late',text:'取消周五上线，改为周一上线',startMs:400000,endMs:401000});record.transcriptRevision++;
+        record.segments.push({...old,id:'new-early',text:'周五上线待确认'+'x'.repeat(1800),startMs:200000,endMs:201000},{...old,id:'new-late',text:'取消周五上线，改为周一上线'+'x'.repeat(1800),startMs:400000,endMs:401000});record.transcriptRevision++;
         const job=requestMinutes(record,{scope:'live'});job.status='running';job.fence=job.id;claim=structuredClone(job);
       });
-      const result=await runMinutesPipeline(f.repo,f.record.id,claim,config,async job=>{
+      const result=await runMinutesPipeline(f.repo,f.record.id,claim,{...config,RECORD_MINUTES_INPUT_BYTES:4096},async job=>{
         const targetId=claim.liveContext.items.find(item=>item.kind==='decision').id;
         if(job.summaries){
           const evidence=[{segmentId:'new-late',revision:1}];
@@ -40,7 +40,7 @@ test('final synthesis retains the latest validated withdrawal and honors a root 
 });
 test('context-only references cannot outrank a newer withdrawal in final synthesis',async()=>{
   const f=await fixture(1);let claim;
-  const a={id:'a',revision:1,sourceId:'mic',startMs:600000,endMs:601000,text:'仍按周五计划推进。'},context={id:'context',revision:1,sourceId:'other',startMs:850000,endMs:1000000,text:'旧上下文中的较长讨论。',contextOnly:true},b={id:'b',revision:1,sourceId:'mic',startMs:950000,endMs:951000,text:'最新决定撤回周五计划。'};
+  const a={id:'a',revision:1,sourceId:'mic',startMs:600000,endMs:601000,text:'仍按周五计划推进。'+'x'.repeat(1800)},context={id:'context',revision:1,sourceId:'other',startMs:850000,endMs:1000000,text:'旧上下文中的较长讨论。',contextOnly:true},b={id:'b',revision:1,sourceId:'mic',startMs:950000,endMs:951000,text:'最新决定撤回周五计划。'+'x'.repeat(1800)};
   const ref=source=>({segmentId:source.id,revision:source.revision});
   try{
     await f.repo.change(f.record.id,record=>{
@@ -48,7 +48,7 @@ test('context-only references cannot outrank a newer withdrawal in final synthes
       record.liveMinutes={title:'原周五计划',template:'meeting',notesRevision:record.notesRevision,transcriptRevision:0,sections:[{heading:'原安排',items:[{text:'原周五计划',evidence:[ref(context)]}]}],actions:[],evidenceSnapshot:[context]};
       const job=requestMinutes(record,{scope:'live'});job.status='running';job.fence=job.id;job.liveContext={items:[{id:'target',text:'原周五计划',evidence:[ref(a)]}]};claim=structuredClone(job);
     });
-    const result=await runMinutesPipeline(f.repo,f.record.id,claim,config,async job=>{
+    const result=await runMinutesPipeline(f.repo,f.record.id,claim,{...config,RECORD_MINUTES_INPUT_BYTES:4096},async job=>{
       if(job.summaries)return {title:'最终',sections:[{heading:'安排',items:[{text:b.text,evidence:[ref(b)]}]}],actions:[],decisions:[],corrections:[{targetId:'target',status:'withdrawn',text:b.text,evidence:[ref(b)]}]};
       const source=job.snapshot.find(segment=>!segment.contextOnly);
       return {title:'分段',sections:[{heading:'安排',items:[{text:source.text,evidence:[ref(source)]}]}],actions:[],decisions:[],corrections:source.id==='a'?[{targetId:'target',status:'corrected',text:a.text,evidence:[ref(a),ref(context)]}]:[]};
@@ -120,10 +120,10 @@ test('partial correction state follows event order even when later windows finis
     await f.repo.change(f.record.id,r=>{
       const old=r.segments[0],evidence=[{segmentId:old.id,revision:1}];
       r.capture='recording';r.liveMinutes={title:'上线',template:'meeting',notesRevision:0,transcriptRevision:1,sections:[{heading:'安排',items:[{id:'plan',text:'周五上线',evidence}]}],decisions:[{id:'plan',text:'周五上线',evidence}],actions:[],evidenceSnapshot:[old]};
-      r.segments.push({...old,id:'new-early',text:'周五上线待确认',startMs:200000,endMs:201000},{...old,id:'new-late',text:'取消周五上线',startMs:400000,endMs:401000});r.transcriptRevision++;
+      r.segments.push({...old,id:'new-early',text:'周五上线待确认'+'x'.repeat(1800),startMs:200000,endMs:201000},{...old,id:'new-late',text:'取消周五上线'+'x'.repeat(1800),startMs:400000,endMs:401000});r.transcriptRevision++;
       const job=requestMinutes(r,{scope:'live'});job.status='running';job.fence=job.id;claim=structuredClone(job);
     });
-    run=runMinutesPipeline(f.repo,f.record.id,claim,config,async job=>{
+    run=runMinutesPipeline(f.repo,f.record.id,claim,{...config,RECORD_MINUTES_INPUT_BYTES:4096},async job=>{
       let correction;
       if(job.stage==='synthesis')correction=job.summaries.flatMap(summary=>summary.corrections || []).at(-1);
       else{
@@ -145,14 +145,14 @@ test('partial correction state follows event order even when later windows finis
     assert.equal(partial.correctionHistory.at(-1).status,'withdrawn');assert.equal(partial.decisions.length,0);
   }finally{release();await run?.catch(()=>{});await f.close();}
 });
-test('text windows batch five minutes while audio windows keep their two-minute cap',()=>{
+test('bounded text stays together while audio windows keep their two-minute cap',()=>{
  const snapshot=Array.from({length:20},(_,i)=>({id:`timed-${i}`,sourceId:'mic',revision:1,text:'短句',startMs:i*30000,endMs:i*30000+1000}));
  const job={snapshot,scope:'live',notes:'',modelVersion:'default'};
  const manifest=buildMinutesManifest(job,config),audio=buildMinutesManifest(job,{...config,MINUTES_MODE:'doubao-audio'});
- assert.deepEqual(manifest.windows.map(w=>w.snapshot.filter(s=>!s.contextOnly).map(s=>s.id)),[snapshot.slice(0,10).map(s=>s.id),snapshot.slice(10).map(s=>s.id)]);
+ assert.deepEqual(manifest.windows.map(w=>w.snapshot.filter(s=>!s.contextOnly).map(s=>s.id)),[snapshot.map(s=>s.id)]);
  assert.equal(audio.windows.length,5);
  assert.equal(manifest.windows.flatMap(w=>w.snapshot.filter(segment=>!segment.contextOnly)).length,snapshot.length);
- assert.ok(manifest.windows[0].snapshot.some(segment=>segment.id==='timed-10'&&segment.contextOnly));
+ assert.ok(manifest.windows[0].snapshot.every(segment=>!segment.contextOnly));
 });
 
 test('switching templates treats the full transcript as new rather than context-only evidence',()=>{
@@ -721,6 +721,43 @@ test('changing reasoning strength invalidates cached windows on identical-transc
  }finally{await f.close();}
 });
 
+test('live increment within budget crosses a time boundary in one model call',async()=>{
+ const f=await fixture(2);try{
+  let claim;await f.repo.change(f.record.id,r=>{
+   r.capture='recording';
+   Object.assign(r.segments[0],{startMs:299000,endMs:300000,text:'FACT:先提议周五上线。'});
+   Object.assign(r.segments[1],{startMs:301000,endMs:302000,text:'FACT:纠正：周五仅评审，上线日期未定，不是已确认上线。'});
+   const job=requestMinutes(r,{scope:'live',modelVersion:'fixture-model'});job.status='running';job.fence='bounded-live';job.lease=Date.now()+300000;claim=structuredClone(job);
+  });
+  const inputs=[];const result=await runMinutesPipeline(f.repo,f.record.id,claim,config,async job=>{inputs.push(job);return summarize(job);});
+  assert.equal(inputs.length,1,'a bounded increment needs one global reasoning pass');
+  assert.equal(inputs[0].snapshot.filter(s=>!s.contextOnly).length,2,'the same model sees the proposal and correction');
+  assert.equal(result.coverage.calls,1);validateMinutes(result,claim.snapshot);
+ }finally{await f.close();}
+});
+
+test('long text meetings fill bounded windows instead of paying per five-minute bucket',async()=>{
+ const f=await fixture(54);try{
+  await f.repo.change(f.record.id,r=>{for(const [index,s] of r.segments.entries())Object.assign(s,{startMs:index*60000,endMs:(index+1)*60000,text:'讨论条件和限制。'.repeat(35)+` FACT:事项${index}`});});
+  const claim=await f.claim(),manifest=buildMinutesManifest(claim,config);
+  assert.ok(manifest.windows.length>1);
+  assert.ok(manifest.windows.length<=4,'54 minutes of sparse text should not force eleven model calls');
+  assert.equal(new Set(manifest.windows.flatMap(w=>w.snapshot.filter(s=>!s.contextOnly).map(s=>s.id))).size,54);
+  assert.ok(manifest.windows.every(w=>Buffer.byteLength(JSON.stringify({transcript:w.snapshot,notes:claim.notes,context:claim.liveContext}))<=manifest.budget));
+ }finally{await f.close();}
+});
+
+test('empty model sections normalize to an empty container without inventing facts',async()=>{
+ const {normalizeMinutesOutput}=await import('../services/records/src/minutes-prompts.mjs');
+ const result={title:'本轮无新增明确事项',sections:[],topics:[],actions:[],decisions:[],highlights:[]};
+ normalizeMinutesOutput(result);
+ assert.equal(result.sections.length,1);assert.deepEqual(result.sections.flatMap(s=>s.items),[]);
+ validateMinutes(result,[]);
+ const invalid={...result,sections:[{heading:'错误引用',items:[{text:'声称已上线',evidence:[{segmentId:'missing',revision:1}]}]}]};
+ assert.throws(()=>validateMinutes(normalizeMinutesOutput(invalid),[]),{code:'unknown_evidence'});
+ for(const malformed of [{title:'缺失章节'},{title:'错误章节',sections:null},{title:'错误类型',sections:'not-an-array'}])assert.throws(()=>validateMinutes(normalizeMinutesOutput(malformed),[]));
+});
+
 test('live windows retain semantic consolidation and final evidence',async()=>{
  const f=await fixture(18);try{
   let claim;await f.repo.change(f.record.id,r=>{r.capture='recording';r.segments.at(-1).text+=' FACT:最后日期待确认';const job=requestMinutes(r,{scope:'live',modelVersion:'fixture-model'});job.status='running';job.fence='live-efficiency';job.lease=Date.now()+300000;claim=structuredClone(job);});
@@ -743,13 +780,13 @@ test('oversized input windows keep non-BMP names intact when splitting a frozen 
 
 
 test('final synthesis accepts real neighboring-window evidence while live neighbors stay context-only', async () => {
-  const f=await fixture(2);
+  const f=await fixture(4),bounded={...config,RECORD_MINUTES_INPUT_BYTES:4096};
   try {
-    await f.repo.change(f.record.id,r=>{r.segments.forEach((s,i)=>Object.assign(s,{text:i?'GPU 缓存为24MB。':'CPU 频率为4GHz。',startMs:i*301000,endMs:i*301000+1000}));});
+    await f.repo.change(f.record.id,r=>{r.segments.forEach((s,i)=>{const startMs=i<2?i*1000:901000+(i-2)*1000;Object.assign(s,{text:(i%2?'GPU 缓存为24MB。':'CPU 频率为4GHz。')+'x'.repeat(900),startMs,endMs:startMs+1000});});});
     const claim=await f.claim();
-    const liveManifest=buildMinutesManifest({...claim,scope:'live'},config);
+    const liveManifest=buildMinutesManifest({...claim,scope:'live'},bounded);
     assert.ok(liveManifest.windows.every(w=>w.snapshot.some(s=>s.contextOnly===true)));
-    const result=await runMinutesPipeline(f.repo,f.record.id,claim,config,async job=>{
+    const result=await runMinutesPipeline(f.repo,f.record.id,claim,bounded,async job=>{
       const primary=job.snapshot[0],neighbor=job.snapshot.at(-1),ref=s=>({segmentId:s.id,revision:s.revision});
       return {title:'芯片规格',topics:[{id:'spec',title:'芯片规格',summary:'CPU 与缓存规格',evidence:[ref(neighbor)]}],sections:[{heading:'芯片规格',items:[{topicId:'spec',text:primary.text,evidence:[ref(primary)]}]}],actions:[]};
     });

@@ -27,7 +27,7 @@ const refs = result => {
   visit(result);return [...found.values()];
 };
 export function buildMinutesManifest(job,config={},budget=inputBudget(config)){
-  const windowMs=audioMinutesEnabled(config)?120000:300000;
+ const windowMs=audioMinutesEnabled(config)?120000:900000;
   const policy=hash({version:MINUTES_PROMPT_VERSION,engine:'pi-text-v1',minutesMode:config.MINUTES_MODE,realtimeModel:config.OPENAI_REALTIME_MODEL,realtimeUrl:config.OPENAI_REALTIME_URL,windowMs,budget,structuredOutputs:config.LLM_STRUCTURED_OUTPUTS,reasoningEffort:config.LLM_REASONING_EFFORT||'auto',context:job.liveContext,model:job.modelVersion==='default'?config.LLM_MODEL:job.modelVersion,base:config.LLM_API_URL,protocol:config.LLM_PROTOCOL,template:job.template,scope:job.scope,mode:job.mode,notes:job.notes,notesRevision:job.notesRevision,generation:job.generation});
   const windows=[];let current=[];
   const flush=()=>{if(current.length){windows.push({key:hash({policy,snapshot:current}),snapshot:current});current=[];}};
@@ -56,7 +56,7 @@ export function buildMinutesManifest(job,config={},budget=inputBudget(config)){
   snapshot.forEach((segment,index)=>{
     const timed=Number.isFinite(segment.startMs)&&Number.isFinite(segment.endMs)&&segment.endMs>segment.startMs;
     const next=timed?Math.floor(segment.startMs/windowMs):undefined;
-    if(current.length && !(single&&job.scope==='final'&&!audioMinutesEnabled(config)) && (timed ? next!==bucket || (audioMinutesEnabled(config) && current[0].sourceId !== segment.sourceId) : !single && (index+snapshotOffset)%24===0))flush();
+  if(current.length && !(single&&!audioMinutesEnabled(config)) && (timed ? next!==bucket || (audioMinutesEnabled(config) && current[0].sourceId !== segment.sourceId) : !single && (index+snapshotOffset)%24===0))flush();
     bucket=next;add(segment);
   });flush();
   if(job.scope==='live'&&snapshot.some(segment=>segment.contextOnly!==true)){
