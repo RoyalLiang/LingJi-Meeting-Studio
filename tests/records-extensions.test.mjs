@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRepository } from '../services/records/src/repository.mjs';
 import { createExtensions, skillMetadata, skillSource } from '../services/records/src/integrations/extensions.mjs';
-import { publicAddress, proxyAddress, remoteUrl } from '../services/records/src/integrations/remote-http.mjs';
+import { publicAddress, proxyAddress, privateNetworkAddress, remoteUrl } from '../services/records/src/integrations/remote-http.mjs';
+import { DomainError } from '../packages/records/src/record.mjs';
 const sha='a'.repeat(40),content='---\nname: meeting-risk\ndescription: >\n  Identify risks with exact meeting evidence.\n---\nRead selected meetings; return cited decisions and actions.\n[Guide](references/guide.md)';
 function remote(){
   const calls=[];
@@ -71,6 +72,42 @@ test('GitLab collection directories offer individual Skill choices before instal
   }finally{await repo.close();await rm(root,{recursive:true,force:true});}
 });
 
+test('desktop GitLab installation permits intranet DNS only for the selected GitLab source',async()=>{
+  for(const localAccount of [true,false]){
+    const root=await mkdtemp(join(tmpdir(),'lingji-intranet-skill-')),repo=await createRepository({root,databaseUrl:''});
+    const request=async(value,options)=>{
+      assert.equal(options.allowPrivateNetwork,localAccount);
+      const url=new URL(value);
+      assert.equal(url.origin,'https://git.example.test');
+      if(url.pathname.includes('/commits/'))return {status:200,headers:{},text:JSON.stringify({id:sha})};
+      const path=decodeURIComponent(url.pathname.split('/files/')[1]),body=path==='SKILL.md'?content:'Use exact evidence.';
+      return {status:200,headers:{},text:JSON.stringify({file_path:path,encoding:'base64',size:Buffer.byteLength(body),content:Buffer.from(body).toString('base64')})};
+    };
+    try{
+      const extensions=await createExtensions(repo,{request,localAccount});
+      const input={provider:'gitlab',source:'https://git.example.test/org/repo',token:'synthetic-intranet-token'};
+      const preview=await extensions.skillPreview(input,'owner');
+      const installed=await extensions.installSkill('owner',{...input,expectedVersion:preview.version,confirmed:true});
+      assert.equal(installed.name,'meeting-risk');assert.equal(installed.enabled,false);
+    }finally{await repo.close();await rm(root,{recursive:true,force:true});}
+  }
+});
+
+test('GitLab transport failures retain safe network error codes for actionable feedback',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'lingji-skill-network-')),repo=await createRepository({root,databaseUrl:''});
+  try{
+    for(const code of ['remote_address_rejected','remote_redirect_rejected','remote_unavailable','remote_response_too_large']){
+      const extensions=await createExtensions(repo,{request:async()=>{throw new DomainError(code,502);}});
+      await assert.rejects(extensions.skillPreview({provider:'gitlab',source:'https://git.example.test/org/repo'},'owner'),{code});
+    }
+  }finally{await repo.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('desktop intranet access covers RFC1918 only and still blocks loopback and metadata',()=>{
+  for(const ip of ['10.4.0.66','172.16.0.1','172.31.255.255','192.168.1.1'])assert.equal(privateNetworkAddress(ip),true,ip);
+  for(const ip of ['127.0.0.1','169.254.169.254','100.64.0.1','172.15.0.1','172.32.0.1','192.0.0.1','8.8.8.8','::1','fc00::1','::ffff:10.4.0.66'])assert.equal(privateNetworkAddress(ip),false,ip);
+});
+
 test('GitHub skills pin commits, include bounded direct references and require enablement',async()=>{
   const root=await mkdtemp(join(tmpdir(),'lingji-extensions-')),repo=await createRepository({root,databaseUrl:''}),fixture=remote(),extensions=await createExtensions(repo,{request:fixture.request});
   try{
@@ -84,7 +121,7 @@ test('GitHub skills pin commits, include bounded direct references and require e
   }finally{await repo.close();await rm(root,{recursive:true,force:true});}
 });
 test('HTTP MCP initializes sessions, limits tools to explicit read grants and redacts credentials',async()=>{
-  const root=await mkdtemp(join(tmpdir(),'lingji-mcp-')),repo=await createRepository({root,databaseUrl:''}),fixture=remote(),extensions=await createExtensions(repo,{request:fixture.request});
+  const root=await mkdtemp(join(tmpdir(),'lingji-mcp-')),repo=await createRepository({root,databaseUrl:''}),fixture=remote(),extensions=await createExtensions(repo,{request:fixture.request,localAccount:true});
   try{
     const installed=await extensions.installPlugin('owner',{name:'Reference Search',url:'https://mcp.example.test/mcp',token:'private-fixture-token',confirmed:true});
     assert.equal(installed.enabled,false);assert.doesNotMatch(JSON.stringify(installed),/private-fixture-token/);assert.doesNotMatch(JSON.stringify(await repo.list('extension')),/private-fixture-token/);
@@ -95,6 +132,7 @@ test('HTTP MCP initializes sessions, limits tools to explicit read grants and re
     const result=await extensions.call('owner',scope,{pluginId:installed.id,toolName:'search',arguments:{query:'selected terms'}});assert.match(result,/Remote reference result/);
     await assert.rejects(extensions.call('owner',scope,{pluginId:installed.id,toolName:'write',arguments:{}}),{code:'mcp_scope_required'});
     assert.ok(fixture.calls.some(call=>call.options.method==='DELETE'&&call.options.headers['Mcp-Session-Id']==='fixture-session'));
+    assert.ok(fixture.calls.every(call=>call.options.allowPrivateNetwork!==true&&call.options.allowProxyFakeIp===true));
     await extensions.check('owner',installed.id);await assert.rejects(extensions.validate('owner',scope),{code:'extension_version_changed'});
   }finally{await repo.close();await rm(root,{recursive:true,force:true});}
 });

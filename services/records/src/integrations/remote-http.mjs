@@ -10,6 +10,11 @@ export function publicAddress(value) {
   return false;
 }
 export const proxyAddress=value=>isIP(value)===4&&/^198\.(?:18|19)\./.test(value);
+export function privateNetworkAddress(value) {
+  if(isIP(value)!==4)return false;
+  const [a,b]=value.split('.').map(Number);
+  return a===10||a===172&&b>=16&&b<=31||a===192&&b===168;
+}
 export function remoteUrl(value) {
   let url;try{url=new URL(value);}catch{throw new DomainError('invalid_remote_url',400);}
   requireThat(typeof value==='string'&&value.length<=2048&&url.protocol==='https:'&&!url.username&&!url.password&&!url.hash&&(!url.port||url.port==='443')&&!isIP(url.hostname)&&!url.hostname.endsWith('.local')&&url.hostname.includes('.'),'invalid_remote_url',400);
@@ -17,10 +22,10 @@ export function remoteUrl(value) {
 }
 
 // Pin the checked DNS address to the TLS request; redirects and DNS rebinding cannot reach local services.
-export async function remoteRequest(value,{method='GET',headers={},body,signal,maxBytes=2*1024*1024,rpcId,allowProxyFakeIp=false}={}) {
+export async function remoteRequest(value,{method='GET',headers={},body,signal,maxBytes=2*1024*1024,rpcId,allowProxyFakeIp=false,allowPrivateNetwork=false}={}) {
   const url=remoteUrl(value);let addresses;
   try{addresses=await lookup(url.hostname,{all:true,verbatim:true});}catch{throw new DomainError('remote_unavailable',502);}
-  requireThat(addresses.length>0&&addresses.every(item=>publicAddress(item.address)||allowProxyFakeIp&&proxyAddress(item.address)),'remote_address_rejected',400);
+  requireThat(addresses.length>0&&addresses.every(item=>publicAddress(item.address)||allowProxyFakeIp&&proxyAddress(item.address)||allowPrivateNetwork&&privateNetworkAddress(item.address)),'remote_address_rejected',400);
   const target=addresses[0];
   return new Promise((resolve,reject)=>{
     const request=https.request(url,{method,headers:{'User-Agent':'Lingji-Meeting-Studio',...headers},signal:AbortSignal.any([AbortSignal.timeout(20000),...(signal?[signal]:[])]),lookup:(_hostname,options,callback)=>{

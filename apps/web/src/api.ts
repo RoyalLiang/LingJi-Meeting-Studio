@@ -11,7 +11,7 @@ const messages: Record<string, string> = {
   invalid_skill_source:'请检查仓库平台、HTTPS 地址、目录和版本；目录不能包含上级路径。',
   skill_directory_required:'请选择包含 SKILL.md 的具体 Skill 目录。',
   invalid_remote_skill:'Skill 格式或大小不支持：需要 name/description 元数据，正文与直接 Markdown 引用合计最多 40000 字符。',
-  skill_access_denied:'无法访问仓库，请检查仓库地址、分支和令牌的 Contents 读取权限。',invalid_skill_token:'访问令牌格式无效，请重新填写。',skill_download_failed:'无法读取 GitHub Skill，请检查仓库、目录、版本、令牌权限及网络。',
+  skill_access_denied:'无法访问仓库，请检查地址、分支，以及令牌是否具有该仓库的 API 读取权限。',invalid_skill_token:'访问令牌格式无效，请重新填写。',skill_download_failed:'无法读取仓库 Skill，请检查仓库、目录、版本、令牌权限及网络。',
   extension_confirmation_required:'请先核对来源、版本和权限，再确认安装。',
   extension_version_changed:'扩展版本或权限已变更，请重新选择并确认任务。',
   extension_disabled:'所选扩展已停用，请启用或重新选择。', extension_not_found:'扩展已移除或不属于当前账户。',
