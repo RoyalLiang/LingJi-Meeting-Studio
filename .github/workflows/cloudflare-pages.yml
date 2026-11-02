@@ -22,7 +22,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
-          node-version: '24.21.0'
+          node-version: '26.12.1'
           cache: npm
       - name: Verify source belongs to main
         run: |
@@ -32,7 +32,7 @@ jobs:
       - name: Verify sharing and website
         if: github.event_name != 'schedule'
         run: |
-          node --test tests/records-published-site.test.mjs
+          node --test tests/records-published-site.test.mjs tests/records-encrypted-sharing.test.mjs
           npm run lint
           npm run build:site
       - name: Publish or clean expired metadata
@@ -43,9 +43,14 @@ jobs:
           SITE_GITHUB_CLIENT_SECRET: ${{ secrets.SITE_GITHUB_CLIENT_SECRET }}
           PUBLISHER_GITHUB_ID: ${{ vars.PUBLISHER_GITHUB_ID }}
         run: node scripts/deploy-public-site.mjs ${{ github.event_name == 'schedule' && '--cleanup' || '' }}
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+      - name: Verify anonymous encrypted sharing on official domain
         if: github.event_name != 'schedule'
+        run: node scripts/verify-encrypted-site.mjs
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: always() && github.event_name != 'schedule'
         with:
           name: cloudflare-publication-receipt
-          path: cloudflare-publication-receipt.json
+          path: |
+            cloudflare-publication-receipt.json
+            encrypted-site-verification.json
           if-no-files-found: error

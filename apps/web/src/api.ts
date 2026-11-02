@@ -103,6 +103,13 @@ const messages: Record<string, string> = {
   invalid_meeting_automation: '请至少选择浏览器或飞书作为联动目标。',
   invalid_provider_url: '地址格式不正确。语音使用 wss://，纪要使用 https://。',
   invalid_learning_service_config: '请同时填写 SSH 主机和远端绝对目录，或将两项都留空。',
+  encrypted_share_unavailable: '加密分享服务暂不可用，请保留当前页面并重试。',
+  encrypted_share_missing: '分享服务尚未确认撤销，请保留本机数据并稍后重试。',
+  encrypted_share_limit: '分享服务已达临时限额，请稍后重试。',
+  encrypted_share_conflict: '分享请求已变化，请重新选择范围并确认。',
+  encrypted_share_too_large: '所选内容超过加密分享的 700 KiB 限额，请缩小范围或导出 HTML。',
+  share_confirmation_required: '请先确认分享内容范围。',
+  share_content_changed: '会议内容已变化，请核对完整预览后重新确认。旧的未完成分享可先撤销，再创建新链接。',
   invalid_asr_hotwords: '术语总长最多 100 字，每词最多 50 字，请精简后重试。',
 
   login_required: '请先登录。', invalid_credentials: '邮箱或密码不正确。', password_length_10_128: '密码需要 10 至 128 个字符。',

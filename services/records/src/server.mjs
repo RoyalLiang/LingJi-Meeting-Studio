@@ -1,4 +1,5 @@
 import { createMeetingAgentRuntime } from './meeting-agent.mjs';
+import { createEncryptedSharing } from './encrypted-sharing.mjs';
 import { truncateText } from '../../../packages/records/src/text.mjs';
 import { isIP } from 'node:net';
 import { manualMinutesContent, minutesActionText } from '../../../packages/records/src/minutes-quality.mjs';
@@ -71,6 +72,7 @@ export function exportRecord(record, format = 'markdown') {
 }
 export async function createRecordServer(options = {}) {
   const repo = options.repo || await createRepository(options); const auth = await createAuth(repo, { seedDevelopment: !options.repo, ...options });
+  const encryptedSharing = createEncryptedSharing(repo, options.encryptedSharing);
   const feishu = await createFeishu(repo, options.feishuOptions);
   const extensions = await createExtensions(repo, {localAccount:Boolean(options.localAccount),...options.extensionOptions});
   let agentError = 'agent_storage_unavailable';
@@ -407,6 +409,7 @@ export async function createRecordServer(options = {}) {
         send(res, 200, ack); return;
       }
       if (action === 'shares' && req.method === 'GET') { send(res, 200, { shares: record.shares.map(({ hash, ...s }) => s) }); return; }
+      if (action === 'encrypted-shares' && req.method === 'GET') { send(res, 200, { shares: await encryptedSharing.list(user.id, id) }); return; }
       const editBytes=action==='minutes'&&req.method==='PATCH'&&record.minutes?Math.max(Buffer.byteLength(JSON.stringify(record.minutes)),Buffer.byteLength(JSON.stringify(manualMinutesContent(record.minutes)))):0;
       const bodyLimit=editBytes?Math.min(16*1024*1024,Math.max(600000,editBytes*3+65536)):600000;
       const body = await readBody(req, bodyLimit);
@@ -480,6 +483,8 @@ export async function createRecordServer(options = {}) {
         r.deleted = true; delete r.waveforms; r.generation++; r.title = '已删除'; r.segments = []; r.notes = ''; r.minutes = null; r.liveMinutes = null; r.minutesHistory = []; r.insights = null; r.jobs = []; r.shares = []; r.cleanup = 'pending';
         emit(r, 'record.deleted'); return { deleted: true, cleanup: r.cleanup };
       });
+      else if (action === 'encrypted-shares' && req.method === 'POST') result = await encryptedSharing.create(user.id, record, body);
+      else if (action.startsWith('encrypted-shares/') && req.method === 'DELETE') result = await encryptedSharing.revoke(user.id, id, decodeURIComponent(action.slice(17)));
       else if (action === 'shares' && req.method === 'POST') {
         const token = randomBytes(32).toString('base64url');
         const scope = body.scope || 'minutes'; requireThat(scope === 'minutes', 'invalid_share_scope', 400);

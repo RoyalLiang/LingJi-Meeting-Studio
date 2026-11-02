@@ -3,7 +3,7 @@ import { createShareDocument } from '../../web/src/share-content.ts';
 
 const byId=id=>document.getElementById(id), file=byId('content-file'), consent=byId('consent'), submit=byId('publish-button');
 let content=null, ready=false, busy=false, generation=0;
-const messages={publisher_login_required:'请使用 RoyalLiang 的 GitHub 账户登录后重试。',publishing_not_configured:'发布身份尚未配置，请联系维护者。',sharing_not_configured:'发布存储尚未配置。',publish_request_conflict:'重试内容发生变化，请重新选择文件。',active_share_limit:'有效链接已达上限，请先撤销不用的链接。',share_too_large:'在线分享内容超过 1 MiB，请缩小范围或使用离线 HTML。',invalid_share_content:'文件内容或引用版本不完整，请从桌面版重新导出。'};
+const messages={publisher_login_required:'请使用原发布账户登录后管理旧分享。',publishing_not_configured:'发布身份尚未配置，请联系维护者。',sharing_not_configured:'发布存储尚未配置。',publish_request_conflict:'重试内容发生变化，请重新选择文件。',active_share_limit:'有效链接已达上限，请先撤销不用的链接。',share_too_large:'在线分享内容超过 1 MiB，请缩小范围或使用离线 HTML。',invalid_share_content:'文件内容或引用版本不完整，请从桌面版重新导出。'};
 const enable=()=>{submit.disabled=!ready || !content || !consent.checked || busy;};
 async function request(path,options={}){
   const response=await fetch(path,{...options,headers:{'Content-Type':'application/json',...options.headers},cache:'no-store',signal:AbortSignal.timeout(30000)});
@@ -54,4 +54,4 @@ byId('publish-form').addEventListener('submit',async event=>{
   finally{busy=false;file.disabled=false;consent.disabled=false;enable();}
 });
 byId('copy-link').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(byId('share-url').value);byId('message').textContent='链接已复制。';}catch{byId('share-url').focus();byId('share-url').select();byId('message').textContent='请选中链接手动复制。';}});
-try{const status=await request('/api/site-status');byId('service-status').textContent=status.publishing?'发布服务已配置。请使用受邀身份继续。':'官网已就绪，发布服务仍待维护者完成配置。';if(status.publishing)await history();else byId('history-status').textContent='发布服务就绪后可在这里管理链接。';}catch{byId('service-status').textContent='暂无法连接发布服务，请稍后刷新。';}
+try{const status=await request('/api/site-status');byId('service-status').textContent=status.publishing?'旧分享管理服务已配置，请使用原发布账户继续。':'官网已就绪，发布服务仍待维护者完成配置。';if(status.publishing)await history();else byId('history-status').textContent='发布服务就绪后可在这里管理链接。';}catch{byId('service-status').textContent='暂无法连接发布服务，请稍后刷新。';}

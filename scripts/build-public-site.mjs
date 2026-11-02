@@ -5,8 +5,8 @@ import assert from 'node:assert/strict';
 const root=resolve(import.meta.dirname,'..'), output=resolve(root,'apps/site/dist');
 await rm(output,{recursive:true,force:true});await mkdir(output,{recursive:true});
 await cp(resolve(root,'apps/site/public'),output,{recursive:true});
-await Promise.all(['worker','publish'].map(async name=>{
-  const result=await build({entryPoints:[resolve(root,`apps/site/src/${name==='worker'?'entry':name}.mjs`)],outfile:resolve(output,name==='worker'?'_worker.js':'publish.js'),bundle:true,format:'esm',platform:'browser',target:'es2022',minify:true,legalComments:'eof',metafile:true});
+await Promise.all(['worker','publish','encrypted-reader','manage'].map(async name=>{
+  const result=await build({entryPoints:[resolve(root,`apps/site/src/${name==='worker'?'entry':name}.mjs`)],outfile:resolve(output,name==='worker'?'_worker.js':`${name}.js`),bundle:true,format:'esm',platform:'browser',target:'es2022',minify:true,legalComments:'eof',metafile:true});
   if(name==='worker')assert.deepEqual(Object.values(result.metafile.outputs)[0].exports,['default'],'Pages entry must export only its handler.');
 }));
 await writeFile(resolve(output,'_routes.json'),JSON.stringify({version:1,include:['/*'],exclude:[]}));

@@ -2,6 +2,7 @@ import { normalizePublishedContent, ShareContentError, MAX_PUBLISHED_BYTES } fro
 import { createShareDocument } from '../../web/src/share-content.ts';
 import { publisher, authentication, publishingConfigured } from './identity.mjs';
 import { exampleContent } from './example.mjs';
+import { encryptedShareRoute } from './encrypted-shares.mjs';
 
 const encoder=new TextEncoder(), invalidReads=new Map();
 const tokenPattern=/^[A-Za-z0-9_-]{43}$/;
@@ -47,6 +48,7 @@ export function createSiteWorker({identify=publisher}={}){
   return {async fetch(request,env){
     try{
       const url=new URL(request.url),path=url.pathname;
+      const encrypted = await encryptedShareRoute(request, env); if (encrypted) return encrypted;
       if(path.startsWith('/auth/'))return await authentication(request,env);
       if(path==='/example' && request.method==='GET')return document(exampleContent);
       if(path==='/api/site-status' && request.method==='GET')return json({publishing:Boolean(publishingConfigured(env) && env.DB)});
@@ -102,7 +104,7 @@ export function createSiteWorker({identify=publisher}={}){
       const response=await env.ASSETS.fetch(request),headers=new Headers(response.headers);
       headers.set('X-Content-Type-Options','nosniff');headers.set('Referrer-Policy','no-referrer');headers.set('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'");
       headers.set('Permissions-Policy','microphone=(), camera=()');
-      if(path==='/publish' || path==='/publish.html'){headers.set('Cache-Control','no-store');headers.set('X-Robots-Tag','noindex, nofollow');}
+      if(['/publish','/publish.html','/manage','/manage.html'].includes(path)){headers.set('Cache-Control','no-store');headers.set('X-Robots-Tag','noindex, nofollow');}
       return new Response(response.body,{status:response.status,headers});
     }catch(error){
       const status=error instanceof ShareContentError?error.status:503;

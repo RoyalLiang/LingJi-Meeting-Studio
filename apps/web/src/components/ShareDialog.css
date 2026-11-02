@@ -6,6 +6,10 @@
 .meeting-share-draft { justify-self: start; margin-top: -10px; color: var(--ink-3); background: var(--panel-2); padding: 4px 9px; border-radius: 6px; font-size: 12px; }
 .meeting-share-empty { margin: 0; color: var(--ink-3); font-size: 13px; }
 .meeting-share-actions { flex-wrap: wrap; margin: 0; }
+.meeting-share-consent { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; line-height: 1.7; margin-block: 14px; }
+.meeting-share-consent input { width: 17px; height: 17px; margin-top: 3px; flex-shrink: 0; accent-color: var(--accent); }
+.meeting-share-full-preview summary { cursor: pointer; color: var(--accent); font-size: 13px; padding-block: 8px; }
+.meeting-share-full-preview iframe { width: 100%; height: 360px; border: 0; margin-top: 12px; background: var(--panel); }
 .meeting-share-retry { color: var(--accent); font-size: 13px; text-underline-offset: 3px; }
 .meeting-share-link { display: flex; gap: 10px; align-items: flex-end; min-width: 0; }
 .meeting-share-link label { flex: 1; min-width: 0; }

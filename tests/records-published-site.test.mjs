@@ -32,7 +32,7 @@ test('OAuth validates the live immutable identity and creates only an eight-hour
     if(calls===1){assert.equal(url,'https://github.com/login/oauth/access_token');assert.equal(options.body.get('code'),'test-code');assert.equal(options.body.get('code_verifier').length,43);return Response.json({access_token:'test-token',scope:'',token_type:'bearer'});}
     assert.equal(url,'https://api.github.com/user');assert.equal(options.headers.Authorization,'Bearer test-token');return Response.json({id:123,login:'RoyalLiang'});
   });
-  assert.equal(response.status,303);assert.equal(response.headers.get('location'),'https://rookiecode.com/publish');assert.equal(calls,2);
+  assert.equal(response.status,303);assert.equal(response.headers.get('location'),'https://rookiecode.com/manage');assert.equal(calls,2);
   const session=response.headers.getSetCookie().find(v=>v.startsWith('__Host-lingji_publisher='));assert.match(session,/Max-Age=28800/);assert.doesNotMatch(session,/test-token/);
   assert.deepEqual(await publisher(oauthRequest('/api/published',session.split(';')[0]),oauthEnv),{id:'github:123'});
   await assert.rejects(publisher(new Request(origin+'/api/published',{headers:{cookie:session.split(';')[0]}}),oauthEnv),{code:'publisher_login_required'});

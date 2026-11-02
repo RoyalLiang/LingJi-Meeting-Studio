@@ -39,7 +39,7 @@ export async function authentication(request,env,fetcher=fetch){
   }
   if(url.pathname==='/auth/logout' && request.method==='POST'){
     if(request.headers.get('origin')!==env.PUBLIC_SITE_ORIGIN)throw new ShareContentError('origin_rejected',403);
-    return redirect('/publish',env,[cookie(sessionCookie,'',0),cookie(flowCookie,'',0)]);
+    return redirect('/manage',env,[cookie(sessionCookie,'',0),cookie(flowCookie,'',0)]);
   }
   if(url.pathname==='/auth/callback' && request.method==='GET'){
     try{
@@ -51,7 +51,7 @@ export async function authentication(request,env,fetcher=fetch){
       const userResponse=await fetcher('https://api.github.com/user',{headers:{Authorization:`Bearer ${token.access_token}`,Accept:'application/vnd.github+json','User-Agent':'LingJi-Beta'},signal:AbortSignal.timeout(15000)});
       const user=await userResponse.json();
       if(!userResponse.ok || !Number.isSafeInteger(user.id) || String(user.id)!==env.PUBLISHER_GITHUB_ID || user.login!=='RoyalLiang')throw new Error('publisher_not_allowed');
-      return redirect('/publish',env,[cookie(flowCookie,'',0),cookie(sessionCookie,await sign({sub:String(user.id)},env,'publisher',28800),28800)]);
+      return redirect('/manage',env,[cookie(flowCookie,'',0),cookie(sessionCookie,await sign({sub:String(user.id)},env,'publisher',28800),28800)]);
     }catch{
       return new Response('登录未完成或当前 GitHub 账户无发布权限。请返回发布页重新登录。',{status:401,headers:{'Content-Type':'text/plain; charset=utf-8','Set-Cookie':cookie(flowCookie,'',0),'Cache-Control':'no-store','Referrer-Policy':'no-referrer'}});
     }
