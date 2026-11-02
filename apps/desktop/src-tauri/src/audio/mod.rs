@@ -390,7 +390,10 @@ impl Captures {
                 let mut pipeline = if let Some(mut previous) = retained.take() {
                     send_packets(&packets, previous.reconfigure(config.sample_rate(), config.channels() as usize)?)?;
                     previous
-                } else { Pipeline::new(config.sample_rate(), config.channels() as usize)? };
+                } else {
+                    let pipe=Pipeline::new(config.sample_rate(), config.channels() as usize)?;
+                    if worker_kind=="microphone" { pipe.with_microphone_filter() } else { pipe }
+                };
                 if let Some(ready) = announced.take() { ready.send(Ok(label)).map_err(|_| "采集启动已取消")?; }
                 while !worker_stop.load(Ordering::Acquire) && !rebuild.load(Ordering::Acquire) {
                     match frames.recv_timeout(Duration::from_millis(200)) {

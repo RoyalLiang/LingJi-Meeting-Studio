@@ -34,10 +34,27 @@ export function normalizeConfig(env = process.env) {
     ASR_PROVIDER: env.ASR_PROVIDER === 'doubao-ast' ? 'doubao' : env.ASR_PROVIDER || (env.DEEPGRAM_API_KEY ? 'deepgram' : env.ASR_API_URL ? 'openai-compatible' : env.DOUBAO_API_KEY ? 'doubao' : localAsrConfigured(env) ? 'sensevoice-local' : 'doubao'),
   };
 }
-export async function readConfig(root, env = process.env) {
-  let saved = {};
-  try { saved = JSON.parse(await readFile(join(root, 'providers.json'), 'utf8')); } catch (e) { if (e.code !== 'ENOENT') throw e; }
-  return normalizeConfig({ ...env, ...saved });
+// Share only the parsed disk settings between worker lanes. Environment and permissions stay live.
+const savedConfigs = new Map();
+const CONFIG_CACHE_MS = 250;
+async function savedConfig(root, cache) {
+  if (!cache) {
+    try { return JSON.parse(await readFile(join(root, 'providers.json'), 'utf8')); }
+    catch (error) { if (error.code === 'ENOENT') return {}; throw error; }
+  }
+  const cached = savedConfigs.get(root);
+  if (cached && Date.now() < cached.until) return cached.value;
+  const entry = { until: Date.now() + CONFIG_CACHE_MS, value: undefined };
+  entry.value = readFile(join(root, 'providers.json'), 'utf8').then(JSON.parse).catch(error => {
+    if (error.code === 'ENOENT') return {};
+    if (savedConfigs.get(root) === entry) savedConfigs.delete(root);
+    throw error;
+  });
+  savedConfigs.set(root, entry);
+  return entry.value;
+}
+export async function readConfig(root, env = process.env, {cache = false} = {}) {
+  return normalizeConfig({ ...env, ...await savedConfig(root, cache) });
 }
 export function publicConfig(config) {
   return { ...Object.fromEntries(fields.map(key => [key, secretFields.has(key) ? configured(config[key]) : config[key] || ''])), LOCAL_ASR_AVAILABLE: localAsrConfigured(config), LOCAL_ASR_MODEL }; 
@@ -53,6 +70,7 @@ export async function saveConfig(root, input, env = process.env) {
   try { return await operation; } finally { if (saves.get(root) === operation) saves.delete(root); }
 }
 async function persistConfig(root, input, env) {
+  savedConfigs.delete(root);
   const current = await readConfig(root, env), values = {};
   requireThat(input && typeof input === 'object' && !Array.isArray(input), 'invalid_provider_config', 400);
   for (const key of fields) {
@@ -94,6 +112,7 @@ async function persistConfig(root, input, env) {
   const temporary = join(root, `providers-${randomUUID()}.tmp`);
   await writeFile(temporary, JSON.stringify({ ...previous, ...values }, null, 2), { mode: 0o600, flag: 'wx' });
   await rename(temporary, join(root, 'providers.json'));
+  savedConfigs.delete(root);
   return publicConfig(next);
 }
 

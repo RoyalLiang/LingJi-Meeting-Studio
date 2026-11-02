@@ -816,3 +816,19 @@ test('sparse long final text meeting fits one call without losing any source',as
   assert.equal(calls,1);assert.equal(result.coverage.segments,50);
  }finally{await f.close();}
 });
+
+
+test('long live and final meetings tolerate empty factual windows and synthesis without empty_minutes',async()=>{
+ const {normalizeMinutesOutput}=await import('../services/records/src/minutes-prompts.mjs');
+ for(const scope of ['live','final']){
+  const f=await fixture(18);let claim;
+  try{
+   await f.repo.change(f.record.id,r=>{r.capture=scope==='live'?'recording':'completed';r.segments.forEach((segment,index)=>{segment.startMs=index*900000;segment.endMs=segment.startMs+300000;});const job=requestMinutes(r,{scope,modelVersion:'empty-long-fixture'});job.status='running';job.fence=job.id;job.lease=Date.now()+300000;claim=structuredClone(job);});
+   const result=await runMinutesPipeline(f.repo,f.record.id,claim,config,async()=>normalizeMinutesOutput({title:'本轮暂无可确认事实',sections:[],actions:[],decisions:[],topics:[]}));
+   assert.ok(result.coverage.windows>1);assert.equal(result.coverage.completed,result.coverage.windows);
+   assert.deepEqual(result.sections.flatMap(section=>section.items),[]);assert.deepEqual(result.actions,[]);
+   validateMinutes(result,claim.snapshot);
+   if(scope==='live'){const saved=await f.repo.get(f.record.id);assert.ok(saved.jobs.at(-1).partialMinutes.sections.length>0);}
+  }finally{await f.close();}
+ }
+});

@@ -18,11 +18,11 @@ export function useMeetingAutomation(config:MeetingAutomationConfig|undefined,re
       unlisten=await listen<Signal>('meeting-activity',async({payload})=>{
         if(!active || payload.token!==token)return;
         const current=latest.current;
-        const decision=engine.sample({sampledAt:payload.sampledAt,receivedAt:Date.now(),active:payload.input || payload.output,error:payload.error},current.report);
+        const decision=engine.sample({sampledAt:payload.sampledAt,receivedAt:Date.now(),active:payload.input || payload.output,startActive:payload.input && payload.output,error:payload.error},current.report);
         if(payload.error && !warned){warned=true;current.commands.error('音频调用监听暂不可用，自动联动已暂停。');}
         if(!payload.error)warned=false;
         const pending=engine.pending;
-        setNotice(pending ? {key:`${token}:${pending.kind}:${pending.since}`,message:pending.kind==='start' ? `检测到音频调用，${Math.max(0,Math.ceil((pending.due-payload.sampledAt)/1000))} 秒后开始记录。` : `目标音频调用已结束，${Math.max(0,Math.ceil((pending.due-payload.sampledAt)/1000))} 秒后结束本场记录。`,cancel:()=>{engine.cancel();setNotice(undefined);}} : undefined);
+        setNotice(pending ? {key:`${token}:${pending.kind}:${pending.since}`,message:pending.kind==='start' ? `检测到双向音频调用，${Math.max(0,Math.ceil((pending.due-payload.sampledAt)/1000))} 秒后开始记录。` : `目标音频调用已结束，${Math.max(0,Math.ceil((pending.due-payload.sampledAt)/1000))} 秒后结束本场记录。`,cancel:()=>{engine.cancel();setNotice(undefined);}} : undefined);
         if(!decision)return;
         setNotice(undefined);
         try{

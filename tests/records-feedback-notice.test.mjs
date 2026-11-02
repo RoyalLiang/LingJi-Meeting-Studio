@@ -78,3 +78,10 @@ test('errors retain alert priority while routine confirmations use the shared ti
   const success=notice()({message:'配置已保存',warning:false});
   assert.equal(success.props.persistent,false);assert.equal(success.props.inline,false);
 });
+
+
+test('transient form failures explicitly override persistent incident defaults',()=>{
+ const failure=notice()({message:'仓库来源校验失败',error:true,persistent:false});
+ assert.equal(failure.props.error,true);assert.equal(failure.props.persistent,false);
+ const incident=notice()({message:'音频采集已暂停',error:true});assert.equal(incident.props.persistent,true);
+});

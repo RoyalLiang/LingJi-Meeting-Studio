@@ -4,7 +4,7 @@ import { remoteRequest, remoteUrl } from './remote-http.mjs';
 import { createSecretStore } from './secret-store.mjs';
 
 const text=(value,max)=>typeof value==='string'&&value.length<=max;
-const publicItem=item=>Object.fromEntries(['id','type','name','description','source','path','ref','version','enabled','tools','approvedTools','url','hasToken','updatedAt','warnings','networkMode'].filter(key=>item[key]!==undefined).map(key=>[key,item[key]]));
+const publicItem=item=>Object.fromEntries(['id','type','name','description','source','provider','path','ref','version','enabled','tools','approvedTools','url','hasToken','updatedAt','warnings','networkMode'].filter(key=>item[key]!==undefined).map(key=>[key,item[key]]));
 async function githubRequest(value,{headers}={}){
   const url=new URL(value);
   requireThat(url.origin==='https://api.github.com'&&url.pathname.startsWith('/repos/'),'invalid_skill_source',400);
@@ -16,12 +16,13 @@ async function githubRequest(value,{headers}={}){
   return {status:response.status,headers:Object.fromEntries(response.headers),text:Buffer.concat(parts).toString('utf8')};
 }
 export function skillSource(input){
-  let url;try{url=new URL(input.source);}catch{throw new DomainError('invalid_skill_source',400);}
+  let url;try{url=remoteUrl(input.source);}catch{throw new DomainError('invalid_skill_source',400);}
   const parts=url.pathname.replace(/\.git\/?$/,'').replace(/\/$/,'').split('/').filter(Boolean);
-  requireThat(url.protocol==='https:'&&url.hostname==='github.com'&&!url.port&&!url.username&&!url.password&&!url.search&&!url.hash&&parts.length===2&&parts.every(part=>/^[A-Za-z0-9_.-]{1,100}$/.test(part)&&!['.','..'].includes(part)),'invalid_skill_source',400);
+  const provider=input.provider||'github';
+  requireThat(['github','gitlab'].includes(provider)&&!url.search&&parts.every(part=>/^[A-Za-z0-9_.-]{1,100}$/.test(part)&&!['.','..'].includes(part))&&(provider==='github'?url.hostname==='github.com'&&parts.length===2:!['github.com','api.github.com'].includes(url.hostname)&&parts.length>=2&&parts.length<=12),'invalid_skill_source',400);
   const path=input.path||'',ref=input.ref||'main';
   requireThat(text(path,300)&&(!path||path.split('/').every(part=>/^[A-Za-z0-9_.-]+$/.test(part)&&!['.','..'].includes(part)))&&text(ref,150)&&/^[A-Za-z0-9_./-]+$/.test(ref),'invalid_skill_source',400);
-  return {source:`https://github.com/${parts.join('/')}`,repo:parts.join('/'),path,ref};
+  return {source:`${url.origin}/${parts.join('/')}`,repo:parts.join('/'),path,ref,...(provider==='gitlab'?{provider}:{} )};
 }
 export function skillMetadata(content){
   requireThat(text(content,40000)&&content.startsWith('---\n'),'invalid_remote_skill',400);
@@ -47,7 +48,14 @@ export async function createExtensions(repo,{request=remoteRequest,requestGithub
   const mcpRequest=(url,options)=>request(url,{...options,allowProxyFakeIp:localAccount===true});
   const get=async(owner,id)=>{const value=await repo.get(id);requireThat(value?.kind==='extension'&&value.owner===owner&&!value.deleted,'extension_not_found',404);return value;};
   const list=async owner=>(await repo.list('extension')).filter(item=>item.owner===owner&&!item.deleted).map(publicItem);
-  async function github(url,shaOnly=false,token){let result;try{result=await requestGithub(url,{headers:{Accept:shaOnly?'application/vnd.github.sha':'application/vnd.github+json',...(token?{Authorization:`Bearer ${token}`}:{})}});}catch{throw new DomainError('skill_download_failed',502);}requireThat(![401,403,404].includes(result.status),'skill_access_denied',400);requireThat(result.status===200,'skill_download_failed',502);if(shaOnly&&/^[a-f0-9]{40}$/.test(result.text.trim()))return {sha:result.text.trim()};let value;try{value=JSON.parse(result.text);}catch{throw new DomainError('skill_download_failed',502);}return value;}
+  async function github(url,shaOnly=false,token,optional=false){let result;try{result=await requestGithub(url,{headers:{Accept:shaOnly?'application/vnd.github.sha':'application/vnd.github+json',...(token?{Authorization:`Bearer ${token}`}:{})}});}catch{throw new DomainError('skill_download_failed',502);}if(optional&&result.status===404)return null;requireThat(![401,403,404].includes(result.status),'skill_access_denied',400);requireThat(result.status===200,'skill_download_failed',502);if(shaOnly&&/^[a-f0-9]{40}$/.test(result.text.trim()))return {sha:result.text.trim()};let value;try{value=JSON.parse(result.text);}catch{throw new DomainError('skill_download_failed',502);}return value;}
+  async function gitlab(source,path,token,optional=false){
+    const url=`${new URL(source.source).origin}/api/v4/projects/${encodeURIComponent(source.repo)}/repository/${path}`;
+    let result;try{result=await request(url,{allowProxyFakeIp:localAccount===true,headers:{Accept:'application/json',...(token?{'PRIVATE-TOKEN':token}:{})}});}catch{throw new DomainError('skill_download_failed',502);}
+    if(optional&&result.status===404)return null;
+    requireThat(![401,403,404].includes(result.status),'skill_access_denied',400);requireThat(result.status===200,'skill_download_failed',502);
+    try{return JSON.parse(result.text);}catch{throw new DomainError('skill_download_failed',502);}
+  }
   async function skillToken(input,owner,source){
     requireThat(text(input.token||'',16000)&&!/[^\x21-\x7e]/.test(input.token||''),'invalid_skill_token',400);
     if(input.extensionId){
@@ -58,14 +66,25 @@ export async function createExtensions(repo,{request=remoteRequest,requestGithub
     return input.token||'';
   }
   async function skillPreview(input,owner){
-    const source=skillSource(input),token=await skillToken(input,owner,source),commit=await github(`https://api.github.com/repos/${source.repo}/commits/${encodeURIComponent(source.ref)}`,true,token);
+    const source=skillSource(input),token=await skillToken(input,owner,source);
+    const commit=source.provider==='gitlab'?{sha:(await gitlab(source,`commits/${encodeURIComponent(source.ref)}`,token)).id}:await github(`https://api.github.com/repos/${source.repo}/commits/${encodeURIComponent(source.ref)}`,true,token);
     requireThat(/^[a-f0-9]{40}$/.test(commit.sha),'skill_download_failed',502);
-    const file=async path=>{
-      const value=await github(`https://api.github.com/repos/${source.repo}/contents/${path.split('/').map(encodeURIComponent).join('/')}?ref=${commit.sha}`,false,token);
-      requireThat(value.type==='file'&&value.encoding==='base64'&&value.size<=120000&&typeof value.content==='string'&&/^[A-Za-z0-9+/=\r\n]+$/.test(value.content),'invalid_remote_skill',400);
+    const file=async(path,optional=false)=>{
+      const value=source.provider==='gitlab'?await gitlab(source,`files/${encodeURIComponent(path)}?ref=${commit.sha}`,token,optional):await github(`https://api.github.com/repos/${source.repo}/contents/${path.split('/').map(encodeURIComponent).join('/')}?ref=${commit.sha}`,false,token,optional);
+      if(value===null&&optional)return null;
+      requireThat((source.provider==='gitlab'?value.file_path===path:value.type==='file')&&value.encoding==='base64'&&value.size<=120000&&typeof value.content==='string'&&/^[A-Za-z0-9+/=\r\n]+$/.test(value.content),'invalid_remote_skill',400);
       const content=Buffer.from(value.content,'base64').toString('utf8').replace(/\r\n/g,'\n');requireThat(Buffer.byteLength(content)<=120000,'invalid_remote_skill',400);return content;
     };
-    const content=await file(`${source.path?source.path+'/':''}SKILL.md`),metadata=skillMetadata(content),references=[];
+    const content=await file(`${source.path?source.path+'/':''}SKILL.md`,true);
+    if(content===null){
+      const entries=source.provider==='gitlab'?await gitlab(source,`tree?path=${encodeURIComponent(source.path)}&ref=${commit.sha}&per_page=100`,token):await github(`https://api.github.com/repos/${source.repo}/contents/${source.path.split('/').map(encodeURIComponent).join('/')}?ref=${commit.sha}`,false,token);
+      requireThat(Array.isArray(entries)&&entries.length<=100,'invalid_remote_skill',400);
+      const prefix=source.path?source.path+'/':'';
+      const choices=entries.filter(entry=>['tree','dir'].includes(entry.type)&&typeof entry.name==='string'&&/^[A-Za-z0-9_.-]+$/.test(entry.name)&&!['.','..'].includes(entry.name)&&entry.path===prefix+entry.name).map(({name,path})=>({name,path}));
+      requireThat(choices.length>0,'skill_directory_required',400);
+      return {...source,version:commit.sha,choices};
+    }
+    const metadata=skillMetadata(content),references=[];
     const paths=[...new Set([...content.matchAll(/\[[^\]]+\]\(([^\s)]+\.md)(?:#[^)]*)?\)/g)].map(match=>match[1].replace(/^\.\//,'')))].filter(path=>!/^https?:/.test(path));
     requireThat(paths.length<=10,'invalid_remote_skill',400);
     for(const path of paths){
@@ -80,6 +99,7 @@ export async function createExtensions(repo,{request=remoteRequest,requestGithub
   async function installSkill(owner,input){
     requireThat(input.confirmed===true&&/^[a-f0-9]{40}$/.test(input.expectedVersion),'extension_confirmation_required',400);
     const requested=skillSource(input),token=await skillToken(input,owner,requested),value=await skillPreview({...requested,token,ref:input.expectedVersion},owner);
+    requireThat(typeof value.content==='string'&&!value.choices,'skill_directory_required',400);
     requireThat(value.version===input.expectedVersion,'extension_version_changed',409);
     const id=`extension:${digest(`${owner}:skill:${value.source}:${value.path}`)}`,current=await repo.get(id);
     const next={id,kind:'extension',type:'skill',owner,...value,ref:requested.ref,enabled:false,hasToken:Boolean(token),...(token?{credentials:secrets.seal(id,{token})}:{}),updatedAt:Date.now()};

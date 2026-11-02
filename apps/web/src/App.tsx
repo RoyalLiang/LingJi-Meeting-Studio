@@ -228,8 +228,8 @@ function Workspace() {
   }, [authReady, id, online, retryVersion]);
   const refreshLocalAudio = useCallback(async () => {
     const recordId=activeId.current;
-    const [count,manifests]=await Promise.all([pendingCount(recordId),localManifests(recordId)]);
-    if(activeId.current===recordId) {setPending(count);setLocalAudio({recordId,manifests});}
+    const [count,manifests]=await Promise.all([pendingCount(recordId),recordId ? localManifests(recordId) : Promise.resolve([])]);
+    if(activeId.current===recordId) {setPending(count);setLocalAudio(current => current.recordId===recordId && JSON.stringify(current.manifests)===JSON.stringify(manifests) ? current : {recordId,manifests});}
   },[]);
   const upload = useCallback(async () => {
     if(uploadingNow.current) return;
@@ -243,9 +243,11 @@ function Workspace() {
   useEffect(()=>{if(authReady&&id)void refreshLocalAudio().catch(e=>setError(messageOf(e)));},[id,authReady,refreshLocalAudio]);
   useEffect(() => {
     if (!authReady) return; const network = () => { setOnline(navigator.onLine); if (navigator.onLine || localBackend) void upload(); };
-    addEventListener('online', network); addEventListener('offline', network); const timer = setInterval(upload, 2500); void upload();
-    return () => { removeEventListener('online', network); removeEventListener('offline', network); clearInterval(timer); };
-  }, [authReady, upload, localBackend]);
+    addEventListener('online', network); addEventListener('offline', network); const timer = setInterval(upload, recording || pending ? 2500 : 15000);
+    const visible = () => { if (document.visibilityState === 'visible') void upload(); };
+    document.addEventListener('visibilitychange', visible); void upload();
+    return () => { removeEventListener('online', network); removeEventListener('offline', network); document.removeEventListener('visibilitychange', visible); clearInterval(timer); };
+  }, [authReady, upload, localBackend, recording, Boolean(pending)]);
   useEffect(() => { const warn = (event: BeforeUnloadEvent) => { if (recording || pending) { event.preventDefault(); event.returnValue = ''; } }; addEventListener('beforeunload', warn); return () => removeEventListener('beforeunload', warn); }, [recording, pending]);
   useEffect(() => { const escape = (e: KeyboardEvent) => { if (e.key === 'Escape' && !document.querySelector('dialog[open]')) setTranslationOpen(false); }; addEventListener('keydown', escape); return () => removeEventListener('keydown', escape); }, []);
   useEffect(() => { if(record) traceCommit(record.id,record.cursor); }, [record?.cursor]);

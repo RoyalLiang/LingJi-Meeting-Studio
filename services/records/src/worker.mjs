@@ -24,8 +24,8 @@ import { processRealtimeAudio, generateRealtimeMinutes, closeRealtime, reconcile
 import { processTranslation } from './translation-worker.mjs';
 import { minutesModelVersion } from './config.mjs';
 
-export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
-  const baseConfig = await readConfig(repo.root), config=baseConfig;
+export async function runCycle(repo, providers = {}, { lane = 'all', cacheConfig = false } = {}) {
+  const baseConfig = await readConfig(repo.root, process.env, {cache:cacheConfig}), config=baseConfig;
   const learningEnabled=config.RECORD_LEARNING_ENABLED==='true' || (config.RECORD_LEARNING_ENABLED!=='false' && process.env.NODE_ENV==='desktop');
   if(lane==='learning'){if(learningEnabled && (!providerStatus(config).fixture || providers.learningPreparation))await runLearningCycle(repo,providers);return;}
   if (lane === 'workspace') { await processWorkspaceAnalysis(repo, config, providers); return; }

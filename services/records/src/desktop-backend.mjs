@@ -113,7 +113,7 @@ export async function startDesktopBackend({ root, port = 0, workers = true } = {
   let stopping = false;
   const loops = workers ? ['audio', 'realtime', 'minutes', 'translation', 'translation-live', 'translation-preview', 'intents', 'workspace', 'learning'].map(lane => (async () => {
     while (!stopping) {
-      try { await runCycle(repo, {}, { lane }); } catch (error) { console.error('[client-worker]', error.code || error.name); }
+      try { await runCycle(repo, {}, { lane, cacheConfig:true }); } catch (error) { console.error('[client-worker]', error.code || error.name); }
       if (!stopping) await new Promise(resolve => setTimeout(resolve, lane === 'audio' ? 100 : 250));
     }
   })()) : [];

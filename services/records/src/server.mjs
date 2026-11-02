@@ -346,7 +346,7 @@ export async function createRecordServer(options = {}) {
         let cursor = String(req.headers['last-event-id'] || url.searchParams.get('after') || record.cursor);
         requireThat(/^\d{1,20}$/.test(cursor), 'invalid_cursor', 400);
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
-        let busy = false, closed = false, draining = false, timer;
+        let busy = false, closed = false, draining = false, timer, lastHeartbeat = Date.now();
         const drained = () => { draining = false; };
         const cleanup = () => { closed = true; clearInterval(timer); res.off('drain', drained); streams.delete(res); };
         const ended = () => closed || res.destroyed || res.writableEnded;
@@ -378,7 +378,7 @@ export async function createRecordServer(options = {}) {
               if (!write(`id: ${event.cursor}\ndata: ${JSON.stringify(event)}\n\n`)) return;
               cursor = event.cursor; if (draining) break;
             }
-            if (!draining) write(': heartbeat\n\n');
+            if (!draining && Date.now() - lastHeartbeat >= 15000) { lastHeartbeat = Date.now(); write(': heartbeat\n\n'); }
           } catch {
             if (!ended()) { write('event: revoked\ndata: {}\n\n'); finish(); }
           } finally { busy = false; }

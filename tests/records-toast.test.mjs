@@ -178,8 +178,10 @@ test('rerender keeps elapsed time and uses the latest callback; unmount clears t
   h.tick(10000); assert.equal(latest, 1);
 });
 
-test('errors and explicitly persistent messages stay until dismissed', () => {
-  for (const flags of [{ error: true }, { persistent: true }]) {
+test('errors automatically dismiss while explicitly persistent messages stay', () => {
+  const temporary=harness();let dismissed=0;temporary.render({message:'安装未成功，请检查地址。',error:true,dismiss:()=>dismissed++});
+  temporary.tick(4999);assert.equal(dismissed,0);temporary.tick(1);assert.equal(dismissed,1);temporary.unmount();
+  for (const flags of [{ error: true,persistent:true }, { persistent: true }]) {
     const h = harness(); let dismissed = 0;
     const tree = h.render({ message: '需要处理的信息', ...flags, dismiss: () => dismissed++ });
     h.tick(60000); assert.equal(dismissed, 0); assert.equal(h.timers, 0);

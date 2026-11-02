@@ -66,3 +66,14 @@ test('background automation defaults off, requires a target, and persists indepe
   await saveConfig(root,{AUTO_MEETING_ENABLED:'false'},{});assert.equal(meetingAutomationConfig(await readConfig(root,{})).enabled,false);
  }finally{await rm(root,{recursive:true,force:true});}
 });
+
+
+test('microphone-only or playback-only activity cannot auto-start; one direction can keep an owned meeting alive',()=>{
+  const engine=createMeetingAutomation();
+  for(let at=0;at<=20000;at+=2000)assert.equal(engine.sample({sampledAt:at,active:true,startActive:false},idle),null);
+  for(let at=22000;at<=26000;at+=2000){const result=engine.sample({sampledAt:at,active:true,startActive:true},idle);if(at===26000)assert.equal(result?.kind,'start');}
+  engine.started(recording.id);
+  for(let at=28000;at<=48000;at+=2000)assert.equal(engine.sample({sampledAt:at,active:true,startActive:false},recording),null);
+  assert.equal(engine.pending,null);
+  assert.equal(tick(engine,50000,60000,false,recording)?.kind,'stop');
+});

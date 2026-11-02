@@ -4,11 +4,16 @@ import { minutesReadingLayout, uniqueMinutesItems } from '../../../../packages/r
 
 // Use native mind-map nodes so the exported outline remains editable in Feishu.
 export function feishuBoard(minutes) {
-  const nodes=[];
+  const nodes=[],levels=new Map(),colors=new Map();
+  const palette=['#256D55','#3B6EA8','#865A9D','#A96930','#397C87'];let branch=0;
   const add=(text,parent)=>{
     if(!String(text||'').trim())return parent;
-    const id=`n1:${nodes.length+1}`;
-    nodes.push({id,type:'mind_map',text:{text:String(text)},...(parent?{mind_map_node:{parent_id:parent,type:'mind_map_round_rect'}}:{x:0,y:0,mind_map_root:{layout:'tree_right',type:'mind_map_round_rect',line_style:'curve'}})});
+    const id=`n1:${nodes.length+1}`,level=parent?(levels.get(parent)||0)+1:0;
+    const color=level===1?palette[branch++%palette.length]:(colors.get(parent)||palette[0]);
+    levels.set(id,level);colors.set(id,color);
+    nodes.push({id,type:'mind_map',text:{text:String(text),font_size:level===0?24:level===1?18:14,font_weight:level<2?'bold':'regular',text_color:level===0?'#FFFFFF':level===1?color:'#33473F'},
+      ...(level<2?{style:{fill_color:level===0?color:'#F3F7F5',fill_opacity:100,border_style:'none',border_radius:{top_left:12,top_right:12,bottom_right:12,bottom_left:12}}}:{}),
+      ...(parent?{mind_map_node:{parent_id:parent,type:level===1?'mind_map_round_rect':'mind_map_text'}}:{x:0,y:0,mind_map_root:{layout:'tree_right',type:'mind_map_round_rect',line_style:'curve'}})});
     return id;
   };
   const root=add(minutes.title||'会议纪要'),layout=minutesReadingLayout(minutes);

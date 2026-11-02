@@ -1,4 +1,4 @@
-export type MeetingActivity = {sampledAt:number;receivedAt?:number;active:boolean;error?:string};
+export type MeetingActivity = {sampledAt:number;receivedAt?:number;active:boolean;startActive?:boolean;error?:string};
 export type MeetingReport = {id:string;recording:boolean;paused:boolean;busy:boolean};
 type Pending = {kind:'start'|'stop';since:number;due:number;recordId:string};
 
@@ -21,7 +21,7 @@ export function createMeetingAutomation() {
       if(!owned && (report.recording || report.paused)){
         pending=null;if(signal.active)suppressed=true;return null;
       }
-      const kind=owned ? (!signal.active ? 'stop' : null) : (signal.active && !suppressed && !report.busy ? 'start' : null);
+      const kind=owned ? (!signal.active ? 'stop' : null) : ((signal.startActive ?? signal.active) && !suppressed && !report.busy ? 'start' : null);
       if(!kind){pending=null;return null;}
       if(pending?.kind!==kind)pending={kind,since:signal.sampledAt,due:signal.sampledAt+(kind==='start'?START_MS:STOP_MS),recordId:owned};
       if(signal.sampledAt<pending.due || report.busy)return null;

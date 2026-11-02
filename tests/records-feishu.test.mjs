@@ -279,3 +279,13 @@ test('disabled automation retains its saved board and destination choices',async
  await h.request('/integrations/feishu/automation','PUT',policy);await h.request('/integrations/feishu/automation','PUT',{enabled:false});
  const saved=(await h.request('/integrations/feishu/automation')).body;assert.equal(saved.configured,true);assert.equal(saved.enabled,false);assert.equal(saved.includeBoard,false);assert.equal(saved.destinationEmail,policy.destinationEmail);assert.equal(saved.includeNotes,true);
 });
+
+
+test('editable board uses quiet typography and separate root topic and detail styles',()=>{
+ const nodes=feishuBoard({title:'设计评审',sections:[{heading:'发布安排',items:[{text:'周五评审'}]}],actions:[]});
+ const [root,topic,detail]=nodes;
+ assert.equal(root.text.font_size,24);assert.equal(root.text.font_weight,'bold');assert.equal(root.style.fill_color,'#256D55');
+ assert.equal(topic.text.font_size,18);assert.equal(topic.mind_map_node.parent_id,root.id);
+ assert.equal(detail.text.font_size,14);assert.equal(detail.mind_map_node.parent_id,topic.id);assert.equal(detail.mind_map_node.type,'mind_map_text');
+ assert.equal(root.mind_map_root.line_style,'curve');
+});

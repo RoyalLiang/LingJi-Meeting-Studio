@@ -23,3 +23,6 @@
 
 .ma-extension-scope,.ma-confirm-plugins{overflow-wrap:anywhere}
 .ma-confirm-plugins p{margin:4px 0}
+.remote-skill-choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:8px;max-height:320px;overflow:auto;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--bg)}
+.remote-skill-choices h3{grid-column:1/-1;margin:0 0 4px;font-size:14px}
+.remote-skill-choices .button{text-align:left;justify-content:flex-start;overflow-wrap:anywhere;min-height:40px}

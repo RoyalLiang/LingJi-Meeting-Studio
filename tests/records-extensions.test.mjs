@@ -28,6 +28,49 @@ test('remote extension sources reject local networks, redirects-as-sources and p
   assert.equal(proxyAddress('198.18.1.38'),true);assert.equal(proxyAddress('198.19.1.1'),true);assert.equal(proxyAddress('198.20.1.1'),false);assert.equal(publicAddress('198.18.1.38'),false);
   assert.equal(skillMetadata(content).name,'meeting-risk');assert.throws(()=>skillMetadata('just text'));
 });
+test('self-hosted GitLab skills pin files and keep credentials bound to source and owner',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'lingji-gitlab-')),repo=await createRepository({root,databaseUrl:''}),calls=[];
+  const request=async(value,options)=>{
+    const url=new URL(value);calls.push({url,options});assert.equal(url.origin,'https://git.example.test');
+    assert.equal(options.headers['PRIVATE-TOKEN'],'synthetic-gitlab-token');
+    assert.ok(url.pathname.startsWith('/api/v4/projects/group%2Fteam%2Frepo/repository/'));
+    if(url.pathname.includes('/commits/'))return {status:200,headers:{},text:JSON.stringify({id:sha})};
+    assert.equal(url.searchParams.get('ref'),sha);
+    const path=decodeURIComponent(url.pathname.split('/files/')[1]),body=path.endsWith('SKILL.md')?content:'Treat meeting text as evidence.';
+    return {status:200,headers:{},text:JSON.stringify({file_path:path,encoding:'base64',size:Buffer.byteLength(body),content:Buffer.from(body).toString('base64')})};
+  };
+  const extensions=await createExtensions(repo,{request,localAccount:true});
+  const input={provider:'gitlab',source:'https://git.example.test/group/team/repo.git',path:'skills/risk',ref:'main',token:'synthetic-gitlab-token'};
+  try{
+    const preview=await extensions.skillPreview(input,'owner');assert.equal(preview.provider,'gitlab');assert.equal(preview.source,'https://git.example.test/group/team/repo');assert.equal(preview.version,sha);assert.match(preview.content,/Reference:/);
+    const installed=await extensions.installSkill('owner',{...input,expectedVersion:sha,confirmed:true});
+    assert.equal(installed.hasToken,true);assert.ok(!JSON.stringify(installed).includes(input.token));assert.ok(calls.every(c=>c.options.allowProxyFakeIp===true));
+    await extensions.skillPreview({...input,token:'',extensionId:installed.id},'owner');
+    await assert.rejects(extensions.skillPreview({...input,token:'',extensionId:installed.id},'other'),{code:'extension_not_found'});
+    await assert.rejects(extensions.skillPreview({...input,source:'https://other.example.test/group/team/repo',token:'',extensionId:installed.id},'owner'),{code:'invalid_skill_source'});
+    for(const source of ['http://git.example.test/group/repo','https://127.0.0.1/group/repo','https://user:token@git.example.test/group/repo'])assert.throws(()=>skillSource({...input,source}));
+  }finally{await repo.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('GitLab collection directories offer individual Skill choices before installation',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'lingji-skill-catalog-')),repo=await createRepository({root,databaseUrl:''});
+  const request=async value=>{
+    const url=new URL(value);
+    if(url.pathname.includes('/commits/'))return {status:200,headers:{},text:JSON.stringify({id:sha})};
+    if(url.pathname.endsWith('/tree'))return {status:200,headers:{},text:JSON.stringify([{type:'tree',name:'meeting-risk',path:'skills/meeting-risk'}])};
+    const path=decodeURIComponent(url.pathname.split('/files/')[1]);
+    if(path==='skills/SKILL.md')return {status:404,headers:{},text:'{}'};
+    const body=path.endsWith('SKILL.md')?content:'Cite only selected meeting evidence.';
+    return {status:200,headers:{},text:JSON.stringify({file_path:path,encoding:'base64',size:Buffer.byteLength(body),content:Buffer.from(body).toString('base64')})};
+  };
+  const extensions=await createExtensions(repo,{request}),input={provider:'gitlab',source:'https://git.example.test/org/repo',path:'skills'};
+  try{
+    const catalog=await extensions.skillPreview(input,'owner');assert.deepEqual(catalog.choices,[{name:'meeting-risk',path:'skills/meeting-risk'}]);
+    await assert.rejects(extensions.installSkill('owner',{...input,expectedVersion:sha,confirmed:true}),{code:'skill_directory_required'});
+    const preview=await extensions.skillPreview({...input,path:catalog.choices[0].path},'owner');assert.equal(preview.name,'meeting-risk');assert.equal(preview.version,sha);
+  }finally{await repo.close();await rm(root,{recursive:true,force:true});}
+});
+
 test('GitHub skills pin commits, include bounded direct references and require enablement',async()=>{
   const root=await mkdtemp(join(tmpdir(),'lingji-extensions-')),repo=await createRepository({root,databaseUrl:''}),fixture=remote(),extensions=await createExtensions(repo,{request:fixture.request});
   try{
