@@ -31,6 +31,8 @@ import { providerStatus, transcribe, completeJson, waveHeader } from './provider
 import { sharedMinutes } from '../../../packages/records/src/shared-content.mjs';
 import { exportMinutesMarkdown, attachmentHeader } from './markdown-export.mjs';
 import { createExtensions } from './integrations/extensions.mjs';
+import {createGitSync} from './git-sync.mjs';
+import {gitSyncRoutes} from './git-sync-routes.mjs';
 import { extensionRoutes } from './integrations/extension-routes.mjs';
 import { createFeishu } from './integrations/feishu.mjs';
 import { feishuRoutes } from './integrations/feishu-routes.mjs';
@@ -81,6 +83,7 @@ export async function createRecordServer(options = {}) {
     console.error('[meeting-agent]', agentError);
     return null;
   });
+  const gitSync=agent?await createGitSync({repo,agent,extensions,localAccount:Boolean(options.localAccount),...options.gitSyncOptions}).catch(()=>null):null;
   const learningEnabled=async()=>{const config=await readConfig(repo.root);return config.RECORD_LEARNING_ENABLED==='true'||(config.RECORD_LEARNING_ENABLED!=='false'&&Boolean(options.localAccount));};
   const learningService = learningServiceFor(repo, options.learningProbe);
   const requireLearning = async () => {
@@ -176,6 +179,7 @@ export async function createRecordServer(options = {}) {
       if (!['GET', 'HEAD'].includes(req.method)) auth.checkCsrf(req, user);
       if (await feishuRoutes({req,res,path,user,feishu,readBody,send})) return;
       if (await extensionRoutes({req,res,path,user,extensions,readBody,send})) return;
+    if (await gitSyncRoutes({req,res,path,user,gitSync,readBody,send})) return;
       if (path === '/api/auth/logout' && req.method === 'POST') {
         await repo.change(user.id, u => { u.authVersion++; }); send(res, 200, { ok: true }, { 'Set-Cookie': auth.clear() }); return;
       }
@@ -504,7 +508,7 @@ export async function createRecordServer(options = {}) {
   });
   server.requestTimeout = 30000; server.headersTimeout = 15000;
   return { repo, server, localSession: () => auth.localSession?.(), start: () => new Promise(resolve => server.listen(options.port ?? Number(process.env.RECORD_API_PORT || 3030), options.host || '127.0.0.1', () => resolve(server.address()))),
-    stop: async () => { for (const stream of streams) stream.end(); await new Promise(resolve => server.close(resolve)); await feishu.close(); await agent?.close(); await repo.close(); } };
+    stop: async () => { for (const stream of streams) stream.end(); await new Promise(resolve => server.close(resolve)); await feishu.close(); await gitSync?.close(); await agent?.close(); await repo.close(); } };
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const app = await createRecordServer(); console.log('[record-api]', await app.start());

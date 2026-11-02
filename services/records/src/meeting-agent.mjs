@@ -82,8 +82,15 @@ export async function createMeetingAgentRuntime({ repo, extensions, env = proces
   const enqueue = operation => { const result = operations.then(operation); operations = result.catch(() => {}); return result; };
   const selectedModel = injectedModels ? { models: injectedModels, model: injectedModel } : configuredModels(repo.root, env, timeoutMs);
   const registry = createRegistry();
-  function snapshot(record, includeNotes = false) {
-    return { ...(includeNotes ? {notes:record.notes||'',notesRevision:record.notesRevision||0} : {}), recordId: record.id, title: record.title, transcriptRevision: record.transcriptRevision, minutesRevision: record.minutesRevision, minutes: structuredClone(record.minutes), segments: record.segments.map(segment => ({ id: segment.id, revision: segment.revision, text: segment.text, speaker: segment.speaker || '', startMs: segment.startMs, endMs: segment.endMs })) };
+  function snapshot(record, includeNotes = false, minutesOnly = false) {
+    const minutes=structuredClone(record.minutes),refs=new Set();
+    if(minutesOnly){
+      const collect=value=>{if(!value||typeof value!=='object')return;for(const [key,child] of Object.entries(value)){if(key==='evidence'&&Array.isArray(child))for(const ref of child)refs.add(`${ref.segmentId}:${ref.revision}`);else if(key!=='evidenceSnapshot')collect(child);}};
+      collect(minutes);
+      if(minutes?.evidenceSnapshot)minutes.evidenceSnapshot=minutes.evidenceSnapshot.filter(s=>refs.has(`${s.id}:${s.revision}`));
+    }
+    const segments=minutesOnly?[...new Map([...record.segments,...(minutes?.evidenceSnapshot||[])].filter(s=>refs.has(`${s.id}:${s.revision}`)).map(s=>[`${s.id}:${s.revision}`,s])).values()]:record.segments;
+    return { ...(includeNotes ? {notes:record.notes||'',notesRevision:record.notesRevision||0} : {}), recordId: record.id, title: record.title, transcriptRevision: record.transcriptRevision, minutesRevision: record.minutesRevision, minutes, segments: segments.map(segment => ({ id: segment.id, revision: segment.revision, text: segment.text, speaker: segment.speaker || '', startMs: segment.startMs, endMs: segment.endMs })) };
   }
   async function authorized(input) {
     await extensions?.validate(input.ownerId,input.extensions);
@@ -107,7 +114,7 @@ export async function createMeetingAgentRuntime({ repo, extensions, env = proces
     });
   }
   async function currentSourceHashes(input, access) {
-    if(input.includeNotes)return Promise.all((await authorized(input)).map(record=>hash(snapshot(record,true))));
+    if(input.includeNotes||input.minutesOnly)return Promise.all((await authorized(input)).map(record=>hash(snapshot(record,input.includeNotes===true,input.minutesOnly===true))));
     const records = authorizedAccess(input, access);
     return Promise.all(records.map(async record => {
       const cached = sourceHashes.get(record.id);
@@ -280,26 +287,26 @@ export async function createMeetingAgentRuntime({ repo, extensions, env = proces
     const runtime = {
       async request(ownerId, input) {
         requireThat(input?.scopeConfirmed === true, 'agent_scope_required', 400);
-      requireThat((input.includeNotes===undefined||typeof input.includeNotes==='boolean')&&(input.skillId===undefined||typeof input.skillId==='string'&&input.skillId.length<=100),'invalid_agent_request',400);
+      requireThat((input.includeNotes===undefined||typeof input.includeNotes==='boolean')&&(input.minutesOnly===undefined||typeof input.minutesOnly==='boolean')&&(input.skillId===undefined||typeof input.skillId==='string'&&input.skillId.length<=100),'invalid_agent_request',400);
         requireThat(typeof ownerId === 'string' && ownerId && Array.isArray(input.recordIds) && input.recordIds.length >= 1 && input.recordIds.length <= 8 && input.recordIds.every(id => typeof id === 'string' && /^[a-f0-9-]{36}$/.test(id)) && new Set(input.recordIds).size === input.recordIds.length && typeof input.prompt === 'string' && input.prompt.trim().length >= 1 && input.prompt.length <= 2000 && typeof input.requestId === 'string' && input.requestId.length >= 1 && input.requestId.length <= 128, 'invalid_agent_request', 400);
-        const recordIds = [...input.recordIds].sort(), prompt = input.prompt.trim(), fingerprint = hash({ recordIds, prompt, ...(input.skillId&&input.skillId!=='meeting-review'||input.pluginIds?.length||input.includeNotes ? {skillId:input.skillId||'meeting-review',skillVersion:input.skillVersion||'1.0.0',pluginIds:[...(input.pluginIds||[])].sort(),pluginVersions:Object.fromEntries([...(input.pluginIds||[])].sort().map(id=>[id,input.pluginVersions?.[id]||''])),includeNotes:input.includeNotes===true} : {}) });
+        const recordIds = [...input.recordIds].sort(), prompt = input.prompt.trim(), fingerprint = hash({ recordIds, prompt, ...(input.skillId&&input.skillId!=='meeting-review'||input.pluginIds?.length||input.includeNotes||input.minutesOnly ? {skillId:input.skillId||'meeting-review',skillVersion:input.skillVersion||'1.0.0',pluginIds:[...(input.pluginIds||[])].sort(),pluginVersions:Object.fromEntries([...(input.pluginIds||[])].sort().map(id=>[id,input.pluginVersions?.[id]||''])),includeNotes:input.includeNotes===true,...(input.minutesOnly?{minutesOnly:true}:{})} : {}) });
         const existing = (await harness.snapshot(Index, context))?.requests.find(item => item.ownerId === ownerId && item.requestId === input.requestId);
         if (existing) { requireThat(existing.fingerprint === fingerprint, 'agent_request_conflict', 409); return publicTask(await indexed(ownerId, existing.taskId)); }
         if (!injectedModels) { const config = await readConfig(repo.root, env); requireThat(configured(config.LLM_API_KEY) && config.LLM_MODEL, 'minutes_not_configured', 503); }
         const extensionScope=await extensions?.snapshot(ownerId,input);
         const snapshots = [];
-        for (const id of recordIds) { const record = await repo.get(id); requireThat(record && record.kind === 'record' && !record.deleted && Date.parse(record.deleteAt) > Date.now(), 'agent_source_unavailable', 410); requireThat(record.owner === ownerId, 'agent_scope_denied', 403); snapshots.push(snapshot(record,input.includeNotes===true)); }
+        for (const id of recordIds) { const record = await repo.get(id); requireThat(record && record.kind === 'record' && !record.deleted && Date.parse(record.deleteAt) > Date.now(), 'agent_source_unavailable', 410); requireThat(record.owner === ownerId, 'agent_scope_denied', 403); snapshots.push(snapshot(record,input.includeNotes===true,input.minutesOnly===true)); }
         const sourceSize=JSON.stringify(snapshots.map(meetingSourceWire)).length;
         requireThat(sourceSize<=60000&&sourceSize+JSON.stringify({extensions:extensionScope||null,prompt}).length<=100000,'agent_input_too_large',413);
         const createdAt = new Date().toISOString(), jobKey = randomUUID(), sources = snapshots.map(({recordId,title,transcriptRevision,minutesRevision}) => ({recordId,title,transcriptRevision,minutesRevision}));
         const job = await openJob(jobKey, true);
-        await job.harness.commit(async tx => { const payload = await tx.doc(Payload); payload.data = { ownerId, requestId: input.requestId, prompt, includeNotes:input.includeNotes===true, extensions:extensionScope||null, sourceIds: recordIds, snapshots, sourceHashes: snapshots.map(hash), sources, createdAt }; }, context);
+        await job.harness.commit(async tx => { const payload = await tx.doc(Payload); payload.data = { ownerId, requestId: input.requestId, prompt, includeNotes:input.includeNotes===true,minutesOnly:input.minutesOnly===true, extensions:extensionScope||null, sourceIds: recordIds, snapshots, sourceHashes: snapshots.map(hash), sources, createdAt }; }, context);
         let id;
         try {
           id = await root.commit(async tx => {
             const index = await tx.doc(Index), previous = [];
             for (const item of index.requests) { const task = await tx.task(item.taskId); if (task && task.state.status !== 'terminal') previous.push(item.taskId); }
-            const id = await tx.createTask(Job, { ownerId, requestId: input.requestId, sourceIds: recordIds, jobKey, includeNotes:input.includeNotes===true, createdAt, previous }, { ownership: { kind: 'conversation' } });
+            const id = await tx.createTask(Job, { ownerId, requestId: input.requestId, sourceIds: recordIds, jobKey, includeNotes:input.includeNotes===true,minutesOnly:input.minutesOnly===true, createdAt, previous }, { ownership: { kind: 'conversation' } });
             index.requests.push({ ownerId, requestId: input.requestId, sourceIds: recordIds, fingerprint, taskId: id, jobKey }); return id;
           }, context);
         } catch (error) { await removeJob(jobKey); throw error; }

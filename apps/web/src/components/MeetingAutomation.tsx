@@ -1,0 +1,6 @@
+import {useEffect,useState} from 'react';
+import {GitBranch,CloudArrowUp} from '@phosphor-icons/react';
+import {FeishuAutomation} from './FeishuAutomation';
+import {GitAutomation} from './GitAutomation';
+import type {InstalledExtension} from './RemoteExtensions';
+export function MeetingAutomation({extensions}:{extensions:InstalledExtension[]}){const [target,setTarget]=useState(()=>{try{const open=sessionStorage.getItem('lingji:git-open-config')==='1';if(open)sessionStorage.removeItem('lingji:git-open-config');return open?'git':'feishu';}catch{return 'feishu';}});useEffect(()=>{const open=()=>{setTarget('git');try{sessionStorage.removeItem('lingji:git-open-config');}catch{/* Optional navigation hint. */}};window.addEventListener('lingji:git-configure',open);return()=>window.removeEventListener('lingji:git-configure',open);},[]);return <><div className="automation-targets" aria-label="自动化目标"><button aria-pressed={target==='feishu'} onClick={()=>setTarget('feishu')}><CloudArrowUp size={18}/>飞书云文档</button><button aria-pressed={target==='git'} onClick={()=>setTarget('git')}><GitBranch size={18}/>Git 项目同步</button></div>{target==='feishu'?<FeishuAutomation/>:<GitAutomation extensions={extensions}/>}</>;}

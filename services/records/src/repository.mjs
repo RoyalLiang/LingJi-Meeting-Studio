@@ -148,23 +148,26 @@ export async function createRepository(options = {}) {
   const workCursors = new Map(), legacyAnalysisInputs = new Map();
   const repository = {
     root, backend: pool ? 'postgres' : 'sqlite', audioBackend: objects ? 's3' : 'filesystem',
-    async listMetadata(kind, owner, fields, {recordId, status, limit=200}={}) {
+    async listMetadata(kind, owner, fields, {recordId, status, limit=200, before}={}) {
       requireThat(typeof kind==='string'&&typeof owner==='string'&&Array.isArray(fields)&&fields.length<=40&&fields.every(key=>/^[A-Za-z][A-Za-z0-9]*$/.test(key))&&Number.isSafeInteger(limit)&&limit>0&&limit<=1000,'invalid_metadata_query',500);
+      requireThat(!before||(Array.isArray(before)&&before.length===2&&before.every(v=>typeof v==='string'&&v.length<=200)),'invalid_metadata_query',500);
       const keys=[...new Set(['id','kind','owner',...fields])];
       if(pool){
         const values=[kind,owner],where=["data->>'kind'=$1","data->>'owner'=$2"];
         if(recordId){values.push(recordId);where.push(`data->>'recordId'=$${values.length}`);}
         if(status){values.push(status);where.push(`data->>'status'=$${values.length}`);}
+        if(before){values.push(before[0],before[1]);where.push(`(data->>'createdAt',id)<($${values.length-1},$${values.length})`);}
         values.push(limit);
         const json=keys.flatMap(key=>[`'${key}'`,`data->'${key}'`]).join(',');
-        return (await pool.query(`SELECT jsonb_build_object(${json}) AS data FROM record_aggregates WHERE ${where.join(' AND ')} ORDER BY data->>'createdAt' DESC LIMIT $${values.length}`,values)).rows.map(row=>row.data);
+        return (await pool.query(`SELECT jsonb_build_object(${json}) AS data FROM record_aggregates WHERE ${where.join(' AND ')} ORDER BY data->>'createdAt' DESC,id DESC LIMIT $${values.length}`,values)).rows.map(row=>row.data);
       }
       const values=[kind,owner],where=["json_extract(data,'$.kind')=?","json_extract(data,'$.owner')=?"];
       if(recordId){values.push(recordId);where.push("json_extract(data,'$.recordId')=?");}
       if(status){values.push(status);where.push("json_extract(data,'$.status')=?");}
+      if(before){values.push(before[0],before[1]);where.push("(json_extract(data,'$.createdAt'),id)<(?,?)");}
       values.push(limit);
       const json=keys.flatMap(key=>[`'${key}'`,`json_extract(data,'$.${key}')`]).join(',');
-      return db.prepare(`SELECT json_object(${json}) AS data FROM aggregates WHERE ${where.join(' AND ')} ORDER BY json_extract(data,'$.createdAt') DESC LIMIT ?`).all(...values).map(row=>JSON.parse(row.data));
+      return db.prepare(`SELECT json_object(${json}) AS data FROM aggregates WHERE ${where.join(' AND ')} ORDER BY json_extract(data,'$.createdAt') DESC,id DESC LIMIT ?`).all(...values).map(row=>JSON.parse(row.data));
     },
     async get(id) { return decode(pool ? (await pool.query('SELECT data FROM record_aggregates WHERE id=$1', [id])).rows[0]
       : db.prepare('SELECT data FROM aggregates WHERE id=?').get(id)); },
