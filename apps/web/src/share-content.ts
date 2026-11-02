@@ -1,6 +1,8 @@
 import { truncateText } from '../../../packages/records/src/text.mjs';
 import type { Evidence, Minutes, RecordDetail, Segment, SummaryTable } from './model';
 import { sharedMinutes } from '../../../packages/records/src/shared-content.mjs';
+import { minutesReadingLayout } from '../../../packages/records/src/minutes-reading.mjs';
+import { minutesItemText } from '../../../packages/records/src/minutes-quality.mjs';
 
 export type ShareScope = 'minutes' | 'full';
 const escapeHtml = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!);
@@ -26,22 +28,18 @@ export function shareFilename(title: string) {
 export function createShareDocument(record: RecordDetail, scope: ShareScope = 'minutes', includeSources = false) {
   const minutes = sharedMinutes(minutesForShare(record), { includeEvidence: includeSources });
   const citations = (refs: Evidence[] = []) => refs.length ? `<span class="sources">${refs.map((ref, index) => `<a href="#${escapeHtml(refId(ref))}">来源 ${index + 1}</a>`).join(' ')}</span>` : '';
-  const item = (value: { text: string; evidence: Evidence[] }) => `<li><p>${escapeHtml(value.text)}</p>${citations(value.evidence)}</li>`;
+  const item = (value: { text: string; evidence: Evidence[] }) => `<li><p>${escapeHtml(minutesItemText(value))}</p>${citations(value.evidence)}</li>`;
   const table = (value: SummaryTable) => `<section class="table"><h3>${escapeHtml(value.title)}</h3><div class="table-scroll"><table><thead><tr>${value.columns.map(column => `<th>${escapeHtml(column)}</th>`).join('')}${includeSources ? '<th>来源</th>' : ''}</tr></thead><tbody>${value.rows.map(row => `<tr>${row.cells.map(cell => `<td>${escapeHtml(cell)}</td>`).join('')}${includeSources ? `<td class="table-sources">${citations(row.evidence)}</td>` : ''}</tr>`).join('')}</tbody></table></div></section>`;
   const source = (segment: Segment, frozen: boolean) => `<li${frozen ? ` id="${escapeHtml(refId({segmentId: segment.id, revision: segment.revision}))}"` : ''}><div class="source-meta"><b>${escapeHtml(segment.speaker || '未标注说话人')}</b><time>${clock(segment.startMs)}–${clock(segment.endMs)}</time>${frozen ? `<small>片段 v${segment.revision}</small>` : ''}</div><p>${escapeHtml(segment.text)}</p></li>`;
   const body: string[] = [];
   if (minutes) {
     if (minutes.highlights?.length) body.push(`<section><h2>重点速览</h2><ul>${minutes.highlights.map(item).join('')}</ul></section>`);
-    for (const visual of minutes.visuals || []) body.push(`<section><h2>${escapeHtml(visual.title)}</h2>${visual.kind === 'timeline' ? `<p>按会议提及顺序排列，时间保留原话</p><ul>${visual.entries.map(entry => item({text:`${entry.label}：${entry.text}`,evidence:entry.evidence})).join('')}</ul>` : `<p>单位：${escapeHtml(visual.unit)}</p><ul>${visual.entries.map(entry => item({text:`${entry.label}：${entry.valueText} ${visual.unit}`,evidence:entry.evidence})).join('')}</ul>`}</section>`);
-    const assigned = new Set<SummaryTable>();
-    for (const topic of minutes.topics || []) {
-      const tables = (minutes.tables || []).filter(value => topic.id && value.topicId === topic.id);
-      tables.forEach(value => assigned.add(value));
-      body.push(`<section><h2>${escapeHtml(topic.title)}</h2><p>${escapeHtml(topic.summary)}</p>${citations(topic.evidence)}${tables.map(table).join('')}</section>`);
-    }
-    for (const section of minutes.sections) body.push(`<section><h2>${escapeHtml(section.heading)}</h2><ul>${section.items.map(item).join('')}</ul></section>`);
-    if (minutes.currentDiscussion?.length) body.push(`<section><h2>当前讨论</h2><ul>${minutes.currentDiscussion.map(item).join('')}</ul></section>`);
-    for (const value of minutes.tables || []) if (!assigned.has(value)) body.push(table(value));
+    const visual = (value: NonNullable<Minutes['visuals']>[number]) => `<section><h3>${escapeHtml(value.title)}</h3>${value.kind === 'timeline' ? `<p>按会议提及顺序排列，时间保留原话</p><ul>${value.entries.map(entry => item({text:`${entry.label}：${entry.text}`,evidence:entry.evidence})).join('')}</ul>` : `<p>单位：${escapeHtml(value.unit)}</p><ul>${value.entries.map(entry => item({text:`${entry.label}：${entry.valueText} ${value.unit}`,evidence:entry.evidence})).join('')}</ul>`}</section>`;
+    const layout=minutesReadingLayout(minutes);
+    for(const branch of layout.branches)body.push(`<section><h2>${escapeHtml(branch.title)}</h2>${branch.summary?`<p>${escapeHtml(branch.summary)}</p>${citations(branch.evidence)}`:''}<ul>${branch.items.map(item).join('')}</ul>${branch.visuals.map(visual).join('')}${branch.tables.map(table).join('')}</section>`);
+    if (record.capture!=='completed'&&minutes.currentDiscussion?.length) body.push(`<section><h2>当前讨论</h2><ul>${minutes.currentDiscussion.map(item).join('')}</ul></section>`);
+    for(const value of layout.unassigned.visuals)body.push(visual(value));
+    for(const value of layout.unassigned.tables)body.push(table(value));
     if (minutes.decisions?.length) body.push(`<section><h2>关键决策</h2><ul>${minutes.decisions.map(item).join('')}</ul></section>`);
     if (minutes.actions.length) body.push(`<section><h2>行动事项</h2><ul>${minutes.actions.map(value => item({ ...value, text: `${value.text}${value.owner ? ` · ${value.owner}` : ''}${value.due ? ` · ${value.due}` : ''}` })).join('')}</ul></section>`);
     if (minutes.speakerSummaries?.length) body.push(`<section><h2>发言人总结</h2>${minutes.speakerSummaries.map(value => `<h3>${escapeHtml(value.speaker)}</h3><p>${escapeHtml(value.summary)}</p>${citations(value.evidence)}`).join('')}</section>`);

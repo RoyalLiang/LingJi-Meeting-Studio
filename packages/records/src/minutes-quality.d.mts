@@ -19,3 +19,4 @@ export const minutesKindLabels:Readonly<Record<'fact'|'decision'|'action'|'risk'
 export function minutesStateLabel<T extends object>(item:T):string|undefined;
 
 export function minutesActionText(item:SourceItem&{topicId?:string},topics?:{id?:string;title:string}[]):string;
+export function minutesItemText(item:SourceItem):string;

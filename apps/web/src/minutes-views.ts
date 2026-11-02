@@ -1,4 +1,5 @@
 import { minutesActionText } from '../../../packages/records/src/minutes-quality.mjs';
+import { minutesReadingBranches, uniqueMinutesItems } from '../../../packages/records/src/minutes-reading.mjs';
 import { speakerLabels } from '../../../packages/records/src/minutes-speakers.mjs';
 import type { Evidence, Minutes, MinutesItem, RecordDetail, SpeakerSummary, SummaryTable, Topic, Segment } from './model';
 
@@ -11,29 +12,15 @@ export function currentMinutesJob(record: Pick<RecordDetail,'capture'|'jobs'|'tr
 }
 
 export function topicBranches(minutes: Minutes): (Topic & { items: MinutesItem[] })[] {
-  if (!minutes.topics?.length) return minutes.sections.map(section => ({ title: section.heading, summary: '', evidence: section.items.flatMap(item => item.evidence), items: section.items }));
-  const key = (ref: Evidence) => `${ref.segmentId}:${ref.revision}`;
-  const topics = minutes.topics, groups = topics.map(() => [] as MinutesItem[]), other = new Map<string, MinutesItem[]>();
-  const ids=new Map<string,number>(),titles=new Map<string,number>();
-  topics.forEach((topic,index)=>{if(topic.id)ids.set(topic.id,ids.has(topic.id)?-1:index);titles.set(topic.title,titles.has(topic.title)?-1:index);});
-  for (const section of minutes.sections) for (const item of section.items) {
-    const index=(item.topicId?ids.get(item.topicId):titles.get(section.heading))??-1;
-    if(index>=0){
-      groups[index].push(section.heading===topics[index].title?item:{...item,label:[section.heading,item.label].filter(Boolean).join(' · ')});
-    }
-    else {const items=other.get(section.heading)||[];items.push(item);other.set(section.heading,items);}
-  }
-  const union = (refs: Evidence[]) => [...new Map(refs.map(ref => [key(ref), ref])).values()];
-  const branches = topics.map((topic,index)=>({...topic,evidence:union([...topic.evidence,...groups[index].flatMap(item=>item.evidence)]),items:groups[index]}));
-  for (const [title,items] of other) branches.push({title,summary:'',evidence:union(items.flatMap(item=>item.evidence)),items});
-  return branches;
+  return minutesReadingBranches(minutes);
 }
 
 export function summaryTables(minutes: Minutes): SummaryTable[] {
   const tables = minutes.tables || [];
-  if (!minutes.actions.length) return tables;
-  const hasOwner = minutes.actions.some(action => action.owner?.trim()), hasDue = minutes.actions.some(action => action.due?.trim());
-  return [...tables, { title: '行动候选汇总', columns: ['事项', ...(hasOwner ? ['负责人'] : []), ...(hasDue ? ['时间'] : [])], rows: minutes.actions.map(action => ({ cells: [minutesActionText(action,minutes.topics), ...(hasOwner ? [action.owner || '未明确'] : []), ...(hasDue ? [action.due || '未明确'] : [])], evidence: action.evidence })) }];
+  const actions=minutes.edited?minutes.actions:uniqueMinutesItems(minutes.actions);
+  if (!actions.length) return tables;
+  const hasOwner = actions.some(action => action.owner?.trim()), hasDue = actions.some(action => action.due?.trim());
+  return [...tables, { title: '行动候选汇总', columns: ['事项', ...(hasOwner ? ['负责人'] : []), ...(hasDue ? ['时间'] : [])], rows: actions.map(action => ({ cells: [minutesActionText(action,minutes.topics), ...(hasOwner ? [action.owner || '未明确'] : []), ...(hasDue ? [action.due || '未明确'] : [])], evidence: action.evidence })) }];
 }
 
 export function topicTableLayout(minutes: Minutes) {
@@ -100,7 +87,7 @@ export function speakerViews(minutes: Minutes): (SpeakerSummary & { method: 'sum
 }
 
 export function decisionItems(minutes: Minutes): MinutesItem[] {
-  return minutes.decisions || minutes.sections.filter(section => /决定|决策|共识/.test(section.heading)).flatMap(section => section.items);
+  return uniqueMinutesItems(minutes.decisions || minutes.sections.filter(section => /决定|决策|共识/.test(section.heading)).flatMap(section => section.items));
 }
 
 export { speakerLabels };

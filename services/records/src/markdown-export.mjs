@@ -1,6 +1,7 @@
 import { speakerLabels } from '../../../packages/records/src/minutes-speakers.mjs';
 import { minutesItemText, minutesActionText } from '../../../packages/records/src/minutes-quality.mjs';
 import { requireThat } from '../../../packages/records/src/record.mjs';
+import { minutesReadingLayout, uniqueMinutesItems } from '../../../packages/records/src/minutes-reading.mjs';
 
 const inline = value => String(value ?? '').replace(/\\/g, '\\\\').replace(/([`*_{}[\]#|])/g, '\\$1').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\r?\n/g, ' ');
 export function minutesForExport(record) {
@@ -28,8 +29,8 @@ export function exportMinutesMarkdown(record, {includeNotes = true, includeEvide
     lines.push('');
   };
   items('重点速览', minutes.highlights);
-  for (const visual of minutes.visuals || []) {
-    lines.push(`## ${inline(visual.title)}`, '');
+  const visualBlock = (visual,level=2) => {
+    lines.push(`${'#'.repeat(level)} ${inline(visual.title)}`, '');
     if (visual.kind === 'timeline') {
       lines.push('按会议提及顺序排列，时间保留原话。', '');
       for (const entry of visual.entries) lines.push(`- **${inline(entry.label)}**：${inline(entry.text)}${cite(entry.evidence)}`);
@@ -38,24 +39,31 @@ export function exportMinutesMarkdown(record, {includeNotes = true, includeEvide
       for (const entry of visual.entries) lines.push(`| ${inline(entry.label)} | ${inline(entry.valueText)} | ${cite(entry.evidence)} |`);
     }
     lines.push('');
-  }
-  if (minutes.topics?.length) {
-    lines.push('## 讨论主题', '');
-    for (const topic of minutes.topics) lines.push(`### ${inline(topic.title)}`, '', `${inline(topic.summary)}${cite(topic.evidence)}`, '');
-  }
-  for (const section of minutes.sections) items(section.heading, section.items);
-  items('关键决策', minutes.decisions);
-  for (const table of minutes.tables || []) {
-    lines.push(`## ${inline(table.title)}`, '', `| ${table.columns.map(inline).join(' | ')} | 来源 |`,
+  };
+  const tableBlock = (table,level=2) => {
+    lines.push(`${'#'.repeat(level)} ${inline(table.title)}`, '', `| ${table.columns.map(inline).join(' | ')} | 来源 |`,
       `| ${table.columns.map(() => '---').join(' | ')} | --- |`);
     for (const row of table.rows) lines.push(`| ${row.cells.map(inline).join(' | ')} | ${cite(row.evidence)} |`);
     lines.push('');
+  };
+  const layout=minutesReadingLayout(minutes);
+  if(minutes.topics?.length)lines.push('## 讨论主题','');
+  for(const branch of layout.branches){
+    lines.push(`${minutes.topics?.length?'###':'##'} ${inline(branch.title)}`,'');
+    if(branch.summary)lines.push(`${inline(branch.summary)}${cite(branch.evidence)}`,'');
+    for(const item of branch.items)lines.push(`- ${inline(minutesItemText(item))}${cite(item.evidence)}`);
+    if(branch.items.length)lines.push('');
+    for(const visual of branch.visuals)visualBlock(visual,minutes.topics?.length?4:3);
+    for(const table of branch.tables)tableBlock(table,minutes.topics?.length?4:3);
   }
+  for(const visual of layout.unassigned.visuals)visualBlock(visual);
+  for(const table of layout.unassigned.tables)tableBlock(table);
+  items('关键决策', uniqueMinutesItems(minutes.decisions));
   if (minutes.speakerSummaries?.length) {
     lines.push('## 发言人总结', '');
     for (const speaker of minutes.speakerSummaries) lines.push(`### ${inline(speakerName(speaker.evidence))}`, '', `${inline(speaker.summary)}${cite(speaker.evidence)}`, '');
   }
-  items('行动候选', minutes.actions?.map(action => ({ evidence:action.evidence,
+  items('行动候选', (minutes.edited?minutes.actions||[]:uniqueMinutesItems(minutes.actions)).map(action => ({ evidence:action.evidence,
     text: `${minutesActionText(action,minutes.topics)}（负责人：${action.owner || '待确认'}；时间：${action.due || '待确认'}）` })));
   if (includeNotes && record.notes) lines.push('## 人工笔记', '', ...record.notes.split(/\r?\n/).map(inline), '');
   if (references.size) {

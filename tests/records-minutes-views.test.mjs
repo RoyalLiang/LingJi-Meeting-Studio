@@ -1,4 +1,5 @@
 import { minutesActionText } from '../packages/records/src/minutes-quality.mjs';
+import { minutesReadingBranches, uniqueMinutesItems } from '../packages/records/src/minutes-reading.mjs';
 import { speakerLabels as sharedSpeakerLabels } from '../packages/records/src/minutes-speakers.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -18,7 +19,7 @@ const snapshot = [
 const ref = index => ({ segmentId:snapshot[index].id, revision:snapshot[index].revision });
 const base = () => ({ title:'发布准备', sections:[{heading:'讨论重点',items:[{text:'周五发布第一版。',evidence:[ref(0)]},{text:'回归测试由说话人 2 负责。',evidence:[ref(1)]}]}], actions:[], evidenceSnapshot:structuredClone(snapshot) });
 const source = stripTypeScriptTypes(await readFile(new URL('../apps/web/src/minutes-views.ts', import.meta.url),'utf8')).replace(/^import .*$/gm,'').replace(/export /g,'');
-const sandbox = {exports:{},minutesActionText,speakerLabels:sharedSpeakerLabels};
+const sandbox = {exports:{},minutesReadingBranches,uniqueMinutesItems,minutesActionText,speakerLabels:sharedSpeakerLabels};
 vm.runInNewContext(source + '\nObject.assign(exports,{topicBranches,speakerViews,decisionItems,currentMinutesJob,speakerLabels});', sandbox);
 const {topicBranches,speakerViews,decisionItems,currentMinutesJob,speakerLabels} = sandbox.exports;
 const usageSource=stripTypeScriptTypes(await readFile(new URL('../apps/web/src/minutes-usage.ts',import.meta.url),'utf8')).replace(/^import .*$/gm,'').replace(/export /g,'');
@@ -160,8 +161,8 @@ test('minutes annotations show stable speaker numbers rather than names',()=>{
  assert.equal(labels.get('a:1'),'说话人2');assert.equal(labels.get('b:1'),'说话人1');assert.equal(labels.get('c:1'),'说话人3');assert.equal(labels.get('unknown:1'),'未区分说话人');
 });
 
-test('retained process sections keep project headings even when a broad root topic cites the same source',()=>{
-  const value=base(),evidence=[ref(0)];
+test('manual process sections keep project headings even when a broad root topic cites the same source',()=>{
+  const value={...base(),edited:true},evidence=[ref(0)];
   value.topics=[{id:'general',title:'项目讨论',summary:'两个项目已讨论。',evidence}];
   value.sections=['项目A','项目B'].map(name=>({heading:`讨论过程 · ${name}`,items:[{text:'颜色蓝色',kind:'fact',label:'过程记录',evidence}]}));
   const branches=topicBranches(value);

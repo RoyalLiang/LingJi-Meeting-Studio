@@ -7,10 +7,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { truncateText } from '../packages/records/src/text.mjs';
 import { sharedMinutes } from '../packages/records/src/shared-content.mjs';
+import { minutesReadingLayout } from '../packages/records/src/minutes-reading.mjs';
+import { minutesItemText } from '../packages/records/src/minutes-quality.mjs';
 import { createRecordServer } from '../services/records/src/server.mjs';
 
 const frontend = await Promise.all(['citation-context.ts', 'share-content.ts'].map(async file => stripTypeScriptTypes(await readFile(new URL(`../apps/web/src/${file}`, import.meta.url), 'utf8')).replace(/^import .*$/gm, '').replace(/export /g, '')));
-const sandbox = { exports: {}, URL, sharedMinutes, truncateText };
+const sandbox = { exports: {}, URL, sharedMinutes, truncateText, minutesReadingLayout, minutesItemText };
 vm.runInNewContext(frontend.join('\n') + '\nObject.assign(exports,{citationContext,canCreateShareLinks,minutesForShare,shareFilename,createShareDocument});', sandbox);
 const { citationContext, canCreateShareLinks, minutesForShare, shareFilename, createShareDocument } = sandbox.exports;
 const segment = (id, revision, text, startMs) => ({ id, revision, text, startMs, endMs: startMs + 1000, speaker: '说话人 1', sourceId: 'fixture', edited: false });

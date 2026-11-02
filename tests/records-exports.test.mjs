@@ -5,6 +5,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { exportMinutesMarkdown, attachmentHeader } from '../services/records/src/markdown-export.mjs';
+import { feishuBoard } from '../services/records/src/integrations/feishu-board.mjs';
+import { minutesReadingBranches, uniqueMinutesItems } from '../packages/records/src/minutes-reading.mjs';
 import { createRecordServer, exportRecord } from '../services/records/src/server.mjs';
 import { createRecord, digest } from '../packages/records/src/record.mjs';
 const ref={segmentId:'saved',revision:1};
@@ -60,4 +62,55 @@ test('action exports retain project and uncertainty context',()=>{
  const candidate=JSON.parse(exportRecord(record,'issues')).candidates[0];
  assert.match(candidate.title,/待确认.*项目A.*范围.*提交报告/);
  assert.match(exportRecord(record,'ics'),/SUMMARY:.*待确认.*项目A.*范围.*提交报告/);
+});
+
+test('generated exports group each topic once and keep its table and timeline beside its prose',()=>{
+ const evidence=[ref],record=fixture();record.minutes.edited=false;
+ record.minutes.topics=[{id:'a',title:'机场信号',summary:'确认信号用途',evidence},{id:'b',title:'迁移',summary:'核对资源',evidence}];
+ record.minutes.sections=[{heading:'机场信号',items:[{text:'确认信号用途',topicId:'a',evidence}]},{heading:'讨论过程 · 旧方案',items:[{text:'已过期窗口草稿',label:'过程记录',evidence}]}];
+ record.minutes.tables=[{title:'信号规则',topicId:'a',columns:['信号','响应'],rows:[{cells:['红灯','停车'],evidence}]}];
+ record.minutes.visuals=[{title:'联调节点',topicId:'a',kind:'timeline',entries:[{label:'周五',text:'联调',evidence},{label:'下周一',text:'验收',evidence}]}];
+ record.minutes.actions=[];const before=JSON.stringify(record),markdown=exportMinutesMarkdown(record),board=feishuBoard(record.minutes);
+ assert.doesNotMatch(markdown,/已过期窗口草稿|讨论过程/);
+ assert.equal((markdown.match(/^#{2,3} 机场信号$/gm)||[]).length,1);
+ assert.equal((markdown.match(/确认信号用途/g)||[]).length,1);
+ assert.match(markdown,/^#### 信号规则$/m);assert.match(markdown,/^#### 联调节点$/m);
+ assert.ok(markdown.indexOf('信号规则')<markdown.indexOf('### 迁移'));
+ assert.ok(markdown.indexOf('联调节点')<markdown.indexOf('### 迁移'));
+ assert.equal(board.filter(node=>node.text.text==='机场信号').length,1);
+ assert.ok(!board.some(node=>node.text.text.includes('已过期窗口草稿')));
+ record.minutes.edited=true;assert.match(exportMinutesMarkdown(record),/已过期窗口草稿/);
+ record.minutes.edited=false;assert.equal(JSON.stringify(record),before);
+});
+
+test('exact action deduplication unions revisions but preserves project, responsibility and uncertainty',()=>{
+ const base={id:'task-a',text:'核对配置',topicId:'a',owner:'李工',due:'周五',evidence:[ref]},before=JSON.stringify(base);
+ const actions=[base,{...base,evidence:[{...ref,revision:2}]},...[
+  {topicId:'b'},{owner:'王工'},{due:'下周一'},{status:'pending'},{label:'不同范围'},{kind:'question'}
+ ].map(change=>({...base,...change}))];
+ const result=uniqueMinutesItems(actions);
+ assert.equal(result.length,7);assert.deepEqual(result[0].evidence,[ref,{...ref,revision:2}]);
+ assert.equal(result[1],actions[2]);assert.equal(JSON.stringify(base),before);
+});
+
+test('duplicate evidence processing stays linear and retains unique item identity',()=>{
+ let reads=0;const items=Array.from({length:3000},(_,i)=>({id:'task-a',text:'同一行动',evidence:[{get segmentId(){reads++;return `s${i}`;},revision:1}]}));
+ const result=uniqueMinutesItems(items);assert.equal(result.length,1);assert.equal(result[0].evidence.length,3000);
+ assert.ok(reads<=6000,`evidence reads: ${reads}`);
+ const unique={text:'独立事项',evidence:[ref]};assert.equal(uniqueMinutesItems([unique])[0],unique);
+ const minutes={sections:[{heading:'讨论过程',items:[{text:'历史保留',label:'过程记录',evidence:[ref]}]}],actions:[]};
+ assert.equal(minutesReadingBranches(minutes).length,0);
+ assert.equal(minutesReadingBranches({...minutes,edited:true})[0].items[0].text,'历史保留');
+});
+
+test('unknown tasks and distinct correction targets survive the sharing round trip',()=>{
+ const actions=[{text:'提交报告',owner:null,due:null,evidence:[{segmentId:'project-a',revision:1}]},{text:'提交报告',owner:null,due:null,evidence:[{segmentId:'project-b',revision:1}]}];
+ assert.equal(uniqueMinutesItems(actions).length,2);
+ const changes=['a','b'].map(id=>({id:`change-${id}`,correctionOf:`target-${id}`,text:'延期，日期待定',status:'pending',evidence:[ref]}));
+ const minutes={title:'两个项目',sections:[{heading:'跟进',items:changes}],actions:changes.map(item=>({...item,owner:null,due:null}))};
+ assert.equal(minutesReadingBranches(minutes)[0].items.length,2);
+ const shared=sharedMinutes(minutes,{includeEvidence:true});
+ assert.equal(minutesReadingBranches(shared)[0].items.length,2);
+ assert.equal(uniqueMinutesItems(shared.actions).length,2);
+ assert.equal(uniqueMinutesItems([{id:'a',text:'参数 A  B',evidence:[ref]},{id:'a',text:'参数 A B',evidence:[ref]}]).length,2);
 });

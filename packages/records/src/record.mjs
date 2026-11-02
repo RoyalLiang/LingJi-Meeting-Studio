@@ -212,7 +212,7 @@ export function requestMinutes(record, input = {}) {
   const liveBaseHash = scope === 'live' ? digest(JSON.stringify(record.liveMinutes || null)) : undefined;
   const liveIncremental = Boolean(liveBaseline(record)?.template === template);
   const manifestHash = digest(JSON.stringify({snapshot, liveBaseHash, liveContext}));
-  const key = `${record.id}:${record.transcriptRevision}:${manifestHash}:${template}:v7:${record.notesRevision}:${input.modelVersion || 'default'}:${input.mode || 'model'}:${scope}`;
+  const key = `${record.id}:${record.transcriptRevision}:${manifestHash}:${template}:v8:${record.notesRevision}:${input.modelVersion || 'default'}:${input.mode || 'model'}:${scope}`;
   requireThat(input.retry === undefined || typeof input.retry === 'boolean', 'invalid_minutes_retry', 400);
   requireThat(!input.retry || input.automatic !== true, 'invalid_minutes_retry', 400);
   if (input.retry) for (const job of record.jobs) if (['queued', 'running'].includes(job.status)) {

@@ -1,5 +1,5 @@
 import { minutesCoreInstructions, minutesQualityInstructions } from '../../../packages/records/src/minutes-quality.mjs';
-export const MINUTES_PROMPT_VERSION = 13;
+export const MINUTES_PROMPT_VERSION = 14;
 const string = {type:'string'};
 const object = properties => ({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
 const array = items => ({type:'array',items});

@@ -182,9 +182,9 @@ test('a repeated object cannot fabricate a two-object numeric comparison',()=>{
 });
 
 
-test('explicit regeneration after upgrade queues the new content policy instead of reusing completed v6 minutes',()=>{
+test('explicit regeneration after upgrade queues the new content policy instead of reusing completed v7 minutes',()=>{
   const record=createRecord('synthetic',{autoMinutes:false});Object.assign(record,{capture:'completed',transcriptRevision:1,segments:structuredClone(snapshot)});
-  const legacy=requestMinutes(record,{mode:'model'});legacy.status='completed';legacy.key=legacy.key.replace(':v7:',':v6:');
+  const legacy=requestMinutes(record,{mode:'model'});legacy.status='completed';legacy.key=legacy.key.replace(':v8:',':v7:');
   record.minutes={...fixture(),edited:false};const oldMinutes=JSON.stringify(record.minutes);
   const next=requestMinutes(record,{mode:'model'});assert.notEqual(next.id,legacy.id);assert.equal(next.status,'queued');
   assert.equal(requestMinutes(record,{mode:'model'}).id,next.id);assert.equal(JSON.stringify(record.minutes),oldMinutes);

@@ -1,4 +1,5 @@
 import { minutesActionText } from '../packages/records/src/minutes-quality.mjs';
+import { minutesReadingBranches, uniqueMinutesItems } from '../packages/records/src/minutes-reading.mjs';
 import { speakerLabels as sharedSpeakerLabels } from '../packages/records/src/minutes-speakers.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -42,7 +43,7 @@ test('paused discussion stays inactive while a queued or running minutes job rem
 const helpers = {};
 const helperSource = (await readFile(new URL('../apps/web/src/minutes-views.ts', import.meta.url), 'utf8'))
   .replace(/^import .*$/gm, '').replace(/export /g, '');
-vm.runInNewContext(stripTypeScriptTypes(helperSource) + '\nObject.assign(exports,{topicTableLayout,summaryTables,topicDurations});', { exports: helpers, minutesActionText,speakerLabels:sharedSpeakerLabels });
+vm.runInNewContext(stripTypeScriptTypes(helperSource) + '\nObject.assign(exports,{topicTableLayout,summaryTables,topicDurations});', { exports: helpers, minutesReadingBranches, uniqueMinutesItems, minutesActionText,speakerLabels:sharedSpeakerLabels });
 const ref = (segmentId, revision = 1) => ({ segmentId, revision });
 const minutes = () => ({
   title: '交付讨论', revision: 1, transcriptRevision: 3, edited: false,

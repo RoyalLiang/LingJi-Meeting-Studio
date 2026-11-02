@@ -35,7 +35,7 @@ function Branch({ branch, index, minutes, cite, speakers }: { branch: ReturnType
 export const MinutesTree=memo(function MinutesTree({ minutes, cite, speakerMap, showHighlights = true }: Props) {
   const speakers=useMemo(()=>speakerMap || speakerLabels(minutes.evidenceSnapshot || []),[minutes,speakerMap]);
   const branches = useMemo(() => {
-    const layout = topicTableLayout({...minutes,sections:minutes.sections.map(section=>({...section,items:section.items.filter(item=>item.label!=='过程记录')}))});
+    const layout = topicTableLayout(minutes);
     return layout.unassigned.length ? [...layout.branches, { title: '补充表格', summary: '', evidence: [], items: [], tables: layout.unassigned }] : layout.branches;
   }, [minutes]).filter(branch=>Boolean(branch.summary?.trim() || branch.items.length || branch.tables.length || (minutes.visuals||[]).some(visual=>branch.id&&visual.topicId===branch.id)));
   const unassignedVisuals = (minutes.visuals || []).filter(visual => !visual.topicId || !branches.some(branch => branch.id === visual.topicId));

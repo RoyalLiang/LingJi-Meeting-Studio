@@ -1,3 +1,5 @@
+import { minutesReadingSections, uniqueMinutesItems } from './minutes-reading.mjs';
+
 const pick = (value, fields) => Object.fromEntries(fields.filter(key => value[key] !== undefined).map(key => [key, value[key]]));
 export function sharedSegments(segments) {
   return segments.map(segment => pick(segment, ['id', 'revision', 'text', 'speaker', 'speakerId', 'startMs', 'endMs']));
@@ -6,7 +8,7 @@ export function sharedSegments(segments) {
 // Explicitly serialize the share contract: provider or internal metadata never leaves it.
 export function sharedMinutes(minutes, { includeEvidence = false } = {}) {
   const evidence = values => (includeEvidence ? values || [] : []).map(value => pick(value, ['segmentId', 'revision']));
-  const item = value => ({ ...pick(value, ['text', 'topicId', 'label', 'kind']), evidence: evidence(value.evidence) });
+  const item = value => ({ ...pick(value, ['text', 'topicId', 'label', 'kind', 'status']), evidence: evidence(value.evidence) });
   if (!minutes) return null;
   const references = new Set();
   const visit = value => {
@@ -16,8 +18,8 @@ export function sharedMinutes(minutes, { includeEvidence = false } = {}) {
   };
   const output = {
     ...pick(minutes, ['title', 'revision', 'transcriptRevision', 'edited', 'method']),
-    sections: (minutes.sections || []).map(section => ({ heading: section.heading, items: section.items.map(item) })),
-    actions: (minutes.actions || []).map(value => ({ ...item(value), ...pick(value, ['owner', 'due', 'status']) })),
+    sections: minutesReadingSections(minutes).map(section => ({ heading: section.heading, items: section.items.map(item) })),
+    actions: (minutes.edited?minutes.actions||[]:uniqueMinutesItems(minutes.actions)).map(value => ({ ...item(value), ...pick(value, ['owner', 'due', 'status']) })),
     evidenceSnapshot: [],
   };
   if (minutes.topics) output.topics = minutes.topics.map(value => ({ ...pick(value, ['id', 'title', 'summary']), evidence: evidence(value.evidence) }));
