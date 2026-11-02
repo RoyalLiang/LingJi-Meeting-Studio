@@ -5,8 +5,9 @@ import { readFile } from 'node:fs/promises';
 import { stripTypeScriptTypes } from 'node:module';
 import { transpileTypeScript } from './helpers/typescript.mjs';
 import { transform } from 'esbuild';
+const {minutesAvailable}=await import('data:text/javascript;base64,'+Buffer.from(transpileTypeScript(await readFile(new URL('../apps/web/src/provider-settings.ts',import.meta.url),'utf8'))).toString('base64'));
 
-async function quickRecordHarness({ active, issues, minutesMode = 'asr-llm' }) {
+async function quickRecordHarness({ active, issues, minutesMode = 'asr-llm', minutes = true, textMinutes = false, audioMinutesDefault = false }) {
   const app = await readFile(new URL('../apps/web/src/App.tsx', import.meta.url), 'utf8');
   const start = app.indexOf('  async function quickRecord()');
   const end = app.indexOf('  async function startCapture(', start);
@@ -14,7 +15,7 @@ async function quickRecordHarness({ active, issues, minutesMode = 'asr-llm' }) {
   const compiled = (await transform(app.slice(start, end) + '\nexports.quickRecord = quickRecord;', { loader: 'ts' })).code;
   const state = { modal: undefined, error: '', recording: false, issues: [], created: null, starts: 0 };
   const controller = { active, startMeeting: async () => { state.starts++; return issues; }, stop: async () => { controller.active = false; } };
-  const sandbox = { exports: {}, recording: false, busy: false, scope: 'all', boot: { providers: { minutes: true, minutesMode } }, captureAllowed: () => true,
+  const sandbox = { minutesAvailable, exports: {}, recording: false, busy: false, scope: 'all', boot: { audioMinutesDefault, providers: { minutes, textMinutes, minutesMode } }, captureAllowed: () => true,
     capture: { current: null }, activeId: { current: '' }, controllerFor: () => controller,
     api: async (_path, method, body) => method === 'POST' ? (state.created = body, { id: 'quick-fixture' }) : { records: [{ id: 'quick-fixture' }] },
     setError: value => { state.error = value; }, setCaptureIssues: value => { state.issues = value; }, setBusy() {}, setCapturePhase() {},
@@ -533,4 +534,14 @@ test('persistence failure is visible while stop is still waiting for retained au
  vm.runInNewContext(code,sandbox);const controller=sandbox.exports.factory('r');sandbox.capture.current=controller;
  try{controller.args[2](new Error('本机缓存已满，正在保留未确认音频'));assert.equal(state.recording,false);assert.match(state.error,/本机缓存已满/);}
  finally{release();await new Promise(resolve=>setImmediate(resolve));}
+});
+
+test('new automatic capture defaults to text AI even when the configured audio model is unavailable',async()=>{
+ const h=await quickRecordHarness({active:true,issues:[],minutesMode:'openai-realtime',minutes:false,textMinutes:true});
+ assert.equal(h.state.starts,1);assert.equal(h.state.created.autoMinutes,true);assert.equal(h.state.created.realtimeAudioConsent,false);
+});
+
+test('explicit future audio authorization enables AI on new automatic audio-only meetings',async()=>{
+ const h=await quickRecordHarness({active:true,issues:[],minutesMode:'doubao-audio-only',audioMinutesDefault:true});
+ assert.equal(h.state.created.autoMinutes,true);assert.equal(h.state.created.realtimeAudioConsent,true);
 });

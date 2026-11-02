@@ -35,3 +35,9 @@ test('topic grouping indexes topics once on thousands of unmatched items',()=>{
  const branches=topicBranches({topics,sections:[{heading:'Other',items}],actions:[]});
  assert.equal(branches.at(-1).items.length,3000);assert.equal(branches.at(-1).items[0],items[0]);assert.ok(reads<3100,`topic title reads: ${reads}`);
 });
+
+test('assistant Markdown handles ordered lists, incomplete fences and safe links',async()=>{
+ const {MarkdownPreview}=await load('apps/web/src/components/MarkdownPreview.tsx');
+ const html=renderToStaticMarkup(React.createElement(MarkdownPreview,{text:'## 草稿\n1. **决定**\n2. *待确认*\n\n[来源](https://example.com)\n[拒绝](javascript:alert(1))\n\n```js\nconst value = "<script>";'}));
+ assert.match(html,/<ol>/);assert.match(html,/<em>待确认<\/em>/);assert.match(html,/href="https:\/\/example.com"/);assert.doesNotMatch(html,/href="javascript:/);assert.match(html,/<pre><code>/);assert.doesNotMatch(html,/<script>/);
+});

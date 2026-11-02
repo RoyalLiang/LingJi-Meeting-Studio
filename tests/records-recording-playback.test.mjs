@@ -272,7 +272,10 @@ test('waveform cache survives restart, stays private, invalidates by source and 
  await post(`/records/${r.id}/seal`,{sources:[{sourceId:source.id,epoch:source.epoch,lastSequence:19}]});
  let reads=0;const read=app.repo.readAudio.bind(app.repo);app.repo.readAudio=async object=>{reads++;return read(object);};
  const wave=async()=>{const res=await fetch(base+`/records/${r.id}/audio/${source.id}?waveform=1`,{headers});assert.equal(res.status,200);return res.json();};
- const before=publicRecord(await app.repo.get(r.id));const first=await wave();assert.equal(reads,20);reads=0;assert.deepEqual(await wave(),first);assert.equal(reads,0);
+ assert.ok((await app.repo.get(r.id)).chunks.every(chunk=>typeof chunk.waveform==='string'),'verified uploads persist envelopes');
+    await wave();assert.equal(reads,0,'new recordings render from envelopes without reading PCM');
+    await app.repo.change(r.id,record=>{for(const chunk of record.chunks)delete chunk.waveform;delete record.waveforms;});
+    const before=publicRecord(await app.repo.get(r.id));const first=await wave();assert.equal(reads,20);reads=0;assert.deepEqual(await wave(),first);assert.equal(reads,0);
  const view=await(await fetch(base+`/records/${r.id}`,{headers})).json();assert.equal('waveforms' in view,false);assert.equal(view.cursor,before.cursor);
  await app.stop();app=await createRecordServer({root,databaseUrl:'',port:0});addr=await app.start();base=`http://127.0.0.1:${addr.port}/api`;headers=await authorize('login');
  const afterRead=app.repo.readAudio.bind(app.repo);app.repo.readAudio=async object=>{reads++;return afterRead(object);};assert.deepEqual(await wave(),first);assert.equal(reads,0,'warm cache must not read PCM after restart');

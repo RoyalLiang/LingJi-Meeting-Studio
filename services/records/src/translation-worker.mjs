@@ -42,7 +42,7 @@ export async function processTranslation(repo, id, translate, mode = 'all') {
       attempts:previous.requestedText === preview.text ? (previous.attempts || 0) : 0, lease:now+10000, fence:settings.fence };
     claim = { ...settings, kind:'preview', id:source.id, epoch:source.epoch, streamFence:source.asr.fence,
       text:preview.text, startMs:preview.startMs };
-  });
+  }, {returnRecord:false});
   if (!claim) return reused;
   try {
     const text = await translate(claim.text,claim.target,claim.kind === 'preview' ? {timeoutMs:8000,partial:true} : {});
@@ -66,7 +66,7 @@ export async function processTranslation(repo, id, translate, mode = 'all') {
         delete value.error; delete value.errorText; value.attempts=0;
         emit(record,'transcript.preview_translated',{sourceId:source.id});
       }
-    });
+    }, {returnRecord:false});
     return true;
   } catch (error) {
     await repo.change(id, record => {
@@ -83,7 +83,7 @@ export async function processTranslation(repo, id, translate, mode = 'all') {
         value.attempts=(value.attempts || 0)+1;value.error=error.code || 'translation_failed';value.errorText=claim.text;
         delete value.lease;delete value.fence;emit(record,'transcript.preview_translation_failed',{sourceId:source.id});
       }
-    });
+    }, {returnRecord:false});
     return false;
   }
 }

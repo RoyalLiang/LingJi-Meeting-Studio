@@ -184,22 +184,22 @@ test('old 48 MiB backlog permits a new meeting and a genuinely full queue recove
 });
 
 test('queue wakeups cannot starve an already selected audio packet',async()=>{
- const original=IDBIndex.prototype.openCursor,joined=[];let queries=0,selectedAtUpload=0;
+ const original=IDBIndex.prototype.openKeyCursor,joined=[];let queries=0,selectedAtUpload=0;
  const h=harness(new IDBFactory(),async()=>{selectedAtUpload=queries;});
  await h.enqueue('r',chunk());h.setQueueRecords(['r']);
- IDBIndex.prototype.openCursor=function(...args){
+ IDBIndex.prototype.openKeyCursor=function(...args){
   const request=original.apply(this,args);
   if(this.name==='lane'&&++queries<=6)joined.push(h.drainQueue());
   return request;
  };
- try{await h.drainQueue();await Promise.all(joined);assert.equal(selectedAtUpload,1,'safety polls must not discard a ready upload and starve persistence');}
- finally{IDBIndex.prototype.openCursor=original;}
+ try{await h.drainQueue();await Promise.all(joined);assert.equal(selectedAtUpload,2,'metadata discovery and head lookup must not restart on safety polls and starve persistence');}
+ finally{IDBIndex.prototype.openKeyCursor=original;}
 });
 
 test('an empty background queue scan does not report saving audio',async()=>{
- const original=IDBIndex.prototype.openCursor,h=harness();h.setQueueRecords(['r']);
+ const original=IDBIndex.prototype.openKeyCursor,h=harness();h.setQueueRecords(['r']);
  let releaseHead;const ready=new Promise(resolve=>{
-  IDBIndex.prototype.openCursor=function(...args){
+  IDBIndex.prototype.openKeyCursor=function(...args){
    const request=original.apply(this,args);
    if(this.name!=='lane')return request;
    return new Proxy(request,{get:(target,key)=>Reflect.get(target,key,target),set(target,key,value){
@@ -210,7 +210,7 @@ test('an empty background queue scan does not report saving audio',async()=>{
  });
  let draining;
  try{draining=h.drainQueue();await ready;const state=await h.updateQueueState();assert.equal(state.pendingCount,0);assert.equal(state.pendingBytes,0);assert.equal(state.queueBusy,false);}
- finally{releaseHead?.();IDBIndex.prototype.openCursor=original;await draining;}
+ finally{releaseHead?.();IDBIndex.prototype.openKeyCursor=original;await draining;}
 });
 
 test('finished meeting drains durable tail and unlocks original audio before ASR completes',async()=>{
@@ -244,4 +244,21 @@ test('empty pending backup returns an explicit no-op without a bogus download',a
  assert.equal(await h.downloadPendingAudio('empty-backup'),false);assert.equal(h.downloads.length,0);
  await h.enqueue('empty-backup',chunk());assert.equal(await h.downloadPendingAudio('empty-backup'),true);
  assert.equal(await h.pendingCount('empty-backup'),1,'backup must leave real queued data untouched');
+});
+
+test('an empty queue with forty meetings uses one metadata cursor instead of forty PCM scans',async()=>{
+ const h=harness();h.setQueueRecords(Array.from({length:40},(_,i)=>`r${i}`));let reads=0;
+ const original=IDBIndex.prototype.openCursor,keys=IDBIndex.prototype.openKeyCursor;
+ IDBIndex.prototype.openCursor=function(...args){if(this.name==='lane')reads++;return original.apply(this,args);};
+ IDBIndex.prototype.openKeyCursor=function(...args){if(this.name==='lane')reads++;return keys.apply(this,args);};
+ try{await h.drainQueue();assert.ok(reads<=2,`expected a bounded index scan, got ${reads}`);}
+ finally{IDBIndex.prototype.openCursor=original;IDBIndex.prototype.openKeyCursor=keys;}
+});
+
+test('current meeting keeps priority over an older two-lane backlog after metadata-only discovery',async()=>{
+ const sent=[],h=harness(new IDBFactory(),async(_path,_method,packet)=>{sent.push(packet.sourceId);});
+ h.setQueueRecords(['z-live','a-backlog']);
+ for(let i=0;i<10;i++)for(const source of ['old-mic','old-display'])await h.enqueue('a-backlog',chunk(source,i));
+ await h.enqueue('z-live',chunk('current'));
+ await h.drainQueue();assert.equal(sent[0],'current');assert.equal(sent.length,21);
 });

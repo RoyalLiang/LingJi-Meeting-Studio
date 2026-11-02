@@ -95,18 +95,37 @@ export async function enqueue(recordId:string,chunk:AudioChunk){
 }
 function parallelism(){try{return sessionStorage.getItem('meeting-queue-serial')==='1'?1:2;}catch{return 2;}}
 const lane=(entry:Pending)=>`${entry.recordId}:${entry.chunk.sourceId}:${entry.chunk.epoch}`;
-async function heads(blocked:Set<string>):Promise<Pending[]>{
-  const connection=await db(),entries:Pending[]=[];
-  for(const id of [...permittedRecords]){
+async function heads(blocked:Set<string>,limit:number):Promise<Pending[]>{
+  if(limit<=0||!permittedRecords.size)return [];
+  const connection=await db(),keys:IDBValidKey[]=[],pending=new Set<string>();
+  // Discover only records with queued keys; empty historical meetings cost no individual IPC query.
+  await new Promise<void>((resolve,reject)=>{
+    const request=connection.transaction('chunks').objectStore('chunks').index('lane').openKeyCursor();
+    request.onsuccess=()=>{
+      const cursor=request.result;if(!cursor){resolve();return;}
+      const [recordId]=cursor.key as [string,string,string,number];
+      if(permittedRecords.has(recordId))pending.add(recordId);
+      cursor.continue([recordId,[]]);
+    };request.onerror=()=>reject(request.error);
+  });
+  for(const id of permittedRecords){
+    if(!pending.has(id))continue;
     await new Promise<void>((resolve,reject)=>{
-      const request=connection.transaction('chunks').objectStore('chunks').index('lane').openCursor(IDBKeyRange.bound([id],[id,[]]));
+      const request=connection.transaction('chunks').objectStore('chunks').index('lane').openKeyCursor(IDBKeyRange.bound([id],[id,[]]));
       request.onsuccess=()=>{
-        const cursor=request.result;if(!cursor||entries.length>=16){resolve();return;}
-        const entry=cursor.value as Pending;if(!blocked.has(lane(entry)))entries.push(entry);
-        cursor.continue([id,entry.chunk.sourceId,entry.chunk.epoch,Number.MAX_SAFE_INTEGER]);
+        const cursor=request.result;if(!cursor||keys.length>=limit){resolve();return;}
+        const [recordId,sourceId,epoch]=cursor.key as [string,string,string,number];
+        if(!blocked.has(`${recordId}:${sourceId}:${epoch}`))keys.push(cursor.primaryKey);
+        if(keys.length>=limit){resolve();return;}
+        cursor.continue([recordId,sourceId,epoch,Number.MAX_SAFE_INTEGER]);
       };request.onerror=()=>reject(request.error);
-    });if(entries.length>=16)break;
-  }return entries;
+    });
+    if(keys.length>=limit)break;
+  }
+  if(!keys.length)return [];
+  const store=connection.transaction('chunks').objectStore('chunks');
+  const entries=await Promise.all(keys.map(key=>result<Pending|undefined>(store.get(key))));
+  return entries.filter((entry):entry is Pending=>Boolean(entry));
 }
 async function remove(entry:Pending){
   const connection=await db();await new Promise<void>((resolve,reject)=>{
@@ -128,7 +147,7 @@ export function drainQueue(onChange?:()=>void): Promise<void>{
     while(canUpload()){
       const notification=new Promise<void>(resolve=>{wakeDrain=resolve;});
       const generation=completed;
-      const entries=await heads(new Set([...blocked,...active.keys()]));
+      const entries=await heads(new Set([...blocked,...active.keys()]),parallelism()-active.size);
       // ACKs can finish while IndexedDB is selecting heads. Re-read instead of
       // waiting on another source with an otherwise unused upload slot.
       if(completed!==generation)continue;

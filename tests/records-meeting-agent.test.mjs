@@ -258,3 +258,23 @@ test('duplicated minutes evidence does not reject a normal full meeting or alter
  const runtime=await f.open(p),task=await runtime.request('owner',request([record],'normal-long'));
  const done=await settled(runtime,task.id);assert.equal(done.status,'completed',JSON.stringify(done));assert.equal(wire.split(record.segments[0].text).length-1,200);assert.equal((await runtime.get('owner',task.id)).stale,false);
 });
+
+test('configured streaming bridge publishes readable Markdown before completion',async t=>{
+ const f=await fixture(t),gate=Promise.withResolvers();let calls=0;
+ t.mock.method(globalThis,'fetch',async()=>{
+  if(++calls===1)return new Response(JSON.stringify({status:'completed',output_text:JSON.stringify({toolCalls:[{name:'read_selected_meeting',arguments:{recordId:f.records[0].id}}]})}),{headers:{'content-type':'application/json'}});
+  const value={...result(f.records.slice(0,1)),summary:'## 已确认\n- **立即**显示 Markdown'};
+  const json=JSON.stringify({result:value}),cut=json.indexOf('","decisions"');
+  const encoder=new TextEncoder(),event=value=>encoder.encode('data: '+JSON.stringify(value)+'\n\n');
+  return new Response(new ReadableStream({async start(controller){
+   controller.enqueue(event({type:'response.output_text.delta',delta:json.slice(0,cut)}));
+   await gate.promise;controller.enqueue(event({type:'response.output_text.delta',delta:json.slice(cut)}));
+   controller.enqueue(event({type:'response.completed',response:{status:'completed'}}));controller.close();
+  }}),{headers:{'content-type':'text/event-stream'}});
+ });
+ const runtime=await f.open({env:{LLM_API_KEY:'explicit-test-key',LLM_MODEL:'fixture-stream',LLM_API_URL:'https://fixture.invalid/responses',LLM_PROTOCOL:'responses'}});
+ const task=await runtime.request('owner',request(f.records.slice(0,1)));
+ try{await waitUntil(async()=>Boolean((await runtime.get('owner',task.id)).preview));const live=await runtime.get('owner',task.id);assert.equal(live.status,'running');assert.match(live.preview,/^## 已确认\n- \*\*立即\*\*/);}
+ finally{gate.resolve();}
+ assert.equal((await settled(runtime,task.id)).status,'completed');
+});

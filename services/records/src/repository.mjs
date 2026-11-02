@@ -6,39 +6,50 @@ import { automaticMinutesAt } from '../../../packages/records/src/automation.mjs
 import { mkdir, open, readFile, readdir, rm, stat, link } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { DomainError, requireThat, needsMinutesAudio } from '../../../packages/records/src/record.mjs';
+import { DomainError, requireThat, needsMinutesAudio, publicRecord } from '../../../packages/records/src/record.mjs';
 import { createS3Objects } from './s3.mjs';
 import { telemetry } from './telemetry.mjs';
 import { encodeStorage, decodeStorage } from './storage-codec.mjs';
 
 function traceWrite(value){if(telemetry.enabled)telemetry.event('db.write',{recordId:value.id,bytes:Buffer.byteLength(JSON.stringify(value))});}
+const workerLanes=['audio','realtime','minutes','intents','translation','translation-live','translation-preview','learning'];
 function schedule(value) {
-  if (value.kind !== 'record') return;
-  const now = Date.now();
-  if (value.deleted) { value.nextWorkAt = value.cleanup === 'completed' ? (value.cleanupAt || 0) + 600000 : now; return; }
-  const times = [learningWorkAt(value, now), ...(value.learning?.enabled && value.capture==='completed' && value.learning.revision!==value.transcriptRevision ? [now] : []), automaticMinutesAt(value, now), Date.parse(value.deleteAt), (value.gcAt || 0) + 3600000];
-  if (!value.retainAudio && !value.audioPurged && value.capture === 'completed' && !needsMinutesAudio(value)) times.push(now);
-  if (value.realtimeAudioConsent && value.autoMinutes?.enabled && value.realtime?.state === 'blocked') times.push(Math.max(value.realtime.retryAt || 0, now));
-  for (const source of value.sources) {
-    if (source.asr?.state === 'running') times.push(now+250);
-    if (source.asr?.state === 'failed' && source.asr.attempts<5) times.push(Math.max(source.asr.retryAt||0,now));
-  }
-  const watermarks = new Map(value.sources.map(source => [source.id, source.watermark]));
-  const firstPending = new Map();
-  for (const chunk of value.chunks) if (chunk.state !== 'done') firstPending.set(chunk.sourceId, Math.min(firstPending.get(chunk.sourceId) ?? Infinity, chunk.sequence));
-  for (const chunk of value.chunks) {
-    if (chunk.expired) continue;
-    if (!value.retainAudio) times.push((chunk.acceptedAt || Date.parse(value.createdAt)) + 86400000);
-    if (chunk.state === 'done') continue;
-    if (chunk.attempts < 5 && watermarks.get(chunk.sourceId) >= chunk.sequence
-      && firstPending.get(chunk.sourceId) === chunk.sequence) {
-      times.push(Math.max(chunk.lease || 0, chunk.retryAt || 0, now));
+  if(value.kind!=='record')return;
+  const now=Date.now(),work=Object.fromEntries(workerLanes.map(lane=>[lane,Infinity]));
+  const due=(lane,time)=>{work[lane]=Math.min(work[lane],time);};
+  if(value.deleted){due('audio',value.cleanup==='completed'?(value.cleanupAt||0)+600000:now);}
+  else{
+    due('audio',Math.min(Date.parse(value.deleteAt),(value.gcAt||0)+3600000));
+    due('learning',learningWorkAt(value,now));
+    if(value.learning?.enabled&&value.capture==='completed'&&value.learning.revision!==value.transcriptRevision)due('learning',Math.max(now,value.learning.retryAt||0));
+    due('minutes',automaticMinutesAt(value,now));
+    if(!value.retainAudio&&!value.audioPurged&&value.capture==='completed'&&!needsMinutesAudio(value))due('audio',now);
+    if(value.realtimeAudioConsent&&value.autoMinutes?.enabled&&value.capture!=='completed'&&value.chunks.length)due('realtime',Math.max(value.realtime?.retryAt||0,now));
+    for(const source of value.sources){
+      if(source.asr?.state==='running')due('audio',now+250);
+      if(source.asr?.state==='failed'&&source.asr.attempts<5)due('audio',Math.max(source.asr.retryAt||0,now));
+      const preview=source.asr?.preview,translation=source.asr?.translation;
+      if(value.translationTarget&&source.asr?.state==='running'&&preview?.text?.trim().length>=4&&!(translation?.target===value.translationTarget&&translation.sourceText===preview.text&&translation.text)&& (translation?.requestedText!==preview.text||(translation?.attempts||0)<3))due('translation-preview',Math.max(now,translation?.lease||0,(translation?.requestedAt||0)+2500));
     }
+    const watermarks=new Map(value.sources.map(source=>[source.id,source.watermark])),firstPending=new Map();
+    for(const chunk of value.chunks)if(chunk.state!=='done')firstPending.set(chunk.sourceId,Math.min(firstPending.get(chunk.sourceId)??Infinity,chunk.sequence));
+    for(const chunk of value.chunks){
+      if(chunk.expired)continue;
+      if(!value.retainAudio)due('audio',(chunk.acceptedAt||Date.parse(value.createdAt))+86400000);
+      if(chunk.state!=='done'&&chunk.attempts<5&&watermarks.get(chunk.sourceId)>=chunk.sequence&&firstPending.get(chunk.sourceId)===chunk.sequence)due('audio',Math.max(chunk.lease||0,chunk.retryAt||0,now));
+    }
+    if(value.segments.length&&value.insights?.transcriptRevision!==value.transcriptRevision)due('intents',Math.max(value.intentLease||0,value.intentRetryAt||0,now));
+    if(value.translationTarget){
+      const liveFrom=value.translationLiveFromMs??value.segments.reduce((end,segment)=>Math.max(end,segment.endMs),0);
+      for(const segment of value.segments){
+        if(segment.translationLanguage===value.translationTarget||(segment.translationAttempts||0)>=3)continue;
+        const time=Math.max(segment.translationLease||0,segment.translationRetryAt||0,now);due('translation',time);
+        if(value.capture==='recording'&&segment.endMs>=liveFrom-60000)due('translation-live',time);
+      }
+    }
+    for(const job of value.jobs){if(job.status==='queued')due('minutes',now);else if(job.status==='running')due('minutes',job.lease||now);}
   }
-  if (value.segments.length && value.insights?.transcriptRevision !== value.transcriptRevision) times.push(Math.max(value.intentLease || 0, value.intentRetryAt || 0, now));
-  if (value.translationTarget) for (const s of value.segments) if (s.translationLanguage !== value.translationTarget && (s.translationAttempts || 0) < 3) times.push(Math.max(s.translationLease || 0, s.translationRetryAt || 0, now));
-  for (const job of value.jobs) { if (job.status === 'queued') times.push(now); else if (job.status === 'running') times.push(job.lease || now); }
-  value.nextWorkAt = times.reduce((earliest, time) => Math.min(earliest, time), Infinity);
+  value.workAt=work;value.nextWorkAt=Math.min(...Object.values(work));
 }
 
 export async function createRepository(options = {}) {
@@ -122,7 +133,7 @@ export async function createRepository(options = {}) {
   function writeSqliteValue(value, insert = false) {
     const json = JSON.stringify(value);
     const packed = options.compressAggregates && value.kind === 'record' ? encodeStorage(Buffer.from(json)) : { compressed: false };
-    const metadata = packed.compressed ? JSON.stringify({ id: value.id, kind: value.kind, owner: value.owner, deleted: value.deleted, deleteAt: value.deleteAt, nextWorkAt: value.nextWorkAt, $payload: 'deflate-v1' }) : json;
+    const metadata = packed.compressed ? JSON.stringify({ id: value.id, kind: value.kind, owner: value.owner, deleted: value.deleted, deleteAt: value.deleteAt, nextWorkAt: value.nextWorkAt, workAt:value.workAt, $payload: 'deflate-v1' }) : json;
     if (insert) db.prepare('INSERT INTO aggregates(id,data) VALUES(?,?)').run(value.id, metadata);
     else db.prepare('UPDATE aggregates SET data=? WHERE id=?').run(metadata, value.id);
     if (packed.compressed) db.prepare('INSERT INTO aggregate_payloads(id,payload) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload').run(value.id, packed.bytes);
@@ -203,14 +214,31 @@ export async function createRepository(options = {}) {
     },
     async listWork({ lane = 'all' } = {}) {
       const after = workCursors.get(lane) || '', now = Date.now();
+      const selectedLane=workerLanes.includes(lane)?lane:null;
+      const lanePg=selectedLane?` AND (data->'workAt' IS NULL OR (data->'workAt'->>'${selectedLane}')::bigint<=$1)` : '';
+      const laneSql=selectedLane?` AND (json_type(data,'$.workAt') IS NULL OR json_extract(data,'$.workAt."${selectedLane}"')<=?)` : '';
       const page = async (start, end, limit) => pool
-        ? (await pool.query("SELECT data FROM record_aggregates WHERE data->>'kind'='record' AND (data->>'nextWorkAt' IS NULL OR (data->>'nextWorkAt')::bigint <= $1) AND id>$2 AND ($3::text IS NULL OR id<=$3) ORDER BY id LIMIT $4", [now, start, end, limit])).rows
-        : db.prepare("SELECT data FROM aggregates WHERE json_extract(data,'$.kind')='record' AND (json_extract(data,'$.nextWorkAt') IS NULL OR json_extract(data,'$.nextWorkAt')<=?) AND id>? AND (? IS NULL OR id<=?) ORDER BY id LIMIT ?").all(now, start, end, end, limit);
+        ? (await pool.query("SELECT data FROM record_aggregates WHERE data->>'kind'='record' AND (data->>'nextWorkAt' IS NULL OR (data->>'nextWorkAt')::bigint <= $1)"+lanePg+" AND id>$2 AND ($3::text IS NULL OR id<=$3) ORDER BY id LIMIT $4", [now,start,end,limit])).rows
+        : db.prepare("SELECT data FROM aggregates WHERE json_extract(data,'$.kind')='record' AND (json_extract(data,'$.nextWorkAt') IS NULL OR json_extract(data,'$.nextWorkAt')<=?)"+laneSql+" AND id>? AND (? IS NULL OR id<=?) ORDER BY id LIMIT ?").all(...[now,...(selectedLane?[now]:[]),start,end,end,limit]);
       const rows = await page(after, null, 100);
       if (after && rows.length < 100) rows.push(...await page('', after, 100 - rows.length));
       if (rows.length) workCursors.set(lane, typeof rows.at(-1).data === 'string' ? JSON.parse(rows.at(-1).data).id : rows.at(-1).data.id);
       else workCursors.delete(lane);
-      return rows.map(decode);
+      const values=[];
+      for(const row of rows){
+        const metadata=typeof row.data==='string'?JSON.parse(row.data):row.data;
+        const originalMetadata=pool?JSON.stringify(metadata):row.data;
+        const value=decode(row);
+        if(!metadata.workAt){
+          schedule(value);const work=JSON.stringify(value.workAt);
+          // Backfill only the small scheduling header; never rewrite archived transcript/audio payloads.
+          if(pool)await pool.query("UPDATE record_aggregates SET data=jsonb_set(data,'{workAt}',$2::jsonb) WHERE id=$1 AND data=$3::jsonb",[value.id,work,originalMetadata]);
+          else db.prepare("UPDATE aggregates SET data=json_set(data,'$.workAt',json(?)) WHERE id=? AND data=?").run(work,value.id,row.data);
+          if(selectedLane&&(!Number.isFinite(value.workAt[selectedLane])||value.workAt[selectedLane]>now))continue;
+        }
+        values.push(value);
+      }
+      return values;
     },
     async insert(value) {
       schedule(value);
@@ -249,7 +277,7 @@ export async function createRepository(options = {}) {
         throw error;
       } finally { client?.release(); }
     },
-    async change(id, mutate, { rebuild = false } = {}) {
+    async change(id, mutate, { rebuild = false, returnRecord = true } = {}) {
       const client = pool ? await pool.connect() : null;
       try {
         if (client) await client.query('BEGIN'); else db.exec('BEGIN IMMEDIATE');
@@ -260,15 +288,16 @@ export async function createRepository(options = {}) {
         const previousShares = rebuild ? undefined : shareState(value);
       const result = mutate(value);
         requireThat(!(result instanceof Promise), 'transaction_must_be_synchronous', 500);
-        if (!rebuild && JSON.stringify(value) === original) { if (client) await client.query('COMMIT'); else db.exec('COMMIT'); return structuredClone(result ?? value); }
-        const before = rebuild ? null : visibleSnapshot(JSON.parse(original));
+        if (!rebuild && JSON.stringify(value) === original) { if (client) await client.query('COMMIT'); else db.exec('COMMIT'); return !returnRecord && result==null ? undefined : structuredClone(result ?? value); }
+        const beforeValue=rebuild?null:JSON.parse(original);
+        const before=beforeValue?.kind==='record'?publicRecord(beforeValue):null;
         schedule(value);
         traceWrite(value);
         if (client) await client.query('UPDATE record_aggregates SET data=$2 WHERE id=$1', [id, JSON.stringify(value)]);
         else writeSqliteValue(value);
         if(client)await writePgProjection(client,value,before,previousShares);else writeSqliteProjection(value,before,previousShares);
         if (client) await client.query('COMMIT'); else db.exec('COMMIT');
-        return structuredClone(result ?? value);
+        return !returnRecord && result==null ? undefined : structuredClone(result ?? value);
       } catch (error) { if (client) await client.query('ROLLBACK'); else db.exec('ROLLBACK'); throw error; }
       finally { client?.release(); }
     },

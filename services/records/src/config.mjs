@@ -45,7 +45,14 @@ export function publicConfig(config) {
 export function canConfigure(user, env = process.env) {
   return env.NODE_ENV !== 'production' || (env.RECORD_CONFIG_ADMIN || '').split(',').map(v => v.trim().toLowerCase()).includes(user.email);
 }
+const saves = new Map();
 export async function saveConfig(root, input, env = process.env) {
+  const previous = saves.get(root) || Promise.resolve();
+  const operation = previous.catch(() => {}).then(() => persistConfig(root, input, env));
+  saves.set(root, operation);
+  try { return await operation; } finally { if (saves.get(root) === operation) saves.delete(root); }
+}
+async function persistConfig(root, input, env) {
   const current = await readConfig(root, env), values = {};
   requireThat(input && typeof input === 'object' && !Array.isArray(input), 'invalid_provider_config', 400);
   for (const key of fields) {
@@ -83,6 +90,7 @@ export async function saveConfig(root, input, env = process.env) {
   requireThat(!context || next.ASR_PROVIDER!=='doubao' || new URL(next.DOUBAO_ASR_URL).pathname.endsWith('/bigmodel_async'),'asr_context_requires_second_pass',400);
   let previous = {};
   try { previous = JSON.parse(await readFile(join(root, 'providers.json'), 'utf8')); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+  if (Object.entries(values).every(([key, value]) => previous[key] === value)) return publicConfig(next);
   const temporary = join(root, `providers-${randomUUID()}.tmp`);
   await writeFile(temporary, JSON.stringify({ ...previous, ...values }, null, 2), { mode: 0o600, flag: 'wx' });
   await rename(temporary, join(root, 'providers.json'));
@@ -96,3 +104,9 @@ export const audioMinutesEnabled = config => ['openai-realtime', 'doubao-audio',
 export const doubaoAudioEnabled = config => ['doubao-audio', 'doubao-audio-only'].includes(config.MINUTES_MODE);
 
 export const meetingAutomationConfig=config=>({enabled:config.AUTO_MEETING_ENABLED==='true',browser:config.AUTO_MEETING_BROWSER!=='false',feishu:config.AUTO_MEETING_FEISHU!=='false'});
+
+// Automatic text minutes remain available without granting permission to send raw audio.
+export function recordMinutesConfig(record,config){
+  return audioMinutesEnabled(config) && config.MINUTES_MODE!=='doubao-audio-only' && !record.realtimeAudioConsent && configured(config.LLM_API_KEY) && config.LLM_MODEL && config.LLM_API_URL
+    ? {...config,MINUTES_MODE:'asr-llm'} : config;
+}

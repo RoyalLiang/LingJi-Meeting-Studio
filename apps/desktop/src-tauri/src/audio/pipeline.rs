@@ -148,6 +148,18 @@ impl Pipeline {
         result
     }
 
+    pub fn flush(&mut self) -> Result<Vec<Vec<u8>>, String> {
+        self.process(true)?;
+        Ok(self.packets(true))
+    }
+    pub fn reconfigure(&mut self, rate: u32, channels: usize) -> Result<Vec<Vec<u8>>, String> {
+        let mut next = Self::new(rate, channels)?;
+        let packets = self.flush()?;
+        next.sequence=self.sequence;
+        next.offset=self.offset;
+        *self=next;
+        Ok(packets)
+    }
     pub fn finish(mut self) -> Result<Vec<Vec<u8>>, String> {
         self.process(true)?;
         Ok(self.packets(true))
@@ -157,6 +169,20 @@ impl Pipeline {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn format_change_preserves_tail_sequence_and_sample_offset() {
+        let mut pipe=Pipeline::new(48_000,2).unwrap();
+        let mut packets=pipe.push(&vec![0.25;48_000*2+246]).unwrap();
+        packets.extend(pipe.reconfigure(44_100,1).unwrap());
+        packets.extend(pipe.push(&vec![0.5;44_100]).unwrap());
+        packets.extend(pipe.finish().unwrap());
+        let mut offset=0;
+        for (sequence,packet) in packets.iter().enumerate() {
+            let read=|at|u32::from_le_bytes(packet[at..at+4].try_into().unwrap());
+            assert_eq!(read(0),sequence as u32);assert_eq!(read(4),offset);offset+=read(8);
+        }
+        assert_eq!(offset,32_041);
+    }
     #[test]
     fn resamples_rates_preserves_tail_and_contiguous_identity() {
         for rate in [8_000, 16_000, 44_100, 48_000, 96_000] {

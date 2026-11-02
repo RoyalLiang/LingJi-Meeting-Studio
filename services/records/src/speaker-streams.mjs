@@ -37,7 +37,7 @@ export async function processSpeakerSources(repo,candidate,config,createStream=c
         // Only the very first connection may allocate identities; reconnects must anchor to prior audio.
         if(asr && !r.speakers?.length && r.speakerOriginSourceId===source.id)current.asr.mayAllocate=true;
         claim={recordId:r.id,sourceId:source.id,fence:current.asr.fence,generation:r.generation,language:r.language};
-      }); } catch(error) { streams.delete(key);throw error; }
+      }, {returnRecord:false}); } catch(error) { streams.delete(key);throw error; }
       if(!claim){streams.delete(key);return;}
       let client;
       const onUpdate=state=>{
@@ -49,7 +49,7 @@ export async function processSpeakerSources(repo,candidate,config,createStream=c
         entry.previewWork=(async()=>{
           while(entry.previewPending){
             const next=entry.previewPending;entry.previewPending=null;
-            await repo.change(candidate.id,r=>updateTranscriptPreview(r,source.id,entry.fence,next.preview,next.runtime,entry.generation));
+            await repo.change(candidate.id,r=>updateTranscriptPreview(r,source.id,entry.fence,next.preview,next.runtime,entry.generation), {returnRecord:false});
           }
         })().catch(()=>{}).finally(()=>{entry.previewWork=null;});
       };
@@ -62,26 +62,26 @@ export async function processSpeakerSources(repo,candidate,config,createStream=c
       let active=await repo.get(candidate.id),current=active?.sources.find(s=>s.id===source.id);
       if(active.deleted || active.generation!==entry.generation || current?.asr?.fence!==entry.fence){entry.client.close();streams.delete(key);return;}
       if(entry.client.state.error)throw entry.client.state.error;
-      await repo.change(candidate.id,r=>{const s=r.sources.find(s=>s.id===source.id);if(!r.deleted && s.asr?.fence===entry.fence)s.asr.lease=Date.now()+90000;});
+      await repo.change(candidate.id,r=>{const s=r.sources.find(s=>s.id===source.id);if(!r.deleted && s.asr?.fence===entry.fence)s.asr.lease=Date.now()+90000;}, {returnRecord:false});
       const chunk=active.chunks.find(c=>c.sourceId===source.id && c.sequence===current.asr.lastFedSequence+1 && c.sequence<=current.watermark);
       if(chunk && !current.asr.ended){
         await entry.client.write(await repo.readAudio(chunk.object));
         await repo.change(candidate.id,r=>{
           const s=r.sources.find(s=>s.id===source.id);if(r.deleted || r.generation!==entry.generation || s.asr?.fence!==entry.fence)return;
           const c=r.chunks.find(c=>c.key===chunk.key);c.state='streaming';s.asr.lastFedSequence=chunk.sequence;
-        });
+        }, {returnRecord:false});
       }
       active=await repo.get(candidate.id);current=active.sources.find(s=>s.id===source.id);
       if(current.stopped && current.watermark===current.lastSequence && current.asr.lastFedSequence===current.lastSequence && !current.asr.ended){
-        await repo.change(candidate.id,r=>{const s=r.sources.find(s=>s.id===source.id);if(!r.deleted && s.asr?.fence===entry.fence)s.asr.ended=true;});entry.client.end();
+        await repo.change(candidate.id,r=>{const s=r.sources.find(s=>s.id===source.id);if(!r.deleted && s.asr?.fence===entry.fence)s.asr.ended=true;}, {returnRecord:false});entry.client.end();
       }
       await entry.previewWork;
-      await repo.change(candidate.id,r=>updateTranscriptPreview(r,source.id,entry.fence,entry.client.state.preview,entry.client.state.runtime||{},entry.generation));
+      await repo.change(candidate.id,r=>updateTranscriptPreview(r,source.id,entry.fence,entry.client.state.preview,entry.client.state.runtime||{},entry.generation), {returnRecord:false});
       const turns=entry.client.state.latest;entry.client.state.latest=null;
-      if(turns?.length){await repo.change(candidate.id,r=>commitSpeakerTurns(r,source.id,entry.fence,turns,entry.generation));telemetry.event('asr.confirmed',{recordId:candidate.id,sourceId:source.id,durationMs:entry.client.state.runtime?.firstConfirmedMs});}
+      if(turns?.length){await repo.change(candidate.id,r=>commitSpeakerTurns(r,source.id,entry.fence,turns,entry.generation), {returnRecord:false});telemetry.event('asr.confirmed',{recordId:candidate.id,sourceId:source.id,durationMs:entry.client.state.runtime?.firstConfirmedMs});}
       if(entry.client.state.error)throw entry.client.state.error;
       if(entry.client.state.complete){
-        let finished=false;await repo.change(candidate.id,r=>{finished=finishSpeakerSource(r,source.id,entry.fence,entry.generation);});
+        let finished=false;await repo.change(candidate.id,r=>{finished=finishSpeakerSource(r,source.id,entry.fence,entry.generation);}, {returnRecord:false});
         if(!finished)throw Object.assign(new Error('unexpected_asr_completion'),{code:'unexpected_asr_completion'});
         entry.client.close();streams.delete(key);
       }
@@ -94,7 +94,7 @@ export async function processSpeakerSources(repo,candidate,config,createStream=c
         if(error.transportCode)s.asr.transportCode=error.transportCode;delete s.asr.lease;
         for(const c of r.chunks.filter(c=>c.sourceId===source.id && c.state!=='done')){c.state='pending';c.attempts=attempts;c.error=s.asr.error;c.retryAt=s.asr.retryAt;delete c.lease;}
         r.transcription=attempts>=5?'failed':'blocked';emit(r,'transcription.blocked',{error:s.asr.error,sourceId:source.id});
-      });
+      }, {returnRecord:false});
     }finally{entry.busy=false;}
   }
   let next=0;

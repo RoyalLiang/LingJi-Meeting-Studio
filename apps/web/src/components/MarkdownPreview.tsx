@@ -1,12 +1,14 @@
+import './MarkdownPreview.css';
+import {ExternalLink} from './ExternalLink';
 import {memo,useId,useMemo,type ReactNode} from 'react';
 
 function inline(text:string,prefix:string):ReactNode[] {
   const result:ReactNode[]=[];let offset=0;
-  const pattern=/\\([\s\S])|\*\*([^*]+)\*\*|`([^`]+)`|\[\^(\d+)\]/g;
+  const pattern=/\\([\s\S])|\*\*([^*]+)\*\*|`([^`]+)`|\[\^(\d+)\]|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|\*([^*\n]+)\*/g;
   const decode=(value:string)=>value.replace(/&lt;/g,'<').replace(/&gt;/g,'>');
   for(const match of text.matchAll(pattern)){
     if(match.index!>offset)result.push(decode(text.slice(offset,match.index)));
-    result.push(match[1]?decode(match[1]):match[2]?<strong key={match.index}>{decode(match[2])}</strong>:match[3]?<code key={match.index}>{decode(match[3])}</code>:<sup key={match.index}><a href={`#${prefix}-${match[4]}`}>{match[4]}</a></sup>);
+    result.push(match[1]?decode(match[1]):match[2]?<strong key={match.index}>{decode(match[2])}</strong>:match[3]?<code key={match.index}>{decode(match[3])}</code>:match[5]?<ExternalLink key={match.index} href={match[6]}>{decode(match[5])}</ExternalLink>:match[7]?<em key={match.index}>{decode(match[7])}</em>:<sup key={match.index}><a href={`#${prefix}-${match[4]}`}>{match[4]}</a></sup>);
     offset=match.index!+match[0].length;
   }
   if(offset<text.length)result.push(decode(text.slice(offset)));return result;
@@ -18,6 +20,15 @@ export const MarkdownPreview=memo(function MarkdownPreview({text}:{text:string})
     const lines=text.split(/\r?\n/),blocks:ReactNode[]=[];
     for(let i=0;i<lines.length;i++){
       const line=lines[i];if(!line.trim())continue;
+      if(/^```/.test(line)){
+        const key=i,code:string[]=[];i++;for(;i<lines.length&&!/^```/.test(lines[i]);i++)code.push(lines[i]);
+        blocks.push(<pre key={key}><code>{code.join('\n')}</code></pre>);continue;
+      }
+      if(/^\d+[.)] /.test(line)){
+        const key=i,items:string[]=[];for(;i<lines.length&&/^\d+[.)] /.test(lines[i]);i++)items.push(lines[i].replace(/^\d+[.)] /,''));i--;
+        blocks.push(<ol key={key}>{items.map((item,j)=><li key={j}>{inline(item,prefix)}</li>)}</ol>);continue;
+      }
+      if(line.startsWith('> ')){blocks.push(<blockquote key={i}>{inline(line.slice(2),prefix)}</blockquote>);continue;}
       const heading=line.match(/^(#{1,6}) (.*)$/),footnote=line.match(/^\[\^(\d+)\]: (.*)$/);
       if(heading){const value=inline(heading[2],prefix);blocks.push(heading[1].length===1?<h2 key={i}>{value}</h2>:heading[1].length===2?<h3 key={i}>{value}</h3>:<h4 key={i}>{value}</h4>);}
       else if(footnote)blocks.push(<p className="markdown-footnote" id={`${prefix}-${footnote[1]}`} key={i}><sup>{footnote[1]}</sup> {inline(footnote[2],prefix)}</p>);

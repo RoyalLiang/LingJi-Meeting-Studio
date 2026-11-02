@@ -48,7 +48,7 @@
 .ma-assistant-start h2{font-size:25px;font-weight:500;letter-spacing:-.7px}.ma-assistant-start p{margin-top:10px;font-size:13px;color:var(--ma-muted)}
 .ma-composer{padding:16px;border:1px solid var(--ma-control);border-radius:10px;background:var(--ma-bg)}
 .ma-composer-tools{display:flex;align-items:center;gap:8px}.ma-composer-tools>.select{width:148px;flex:none}
-.ma-composer textarea{width:100%;min-height:120px;max-height:300px;margin:12px 0;padding:8px 0;border:0;border-radius:0;background:transparent;color:var(--ma-ink);box-shadow:none;resize:vertical;font-family:inherit;font-size:14px;line-height:1.8}
+.ma-composer textarea{width:100%;min-height:120px;max-height:300px;margin:12px 0;padding:14px 16px;border:1px solid var(--ma-border);border-radius:14px;background:var(--ma-panel);color:var(--ma-ink);box-shadow:none;resize:vertical;font-family:inherit;font-size:14px;line-height:1.8}
 .ma-composer textarea:disabled{opacity:.7}.ma-composer-bottom{display:flex;align-items:center;justify-content:space-between;gap:16px}
 .ma-composer-bottom>span{font-size:11px;color:var(--ma-muted)}.ma-selected-sources{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
 .ma-selected-sources button,.ma-evidence button{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:6px 8px;border:1px solid var(--ma-border);border-radius:5px;background:var(--ma-panel);font-size:11px;line-height:1.6;color:var(--ma-muted);text-align:left}
@@ -85,3 +85,5 @@
 @media(prefers-reduced-motion:reduce){.meeting-agent-center *,.ma-layer *{transition:none!important;animation:none!important}}
 
 @media(max-width:700px){.meeting-agent-center{padding-top:24px}.ma-heading{min-height:0;padding-bottom:20px}.ma-heading h1{font-size:26px}}
+
+.ma-extension-scope{padding:16px 8px 8px}.ma-prompt-templates{display:flex;flex-wrap:wrap;gap:8px}.ma-prompt-templates>.button{max-width:100%;height:auto;white-space:normal;text-align:left}.ma-composer textarea:focus-visible{outline-offset:2px}.ma-result .markdown-preview{margin:12px 0}.ma-toolbar .select-trigger>span{white-space:nowrap}.meeting-agent-center .ma-tools>.select{flex:none}

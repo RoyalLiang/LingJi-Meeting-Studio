@@ -1070,5 +1070,7 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 .record-reading .notes-block { margin-top:22px; }
 .sidebar .extension-entry { width:100%; justify-content:flex-start; gap:8px; padding:6px 10px; font-size:12px; min-height:34px; margin:8px 0; }
 .sidebar .extension-entry.selected { color:var(--accent); background:var(--accent-soft); }
-.rail-brand { min-width:0; flex-wrap:wrap; row-gap:0; }
+.rail-brand { min-width:0; flex-wrap:nowrap; }
 .sidebar .rail-brand .brand { min-width:0; gap:6px; }
+
+.rail-brand>.client-update-version{flex:none}.rail-brand .brand{min-width:0;white-space:nowrap;flex-shrink:1}.rail-brand .brand h1{white-space:nowrap}.select-portal[aria-label="筛选任务状态"] [role=option]>span:first-child{display:block;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}.select-portal[aria-label="筛选任务状态"] [role=option]{overflow-wrap:normal}

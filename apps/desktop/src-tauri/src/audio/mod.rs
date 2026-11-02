@@ -150,7 +150,11 @@ where T: cpal::SizedSample, f32: FromSample<T> {
     }
 }
 
-fn handle_stream_error(event: cpal::Error, error: &Mutex<Option<String>>, stop: &AtomicBool, warned: &AtomicBool) {
+fn handle_stream_error(event: cpal::Error, error: &Mutex<Option<String>>, stop: &AtomicBool, warned: &AtomicBool, rebuild: &AtomicBool) {
+    if matches!(event.kind(), cpal::ErrorKind::StreamInvalidated | cpal::ErrorKind::DeviceNotAvailable) {
+        rebuild.store(true, Ordering::Release);
+        return;
+    }
     // CPAL keeps the stream running for these notifications and still delivers audio.
     if matches!(event.kind(), cpal::ErrorKind::Xrun | cpal::ErrorKind::DeviceChanged | cpal::ErrorKind::RealtimeDenied) {
         if !warned.swap(true, Ordering::Relaxed) {
@@ -168,6 +172,7 @@ fn input_stream<T>(
     sender: SyncSender<Vec<f32>>,
     error: Arc<Mutex<Option<String>>>,
     stop: Arc<AtomicBool>,
+    rebuild: Arc<AtomicBool>,
 ) -> Result<cpal::Stream, String>
 where
     T: cpal::SizedSample,
@@ -176,7 +181,7 @@ where
     let failure = error.clone();
     let failed = stop.clone();
     let warned = AtomicBool::new(false);
-    device.build_input_stream(*config, move |data: &[T], _| { queue_input(&sender, data, &error, &stop); }, move |e| { handle_stream_error(e, &failure, &failed, &warned); }, None)
+    device.build_input_stream(*config, move |data: &[T], _| { queue_input(&sender, data, &error, &stop); }, move |e| { handle_stream_error(e, &failure, &failed, &warned, &rebuild); }, None)
         .map_err(|e| e.to_string())
 }
 
@@ -190,6 +195,13 @@ fn finish_capture(packets: &PacketQueue, mut pipeline: Pipeline, frames: Receive
         for data in frames.try_iter() { send_packets(packets, pipeline.push(&data)?)?; }
         send_packets(packets, pipeline.finish()?)?;
     }
+    Ok(())
+}
+
+fn prepare_restart(sender: &PacketQueue, pipeline: &mut Pipeline, frames: Receiver<Vec<f32>>, attempts: usize) -> Result<(),String> {
+    for data in frames.try_iter() { send_packets(sender,pipeline.push(&data)?)?; }
+    send_packets(sender,pipeline.flush()?)?;
+    if attempts>=3 { return Err("音频设备连续切换失败，请重新选择设备".into()); }
     Ok(())
 }
 
@@ -297,6 +309,13 @@ impl Captures {
         std::thread::spawn(move || {
             let _writer = packets.writer();
             let result = (|| {
+                let mut retained: Option<Pipeline> = None;
+                let mut announced = Some(ready.clone());
+                let mut restarts = 0;
+                let mut stable_since = std::time::Instant::now();
+                loop {
+                let rebuild = Arc::new(AtomicBool::new(false));
+                let opened = (|| {
                 let host = audio_host(worker_kind == "display")?;
                 let devices = if worker_kind == "microphone" {
                     input_list(&host)?
@@ -319,7 +338,6 @@ impl Captures {
                     device.default_input_config()
                 }
                 .map_err(|e| e.to_string())?;
-                let mut pipeline = Pipeline::new(config.sample_rate(), config.channels() as usize)?;
                 let (raw, frames) = raw_input_channel();
                 let stream_config = config.config();
                 let stream = match config.sample_format() {
@@ -329,6 +347,7 @@ impl Captures {
                         raw,
                         worker_error.clone(),
                         worker_stop.clone(),
+                        rebuild.clone(),
                     ),
                     cpal::SampleFormat::I16 => input_stream::<i16>(
                         &device,
@@ -336,6 +355,7 @@ impl Captures {
                         raw,
                         worker_error.clone(),
                         worker_stop.clone(),
+                        rebuild.clone(),
                     ),
                     cpal::SampleFormat::U16 => input_stream::<u16>(
                         &device,
@@ -343,6 +363,7 @@ impl Captures {
                         raw,
                         worker_error.clone(),
                         worker_stop.clone(),
+                        rebuild.clone(),
                     ),
                     format => Err(format!("尚未支持设备格式 {format}")),
                 }?;
@@ -355,8 +376,23 @@ impl Captures {
                     .map_err(|e| e.to_string())?
                     .name()
                     .to_string();
-                ready.send(Ok(label)).map_err(|_| "采集启动已取消")?;
-                while !worker_stop.load(Ordering::Acquire) {
+                    Ok::<_,String>((stream,frames,config,label))
+                })();
+                let (stream,frames,config,label) = match opened {
+                    Ok(value) => value,
+                    Err(_) if announced.is_none() && !worker_stop.load(Ordering::Acquire) && restarts<3 => {
+                        restarts+=1;
+                        std::thread::sleep(Duration::from_millis(300));
+                        continue;
+                    }
+                    Err(message) => return Err(message),
+                };
+                let mut pipeline = if let Some(mut previous) = retained.take() {
+                    send_packets(&packets, previous.reconfigure(config.sample_rate(), config.channels() as usize)?)?;
+                    previous
+                } else { Pipeline::new(config.sample_rate(), config.channels() as usize)? };
+                if let Some(ready) = announced.take() { ready.send(Ok(label)).map_err(|_| "采集启动已取消")?; }
+                while !worker_stop.load(Ordering::Acquire) && !rebuild.load(Ordering::Acquire) {
                     match frames.recv_timeout(Duration::from_millis(200)) {
                         Ok(data) => send_packets(&packets, pipeline.push(&data)?)?,
                         Err(mpsc::RecvTimeoutError::Timeout) => {}
@@ -364,8 +400,18 @@ impl Captures {
                     }
                 }
                 drop(stream);
+                if rebuild.load(Ordering::Acquire) && !worker_stop.load(Ordering::Acquire) {
+                    if stable_since.elapsed() >= Duration::from_secs(10) { restarts=0; }
+                    prepare_restart(&packets,&mut pipeline,frames,restarts)?;
+                    restarts += 1;
+                    stable_since=std::time::Instant::now();
+                    retained=Some(pipeline);
+                    std::thread::sleep(Duration::from_millis(150));
+                    continue;
+                }
                 finish_capture(&packets, pipeline, frames, worker_discard.load(Ordering::Acquire))?;
-                Ok::<(), String>(())
+                return Ok::<(), String>(());
+                }
             })();
             if let Err(message) = result {
                 *worker_error.lock().unwrap() = Some(message.clone());
@@ -450,6 +496,28 @@ impl Drop for Captures {
 mod tests {
     use super::*;
     #[test]
+    fn exhausted_restart_budget_still_persists_all_tail_samples() {
+        let packets=PacketQueue::new().unwrap();let mut pipeline=Pipeline::new(48_000,2).unwrap();
+        send_packets(&packets,pipeline.push(&vec![0.25;4_800*2]).unwrap()).unwrap();
+        let (sender,frames)=raw_input_channel();sender.send(vec![0.5;4_800*2]).unwrap();drop(sender);
+        assert!(prepare_restart(&packets,&mut pipeline,frames,3).is_err());
+        packets.close();let mut sequence=0;let mut offset=0;
+        while let Some(packet)=packets.pending().unwrap(){
+            let read=|at|u32::from_le_bytes(packet[at..at+4].try_into().unwrap());
+            assert_eq!(read(0),sequence);assert_eq!(read(4),offset);
+            packets.acknowledge(read(0),read(4),read(8)).unwrap();sequence+=1;offset+=read(8);
+        }
+        assert_eq!(offset,3_200);
+    }
+    #[test]
+    fn sample_rate_invalidation_requests_rebuild_instead_of_stopping_meeting() {
+        let stop=AtomicBool::new(false);let warned=AtomicBool::new(false);let error=Mutex::new(None);
+        let rebuild=AtomicBool::new(false);
+        handle_stream_error(cpal::ErrorKind::StreamInvalidated.into(),&error,&stop,&warned,&rebuild);
+        assert!(rebuild.load(Ordering::Acquire));
+        assert!(!stop.load(Ordering::Acquire));assert!(error.lock().unwrap().is_none());
+    }
+    #[test]
     fn recoverable_stream_warning_keeps_the_same_available_audio() {
         for kind in [cpal::ErrorKind::Xrun, cpal::ErrorKind::DeviceChanged, cpal::ErrorKind::RealtimeDenied] {
             let (sender, receiver) = raw_input_channel();
@@ -457,7 +525,7 @@ mod tests {
             let warned = AtomicBool::new(false);
             let error = Mutex::new(None);
             // WASAPI reports a discontinuity before delivering the available buffer.
-            handle_stream_error(kind.into(), &error, &stop, &warned);
+            handle_stream_error(kind.into(), &error, &stop, &warned, &AtomicBool::new(false));
             queue_input(&sender, &[0.25f32, -0.25], &error, &stop);
             assert!(!stop.load(Ordering::Acquire), "recoverable {kind:?} must not disconnect system audio");
             assert!(error.lock().unwrap().is_none());
@@ -468,17 +536,17 @@ mod tests {
 
     #[test]
     fn fatal_stream_errors_still_stop_and_do_not_accept_more_audio() {
-        for kind in [cpal::ErrorKind::DeviceNotAvailable, cpal::ErrorKind::PermissionDenied, cpal::ErrorKind::StreamInvalidated, cpal::ErrorKind::BackendError] {
+        for kind in [cpal::ErrorKind::PermissionDenied, cpal::ErrorKind::BackendError] {
             let (sender, receiver) = raw_input_channel();
             let stop = AtomicBool::new(false);
             let warned = AtomicBool::new(false);
             let error = Mutex::new(None);
-            handle_stream_error(kind.into(), &error, &stop, &warned);
+            handle_stream_error(kind.into(), &error, &stop, &warned, &AtomicBool::new(false));
             queue_input(&sender, &[0.25f32], &error, &stop);
             assert!(stop.load(Ordering::Acquire));
             assert!(error.lock().unwrap().as_ref().unwrap().starts_with("音频设备停止："));
             assert!(receiver.try_recv().is_err());
-            handle_stream_error(cpal::ErrorKind::Xrun.into(), &error, &stop, &warned);
+            handle_stream_error(cpal::ErrorKind::Xrun.into(), &error, &stop, &warned, &AtomicBool::new(false));
             assert!(stop.load(Ordering::Acquire), "a warning must not restart a failed device");
             assert!(error.lock().unwrap().is_some());
         }
@@ -514,7 +582,7 @@ mod tests {
             let error = Mutex::new(None);
             for _ in 0..256 { queue_input(&sender, &[0.25f32; 960], &error, &stop); }
             if overflow { queue_input(&sender, &[0.25f32; 960], &error, &stop); }
-            else { handle_stream_error(cpal::ErrorKind::DeviceNotAvailable.into(), &error, &stop, &AtomicBool::new(false)); }
+            else { handle_stream_error(cpal::ErrorKind::PermissionDenied.into(), &error, &stop, &AtomicBool::new(false), &AtomicBool::new(false)); }
             assert!(stop.load(Ordering::Acquire));
             finish_capture(&packets, pipeline, frames, false).unwrap();
             packets.close();

@@ -113,3 +113,12 @@ test('parallel waveform scans keep exact bins, offsets and an eight-buffer read 
  let active=0,max=0;const actual=await recordingWaveform(chunks,async object=>{active++;max=Math.max(max,active);await new Promise(r=>setImmediate(r));active--;return objects[object];},()=>false,leading);
  assert.deepEqual(actual.peaks,expected);assert.equal(actual.samples,samples);assert.equal(max,8);
 });
+
+test('persisted chunk envelopes render the first waveform without reading original audio',async()=>{
+ const {chunkWaveform}=await import('../services/records/src/waveform.mjs');
+ const bytes=pcm(Array.from({length:32000},(_,i)=>i<16000?0:-32768));
+ const chunks=[{sampleOffset:0,sampleCount:32000,waveform:chunkWaveform(bytes)}];let reads=0;
+ const result=await recordingWaveform(chunks,async()=>{reads++;return bytes;});
+ assert.equal(reads,0);assert.ok(result.peaks.slice(0,96).every(value=>value===0));assert.ok(result.peaks.slice(97).every(value=>value===1));
+ const fallback=await recordingWaveform([{...chunks[0],waveform:'broken'}],async()=>{reads++;return bytes;});assert.equal(reads,1);assert.equal(fallback.peaks.length,192);
+});

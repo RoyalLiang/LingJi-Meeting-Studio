@@ -493,3 +493,24 @@ test('the minutes lane prioritizes an ended meeting ahead of another live refres
   assert.equal((await repo.get(ended.id)).jobs[0].status,'completed');
  }finally{if(previous===undefined)delete process.env.RECORD_WORKER_CONCURRENCY;else process.env.RECORD_WORKER_CONCURRENCY=previous;await repo.close();await rm(root,{recursive:true,force:true});}
 });
+
+test('a queued text job stays on text transport when the meeting later permits audio',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'tts-text-job-')),repo=await createRepository({root,databaseUrl:''});
+ try{
+ await saveConfig(root,{MINUTES_MODE:'openai-realtime',OPENAI_REALTIME_API_KEY:'fixture',LLM_API_KEY:'fixture',LLM_MODEL:'text-fixture'},{});
+ const r=record();r.capture='completed';requestMinutes(r,{mode:'model',modelVersion:'text-fixture'});r.realtimeAudioConsent=true;await repo.insert(r);let calls=0;
+ await runCycle(repo,{minutes:async(_job,config)=>{calls++;assert.equal(config.MINUTES_MODE,'asr-llm');return result;}},{lane:'minutes'});
+ assert.equal(calls,1);assert.equal((await repo.get(r.id)).jobs[0].status,'completed');
+ }finally{await repo.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('claim uses the newly authorized audio mode even when listWork returned an older snapshot',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'tts-claim-mode-')),repo=await createRepository({root,databaseUrl:''});
+ try{
+ await saveConfig(root,{MINUTES_MODE:'openai-realtime',OPENAI_REALTIME_API_KEY:'fixture',OPENAI_REALTIME_MODEL:'audio-fixture',LLM_API_KEY:'fixture',LLM_MODEL:'text-fixture'},{});
+ const r=record();r.capture='completed';requestMinutes(r,{mode:'model',automatic:true,modelVersion:'text-fixture'});await repo.insert(r);
+ const list=repo.listWork.bind(repo);let granted=false;
+ repo.listWork=async options=>{const stale=await list(options);if(!granted){granted=true;await repo.change(r.id,value=>{setAutomation(value,{enabled:false});setAutomation(value,{enabled:true,realtimeAudioConsent:true});requestMinutes(value,{mode:'model',modelVersion:'openai-realtime:audio-fixture'});});}return stale;};
+ let calls=0;await runCycle(repo,{minutes:async(job,config)=>{calls++;assert.equal(job.modelVersion,'openai-realtime:audio-fixture');assert.equal(config.MINUTES_MODE,'openai-realtime');return result;}},{lane:'minutes'});assert.equal(calls,1);
+ }finally{await repo.close();await rm(root,{recursive:true,force:true});}
+});

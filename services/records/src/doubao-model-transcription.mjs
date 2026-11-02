@@ -46,7 +46,7 @@ export async function processDoubaoModelAudio(repo, candidate, config) {
         claim = { generation:r.generation, language:r.language, sourceId:source.id, chunks:structuredClone(batch), fence };
         break;
       }
-    });
+    }, {returnRecord:false});
     if (!claim) return;
     const previousUsage = {}; let reported = false;
     const owns = r => !r.deleted && r.generation === claim.generation && claim.chunks.every(c => r.chunks.find(current => current.key === c.key)?.fence === claim.fence);
@@ -63,7 +63,7 @@ export async function processDoubaoModelAudio(repo, candidate, config) {
           requireThat(owns(r) && r.realtimeAudioConsent, 'stale_job', 410);
           r.usage.audioTranscriptionMeter ||= {requests:0,reportedRequests:0}; r.usage.audioTranscriptionMeter.requests++;
           emit(r,'transcription.usage');
-        }),
+        }, {returnRecord:false}),
         onUsage: async usage => repo.change(candidate.id, r => {
           if (r.deleted || r.generation !== claim.generation) return;
           const meter = r.usage.audioTranscriptionMeter;
@@ -75,7 +75,7 @@ export async function processDoubaoModelAudio(repo, candidate, config) {
             if (field === 'totalTokens') r.usage.llmTokens += delta;
           }
           emit(r,'transcription.usage');
-        }),
+        }, {returnRecord:false}),
       });
       await repo.change(candidate.id, r => {
         if (!owns(r)) return;
@@ -86,7 +86,7 @@ export async function processDoubaoModelAudio(repo, candidate, config) {
         commitTranscriptBatch(r, claim.chunks.map(c=>c.key), result.text, claim.generation, config.LLM_MODEL);
         const source = r.sources.find(s=>s.id===claim.sourceId);
         source.asr = { state:source.stopped && r.chunks.filter(c=>c.sourceId===source.id).every(c=>c.state==='done') ? 'completed' : 'queued', provider:'doubao-audio-only', runtime:result.runtime };
-      });
+      }, {returnRecord:false});
     } catch (error) {
       await repo.change(candidate.id, r => {
         if (!owns(r)) return;
@@ -100,7 +100,7 @@ export async function processDoubaoModelAudio(repo, candidate, config) {
         if (!r.realtimeAudioConsent) { source.asr={state:'queued',provider:'doubao-audio-only'};r.transcription='queued';return; }
         source.asr={state:'failed',provider:'doubao-audio-only',error:error.code || 'asr_request_failed'};
         r.transcription=ownedChunks.some(c=>c.attempts>=5)?'failed':'blocked'; emit(r,'transcription.blocked',{error:source.asr.error});
-      });
+      }, {returnRecord:false});
     }
   }
   await Promise.all([work(),work()]);

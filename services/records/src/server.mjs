@@ -2,9 +2,9 @@ import { createMeetingAgentRuntime } from './meeting-agent.mjs';
 import { truncateText } from '../../../packages/records/src/text.mjs';
 import { isIP } from 'node:net';
 import { manualMinutesContent, minutesActionText } from '../../../packages/records/src/minutes-quality.mjs';
-import { recordingWaveform, waveformKey, validWaveform } from './waveform.mjs';
+import { recordingWaveform, waveformKey, validWaveform, chunkWaveform } from './waveform.mjs';
 import { meetingAutomationConfig, doubaoAudioEnabled } from './config.mjs';
-import { audioMinutesEnabled } from './config.mjs';
+import { audioMinutesEnabled, recordMinutesConfig } from './config.mjs';
 import { testDoubaoAudio } from './doubao-audio-minutes.mjs';
 import {learningRoutes} from './learning-routes.mjs';
 import {learningServiceFor} from './learning-service.mjs';
@@ -110,8 +110,24 @@ export async function createRecordServer(options = {}) {
     void request.then(release, release);
     return request;
   };
-  const send = (res, status, data, headers = {}) => { const payload=JSON.stringify(data); res.writeHead(status, { 'Content-Length':Buffer.byteLength(payload), 'Content-Type': 'application/json; charset=utf-8',
-    'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...headers }); res.end(payload); };
+  const sendPayload = (res,status,payload,headers={}) => {res.writeHead(status,{'Content-Length':Buffer.byteLength(payload),'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...headers});res.end(payload);};
+  const send = (res,status,data,headers) => sendPayload(res,status,JSON.stringify(data),headers);
+  const recordResponses=new Map();let responseBytes=0;
+  const forgetResponse=id=>{const cached=recordResponses.get(id);if(cached){responseBytes-=cached.payload.length;recordResponses.delete(id);}};
+  async function readRecordResponse(id,user){
+    const [access]=await repo.getRecordAccess([id]);
+    requireThat(access?.kind==='record'&&access.owner===user.id,'not_found',404);
+    requireThat(!access.deleted&&Date.parse(access.deleteAt)>Date.now(),'record_deleted',410);
+    const cached=recordResponses.get(id);
+    if(cached?.version===access.version){recordResponses.delete(id);recordResponses.set(id,cached);return cached.payload;}
+    forgetResponse(id);
+    const payload=Buffer.from(JSON.stringify(publicRecord(await owned(id,user))));
+    if(payload.length<=24*1024*1024){
+      while(recordResponses.size>=32||responseBytes+payload.length>24*1024*1024)forgetResponse(recordResponses.keys().next().value);
+      recordResponses.set(id,{version:access.version,payload});responseBytes+=payload.length;
+    }
+    return payload;
+  }
   async function owned(id, user) { const r = await repo.get(id); requireThat(r && r.kind === 'record' && r.owner === user.id, 'not_found', 404); requireThat(!r.deleted && Date.parse(r.deleteAt) > Date.now(), 'record_deleted', 410); return r; }
   const changeOwned = (id, user, mutate) => repo.change(id, r => {
     requireThat(r.owner === user.id && !r.deleted && Date.parse(r.deleteAt) > Date.now(), 'record_deleted', 410);
@@ -167,7 +183,7 @@ export async function createRecordServer(options = {}) {
         send(res, 200, { enabled, ...(enabled && supported ? learningService.read() : { available:false, status:'disabled', checkedAt:null }) }); return;
       }
       if (path === '/api/bootstrap' && req.method === 'GET') {
-        send(res, 200, { email: user.email, csrf: auth.csrf(user), audioTransport: 'pcm-v1', localAccount: Boolean(options.localAccount), learning:{enabled:await learningEnabled(),...learningService.snapshot()}, meetingAutomation:meetingAutomationConfig(await readConfig(repo.root)), providers: providerStatus(await readConfig(repo.root)), limits: { maxMinutes: null, maxRecords: 200, maxChunkSeconds: 15 }, storage: repo.backend, canConfigure: canConfigure(user) }); return;
+        send(res, 200, { email: user.email, csrf: auth.csrf(user), audioTransport: 'pcm-v1', audioMinutesDefault:user.autoAudioMinutes===true, localAccount: Boolean(options.localAccount), learning:{enabled:await learningEnabled(),...learningService.snapshot()}, meetingAutomation:meetingAutomationConfig(await readConfig(repo.root)), providers: providerStatus(await readConfig(repo.root)), limits: { maxMinutes: null, maxRecords: 200, maxChunkSeconds: 15 }, storage: repo.backend, canConfigure: canConfigure(user) }); return;
       }
       if (path === '/api/settings/providers/test' && req.method === 'POST') {
         requireThat(canConfigure(user), 'configuration_admin_required', 403);
@@ -181,8 +197,16 @@ export async function createRecordServer(options = {}) {
       }
       if (path === '/api/settings/providers') {
         requireThat(canConfigure(user), 'configuration_admin_required', 403);
-        if (req.method === 'GET') { send(res, 200, { values: publicConfig(await readConfig(repo.root)) }); return; }
-        if (req.method === 'PUT') { const values=await saveConfig(repo.root, await readBody(req, 20000)); learningService.invalidate(); send(res, 200, { values }); return; }
+        if (req.method === 'GET') { send(res, 200, { values: {...publicConfig(await readConfig(repo.root)),AUTO_AUDIO_MINUTES:String(user.autoAudioMinutes===true)} }); return; }
+        if (req.method === 'PUT') {
+        const input=await readBody(req,20000),audioDefault=input.AUTO_AUDIO_MINUTES;
+        requireThat(audioDefault===undefined||['true','false'].includes(audioDefault),'invalid_minutes_default',400);
+        const values=await saveConfig(repo.root,input);
+        if(audioDefault!==undefined)await repo.change(user.id,value=>{value.autoAudioMinutes=audioDefault==='true';});
+        const audioMinutesDefault=audioDefault===undefined?user.autoAudioMinutes===true:audioDefault==='true';
+        learningService.invalidate();const config=await readConfig(repo.root);
+        send(res,200,{values:{...values,AUTO_AUDIO_MINUTES:String(audioMinutesDefault)},providers:providerStatus(config),meetingAutomation:meetingAutomationConfig(config),audioMinutesDefault});return;
+      }
       }
       if (path === '/api/deletions' && req.method === 'GET') {
         send(res, 200, { deletions: (await repo.list()).filter(r => r.owner === user.id && r.deleted).map(r => ({ id: r.id, cleanup: r.cleanup || 'pending' })) }); return;
@@ -205,7 +229,12 @@ export async function createRecordServer(options = {}) {
         const all = (await repo.list()).filter(r => r.owner === user.id && !r.deleted);
         requireThat(all.length < 200, 'record_limit', 429); const input = await readBody(req, 4000);
         if (input.workspaceId) { requireThat(!['all', 'inbox'].includes(input.workspaceId), 'invalid_workspace', 400); await requireWorkspace(repo, user.id, input.workspaceId); }
-        const config = await readConfig(repo.root);
+        const savedConfig=await readConfig(repo.root);
+      if(user.autoAudioMinutes===true&&audioMinutesEnabled(savedConfig)){
+        if(input.realtimeAudioConsent===undefined)input.realtimeAudioConsent=true;
+        if(input.autoMinutes===undefined)input.autoMinutes=providerStatus(savedConfig).minutes;
+      }
+      const config = recordMinutesConfig(input,savedConfig);
       requireThat(!input.autoMinutes || providerStatus(config).minutes, 'minutes_not_configured', 503);
       requireThat(!input.autoMinutes || !audioMinutesEnabled(config) || input.realtimeAudioConsent === true, 'realtime_audio_consent_required', 403);
         const r = await repo.insert(createRecord(user.id, {...input,learningEnabled:await learningEnabled()}));
@@ -218,11 +247,13 @@ export async function createRecordServer(options = {}) {
         send(res, 200, { records }); return;
       }
       const route = path.match(/^\/api\/records\/([a-f0-9-]{36})(?:\/(.*))?$/);
-      requireThat(route, 'not_found', 404); const id = route[1], action = route[2] || ''; const record = await owned(id, user);
+      requireThat(route, 'not_found', 404); const id = route[1], action = route[2] || '';
+      if(action===''&&req.method==='GET'){sendPayload(res,200,await readRecordResponse(id,user));return;}
+      const record = await owned(id, user);
       if(await learningRoutes({req,res,url,action,repo,user,record,readBody,send,csrf:auth.csrf(user),requireLearning,learningService}))return;
       if (action === 'automation' && req.method === 'PATCH') {
         const body = await readBody(req, 4000);
-        const config = await readConfig(repo.root);
+        const config = recordMinutesConfig({...record,realtimeAudioConsent:record.realtimeAudioConsent||body.realtimeAudioConsent},await readConfig(repo.root));
       requireThat(!body.enabled || providerStatus(config).minutes, 'minutes_not_configured', 503);
       requireThat(!body.enabled || !audioMinutesEnabled(config) || record.realtimeAudioConsent || body.realtimeAudioConsent === true, 'realtime_audio_consent_required', 403);
         const result = await changeOwned(id, user, r => { setAutomation(r, body); return publicRecord(r); });
@@ -363,12 +394,16 @@ export async function createRecordServer(options = {}) {
       if (action === 'audio' && req.method === 'POST') {
         const { body, bytes } = await readAudio(req); requireThat(bytes.length === body.sampleCount * 2 && bytes.length > 0 && bytes.length <= 480000, 'audio_size_mismatch', 400);
         requireThat(digest(bytes) === body.digest, 'audio_digest_mismatch', 400);
-        const preflight = acknowledge(structuredClone(record), { sessionId: body.sessionId, sourceId: body.sourceId, epoch: body.epoch, sequence: body.sequence, sampleOffset: body.sampleOffset, sampleCount: body.sampleCount, sampleRate: body.sampleRate, digest: body.digest, object: 'preflight' });
+        const preflight = acknowledge({...record,sources:record.sources.map(source=>({...source})),chunks:[...record.chunks],usage:{...record.usage},events:[]}, { sessionId: body.sessionId, sourceId: body.sourceId, epoch: body.epoch, sequence: body.sequence, sampleOffset: body.sampleOffset, sampleCount: body.sampleCount, sampleRate: body.sampleRate, digest: body.digest, object: 'preflight' });
         if (record.chunks.some(c => c.sourceId === body.sourceId && c.epoch === body.epoch && c.sequence === body.sequence)) { send(res, 200, preflight); return; }
-        const object = await repo.putAudio(id, bytes);
-        const ack = await changeOwned(id, user, r => { requireThat(r.owner === user.id, 'not_found', 404); return acknowledge(r, {
-          sessionId: body.sessionId, sourceId: body.sourceId, epoch: body.epoch, sequence: body.sequence, sampleOffset: body.sampleOffset, sampleCount: body.sampleCount, sampleRate: body.sampleRate, traceId, ...object }); });
-        telemetry.event('audio.ack', {traceId, recordId:id, sourceId:body.sourceId, sequence:body.sequence, bytes:bytes.length, durationMs:performance.now()-started});
+        const object = await repo.putAudio(id, bytes), envelope=chunkWaveform(bytes);
+        const ack = await changeOwned(id, user, r => {
+        requireThat(r.owner === user.id, 'not_found', 404);
+        const result=acknowledge(r,{sessionId:body.sessionId,sourceId:body.sourceId,epoch:body.epoch,sequence:body.sequence,sampleOffset:body.sampleOffset,sampleCount:body.sampleCount,sampleRate:body.sampleRate,traceId,...object});
+        r.chunks.find(chunk=>chunk.sourceId===body.sourceId&&chunk.epoch===body.epoch&&chunk.sequence===body.sequence).waveform=envelope;
+        return result;
+      });
+      telemetry.event('audio.ack', {traceId, recordId:id, sourceId:body.sourceId, sequence:body.sequence, bytes:bytes.length, durationMs:performance.now()-started});
         send(res, 200, ack); return;
       }
       if (action === 'shares' && req.method === 'GET') { send(res, 200, { shares: record.shares.map(({ hash, ...s }) => s) }); return; }
@@ -402,7 +437,7 @@ export async function createRecordServer(options = {}) {
       });
       else if (action.startsWith('segments/') && req.method === 'PATCH') result = await changeOwned(id, user, r => { editSegment(r, action.slice(9), body); return publicRecord(r); });
       else if (action === 'minutes' && req.method === 'POST') {
-        const config = await readConfig(repo.root), mode = body.mode || 'model';
+        const config = recordMinutesConfig({...record,realtimeAudioConsent:record.realtimeAudioConsent||body.realtimeAudioConsent},await readConfig(repo.root)), mode = body.mode || 'model';
         requireThat(['model', 'extractive'].includes(mode), 'invalid_minutes_mode', 400);
         requireThat(mode === 'extractive' || providerStatus(config).minutes || providerStatus(config).fixture, 'minutes_not_configured', 503);
         requireThat(mode !== 'model' || !audioMinutesEnabled(config) || record.realtimeAudioConsent || body.realtimeAudioConsent === true, 'realtime_audio_consent_required', 403);

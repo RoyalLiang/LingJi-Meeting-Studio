@@ -25,10 +25,10 @@ function history(index=0) {
 
 test('due work rotates beyond 100 unavailable translations and keeps lane cursors independent',()=>fixture(async repo=>{
   for(let i=0;i<201;i++){const r=history(i);r.id=`00000000-0000-4000-8000-${String(i).padStart(12,'0')}`;await repo.insert(r);}
-  const first=await repo.listWork({lane:'audio'});
+  const first=await repo.listWork({lane:'translation'});
   assert.equal(first.length,100);
-  assert.deepEqual((await repo.listWork({lane:'minutes'})).map(r=>r.id),first.map(r=>r.id));
-  const second=await repo.listWork({lane:'audio'}),third=await repo.listWork({lane:'audio'});
+  assert.deepEqual((await repo.listWork({lane:'all'})).map(r=>r.id),first.map(r=>r.id));
+  const second=await repo.listWork({lane:'translation'}),third=await repo.listWork({lane:'translation'});
   assert.equal(new Set([...first,...second,...third].map(r=>r.id)).size,201);
   assert.equal(second.length,100);assert.equal(third.length,100);
 }));
@@ -91,3 +91,41 @@ test('legacy analysis metadata loads each aggregate once and accepts same-cursor
   } finally { db.close(); }
 }));
 
+
+test('a due learning review does not decode archived meetings in unrelated worker lanes',()=>fixture(async repo=>{
+ const r=history();r.translationTarget='';r.learning={enabled:true,status:'queued',attempts:0,revision:r.transcriptRevision};r.segments[0].text='Synthetic large archive '.repeat(10000);await repo.insert(r);
+ const parse=JSON.parse;let archiveDecodes=0;JSON.parse=function(value,...args){if(typeof value==='string'&&value.includes('Synthetic large archive '))archiveDecodes++;return parse(value,...args);};
+ try{for(const lane of ['audio','minutes','intents','translation','translation-live','translation-preview','realtime'])assert.equal((await repo.listWork({lane})).length,0,lane);assert.equal(archiveDecodes,0);assert.equal((await repo.listWork({lane:'learning'})).length,1);}
+ finally{JSON.parse=parse;}
+}));
+
+test('legacy compressed work scheduling backfills headers once without rewriting archive payloads',()=>fixture(async repo=>{
+ const r=history();r.translationTarget='';r.learning={enabled:true,status:'queued',attempts:0,revision:r.transcriptRevision};r.segments[0].text='Legacy archive marker '.repeat(10000);await repo.insert(r);
+ const db=new DatabaseSync(join(repo.root,'records.sqlite'));
+ try{
+ const payload=db.prepare('SELECT payload FROM aggregate_payloads WHERE id=?').get(r.id).payload;
+ db.prepare("UPDATE aggregates SET data=json_remove(data,'$.workAt') WHERE id=?").run(r.id);
+ assert.equal((await repo.listWork({lane:'audio'})).length,0);assert.ok(JSON.parse(db.prepare('SELECT data FROM aggregates WHERE id=?').get(r.id).data).workAt);
+ assert.deepEqual(db.prepare('SELECT payload FROM aggregate_payloads WHERE id=?').get(r.id).payload,payload);
+ const parse=JSON.parse;let decoded=0;JSON.parse=function(value,...args){if(typeof value==='string'&&value.includes('Legacy archive marker '))decoded++;return parse(value,...args);};
+ try{assert.equal((await repo.listWork({lane:'minutes'})).length,0);assert.equal(decoded,0);}finally{JSON.parse=parse;}
+ await repo.change(r.id,value=>{value.jobs.push({id:'new-job',status:'queued'});});assert.equal((await repo.listWork({lane:'minutes'})).length,1);
+ }finally{db.close();}
+}));
+
+test('a transaction snapshot parsed from immutable JSON does not clone the entire meeting a second time',()=>fixture(async repo=>{
+ const r=history();r.minutes={summary:'Unrelated archive clone marker '.repeat(10000),revision:1};await repo.insert(r);
+ const clone=globalThis.structuredClone;let copies=0;globalThis.structuredClone=function(value,...args){if(value?.minutes?.summary?.includes('Unrelated archive clone marker '))copies++;return clone(value,...args);};
+ try{await repo.change(r.id,value=>{value.title='Updated title';return true;});assert.equal(copies,0);assert.equal((await repo.get(r.id)).title,'Updated title');}
+ finally{globalThis.structuredClone=clone;}
+}));
+
+test('workers may skip unused aggregate copies while explicit transaction results stay isolated',()=>fixture(async repo=>{
+ const r=history();await repo.insert(r);let copies=0;const clone=globalThis.structuredClone;globalThis.structuredClone=function(value,...args){if(value?.kind==='record')copies++;return clone(value,...args);};
+ try{
+ assert.equal(await repo.change(r.id,()=>{},{returnRecord:false}),undefined);
+ assert.equal(await repo.change(r.id,value=>{value.title='saved';},{returnRecord:false}),undefined);
+ assert.equal(copies,0);const explicit=await repo.change(r.id,value=>value.segments,{returnRecord:false});explicit[0].text='caller edit';assert.equal((await repo.get(r.id)).segments[0].text,'Synthetic statement');
+ assert.equal((await repo.change(r.id,()=>{})).title,'saved');assert.equal(copies,1,'default caller contract still returns an isolated aggregate');
+ }finally{globalThis.structuredClone=clone;}
+}));

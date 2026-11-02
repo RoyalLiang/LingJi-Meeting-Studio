@@ -2,7 +2,7 @@ import { processFunasrAudio } from './funasr-transcription.mjs';
 import { processDoubaoModelAudio } from './doubao-model-transcription.mjs';
 import { doubaoAudioEnabled } from './config.mjs';
 import { chronologicalSegments, minutesContext, liveBaseline } from '../../../packages/records/src/live-minutes.mjs';
-import { audioMinutesEnabled } from './config.mjs';
+import { audioMinutesEnabled, recordMinutesConfig } from './config.mjs';
 import { generateDoubaoAudioMinutes } from './doubao-audio-minutes.mjs';
 import {runLearningCycle} from './learning-worker.mjs';
 import { runMinutesPipeline } from './minutes-pipeline.mjs';
@@ -25,14 +25,17 @@ import { processTranslation } from './translation-worker.mjs';
 import { minutesModelVersion } from './config.mjs';
 
 export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
-  const config = await readConfig(repo.root);
+  const baseConfig = await readConfig(repo.root), config=baseConfig;
   const learningEnabled=config.RECORD_LEARNING_ENABLED==='true' || (config.RECORD_LEARNING_ENABLED!=='false' && process.env.NODE_ENV==='desktop');
   if(lane==='learning'){if(learningEnabled && (!providerStatus(config).fixture || providers.learningPreparation))await runLearningCycle(repo,providers);return;}
   if (lane === 'workspace') { await processWorkspaceAnalysis(repo, config, providers); return; }
   if (lane === 'realtime' || lane === 'all') await reconcileRealtime(repo, config);
+  if(lane==='realtime'&&!realtimeEnabled(config))return;
+  if(['translation','translation-live','translation-preview'].includes(lane)&&!providers.translate&&!providerStatus(config).translation)return;
   const records = await repo.listWork({ lane });
   if (lane === 'minutes') records.sort((a,b)=>Number(['sealed','completed'].includes(b.capture))-Number(['sealed','completed'].includes(a.capture)));
   async function processCandidate(candidate) {
+    const config=recordMinutesConfig(candidate,baseConfig);
     if (lane !== 'all' && lane !== 'audio' && lane !== 'realtime' && (candidate.deleted || Date.parse(candidate.deleteAt) < Date.now())) return;
     if (candidate.deleted && candidate.cleanup === 'completed' && Date.now() - (candidate.cleanupAt || 0) < 600000) return;
     if (candidate.deleted || Date.parse(candidate.deleteAt) < Date.now()) {
@@ -41,14 +44,14 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
         if (!r.deleted) { r.deleted = true; delete r.waveforms; r.generation++; r.title = '已删除'; r.segments = []; r.notes = ''; r.minutes = null; r.liveMinutes = null;
           r.jobs = []; r.shares = []; r.minutesHistory = []; r.insights = null; emit(r, 'record.deleted'); }
         r.cleanup = 'pending';
-      });
-      await repo.cleanAudio(candidate.id); await repo.change(candidate.id, r => { r.chunks = []; delete r.waveforms; r.cleanup = 'completed'; r.cleanupAt = Date.now(); }); return;
+      }, {returnRecord:false});
+      await repo.cleanAudio(candidate.id); await repo.change(candidate.id, r => { r.chunks = []; delete r.waveforms; r.cleanup = 'completed'; r.cleanupAt = Date.now(); }, {returnRecord:false}); return;
     }
     if (lane === 'realtime') { await processRealtimeAudio(repo, candidate, config, providers.realtimeFactory); return; }
     if (lane === 'all' || lane === 'audio') {
     const expired = candidate.chunks.filter(c => !c.expired && !candidate.retainAudio && Date.now() - (c.acceptedAt || Date.parse(candidate.createdAt)) > 86400000);
     if (expired.length) {
-      await repo.change(candidate.id, r => { delete r.waveforms; for (const c of r.chunks) if (expired.some(e => e.key === c.key)) { c.expired = true; if (c.state !== 'done') { c.attempts = 5; c.error = 'temporary_audio_expired'; r.transcription = 'failed'; delete c.lease; } } emit(r, 'audio.expired'); });
+      await repo.change(candidate.id, r => { delete r.waveforms; for (const c of r.chunks) if (expired.some(e => e.key === c.key)) { c.expired = true; if (c.state !== 'done') { c.attempts = 5; c.error = 'temporary_audio_expired'; r.transcription = 'failed'; delete c.lease; } } emit(r, 'audio.expired'); }, {returnRecord:false});
       await repo.cleanAudio(candidate.id, new Set(candidate.chunks.filter(c => !expired.some(e => e.key === c.key)).map(c => c.object)));
     }
     const realtimeWork = lane === 'all' ? processRealtimeAudio(repo, candidate, config, providers.realtimeFactory) : Promise.resolve();
@@ -66,7 +69,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
       if (!chunk) return;
       chunk.lease = Date.now() + 240000; chunk.fence = randomUUID(); chunk.state = 'processing';
       claimed = { record: structuredClone(r), chunk: structuredClone(chunk) };
-    });
+    }, {returnRecord:false});
     if (claimed) {
       const { record, chunk } = claimed;
       try {
@@ -74,7 +77,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
         await repo.change(record.id, r => {
           if (r.chunks.find(c => c.key === chunk.key)?.fence !== chunk.fence) return;
           commitTranscript(r, chunk.key, text, record.generation);
-        });
+        }, {returnRecord:false});
       } catch (error) {
         await repo.change(record.id, r => {
           const current = r.chunks.find(c => c.key === chunk.key);
@@ -82,7 +85,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
           current.state = 'pending'; current.attempts++; current.error = error.code || 'asr_request_failed';
           current.retryAt = Date.now() + Math.min(60000, 2000 * 2 ** current.attempts); delete current.lease;
           r.transcription = current.attempts >= 5 ? 'failed' : 'blocked'; emit(r, 'transcription.blocked', { error: current.error });
-        });
+        }, {returnRecord:false});
       }
     }
     }
@@ -97,27 +100,27 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
         lane === 'translation-preview' ? 'preview' : lane === 'translation-live' ? 'live' : lane === 'translation' ? 'history' : 'all');
     }
     const updated = lane === 'all' || lane === 'intents' ? await repo.get(candidate.id) : candidate;
-    if ((lane === 'all' || lane === 'intents') && !updated.deleted && updated.segments.length && updated.insights?.transcriptRevision !== updated.transcriptRevision && (updated.intentRetryAt || 0) <= Date.now()) {
+    if (updated && (lane === 'all' || lane === 'intents') && !updated.deleted && updated.segments.length && updated.insights?.transcriptRevision !== updated.transcriptRevision && (updated.intentRetryAt || 0) <= Date.now()) {
       let claim;
       await repo.change(candidate.id, r => {
         if (r.deleted || r.insights?.transcriptRevision === r.transcriptRevision || (r.intentLease || 0) > Date.now()) return;
         r.intentLease = Date.now() + 180000;
         const snapshot=chronologicalSegments(r.segments.slice(-120)).map(({id, revision, text, startMs, endMs, speakerId, speaker, sourceId}) => ({id, revision, text, startMs, endMs, speakerId, speaker, sourceId}));
         claim = { snapshot, context:minutesContext(liveBaseline(r),snapshot), revision: r.transcriptRevision, generation: r.generation };
-      });
+      }, {returnRecord:false});
       if (claim) {
         try {
           const model = updated.analysisConsent === true && providerStatus(config).textMinutes && JSON.stringify({transcript:claim.snapshot,context:claim.context}).length <= 180000;
           const result = model ? await (providers.intents || analyzeIntents)(claim.snapshot, config, claim.context) : ruleIntents(claim.snapshot);
-          await repo.change(candidate.id, r => { if (r.generation !== claim.generation) return; commitIntents(r, claim.snapshot, result, model ? 'model' : 'rules', claim.revision, claim.generation); delete r.intentLease; delete r.intentRetryAt; });
+          await repo.change(candidate.id, r => { if (r.generation !== claim.generation) return; commitIntents(r, claim.snapshot, result, model ? 'model' : 'rules', claim.revision, claim.generation); delete r.intentLease; delete r.intentRetryAt; }, {returnRecord:false});
         } catch (error) {
-          await repo.change(candidate.id, r => { if (r.generation !== claim.generation) return; r.intentError = error.code || 'intent_analysis_failed'; r.intentRetryAt = Date.now() + 60000; delete r.intentLease; emit(r, 'intents.blocked'); });
+          await repo.change(candidate.id, r => { if (r.generation !== claim.generation) return; r.intentError = error.code || 'intent_analysis_failed'; r.intentRetryAt = Date.now() + 60000; delete r.intentLease; emit(r, 'intents.blocked'); }, {returnRecord:false});
         }
       }
     }
     let jobClaim;
     if (lane === 'all' || (lane === 'minutes' && (automaticMinutesAt(candidate) <= Date.now() || candidate.jobs.some(job => job.status === 'queued' || (job.status === 'running' && (!Number.isFinite(job.lease) || job.lease <= Date.now())))))) {
-    if (providerStatus(config).minutes && (lane === 'all' || automaticMinutesAt(candidate) <= Date.now())) await repo.change(candidate.id, r => { if (!audioMinutesEnabled(config) || r.realtimeAudioConsent) queueAutomaticMinutes(r, minutesModelVersion(config)); });
+    if (providerStatus(config).minutes && (lane === 'all' || automaticMinutesAt(candidate) <= Date.now())) await repo.change(candidate.id, r => { if (!audioMinutesEnabled(config) || r.realtimeAudioConsent) queueAutomaticMinutes(r, minutesModelVersion(config)); }, {returnRecord:false});
     const minutesCandidate = await repo.get(candidate.id);
     const now=Date.now(), reclaimable=job=>job.status==='queued'||(job.status==='running'&&(!Number.isFinite(job.lease)||job.lease<=now));
     if (minutesCandidate.jobs.some(reclaimable)) await repo.change(candidate.id, r => {
@@ -132,7 +135,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
       if (!job) return;
       job.status = 'running'; job.attempts++; job.fence = randomUUID(); job.lease = Date.now() + minutesTimeoutMs(job) + 60000;
       jobClaim = structuredClone(job); emit(r, 'minutes.running', { jobId: job.id });
-    });
+    }, {returnRecord:false});
     if (jobClaim) {
       try {
         let json = '', lastPublished = 0, previewStream, previewTimer, previewRuntime;
@@ -147,16 +150,18 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
         if(previewClosed || publishing || !previewDirty)return publishing;
         previewDirty=false;
         const text=json,runtime=previewRuntime;
-        publishing=repo.change(candidate.id,r=>updateMinutesPreview(r,jobClaim.id,jobClaim.fence,text,runtime))
+        publishing=repo.change(candidate.id,r=>updateMinutesPreview(r,jobClaim.id,jobClaim.fence,text,runtime), {returnRecord:false})
           .catch(error=>telemetry.event('minutes.preview-failed',{recordId:candidate.id,jobId:jobClaim.id,error:error.code || 'preview_write_failed'}))
           .finally(()=>{publishing=undefined;lastPublished=Date.now();schedulePreview();});
         return publishing;
       };
-      const generate=providers.minutes || (realtimeEnabled(config) && jobClaim.mode !== 'extractive' ? (job,env,opts)=>generateRealtimeMinutes(repo,candidate.id,job,env,opts,providers.realtimeFactory) : doubaoAudioEnabled(config) && jobClaim.mode !== 'extractive' ? (job,env,opts)=>generateDoubaoAudioMinutes(repo,candidate.id,job,env,opts) : generateMinutes);
+      const boundMode=jobClaim.modelVersion?.match(/^(openai-realtime|doubao-audio(?:-only)?):/)?.[1];
+      const minutesConfig=jobClaim.mode==='model' && jobClaim.modelVersion && jobClaim.modelVersion!=='default' ? {...baseConfig,MINUTES_MODE:boundMode||'asr-llm'} : config;
+      const generate=providers.minutes || (realtimeEnabled(minutesConfig) && jobClaim.mode !== 'extractive' ? (job,env,opts)=>generateRealtimeMinutes(repo,candidate.id,job,env,opts,providers.realtimeFactory) : doubaoAudioEnabled(minutesConfig) && jobClaim.mode !== 'extractive' ? (job,env,opts)=>generateDoubaoAudioMinutes(repo,candidate.id,job,env,opts) : generateMinutes);
         const processMinutes=config.RECORD_MINUTES_PIPELINE_ENABLED==='false' ? async(job,env,opts)=>({...await meteredMinutesCall(repo,candidate.id,job,generate,job,env,opts),usageRecorded:true}) : (job,env,opts)=>runMinutesPipeline(repo,candidate.id,job,env,generate,opts);
         let result;
       try {
-        result=await telemetry.measure('minutes.complete',{recordId:candidate.id,jobId:jobClaim.id,revision:jobClaim.transcriptRevision,queueMs:Date.now()-Date.parse(jobClaim.createdAt)},()=>processMinutes(jobClaim,config,{
+        result=await telemetry.measure('minutes.complete',{recordId:candidate.id,jobId:jobClaim.id,revision:jobClaim.transcriptRevision,queueMs:Date.now()-Date.parse(jobClaim.createdAt)},()=>processMinutes(jobClaim,minutesConfig,{
           onDelta:(delta,runtime,stream)=>{
             if(stream!==previewStream){clearTimeout(previewTimer);previewTimer=undefined;json='';lastPublished=0;previewStream=stream;}
             if(!json)telemetry.event('minutes.first-text',{recordId:candidate.id,jobId:jobClaim.id,durationMs:runtime?.firstTokenMs});
@@ -165,7 +170,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
         }));
       } finally {previewClosed=true;clearTimeout(previewTimer);await publishing;}
       telemetry.event('minutes.usage', {recordId:candidate.id, jobId:jobClaim.id, tokens:result.usageTokens, firstTextMs:result.runtime?.firstTokenMs});
-        const committed=await telemetry.measure('minutes.commit',{recordId:candidate.id,jobId:jobClaim.id},()=>repo.change(candidate.id,r=>{commitMinutes(r,jobClaim.id,result,jobClaim.fence);return r.jobs.find(j=>j.id===jobClaim.id).status==='completed';}));
+        const committed=await telemetry.measure('minutes.commit',{recordId:candidate.id,jobId:jobClaim.id},()=>repo.change(candidate.id,r=>{commitMinutes(r,jobClaim.id,result,jobClaim.fence);return r.jobs.find(j=>j.id===jobClaim.id).status==='completed';}, {returnRecord:false}));
         if(committed)telemetry.event('minutes.committed',{recordId:candidate.id,jobId:jobClaim.id,revision:jobClaim.transcriptRevision});
       } catch (error) {
         await repo.change(candidate.id, r => {
@@ -173,7 +178,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
           if (!job || job.fence !== jobClaim.fence || r.deleted) return;
           preserveMinutesProgress(r,job);
           job.status = error.code==='minutes_snapshot_changed' ? 'stale' : 'failed'; delete job.preview; delete job.partialMinutes; job.snapshot = []; job.error = error.code || 'minutes_request_failed'; job.failedAt=Date.now(); emit(r, 'minutes.failed', { jobId: job.id, error: job.error });
-        });
+        }, {returnRecord:false});
       }
     }
     }
@@ -181,13 +186,13 @@ export async function runCycle(repo, providers = {}, { lane = 'all' } = {}) {
     const latest = await repo.get(candidate.id);
     if (!latest.audioPurged && !latest.retainAudio && latest.capture === 'completed' && latest.chunks.every(c => c.state === 'done') && !needsMinutesAudio(latest)) {
       let purge = false;
-      await repo.change(latest.id, r => { if (r.capture === 'completed' && !r.retainAudio && !needsMinutesAudio(r)) { delete r.waveforms; r.audioCleanup = true; purge = true; } });
-      if (purge) { await repo.cleanAudio(latest.id); await repo.change(latest.id, r => { delete r.waveforms; r.audioPurged = true; r.audioCleanup = false; }); }
+      await repo.change(latest.id, r => { if (r.capture === 'completed' && !r.retainAudio && !needsMinutesAudio(r)) { delete r.waveforms; r.audioCleanup = true; purge = true; } }, {returnRecord:false});
+      if (purge) { await repo.cleanAudio(latest.id); await repo.change(latest.id, r => { delete r.waveforms; r.audioPurged = true; r.audioCleanup = false; }, {returnRecord:false}); }
     } else {
       // Objects written before a failed metadata transaction are removed after a one-hour grace period.
       if (Date.now() - (latest.gcAt || 0) > 3600000) {
         await repo.cleanAudio(latest.id, new Set(latest.chunks.filter(c => !c.expired).map(c => c.object)), Date.now() - 3600000);
-        await repo.change(latest.id, r => { r.gcAt = Date.now(); });
+        await repo.change(latest.id, r => { r.gcAt = Date.now(); }, {returnRecord:false});
       }
     }
   }

@@ -59,7 +59,7 @@ export async function processFunasrAudio(repo, candidate, config, transcriber = 
         claim = { generation:r.generation, sourceId:source.id, epoch:source.epoch, language:r.language, chunks:structuredClone(chunks), fence, stopped, oldestAt:first.acceptedAt };
         break;
       }
-    });
+    }, {returnRecord:false});
     if (!claim) return;
     const owns = r => !r.deleted && r.generation === claim.generation && Date.parse(r.deleteAt) > Date.now()
       && claim.chunks.every(c => r.chunks.some(current => current.key === c.key && current.fence === claim.fence && current.state === 'processing'));
@@ -81,10 +81,10 @@ export async function processFunasrAudio(repo, candidate, config, transcriber = 
       const latestSource = latest.sources.find(s=>s.id===claim.sourceId && s.epoch===claim.epoch);
       const extra = latest.chunks.find(c=>c.sourceId===claim.sourceId && c.sequence===claim.chunks.at(-1).sequence+1 && c.state!=='done' && !c.expired && c.attempts<5 && (c.lease||0)<=Date.now() && (c.retryAt||0)<=Date.now());
       const tailGrew = latestSource.stopped && extra && claim.chunks.length<MAX_CHUNKS && claim.chunks.reduce((sum,c)=>sum+c.sampleCount,0)+extra.sampleCount<=MAX_SAMPLES;
-      if (tailGrew) { await repo.change(candidate.id,r=>{if(owns(r))release(r);}); return; }
+      if (tailGrew) { await repo.change(candidate.id,r=>{if(owns(r))release(r);}, {returnRecord:false}); return; }
       const draining = latestSource.stopped && latestSource.watermark === latestSource.lastSequence;
       const end = batchEnd(parts, claim.chunks, claim.stopped || draining, claim.oldestAt, Date.now());
-      if (!end) { await repo.change(candidate.id, r => { if (owns(r)) release(r,!latestSource.stopped); }); return; }
+      if (!end) { await repo.change(candidate.id, r => { if (owns(r)) release(r,!latestSource.stopped); }, {returnRecord:false}); return; }
       const selected = claim.chunks.slice(0,end);
       if (end < claim.chunks.length) {
         let released = false;
@@ -96,12 +96,12 @@ export async function processFunasrAudio(repo, candidate, config, transcriber = 
             if (chunk.batchWaiting) { delete chunk.batchWaiting; delete chunk.retryAt; }
           }
           released = true;
-        });
+        }, {returnRecord:false});
         if (!released) return;
         claim.chunks = selected;
       }
       const currentConfig = await readConfig(repo.root);
-      if (!sameService(config,currentConfig)) { await repo.change(candidate.id,r=>{if(owns(r))release(r);}); return; }
+      if (!sameService(config,currentConfig)) { await repo.change(candidate.id,r=>{if(owns(r))release(r);}, {returnRecord:false}); return; }
       // Recheck the durable claim immediately before sending audio to the service.
       const current = await repo.get(candidate.id);
       if (!owns(current)) return;
@@ -115,7 +115,7 @@ export async function processFunasrAudio(repo, candidate, config, transcriber = 
         release(r);
         const source = r.sources.find(s=>s.id===claim.sourceId && s.epoch===claim.epoch);
         source.asr = {provider:config.ASR_PROVIDER,state:source.stopped && r.chunks.filter(c=>c.sourceId===source.id).every(c=>c.state==='done') ? 'completed' : 'queued'};
-      });
+      }, {returnRecord:false});
     } catch (error) {
       const afterConfig = await readConfig(repo.root).catch(() => config);
       await repo.change(candidate.id, r => {
@@ -129,7 +129,7 @@ export async function processFunasrAudio(repo, candidate, config, transcriber = 
         source.asr={provider:config.ASR_PROVIDER,state:'failed',error:error.code || 'funasr_service_unavailable'};
         r.transcription=r.chunks.some(c=>c.attempts>=5 && c.state!=='done')?'failed':'blocked';
         emit(r,'transcription.blocked',{error:source.asr.error});
-      });
+      }, {returnRecord:false});
     }
   }
   await Promise.all([work(),work()]);
