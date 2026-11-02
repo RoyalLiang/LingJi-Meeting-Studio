@@ -114,6 +114,20 @@ test('parallel waveform scans keep exact bins, offsets and an eight-buffer read 
  assert.deepEqual(actual.peaks,expected);assert.equal(actual.samples,samples);assert.equal(max,8);
 });
 
+test('compact waveform bounds long-record metadata and preserves legacy envelopes',async()=>{
+  const {chunkWaveform}=await import('../services/records/src/waveform.mjs');
+  const bytes=pcm(Array(16000).fill(-12345)), encoded=chunkWaveform(bytes);
+  assert.ok(encoded.length<=27,'one second needs at most 27 characters');
+  const result=await recordingWaveform([{sampleOffset:0,sampleCount:16000,waveform:encoded}],()=>assert.fail('compact envelope must avoid PCM reads'));
+  assert.ok(result.peaks.every(value=>Math.abs(value-12345/32768)<=1/510));
+  const old=Buffer.alloc(250);for(let i=0;i<125;i++)old.writeUInt16LE(12345,i*2);
+  const legacy=await recordingWaveform([{sampleOffset:0,sampleCount:16000,waveform:old.toString('base64')}],()=>assert.fail('legacy envelope must avoid PCM reads'));
+  assert.ok(legacy.peaks.every(value=>value===12345/32768));
+  let reads=0;
+  await recordingWaveform([{sampleOffset:0,sampleCount:16000,waveform:123}],async()=>{reads++;return bytes;});
+  assert.equal(reads,1,'malformed envelopes fall back to retained audio');
+});
+
 test('persisted chunk envelopes render the first waveform without reading original audio',async()=>{
  const {chunkWaveform}=await import('../services/records/src/waveform.mjs');
  const bytes=pcm(Array.from({length:32000},(_,i)=>i<16000?0:-32768));

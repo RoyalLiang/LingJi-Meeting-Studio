@@ -87,7 +87,7 @@ test('retained recordings serve complete WAV and byte ranges while temporary or 
     const waveform=await fetch(url+'?waveform=1',{headers});
     assert.equal(waveform.status,200);assert.equal(waveform.headers.get('cache-control'),'no-store');
     const peaks=await waveform.json();assert.equal(peaks.samples,2400);assert.equal(peaks.peaks.length,192);
-    assert.ok(peaks.peaks.slice(0,128).every(value=>value===1285/32768));assert.ok(peaks.peaks.slice(128).every(value=>value===2313/32768));
+    assert.ok(peaks.peaks.slice(0,128).every(value=>Math.abs(value-1285/32768)<=1/510));assert.ok(peaks.peaks.slice(128).every(value=>Math.abs(value-2313/32768)<=1/510));
     assert.equal((await fetch(url+'?waveform=1')).status,401);
     assert.deepEqual(earlyWav.subarray(44),audioBytes);
     const download=await fetch(url+'?download=1',{headers});
