@@ -65,3 +65,10 @@ test('installer resource hashes follow packaged bytes with safe deterministic de
     await assert.rejects(writeResourceHashes(join(root,'resources'),output),/Unsafe installer resource path/);
   } finally {await rm(root,{recursive:true,force:true});}
 });
+
+
+test('startup diagnostics locate SQLite failures without logging query text or secrets',async()=>{
+  const {startupDiagnostic}=await import('../services/records/src/desktop-backend.mjs');
+  const error=Object.assign(new Error('no such column: synthetic-private-token'),{code:'ERR_SQLITE_ERROR',errcode:1,errstr:'SQL logic error',startupStage:'repository',stack:'Error: synthetic-private-token\n    at createRepository (file:///Users/private-person/app/repository.mjs:75:8)'});
+  const report=startupDiagnostic(error);assert.equal(report.stage,'repository');assert.equal(report.sqlite.category,'no such column');assert.deepEqual(report.frames,['repository.mjs:75:8']);assert.doesNotMatch(JSON.stringify(report),/synthetic-private-token|private-person/);
+});

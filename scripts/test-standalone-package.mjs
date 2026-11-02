@@ -70,6 +70,11 @@ async function launch() {
   const agent = await fetch(state.url + '/api/agent/tasks', { headers });
   assert.equal(agent.status, 200, 'Packaged Pi runtime must initialize');
   assert.ok(Array.isArray((await agent.json()).tasks));
+  const gitSync = await fetch(state.url + '/api/integrations/git-sync', { headers });
+  assert.equal(gitSync.status, 200, 'Packaged Pi Git sync runtime must initialize');
+  const gitConfig = await gitSync.json();
+  assert.equal(gitConfig.configured, false);
+  assert.ok(Array.isArray(gitConfig.recent));
   if(process.env.TTS_VERIFY_BUNDLED_ASR==='1') {
     assert.equal(boot.providers.asrProvider,'sensevoice-local');
     assert.equal(boot.providers.asr,true);

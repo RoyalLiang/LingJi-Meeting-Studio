@@ -85,7 +85,15 @@ export async function recoverLocalWork(repo) {
   }
 }
 
+// Startup reports must identify a failing SQL boundary without retaining queries or credentials.
+export function startupDiagnostic(error) {
+  const safe=value=>typeof value==='string'&&/^[A-Za-z0-9_ .-]{1,100}$/.test(value)?value:undefined;
+  return {code:safe(error?.code)||safe(error?.name)||'startup_failed',stage:safe(error?.startupStage),...(error?.code==='ERR_SQLITE_ERROR'?{sqlite:{errcode:Number.isSafeInteger(error.errcode)?error.errcode:undefined,errstr:safe(error.errstr),category:/database is locked|database is busy|unable to open database file|disk I\/O error|no such table|no such column|syntax error|database disk image is malformed/i.exec(error.message||'')?.[0]}}:{}),frames:String(error?.stack||'').split('\n').slice(1).flatMap(line=>{const match=line.match(/([A-Za-z0-9_.-]+\.(?:mjs|js):\d+:\d+)\)?$/);return match?[match[1]]:[];}).slice(0,5)};
+}
+
 export async function startDesktopBackend({ root, port = 0, workers = true } = {}) {
+  let stage='filesystem';
+  try {
   if (!root) throw new Error('client_data_root_required');
   process.umask(0o077);
   process.env.NODE_ENV = 'desktop';
@@ -96,18 +104,26 @@ export async function startDesktopBackend({ root, port = 0, workers = true } = {
   await mkdir(root, { recursive: true, mode: 0o700 });
   // Native has acquired the client lock; no previous owner is still writing.
   await recoverTemporaryAudio(root);
+  stage='sqlite_runtime';
   const db = new DatabaseSync(':memory:');
   const sqlite = db.prepare('SELECT sqlite_version() version').get().version;
   db.exec('CREATE VIRTUAL TABLE verify_fts USING fts5(content)'); db.close();
   const version = sqlite.split('.').map(Number);
   if (version[0] < 3 || (version[0] === 3 && (version[1] < 51 || (version[1] === 51 && version[2] < 3)))) throw new Error('client_sqlite_runtime_too_old');
+  stage='repository';
   const repo = await createRepository({ root, databaseUrl: '', s3: { bucket: '' }, compressAggregates: true, compressAudio: true });
+  stage='asr_migration';
   await migrateBundledAsr(repo);
+  stage='work_recovery';
   await recoverLocalWork(repo);
+  stage='record_server';
   const app = await createRecordServer({ repo, port, host: '127.0.0.1', seedDevelopment: false, localAccount: true });
+  stage='listen';
   const address = await app.start();
+  stage='local_session';
   const session = await app.localSession();
   const state = { pid: process.pid, url: `http://127.0.0.1:${address.port}`, node: process.version, sqlite, startedAt: new Date().toISOString() };
+  stage='runtime_state';
   await writeFile(join(root, 'runtime-state.json'), JSON.stringify(state) + '\n', { mode: 0o600 });
   openLocalAsr();
   let stopping = false;
@@ -120,6 +136,7 @@ export async function startDesktopBackend({ root, port = 0, workers = true } = {
   return { repo, sqlite, url: `http://127.0.0.1:${address.port}`, session,
     async stop() { stopping = true; await closeLocalAsr(); for (const record of await repo.list()) closeSpeakerStreams(repo, record.id); await Promise.all(loops); closeRealtime(repo); await app.stop(); },
   };
+  } catch(error) { if(error&&typeof error==='object'&&Object.isExtensible(error))error.startupStage=stage;throw error; }
 }
 
 // Node resolves module paths; argv can retain Windows 8.3 paths or directory aliases.
@@ -129,7 +146,7 @@ if (process.argv[1] && await realpath(process.argv[1]).catch(() => null) === fil
     if (!process.argv[2]) throw new Error('client_data_root_required');
     backend = await startDesktopBackend({ root: resolve(process.argv[2]), workers: true });
     console.log(JSON.stringify({ protocol: 1, url: backend.url, cookie: backend.session, sqlite: backend.sqlite, nonce: randomBytes(8).toString('hex') }));
-  } catch (error) { console.error('[client-backend]', error.code || error.message || error.name); process.exit(1); }
+  } catch (error) { console.error('[client-backend]', JSON.stringify(startupDiagnostic(error))); process.exit(1); }
   openLocalAsr();
   let stopping = false;
   const stop = async () => {
