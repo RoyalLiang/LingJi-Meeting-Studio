@@ -208,6 +208,7 @@ test('desktop release versions match preview overrides and every workspace', asy
   assert.equal(base.version,root.version,'base Tauri version');
   assert.equal(preview.version,root.version,'preview Tauri version');
   assert.equal(preview.bundle.macOS.bundleVersion,base.bundle.macOS.bundleVersion,'preview macOS build');
+  assert.equal(base.bundle.macOS.bundleVersion,root.version,'macOS build matches product version');
   const cargo=await readFile(new URL('../apps/desktop/src-tauri/Cargo.toml',import.meta.url),'utf8');
   assert.equal(cargo.match(/^version = "([^"]+)"/m)[1],root.version,'Cargo package');
   const lock=await readFile(new URL('../apps/desktop/src-tauri/Cargo.lock',import.meta.url),'utf8');

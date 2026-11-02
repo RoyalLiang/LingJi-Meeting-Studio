@@ -336,3 +336,10 @@ export function publicRecord(record) {
 export function needsMinutesAudio(record) {
   return Boolean(record.realtimeAudioConsent && (record.jobs.some(job => job.mode === 'model' && ['queued', 'running'].includes(job.status)) || (record.autoMinutes?.enabled && !record.minutes?.edited && record.minutes?.transcriptRevision !== record.transcriptRevision)));
 }
+
+
+// A failed or still-processing chunk must remain available for retry until retention expires.
+export function audioPurgeReady(record) {
+  return !record.audioPurged && !record.retainAudio && record.capture === 'completed'
+    && record.chunks.every(chunk => chunk.state === 'done') && !needsMinutesAudio(record);
+}

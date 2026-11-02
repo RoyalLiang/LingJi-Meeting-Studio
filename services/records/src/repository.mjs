@@ -1,3 +1,4 @@
+import { canStartSpeechSource } from './asr-recovery.mjs';
 import { analysisInput } from '../../../packages/records/src/workspaces.mjs';
 import {flushAudioObject} from './audio-storage-sync.mjs';
 import {learningWorkAt} from '../../../packages/records/src/learning.mjs';
@@ -6,16 +7,16 @@ import { automaticMinutesAt } from '../../../packages/records/src/automation.mjs
 import { mkdir, open, readFile, readdir, rm, stat, link } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { DomainError, requireThat, needsMinutesAudio, publicRecord } from '../../../packages/records/src/record.mjs';
+import { DomainError, requireThat, audioPurgeReady, publicRecord } from '../../../packages/records/src/record.mjs';
 import { createS3Objects } from './s3.mjs';
 import { telemetry } from './telemetry.mjs';
 import { encodeStorage, decodeStorage } from './storage-codec.mjs';
 
 function traceWrite(value){if(telemetry.enabled)telemetry.event('db.write',{recordId:value.id,bytes:Buffer.byteLength(JSON.stringify(value))});}
 const workerLanes=['audio','realtime','minutes','intents','translation','translation-live','translation-preview','learning'];
-function schedule(value) {
+function schedule(value, now=Date.now()) {
   if(value.kind!=='record')return;
-  const now=Date.now(),work=Object.fromEntries(workerLanes.map(lane=>[lane,Infinity]));
+  const work=Object.fromEntries(workerLanes.map(lane=>[lane,Infinity]));
   const due=(lane,time)=>{work[lane]=Math.min(work[lane],time);};
   if(value.deleted){due('audio',value.cleanup==='completed'?(value.cleanupAt||0)+600000:now);}
   else{
@@ -23,11 +24,15 @@ function schedule(value) {
     due('learning',learningWorkAt(value,now));
     if(value.learning?.enabled&&value.capture==='completed'&&value.learning.revision!==value.transcriptRevision)due('learning',Math.max(now,value.learning.retryAt||0));
     due('minutes',automaticMinutesAt(value,now));
-    if(!value.retainAudio&&!value.audioPurged&&value.capture==='completed'&&!needsMinutesAudio(value))due('audio',now);
+    if(audioPurgeReady(value))due('audio',now);
     if(value.realtimeAudioConsent&&value.autoMinutes?.enabled&&value.capture!=='completed'&&value.chunks.length)due('realtime',Math.max(value.realtime?.retryAt||0,now));
     for(const source of value.sources){
       if(source.asr?.state==='running')due('audio',now+250);
-      if(source.asr?.state==='failed'&&source.asr.attempts<5)due('audio',Math.max(source.asr.retryAt||0,now));
+      if(source.asr?.state==='failed'){
+        let retryAt=Math.max(now,source.asr.retryAt||0,source.asr.lease||0);
+        for(const chunk of value.chunks)if(chunk.sourceId===source.id&&chunk.state==='processing')retryAt=Math.max(retryAt,chunk.lease||0);
+        if(canStartSpeechSource(value,source,retryAt))due('audio',retryAt);
+      }
       const preview=source.asr?.preview,translation=source.asr?.translation;
       if(value.translationTarget&&source.asr?.state==='running'&&preview?.text?.trim().length>=4&&!(translation?.target===value.translationTarget&&translation.sourceText===preview.text&&translation.text)&& (translation?.requestedText!==preview.text||(translation?.attempts||0)<3))due('translation-preview',Math.max(now,translation?.lease||0,(translation?.requestedAt||0)+2500));
     }
@@ -228,14 +233,16 @@ export async function createRepository(options = {}) {
       for(const row of rows){
         const metadata=typeof row.data==='string'?JSON.parse(row.data):row.data;
         const originalMetadata=pool?JSON.stringify(metadata):row.data;
-        const value=decode(row);
-        if(!metadata.workAt){
-          schedule(value);const work=JSON.stringify(value.workAt);
-          // Backfill only the small scheduling header; never rewrite archived transcript/audio payloads.
-          if(pool)await pool.query("UPDATE record_aggregates SET data=jsonb_set(data,'{workAt}',$2::jsonb) WHERE id=$1 AND data=$3::jsonb",[value.id,work,originalMetadata]);
-          else db.prepare("UPDATE aggregates SET data=json_set(data,'$.workAt',json(?)) WHERE id=? AND data=?").run(work,value.id,row.data);
-          if(selectedLane&&(!Number.isFinite(value.workAt[selectedLane])||value.workAt[selectedLane]>now))continue;
+        const value=decode(row);schedule(value,now);
+        const dueAt=selectedLane?value.workAt[selectedLane]:value.nextWorkAt;
+        const stale=!Number.isFinite(dueAt)||dueAt>now;
+        if(!metadata.workAt||stale){
+          const work=JSON.stringify(value.workAt),next=JSON.stringify(value.nextWorkAt);
+          // Repair only the scheduling header. Compare the original row so concurrent work wins.
+          if(pool)await pool.query("UPDATE record_aggregates SET data=jsonb_set(jsonb_set(data,'{workAt}',$2::jsonb),'{nextWorkAt}',$3::jsonb) WHERE id=$1 AND data=$4::jsonb",[value.id,work,next,originalMetadata]);
+          else db.prepare("UPDATE aggregates SET data=json_set(data,'$.workAt',json(?),'$.nextWorkAt',json(?)) WHERE id=? AND data=?").run(work,next,value.id,row.data);
         }
+        if(stale)continue;
         values.push(value);
       }
       return values;

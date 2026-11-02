@@ -13,7 +13,7 @@ import { processSpeakerSources, closeSpeakerStreams } from './speaker-streams.mj
 import { automaticMinutesAt, queueAutomaticMinutes, updateMinutesPreview } from '../../../packages/records/src/automation.mjs';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { commitMinutes, commitTranscript, preserveMinutesProgress, emit, needsMinutesAudio } from '../../../packages/records/src/record.mjs';
+import { commitMinutes, commitTranscript, preserveMinutesProgress, emit, audioPurgeReady } from '../../../packages/records/src/record.mjs';
 import { createRepository } from './repository.mjs';
 import { readConfig } from './config.mjs';
 import { recordAsrConfig } from './vocabulary.mjs';
@@ -184,9 +184,9 @@ export async function runCycle(repo, providers = {}, { lane = 'all', cacheConfig
     }
     if (lane !== 'all' && lane !== 'audio') return;
     const latest = await repo.get(candidate.id);
-    if (!latest.audioPurged && !latest.retainAudio && latest.capture === 'completed' && latest.chunks.every(c => c.state === 'done') && !needsMinutesAudio(latest)) {
+    if (audioPurgeReady(latest)) {
       let purge = false;
-      await repo.change(latest.id, r => { if (r.capture === 'completed' && !r.retainAudio && !needsMinutesAudio(r)) { delete r.waveforms; r.audioCleanup = true; purge = true; } }, {returnRecord:false});
+      await repo.change(latest.id, r => { if (audioPurgeReady(r)) { delete r.waveforms; r.audioCleanup = true; purge = true; } }, {returnRecord:false});
       if (purge) { await repo.cleanAudio(latest.id); await repo.change(latest.id, r => { delete r.waveforms; r.audioPurged = true; r.audioCleanup = false; }, {returnRecord:false}); }
     } else {
       // Objects written before a failed metadata transaction are removed after a one-hour grace period.

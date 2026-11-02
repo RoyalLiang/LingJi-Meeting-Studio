@@ -129,3 +129,65 @@ test('workers may skip unused aggregate copies while explicit transaction result
  assert.equal((await repo.change(r.id,()=>{})).title,'saved');assert.equal(copies,1,'default caller contract still returns an isolated aggregate');
  }finally{globalThis.structuredClone=clone;}
 }));
+
+test('exhausted audio is not repeatedly scheduled as purge-ready while manual retry remains possible',()=>fixture(async repo=>{
+ const r=history();r.translationTarget='';r.retainAudio=false;r.audioPurged=false;r.capture='completed';r.gcAt=Date.now();r.insights={transcriptRevision:r.transcriptRevision};
+ r.sources=[{id:'mic',kind:'microphone',epoch:'e',watermark:0,lastSequence:0,asr:{state:'failed',attempts:5}}];
+ r.chunks=[{key:'mic:e:0',sourceId:'mic',epoch:'e',sequence:0,state:'failed',attempts:5,acceptedAt:Date.now(),object:r.id+'/failed.pcm'}];
+ await repo.insert(r);assert.equal((await repo.listWork({lane:'audio'})).length,0,'exhausted transcription must wait for retry or retention rather than spin');
+ assert.equal((await repo.get(r.id)).chunks[0].expired,undefined);
+ await repo.change(r.id,value=>{value.chunks[0].attempts=0;value.chunks[0].state='queued';value.sources[0].asr={state:'queued',attempts:0};});
+ assert.equal((await repo.listWork({lane:'audio'})).length,1,'manual retry wakes immediately');
+}));
+
+test('stale compressed scheduling headers repair once without rewriting archived content',()=>fixture(async repo=>{
+ const r=history();r.translationTarget='';r.retainAudio=true;r.gcAt=Date.now();r.insights={transcriptRevision:r.transcriptRevision};r.segments[0].text='Stale fixture archive '.repeat(10000);await repo.insert(r);
+ const db=new DatabaseSync(join(repo.root,'records.sqlite'));
+ try{
+  const payload=db.prepare('SELECT payload FROM aggregate_payloads WHERE id=?').get(r.id).payload;
+  db.prepare("UPDATE aggregates SET data=json_set(data,'$.workAt.audio',0,'$.nextWorkAt',0) WHERE id=?").run(r.id);
+  assert.equal((await repo.listWork({lane:'audio'})).length,0);
+  const header=JSON.parse(db.prepare('SELECT data FROM aggregates WHERE id=?').get(r.id).data);
+  assert.ok(header.workAt.audio>Date.now());assert.ok(header.nextWorkAt>Date.now());
+  assert.deepEqual(db.prepare('SELECT payload FROM aggregate_payloads WHERE id=?').get(r.id).payload,payload);
+  const parse=JSON.parse;let archives=0;JSON.parse=function(value,...args){if(typeof value==='string'&&value.includes('Stale fixture archive '))archives++;return parse(value,...args);};
+  try{for(let n=0;n<10;n++)assert.equal((await repo.listWork({lane:'audio'})).length,0);assert.equal(archives,0);}finally{JSON.parse=parse;}
+ }finally{db.close();}
+}));
+
+test('transient speech recovery keeps its scheduled wake after five failed attempts',()=>fixture(async repo=>{
+ const r=history();r.translationTarget='';r.retainAudio=false;r.audioPurged=false;r.gcAt=Date.now();
+ const retryAt=Date.now()+60000,lease=retryAt+30000;
+ r.sources=[{id:'mic',kind:'microphone',epoch:'e',watermark:0,lastSequence:0,asr:{state:'failed',attempts:5,error:'doubao_connection_failed',retryAt}}];
+ r.chunks=[{key:'mic:e:0',sourceId:'mic',epoch:'e',sequence:0,state:'processing',attempts:5,lease,acceptedAt:Date.now(),object:r.id+'/retry.pcm'}];await repo.insert(r);
+ const saved=await repo.get(r.id);assert.equal(saved.workAt.audio,lease,'recovery wakes at both retry and processing lease readiness');
+ assert.equal((await repo.listWork({lane:'audio'})).length,0);
+ await repo.change(r.id,value=>{value.sources[0].asr.retryAt=Date.now()-1;delete value.chunks[0].lease;value.chunks[0].state='failed';});
+ assert.equal((await repo.listWork({lane:'audio'})).length,1,'transient exhausted source is still recoverable');
+}));
+
+test('a failed source with no retryable chunks does not busy poll',()=>fixture(async repo=>{
+ const r=history();r.translationTarget='';r.retainAudio=true;r.gcAt=Date.now();
+ r.sources=[{id:'mic',watermark:0,lastSequence:0,asr:{state:'failed',attempts:1,error:'provider_unauthorized'}}];
+ r.chunks=[{key:'mic:e:0',sourceId:'mic',epoch:'e',sequence:0,state:'failed',attempts:5,acceptedAt:Date.now(),object:r.id+'/terminal.pcm'}];await repo.insert(r);
+ assert.equal((await repo.listWork({lane:'audio'})).length,0);
+}));
+
+test('recovery wake respects expired chunks completed chunks and cleanup while retaining deletion deadlines',async()=>{
+ for(const flag of ['expired','completed','cleanup'])await fixture(async repo=>{
+  const r=history();r.translationTarget='';r.retainAudio=true;r.gcAt=Date.now();
+  r.sources=[{id:'mic',watermark:0,lastSequence:0,asr:{state:'failed',attempts:5,error:'doubao_connection_failed',retryAt:Date.now()-1}}];
+  r.chunks=[{key:'mic:e:0',sourceId:'mic',epoch:'e',sequence:0,state:flag==='completed'?'done':'failed',attempts:5,acceptedAt:Date.now(),object:r.id+'/retained.pcm',...(flag==='expired'?{expired:true}:{})}];
+  if(flag==='cleanup')r.audioCleanup=true;
+  await repo.insert(r);assert.equal((await repo.listWork({lane:'audio'})).length,0,flag);
+  await repo.change(r.id,value=>{value.deleteAt=new Date(Date.now()-1000).toISOString();});
+  assert.equal((await repo.listWork({lane:'audio'})).length,1,'retention deletion is never hidden by recovery filtering');
+ });
+});
+
+test('generic ASR pending work is not delayed by prior provider stream state',()=>fixture(async repo=>{
+ const r=history();r.translationTarget='';r.retainAudio=false;r.gcAt=Date.now();
+ r.sources=[{id:'mic',watermark:0,lastSequence:0,asr:{state:'failed',attempts:1,error:'doubao_connection_failed',lease:Date.now()+60000,retryAt:Date.now()+5000}}];
+ r.chunks=[{key:'mic:e:0',sourceId:'mic',epoch:'e',sequence:0,state:'failed',attempts:1,acceptedAt:Date.now(),object:r.id+'/waiting.pcm'}];await repo.insert(r);
+ assert.equal((await repo.listWork({lane:'audio'})).length,1,'generic worker can claim its due chunk independent of old provider source state');
+}));
