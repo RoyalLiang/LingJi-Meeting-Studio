@@ -223,10 +223,10 @@ test('settings update action follows automatic-download readiness and keeps reco
 
 test('release display keeps only change items and removes Markdown destinations and release metadata', () => {
   const notes = '# Preview v1.2.0\r\n\r\n## 版本改动与修复\r\n- 修复 **自动下载** 与 `离线转录`。\r\n  保留录音。\r\n- 优化 [设置页面](https://example.test/settings)。\r\n\r\n## 下载与安装\r\n[安装包](https://example.test/private-installer)\r\n## SHA-256\r\ndeadbeef\r\n## 构建来源与验证\r\nsource-secret';
-  assert.deepEqual(updateReleaseItems(notes), ['修复 自动下载 与 离线转录。 保留录音。', '优化 设置页面。']);
+  assert.deepEqual(updateReleaseItems(notes), ['修复 自动下载 与 离线转录', '优化 设置页面']);
   assert.deepEqual(updateReleaseItems('## 下载与安装\nDo not display this section'), []);
   assert.deepEqual(updateReleaseItems('## Changes\n- Keep names.\n## Checksums\nDo not display'), ['Keep names.']);
-  assert.deepEqual(updateReleaseItems('- 修复下载。\n- 保留音频。'), ['修复下载。', '保留音频。']);
+  assert.deepEqual(updateReleaseItems('- 修复下载。\n- 保留音频。'), ['修复下载']);
   assert.deepEqual(updateReleaseItems(null), []);
 });
 
@@ -279,9 +279,20 @@ test('settings update notes open in a separate dialog with no inline explanatory
  const idle=box.module.exports.ClientUpdatesPanel({updates});assert.doesNotMatch(JSON.stringify(idle),/由你手动检查更新|启动后会自动检查更新/);
  const current=box.module.exports.ClientUpdatesPanel({updates:{...updates,status:{...updates.status,phase:'current'}}});assert.doesNotMatch(JSON.stringify(current),/当前已是最新版本|client-update-status/);
 
- const availableUpdates={...updates,status:{...updates.status,phase:'available',version:'0.1.43',notes:'## 更新内容\n- 保留完整原音'}};
+ const availableUpdates={...updates,status:{...updates.status,phase:'available',version:'0.1.43',notes:'## 更新内容\n- 优化：保留完整原音'}};
  const render=()=>box.module.exports.ClientUpdatesPanel({updates:availableUpdates}),nodes=tree=>[tree,...(tree?.children||[]).flat(Infinity).filter(x=>x&&typeof x==='object').flatMap(nodes)];
  const available=render();assert.doesNotMatch(JSON.stringify(available),/→ v/);assert.equal(nodes(available).filter(node=>node.props?.className==='client-update-version').length,0);const version=box.module.exports.ClientVersion({status:availableUpdates.status});assert.equal(nodes(version).filter(node=>node.props?.className==='client-update-version').length,1);assert.equal(nodes(version).find(node=>node.props?.className==='client-update-available').props['aria-label'],'可升级至 v0.1.43');assert.ok(!nodes(box.module.exports.ClientVersion({status:updates.status})).some(node=>node.props?.className==='client-update-available'));assert.ok(!nodes(available).some(node=>node.tag==='dialog'||node.tag==='details'));
  const trigger=nodes(available).find(node=>node.props?.className==='update-notes-trigger');assert.equal(trigger.props['aria-haspopup'],'dialog');trigger.props.onClick();
  const dialog=nodes(render()).find(node=>node.tag==='dialog');assert.ok(dialog);assert.match(JSON.stringify(dialog),/保留完整原音/);dialog.props.onClose();assert.ok(!nodes(render()).some(node=>node.tag==='dialog'));
+});
+
+
+test('release notes stay concise and exclude validation commentary',()=>{
+ const text='## 更新内容\n- 修复私库令牌保存；验证 931 项测试通过。\n  内部实现与验证细节。\n- 新增多个 Skill 共同使用。\n- 验证 macOS 与 Windows CI 成功。\n';
+ assert.deepEqual(updateReleaseItems(text),['修复私库令牌保存','新增多个 Skill 共同使用']);
+});
+
+
+test('release change whitelist excludes validation and boundary commentary',()=>{
+ assert.deepEqual(updateReleaseItems('## 更新内容\n- 新增多个 Skill。\n- 本轮验证 931 项通过，真实租户尚待验收。\n- 当前仅完成本地检查。\n- 修复私有仓库安装。'),['新增多个 Skill','修复私有仓库安装']);
 });

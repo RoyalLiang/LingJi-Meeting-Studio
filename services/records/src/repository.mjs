@@ -250,6 +250,19 @@ export async function createRepository(options = {}) {
       }
       return values;
     },
+    async saveExtensions(values,expected) {
+      requireThat(Array.isArray(values)&&values.length>0&&values.length<=50&&values.every(v=>v.kind==='extension'&&v.owner===values[0].owner),'invalid_extension',400);
+      const client=pool?await pool.connect():null;
+      try{if(client)await client.query('BEGIN');else db.exec('BEGIN IMMEDIATE');
+        for(const value of values){
+          const raw=client?(await client.query('SELECT data FROM record_aggregates WHERE id=$1 FOR UPDATE',[value.id])).rows[0]:db.prepare('SELECT data FROM aggregates WHERE id=?').get(value.id),current=raw?(typeof raw.data==='string'?JSON.parse(raw.data):raw.data):null;
+          requireThat(expected?.[value.id]===JSON.stringify(current),'extension_version_changed',409);
+          if(client)await client.query(current?'UPDATE record_aggregates SET data=$2 WHERE id=$1':'INSERT INTO record_aggregates(id,data) VALUES($1,$2)',[value.id,JSON.stringify(value)]);
+          else if(current)db.prepare('UPDATE aggregates SET data=? WHERE id=?').run(JSON.stringify(value),value.id);else db.prepare('INSERT INTO aggregates(id,data) VALUES(?,?)').run(value.id,JSON.stringify(value));
+        }
+        if(client)await client.query('COMMIT');else db.exec('COMMIT');
+      }catch(error){if(client)await client.query('ROLLBACK');else db.exec('ROLLBACK');throw error;}finally{client?.release();}
+    },
     async insert(value) {
       schedule(value);
       traceWrite(value);
@@ -369,7 +382,7 @@ export async function createRepository(options = {}) {
   }
   const missing=pool ? (await pool.query("SELECT a.id FROM record_aggregates a LEFT JOIN record_feed_meta m ON a.id=m.id LEFT JOIN record_list_projection l ON a.id=l.id WHERE a.data->>'kind'='record' AND (m.id IS NULL OR l.id IS NULL)")).rows : db.prepare("SELECT a.id FROM aggregates a LEFT JOIN record_feed_meta m ON a.id=m.id LEFT JOIN record_list_projection l ON a.id=l.id WHERE json_extract(a.data,'$.kind')='record' AND (m.id IS NULL OR l.id IS NULL)").all();
   for(const {id} of missing)await repository.change(id,()=>{}, {rebuild:true});
-  for (const name of ['listAnalysisInputs','listSummaries','eventsAfter','get', 'list', 'listWork', 'change', 'changeMany', 'putAudio']) {
+  for (const name of ['saveExtensions','listAnalysisInputs','listSummaries','eventsAfter','get', 'list', 'listWork', 'change', 'changeMany', 'putAudio']) {
     const operation = repository[name];
     repository[name] = (...args) => telemetry.measure(`db.${name}`, { backend: repository.backend, ...(typeof args[0] === 'string' && name !== 'list' ? {recordId:args[0]} : {}) }, () => operation(...args));
   }

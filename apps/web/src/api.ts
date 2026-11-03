@@ -35,6 +35,7 @@ const messages: Record<string, string> = {
   feishu_automation_changed:'自动导出设置已变更，本次任务已停止后续写入。',
   invalid_feishu_automation:'自动导出设置无效，请重新检查。',
   invalid_skill_source:'请检查仓库平台、HTTPS 地址、目录和版本；目录不能包含上级路径。',
+  skill_collection_too_large: '集合内容过多，请分批安装或减少选择。',
   skill_directory_required:'请选择包含 SKILL.md 的具体 Skill 目录。',
   invalid_remote_skill:'Skill 格式或大小不支持：需要 name/description 元数据，正文与直接 Markdown 引用合计最多 40000 字符。',
   skill_access_denied:'无法访问仓库，请检查地址、分支，以及令牌是否具有该仓库的 API 读取权限。',invalid_skill_token:'访问令牌格式无效，请重新填写。',skill_download_failed:'无法读取仓库 Skill，请检查仓库、目录、版本、令牌权限及网络。',

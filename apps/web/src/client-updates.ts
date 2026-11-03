@@ -14,11 +14,14 @@ export function updateReleaseItems(notes?: string | null): string[] {
     : (/^#{1,3}[ \t]/m.test(text) ? '' : text);
   const items: string[] = [];
   for (const line of content.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed || /^#{1,6}\s|^```/.test(trimmed)) continue;
-    const item = trimmed.replace(/^\s*(?:[-*+] |\d+[.)] )/, '').replace(/\[([^\]]+)\]\([^\n)]*\)/g, '$1').replace(/`([^`]+)`|\*\*([^*]+)\*\*/g, '$1$2');
-    if (/^\s*(?:[-*+] |\d+[.)] )/.test(line) || !items.length) items.push(item);
-    else items[items.length - 1] += ` ${item}`;
+    const trimmed=line.trim();
+    if(!trimmed||/^#{1,6}\s|^```/.test(trimmed))continue;
+    const bullet=/^(?:[-*+] |\d+[.)] )/.test(trimmed);
+    if(!bullet&&section)continue;
+    const item=trimmed.replace(/^(?:[-*+] |\d+[.)] )/,'').replace(/\[([^\]]+)\]\([^\n)]*\)/g,'$1').replace(/`([^`]+)`|\*\*([^*]+)\*\*/g,'$1$2').split(/[；。]/,1)[0].trim();
+    if(!item||!/^(?:新增|修复|优化|增加|支持|改进|完善|调整|Add(?:ed)?\b|Fix(?:ed)?\b|Improv(?:e|ed)\b|Optimiz(?:e|ed)\b|Keep\b)/i.test(item))continue;
+    items.push(item.length>60?item.slice(0,59)+'…':item);
+    if(items.length===6)break;
   }
   return items;
 }

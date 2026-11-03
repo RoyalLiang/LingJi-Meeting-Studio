@@ -4,7 +4,7 @@ import { remoteRequest, remoteUrl } from './remote-http.mjs';
 import { createSecretStore } from './secret-store.mjs';
 
 const text=(value,max)=>typeof value==='string'&&value.length<=max;
-const publicItem=item=>Object.fromEntries(['id','type','name','description','source','provider','path','ref','version','enabled','tools','approvedTools','url','hasToken','updatedAt','warnings','networkMode'].filter(key=>item[key]!==undefined).map(key=>[key,item[key]]));
+const publicItem=item=>Object.fromEntries(['id','type','name','description','source','provider','path','ref','version','enabled','tools','approvedTools','url','hasToken','updatedAt','warnings','networkMode','bundle','members','commit'].filter(key=>item[key]!==undefined).map(key=>[key,key==='members'?item.members.map(({name,description,path,version})=>({name,description,path,version})):item[key]]));
 async function githubRequest(value,{headers}={}){
   const url=new URL(value);
   requireThat(url.origin==='https://api.github.com'&&url.pathname.startsWith('/repos/'),'invalid_skill_source',400);
@@ -33,6 +33,15 @@ export function skillMetadata(content){
   requireThat(name&&/^[a-z0-9][a-z0-9-]{0,63}$/.test(name)&&description&&description.length<=1024,'invalid_remote_skill',400);
   return {name,description};
 }
+function skillProse(content){
+  let fence;
+  return content.split('\n').map(line=>{
+    const delimiter=line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    if(fence){if(delimiter&&delimiter[1][0]===fence[0]&&delimiter[1].length>=fence.length&&!delimiter[2].trim())fence=undefined;return '';}
+    if(delimiter&&!(delimiter[1][0]==='`'&&delimiter[2].includes('`'))){fence=delimiter[1];return '';}
+    return line;
+  }).join('\n').replace(/(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/g,'');
+}
 function rpcResult(response,id){
   requireThat(response.status>=200&&response.status<300,'mcp_connection_failed',502);
   let data;
@@ -57,14 +66,28 @@ export async function createExtensions(repo,{request=remoteRequest,requestGithub
     requireThat(![401,403,404].includes(result.status),'skill_access_denied',400);requireThat(result.status===200,'skill_download_failed',502);
     try{return JSON.parse(result.text);}catch{throw new DomainError('skill_download_failed',502);}
   }
+  const sourceId=(owner,source)=>`extension-source:${digest(`${owner}:${source.source}`)}`;
   async function skillToken(input,owner,source){
     requireThat(text(input.token||'',16000)&&!/[^\x21-\x7e]/.test(input.token||''),'invalid_skill_token',400);
-    if(input.extensionId){
-      const current=await get(owner,input.extensionId);
-      requireThat(current.type==='skill'&&current.source===source.source&&current.path===source.path,'invalid_skill_source',400);
-      return input.token || (current.credentials?secrets.open(current.id,current.credentials).token:'');
-    }
-    return input.token||'';
+    let current;if(input.extensionId){current=await get(owner,input.extensionId);requireThat(current.type==='skill'&&current.source===source.source,'invalid_skill_source',400);}
+    if(input.token)return input.token;
+    const saved=await repo.get(sourceId(owner,source));if(saved&&saved.owner===owner&&saved.credentials)return secrets.open(saved.id,saved.credentials).token;
+    current=current||(await repo.list('extension')).find(item=>item.owner===owner&&item.type==='skill'&&item.source===source.source&&!item.deleted&&item.credentials);
+    return current?.credentials?secrets.open(current.id,current.credentials).token:'';
+  }
+  async function remember(owner,source,token){
+    if(!owner||!token)return;const id=sourceId(owner,source),value={id,kind:'extension-source',owner,source:source.source,credentials:secrets.seal(id,{token}),updatedAt:Date.now()};
+    const previous=await repo.get(id);if(previous?.credentials&&secrets.open(id,previous.credentials).token===token)return;if(previous)await repo.change(id,row=>Object.assign(row,value));else await repo.insert(value);
+  }
+  async function skillPaths(source,sha,token){
+    const prefix=source.path?source.path+'/':'';let entries=[];
+    if(source.provider==='gitlab'){
+      for(let page=1;page<=20;page++){const batch=await gitlab(source,`tree?path=${encodeURIComponent(source.path)}&ref=${sha}&recursive=true&per_page=100&page=${page}`,token);requireThat(Array.isArray(batch)&&batch.length<=100,'invalid_remote_skill',400);entries.push(...batch);if(batch.length<100)break;requireThat(page<20,'skill_collection_too_large',400);}
+    }else{const tree=await github(`https://api.github.com/repos/${source.repo}/git/trees/${sha}?recursive=1`,false,token);requireThat(Array.isArray(tree.tree)&&!tree.truncated&&tree.tree.length<=20000,'skill_collection_too_large',400);entries=tree.tree;}
+    const choices=entries.filter(e=>e.type==='blob'&&typeof e.path==='string'&&e.path.startsWith(prefix)&&e.path.endsWith('SKILL.md')&&e.path.split('/').at(-1)==='SKILL.md').map(e=>{const path=e.path.slice(0,-'SKILL.md'.length).replace(/\/$/,'');skillSource({...source,path});return {name:path.split('/').at(-1)||source.repo.split('/').at(-1),path};});
+    // Older providers/fixtures may return only directory entries; these remain navigable.
+    if(!choices.length)for(const e of entries)if(['tree','dir'].includes(e.type)&&typeof e.path==='string'&&e.path.startsWith(prefix)&&typeof e.name==='string'&&/^[A-Za-z0-9_.-]+$/.test(e.name)&&!['.','..'].includes(e.name))choices.push({name:e.name,path:e.path});
+    requireThat(choices.length>0&&choices.length<=50,'skill_directory_required',400);return choices.sort((a,b)=>a.path.localeCompare(b.path));
   }
   async function skillPreview(input,owner){
     const source=skillSource(input),token=await skillToken(input,owner,source);
@@ -77,35 +100,42 @@ export async function createExtensions(repo,{request=remoteRequest,requestGithub
       const content=Buffer.from(value.content,'base64').toString('utf8').replace(/\r\n/g,'\n');requireThat(Buffer.byteLength(content)<=120000,'invalid_remote_skill',400);return content;
     };
     const content=await file(`${source.path?source.path+'/':''}SKILL.md`,true);
-    if(content===null){
-      const entries=source.provider==='gitlab'?await gitlab(source,`tree?path=${encodeURIComponent(source.path)}&ref=${commit.sha}&per_page=100`,token):await github(`https://api.github.com/repos/${source.repo}/contents/${source.path.split('/').map(encodeURIComponent).join('/')}?ref=${commit.sha}`,false,token);
-      requireThat(Array.isArray(entries)&&entries.length<=100,'invalid_remote_skill',400);
-      const prefix=source.path?source.path+'/':'';
-      const choices=entries.filter(entry=>['tree','dir'].includes(entry.type)&&typeof entry.name==='string'&&/^[A-Za-z0-9_.-]+$/.test(entry.name)&&!['.','..'].includes(entry.name)&&entry.path===prefix+entry.name).map(({name,path})=>({name,path}));
-      requireThat(choices.length>0,'skill_directory_required',400);
-      return {...source,version:commit.sha,choices};
+    if(content===null||input.bundle===true){
+      const choices=await skillPaths(source,commit.sha,token);await remember(owner,source,token);
+      return {...source,version:commit.sha,choices,hasToken:Boolean(token)};
     }
-    const metadata=skillMetadata(content),references=[];
-    const paths=[...new Set([...content.matchAll(/\[[^\]]+\]\(([^\s)]+\.md)(?:#[^)]*)?\)/g)].map(match=>match[1].replace(/^\.\//,'')))].filter(path=>!/^https?:/.test(path));
+    const metadata=skillMetadata(content),references=[],missing=[];
+    const prose=skillProse(content);
+    const paths=[...new Set([...prose.matchAll(/\[[^\]]+\]\(([^\s)]+\.md)(?:#[^)]*)?\)/g)].map(match=>match[1].replace(/^\.\//,'')))].filter(path=>!/^https?:/.test(path));
     requireThat(paths.length<=10,'invalid_remote_skill',400);
     for(const path of paths){
       if(/^https?:/.test(path))continue;
-      requireThat(path.split('/').every(part=>/^[A-Za-z0-9_.-]+$/.test(part)&&!['.','..'].includes(part)),'invalid_remote_skill',400);
-      references.push({path,content:await file(`${source.path?source.path+'/':''}${path}`)});
+      requireThat(path.length<=300&&path.split('/').every(part=>/^[^<>:"|?*\\\u0000-\u0020#%]+$/u.test(part)&&!['.','..'].includes(part)),'invalid_remote_skill',400);
+      const reference=await file(`${source.path?source.path+'/':''}${path}`,true);
+      if(reference===null)missing.push(path);else references.push({path,content:reference});
     }
     const guidance=content+references.map(item=>`\n\n--- Reference: ${item.path} ---\n${item.content}`).join('');
     requireThat(guidance.length<=40000,'invalid_remote_skill',400);
-    return {...source,...metadata,version:commit.sha,content:guidance,warnings:['仅加载 Skill 与直接引用的 Markdown 指引；不执行仓库脚本、安装依赖或扩大会议读取权限。']};
+    await remember(owner,source,token);
+    return {...source,...metadata,version:commit.sha,content:guidance,hasToken:Boolean(token),warnings:['仅加载 Skill 与直接引用的 Markdown 指引；不执行仓库脚本、安装依赖或扩大会议读取权限。',...missing.map(path=>`未找到引用文档：${path}`)]};
   }
+  async function detail(owner,id){const item=await get(owner,id);requireThat(item.type==='skill','invalid_extension',400);return {...publicItem(item),content:item.content,members:item.members||[]};}
   async function installSkill(owner,input){
     requireThat(input.confirmed===true&&/^[a-f0-9]{40}$/.test(input.expectedVersion),'extension_confirmation_required',400);
-    const requested=skillSource(input),token=await skillToken(input,owner,requested),value=await skillPreview({...requested,token,ref:input.expectedVersion},owner);
-    requireThat(typeof value.content==='string'&&!value.choices,'skill_directory_required',400);
-    requireThat(value.version===input.expectedVersion,'extension_version_changed',409);
-    const id=`extension:${digest(`${owner}:skill:${value.source}:${value.path}`)}`,current=await repo.get(id);
-    const next={id,kind:'extension',type:'skill',owner,...value,ref:requested.ref,enabled:false,hasToken:Boolean(token),...(token?{credentials:secrets.seal(id,{token})}:{}),updatedAt:Date.now()};
-    if(current)await repo.change(id,item=>{Object.assign(item,next);if(!token)delete item.credentials;delete item.deleted;});else await repo.insert(next);
-    return publicItem(next);
+    const requested=skillSource(input),token=await skillToken(input,owner,requested),prefix=requested.path?requested.path+'/':'';
+    let paths=input.paths;
+    if(paths!==undefined)requireThat(Array.isArray(paths)&&paths.length>0&&paths.length<=50&&new Set(paths).size===paths.length&&paths.every(path=>typeof path==='string'&&(path===requested.path||path.startsWith(prefix))),'invalid_skill_source',400);
+    if(input.bundle===true&&!paths)paths=(await skillPaths(requested,input.expectedVersion,token)).map(item=>item.path);
+    const values=[];
+    for(const path of paths||[requested.path]){
+      const value=await skillPreview({...requested,path,token,ref:input.expectedVersion},owner);requireThat(typeof value.content==='string'&&!value.choices,'skill_directory_required',400);requireThat(value.version===input.expectedVersion,'extension_version_changed',409);values.push(value);
+    }
+    requireThat(values.reduce((size,value)=>size+value.content.length,0)<=2000000,'skill_collection_too_large',400);
+    const selected=input.bundle===true?[{...requested,commit:input.expectedVersion,version:input.expectedVersion+':'+digest(JSON.stringify(values.map(v=>[v.path,digest(v.content)]).sort((a,b)=>a[0].localeCompare(b[0])))),bundle:true,name:requested.path.split('/').at(-1)||requested.repo.split('/').at(-1),description:`${values.length} Skills`,content:'# '+(requested.path||requested.repo)+'\n\n'+values.map(v=>`- **${v.name}** — ${v.description}`).join('\n'),members:values.map(({name,description,path,content,version})=>({name,description,path,content,version}))}]:values;
+    const rows=[],expected={};
+    for(const value of selected){const id=`extension:${digest(`${owner}:skill:${value.source}:${value.path}`)}`,current=await repo.get(id);requireThat(!current||current.owner===owner,'extension_not_found',404);expected[id]=JSON.stringify(current||null);rows.push({id,kind:'extension',type:'skill',owner,...value,ref:requested.ref,enabled:false,hasToken:Boolean(token),...(token?{credentials:secrets.seal(id,{token})}:{}),updatedAt:Date.now()});}
+    await repo.saveExtensions(rows,expected);await remember(owner,requested,token);
+    const items=rows.map(publicItem);return paths&&input.bundle!==true?{items}:items[0];
   }
   async function mcpSession(plugin,operation,signal){
     signal?.throwIfAborted();
@@ -155,19 +185,27 @@ export async function createExtensions(repo,{request=remoteRequest,requestGithub
   }
   async function remove(owner,id){await get(owner,id);await repo.change(id,item=>{item.deleted=true;item.enabled=false;delete item.credentials;delete item.content;item.tools=[];});return {deleted:true};}
   async function snapshot(owner,input={}){
-    const skillId=input.skillId||'meeting-review',pluginIds=input.pluginIds||[];
+    const ids=input.skillIds||[input.skillId||'meeting-review'],pluginIds=input.pluginIds||[];
+    requireThat(Array.isArray(ids)&&ids.length>0&&ids.length<=20&&new Set(ids).size===ids.length&&ids.every(id=>typeof id==='string'&&id.length<=100),'invalid_extension_scope',400);
     requireThat(Array.isArray(pluginIds)&&pluginIds.length<=3&&new Set(pluginIds).size===pluginIds.length&&pluginIds.every(id=>typeof id==='string'),'invalid_extension_scope',400);
-    const skill=skillId==='meeting-review'?{id:'meeting-review',name:'会议复盘',version:'1.0.0',content:''}:await get(owner,skillId);
-    requireThat(skill.id==='meeting-review'||skill.type==='skill'&&skill.enabled,'extension_disabled',409);
-    requireThat(skill.id==='meeting-review'||input.skillVersion===skill.version,'extension_version_changed',409);
+    const skills=[],guides=[],seen=new Set();let firstContent='';
+    for(const id of [...ids].sort()){
+      const skill=id==='meeting-review'?{id,name:'会议复盘',version:'1.0.0',content:''}:await get(owner,id);
+      requireThat(id==='meeting-review'||skill.type==='skill'&&skill.enabled,'extension_disabled',409);
+      requireThat(id==='meeting-review'||(input.skillVersions?.[id]||input.skillVersion)===skill.version,'extension_version_changed',409);
+      if(!skills.length)firstContent=skill.content||'';
+      skills.push({id,name:skill.name,version:skill.version,bundle:Boolean(skill.bundle)});
+      for(const member of skill.bundle?skill.members:[skill]){const key=digest(`${skill.source||'builtin'}:${member.path||''}:${member.version}`);if(seen.has(key))continue;seen.add(key);guides.push({key,name:member.name,description:member.description||'',path:member.path||'',version:member.version,content:member.content||''});}
+    }
+    requireThat(guides.length<=100&&guides.reduce((size,g)=>size+g.content.length,0)<=4000000,'skill_collection_too_large',400);
     requireThat(!pluginIds.length||input.remoteToolsConfirmed===true,'mcp_scope_required',400);
     const plugins=[];for(const id of pluginIds){const plugin=await get(owner,id);requireThat(plugin.type==='mcp'&&plugin.enabled,'extension_disabled',409);requireThat(input.pluginVersions?.[id]===plugin.version,'extension_version_changed',409);plugins.push({id,name:plugin.name,version:plugin.version,url:plugin.url,tools:plugin.tools.filter(tool=>plugin.approvedTools.includes(tool.name))});}
     requireThat(!plugins.length||input.remoteToolsConfirmed===true,'mcp_scope_required',400);
-    return {skill:{id:skill.id,name:skill.name,version:skill.version,content:skill.content},plugins};
+    return {skill:{...skills[0],content:firstContent},skills,guides,plugins};
   }
   async function validate(owner,snapshot){
     if(!snapshot)return;
-    if(snapshot.skill.id!=='meeting-review'){const skill=await get(owner,snapshot.skill.id);requireThat(skill.enabled&&skill.version===snapshot.skill.version,'extension_version_changed',409);}
+    for(const expected of snapshot.skills||[snapshot.skill])if(expected.id!=='meeting-review'){const skill=await get(owner,expected.id);requireThat(skill.enabled&&skill.version===expected.version,'extension_version_changed',409);}
     for(const expected of snapshot.plugins){const plugin=await get(owner,expected.id);requireThat(plugin.enabled&&plugin.version===expected.version&&expected.tools.every(tool=>plugin.approvedTools.includes(tool.name)),'extension_version_changed',409);}
   }
   async function call(owner,snapshot,{pluginId,toolName,arguments:args},signal,beforeCall){
@@ -182,5 +220,5 @@ export async function createExtensions(repo,{request=remoteRequest,requestGithub
       requireThat(content.length>0&&content.length<=40000,'mcp_result_too_large',502);return content;
     },signal);
   }
-  return {list,skillPreview,installSkill,installPlugin,check,change,remove,snapshot,validate,call};
+  return {list,detail,skillPreview,installSkill,installPlugin,check,change,remove,snapshot,validate,call};
 }
