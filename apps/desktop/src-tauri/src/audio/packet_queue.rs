@@ -26,6 +26,7 @@ struct State {
     closed: bool,
     discarded: bool,
     last_ack: Option<(u32, u32, u32)>,
+    produced_samples: u64,
 }
 
 fn io_failure(error: std::io::Error) -> String {
@@ -46,6 +47,7 @@ impl PacketQueue {
                 closed: false,
                 discarded: false,
                 last_ack: None,
+                produced_samples: 0,
             }),
             available: Condvar::new(),
         }
@@ -75,6 +77,13 @@ impl PacketQueue {
         state.file.write_all(packet).map_err(io_failure)?;
         // Only complete writes become visible to a reader.
         state.written += 4 + packet.len() as u64;
+        if packet.len() >= 14 {
+            let offset = u32::from_le_bytes(packet[4..8].try_into().unwrap()) as u64;
+            let samples = u32::from_le_bytes(packet[8..12].try_into().unwrap()) as u64;
+            if samples > 0 && packet.len() as u64 == 12 + samples * 2 {
+                state.produced_samples = state.produced_samples.max(offset + samples);
+            }
+        }
         self.available.notify_one();
         Ok(())
     }
@@ -125,6 +134,12 @@ impl PacketQueue {
         Ok(())
     }
 
+    pub fn progress(&self) -> (u64, u64, u64) {
+        let state = self.state.lock().unwrap();
+        let acknowledged = state.last_ack.map(|(_, offset, samples)| offset as u64 + samples as u64).unwrap_or(0);
+        (state.produced_samples, acknowledged, state.written - state.read)
+    }
+
     #[cfg(test)]
     pub fn buffered_bytes(&self) -> u64 {
         let state = self.state.lock().unwrap();
@@ -158,6 +173,20 @@ mod tests {
         assert_eq!(queue.pending().unwrap().unwrap(), packet(sequence, samples));
         queue.acknowledge(sequence, sequence * 16000, samples).unwrap();
     }
+    #[test]
+    fn progress_is_independent_of_ack_and_survives_queue_compaction() {
+        let queue = PacketQueue::new().unwrap();
+        queue.push(&packet(0, 16000)).unwrap();
+        queue.push(&packet(1, 4000)).unwrap();
+        assert_eq!(queue.progress().0, 20000);
+        assert_eq!(queue.progress().1, 0);
+        consume(&queue, 0, 16000);
+        assert_eq!(queue.progress().0, 20000);
+        assert_eq!(queue.progress().1, 16000);
+        consume(&queue, 1, 4000);
+        assert_eq!(queue.progress(), (20000, 20000, 0));
+    }
+
     #[test]
     fn persistence_failure_keeps_head_and_tail_and_ack_is_idempotent() {
         let queue = PacketQueue::new().unwrap();

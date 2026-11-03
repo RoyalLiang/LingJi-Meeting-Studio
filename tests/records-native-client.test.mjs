@@ -312,3 +312,22 @@ test('full cache refuses native capture before starting audio producers',async()
  const h=await controllerHarness({capacityFailure:true});const issues=await h.controller.startMeeting();
  assert.equal(issues.length,2);assert.equal(h.controller.active,false);assert.equal(h.starts.length,0);assert.equal(h.uploads.length,0);
 });
+
+test('native progress advances while local persistence is blocked, without acknowledging the packet',async t=>{
+ let release,stopping=false,reads=0,acks=0,progressCalls=0,progressReceived;
+ const progressReady=new Promise(resolve=>{progressReceived=resolve;});
+ const stream=await openNativeStream(async command=>{
+  if(command==='capture_start')return{id:'backpressure',label:'synthetic'};
+  if(command==='capture_progress'){progressCalls++;return{sampleEnd:32000,acknowledgedSampleEnd:0,bufferedBytes:64024};}
+  if(command==='capture_ack'){acks++;return;}
+  if(command==='capture_stop'){stopping=true;return;}
+  reads++;if(reads===1)return packet(0,0,16000);
+  assert.equal(stopping,true);return new ArrayBuffer(0);
+ },'display','default',async()=>{await new Promise(resolve=>{release=resolve;});},assert.fail,progressReceived);
+ t.after(async()=>{release?.();await stream.stop(true);});
+ const progress=await Promise.race([progressReady,new Promise((_,reject)=>setTimeout(()=>reject(new Error('progress did not arrive')),2500))]);
+ assert.equal(progress.sampleEnd,32000);assert.equal(progress.acknowledgedSampleEnd,0);
+ assert.equal(reads,1);assert.equal(acks,0,'display progress must not claim local persistence');
+ const stopped=stream.stop();release();await stopped;assert.equal(acks,1);
+ const polls=progressCalls;await new Promise(resolve=>setTimeout(resolve,550));assert.equal(progressCalls,polls,'timer stops with the stream');
+});

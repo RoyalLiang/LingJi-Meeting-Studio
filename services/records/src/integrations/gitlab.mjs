@@ -27,18 +27,21 @@ export function createGitlab({request=remoteRequest,localAccount=false}={}){
       if(values.length<100)return {group:{id:group.id,full_path:group.full_path},projects};
     }
   }
-  async function project(connection,id,root,signal){const currentRoot=await call(connection,`/groups/${root.id}`,{signal});requireThat(currentRoot.id===root.id&&currentRoot.full_path===root.full_path,'git_target_unavailable',409);const value=await call(connection,`/projects/${id}`,{signal});requireThat(value.id===id&&inGitRoot(value,root)&&typeof value.default_branch==='string'&&value.default_branch,'git_target_unavailable',409);return value;}
+  async function project(connection,id,root,signal){const currentRoot=await call(connection,`/groups/${root.id}`,{signal});requireThat(currentRoot.id===root.id&&currentRoot.full_path===root.full_path,'git_target_unavailable',409);const value=await call(connection,`/projects/${id}`,{signal});requireThat(value.id===id&&inGitRoot(value,root),'git_target_unavailable',409);requireThat(typeof value.default_branch==='string'&&value.default_branch,value.empty_repo===true?'git_repository_empty':'git_default_branch_missing',409);return value;}
   const branch=(c,id,name,signal)=>call(c,`/projects/${id}/repository/branches/${encodeURIComponent(name)}`,{optional:true,signal});
   const file=(c,id,path,ref,signal)=>call(c,`/projects/${id}/repository/files/${encodeURIComponent(path)}?ref=${encodeURIComponent(ref)}`,{optional:true,signal});
   async function commit(connection,job,signal,beforeWrite){
     const {id}=job.project,prefix=`/projects/${id}`;
-    await project(connection,id,job.rootGroup,signal);
-    const base=await branch(connection,id,job.baseBranch,signal);requireThat(/^[a-f0-9]{40}$/.test(base?.commit?.id),'git_target_unavailable',409);
-    const baseFiles=await Promise.all(Object.keys(job.files).map(path=>file(connection,id,path,base.commit.id,signal)));
-    if(baseFiles.every((f,i)=>f?.encoding==='base64'&&Buffer.from(f.content,'base64').toString('utf8')===Object.values(job.files)[i]))return {commit:base.commit.id,integrated:true};
+    const target=await project(connection,id,job.rootGroup,signal);
+    const base=await branch(connection,id,job.baseBranch,signal);
+    requireThat(base||target.empty_repo===true,'git_default_branch_missing',409);
+    requireThat(base||job.mode==='direct','git_repository_empty',409);
+    requireThat(!base||/^[a-f0-9]{40}$/.test(base.commit?.id),'git_invalid_response',502);
+    const baseFiles=base?await Promise.all(Object.keys(job.files).map(path=>file(connection,id,path,base.commit.id,signal))):[];
+    if(base&&baseFiles.every((f,i)=>f?.encoding==='base64'&&Buffer.from(f.content,'base64').toString('utf8')===Object.values(job.files)[i]))return {commit:base.commit.id,integrated:true};
     requireThat(!baseFiles.some(Boolean),'git_archive_exists',409);
     let head=await branch(connection,id,job.branch,signal);
-    if(!head){
+    if(!head&&base){
       // Reject pre-existing archive files; never overwrite human-maintained repository content.
       head=await call(connection,`${prefix}/repository/branches`,{method:'POST',body:{branch:job.branch,ref:base.commit.id},signal,beforeWrite});
     }

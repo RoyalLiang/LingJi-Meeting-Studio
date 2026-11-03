@@ -170,3 +170,67 @@ test('Git archives retain all selected Skills and read a top-level bundle with r
  const h=await fixture(t),version='c'.repeat(40),id='extension:bundle-test';await h.repo.insert({id,kind:'extension',owner:'owner',type:'skill',source:'https://git.example.test/root/skills',path:'skills',name:'项目指引集合',version,enabled:true,bundle:true,content:'# 项目指引集合',members:[{name:'risk',path:'skills/risk',description:'风险整理',version,content:'保留人工纪要与风险引用。'}]});
  const policy={...h.policy,skillIds:['meeting-review',id],skillVersions:{'meeting-review':'1.0.0',[id]:version}};await h.sync.save('owner',policy);assert.deepEqual((await h.sync.settings('owner')).skillIds.slice().sort(),policy.skillIds.slice().sort());const r=await h.record(),scope=await h.extensions.snapshot('owner',policy),guide=scope.guides.find(g=>g.name==='risk');h.fake.setResponses([message(call('read_selected_skill',{key:guide.key}),{stopReason:'toolUse'}),message(call('read_selected_meeting',{recordId:r.id}),{stopReason:'toolUse'}),message(JSON.stringify({summary:'风险已整理',decisions:[{text:'保留人工纪要',evidence:[{recordId:r.id,segmentId:'cited',revision:1}]}],actions:[]}))]);const job=await h.sync.start('owner',r.id);assert.equal((await settled(h.sync,job.id)).status,'succeeded');const row=await h.repo.get(job.id),manifest=JSON.parse(Object.entries(row.files).find(([path])=>path.endsWith('source.json'))?.[1]||Object.entries(row.files).find(([path])=>path.endsWith('.json'))[1]);assert.equal(manifest.skills.length,2);assert.ok(manifest.skillFiles.some(g=>g.path==='skills/risk'));
 });
+
+test('a slow connection check cannot delay disabling Git sync',async t=>{
+ const h=await fixture(t);await h.sync.save('owner',h.policy);
+ let entered,release;const seen=new Promise(r=>{entered=r;}),gate=new Promise(r=>{release=r;});
+ h.network.onRead(async path=>{if(path==='/groups/root'){entered();await gate;}});
+ const checking=h.sync.check('owner',{root:source,token:'synthetic-git-token'});await seen;
+ try{const disabling=h.sync.save('owner',{enabled:false});const result=await Promise.race([disabling,delay(80).then(()=>null)]);assert.ok(result,'disabling must not wait for unrelated network checks');assert.equal(result.enabled,false);}finally{release();await checking;}
+});
+
+test('an older enable save cannot overwrite a newer disable while validation is slow',async t=>{
+ const h=await fixture(t);await h.sync.save('owner',h.policy);
+ let entered,release;const seen=new Promise(r=>{entered=r;}),gate=new Promise(r=>{release=r;});h.network.onRead(async path=>{if(path==='/groups/root'){entered();await gate;}});
+ h.network.allowToken('delayed-new-token');const saving=h.sync.save('owner',{...h.policy,token:'delayed-new-token',prompt:'新版整理指令'}).then(value=>({value}),error=>({error}));await seen;
+ try{const disabled=await Promise.race([h.sync.save('owner',{enabled:false}),delay(80).then(()=>null)]);assert.ok(disabled,'disable must be durable before validation completes');}finally{release();}
+ const stale=await saving;assert.equal(stale.error?.code,'git_rule_changed');assert.equal((await h.sync.settings('owner')).enabled,false);
+});
+
+test('pause is persisted during an unrelated slow check and prevents further Git writes',async t=>{
+ const h=await fixture(t);await h.sync.save('owner',h.policy);const r=await h.record();h.respond(r);
+ let projectSeen,releaseProject,checkSeen,releaseCheck,checking=false,held=false;
+ const atProject=new Promise(r=>{projectSeen=r;}),projectGate=new Promise(r=>{releaseProject=r;}),atCheck=new Promise(r=>{checkSeen=r;}),checkGate=new Promise(r=>{releaseCheck=r;});
+ h.network.onRead(async path=>{if(path==='/projects/10'&&!held){held=true;projectSeen();await projectGate;}else if(path==='/groups/root'&&checking){checkSeen();await checkGate;}});
+ const job=await h.sync.start('owner',r.id);await atProject;checking=true;const check=h.sync.check('owner',{root:source,token:'synthetic-git-token'});await atCheck;
+ try{const paused=await Promise.race([h.sync.control('owner',job.id,'pause'),delay(80).then(()=>null)]);assert.ok(paused,'pause must not wait for a connection check');assert.equal(paused.status,'paused');releaseProject();await delay(25);assert.equal(h.network.writes.length,0);}finally{releaseProject();releaseCheck();await check;}
+});
+
+test('direct sync initializes an empty repository at its declared default branch',async t=>{
+ const h=await fixture(t);h.network.branches.delete('main');h.network.onRead(path=>path==='/projects/10'?{status:200,headers:{},text:JSON.stringify({...projects[0],empty_repo:true})}:undefined);
+ await h.sync.save('owner',{...h.policy,mode:'direct',directConfirmed:true});const r=await h.record();h.respond(r);const job=await h.sync.start('owner',r.id);const result=await settled(h.sync,job.id);
+ assert.equal(result.status,'succeeded',JSON.stringify(result));assert.equal(result.branch,'main');assert.equal(h.network.mrs.length,0);assert.equal(h.network.writes.filter(w=>w.path.endsWith('/repository/commits')).length,1);
+});
+
+test('MR mode leaves an empty repository unchanged and explains initialization is required',async t=>{
+ const h=await fixture(t);h.network.branches.delete('main');h.network.onRead(path=>path==='/projects/10'?{status:200,headers:{},text:JSON.stringify({...projects[0],empty_repo:true})}:undefined);
+ await h.sync.save('owner',h.policy);const r=await h.record();h.respond(r);const job=await h.sync.start('owner',r.id),result=await settled(h.sync,job.id);
+ assert.equal(result.error,'git_repository_empty');assert.equal(h.network.writes.length,0);
+});
+
+test('missing default branch in a nonempty repository is not reported as an invisible project',async t=>{
+ const h=await fixture(t);h.network.branches.delete('main');h.network.branches.set('other','a'.repeat(40));h.network.onRead(path=>path==='/projects/10'?{status:200,headers:{},text:JSON.stringify({...projects[0],empty_repo:false})}:undefined);
+ await h.sync.save('owner',{...h.policy,mode:'direct',directConfirmed:true});const r=await h.record();h.respond(r);const job=await h.sync.start('owner',r.id),result=await settled(h.sync,job.id);
+ assert.equal(result.error,'git_default_branch_missing');assert.equal(h.network.writes.length,0);
+});
+
+test('uncertain first commit in an empty repository is verified before retrying',async t=>{
+ const h=await fixture(t);h.network.branches.delete('main');h.network.onRead(path=>path==='/projects/10'?{status:200,headers:{},text:JSON.stringify({...projects[0],empty_repo:true})}:undefined);
+ await h.sync.save('owner',{...h.policy,mode:'direct',directConfirmed:true});const r=await h.record();h.respond(r);h.network.timeoutAfterCommit();const job=await h.sync.start('owner',r.id);
+ assert.equal((await settled(h.sync,job.id)).status,'unknown');await h.sync.control('owner',job.id,'retry');assert.equal((await settled(h.sync,job.id)).status,'succeeded');assert.equal(h.network.writes.filter(w=>w.path.endsWith('/repository/commits')).length,1);
+});
+
+test('save reports mapping, alias and directory errors specifically and accepts the visible default directory',async t=>{
+ const h=await fixture(t);const w={id:crypto.randomUUID(),kind:'workspace',owner:'owner',name:'RTLS'};await h.repo.insert(w);
+ await assert.rejects(h.sync.save('owner',{...h.policy,mappings:[{workspaceId:'missing',projectId:10}]}),{code:'git_mapping_invalid'});
+ await assert.rejects(h.sync.save('owner',{...h.policy,mappings:[{workspaceId:w.id,projectId:10},{workspaceId:w.id,projectId:20}]}),{code:'git_mapping_duplicate'});
+ await assert.rejects(h.sync.save('owner',{...h.policy,aliases:[{name:'',projectId:10}]}),{code:'git_alias_invalid'});
+ await assert.rejects(h.sync.save('owner',{...h.policy,directory:'../secret'}),{code:'git_directory_invalid'});
+ assert.equal((await h.sync.save('owner',{...h.policy,directory:''})).directory,'docs/meetings');
+});
+
+test('saving local preferences reuses the validated connection while changed credentials are checked',async t=>{
+ const h=await fixture(t);await h.sync.save('owner',h.policy);let requests=0;h.network.onRead(()=>{requests++;});
+ await h.sync.save('owner',{...h.policy,prompt:'只调整整理方式'});assert.equal(requests,0,'local edits must not repeat remote catalog requests');
+ h.network.allowToken('changed-synthetic-token');await h.sync.save('owner',{...h.policy,token:'changed-synthetic-token'});assert.ok(requests>0);
+});

@@ -25,6 +25,14 @@ pub struct Started {
     pub id: String,
     pub label: String,
 }
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Progress {
+    pub sample_end: u64,
+    pub acknowledged_sample_end: u64,
+    pub buffered_bytes: u64,
+}
+
 struct Capture {
     kind: String,
     stop: Arc<AtomicBool>,
@@ -460,6 +468,12 @@ impl Captures {
                 }
             }
         }
+    }
+
+    pub fn progress(&self, id: &str) -> Result<Progress, String> {
+        let session = self.sessions.lock().unwrap().get(id).cloned().ok_or("采集已结束")?;
+        let (sample_end, acknowledged_sample_end, buffered_bytes) = session.receiver.progress();
+        Ok(Progress { sample_end, acknowledged_sample_end, buffered_bytes })
     }
 
     pub fn acknowledge(&self, id: &str, sequence: u32, sample_offset: u32, sample_count: u32) -> Result<(), String> {

@@ -64,6 +64,11 @@ export class NativeCaptureController {
         if (!this.active) this.args[4]();
         this.args[2](new Error(`${kind === 'display' ? '会议声音' : '我的声音'}中断：${error.message}。${this.active ? '其他音源继续录制，可重新接入此音源。' : '会议已暂停，可恢复录制；尚未结束本场。'}`), true);
       });
+    }, progress => {
+      const signal = this.streams.get(kind)?.signal;
+      if (!signal) return;
+      signal.seconds = Math.max(signal.seconds, progress.sampleEnd / 16000);
+      this.report();
     });
     try {
       const source = await api<Source>(`/records/${recordId}/sources`, 'POST', { kind, label: stream.label });

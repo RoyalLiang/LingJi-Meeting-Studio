@@ -23,6 +23,7 @@ export function FeishuConnection({onChange,disabled=false}:{onChange:(value:Feis
       <label>App ID<input name="appId" required defaultValue={value.appId} pattern="cli_[a-fA-F0-9]{16}" placeholder="cli_…" disabled={busy||disabled}/></label><label>App Secret<input name="appSecret" type="password" required={!value.hasSecret} autoComplete="new-password" placeholder={value.hasSecret?'已保存；留空保留':'应用凭据中的 Secret'} disabled={busy||disabled}/></label>
       <div className="feishu-actions"><Button variant="primary" disabled={busy||disabled}>保存配置</Button></div>
     </form>}
-    {error&&<FeedbackNotice key={error} message={error} error/>}
+    {value?.enabled&&phase==='failed'&&<FeedbackNotice key={`connection:${value.appId}`} message="飞书配置已保存，连接失败；请检查凭据后重新连接。" error/>}
+  {error&&<FeedbackNotice key={error} message={error} error/>}
   </div>;
 }

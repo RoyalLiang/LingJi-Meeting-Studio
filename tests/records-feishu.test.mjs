@@ -50,7 +50,7 @@ async function harness(t,{autoPollMs=100}={}){
   const created=await request('/records','POST',{});await app.repo.change(created.body.id,recordMinutes);
   async function connect(){
     assert.equal((await request('/integrations/feishu','PUT',{appId:'cli_a1b2c3d4e5f67890',appSecret})).status,200);
-    const value=await request('/integrations/feishu','PATCH',{enabled:true});assert.equal(value.status,200);assert.equal(value.body.connected,true);
+    const value=await request('/integrations/feishu','PATCH',{enabled:true});assert.equal(value.status,200);await waitFor(async()=>(await request('/integrations/feishu')).body.connected);
   }
   const preview=()=>request(`/records/${created.body.id}/feishu/preview`,'POST',{title:'人工核对的会议纪要',folderToken:'',includeNotes:false,includeEvidence:true});
   const wait=async id=>{for(let i=0;i<60;i++){const value=await request(`/integrations/feishu/exports/${id}`);if(value.body.status!=='publishing')return value.body;await new Promise(resolve=>setTimeout(resolve,10));}throw new Error('Fixture export did not complete');};
@@ -73,7 +73,7 @@ test('Feishu SDK connection, frozen preview, owner isolation and one-time public
   const h=await harness(t);await h.connect();
   const settings=await h.request('/integrations/feishu');assert.equal(settings.body.connected,true);assert.doesNotMatch(JSON.stringify(settings.body),/fixture-app-secret|fixture-access-token|fixture-refresh/);
   const stored=(await h.app.repo.list('feishu-connection'))[0];assert.doesNotMatch(JSON.stringify(stored),/fixture-app-secret|fixture-access-token|fixture-refresh/);
-  const preview=await h.preview();assert.match(preview.body.markdown,/保留人工修订|引用版本一/);assert.doesNotMatch(preview.body.markdown,/private-saved-notes|后续修改/);
+  const preview=await h.preview();assert.doesNotMatch(preview.body.markdown,/^# /,'Feishu already provides the document title');assert.match(preview.body.markdown,/保留人工修订|引用版本一/);assert.doesNotMatch(preview.body.markdown,/private-saved-notes|后续修改/);
   const id=preview.body.id;assert.equal((await h.request(`/integrations/feishu/exports/${id}/publish`,'POST',{confirmed:false})).status,400);
   assert.equal((await h.request(`/integrations/feishu/exports/${id}/publish`,'POST',{confirmed:true})).status,202);
   const receipt=await h.wait(id);assert.equal(receipt.status,'succeeded');assert.equal(receipt.url,`https://fixture.feishu.cn/docx/${documentId}`);
@@ -145,14 +145,14 @@ test('application identity connects and exports without OAuth callback, user ide
   assert.doesNotMatch(JSON.stringify([configured,connected,draft]),/fixture-app-secret|fixture-access-token|fixture-refresh/);
 });
 
-test('automatic connection rejects invalid credentials and disabling fences a late successful start',async t=>{
+test('saving credentials reports asynchronous connection failure and disabling fences a late start',async t=>{
   const h=await harness(t);h.remote.flags.connectError=true;
   const denied=await h.request('/integrations/feishu','PUT',{appId:'cli_a1b2c3d4e5f67890',appSecret});
-  assert.equal(denied.status,502);assert.doesNotMatch(JSON.stringify(denied),/private-sdk|fixture-app-secret/);
+  assert.equal(denied.status,200);await waitFor(async()=>(await h.request('/integrations/feishu')).body.connection.state==='failed');assert.doesNotMatch(JSON.stringify(denied),/private-sdk|fixture-app-secret/);
   h.remote.flags.connectError=false;let release;h.remote.flags.connectGate=new Promise(resolve=>{release=resolve;});
   const previous=h.remote.connections.length,connecting=h.request('/integrations/feishu','PATCH',{enabled:true});
   try{await waitFor(()=>h.remote.connections.length>previous);await h.request('/integrations/feishu','PATCH',{enabled:false});}finally{release();}
-  assert.notEqual((await connecting).status,200);assert.equal((await h.request('/integrations/feishu')).body.connected,false);
+  assert.equal((await connecting).status,200);assert.equal((await h.request('/integrations/feishu')).body.connected,false);
 });
 
 test('application identity automatically exports only new finalized meetings once',async t=>{
@@ -199,9 +199,9 @@ test('disconnect cancels SDK initialization even while its first storage read is
 
 test('saving credentials starts automatically and the capability switch preserves credentials',async t=>{
   const h=await harness(t);const configured=await h.request('/integrations/feishu','PUT',{appId:'cli_a1b2c3d4e5f67890',appSecret});
-  assert.equal(configured.status,200);assert.equal(configured.body.enabled,true);assert.equal(configured.body.connected,true);assert.equal(h.remote.connections.length,1);
+  assert.equal(configured.status,200);assert.equal(configured.body.enabled,true);await waitFor(async()=>(await h.request('/integrations/feishu')).body.connected);assert.equal(h.remote.connections.length,1);
   const disabled=await h.request('/integrations/feishu','PATCH',{enabled:false});assert.equal(disabled.body.hasSecret,true);assert.equal(disabled.body.enabled,false);assert.equal(disabled.body.connected,false);
-  const enabled=await h.request('/integrations/feishu','PATCH',{enabled:true});assert.equal(enabled.body.connected,true);assert.equal(h.remote.connections.length,2);
+  const enabled=await h.request('/integrations/feishu','PATCH',{enabled:true});assert.equal(enabled.body.enabled,true);await waitFor(async()=>(await h.request('/integrations/feishu')).body.connected);assert.equal(h.remote.connections.length,2);
   assert.equal((await h.request('/integrations/feishu/connect','POST',{})).status,404);
 });
 
@@ -288,4 +288,15 @@ test('editable board uses quiet typography and separate root topic and detail st
  assert.equal(topic.text.font_size,18);assert.equal(topic.mind_map_node.parent_id,root.id);
  assert.equal(detail.text.font_size,14);assert.equal(detail.mind_map_node.parent_id,topic.id);assert.equal(detail.mind_map_node.type,'mind_map_text');
  assert.equal(root.mind_map_root.line_style,'curve');
+});
+
+test('saving and disabling Feishu configuration does not wait for the remote connection',async t=>{
+ const h=await harness(t);let release;h.remote.flags.connectGate=new Promise(resolve=>{release=resolve;});
+ const configuring=h.request('/integrations/feishu','PUT',{appId:'cli_a1b2c3d4e5f67890',appSecret});
+ try{
+  const saved=await Promise.race([configuring,new Promise((_,reject)=>setTimeout(()=>reject(new Error('configuration blocked by network')),1000))]);
+  assert.equal(saved.status,200);assert.equal(saved.body.hasSecret,true);assert.equal(saved.body.enabled,true);assert.equal(saved.body.connected,false);assert.equal(saved.body.connection.state,'connecting');
+  const disabled=await h.request('/integrations/feishu','PATCH',{enabled:false});assert.equal(disabled.body.enabled,false);
+ }finally{release();await configuring;}
+ await new Promise(resolve=>setImmediate(resolve));assert.equal((await h.request('/integrations/feishu')).body.connected,false);
 });

@@ -28,7 +28,8 @@ export const MarkdownPreview=memo(function MarkdownPreview({text}:{text:string})
         const key=i,items:string[]=[];for(;i<lines.length&&/^\d+[.)] /.test(lines[i]);i++)items.push(lines[i].replace(/^\d+[.)] /,''));i--;
         blocks.push(<ol key={key}>{items.map((item,j)=><li key={j}>{inline(item,prefix)}</li>)}</ol>);continue;
       }
-      if(line.startsWith('> ')){blocks.push(<blockquote key={i}>{inline(line.slice(2),prefix)}</blockquote>);continue;}
+      if(/^ {0,3}([-*_])(?: *\1){2,} *$/.test(line)){blocks.push(<hr key={i}/>);continue;}
+    if(line.startsWith('> ')){blocks.push(<blockquote key={i}>{inline(line.slice(2),prefix)}</blockquote>);continue;}
       const heading=line.match(/^(#{1,6}) (.*)$/),footnote=line.match(/^\[\^(\d+)\]: (.*)$/);
       if(heading){const value=inline(heading[2],prefix);blocks.push(heading[1].length===1?<h2 key={i}>{value}</h2>:heading[1].length===2?<h3 key={i}>{value}</h3>:<h4 key={i}>{value}</h4>);}
       else if(footnote)blocks.push(<p className="markdown-footnote" id={`${prefix}-${footnote[1]}`} key={i}><sup>{footnote[1]}</sup> {inline(footnote[2],prefix)}</p>);

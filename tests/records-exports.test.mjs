@@ -24,7 +24,7 @@ function fixture() {
 }
 test('Markdown exports complete saved minutes with frozen evidence, Unicode and proper tables',()=>{
   const text=exportMinutesMarkdown(fixture());
-  for(const section of ['# 发布与验收计划','转录版本 3 · 纪要版本 2 · 人工修订','讨论主题','关键决策','验收表','发言人总结','行动候选','负责人：待确认','人工核对','[^1]: saved@1 01:01 说话人1 — 周五完成验收'])assert.ok(text.includes(section),section);
+  for(const section of ['# 发布与验收计划','转录版本 3 · 纪要版本 2 · 人工修订','讨论主题','关键决策','验收表','发言人总结','行动候选','| 事项 | 负责人 | 时间 |','人工核对','[^1]: saved@1 01:01 说话人1 — 周五完成验收'])assert.ok(text.includes(section),section);
   assert.ok(text.includes('A\\|B 测试'));
   assert.doesNotMatch(text,/后来修改后的文本|无关的私密原文/);
   assert.equal((text.match(/\[\^1\]:/g)||[]).length,1);
@@ -113,4 +113,11 @@ test('unknown tasks and distinct correction targets survive the sharing round tr
  assert.equal(minutesReadingBranches(shared)[0].items.length,2);
  assert.equal(uniqueMinutesItems(shared.actions).length,2);
  assert.equal(uniqueMinutesItems([{id:'a',text:'参数 A  B',evidence:[ref]},{id:'a',text:'参数 A B',evidence:[ref]}]).length,2);
+});
+
+test('Markdown preview renders export structure as headings, rules and action tables',async()=>{
+ const {build}=await import('esbuild'),{createRequire}=await import('node:module'),{resolve}=await import('node:path'),vm=await import('node:vm'),React=await import('react'),{renderToStaticMarkup}=await import('react-dom/server');
+ const compiled=await build({entryPoints:['apps/web/src/components/MarkdownPreview.tsx'],bundle:true,write:false,platform:'node',format:'cjs',jsx:'automatic',loader:{'.css':'empty'},external:['react','react/jsx-runtime','react-dom']});const module={exports:{}};vm.runInNewContext(compiled.outputFiles[0].text,{module,exports:module.exports,require:createRequire(resolve('package.json'))});
+ const html=renderToStaticMarkup(React.createElement(module.exports.MarkdownPreview,{text:'# 会议结论\n\n---\n\n| 事项 | 负责人 |\n| --- | --- |\n| 验证候选 | 待确认 |\n\n<script>alert(1)</script>'}));
+ assert.match(html,/<h2[^>]*>会议结论/);assert.match(html,/<hr/);assert.match(html,/<table/);assert.match(html,/待确认/);assert.doesNotMatch(html,/<script|>---</);
 });

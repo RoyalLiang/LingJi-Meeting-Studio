@@ -61,18 +61,18 @@ export function Toast({ message, error = false, warning = false, persistent = fa
   },[message,messageKey,inline,error,warning]);
   useEffect(() => {
     if (!message || persistent) return;
-    const countdown = createToastTimer(getToastDuration(error), () => dismissRef.current());
+    const countdown = createToastTimer(getToastDuration(error || warning), () => dismissRef.current());
     timer.current = countdown;
     countdown.setPaused('hover', Boolean(ref.current?.matches(':hover')));
     countdown.setPaused('focus', Boolean(ref.current?.contains(document.activeElement)));
     const visibility = () => countdown.setPaused('hidden', document.hidden);
     const element = ref.current;
-    const toggle = (event: Event) => countdown.setPaused('covered', (event as ToggleEvent).newState !== 'open');
-    countdown.setPaused('covered', Boolean(element?.showPopover && !element.matches(':popover-open')));
+    const toggle = (event: Event) => countdown.setPaused('covered', !inline && Boolean(element?.showPopover) && (event as ToggleEvent).newState !== 'open');
+    countdown.setPaused('covered', !inline && Boolean(element?.showPopover && !element.matches(':popover-open')));
     element?.addEventListener('beforetoggle', toggle);
     visibility(); document.addEventListener('visibilitychange', visibility);
     return () => { countdown.dispose(); timer.current = null; element?.removeEventListener('beforetoggle', toggle); document.removeEventListener('visibilitychange', visibility); };
-  }, [message, messageKey, error, persistent]);
+  }, [message, messageKey, error, warning, persistent, inline]);
   if (!message) return null;
   const popover = !inline && typeof HTMLElement !== 'undefined' && 'showPopover' in HTMLElement.prototype ? 'manual' : undefined;
   return <div ref={ref} popover={popover} className={`toast feedback-toast glass ${inline ? 'is-inline' : ''} ${error ? 'is-error' : warning ? 'is-warning' : ''} ${className}`} role={error ? 'alert' : 'status'} aria-live={error ? 'assertive' : 'polite'} aria-atomic="true"

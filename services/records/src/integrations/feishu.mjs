@@ -56,7 +56,7 @@ function exportSnapshot(record, input) {
   requireThat(!destinationEmail||!folderToken,'invalid_feishu_destination',400);
   requireThat(input.includeBoard===undefined||typeof input.includeBoard==='boolean','feishu_scope_required',400);
   const includeBoard=input.includeBoard===true;
-  const markdown = exportMinutesMarkdown(record, input), minutes = minutesForExport(record);
+  const markdown = exportMinutesMarkdown(record, {...input,includeTitle:false}), minutes = minutesForExport(record);
   requireThat(Buffer.byteLength(markdown) <= 500000, 'feishu_document_too_large', 400);
   const source = {minutesRevision:minutes.revision, transcriptRevision:minutes.transcriptRevision,
     notesRevision:input.includeNotes ? record.notesRevision : null, edited:Boolean(minutes.edited), draft:minutes !== record.minutes || record.capture !== 'completed'};
@@ -94,9 +94,12 @@ export async function createFeishu(repo, {sdkFactory=createFeishuSdk,now=Date.no
       }catch{entry.error='feishu_connection_failed';entry.sdk?.close();throw new DomainError('feishu_connection_failed',502);}
     })();return entry.starting;
   }
+  function connectInBackground(conn,active){
+    const work=startConnection(conn,active).catch(()=>{});jobs.add(work);void work.finally(()=>jobs.delete(work));
+  }
   async function settings(owner){
     const conn=await load(owner),entry=clients.get(owner),status=entry?.sdk?.status();
-    const connection=entry&&entry.generation===conn?.generation?{state:entry.error?'failed':status?.state||'connecting',reconnectAttempts:status?.reconnectAttempts||0}:{state:conn?.credentials?'disconnected':'unconfigured',reconnectAttempts:0};
+    const connection=entry&&entry.generation===conn?.generation?{state:entry.error?'failed':!entry.started?'connecting':status?.state||'connecting',reconnectAttempts:status?.reconnectAttempts||0}:{state:conn?.credentials?'disconnected':'unconfigured',reconnectAttempts:0};
     return {authMode:'app',appId:conn?.appId||'',hasSecret:Boolean(conn?.credentials),enabled:Boolean(conn?.connected),connected:Boolean(conn?.connected&&connection.state==='connected'),connection,scopes:FEISHU_SCOPES};
   }
   async function request(client,url,{body,write=false,signal}={}){
@@ -119,19 +122,18 @@ export async function createFeishu(repo, {sdkFactory=createFeishuSdk,now=Date.no
     if(current?.appId===input.appId&&open(current).appSecret===appSecret&&current.authMode==='app'){
       await repo.change(current.id,value=>{active();value.connected=true;});
       const previous=clients.get(owner);if(previous?.error||previous?.sdk?.status().state==='failed')abortConnection(owner);
-      await startConnection({...current,connected:true},active);return settings(owner);
+      connectInBackground({...current,connected:true},active);return settings(owner);
     }
     const next={id:connectionId(owner),kind:'feishu-connection',owner,authMode:'app',appId:input.appId,generation:randomUUID(),connected:true};
     next.credentials=secrets.seal(next.id,{appSecret});
     if(current)await repo.change(next.id,value=>{active();abortConnection(owner);Object.assign(value,next);delete value.identity;delete value.redirectUri;delete value.authorizationAttempt;});else{await repo.insert({...next,connected:false});active();await repo.change(next.id,value=>{active();requireThat(value.generation===next.generation,'feishu_connection_changed',409);value.connected=true;});}
-    active();await startConnection(next,active);return settings(owner);
+    active();connectInBackground(next,active);return settings(owner);
   }
   async function connect(owner){
     const active=control(owner),conn=await load(owner);active();requireThat(conn?.credentials,'feishu_not_configured',409);
     await repo.change(conn.id,current=>{active();requireThat(current.generation===conn.generation,'feishu_connection_changed',409);current.connected=true;});active();
     const previous=clients.get(owner);if(previous?.generation===conn.generation&&(previous.error||previous.sdk?.status().state==='failed'))abortConnection(owner);
-    await startConnection(conn,active);active();
-    requireThat(!stopping.signal.aborted&&clients.get(owner)?.generation===conn.generation&&!clients.get(owner).controller.signal.aborted,'feishu_connection_changed',409);
+    connectInBackground(conn,active);
     return settings(owner);
   }
   async function disconnect(owner){

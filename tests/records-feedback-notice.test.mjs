@@ -16,13 +16,13 @@ function notice(storage){
 test('a floating processing failure keeps its action without reserving document space',()=>{
   const run=()=>{},shown=notice()({message:'整理未完成',inline:false,action:{label:'重新整理',run}});
   assert.equal(shown.props.inline,false);
-  assert.equal(shown.props.persistent,true);
+  assert.equal(shown.props.persistent,false);
   assert.equal(shown.props.action.run,run);
 });
 
 test('dismissing a warning survives refresh and transient processing states until a new notice identity',()=>{
   const render=notice(),props={message:'语音处理暂时受阻。',open:true};
-  const shown=render(props);assert.equal(shown.props.persistent,true);assert.equal(shown.props.warning,true);
+  const shown=render(props);assert.equal(shown.props.persistent,false);assert.equal(shown.props.warning,true);
   shown.props.dismiss();assert.equal(render(props),null);
   assert.equal(render({...props,open:false}),null);
   assert.equal(render({...props,open:true,message:props.message+'音频仍在保存期内。'}),null);
@@ -69,12 +69,12 @@ test('minutes failure forwards its floating presentation class without inline la
   const shown=notice()({message:'整理未完成',className:'minutes-failure-toast'});
   assert.equal(shown.props.className,'minutes-failure-toast');
   assert.equal(shown.props.inline,false);
-  assert.equal(shown.props.persistent,true);
+  assert.equal(shown.props.persistent,false);
 });
 
 test('errors retain alert priority while routine confirmations use the shared timer',()=>{
   const failure=notice()({message:'导出失败',error:true});
-  assert.equal(failure.props.error,true);assert.equal(failure.props.persistent,true);
+  assert.equal(failure.props.error,true);assert.equal(failure.props.persistent,false);
   const success=notice()({message:'配置已保存',warning:false});
   assert.equal(success.props.persistent,false);assert.equal(success.props.inline,false);
 });
@@ -83,5 +83,15 @@ test('errors retain alert priority while routine confirmations use the shared ti
 test('transient form failures explicitly override persistent incident defaults',()=>{
  const failure=notice()({message:'仓库来源校验失败',error:true,persistent:false});
  assert.equal(failure.props.error,true);assert.equal(failure.props.persistent,false);
- const incident=notice()({message:'音频采集已暂停',error:true});assert.equal(incident.props.persistent,true);
+ const incident=notice()({message:'音频采集已暂停',error:true});assert.equal(incident.props.persistent,false);
+});
+
+test('inline feedback and browsers without popover support still auto-dismiss',async()=>{
+ const source=await readFile(new URL('../apps/web/src/components/Toast.tsx',import.meta.url),'utf8'),compiled=(await transform(source,{loader:'tsx',jsx:'automatic',format:'cjs'})).code;
+ for(const inline of [true,false]){
+  const effects=[],layouts=[],refs=[],timers=new Map();let next=0,dismissed=0;
+  const jsx=(type,props)=>({type,props}),module={exports:{}},element={isConnected:true,matches:()=>false,contains:()=>false,addEventListener:()=>{},removeEventListener:()=>{},...(inline?{showPopover:()=>{}}:{})};
+  const sandbox={module,exports:module.exports,require:name=>name==='react'?{useRef:value=>{const ref={current:value};refs.push(ref);return ref;},useEffect:fn=>effects.push(fn),useLayoutEffect:fn=>layouts.push(fn)}:name==='react/jsx-runtime'?{jsx,jsxs:jsx}:{},HTMLElement:class{},document:{hidden:false,activeElement:null,addEventListener:()=>{},removeEventListener:()=>{}},performance:{now:()=>0},setTimeout:(run)=>{timers.set(++next,run);return next;},clearTimeout:id=>timers.delete(id)};
+  vm.runInNewContext(compiled,sandbox);const node=module.exports.Toast({message:'保存完成',inline,dismiss:()=>dismissed++});node.props.ref.current=element;layouts.forEach(fn=>fn());effects.forEach(fn=>fn());assert.equal(timers.size,1,inline?'inline countdown':'fallback countdown');[...timers.values()][0]();assert.equal(dismissed,1);
+ }
 });

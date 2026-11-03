@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
-import {mkdtemp,rm} from 'node:fs/promises';
+import {mkdtemp,rm,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {saveConfig,readConfig,meetingAutomationConfig} from '../services/records/src/config.mjs';
@@ -76,4 +76,22 @@ test('microphone-only or playback-only activity cannot auto-start; one direction
   for(let at=28000;at<=48000;at+=2000)assert.equal(engine.sample({sampledAt:at,active:true,startActive:false},recording),null);
   assert.equal(engine.pending,null);
   assert.equal(tick(engine,50000,60000,false,recording)?.kind,'stop');
+});
+
+test('quick capture stays active when an auxiliary list or detail refresh fails',async()=>{
+ const {transform}=await import('esbuild'),vm=await import('node:vm');
+ const app=await readFile(new URL('../apps/web/src/App.tsx',import.meta.url),'utf8');
+ const start=app.indexOf('async function quickRecord()'),end=app.indexOf('async function startCapture(',start);
+ const {code}=await transform(app.slice(start,end)+'\nexports.run=quickRecord;',{loader:'tsx',format:'cjs'});
+ for(const failure of ['list','load','detail']){
+  let stops=0,active=true;const errors=[];
+  const controller={get active(){return active;},startMeeting:async()=>[],stop:async()=>{stops++;active=false;}};
+  const noop=()=>{},context={exports:{},recording:false,busy:false,captureAllowed:()=>true,setError:value=>errors.push(value),setCaptureIssues:noop,setBusy:noop,setCapturePhase:noop,capture:{current:null},boot:null,scope:'all',minutesAvailable:()=>false,controllerFor:()=>controller,activeId:{current:null},selectRecord:noop,rememberRecord:noop,setModal:noop,setQueueRecords:noop,setRecording:noop,messageOf:e=>e.message,
+   api:async(_path,method)=>{if(method==='POST')return{id:'new-record'};if(failure==='list')throw new Error('list unavailable');return{records:[]};},
+   loadList:async()=>{if(failure==='load')throw new Error('list unavailable');},refresh:async()=>{if(failure==='detail')throw new Error('detail unavailable');}};
+  vm.runInNewContext(code,context);
+  assert.equal(await context.exports.run(),'new-record',failure);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(active,true);assert.equal(stops,0);assert.equal(context.activeId.current,'new-record');assert.ok(errors.some(value=>value.includes('unavailable')));
+ }
 });

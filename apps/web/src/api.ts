@@ -5,6 +5,18 @@ export function setAudioTransport(value?: string) { binaryAudio = value === 'pcm
 let csrf = '';
 export const setCsrf = (token: string) => { csrf = token; };
 const messages: Record<string, string> = {
+  git_repository_empty:'仓库尚未初始化，请先创建默认分支，再使用合并请求同步。',
+  git_default_branch_missing:'仓库默认分支不存在，请在 GitLab 中修正默认分支后重试。',
+  git_mapping_invalid:'请为每个 Workspace 选择当前分组中可见的目标仓库。',
+  git_mapping_duplicate:'同一个 Workspace 只能绑定一个目标仓库，请移除重复映射。',
+  git_alias_invalid:'请填写至少 3 个字符的项目别名，并选择目标仓库。',
+  git_directory_invalid:'归档目录无效，请使用类似 docs/meetings 的相对目录。',
+  git_timezone_invalid:'时区设置无效，请重新选择时区。',
+  agent_input_too_large:'所选内容过多，请分批选择后重试。',
+  agent_timeout:'整理用时较长，已有内容保留，请稍后重试。',
+  invalid_agent_output:'整理结果暂时无法核对，请重试。',
+  agent_failed:'整理未完成，请稍后重试。',
+
   git_target_unclear:'标题没有明确项目或场地，且未绑定指定 Workspace，已暂停同步。',
   git_target_conflict:'标题匹配多个项目，或与 Workspace 目标冲突，请确认归属。',
   git_target_unavailable:'目标项目不可见或已移出 root 分组，已停止同步。',

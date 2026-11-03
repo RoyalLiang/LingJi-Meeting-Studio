@@ -7,7 +7,7 @@ function acknowledged(key?: string) {
 }
 
 /** The caller keys a persisted notice by incident; explicit reopening bypasses its acknowledgement. */
-export function FeedbackNotice({ message, action, error = false, warning = true, persistent=error || warning || Boolean(action), open = true, dismissalKey, forceOpen = false, inline = false, className = '' }: {
+export function FeedbackNotice({ message, action, error = false, warning = true, persistent=false, open = true, dismissalKey, forceOpen = false, inline = false, className = '' }: {
   message: string; error?: boolean; warning?: boolean; persistent?:boolean; open?: boolean; dismissalKey?: string; forceOpen?: boolean; inline?: boolean; className?: string;
   action?: { label: string; run: () => void; disabled?: boolean; busy?: boolean };
 }) {

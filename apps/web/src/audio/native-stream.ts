@@ -1,4 +1,5 @@
 export type NativeInvoke = (command: string, args?: Record<string, unknown>) => Promise<unknown>;
+export type NativeProgress = { sampleEnd: number; acknowledgedSampleEnd: number; bufferedBytes: number };
 export type NativePacket = { sequence: number; sampleOffset: number; buffer: ArrayBuffer };
 export type NativeStream = { id: string; label: string; done: Promise<void>; stop: (discard?: boolean) => Promise<void> };
 
@@ -12,9 +13,20 @@ export function decodeNativePacket(raw: ArrayBuffer, sequence: number, offset: n
 }
 
 export async function openNativeStream(invoke: NativeInvoke, kind: 'display' | 'microphone', deviceId: string,
-  onPacket: (packet: NativePacket) => Promise<void>, onError: (error: Error, retaining?: boolean) => void): Promise<NativeStream> {
+  onPacket: (packet: NativePacket) => Promise<void>, onError: (error: Error, retaining?: boolean) => void, onProgress?: (progress: NativeProgress) => void): Promise<NativeStream> {
   const started = await invoke('capture_start', { kind, deviceId }) as { id: string; label: string };
   let stopping: Promise<void> | undefined, discard = false, stopRequested = false, sequence = 0, offset = 0;
+  let ended = false, polling = false;
+  const pollProgress = async () => {
+    if (ended || polling || !onProgress) return;
+    polling = true;
+    try {
+      const progress = await invoke('capture_progress', { id: started.id }) as NativeProgress;
+      if (!ended && Number.isSafeInteger(progress.sampleEnd) && progress.sampleEnd >= 0) onProgress(progress);
+    } catch { /* Packet read/ACK remains the authoritative error path. */ }
+    finally { polling = false; }
+  };
+  const progressTimer = onProgress ? setInterval(() => void pollProgress(), 500) : undefined;
   const done = (async () => {
     try {
       for (;;) {
@@ -51,7 +63,7 @@ export async function openNativeStream(invoke: NativeInvoke, kind: 'display' | '
       }
     }
   })();
-  void done.catch(() => {});
+  void done.finally(() => { ended = true; if (progressTimer) clearInterval(progressTimer); }).catch(() => {});
   return { ...started, done, stop: async (drop = false) => {
     stopRequested = true; discard ||= drop;
     if (!stopping || drop) stopping = invoke('capture_stop', { id: started.id, discard }).then(() => {});

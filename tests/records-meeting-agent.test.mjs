@@ -128,7 +128,7 @@ test('sources are checked again after model completion, not only before reading'
 test('missing model configuration, oversized sources and invalid admission fail explicitly',async t=>{
   const f=await fixture(t),runtime=await f.open({env:{}});await assert.rejects(runtime.request('owner',request(f.records)),{code:'minutes_not_configured'});
   await assert.rejects(runtime.request('owner',{...request(f.records),prompt:'x'.repeat(2001)}),{code:'invalid_agent_request'});await f.close();
-  const p=provider(),configured=await f.open(p);await f.repo.change(f.records[0].id,record=>{record.segments[0].text='x'.repeat(60001);});await assert.rejects(configured.request('owner',request(f.records)),{code:'agent_input_too_large'});
+  const p=provider(),configured=await f.open(p);await f.repo.change(f.records[0].id,record=>{record.segments[0].text='x'.repeat(2000001);});await assert.rejects(configured.request('owner',request(f.records)),{code:'agent_input_too_large'});
 });
 
 test('SIGKILL recovery resumes the committed Pi tool checkpoint and completed requests are never replayed',async t=>{
@@ -254,7 +254,7 @@ test('duplicated minutes evidence does not reject a normal full meeting or alter
  record.segments=Array.from({length:200},(_,i)=>({id:`long-${i}`,revision:1,text:'会议讨论内容'.repeat(20),startMs:i*1000,endMs:(i+1)*1000}));
  record.minutes={title:'会议',sections:[],actions:[],evidenceSnapshot:structuredClone(record.segments)};
  await f.repo.change(record.id,value=>Object.assign(value,record));
- let wire;const p=provider([reads([record]),context=>{wire=JSON.stringify(context.messages.find(item=>item.role==='toolResult'));return message(JSON.stringify(result([record])));}]);
+ let wire='';const respond=context=>{const output=context.messages.filter(item=>item.role==='toolResult').at(-1);const text=output.content.filter(part=>part.type==='text').map(part=>part.text).join('');const page=JSON.parse(text);wire+=page.content||text;if(page.nextPage!==undefined)return message(call('read_selected_meeting',{recordId:record.id,page:page.nextPage}),{stopReason:'toolUse'});return message(JSON.stringify(result([record])));};const p=provider([reads([record]),...Array.from({length:30},()=>respond)]);
  const runtime=await f.open(p),task=await runtime.request('owner',request([record],'normal-long'));
  const done=await settled(runtime,task.id);assert.equal(done.status,'completed',JSON.stringify(done));assert.equal(wire.split(record.segments[0].text).length-1,200);assert.equal((await runtime.get('owner',task.id)).stale,false);
 });

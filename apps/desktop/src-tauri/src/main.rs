@@ -104,6 +104,12 @@ async fn capture_read(
 }
 
 #[tauri::command]
+fn capture_progress(window: WebviewWindow, state: State<'_, Client>, id: String) -> Result<audio::Progress, String> {
+    authorize(&window, &state)?;
+    state.captures.progress(&id)
+}
+
+#[tauri::command]
 fn capture_ack(window: WebviewWindow, state: State<'_, Client>, id: String, sequence: u32, sample_offset: u32, sample_count: u32) -> Result<(), String> {
     authorize(&window, &state)?;
     state.captures.acknowledge(&id, sequence, sample_offset, sample_count)
@@ -325,6 +331,7 @@ fn main() {
         capture_start,
         capture_read,
         capture_ack,
+        capture_progress,
         capture_stop,
         capture_inputs,
         client_ready,
@@ -345,6 +352,7 @@ fn main() {
         capture_start,
         capture_read,
         capture_ack,
+        capture_progress,
         capture_stop,
         capture_inputs,
         client_ready,
@@ -394,7 +402,7 @@ fn main() {
                 profile: profile.clone(),
                 origin: origin.clone(), captures: Arc::new(audio::Captures::default()), resident: resident::Resident::default(), _lock: binding._lock, _backend: backend, updates, api });
             app.add_capability(CapabilityBuilder::new("local-capture").window("main").local(false).remote(format!("{origin}/*"))
-                .permission("allow-integration-open").permission("allow-meeting-watch-configure").permission("allow-capture-start").permission("allow-capture-read").permission("allow-capture-ack").permission("allow-capture-stop").permission("allow-capture-inputs")
+                .permission("allow-integration-open").permission("allow-meeting-watch-configure").permission("allow-capture-start").permission("allow-capture-read").permission("allow-capture-ack").permission("allow-capture-progress").permission("allow-capture-stop").permission("allow-capture-inputs")
                 .permission("allow-recording-widget-update").permission("allow-client-close").permission("allow-client-ready").permission("allow-client-status").permission("allow-update-status").permission("allow-update-activity").permission("allow-update-check").permission("allow-update-download").permission("allow-update-install")
                 .permission("core:event:allow-listen").permission("core:event:allow-unlisten"))?;
             app.add_capability(CapabilityBuilder::new("recording-widget").window("recording-widget").local(false).remote(format!("{origin}/*"))

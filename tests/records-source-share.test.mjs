@@ -8,11 +8,11 @@ import { join } from 'node:path';
 import { truncateText } from '../packages/records/src/text.mjs';
 import { sharedMinutes } from '../packages/records/src/shared-content.mjs';
 import { minutesReadingLayout } from '../packages/records/src/minutes-reading.mjs';
-import { minutesItemText } from '../packages/records/src/minutes-quality.mjs';
+import { minutesItemText, minutesActionText } from '../packages/records/src/minutes-quality.mjs';
 import { createRecordServer } from '../services/records/src/server.mjs';
 
 const frontend = await Promise.all(['citation-context.ts', 'share-content.ts'].map(async file => stripTypeScriptTypes(await readFile(new URL(`../apps/web/src/${file}`, import.meta.url), 'utf8')).replace(/^import .*$/gm, '').replace(/export /g, '')));
-const sandbox = { exports: {}, URL, sharedMinutes, truncateText, minutesReadingLayout, minutesItemText };
+const sandbox = { exports: {}, URL, sharedMinutes, truncateText, minutesReadingLayout, minutesItemText, minutesActionText };
 vm.runInNewContext(frontend.join('\n') + '\nObject.assign(exports,{citationContext,canCreateShareLinks,minutesForShare,shareFilename,createShareDocument});', sandbox);
 const { citationContext, canCreateShareLinks, minutesForShare, shareFilename, createShareDocument } = sandbox.exports;
 const segment = (id, revision, text, startMs) => ({ id, revision, text, startMs, endMs: startMs + 1000, speaker: '说话人 1', sourceId: 'fixture', edited: false });
@@ -100,4 +100,10 @@ test('HTTP read-only sharing keeps exact table sources, excludes unshared transc
     await call(`/api/records/${id}/shares/${link.data.id}`, { method: 'DELETE', headers, body: '{}' });
     assert.equal((await call(`/api/shared/${link.data.token}`)).status, 404);
   } finally { await app.stop(); await rm(root, { recursive: true, force: true }); }
+});
+
+test('standalone HTML export has a document hierarchy and action table without changing meeting data',()=>{
+ const value=minutes();value.highlights=[{text:'先核对发布条件',evidence:[ref('s1')]}];value.decisions=[{text:'验证通过再发布',evidence:[ref('s2')]}];value.actions=[{text:'补充回归证据',owner:null,due:null,evidence:[ref('s3')]}];
+ const record={title:'发布讨论',capture:'completed',minutes:value,segments:snapshot},before=JSON.stringify(record),html=createShareDocument(record,'minutes',true);
+ assert.ok(html.indexOf('关键决策')<html.indexOf('讨论主题'));assert.match(html,/<table class="actions"/);assert.match(html,/<th>事项<\/th><th>负责人<\/th><th>时间<\/th>/);assert.match(html,/待确认/);assert.match(html,/class="topic-summary"/);assert.match(html,/<sup class="sources">/);assert.equal(JSON.stringify(record),before,'export must not rewrite app minutes');
 });

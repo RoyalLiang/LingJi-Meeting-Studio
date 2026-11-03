@@ -201,3 +201,32 @@ test('new model tables require explicit valid topic associations while table-fre
     }
   } finally {globalThis.fetch=original;}
 });
+
+test('Pi minutes repairs invalid topic structure once and accounts both attempts',async()=>{
+ const {generateMinutes}=await import('../services/records/src/providers.mjs');const original=globalThis.fetch,evidence=[{segmentId:'s',revision:1}];let calls=0;const requests=[],usage=[];
+ const valid={title:'候选方案核对',topics:[{id:'candidate',title:'候选方案',summary:'仍需验证',evidence}],sections:[{heading:'候选方案',items:[{text:'候选尚未实测，不承诺零丢失。',evidence,topicId:'candidate'}]}],actions:[]};
+ globalThis.fetch=async(_url,options)=>{requests.push(JSON.parse(options.body));const output=structuredClone(valid);if(++calls===1)output.topics.push({...output.topics[0]});return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(output)}}],usage:{prompt_tokens:10,completion_tokens:20,total_tokens:30}}),{headers:{'content-type':'application/json'}});};
+ try{
+  const result=await generateMinutes({scope:'live',snapshot:[{id:'s',revision:1,text:'候选尚未实测，不承诺零丢失。'}]},{LLM_API_URL:'https://fixture.invalid/chat/completions',LLM_API_KEY:'synthetic-key',LLM_MODEL:'synthetic',LLM_PROTOCOL:'chat-completions'},{onUsage:value=>usage.push(value)});
+  assert.equal(calls,2);assert.equal(result.runtime.engine,'pi');assert.equal(result.runtime.structureRepairs,1);assert.equal(result.usageTokens,60);assert.equal(result.tokenUsage.totalTokens,60);assert.equal(usage.at(-1).totalTokens,60);assert.equal(result.sections[0].items[0].text,valid.sections[0].items[0].text);assert.match(requests[1].messages[0].content,/上次主题结构未通过校验/);
+ }finally{globalThis.fetch=original;}
+});
+
+test('minutes structure retry records a missing second usage report as unknown',async()=>{
+ const {generateMinutes}=await import('../services/records/src/providers.mjs'),{meteredMinutesCall}=await import('../services/records/src/minutes-usage.mjs');
+ const original=globalThis.fetch,evidence=[{segmentId:'s',revision:1}],record=createRecord('owner');let calls=0;
+ const claim={id:'repair-usage',generation:record.generation,fence:'f',mode:'model',scope:'live',snapshot:[{id:'s',revision:1,text:'候选仍待验证'}]};record.jobs=[{...claim,status:'running'}];
+ const output={title:'候选',topics:[{id:'t',title:'候选',summary:'待验证',evidence}],sections:[{heading:'候选',items:[{text:'候选仍待验证',evidence}]}],actions:[]};
+ globalThis.fetch=async()=>{const result=structuredClone(output);if(++calls===1)result.topics.push({...result.topics[0]});return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(result)}}],...(calls===1?{usage:{prompt_tokens:10,completion_tokens:20,total_tokens:30}}:{})}),{headers:{'content-type':'application/json'}});};
+ try{
+  const result=await meteredMinutesCall({change:async(_id,change)=>change(record)},record.id,claim,generateMinutes,claim,{LLM_API_URL:'https://fixture.invalid/chat/completions',LLM_API_KEY:'synthetic-key',LLM_MODEL:'synthetic',LLM_PROTOCOL:'chat-completions'});
+  assert.equal(calls,2);assert.equal(result.usageReported,false);assert.equal(record.usage.minutesMeter.requests,2);assert.equal(record.usage.minutesMeter.reportedRequests,1);assert.equal(record.usage.minutesMeter.totalTokens,30);assert.equal(record.usage.minutesMeter.totalTokensRequests,1);
+ }finally{globalThis.fetch=original;}
+});
+
+test('minutes structure repair shares the original deadline instead of renewing the lease budget',async()=>{
+ const {generateMinutes}=await import('../services/records/src/providers.mjs');const original=globalThis.fetch,originalNow=Date.now;let clock=originalNow(),calls=0;Date.now=()=>clock;
+ const evidence=[{segmentId:'s',revision:1}],topic={id:'t',title:'候选',summary:'待验证',evidence};
+ globalThis.fetch=async()=>{calls++;clock+=120001;return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({title:'候选',topics:[topic,topic],sections:[{heading:'候选',items:[{text:'仍待验证',evidence}]}],actions:[]})}}]}),{headers:{'content-type':'application/json'}});};
+ try{await assert.rejects(generateMinutes({scope:'live',snapshot:[{id:'s',revision:1,text:'仍待验证'}]},{LLM_API_URL:'https://fixture.invalid/chat/completions',LLM_API_KEY:'synthetic-key',LLM_MODEL:'synthetic',LLM_PROTOCOL:'chat-completions'}),{code:'llm_timeout'});assert.equal(calls,1);}finally{globalThis.fetch=original;Date.now=originalNow;}
+});

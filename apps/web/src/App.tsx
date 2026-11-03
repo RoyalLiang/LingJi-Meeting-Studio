@@ -329,14 +329,17 @@ function Workspace() {
     try {
       const next = await created;
       activeId.current = next.id; selectRecord(next.id); rememberRecord(next); setModal(null);
-      const list = await api<{records: RecordListItem[]}>('/records');
-      setQueueRecords(list.records.map(item => item.id)); await loadList();
       const issues = await started; setCaptureIssues(issues); setRecording(controller.active);
       if (issues.length) {
         if (controller.active) setError(issues.map(issue => issue.message).join('；'));
         else setModal('capture');
       }
-      await refresh();
+      // Refresh failure must not stop an already active capture or suppress automation.
+      void (async () => {
+        const list = await api<{records: RecordListItem[]}>('/records');
+        setQueueRecords(list.records.map(item => item.id));
+        await loadList(); await refresh();
+      })().catch(e => setError(messageOf(e)));
       return controller.active ? next.id : undefined;
     } catch (e) {
       await started; await controller.stop(); capture.current = null; setRecording(false); setError(messageOf(e));

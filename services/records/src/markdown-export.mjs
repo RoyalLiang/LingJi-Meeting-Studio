@@ -7,12 +7,13 @@ const inline = value => String(value ?? '').replace(/\\/g, '\\\\').replace(/([`*
 export function minutesForExport(record) {
   return record.minutes?.edited ? record.minutes : record.capture === 'completed' ? record.minutes || record.liveMinutes : record.liveMinutes || record.minutes;
 }
-export function exportMinutesMarkdown(record, {includeNotes = true, includeEvidence = true} = {}) {
+export function exportMinutesMarkdown(record, {includeNotes = true, includeEvidence = true, includeTitle = true} = {}) {
   const minutes = minutesForExport(record);
   requireThat(minutes, 'minutes_unavailable', 409);
   const draft = minutes !== record.minutes || record.capture !== 'completed';
-  const lines = [`# ${inline(minutes.title)}`, '', `会议：${inline(record.title)}`, '',
-    `转录版本 ${minutes.transcriptRevision} · ${draft ? '会中草稿' : `纪要版本 ${minutes.revision}`}${minutes.edited ? ' · 人工修订' : ''}`, ''];
+  const lines = includeTitle ? [`# ${inline(minutes.title)}`, ''] : [];
+  if(record.title && record.title !== minutes.title)lines.push(`会议：${inline(record.title)}`, '');
+  if(draft)lines.push('> 会中草稿', '');
   const speakers=speakerLabels(minutes.evidenceSnapshot||[],record.speakers||[],record.segments||[]);
   const speakerName=evidence=>[...new Set((evidence||[]).map(ref=>speakers.get(`${ref.segmentId}:${ref.revision}`)).filter(Boolean))].join('、')||'未区分说话人';
   const references = new Map(), sourceByRevision = new Map();
@@ -29,6 +30,7 @@ export function exportMinutesMarkdown(record, {includeNotes = true, includeEvide
     lines.push('');
   };
   items('重点速览', minutes.highlights);
+  items('关键决策', uniqueMinutesItems(minutes.decisions));
   const visualBlock = (visual,level=2) => {
     lines.push(`${'#'.repeat(level)} ${inline(visual.title)}`, '');
     if (visual.kind === 'timeline') {
@@ -58,14 +60,19 @@ export function exportMinutesMarkdown(record, {includeNotes = true, includeEvide
   }
   for(const visual of layout.unassigned.visuals)visualBlock(visual);
   for(const table of layout.unassigned.tables)tableBlock(table);
-  items('关键决策', uniqueMinutesItems(minutes.decisions));
+
   if (minutes.speakerSummaries?.length) {
     lines.push('## 发言人总结', '');
     for (const speaker of minutes.speakerSummaries) lines.push(`### ${inline(speakerName(speaker.evidence))}`, '', `${inline(speaker.summary)}${cite(speaker.evidence)}`, '');
   }
-  items('行动候选', (minutes.edited?minutes.actions||[]:uniqueMinutesItems(minutes.actions)).map(action => ({ evidence:action.evidence,
-    text: `${minutesActionText(action,minutes.topics)}（负责人：${action.owner || '待确认'}；时间：${action.due || '待确认'}）` })));
+  const actions=minutes.edited?minutes.actions||[]:uniqueMinutesItems(minutes.actions);
+  if(actions.length){
+    lines.push('## 行动候选', '', '| 事项 | 负责人 | 时间 |', '| --- | --- | --- |');
+    for(const action of actions)lines.push(`| ${inline(minutesActionText(action,minutes.topics))}${cite(action.evidence)} | ${inline(action.owner || '待确认')} | ${inline(action.due || '待确认')} |`);
+    lines.push('');
+  }
   if (includeNotes && record.notes) lines.push('## 人工笔记', '', ...record.notes.split(/\r?\n/).map(inline), '');
+  lines.push('---', '', `转录版本 ${minutes.transcriptRevision} · ${draft ? '会中草稿' : `纪要版本 ${minutes.revision}`}${minutes.edited ? ' · 人工修订' : ''}`, '');
   if (references.size) {
     lines.push('## 引用原文', '');
     for (const ref of references.values()) {
