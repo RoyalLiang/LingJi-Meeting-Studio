@@ -159,6 +159,11 @@ jobs:
             [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $script),[ref]$tokens,[ref]$parseErrors)
             if ($parseErrors.Count -gt 0) { throw ($parseErrors | Out-String) }
           }
+          $installerVerifier=Get-Content scripts/test-windows-installer-ui.ps1 -Raw
+          $installerNative=[regex]::Match($installerVerifier,"(?s)Add-Type @'\r?\n(.*?)\r?\n'@")
+          if(-not $installerNative.Success){throw 'Native installer verifier source missing'}
+          Add-Type -TypeDefinition $installerNative.Groups[1].Value
+          [LingJiInstallerWindow]::VerifyControlLookup()
       - run: node --test tests/records-desktop-entry.test.mjs tests/records-audio-storage-sync.test.mjs tests/records-release-source.test.mjs tests/records-preview-release.test.mjs
       - run: npm run build:web
       - run: node scripts/prepare-client-backend.mjs

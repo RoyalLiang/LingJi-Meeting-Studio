@@ -8,6 +8,38 @@ using System;
 using System.Runtime.InteropServices;
 public class LingJiInstallerWindow {
  [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left,Top,Right,Bottom; }
+  public delegate bool EnumWindowProc(IntPtr h,IntPtr data);
+  [DllImport("user32.dll")] public static extern bool EnumChildWindows(IntPtr h,EnumWindowProc callback,IntPtr data);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll",CharSet=CharSet.Unicode,ExactSpelling=true)] static extern int GetWindowTextW(IntPtr h,System.Text.StringBuilder text,int size);
+  [DllImport("user32.dll",CharSet=CharSet.Unicode,ExactSpelling=true)] static extern int GetClassNameW(IntPtr h,System.Text.StringBuilder text,int size);
+  static string Text(IntPtr h) { var text=new System.Text.StringBuilder(512);GetWindowTextW(h,text,text.Capacity);return text.ToString(); }
+  static string Class(IntPtr h) { var text=new System.Text.StringBuilder(64);GetClassNameW(h,text,text.Capacity);return text.ToString(); }
+  public static IntPtr[] FindVisibleControls(IntPtr root,string[] names,bool staticOnly) {
+    var matches=new System.Collections.Generic.List<IntPtr>();
+    EnumChildWindows(root,(h,data)=>{if(IsWindowVisible(h)&&Array.IndexOf(names,Text(h))>=0&&(!staticOnly||Class(h).Equals("Static",StringComparison.OrdinalIgnoreCase)))matches.Add(h);return true;},IntPtr.Zero);
+    return matches.ToArray();
+  }
+  [DllImport("user32.dll",CharSet=CharSet.Unicode,ExactSpelling=true,SetLastError=true)] static extern IntPtr CreateWindowExW(uint ex,string kind,string title,uint style,int x,int y,int width,int height,IntPtr parent,IntPtr menu,IntPtr instance,IntPtr data);
+  [DllImport("user32.dll")] static extern bool DestroyWindow(IntPtr h);
+  public static void VerifyControlLookup() {
+    var root=CreateWindowExW(0,"STATIC","lookup fixture",0x90000000u,-10000,-10000,300,160,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero);
+    if(root==IntPtr.Zero)throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+    try {
+      var label=CreateWindowExW(0,"STATIC","same caption",0x50000000u,10,10,120,24,root,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero);
+      var button=CreateWindowExW(0,"BUTTON","same caption",0x50000000u,10,50,120,24,root,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero);
+      var hidden=CreateWindowExW(0,"STATIC","same caption",0x40000000u,10,90,120,24,root,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero);
+      if(label==IntPtr.Zero||button==IntPtr.Zero||hidden==IntPtr.Zero)throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+      var labels=FindVisibleControls(root,new[]{"same caption"},true);
+      if(labels.Length!=1||labels[0]!=label||FindVisibleControls(root,new[]{"same caption"},false).Length!=2)throw new Exception("Native lookup must separate visible labels, buttons and hidden controls");
+      Rect bounds;if(!GetWindowRect(labels[0],out bounds)||bounds.Right<=bounds.Left||bounds.Bottom<=bounds.Top)throw new Exception("Native label bounds missing");
+    } finally {DestroyWindow(root);}
+  }
+  public static string VisibleControls(IntPtr root) {
+    var rows=new System.Collections.Generic.List<string>();
+    EnumChildWindows(root,(h,data)=>{var text=Text(h);if(IsWindowVisible(h)&&text.Length>0&&rows.Count<30)rows.Add(Class(h)+":"+text);return true;},IntPtr.Zero);
+    return string.Join(" | ",rows);
+  }
  [DllImport("user32.dll")] public static extern bool IsWindowEnabled(IntPtr h);
  [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h,out Rect r);
  [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr h,ref Point p);
@@ -148,13 +180,12 @@ function Click-Next {
  if(-not [LingJiInstallerWindow]::PostMessage($script:handle,0x0111,[IntPtr]1,$button)){throw 'Installer next action could not be posted'}
 }
 function Assert-Separate([string[]]$leftNames,[string[]]$rightNames) {
-  $rootElement=[System.Windows.Automation.AutomationElement]::FromHandle($script:handle)
-  $elements=$rootElement.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)
-  $left=@($elements | Where-Object {$leftNames -contains $_.Current.Name -and $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Text})
-  $right=@($elements | Where-Object {$rightNames -contains $_.Current.Name})
-  if($left.Count -ne 1 -or $right.Count -ne 1){throw 'Installer layout controls missing or ambiguous'}
-  $a=$left[0].Current.BoundingRectangle;$b=$right[0].Current.BoundingRectangle
-  if($a.IsEmpty -or $b.IsEmpty -or ($a.Left -lt $b.Right -and $b.Left -lt $a.Right -and $a.Top -lt $b.Bottom -and $b.Top -lt $a.Bottom)){throw ('Installer controls overlap: '+$left[0].Current.Name+' / '+$right[0].Current.Name)}
+  $left=@([LingJiInstallerWindow]::FindVisibleControls($script:handle,$leftNames,$true))
+  $right=@([LingJiInstallerWindow]::FindVisibleControls($script:handle,$rightNames,$false))
+  if($left.Count -ne 1 -or $right.Count -ne 1){throw ("Installer layout controls missing or ambiguous: left="+$left.Count+" ["+($leftNames -join '/')+"]; right="+$right.Count+" ["+($rightNames -join '/')+"]; visible="+[LingJiInstallerWindow]::VisibleControls($script:handle))}
+  $a=New-Object LingJiInstallerWindow+Rect;$b=New-Object LingJiInstallerWindow+Rect
+  if(-not [LingJiInstallerWindow]::GetWindowRect($left[0],[ref]$a) -or -not [LingJiInstallerWindow]::GetWindowRect($right[0],[ref]$b)){throw 'Installer control bounds unavailable'}
+  if($a.Right -le $a.Left -or $a.Bottom -le $a.Top -or $b.Right -le $b.Left -or $b.Bottom -le $b.Top -or ($a.Left -lt $b.Right -and $b.Left -lt $a.Right -and $a.Top -lt $b.Bottom -and $b.Top -lt $a.Bottom)){throw ('Installer controls overlap: '+($leftNames -join '/')+' / '+($rightNames -join '/'))}
 }
 function Capture-Page([string]$name,[IntPtr]$target=[IntPtr]::Zero,[switch]$ThemedPrompt) {
  if($target -eq [IntPtr]::Zero){$target=$script:handle}

@@ -16,14 +16,22 @@ const runtimes = {
   'linux-x64': ['tar.xz', '6170b2d474e1c626f43cff3adc118df9fe3b573258a4fc3d850c8dbc6b079bbd'],
   'win-x64': ['zip', 'b3efd5c70cba3308ed46e7e699a9b8aac075bbc6b027fcb39c84c31acc25e2b4'],
 };
+export function includeBackendSource(path){
+  return !path.endsWith('.DS_Store')&&!/\.(?:map|d\.[cm]?ts|tsbuildinfo)$/.test(path);
+}
 export function includeBackendDependency(path){
   const normalized=path.replaceAll('\\','/');
-  if(normalized.includes('/node_modules/node_modules/')||/\.(?:map|d\.[cm]?ts|tsbuildinfo)$/.test(normalized))return false;
+  if(normalized.includes('/node_modules/node_modules/')||!includeBackendSource(normalized))return false;
   if(/\/(?:test|tests|__tests__|examples|docs|coverage|\.github)(?:\/|$)/.test(normalized))return false;
   if(/\/(?:README|CHANGELOG|HISTORY|CONTRIBUTING)(?:\.[^/]*)?$/i.test(normalized))return false;
   // The pinned SDK resolves through lib/index.js in Node; es is a duplicate browser build.
   if(normalized.includes('/@larksuiteoapi/node-sdk/es'))return false;
-  return !normalized.endsWith('.DS_Store');
+  // Node exports use the compiled entry points; these are TypeScript sources
+  // and Google SDK browser/fallback builds. Preserve Node builds and licenses.
+  // Traverse source directories so vendored LICENSE/NOTICE files survive.
+  if(/\/node_modules\/(?:openai|@anthropic-ai\/sdk)\/src(?:\/|$)/.test(normalized)&&/\.[cm]?tsx?$/.test(normalized))return false;
+  if(/\/node_modules\/@google\/genai\/dist\/(?:web(?:\/|$)|index\.(?:cjs|mjs)$)/.test(normalized))return false;
+  return true;
 }
 
 export async function prepareClientBackend({ root = project, cacheRoot = join(project, '.agent-runtime/runtimes') } = {}) {
@@ -63,7 +71,7 @@ export async function prepareClientBackend({ root = project, cacheRoot = join(pr
   await copyFile(binary, runtimeBinary); await chmod(runtimeBinary, 0o755);
   await copyFile(join(extracted, 'LICENSE'), join(runtime, 'LICENSE'));
   for (const path of ['services/records/src', 'packages/records/src', 'scripts/alpha-learning']) {
-    await cp(join(root, path), join(backend, path), { recursive: true, filter: path => !path.endsWith('.DS_Store') });
+    await cp(join(root, path), join(backend, path), { recursive: true, filter: includeBackendSource });
   }
   await mkdir(join(backend,'tools/neohorse'),{recursive:true});
   for(const file of ['learning_data.py','build_learning_round.py','predict_learning.py','score_learning.py','finalize_learning_round.py','train_lora.py','intent_inputs.py','build_dataset.py','intent_policy.json','quantized_runtime.py','train_head.py'])await copyFile(join(root,'tools/neohorse',file),join(backend,'tools/neohorse',file));
@@ -91,7 +99,7 @@ export async function prepareClientBackend({ root = project, cacheRoot = join(pr
   const isolated = await mkdtemp(join(tmpdir(), 'lingji-backend-import-'));
   try {
     await cp(backend, isolated, { recursive: true, dereference: true });
-    execFileSync(binary, ['--input-type=module', '-e', 'await import(process.argv[1]);', pathToFileURL(join(isolated, 'services/records/src/desktop-backend.mjs')).href]);
+    execFileSync(binary, ['--input-type=module', '-e', 'await import(process.argv[1]);const {readdir}=await import("node:fs/promises");const {join}=await import("node:path");const {pathToFileURL}=await import("node:url");for(const file of await readdir(process.argv[2]))if(file.endsWith(".js"))await import(pathToFileURL(join(process.argv[2],file)));', pathToFileURL(join(isolated, 'services/records/src/desktop-backend.mjs')).href, join(isolated,'node_modules/@earendil-works/pi-ai/dist/providers')]);
   } finally { await rm(isolated, { recursive: true, force: true }); }
   const metadata = { ...verified, archive, archiveSha256: expected, dependencies: Object.fromEntries(modules), localAsr, backendBundled: true, externalDevelopmentServiceRequired: false };
   await writeFile(join(runtime, 'runtime.json'), JSON.stringify(metadata, null, 2) + '\n');
