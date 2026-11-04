@@ -3,6 +3,7 @@ import { requireThat, emit } from '../../../packages/records/src/record.mjs';
 import { providerStatus } from './providers.mjs';
 import { readConfig } from './config.mjs';
 import { parseVocabulary, vocabularyId } from '../../../packages/records/src/vocabulary.mjs';
+import { loadBuiltinVocabulary } from './builtin-vocabulary.mjs';
 
 export async function requireWorkspace(repo, owner, scope) {
   if (virtualScopes.includes(scope)) return { id: scope, name: scope === 'all' ? '所有会议' : '未归档', description: scope === 'all' ? '让每一次讨论，成为下一步的起点。' : '这些会议还没有放入工作目录。' };
@@ -42,14 +43,16 @@ export async function workspaceRoutes({ req, res, path, repo, user, readBody, se
   const scope = route[1], action = route[2] || '', workspace = await requireWorkspace(repo, user.id, scope);
   if (action === 'vocabulary') {
     const id = vocabularyId(user.id, scope), current = await repo.get(id);
-    if (req.method === 'GET') { send(res, 200, current ? {terms:current.terms,names:current.names,revision:current.revision} : {terms:'',names:'',revision:0}); return true; }
+    const pack = await loadBuiltinVocabulary();
+    const builtin = { available: pack.available, version: pack.version, entries: pack.entries.length };
+    if (req.method === 'GET') { send(res, 200, {...(current ? {terms:current.terms,names:current.names,revision:current.revision} : {terms:'',names:'',revision:0}), builtin}); return true; }
     if (req.method === 'PUT') {
       const body = await readBody(req, 100000); parseVocabulary(body);
       requireThat(Number.isSafeInteger(body.revision) && body.revision === (current?.revision || 0), 'vocabulary_revision_conflict', 409);
       const next = {terms:body.terms || '',names:body.names || '',revision:body.revision+1,updatedAt:new Date().toISOString()};
       if (!current) await repo.insert({id,kind:'vocabulary',owner:user.id,scope,...next});
       else await repo.change(id, value => { requireThat(value.owner === user.id && value.revision === body.revision, 'vocabulary_revision_conflict', 409); Object.assign(value,next); });
-      send(res, 200, next); return true;
+      send(res, 200, {...next, builtin}); return true;
     }
     requireThat(false, 'not_found', 404);
   }

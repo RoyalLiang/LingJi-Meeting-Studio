@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { prepareLocalAsr } from './prepare-local-asr.mjs';
+import { materializeBuiltinVocabulary } from './materialize-builtin-vocabulary.mjs';
+import { readBuiltinVocabulary } from '../services/records/src/builtin-vocabulary.mjs';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { access, chmod, copyFile, cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -63,6 +65,7 @@ export async function prepareClientBackend({ root = project, cacheRoot = join(pr
   assert.equal(verified.node, `v${version}`); assert.equal(verified.sqlite, '3.54.0'); assert.equal(verified.arch, process.arch);
   assert.equal(verified.platform, process.platform);
   const resources = join(root, 'apps/desktop/src-tauri/resources');
+  const builtinVocabulary = await materializeBuiltinVocabulary({ base: pathToFileURL(join(root, 'services/records/src/data/')) });
   const runtime = join(resources, 'runtime'), backend = join(resources, 'client-backend');
   await mkdir(runtime, { recursive: true });
   await rm(backend, { recursive: true, force: true });
@@ -73,6 +76,8 @@ export async function prepareClientBackend({ root = project, cacheRoot = join(pr
   for (const path of ['services/records/src', 'packages/records/src', 'scripts/alpha-learning']) {
     await cp(join(root, path), join(backend, path), { recursive: true, filter: includeBackendSource });
   }
+  const bundledVocabulary = await readBuiltinVocabulary(pathToFileURL(join(backend, 'services/records/src/data/')));
+  assert.equal(bundledVocabulary.hash, builtinVocabulary.sha256, 'bundled vocabulary missing or changed');
   await mkdir(join(backend,'tools/neohorse'),{recursive:true});
   for(const file of ['learning_data.py','build_learning_round.py','predict_learning.py','score_learning.py','finalize_learning_round.py','train_lora.py','intent_inputs.py','build_dataset.py','intent_policy.json','quantized_runtime.py','train_head.py'])await copyFile(join(root,'tools/neohorse',file),join(backend,'tools/neohorse',file));
   const lock = JSON.parse(await readFile(join(root, 'package-lock.json'), 'utf8'));
@@ -101,7 +106,7 @@ export async function prepareClientBackend({ root = project, cacheRoot = join(pr
     await cp(backend, isolated, { recursive: true, dereference: true });
     execFileSync(binary, ['--input-type=module', '-e', 'await import(process.argv[1]);const {readdir}=await import("node:fs/promises");const {join}=await import("node:path");const {pathToFileURL}=await import("node:url");for(const file of await readdir(process.argv[2]))if(file.endsWith(".js"))await import(pathToFileURL(join(process.argv[2],file)));', pathToFileURL(join(isolated, 'services/records/src/desktop-backend.mjs')).href, join(isolated,'node_modules/@earendil-works/pi-ai/dist/providers')]);
   } finally { await rm(isolated, { recursive: true, force: true }); }
-  const metadata = { ...verified, archive, archiveSha256: expected, dependencies: Object.fromEntries(modules), localAsr, backendBundled: true, externalDevelopmentServiceRequired: false };
+  const metadata = { ...verified, archive, archiveSha256: expected, dependencies: Object.fromEntries(modules), localAsr, builtinVocabulary, backendBundled: true, externalDevelopmentServiceRequired: false };
   await writeFile(join(runtime, 'runtime.json'), JSON.stringify(metadata, null, 2) + '\n');
   return metadata;
 }

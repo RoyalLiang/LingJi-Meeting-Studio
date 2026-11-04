@@ -91,6 +91,13 @@ jobs:
         run: test "$(uname -m)" = arm64 && node -e "if(process.arch!=='arm64')process.exit(1)"
       - run: rustup toolchain install 1.92.0 --profile minimal && rustup default 1.92.0
       - run: npm ci
+      - name: Materialize private built-in vocabulary
+        env:
+          TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART1: ${{ secrets.TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART1 }}
+          TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART2: ${{ secrets.TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART2 }}
+        run: node scripts/materialize-builtin-vocabulary.mjs
+      - name: Keep vocabulary payload outside Git
+        run: git check-ignore --quiet services/records/src/data/builtin-vocabulary.private.json
       - run: npm test
       - run: npm run lint && npm run typecheck && npm run check:docs
       - name: Prepare bundled runtime and Web assets for native checks
@@ -151,6 +158,13 @@ jobs:
           node-version: '24.21.0'
       - run: rustup toolchain install 1.92.0 --profile minimal; rustup default 1.92.0
       - run: npm ci
+      - name: Materialize private built-in vocabulary
+        env:
+          TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART1: ${{ secrets.TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART1 }}
+          TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART2: ${{ secrets.TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART2 }}
+        run: node scripts/materialize-builtin-vocabulary.mjs
+      - name: Keep vocabulary payload outside Git
+        run: git check-ignore --quiet services/records/src/data/builtin-vocabulary.private.json
       - name: Check installer PowerShell syntax
         shell: pwsh
         run: |
@@ -311,6 +325,13 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev libpipewire-0.3-dev libspa-0.2-dev xvfb xauth
       - run: rustup toolchain install 1.92.0 --profile minimal && rustup default 1.92.0
       - run: npm ci
+      - name: Materialize private built-in vocabulary
+        env:
+          TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART1: ${{ secrets.TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART1 }}
+          TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART2: ${{ secrets.TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART2 }}
+        run: node scripts/materialize-builtin-vocabulary.mjs
+      - name: Keep vocabulary payload outside Git
+        run: git check-ignore --quiet services/records/src/data/builtin-vocabulary.private.json
       - run: node --test tests/records-preview-release.test.mjs tests/records-local-asr.test.mjs tests/records-release-source.test.mjs
       - run: npm run build:web && node scripts/prepare-client-backend.mjs
       - name: Linux native regression

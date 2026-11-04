@@ -17,6 +17,7 @@ tmp/
 temp/
 # codex-agent-rules runtime
 .agent-runtime/
+services/records/src/data/builtin-vocabulary.private.json
 # end codex-agent-rules runtime
 
 # Generated native installer painter

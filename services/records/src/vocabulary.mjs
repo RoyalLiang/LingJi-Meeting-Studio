@@ -4,6 +4,7 @@ import { commonVocabulary, commonVocabularyVersion } from '../../../packages/rec
 import { phoneticCandidates } from '../../../packages/records/src/phonetic-vocabulary.mjs';
 import { loadRecognitionLexicon } from './recognition-lexicon.mjs';
 import { completeModelJson } from './llm.mjs';
+import { loadBuiltinVocabulary, selectBuiltinVocabulary } from './builtin-vocabulary.mjs';
 
 export async function loadVocabulary(repo, owner) {
   const sets = [await repo.get(vocabularyId(owner, 'all'))];
@@ -16,8 +17,15 @@ export async function loadRecordVocabulary(repo, record) {
   const context = [record.title, record.notes, ...record.segments.slice(-3).map(s => s.text)].join(' ');
   const known = new Set(vocabulary.entries.map(entry => entry.text));
   const reading = await loadRecognitionLexicon();
+  const builtin = await loadBuiltinVocabulary();
+  const selected = selectBuiltinVocabulary(builtin, context).filter(entry => !known.has(entry.text));
   const common = ['auto', 'zh', 'zhen'].includes(record.language) ? commonVocabulary.filter(entry => !known.has(entry.text) && context.includes(entry.text)) : [];
-  return { entries: [...vocabulary.entries, ...common], fingerprint: digest(JSON.stringify([vocabulary.fingerprint, commonVocabularyVersion, reading.hash, common.map(entry => entry.text)])) };
+  const entries = [], included = new Set();
+  for (const entry of [...vocabulary.entries, ...selected, ...common]) {
+    const key = entry.text.normalize('NFKC').toLowerCase();
+    if (!included.has(key)) { entries.push(entry); included.add(key); }
+  }
+  return { entries, fingerprint: digest(JSON.stringify([vocabulary.fingerprint, commonVocabularyVersion, reading.hash, builtin.hash, entries])) };
 }
 
 export async function recordAsrConfig(repo, record, config) {
