@@ -50,7 +50,7 @@ export function createGitlab({request=remoteRequest,localAccount=false}={}){
       requireThat(existing.every((f,i)=>f&&f.encoding==='base64'&&Buffer.from(f.content,'base64').toString('utf8')===Object.values(job.files)[i]),'git_write_conflict',409);
     }else{
       // Persisted branch + immutable file content make a replay reconcile before sending again.
-      await call(connection,`${prefix}/repository/commits`,{method:'POST',body:{branch:job.branch,commit_message:`docs: archive meeting ${job.recordId}\n\nLingji-Task: ${job.id}`,actions:Object.entries(job.files).map(([file_path,content])=>({action:'create',file_path,content}))},signal,beforeWrite});
+      await call(connection,`${prefix}/repository/commits`,{method:'POST',body:{branch:job.branch,commit_message:`${job.commitMessage||`docs: archive meeting ${job.recordId}`}\n\nLingji-Task: ${job.id}`,actions:Object.entries(job.files).map(([file_path,content])=>({action:'create',file_path,content}))},signal,beforeWrite});
     }
     const final=await branch(connection,id,job.branch,signal);requireThat(/^[a-f0-9]{40}$/.test(final?.commit?.id),'git_result_unknown',502);
     const verified=await Promise.all(Object.keys(job.files).map(path=>file(connection,id,path,final.commit.id,signal)));
@@ -61,10 +61,19 @@ export function createGitlab({request=remoteRequest,localAccount=false}={}){
     await project(connection,job.project.id,job.rootGroup,signal);
     const prefix=`/projects/${job.project.id}/merge_requests`,existing=await call(connection,`${prefix}?source_branch=${encodeURIComponent(job.branch)}&target_branch=${encodeURIComponent(job.baseBranch)}&scope=all&per_page=100`,{signal});
     requireThat(Array.isArray(existing)&&existing.length<=1,'git_write_conflict',409);
-    const mr=existing[0]||await call(connection,prefix,{method:'POST',body:{source_branch:job.branch,target_branch:job.baseBranch,title:`会议归档：${job.title}`.slice(0,200),description:`Lingji-Task: ${job.id}\n会议 ${job.recordId} · 纪要 v${job.minutesRevision}`,remove_source_branch:false},signal,beforeWrite});
+    const mr=existing[0]||await call(connection,prefix,{method:'POST',body:{source_branch:job.branch,target_branch:job.baseBranch,title:job.mergeTitle||`会议归档：${job.title}`.slice(0,200),description:`Lingji-Task: ${job.id}\n会议 ${job.recordId} · 纪要 v${job.minutesRevision}`,remove_source_branch:false},signal,beforeWrite});
     requireThat(Number.isSafeInteger(mr.iid)&&mr.source_branch===job.branch&&mr.target_branch===job.baseBranch&&['opened','merged'].includes(mr.state),'git_write_conflict',409);
     const url=new URL(mr.web_url);requireThat(url.origin===gitRoot(connection.root).origin&&url.pathname.startsWith(`/${job.project.path}/-/merge_requests/`),'git_invalid_response',502);
     return {url:url.href,iid:mr.iid};
   }
-  return {catalog,project,commit,mergeRequest};
+  async function readFile(connection,job,path,signal){
+    await project(connection,job.project.id,job.rootGroup,signal);const value=await file(connection,job.project.id,path,job.baseBranch,signal);
+    if(!value)return {path,exists:false};requireThat(value.encoding==='base64'&&typeof value.content==='string'&&value.content.length<=160000,'git_archive_too_large',413);return {path,exists:true,content:Buffer.from(value.content,'base64').toString('utf8')};
+  }
+  async function listFiles(connection,job,path,page,signal){
+    requireThat(Number.isSafeInteger(page)&&page>=0&&page<10,'invalid_git_sync',400);await project(connection,job.project.id,job.rootGroup,signal);
+    const values=await call(connection,`/projects/${job.project.id}/repository/tree?ref=${encodeURIComponent(job.baseBranch)}&path=${encodeURIComponent(path)}&per_page=100&page=${page+1}`,{signal});requireThat(Array.isArray(values)&&values.length<=100&&values.every(item=>typeof item.path==='string'&&typeof item.name==='string'&&['tree','blob'].includes(item.type)),'git_invalid_response',502);
+    return {files:values.map(({path,name,type})=>({path,name,type})),...(values.length===100?{nextPage:page+1}:{})};
+  }
+  return {catalog,readFile,listFiles,project,commit,mergeRequest};
 }

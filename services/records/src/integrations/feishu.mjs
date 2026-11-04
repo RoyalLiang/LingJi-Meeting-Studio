@@ -9,7 +9,7 @@ import {createFeishuSdk} from './feishu-sdk.mjs';
 export {FEISHU_SCOPES};
 const api = 'https://open.feishu.cn/open-apis';
 const autoId = owner => `feishu-auto:${digest(owner)}`;
-const exportFields=['authMode','recordId','title','folderToken','destinationEmail','includeBoard','includeNotes','includeEvidence','source','fingerprint','status','stage','createdAt','updatedAt','documentId','url','error','automatic'];
+const exportFields=['authMode','recordId','title','folderToken','destinationEmail','includeBoard','boardTheme','includeNotes','includeEvidence','source','fingerprint','status','stage','createdAt','updatedAt','documentId','url','error','automatic'];
 const connectionId = owner => `feishu-connection:${digest(owner)}`;
 const string = (value, max) => typeof value === 'string' && value.length <= max;
 const documentToken = value => typeof value === 'string' && /^[A-Za-z0-9_-]{8,100}$/.test(value);
@@ -55,17 +55,19 @@ function exportSnapshot(record, input) {
   const folderToken = feishuFolder(input.folderToken),destinationEmail=feishuMember(input.destinationEmail);
   requireThat(!destinationEmail||!folderToken,'invalid_feishu_destination',400);
   requireThat(input.includeBoard===undefined||typeof input.includeBoard==='boolean','feishu_scope_required',400);
-  const includeBoard=input.includeBoard===true;
-  const markdown = exportMinutesMarkdown(record, {...input,includeTitle:false}), minutes = minutesForExport(record);
+  const includeBoard=input.includeBoard===true,boardTheme=input.boardTheme||'light';
+  requireThat(['light','dark'].includes(boardTheme),'feishu_scope_required',400);
+  const referenceMap=new Map();
+  const markdown = exportMinutesMarkdown(record, {...input,includeTitle:false,referenceMap}), minutes = minutesForExport(record);
   requireThat(Buffer.byteLength(markdown) <= 500000, 'feishu_document_too_large', 400);
   const source = {minutesRevision:minutes.revision, transcriptRevision:minutes.transcriptRevision,
     notesRevision:input.includeNotes ? record.notesRevision : null, edited:Boolean(minutes.edited), draft:minutes !== record.minutes || record.capture !== 'completed'};
-  const boardNodes=includeBoard?feishuBoard(minutes):[];
-  return {title, folderToken, destinationEmail, includeBoard, boardNodes, includeNotes:input.includeNotes, includeEvidence:input.includeEvidence, markdown, source,
-    fingerprint:digest(JSON.stringify({title, folderToken, destinationEmail, includeBoard, boardNodes, markdown, source}))};
+  const boardNodes=includeBoard?feishuBoard(minutes,{theme:boardTheme,citations:input.includeEvidence?refs=>{const numbers=[...new Set((refs||[]).map(ref=>referenceMap.get(`${ref.segmentId}@${ref.revision}`)?.number).filter(Boolean))];return numbers.length?` [${numbers.join(', ')}]`:'';}:undefined}):[];
+  return {title, folderToken, destinationEmail, includeBoard, boardTheme, boardNodes, includeNotes:input.includeNotes, includeEvidence:input.includeEvidence, markdown, source,
+    fingerprint:digest(JSON.stringify({title, folderToken, destinationEmail, includeBoard, boardTheme, boardNodes, markdown, source}))};
 }
 
-const publicExport = value => Object.fromEntries(['authMode','id','recordId','title','folderToken','destinationEmail','includeBoard','includeNotes','includeEvidence','source','fingerprint','status','stage','createdAt','updatedAt','documentId','url','error','automatic'].filter(key => value[key] !== undefined && value[key] !== null).map(key => [key,['includeBoard','includeNotes','includeEvidence','automatic'].includes(key)?Boolean(value[key]):value[key]]));
+const publicExport = value => Object.fromEntries(['authMode','id','recordId','title','folderToken','destinationEmail','includeBoard','boardTheme','includeNotes','includeEvidence','source','fingerprint','status','stage','createdAt','updatedAt','documentId','url','error','automatic'].filter(key => value[key] !== undefined && value[key] !== null).map(key => [key,['includeBoard','includeNotes','includeEvidence','automatic'].includes(key)?Boolean(value[key]):value[key]]));
 
 export async function createFeishu(repo, {sdkFactory=createFeishuSdk,now=Date.now,autoPollMs=30000}={}) {
   const secrets=await createSecretStore(repo.root),clients=new Map(),controlVersions=new Map(),jobs=new Set(),stopping=new AbortController();
@@ -179,11 +181,14 @@ export async function createFeishu(repo, {sdkFactory=createFeishuSdk,now=Date.no
       await request(client,`${api}/docx/v1/documents/${documentId}/blocks/${documentId}/descendant?document_revision_id=-1&client_token=${id}`,{signal,body:blocks,write:true});
       if(value.includeBoard){
         await guard();stage='board';await update({stage});
-        const block=await request(client,`${api}/docx/v1/documents/${documentId}/blocks/${documentId}/children?document_revision_id=-1&client_token=${id}-board`,{signal,body:{children:[{block_type:43,board:{}}],index:-1},write:true});
+        const block=await request(client,`${api}/docx/v1/documents/${documentId}/blocks/${documentId}/children?document_revision_id=-1&client_token=${id}-board`,{signal,body:{children:[{block_type:43,board:{}}],index:0},write:true});
         const boardToken=block.data?.children?.find(item=>item.block_type===43)?.board?.token;
         requireThat(documentToken(boardToken),'feishu_verification_failed',502);await update({boardToken});await guard();
-        const createdNodes=await request(client,`${api}/board/v1/whiteboards/${boardToken}/nodes?client_token=${id}`,{signal,body:{nodes:value.boardNodes},write:true});
-        requireThat(Array.isArray(createdNodes.data?.ids)&&createdNodes.data.ids.length===value.boardNodes.length,'feishu_verification_failed',502);
+        for(let offset=0;offset<value.boardNodes.length;offset+=100){
+          await guard();const batch=value.boardNodes.slice(offset,offset+100);
+          const createdNodes=await request(client,`${api}/board/v1/whiteboards/${boardToken}/nodes?client_token=${id}-${offset}`,{signal,body:{nodes:batch},write:true});
+          requireThat(Array.isArray(createdNodes.data?.ids)&&createdNodes.data.ids.length===batch.length,'feishu_verification_failed',502);
+        }
       }
       stage='verify';await update({stage});const url=await metadata();
       if(value.destinationEmail){

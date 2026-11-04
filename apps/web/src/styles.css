@@ -1074,3 +1074,7 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 .sidebar .rail-brand .brand { min-width:0; gap:6px; }
 
 .rail-brand>.client-update-version{flex:none}.rail-brand .brand{min-width:0;white-space:nowrap;flex-shrink:1}.rail-brand .brand h1{white-space:nowrap}.select-portal[aria-label="筛选任务状态"] [role=option]>span:first-child{display:block;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}.select-portal[aria-label="筛选任务状态"] [role=option]{overflow-wrap:normal}
+
+input[type=checkbox],input[type=radio]{box-sizing:border-box;flex:none;align-self:center;inline-size:18px;block-size:18px;min-inline-size:18px;min-block-size:18px;max-inline-size:18px;max-block-size:18px;aspect-ratio:1;padding:0}
+input[type=radio]{border-radius:50%}
+select,.select-trigger{box-sizing:border-box;min-width:0}

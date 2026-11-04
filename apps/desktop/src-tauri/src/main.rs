@@ -54,6 +54,12 @@ fn authorize(window: &WebviewWindow, state: &Client) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn client_attention(window: WebviewWindow, state: State<'_, Client>) -> Result<(), String> {
+    authorize(&window, &state)?;
+    window.request_user_attention(Some(tauri::UserAttentionType::Informational)).map_err(|_| "无法请求用户关注".into())
+}
+
+#[tauri::command]
 fn integration_open(window: WebviewWindow, state: State<'_, Client>, url: String) -> Result<(), String> {
     authorize(&window, &state)?;
     integration_links::open(&url)
@@ -327,6 +333,7 @@ fn main() {
     let builder = builder.invoke_handler(tauri::generate_handler![
         recording_widget::recording_widget_update, recording_widget::recording_widget_state, recording_widget::recording_widget_ready, recording_widget::recording_widget_action,
         integration_open,
+            client_attention,
         meeting_watch_configure,
         capture_start,
         capture_read,
@@ -348,6 +355,7 @@ fn main() {
     let builder = builder.invoke_handler(tauri::generate_handler![
         recording_widget::recording_widget_update, recording_widget::recording_widget_state, recording_widget::recording_widget_ready, recording_widget::recording_widget_action,
         integration_open,
+            client_attention,
         meeting_watch_configure,
         capture_start,
         capture_read,

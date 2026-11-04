@@ -29,4 +29,7 @@
 @media (prefers-reduced-motion: reduce) { .toast.feedback-toast { animation: none; } }
 @media (pointer: coarse) { .toast.feedback-toast .toast-dismiss { min-width: 44px; min-height: 44px; } }
 .toast.feedback-toast.is-inline { position: relative; inset: auto; transform: none; width: 100%; max-width: none; margin: 10px 0 14px; z-index: auto; box-shadow: none; }
-.toast.feedback-toast{inset:calc(24px + env(safe-area-inset-top,0px)) 24px auto auto;width:min(480px,calc(100vw - 32px));max-width:min(480px,calc(100vw - 32px));margin-inline:0;min-height:54px;padding:12px 14px;gap:10px;border-radius:12px}.toast.feedback-toast.is-inline{inset:auto;width:auto;max-width:none;margin-inline:0}.toast.feedback-toast .toast-message{min-width:0;overflow-wrap:anywhere}@media(max-width:600px){.toast.feedback-toast{inset:calc(16px + env(safe-area-inset-top,0px)) 16px auto 16px;width:auto;max-width:calc(100vw - 32px)}}
+.toast.feedback-toast{inset:calc(20px + env(safe-area-inset-top,0px)) 16px auto;width:fit-content;max-width:min(680px,calc(100vw - 32px));margin:0 auto;min-height:48px}
+.toast.feedback-toast.is-inline{position:relative;inset:auto;width:100%;max-width:none;margin:0;transform:none}
+.toast.feedback-toast .toast-message{min-width:0;overflow-wrap:anywhere}
+@media(max-width:600px){.toast.feedback-toast{inset:calc(16px + env(safe-area-inset-top,0px)) 12px auto;max-width:calc(100vw - 24px)}.toast-content{gap:8px}}

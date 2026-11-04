@@ -16,6 +16,16 @@ const runtimes = {
   'linux-x64': ['tar.xz', '6170b2d474e1c626f43cff3adc118df9fe3b573258a4fc3d850c8dbc6b079bbd'],
   'win-x64': ['zip', 'b3efd5c70cba3308ed46e7e699a9b8aac075bbc6b027fcb39c84c31acc25e2b4'],
 };
+export function includeBackendDependency(path){
+  const normalized=path.replaceAll('\\','/');
+  if(normalized.includes('/node_modules/node_modules/')||/\.(?:map|d\.[cm]?ts|tsbuildinfo)$/.test(normalized))return false;
+  if(/\/(?:test|tests|__tests__|examples|docs|coverage|\.github)(?:\/|$)/.test(normalized))return false;
+  if(/\/(?:README|CHANGELOG|HISTORY|CONTRIBUTING)(?:\.[^/]*)?$/i.test(normalized))return false;
+  // The pinned SDK resolves through lib/index.js in Node; es is a duplicate browser build.
+  if(normalized.includes('/@larksuiteoapi/node-sdk/es'))return false;
+  return !normalized.endsWith('.DS_Store');
+}
+
 export async function prepareClientBackend({ root = project, cacheRoot = join(project, '.agent-runtime/runtimes') } = {}) {
   const target = `${process.platform === 'win32' ? 'win' : process.platform}-${process.arch}`;
   assert.ok(runtimes[target], `Bundled runtime is not configured for ${target}`);
@@ -72,7 +82,7 @@ export async function prepareClientBackend({ root = project, cacheRoot = join(pr
     }
     assert.equal(pkg.version, lock.packages[`node_modules/${name}`]?.version, `Installed dependency differs from lockfile: ${name}`);
     modules.set(name, pkg.version);
-    await cp(directory, join(backend, 'node_modules', name), { recursive: true, dereference: true, filter: path => !path.includes('/node_modules/node_modules/') && !path.endsWith('.DS_Store') });
+    await cp(directory, join(backend, 'node_modules', name), { recursive: true, dereference: true, filter: includeBackendDependency });
     pending.push(...Object.keys(pkg.dependencies || {}));
   }
   const localAsr = await prepareLocalAsr({ destination: join(backend, 'local-asr'), cacheRoot: join(cacheRoot, 'local-asr') });

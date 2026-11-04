@@ -266,10 +266,12 @@ test('member destination and editable board are frozen and published before owne
 
 test('board keeps legacy and ambiguous topics from claiming unrelated sections or tables',()=>{
  const minutes={title:'会议',topics:[{title:'A'},{title:'B'},{id:'dup',title:'C'},{id:'dup',title:'D'}],sections:[{heading:'独立章节',items:[{text:'未归属内容'},{text:'含歧义内容',topicId:'dup'}]}],tables:[{title:'独立表格',columns:['值'],rows:[{cells:['原始值']}]}]};
- const nodes=feishuBoard(minutes),byText=new Map(nodes.map(node=>[node.text.text,node]));
- assert.equal(byText.get('未归属内容').mind_map_node.parent_id,byText.get('独立章节').id);
- assert.equal(byText.get('含歧义内容').mind_map_node.parent_id,byText.get('独立章节').id);
- assert.equal(byText.get('独立表格').mind_map_node.parent_id,nodes[0].id);
+ const nodes=feishuBoard(minutes),byText=new Map(nodes.filter(node=>node.text).map(node=>[node.text.text,node]));
+  const section=byText.get('独立章节'),other=byText.get('其他图表');
+  assert.ok(byText.get('未归属内容').y>section.y&&byText.get('未归属内容').y<other.y);
+  assert.ok(byText.get('含歧义内容').y>section.y&&byText.get('含歧义内容').y<other.y);
+  assert.ok(byText.get('独立表格').y>other.y);
+
 });
 
 
@@ -281,13 +283,31 @@ test('disabled automation retains its saved board and destination choices',async
 });
 
 
-test('editable board uses quiet typography and separate root topic and detail styles',()=>{
- const nodes=feishuBoard({title:'设计评审',sections:[{heading:'发布安排',items:[{text:'周五评审'}]}],actions:[]});
- const [root,topic,detail]=nodes;
- assert.equal(root.text.font_size,24);assert.equal(root.text.font_weight,'bold');assert.equal(root.style.fill_color,'#256D55');
- assert.equal(topic.text.font_size,18);assert.equal(topic.mind_map_node.parent_id,root.id);
- assert.equal(detail.text.font_size,14);assert.equal(detail.mind_map_node.parent_id,topic.id);assert.equal(detail.mind_map_node.type,'mind_map_text');
- assert.equal(root.mind_map_root.line_style,'curve');
+test('editable board has readable topic hierarchy and real diagram primitives',()=>{
+  const nodes=feishuBoard({title:'设计评审',sections:[{heading:'发布安排',items:[{text:'周五评审'}]}],actions:[]});
+  const byText=new Map(nodes.filter(node=>node.text).map(node=>[node.text.text,node]));
+  const root=byText.get('设计评审'),topic=byText.get('发布安排'),detail=byText.get('周五评审');
+  assert.ok(root.text.font_size>topic.text.font_size&&topic.text.font_size>detail.text.font_size);
+  assert.equal(root.text.font_weight,'bold');assert.equal(detail.text.font_weight,'regular');
+  assert.ok(topic.y<detail.y);assert.ok(nodes.some(node=>node.type==='connector'));
+
+});
+
+test('large editable board is inserted first and every bounded batch is verified',async t=>{
+  const h=await harness(t);await h.connect();
+  await h.app.repo.change(h.recordId,record=>{
+    record.minutes.sections[0].items=Array.from({length:45},(_,index)=>({text:`核对事项 ${index+1}`,evidence:[{segmentId:'s1',revision:1}]}));
+  });
+  const preview=await h.request(`/records/${h.recordId}/feishu/preview`,'POST',{title:'人工核对的会议纪要',folderToken:'',includeBoard:true,boardTheme:'dark',includeNotes:false,includeEvidence:true});
+  assert.equal(preview.status,201);assert.equal(preview.body.boardTheme,'dark');assert.ok(preview.body.boardNodes.length>100);
+  assert.equal(preview.body.boardNodes[0].style.fill_color,'#1D1E20');
+  await h.request(`/integrations/feishu/exports/${preview.body.id}/publish`,'POST',{confirmed:true});
+  assert.equal((await h.wait(preview.body.id)).status,'succeeded');
+  const board=h.remote.calls.find(call=>call.url.includes('/children?'));assert.equal(JSON.parse(board.body).index,0);
+  const batches=h.remote.calls.filter(call=>call.url.includes('/whiteboards/')&&call.url.includes('/nodes?'));
+  assert.ok(batches.length>1);assert.ok(batches.every(call=>JSON.parse(call.body).nodes.length<=100));
+  assert.equal(batches.reduce((total,call)=>total+JSON.parse(call.body).nodes.length,0),preview.body.boardNodes.length);
+  assert.equal(new Set(batches.map(call=>new URL(call.url).searchParams.get('client_token'))).size,batches.length);
 });
 
 test('saving and disabling Feishu configuration does not wait for the remote connection',async t=>{

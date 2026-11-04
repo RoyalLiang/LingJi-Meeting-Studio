@@ -278,3 +278,29 @@ test('configured streaming bridge publishes readable Markdown before completion'
  finally{gate.resolve();}
  assert.equal((await settled(runtime,task.id)).status,'completed');
 });
+
+test('configured bridge repairs one malformed tool response before executing any tool',async t=>{
+  const f=await fixture(t);let calls=0;
+  t.mock.method(globalThis,'fetch',async(_url,options)=>{calls++;const body=JSON.parse(options.body);if(calls===2)assert.match(JSON.stringify(body),/previous response had invalid structure/);return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(calls===1?{toolCalls:[{name:'read_repository',arguments:{}}]}:calls===2?{toolCalls:[{name:'read_selected_meeting',arguments:{recordId:f.records[0].id}}]}:{result:result(f.records.slice(0,1))})}}]}),{headers:{'content-type':'application/json'}});});
+  const runtime=await f.open({env:{LLM_API_KEY:'explicit-test-key',LLM_MODEL:'fixture-http',LLM_API_URL:'https://fixture.invalid/chat/completions',LLM_PROTOCOL:'chat-completions'}}),task=await runtime.request('owner',request(f.records.slice(0,1)));
+  assert.equal((await settled(runtime,task.id)).status,'completed');assert.equal(calls,3);
+});
+
+test('unchanged minutes-only task polling reuses the frozen source hash',async t=>{
+  const f=await fixture(t),p=provider([reads(f.records.slice(0,1)),message(JSON.stringify(result(f.records.slice(0,1))))]),runtime=await f.open(p);
+  await f.repo.change(f.records[0].id,record=>{record.minutes.decisions=[{text:'保留人工纪要',evidence:[{segmentId:record.segments[0].id,revision:record.segments[0].revision}]}];});
+  const task=await runtime.request('owner',{...request(f.records.slice(0,1)),minutesOnly:true});assert.equal((await settled(runtime,task.id)).status,'completed');
+  const original=f.repo.get.bind(f.repo);let sourceReads=0;t.mock.method(f.repo,'get',async id=>{if(id===f.records[0].id)sourceReads++;return original(id);});
+  for(let i=0;i<30;i++)await runtime.get('owner',task.id);assert.equal(sourceReads,0);
+  await f.repo.change(f.records[0].id,record=>{record.minutesRevision++;});sourceReads=0;assert.equal((await runtime.get('owner',task.id)).stale,true);assert.equal(sourceReads,1);
+});
+
+
+test('an owner does not queue behind another owner running Agent',async t=>{
+  const f=await fixture(t),entered=Promise.withResolvers(),p=provider([async(_context,options)=>{entered.resolve();await new Promise(resolve=>options.signal.addEventListener('abort',resolve,{once:true}));return message('aborted',{stopReason:'aborted'});}]),runtime=await f.open(p);
+  const first=await runtime.request('owner',request(f.records,'first-owner'));await entered.promise;
+  const other=createRecord('other',{title:'另一账户'});other.segments=[{id:'other-segment',revision:1,text:'另一账户的独立讨论',startMs:0,endMs:10}];await f.repo.insert(other);
+  p.fake.setResponses([reads([other]),message(JSON.stringify(result([other])))]);
+  const independent=await runtime.request('other',request([other],'second-owner'));assert.equal((await settled(runtime,independent.id,'other')).status,'completed');
+  assert.equal((await runtime.get('owner',first.id)).status,'running');await runtime.cancel('owner',first.id);assert.equal((await settled(runtime,first.id)).status,'cancelled');
+});

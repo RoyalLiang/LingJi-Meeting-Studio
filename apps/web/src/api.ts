@@ -2,8 +2,9 @@ import { trace } from './telemetry';
 import type { AudioChunk } from './model';
 let binaryAudio = false;
 export function setAudioTransport(value?: string) { binaryAudio = value === 'pcm-v1'; }
-let csrf = '';
-export const setCsrf = (token: string) => { csrf = token; };
+let csrf = '', authGeneration = 0;
+export const setCsrf = (token: string) => { if (csrf !== token) authGeneration++; csrf = token; };
+export const getAuthGeneration = () => authGeneration;
 const messages: Record<string, string> = {
   git_repository_empty:'仓库尚未初始化，请先创建默认分支，再使用合并请求同步。',
   git_default_branch_missing:'仓库默认分支不存在，请在 GitLab 中修正默认分支后重试。',

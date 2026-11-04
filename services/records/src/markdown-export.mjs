@@ -7,7 +7,7 @@ const inline = value => String(value ?? '').replace(/\\/g, '\\\\').replace(/([`*
 export function minutesForExport(record) {
   return record.minutes?.edited ? record.minutes : record.capture === 'completed' ? record.minutes || record.liveMinutes : record.liveMinutes || record.minutes;
 }
-export function exportMinutesMarkdown(record, {includeNotes = true, includeEvidence = true, includeTitle = true} = {}) {
+export function exportMinutesMarkdown(record, {includeNotes = true, includeEvidence = true, includeTitle = true, referenceMap} = {}) {
   const minutes = minutesForExport(record);
   requireThat(minutes, 'minutes_unavailable', 409);
   const draft = minutes !== record.minutes || record.capture !== 'completed';
@@ -16,7 +16,7 @@ export function exportMinutesMarkdown(record, {includeNotes = true, includeEvide
   if(draft)lines.push('> 会中草稿', '');
   const speakers=speakerLabels(minutes.evidenceSnapshot||[],record.speakers||[],record.segments||[]);
   const speakerName=evidence=>[...new Set((evidence||[]).map(ref=>speakers.get(`${ref.segmentId}:${ref.revision}`)).filter(Boolean))].join('、')||'未区分说话人';
-  const references = new Map(), sourceByRevision = new Map();
+  const references = referenceMap instanceof Map ? referenceMap : new Map(), sourceByRevision = new Map();
   for(const segment of minutes.evidenceSnapshot||[]){const key=`${segment.id}@${segment.revision}`;if(!sourceByRevision.has(key))sourceByRevision.set(key,segment);}
   const cite = evidence => (includeEvidence ? evidence || [] : []).map(ref => {
     const key = `${ref.segmentId}@${ref.revision}`;

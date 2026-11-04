@@ -14,16 +14,16 @@ import {createMeetingAgentRuntime} from '../services/records/src/meeting-agent.m
 import {createGitSync} from '../services/records/src/git-sync.mjs';
 
 import {source,writeSha,projects,gitRemoteFixture as remote} from './fixtures/git-sync.mjs';
-async function fixture(t){
+async function fixture(t,agentOptions={}){
   const root=await mkdtemp(join(tmpdir(),'lingji-git-sync-')),repo=await createRepository({root,databaseUrl:''}),network=remote(),extensions=await createExtensions(repo);
   const models=createModels(),fake=fauxProvider({provider:'git-test',models:[{id:'test'}],tokensPerSecond:Infinity});models.setProvider(fake.provider);let agent,sync;
   t.after(async()=>{await sync?.close();await agent?.close();await repo.close();await rm(root,{recursive:true,force:true});});
-  async function open(){agent=await createMeetingAgentRuntime({repo,extensions,models,model:{provider:'git-test',modelId:'test'}});sync=await createGitSync({repo,agent,extensions,request:network.request,localAccount:true,pollMs:3600000,agentPollMs:10,retryDelayMs:10});}
+  async function open(){agent=await createMeetingAgentRuntime({...agentOptions,repo,extensions,models,model:{provider:'git-test',modelId:'test'}});sync=await createGitSync({repo,agent,extensions,request:network.request,localAccount:true,pollMs:3600000,agentPollMs:10,retryDelayMs:10});}
   await open();
   const policy={root:source,token:'synthetic-git-token',enabled:true,confirmed:true,prompt:'整理决策，保留人工修订和引用。',skillId:'meeting-review',skillVersion:'1.0.0',pluginIds:[],pluginVersions:{},remoteToolsConfirmed:true,mappings:[],aliases:[],directory:'docs/meetings',mode:'mr',includeNotes:false,includeEvidence:true};
   async function record(title='浦东机场｜周会',workspaceId){const r=createRecord('owner',{title,autoMinutes:false});Object.assign(r,{capture:'completed',transcription:'ready',transcriptRevision:1,minutesRevision:1,workspaceId,notes:'private-notes',segments:[{id:'cited',revision:1,text:'决定保留人工修订。',startMs:0,endMs:1000},{id:'uncited',revision:1,text:'never-export-uncited-transcript',startMs:1000,endMs:2000}]});const evidence=[{segmentId:'cited',revision:1}];r.minutes={title,revision:1,transcriptRevision:1,edited:true,sections:[{title:'人工纪要',items:[{text:'人工修订内容不能丢失',evidence}]}],decisions:[{text:'保留人工修订',evidence}],actions:[],evidenceSnapshot:[r.segments[0]]};await repo.insert(r);return r;}
   function respond(r){fake.setResponses([message(call('read_selected_meeting',{recordId:r.id}),{stopReason:'toolUse'}),context=>{assert.doesNotMatch(JSON.stringify(context),/never-export-uncited-transcript|private-notes/);return message(JSON.stringify({summary:'归档整理结果。',decisions:[{text:'保留人工修订',evidence:[{recordId:r.id,segmentId:'cited',revision:1}]}],actions:[]}));}]);}
-  return {root,repo,network,policy,record,respond,extensions,fake,get sync(){return sync;},async restart(){await sync.close();await agent.close();await open();}};
+  return {root,repo,network,policy,record,respond,extensions,fake,get agent(){return agent;},get sync(){return sync;},async restart(){await sync.close();await agent.close();await open();}};
 }
 async function settled(sync,id){for(let i=0;i<300;i++){const job=await sync.get('owner',id);if(['succeeded','blocked','failed','unknown','paused'].includes(job.status))return job;await delay(10);}throw Error('Git task did not settle');}
 
@@ -168,7 +168,7 @@ test('deleting a source during prepare never restores a purged archival payload'
 
 test('Git archives retain all selected Skills and read a top-level bundle with real Pi',async t=>{
  const h=await fixture(t),version='c'.repeat(40),id='extension:bundle-test';await h.repo.insert({id,kind:'extension',owner:'owner',type:'skill',source:'https://git.example.test/root/skills',path:'skills',name:'项目指引集合',version,enabled:true,bundle:true,content:'# 项目指引集合',members:[{name:'risk',path:'skills/risk',description:'风险整理',version,content:'保留人工纪要与风险引用。'}]});
- const policy={...h.policy,skillIds:['meeting-review',id],skillVersions:{'meeting-review':'1.0.0',[id]:version}};await h.sync.save('owner',policy);assert.deepEqual((await h.sync.settings('owner')).skillIds.slice().sort(),policy.skillIds.slice().sort());const r=await h.record(),scope=await h.extensions.snapshot('owner',policy),guide=scope.guides.find(g=>g.name==='risk');h.fake.setResponses([message(call('read_selected_skill',{key:guide.key}),{stopReason:'toolUse'}),message(call('read_selected_meeting',{recordId:r.id}),{stopReason:'toolUse'}),message(JSON.stringify({summary:'风险已整理',decisions:[{text:'保留人工纪要',evidence:[{recordId:r.id,segmentId:'cited',revision:1}]}],actions:[]}))]);const job=await h.sync.start('owner',r.id);assert.equal((await settled(h.sync,job.id)).status,'succeeded');const row=await h.repo.get(job.id),manifest=JSON.parse(Object.entries(row.files).find(([path])=>path.endsWith('source.json'))?.[1]||Object.entries(row.files).find(([path])=>path.endsWith('.json'))[1]);assert.equal(manifest.skills.length,2);assert.ok(manifest.skillFiles.some(g=>g.path==='skills/risk'));
+ const policy={...h.policy,skillIds:['meeting-review',id],skillVersions:{'meeting-review':'1.0.0',[id]:version}};await h.sync.save('owner',policy);assert.deepEqual((await h.sync.settings('owner')).skillIds.slice().sort(),policy.skillIds.slice().sort());const r=await h.record(),scope=await h.extensions.snapshot('owner',policy),guide=scope.guides.find(g=>g.name==='risk');h.fake.setResponses([message(call('read_selected_skill',{key:guide.key}),{stopReason:'toolUse'}),message(call('read_selected_meeting',{recordId:r.id}),{stopReason:'toolUse'}),message(call('manage_git_sync',{action:'archive',mode:'mr',directory:'docs/meetings',content:'# 风险归档\n保留人工纪要与风险引用。'}),{stopReason:'toolUse'}),message(JSON.stringify({summary:'风险已整理',decisions:[{text:'保留人工纪要',evidence:[{recordId:r.id,segmentId:'cited',revision:1}]}],actions:[]}))]);const job=await h.sync.start('owner',r.id);assert.equal((await settled(h.sync,job.id)).status,'succeeded');const row=await h.repo.get(job.id),manifest=JSON.parse(Object.entries(row.files).find(([path])=>path.endsWith('source.json'))?.[1]||Object.entries(row.files).find(([path])=>path.endsWith('.json'))[1]);assert.equal(manifest.skills.length,2);assert.ok(manifest.skillFiles.some(g=>g.path==='skills/risk'));
 });
 
 test('a slow connection check cannot delay disabling Git sync',async t=>{
@@ -233,4 +233,98 @@ test('saving local preferences reuses the validated connection while changed cre
  const h=await fixture(t);await h.sync.save('owner',h.policy);let requests=0;h.network.onRead(()=>{requests++;});
  await h.sync.save('owner',{...h.policy,prompt:'只调整整理方式'});assert.equal(requests,0,'local edits must not repeat remote catalog requests');
  h.network.allowToken('changed-synthetic-token');await h.sync.save('owner',{...h.policy,token:'changed-synthetic-token'});assert.ok(requests>0);
+});
+
+test('agent-led sync survives a legacy expired deadline',async t=>{
+  const h=await fixture(t);await h.sync.save('owner',h.policy);const r=await h.record();
+  h.fake.setResponses([async()=>{await delay(80);return message(call('read_selected_meeting',{recordId:r.id}),{stopReason:'toolUse'});},message(JSON.stringify({summary:'已归档',decisions:[{text:'保留人工修订',evidence:[{recordId:r.id,segmentId:'cited',revision:1}]}],actions:[]}))]);
+  const job=await h.sync.start('owner',r.id);await h.repo.change(job.id,row=>{row.deadline=1;});
+  assert.equal((await settled(h.sync,job.id)).status,'succeeded');
+});
+
+test('Skill controls archive mode and directory, waits for reply across restart, and writes once',async t=>{
+  const h=await fixture(t,{timeoutMs:20}),version='d'.repeat(40),id='extension:interactive-sync';
+  await h.repo.insert({id,kind:'extension',owner:'owner',type:'skill',source:'https://git.example.test/root/skills',path:'skills/archive',name:'归档工作流',version,enabled:true,content:'询问归档方式，收到答复后直接提交到 docs/skill-notes，保留来源。'});
+  const policy={...h.policy,skillIds:[id],skillVersions:{[id]:version},mode:'',directory:''};await h.sync.save('owner',policy);
+  const r=await h.record(),scope=await h.extensions.snapshot('owner',policy),guide=scope.guides[0];
+  h.fake.setResponses([
+    message(call('read_selected_skill',{key:guide.key}),{stopReason:'toolUse'}),
+    message(call('read_selected_meeting',{recordId:r.id}),{stopReason:'toolUse'}),
+    message(call('request_user_input',{id:'write-mode',question:'请确认本次归档方式。',options:['直接提交','创建合并请求']}),{stopReason:'toolUse'}),
+    context=>{assert.match(JSON.stringify(context),/直接提交/);return message(call('manage_git_sync',{action:'archive',mode:'direct',directory:'docs/skill-notes',content:'# Skill 归档\n保留人工修订。'}),{stopReason:'toolUse'});},
+    context=>{assert.ok(!context.messages.some(m=>m.role==='toolResult'&&m.isError));return message(JSON.stringify({summary:'已按所选 Skill 完成归档。',decisions:[{text:'保留人工修订',evidence:[{recordId:r.id,segmentId:'cited',revision:1}]}],actions:[]}));}
+  ]);
+  const job=await h.sync.start('owner',r.id);let waiting;
+  for(let i=0;i<200;i++){waiting=await h.sync.get('owner',job.id);if(waiting.interaction)break;await delay(10);}
+  assert.equal(waiting.status,'waiting');await delay(80);assert.equal((await h.sync.get('owner',job.id)).status,'waiting');assert.equal(h.network.writes.length,0);assert.equal((await h.sync.status('owner')).recent[0].managed,true);const inputId=waiting.interaction.id;
+  await h.repo.change(job.id,row=>{row.deadline=1;});await h.restart();
+  waiting=await h.sync.get('owner',job.id);assert.equal(waiting.interaction.id,inputId);
+  await assert.rejects(h.sync.respond('other',job.id,{id:inputId,answer:'直接提交'}),{code:'git_task_not_found'});
+  await assert.rejects(h.sync.respond('owner',job.id,{id:'stale',answer:'直接提交'}),{code:'agent_input_changed'});
+  await h.sync.respond('owner',job.id,{id:inputId,answer:'直接提交'});
+  const done=await settled(h.sync,job.id);assert.equal(done.status,'succeeded',JSON.stringify(done));assert.equal(done.mode,'direct');assert.equal(h.network.mrs.length,0);
+  const stored=await h.repo.get(job.id);assert.ok(Object.keys(stored.files).every(path=>path.startsWith('docs/skill-notes/')));assert.match(stored.files[stored.manifestPath],/originalMarkdown/);
+  assert.equal(h.network.writes.filter(w=>w.path.endsWith('/repository/commits')).length,1);
+});
+
+test('Skill cannot change a fixed archive mode or directory',async t=>{
+  const h=await fixture(t),version='e'.repeat(40),id='extension:scope-test';await h.repo.insert({id,kind:'extension',owner:'owner',type:'skill',source:'https://git.example.test/root/skills',path:'skills/test',name:'Scope test',version,enabled:true,content:'Archive within the user scope.'});
+  await h.sync.save('owner',{...h.policy,skillIds:[id],skillVersions:{[id]:version}});const r=await h.record();h.fake.setResponses([
+    message(call('read_selected_meeting',{recordId:r.id}),{stopReason:'toolUse'}),
+    message(call('manage_git_sync',{action:'archive',mode:'direct',directory:'other/path',content:'outside fixed policy'}),{stopReason:'toolUse'}),
+    context=>{assert.ok(context.messages.some(m=>m.role==='toolResult'&&m.isError&&JSON.stringify(m).includes('git_scope_changed')));return message(JSON.stringify({summary:'无法归档',decisions:[{text:'保留来源',evidence:[{recordId:r.id,segmentId:'cited',revision:1}]}],actions:[]}));}
+  ]);const job=await h.sync.start('owner',r.id);assert.equal((await settled(h.sync,job.id)).status,'failed');assert.equal(h.network.writes.length,0);
+});
+
+test('Skill retry reconciles an uncertain staged commit without a duplicate write',async t=>{
+  const h=await fixture(t),version='f'.repeat(40),id='extension:reconcile-test';await h.repo.insert({id,kind:'extension',owner:'owner',type:'skill',source:'https://git.example.test/root/skills',path:'skills/archive',name:'Archive',version,enabled:true,content:'Archive and reconcile uncertain remote results before retrying.'});
+  await h.sync.save('owner',{...h.policy,skillIds:[id],skillVersions:{[id]:version},mode:'',directory:''});const r=await h.record();
+  const finish=()=>message(JSON.stringify({summary:'归档结果',decisions:[{text:'保留来源',evidence:[{recordId:r.id,segmentId:'cited',revision:1}]}],actions:[]}));
+  h.network.timeoutAfterCommit();h.fake.setResponses([message(call('read_selected_meeting',{recordId:r.id}),{stopReason:'toolUse'}),message(call('manage_git_sync',{action:'archive',mode:'mr',directory:'docs/skill-notes',content:'# 归档'}),{stopReason:'toolUse'}),finish()]);
+  const job=await h.sync.start('owner',r.id),unknown=await settled(h.sync,job.id);assert.equal(unknown.status,'unknown',JSON.stringify(unknown));assert.equal(unknown.error,'git_result_unknown');
+  h.fake.setResponses([message(call('read_selected_meeting',{recordId:r.id}),{stopReason:'toolUse'}),message(call('manage_git_sync',{action:'reconcile'}),{stopReason:'toolUse'}),finish()]);await h.sync.control('owner',job.id,'retry');
+  const done=await settled(h.sync,job.id);assert.equal(done.status,'succeeded',JSON.stringify(done));assert.equal(h.network.writes.filter(w=>w.path.endsWith('/repository/commits')).length,1);assert.equal(h.network.mrs.length,1);
+});
+
+test('pre-upgrade custom Skill settings apply the managed workflow to new tasks',async t=>{
+  const h=await fixture(t),id='extension:legacy-policy',version='a'.repeat(40);await h.repo.insert({id,kind:'extension',owner:'owner',type:'skill',source:'https://git.example.test/root/skills',path:'skills/archive',name:'Archive',version,enabled:true,content:'Archive into the specified directory.'});
+  await h.sync.save('owner',{...h.policy,skillIds:[id],skillVersions:{[id]:version}});const rule=(await h.repo.list('git-sync-rule'))[0];await h.repo.change(rule.id,row=>{delete row.managed;});const r=await h.record();
+  h.fake.setResponses([message(call('read_selected_meeting',{recordId:r.id}),{stopReason:'toolUse'}),message(call('manage_git_sync',{action:'archive',mode:'mr',directory:'docs/meetings',content:'# Skill archive'}),{stopReason:'toolUse'}),message(JSON.stringify({summary:'已归档',decisions:[{text:'保留人工修订',evidence:[{recordId:r.id,segmentId:'cited',revision:1}]}],actions:[]}))]);
+  const job=await h.sync.start('owner',r.id);assert.equal(job.managed,true);assert.equal((await settled(h.sync,job.id)).status,'succeeded');
+});
+
+test('Skill chooses multiple archive paths and messages inside a fixed target directory',async t=>{
+  const h=await fixture(t),id='extension:batch-archive',version='9'.repeat(40);await h.repo.insert({id,kind:'extension',owner:'owner',type:'skill',source:'https://git.example.test/root/skills',path:'skills/archive',name:'Project archive',version,enabled:true,content:'List project files, then archive a context and a meeting note with meaningful commit and MR titles.'});
+  await h.sync.save('owner',{...h.policy,skillIds:[id],skillVersions:{[id]:version},mode:'',directory:'docs/project'});const r=await h.record();
+  h.network.onRead(path=>path.endsWith('/repository/tree')?{status:200,headers:{},text:JSON.stringify([{name:'README.md',path:'README.md',type:'blob'}])}:undefined);
+  h.fake.setResponses([message(call('read_selected_meeting',{recordId:r.id}),{stopReason:'toolUse'}),message(call('manage_git_sync',{action:'list_files'}),{stopReason:'toolUse'}),message(call('manage_git_sync',{action:'archive',mode:'mr',directory:'docs/project',files:[{path:'CONTEXT.md',content:'# Project context'},{path:'meetings/review.md',content:'# Meeting decisions'}],commitMessage:'docs: initialize project knowledge',title:'项目资料归档'}),{stopReason:'toolUse'}),message(JSON.stringify({summary:'已按项目规则归档',decisions:[{text:'保留人工内容',evidence:[{recordId:r.id,segmentId:'cited',revision:1}]}],actions:[]}))]);
+  const job=await h.sync.start('owner',r.id),done=await settled(h.sync,job.id);assert.equal(done.status,'succeeded',JSON.stringify(done));const stored=await h.repo.get(job.id);assert.ok(stored.files['docs/project/CONTEXT.md']);assert.ok(stored.files['docs/project/meetings/review.md']);assert.equal(Object.keys(stored.files).length,3);
+  assert.match(h.network.writes.find(write=>write.path.endsWith('/repository/commits')).body.commit_message,/^docs: initialize project knowledge/);assert.equal(h.network.writes.find(write=>write.path.endsWith('/merge_requests')).body.title,'项目资料归档');
+});
+
+
+test('invalidating a rule cancels its pending Agent question and releases later work',async t=>{
+  const h=await fixture(t);await h.sync.save('owner',h.policy);const first=await h.record(),next=await h.record('浦东机场｜后续会议');
+  h.fake.setResponses([message(call('read_selected_meeting',{recordId:first.id}),{stopReason:'toolUse'}),message(call('request_user_input',{id:'confirm',question:'继续归档？'}),{stopReason:'toolUse'})]);
+  const started=await h.sync.start('owner',first.id);let waiting;
+  for(let i=0;i<200;i++){waiting=await h.sync.get('owner',started.id);if(waiting.interaction)break;await delay(10);}
+  assert.ok(waiting.interaction);await h.sync.save('owner',{...h.policy,prompt:'保留来源并补充待确认事项。'});
+  assert.equal((await settled(h.sync,started.id)).error,'git_rule_changed');
+  for(let i=0;i<200&&(await h.agent.get('owner',waiting.agentId)).status!=='cancelled';i++)await delay(10);
+  assert.equal((await h.agent.get('owner',waiting.agentId)).status,'cancelled');
+  await assert.rejects(h.sync.respond('owner',started.id,{id:waiting.interaction.id,answer:'继续'}),{code:'git_rule_changed'});
+  h.respond(next);const resumed=await h.sync.start('owner',next.id);assert.equal((await settled(h.sync,resumed.id)).status,'succeeded');
+});
+
+test('a paused Git question preserves its answer slot without blocking other Agent work',async t=>{
+  const h=await fixture(t);await h.sync.save('owner',h.policy);const first=await h.record(),other=await h.record('浦东机场｜独立复盘');
+  h.fake.setResponses([message(call('read_selected_meeting',{recordId:first.id}),{stopReason:'toolUse'}),message(call('request_user_input',{id:'confirm',question:'继续归档？'}),{stopReason:'toolUse'})]);
+  const started=await h.sync.start('owner',first.id);let waiting;
+  for(let i=0;i<200;i++){waiting=await h.sync.get('owner',started.id);if(waiting.interaction)break;await delay(10);}
+  assert.ok(waiting.interaction);assert.equal((await h.sync.control('owner',started.id,'pause')).status,'paused');
+  h.respond(other);const review=await h.agent.request('owner',{recordIds:[other.id],requestId:'independent-review',prompt:'独立复盘',scopeConfirmed:true,minutesOnly:true});
+  let done;for(let i=0;i<200;i++){done=await h.agent.get('owner',review.id);if(['completed','failed','blocked','cancelled'].includes(done.status))break;await delay(10);}
+  assert.equal(done.status,'completed',JSON.stringify(done));
+  h.respond(first);const resumed=await h.sync.control('owner',started.id,'resume');assert.equal(resumed.interaction.id,waiting.interaction.id);
+  await h.sync.respond('owner',started.id,{id:waiting.interaction.id,answer:'继续'});assert.equal((await settled(h.sync,started.id)).status,'succeeded');
 });

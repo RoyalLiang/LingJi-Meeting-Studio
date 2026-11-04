@@ -16,7 +16,7 @@ const Index=defineDoc({kind:'git-sync.index.v1',version:1,scope:'session',initia
 const ruleId=owner=>`git-sync-rule:${digest(owner)}`;
 const now=()=>new Date().toISOString();
 const terminal=outcome=>({status:'terminal',outcome});
-const safeCode=error=>/^(?:git_[a-z_]+|remote_[a-z_]+|minutes_not_configured|extension_[a-z_]+|mcp_[a-z_]+|agent_[a-z_]+)$/.test(error?.code||'')?error.code:'git_sync_failed';
+const safeCode=error=>/^(?:git_[a-z_]+|remote_[a-z_]+|minutes_not_configured|extension_[a-z_]+|mcp_[a-z_]+|agent_[a-z_]+|invalid_agent_output|provider_[a-z_]+|llm_[a-z_]+)$/.test(error?.code||'')?error.code:'git_sync_failed';
 const inline=value=>String(value).replace(/[<>]/g,c=>c==='<'?'&lt;':'&gt;').replace(/([\\`*_{}[\]#|])/g,'\\$1');
 const modelHash=config=>digest(JSON.stringify([config.LLM_MODEL||'',config.LLM_API_URL||'',config.LLM_PROTOCOL||'',config.LLM_REASONING_EFFORT||'']));
 const publicRule=rule=>rule?{configured:true,enabled:rule.enabled,root:rule.root,group:rule.group,projects:rule.projects,prompt:rule.prompt,skillId:rule.scope.skill.id,skillVersion:rule.scope.skill.version,skillIds:(rule.scope.skills||[rule.scope.skill]).map(s=>s.id),skillVersions:Object.fromEntries((rule.scope.skills||[rule.scope.skill]).map(s=>[s.id,s.version])),pluginIds:rule.scope.plugins.map(p=>p.id),pluginVersions:Object.fromEntries(rule.scope.plugins.map(p=>[p.id,p.version])),mappings:rule.mappings,aliases:rule.aliases,directory:rule.directory,mode:rule.mode,timezone:rule.timezone,includeNotes:rule.includeNotes,includeEvidence:rule.includeEvidence,hasToken:Boolean(rule.credentials),generation:rule.generation}:{configured:false,enabled:false};
@@ -27,7 +27,7 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
   try{lock.exec('PRAGMA busy_timeout=0; BEGIN EXCLUSIVE; CREATE TABLE IF NOT EXISTS owner_lock(v INTEGER)');}catch{lock.close();throw new DomainError('git_sync_busy',503);}
   let harness,root,timer,closing=false,busy=false,operations=Promise.resolve();const sourceCache=new Map(),saveIntents=new Map(),catalogCache=new Map();
   const enqueue=action=>{const next=operations.then(action);operations=next.catch(()=>{});return next;};
-  const load=owner=>repo.get(ruleId(owner));
+  const load=async owner=>{const rule=await repo.get(ruleId(owner));return rule?{...rule,managed:rule.managed??(rule.scope.skills||[rule.scope.skill]).some(skill=>skill.id!=='meeting-review')}:rule;};
   const connection=rule=>({root:rule.root,token:rule.credentials?secrets.open(rule.id,rule.credentials).token:''});
   async function recordFor(owner,id){const r=await repo.get(id);requireThat(r?.kind==='record'&&r.owner===owner&&!r.deleted&&Date.parse(r.deleteAt)>Date.now(),'git_source_unavailable',410);return r;}
   const retained=(record,owner)=>record?.kind==='record'&&record.owner===owner&&!record.deleted&&Date.parse(record.deleteAt)>Date.now();
@@ -41,10 +41,14 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
   }
   async function jobFor(owner,id){const job=await repo.get(id);requireThat(job?.kind==='git-sync-job'&&job.owner===owner,'git_task_not_found',404);return job;}
   async function publicJob(job){
+    if(job.agentId&&['queued','running','waiting'].includes(job.status)){
+      const child=await agent.get(job.owner,job.agentId);
+      const visible=!child.stale&&!['blocked','cancelled'].includes(child.status);job={...job,...(visible&&child.interaction?{status:'waiting',interaction:child.interaction}:{interaction:undefined}),preview:visible?child.preview:undefined};
+    }
     if(!retained((await repo.getRecordAccess([job.recordId]))[0],job.owner))return {id:job.id,recordId:job.recordId,title:'会议已删除或过期',status:'blocked',phase:job.phase,error:'git_source_unavailable',createdAt:job.createdAt,updatedAt:job.updatedAt};
-    return Object.fromEntries(['id','recordId','title','status','phase','error','createdAt','updatedAt','project','basis','minutesRevision','transcriptRevision','branch','baseBranch','directory','mode','commit','url','agentId','automatic','paused'].filter(k=>job[k]!==undefined).map(k=>[k,job[k]]));
+    return Object.fromEntries(['id','recordId','title','status','phase','error','createdAt','updatedAt','project','basis','minutesRevision','transcriptRevision','branch','baseBranch','directory','mode','commit','url','agentId','automatic','paused','interaction','preview','managed'].filter(k=>job[k]!==undefined).map(k=>[k,['automatic','paused','managed'].includes(k)?Boolean(job[k]):job[k]]));
   }
-  const history=async owner=>(await repo.listMetadata('git-sync-job',owner,['recordId','status','phase','title','createdAt','updatedAt','ruleGeneration','error','project','basis','minutesRevision','transcriptRevision','branch','baseBranch','directory','mode','commit','url','agentId','automatic','paused'],{limit:1000})).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
+  const history=async owner=>(await repo.listMetadata('git-sync-job',owner,['recordId','status','phase','title','createdAt','updatedAt','ruleGeneration','error','project','basis','minutesRevision','transcriptRevision','branch','baseBranch','directory','mode','commit','url','agentId','automatic','paused','interaction','preview','managed'],{limit:1000})).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
   async function guard(job,signal,remote=false,ignorePause=false,full=false){
     signal?.throwIfAborted();const rule=await load(job.owner);
     requireThat(rule?.enabled&&rule.generation===(job.authorizationGeneration||job.ruleGeneration),'git_rule_changed',409);
@@ -56,14 +60,14 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
     if(remote){const catalog=await git.catalog(connection(rule),signal),match=gitTarget(record,catalog.projects,rule.mappings,rule.aliases);requireThat(catalog.group.id===job.rootGroup.id&&match.status==='eligible'&&match.project.id===job.project.id&&match.project.default_branch===job.baseBranch,'git_target_changed',409);}
     return {rule,record};
   }
-  async function update(id,values){return repo.change(id,row=>{const unavailable=row.error==='git_source_unavailable'||values.error==='git_source_unavailable';Object.assign(row,values,{updatedAt:now()});if(unavailable)Object.assign(row,{status:'blocked',error:'git_source_unavailable',files:null,original:null,title:''});return structuredClone(row);});}
+  async function update(id,values){const current=await repo.get(id);if(Object.entries(values).every(([key,value])=>JSON.stringify(current[key])===JSON.stringify(value)))return current;return repo.change(id,row=>{const unavailable=row.error==='git_source_unavailable'||values.error==='git_source_unavailable';Object.assign(row,values,{updatedAt:now()});if(unavailable)Object.assign(row,{status:'blocked',error:'git_source_unavailable',files:null,original:null,title:''});return structuredClone(row);});}
   const phases=['resolve','prepare','organize','commit','merge'];
   function phaseHandler(phase){return async(task,runtime,taskContext)=>{
     let job=await repo.get(task.input.jobId);
     try{
       requireThat(job&&(!job.taskId||job.taskId===runtime.taskId),'git_task_replaced',409);
       await guard(job,runtime.signal,['commit','merge'].includes(phase));
-      job=await update(job.id,{status:'running',phase,error:null,taskId:runtime.taskId});
+      job=await update(job.id,{status:phase==='organize'&&job.status==='waiting'?'waiting':'running',phase,error:null,taskId:runtime.taskId});
       if(phase==='resolve'){
         const {rule,record}=await guard(job,runtime.signal),catalog=await git.catalog(connection(rule),runtime.signal),target=gitTarget(record,catalog.projects,rule.mappings,rule.aliases);
         requireThat(catalog.group.id===job.rootGroup.id,'git_target_changed',409);requireThat(target.status==='eligible',target.reason||'git_target_unclear',409);
@@ -75,11 +79,15 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
       }else if(phase==='organize'){
         const {rule}=await guard(job,runtime.signal);
         if(!job.modelConfigHash){const config=await readConfig(repo.root);job=await update(job.id,{modelConfigHash:modelHash(config),model:config.LLM_MODEL||'injected-test-model'});}
-        const child=job.agentId?await agent.get(job.owner,job.agentId):await agent.request(job.owner,{recordIds:[job.recordId],prompt:rule.prompt,requestId:`git-sync:${digest(`${job.id}:${job.agentAttempt||0}`)}`,scopeConfirmed:true,minutesOnly:true,includeNotes:rule.includeNotes,skillId:rule.scope.skill.id,skillVersion:rule.scope.skill.version,skillIds:(rule.scope.skills||[rule.scope.skill]).map(s=>s.id),skillVersions:Object.fromEntries((rule.scope.skills||[rule.scope.skill]).map(s=>[s.id,s.version])),pluginIds:rule.scope.plugins.map(p=>p.id),pluginVersions:Object.fromEntries(rule.scope.plugins.map(p=>[p.id,p.version])),remoteToolsConfirmed:true});
+        const child=job.agentId?await agent.get(job.owner,job.agentId):await agent.request(job.owner,{recordIds:[job.recordId],prompt:rule.prompt,requestId:`git-sync:${digest(`${job.id}:${job.agentAttempt||0}`)}`,scopeConfirmed:true,minutesOnly:true,includeNotes:rule.includeNotes,skillId:rule.scope.skill.id,skillVersion:rule.scope.skill.version,skillIds:(rule.scope.skills||[rule.scope.skill]).map(s=>s.id),skillVersions:Object.fromEntries((rule.scope.skills||[rule.scope.skill]).map(s=>[s.id,s.version])),pluginIds:rule.scope.plugins.map(p=>p.id),pluginVersions:Object.fromEntries(rule.scope.plugins.map(p=>[p.id,p.version])),remoteToolsConfirmed:true},{jobId:job.id,managed:job.managed===true,root:rule.root,project:{id:job.project.id,path:job.project.path,defaultBranch:job.baseBranch},mode:rule.mode||null,directory:rule.directory||null,pendingArchive:Boolean(job.files),instruction:job.managed?'The user requirements and selected meeting/repository scope are immutable. Follow the selected Skills to choose the process, archive directory and write mode where not specified. Ask the user when necessary. Use manage_git_sync to archive before completing.':'Organize the meeting according to the selected guidance; the application will perform the archive.'});
         if(!job.agentId)job=await update(job.id,{agentId:child.id});
-        requireThat(Date.now()<job.deadline,'git_agent_timeout',504);
-        if(['queued','running','cancelling'].includes(child.status)){await runtime.sleepUntil(Date.now()+agentPollMs,{phase},taskContext);return;}
-        requireThat(child.status==='completed'&&!child.stale&&child.result,'git_agent_failed',502);
+        if(['queued','running','cancelling'].includes(child.status)){await update(job.id,{status:child.interaction?'waiting':'running'});await runtime.sleepUntil(Date.now()+agentPollMs,{phase},taskContext);return;}
+        const archived=await repo.get(job.id);if(job.managed&&archived.commit&&archived.url&&(archived.mode!=='mr'||archived.iid||archived.integrated)){await update(job.id,{status:'succeeded',phase:'done',error:null});await runtime.commit(()=>terminal({status:'completed',result:{jobId:job.id}}),taskContext);return;}
+        requireThat(child.status==='completed'&&!child.stale&&child.result,child.error||'git_agent_failed',502);
+        if(job.managed){
+          job=await repo.get(job.id);requireThat(job.commit&&job.url&&(job.mode!=='mr'||job.iid||job.integrated),job.remoteError||'git_agent_archive_required',409);
+          await update(job.id,{status:'succeeded',phase:'done',error:null});await runtime.commit(()=>terminal({status:'completed',result:{jobId:job.id}}),taskContext);return;
+        }
         const cite=item=>(item.evidence||[]).map(e=>`${e.segmentId}@${e.revision}`).join(', ');
         const lines=['','## 归档整理','',inline(child.result.summary),''];
         for(const [name,items] of [['决策',child.result.decisions],['行动候选（待确认）',child.result.actions]]){lines.push(`### ${name}`,'');for(const item of items)lines.push(`- ${inline(item.text)}${rule.includeEvidence?`（引用：${inline(cite(item))}）`:''}`);lines.push('');}
@@ -105,7 +113,10 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
       if(closing||runtime.signal.aborted)throw error;
       if(error.code==='git_rate_limited'&&(job.rateAttempts||0)<3){const attempt=(job.rateAttempts||0)+1;await update(job.id,{status:'queued',error:'git_rate_limited',rateAttempts:attempt});await runtime.sleepUntil(Date.now()+retryDelayMs*2**(attempt-1),{phase},taskContext);return;}
       const code=safeCode(error),blocked=['git_rule_changed','git_source_changed','git_model_changed','git_source_unavailable','git_target_unclear','git_target_changed','git_target_unavailable','git_default_branch_missing','git_repository_empty','git_target_conflict','git_archive_exists','extension_version_changed','extension_disabled'].includes(code);
-      if(code!=='git_paused')await update(job.id,{status:code==='git_result_unknown'?'unknown':blocked?'blocked':'failed',error:code});
+      if(code!=='git_paused'){
+        if(job.agentId)await agent.cancel(job.owner,job.agentId).catch(()=>{});
+        await update(job.id,{status:code==='git_result_unknown'?'unknown':blocked?'blocked':'failed',error:code});
+      }
       await runtime.commit(()=>terminal({status:'failed',error:{message:code}}),taskContext);
     }
   };}
@@ -123,7 +134,7 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
   async function save(owner,input,intent){
     requireThat(typeof input.enabled==='boolean','invalid_git_sync',400);const current=await load(owner);
     if(!input.enabled)return enqueue(async()=>{const latest=await load(owner);if(latest)await repo.change(latest.id,r=>{r.enabled=false;r.generation=randomUUID();});return publicRule(await load(owner));});
-    requireThat(input.confirmed===true&&typeof input.prompt==='string'&&input.prompt.trim().length>=1&&input.prompt.length<=2000&&typeof input.includeNotes==='boolean'&&typeof input.includeEvidence==='boolean'&&['mr','direct'].includes(input.mode),'git_confirmation_required',400);
+    requireThat(input.confirmed===true&&typeof input.prompt==='string'&&input.prompt.trim().length>=1&&input.prompt.length<=2000&&typeof input.includeNotes==='boolean'&&typeof input.includeEvidence==='boolean'&&['','mr','direct'].includes(input.mode||''),'git_confirmation_required',400);
     requireThat(input.mode!=='direct'||input.directConfirmed===true,'git_direct_confirmation_required',400);
     const timezone=input.timezone||'UTC';requireThat(typeof timezone==='string'&&timezone.length<=100,'git_timezone_invalid',400);try{new Intl.DateTimeFormat('en-CA',{timeZone:timezone});}catch{throw new DomainError('git_timezone_invalid',400);}
     const rootValue=gitRoot(input.root).url,token=input.token||(current?.root===rootValue?connection(current).token:'');
@@ -131,12 +142,13 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
     const recent=catalogCache.get(owner),sameConnection=current?.root===rootValue&&connection(current).token===token;
     const catalog=recent?.key===digest(rootValue+':'+token)&&Date.now()-recent.at<30000?recent.catalog:sameConnection?{group:current.group,projects:current.projects}:await check(owner,input);
     const {group,projects}=catalog,scope=await extensions.snapshot(owner,input);
+    const managed=scope.skills.some(skill=>skill.id!=='meeting-review');requireThat(managed||input.mode,'git_write_mode_required',400);
     requireThat(Array.isArray(input.mappings)&&input.mappings.length<=50&&Array.isArray(input.aliases)&&input.aliases.length<=100,'invalid_git_sync',400);
     for(const mapping of input.mappings){const workspace=await repo.get(mapping.workspaceId);requireThat(workspace?.kind==='workspace'&&workspace.owner===owner&&projects.some(p=>p.id===mapping.projectId),'git_mapping_invalid',400);}
     requireThat(new Set(input.mappings.map(m=>m.workspaceId)).size===input.mappings.length,'git_mapping_duplicate',400);
     requireThat(input.aliases.every(a=>typeof a.name==='string'&&a.name.trim().length>=3&&a.name.length<=100&&projects.some(p=>p.id===a.projectId)),'git_alias_invalid',400);
-    let directory;try{directory=gitArchivePath(typeof input.directory==='string'&&input.directory.trim()?input.directory.trim():'docs/meetings');}catch{throw new DomainError('git_directory_invalid',400);}
-    const policy={root:rootValue,group,projects,timezone,prompt:input.prompt.trim(),scope,mappings:input.mappings.map(({workspaceId,projectId})=>({workspaceId,projectId})),aliases:input.aliases.map(({name,projectId})=>({name:name.trim(),projectId})),directory,mode:input.mode,includeNotes:input.includeNotes,includeEvidence:input.includeEvidence};
+    let directory;try{directory=managed&&!input.directory?.trim()?'':gitArchivePath(typeof input.directory==='string'&&input.directory.trim()?input.directory.trim():'docs/meetings');}catch{throw new DomainError('git_directory_invalid',400);}
+    const policy={root:rootValue,group,projects,timezone,prompt:input.prompt.trim(),scope,mappings:input.mappings.map(({workspaceId,projectId})=>({workspaceId,projectId})),aliases:input.aliases.map(({name,projectId})=>({name:name.trim(),projectId})),directory,mode:input.mode||'',managed,includeNotes:input.includeNotes,includeEvidence:input.includeEvidence};
     const fingerprint=digest(JSON.stringify({...policy,projects:undefined})),unchanged=current?.enabled&&current.fingerprint===fingerprint&&connection(current).token===token;
     const next={id:ruleId(owner),kind:'git-sync-rule',owner,...policy,fingerprint,enabled:true,generation:unchanged?current.generation:randomUUID(),enabledAt:unchanged?current.enabledAt:Date.now(),excluded:unchanged?current.excluded:(await repo.listSummaries(owner,'all','')).filter(r=>r.capture==='completed').map(r=>r.id),credentials:token?secrets.seal(ruleId(owner),{token}):null};
     return enqueue(async()=>{
@@ -151,7 +163,7 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
     const rule=await load(owner);requireThat(rule?.enabled,'git_not_configured',409);const record=await recordFor(owner,recordId);requireThat(gitFinal(record),'git_minutes_not_ready',409);
     const config=await readConfig(repo.root),configHash=modelHash(config),sourceHash=gitSourceHash(record,rule.includeNotes),archiveKey=digest(JSON.stringify([sourceHash,rule.fingerprint,configHash])),key=digest(`${owner}:${record.id}:${archiveKey}`),id=`git-sync:${key}`;
     const existing=await repo.get(id);if(existing)return publicJob(existing);
-    const row={id,kind:'git-sync-job',owner,recordId,title:record.title,sourceHash,archiveKey,ruleGeneration:rule.generation,policyFingerprint:rule.fingerprint,modelConfigHash:configHash,model:config.LLM_MODEL||'injected-test-model',reasoningEffort:config.LLM_REASONING_EFFORT||'',rootGroup:rule.group,minutesRevision:record.minutesRevision,transcriptRevision:record.transcriptRevision,automatic,phase:'resolve',status:'queued',createdAt:now(),updatedAt:now(),deadline:Date.now()+900000};
+    const row={id,kind:'git-sync-job',owner,recordId,title:record.title,sourceHash,archiveKey,ruleGeneration:rule.generation,policyFingerprint:rule.fingerprint,modelConfigHash:configHash,model:config.LLM_MODEL||'injected-test-model',reasoningEffort:config.LLM_REASONING_EFFORT||'',rootGroup:rule.group,minutesRevision:record.minutesRevision,transcriptRevision:record.transcriptRevision,automatic,managed:rule.managed===true,phase:'resolve',status:'queued',createdAt:now(),updatedAt:now(),startedAt:now()};
     await repo.insert(row);if(row.status==='queued'){try{await schedule(row);}catch(error){await update(id,{status:'failed',error:safeCode(error)});}}return publicJob(await repo.get(id));
   }
   async function tick(){
@@ -166,7 +178,7 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
         for(const item of batch)if(!retained(access.get(item.recordId),rule.owner)&&item.error!=='git_source_unavailable'){await update(item.id,{status:'blocked',error:'git_source_unavailable',files:null,original:null,title:''});sourceCache.delete(`${item.recordId}:true`);sourceCache.delete(`${item.recordId}:false`);}
         if(batch.length<1000)break;const last=batch.at(-1);before=[last.createdAt,last.id];
       }
-      if(!rule.enabled||rows.some(r=>['queued','running'].includes(r.status)))continue;
+      if(!rule.enabled||rows.some(r=>['queued','running','waiting'].includes(r.status)))continue;
       for(const summary of await repo.listSummaries(rule.owner,'all','')){
         if(summary.capture!=='completed'||!summary.hasMinutes||rule.excluded.includes(summary.id)||rows.some(r=>r.ruleGeneration===rule.generation&&r.recordId===summary.id))continue;
         const record=await recordFor(rule.owner,summary.id);if(!gitFinal(record))continue;
@@ -180,12 +192,45 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
   try{
     const registry=createRegistry();registry.install(defineExtension({name:'git-sync@1',tasks:[Job]}));
     harness=await Harness.open(await openNodeSqliteStorage(join(repo.root,'git-sync.sqlite')),{models:createModels(),registry,settings:{compaction:{enabled:false}}},context);root=await harness.root(context);
-    for(const rule of await repo.list('git-sync-rule'))for(const row of await history(rule.owner)){const job=await repo.get(row.id);if(['queued','running'].includes(job.status)&&!job.taskId)await schedule(job);}
+    for(const rule of await repo.list('git-sync-rule'))for(const row of await history(rule.owner)){const job=await repo.get(row.id);if(['queued','running','waiting'].includes(job.status)&&!job.taskId)await schedule(job);}
+    agent.setGitSyncHandler?.(async(owner,id,args,signal)=>{
+      let job=await jobFor(owner,id);const {rule}=await guard(job,signal,!['read_file','list_files'].includes(args.action),false,!['read_file','list_files'].includes(args.action));
+      requireThat(job.managed&&rule.managed,'agent_scope_denied',403);
+      if(args.action==='list_files'){const path=args.path?gitArchivePath(args.path):'';return git.listFiles(connection(rule),job,path,args.page||0,signal);}
+      if(args.action==='read_file'){
+        const path=gitArchivePath(args.path);return git.readFile(connection(rule),job,path,signal);
+      }
+      if(args.action==='archive'){
+      requireThat(args.files===undefined||Array.isArray(args.files)&&args.files.length>0&&args.files.length<=20,'invalid_git_sync',400);
+      const mode=rule.mode||args.mode,directory=rule.directory||(args.directory==='.'?'':gitArchivePath(args.directory||'docs/meetings'));
+      requireThat(['mr','direct'].includes(mode)&&(!rule.mode||!args.mode||rule.mode===args.mode)&&(!rule.directory||!args.directory||rule.directory===args.directory),'git_scope_changed',409);
+      const stem=job.filePath.slice(job.filePath.lastIndexOf('/')+1),prefix=directory?`${directory}/`:'';
+      const proposed=args.files||[{path:args.path||stem,content:args.content}];
+      requireThat(proposed.every(file=>typeof file.content==='string'&&file.content.trim()&&file.content.length<=100000),'invalid_git_sync',400);
+      const paths=proposed.map(file=>prefix+gitArchivePath(file.path));requireThat(new Set(paths).size===paths.length,'invalid_git_sync',400);
+      const filePath=paths[0],manifestPath=`${prefix}${stem.replace(/\.md$/,'.source.json')}`;requireThat(!paths.includes(manifestPath),'invalid_git_sync',400);
+      const files=Object.fromEntries(proposed.map((file,index)=>[paths[index],file.content+'\n']));
+      files[manifestPath]=JSON.stringify({recordId:job.recordId,minutesRevision:job.minutesRevision,transcriptRevision:job.transcriptRevision,sourceHash:job.sourceHash,archiveKey:job.archiveKey,skills:rule.scope.skills.map(({id,version})=>({id,version})),skillFiles:(rule.scope.guides||[]).map(({key,name,path,version})=>({key,name,path,version})),citations:gitCitations((await recordFor(owner,job.recordId)).minutes),originalMarkdown:job.original},null,2)+'\n';
+      requireThat((args.commitMessage===undefined||typeof args.commitMessage==='string'&&args.commitMessage.trim().length>0&&args.commitMessage.length<=500)&&(args.title===undefined||typeof args.title==='string'&&args.title.trim().length>0&&args.title.length<=200),'invalid_git_sync',400);
+      requireThat(Buffer.byteLength(JSON.stringify(files))<=160000,'git_archive_too_large',413);
+      if(job.files)requireThat(JSON.stringify(job.files)===JSON.stringify(files)&&job.mode===mode,'git_write_conflict',409);
+      job=await update(id,{files,filePath,manifestPath,mode,directory,commitMessage:args.commitMessage||job.commitMessage||`docs: ${job.recordId}`,mergeTitle:args.title||job.mergeTitle||`会议归档：${job.title}`.slice(0,200),branch:mode==='mr'?`lingji/archive-${job.recordId}-${job.archiveKey.slice(0,12)}`:job.baseBranch});
+      }else requireThat(args.action==='reconcile'&&job.files&&job.mode,'git_agent_archive_required',409);
+      try{
+      const beforeWrite=async()=>{await guard(job,signal,true);job=await update(id,{writeStarted:true});await guard(job,signal);};
+      const result=await git.commit(connection(rule),job,signal,beforeWrite);job=await update(id,{...result,url:`${gitRoot(rule.root).origin}/${job.project.path}/-/commit/${result.commit}`});
+      const merged=job.mode==='mr'&&!job.integrated?await git.mergeRequest(connection(rule),job,signal,beforeWrite):{url:job.url};
+      job=await update(id,{...merged,remoteError:null});return {commit:job.commit,url:job.url,mode:job.mode,filePath:job.filePath};
+      }catch(error){await update(id,{remoteError:safeCode(error)});throw error;}
+    });
     harness.resume();timer=setInterval(()=>void enqueue(tick).catch(()=>{}),Math.max(50,pollMs));timer.unref();
     return {
     check,save:(owner,input)=>{const intent={};saveIntents.set(owner,intent);return save(owner,input,intent).finally(()=>{if(saveIntents.get(owner)===intent)saveIntents.delete(owner);});},preview,start:(owner,id)=>enqueue(()=>start(owner,id)),tick:()=>enqueue(tick),
-      async settings(owner){return {...publicRule(await load(owner)),recent:await Promise.all((await history(owner)).slice(0,20).map(publicJob))};},
-      async get(owner,id){return publicJob(await jobFor(owner,id));},
+      async status(owner){return {enabled:Boolean((await load(owner))?.enabled),recent:await Promise.all((await history(owner)).slice(0,20).map(publicJob))};},
+      async settings(owner){
+return {...publicRule(await load(owner)),recent:await Promise.all((await history(owner)).slice(0,20).map(publicJob))};},
+      get:async(owner,id)=>publicJob(await jobFor(owner,id)),
+    respond:async(owner,id,input)=>{const job=await jobFor(owner,id);await guard(job);requireThat(job.agentId,'agent_input_changed',409);await agent.respond(owner,job.agentId,input);return publicJob(await repo.get(id));},
       control:(owner,id,action)=>enqueue(async()=>{
         let job=await jobFor(owner,id);if(job.status==='succeeded')return publicJob(job);
         requireThat(['pause','resume','retry'].includes(action),'invalid_git_sync',400);
@@ -201,7 +246,7 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
           await guard(job,undefined,false,true);
 
           const child=job.agentId?await agent.get(owner,job.agentId):null;
-          job=await update(id,{paused:false,status:'queued',phase:job.project?job.phase:'resolve',error:null,rateAttempts:0,deadline:Date.now()+900000,...(child&&['failed','blocked','cancelled'].includes(child.status)?{agentId:null,agentAttempt:(job.agentAttempt||0)+1}:{})});await schedule(job);
+          job=await update(id,{paused:false,status:'queued',phase:job.project?job.phase:'resolve',error:null,rateAttempts:0,startedAt:now(),...(child&&(['failed','blocked','cancelled'].includes(child.status)||job.managed&&job.error&&child.status==='completed')?{agentId:null,agentAttempt:(job.agentAttempt||0)+1}:{})});await schedule(job);
         }return publicJob(await repo.get(id));
       }),
       async close(){closing=true;clearInterval(timer);await operations;await harness.close(context);lock.close();}
