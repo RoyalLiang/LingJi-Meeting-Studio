@@ -67,34 +67,36 @@ function canvas(theme,citations){
   };
   return {p,nodes,rect,text,line,table,visual,measure};
 }
-export function minutesBoard(minutes,{theme='light',citations}={}){
+export function minutesBoard(minutes,{theme='light',citations,includeSummary=true}={}){
   const view=minutesOverview(minutes),c=canvas(theme,citations),{p,rect,text,line,table,visual}=c;
   const width=1120,background=rect(0,0,width,1,p.bg),heading=(value,y)=>text(value,28,y,1064,{size:21,bold:true});
   let y=24;
   y+=heading(minutes.title||'会议纪要',y)+16;
   text(`转录 v${minutes.transcriptRevision??'?'} · 纪要 v${minutes.revision??'?'}${minutes.edited?' · 人工修订':''}`,28,y,1064,{size:12,color:p.muted});y+=34;
-  y+=heading('会议总览',y)+14;
-  if(view.summary.length){
-    const box=rect(28,y,1064,1,p.figure);let cursor=y+14;
-    text(view.summaryLabel,44,cursor,110,{size:13,color:p.muted});
-    for(const [i,item] of view.summary.entries())cursor+=text(item.text,170,cursor,900,{size:i===0?18:15,bold:i===0,refs:item.evidence})+12;
-    box.height=cursor-y+2;y=cursor+22;
+  if(includeSummary){
+    y+=heading('会议总览',y)+14;
+    if(view.summary.length){
+      const box=rect(28,y,1064,1,p.figure);let cursor=y+14;
+      text(view.summaryLabel,44,cursor,110,{size:13,color:p.muted});
+      for(const [i,item] of view.summary.entries())cursor+=text(item.text,170,cursor,900,{size:i===0?18:15,bold:i===0,refs:item.evidence})+12;
+      box.height=cursor-y+2;y=cursor+22;
+    }
+    const groups=[['关键决策',view.decisions,'purple'],['下一步行动',view.actions,'green'],['风险与待确认',view.pending,'amber']];
+    const tops=y,heights=[];
+    for(const [i,[label,items,color]] of groups.entries()){
+      const x=28+i*360,outer=rect(x,tops,344,1,p[color][1],null);text(label,x+14,tops+10,316,{size:15,bold:true,color:p[color][0]});
+      const inner=rect(x+4,tops+42,336,1,p.bg,null);let cursor=tops+55;
+      if(!items.length)cursor+=text('纪要未列出',x+16,cursor,310,{size:14,color:p.muted})+14;
+      for(const item of items){const detail=color==='green'?[item.text,`负责人：${item.owner||'待确认'} · 时间：${item.due||'待确认'}`].join('\n'):item.text;cursor+=text(detail,x+16,cursor,310,{size:14,refs:item.evidence})+14;}
+      heights.push(cursor-tops+6);outer.height=heights[i];inner.height=outer.height-46;
+    }
+    const groupHeight=Math.max(...heights);
+    // Equal outer heights do not constrain any of the text nodes.
+    for(const node of c.nodes)if(node.type==='composite_shape'&&node.y===tops&&node.width===344)node.height=groupHeight;
+    for(const node of c.nodes)if(node.type==='composite_shape'&&node.y===tops+42&&node.width===336)node.height=groupHeight-46;
+    y=tops+groupHeight+24;
+    if(view.actions.length)y+=table('推进安排与前置条件',['阶段事项','负责人','时间','状态'],view.actions.map(item=>[item.text,item.owner||'待确认',item.due||'待确认',({pending:'待确认',candidate:'候选',confirmed:'已确认',blocked:'受阻',completed:'已完成',done:'已完成'})[item.status]||item.status||'待确认']),28,y,1064)+28;
   }
-  const groups=[['关键决策',view.decisions,'purple'],['下一步行动',view.actions,'green'],['风险与待确认',view.pending,'amber']];
-  const tops=y,heights=[];
-  for(const [i,[label,items,color]] of groups.entries()){
-    const x=28+i*360,outer=rect(x,tops,344,1,p[color][1],null);text(label,x+14,tops+10,316,{size:15,bold:true,color:p[color][0]});
-    const inner=rect(x+4,tops+42,336,1,p.bg,null);let cursor=tops+55;
-    if(!items.length)cursor+=text('纪要未列出',x+16,cursor,310,{size:14,color:p.muted})+14;
-    for(const item of items){const detail=color==='green'?[item.text,`负责人：${item.owner||'待确认'} · 时间：${item.due||'待确认'}`].join('\n'):item.text;cursor+=text(detail,x+16,cursor,310,{size:14,refs:item.evidence})+14;}
-    heights.push(cursor-tops+6);outer.height=heights[i];inner.height=outer.height-46;
-  }
-  const groupHeight=Math.max(...heights);
-  // Equal outer heights do not constrain any of the text nodes.
-  for(const node of c.nodes)if(node.type==='composite_shape'&&node.y===tops&&node.width===344)node.height=groupHeight;
-  for(const node of c.nodes)if(node.type==='composite_shape'&&node.y===tops+42&&node.width===336)node.height=groupHeight-46;
-  y=tops+groupHeight+24;
-  if(view.actions.length)y+=table('推进安排与前置条件',['阶段事项','负责人','时间','状态'],view.actions.map(item=>[item.text,item.owner||'待确认',item.due||'待确认',({pending:'待确认',candidate:'候选',confirmed:'已确认',blocked:'受阻',completed:'已完成',done:'已完成'})[item.status]||item.status||'待确认']),28,y,1064)+28;
   y+=heading('主题脉络图',y)+18;
   const trunk=y;let last=trunk;
   const branch=(value,index)=>{

@@ -21,7 +21,7 @@ test('overview preserves unresolved owners, source versions and manual duplicate
 test('native export contains top summary blocks, editable tables, timeline and version citations',()=>{
   const minutes=fixture(),references=new Map();
   const markdown=exportMinutesMarkdown({minutes,capture:'completed',title:minutes.title},{referenceMap:references});
-  const nodes=feishuBoard(minutes,{citations:refs=>refs.length?` [${references.get('s1@2').number}]`:''});
+  const nodes=minutesBoard(minutes,{citations:refs=>refs.length?` [${references.get('s1@2').number}]`:''});
   const text=nodes.filter(node=>node.type==='text_shape').map(node=>node.text.text).join('\n');
   assert.match(text,/会议总览[\s\S]*核心结论[\s\S]*关键决策[\s\S]*下一步行动[\s\S]*风险与待确认[\s\S]*推进安排[\s\S]*主题脉络图/);
   assert.match(text,/方案对比[\s\S]*待验证/);assert.match(text,/推进节点[\s\S]*周五：评审/);
@@ -51,4 +51,9 @@ test('numeric comparison draws quantities while ambiguous values remain text',()
   assert.match(text,/数量对比[\s\S]*单位：台[\s\S]*10[\s\S]*20/);
   assert.ok(nodes.filter(node=>node.type==='composite_shape'&&node.height===15).length>=2);
   minutes.visuals[0].entries[0].valueText='10～20';const ambiguous=minutesBoard(minutes);assert.ok(!ambiguous.some(node=>node.type==='composite_shape'&&node.height===15));
+});
+
+test('Feishu topic board excludes the summary now owned by native document blocks',()=>{
+  const nodes=feishuBoard(fixture()),text=nodes.filter(node=>node.text).map(node=>node.text.text).join('\n');
+  assert.match(text,/主题脉络图/);assert.doesNotMatch(text,/会议总览|核心结论|关键决策|下一步行动|风险与待确认|推进安排与前置条件/);
 });

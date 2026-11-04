@@ -20,7 +20,7 @@ export const MarkdownPreview=memo(function MarkdownPreview({text}:{text:string})
   }}/>{error&&<FeedbackNotice key={error} message={error} error/>}</>;
 });
 export type BoardNode={id:string;type?:string;text?:{text?:string};mind_map_node?:{parent_id:string};[key:string]:unknown};
-export function BoardPreview({nodes}:{nodes:BoardNode[]}){
+export function BoardPreview({nodes,title="会议总览与主题图表"}:{nodes:BoardNode[];title?:string}){
   const graphic=useMemo(()=>boardSvg(nodes),[nodes]);
   const [zoom,setZoom]=useState(1),[fit,setFit]=useState(false),[expanded,setExpanded]=useState(false);
   const drag=useRef<{x:number;y:number;left:number;top:number}|null>(null);
@@ -28,5 +28,5 @@ export function BoardPreview({nodes}:{nodes:BoardNode[]}){
   const branch=(parent:string):ReactNode=><ul>{(children.get(parent)||[]).map(node=><li key={node.id}><span>{node.text?.text}</span>{children.has(node.id)&&branch(node.id)}</li>)}</ul>;
   const tools=<div className="feishu-board-tools"><button type="button" aria-label="缩小画板" onClick={()=>setZoom(value=>Math.max(.25,value/1.25))}>−</button><output>{Math.round(zoom*100)}%</output><button type="button" aria-label="放大画板" onClick={()=>setZoom(value=>Math.min(4,value*1.25))}>＋</button><button type="button" onClick={()=>{setZoom(1);setFit(true);}}>适应</button>{!expanded&&<button type="button" onClick={()=>setExpanded(true)}>放大查看</button>}</div>;
   const image=()=> <div className="feishu-board-canvas" tabIndex={0} role="region" aria-label="可缩放和拖动的纪要画板" onPointerDown={event=>{if(event.button!==0||event.pointerType==='touch')return;const element=event.currentTarget;drag.current={x:event.clientX,y:event.clientY,left:element.scrollLeft,top:element.scrollTop};element.setPointerCapture(event.pointerId);}} onPointerMove={event=>{if(!drag.current)return;event.currentTarget.scrollLeft=drag.current.left+drag.current.x-event.clientX;event.currentTarget.scrollTop=drag.current.top+drag.current.y-event.clientY;}} onPointerUp={()=>{drag.current=null;}} onPointerCancel={()=>{drag.current=null;}}><div style={{width:`${zoom*100}%`,minWidth:fit?0:680*zoom}} dangerouslySetInnerHTML={{__html:graphic}}/></div>;
-  return <section className="feishu-board-preview" aria-label="画板内容预览"><header><h3>会议总览与主题图表</h3>{graphic&&tools}</header>{graphic?image():branch('')}{expanded&&<Modal title="会议总览与主题图表" wide className="feishu-board-modal" onClose={()=>setExpanded(false)} headerActions={tools}>{image()}</Modal>}</section>;
+  return <section className="feishu-board-preview" aria-label="画板内容预览"><header><h3>{title}</h3>{graphic&&tools}</header>{graphic?image():branch('')}{expanded&&<Modal title={title} wide className="feishu-board-modal" onClose={()=>setExpanded(false)} headerActions={tools}>{image()}</Modal>}</section>;
 }

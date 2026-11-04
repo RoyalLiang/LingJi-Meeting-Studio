@@ -4,6 +4,7 @@ import { exportMinutesMarkdown, minutesForExport } from '../markdown-export.mjs'
 import { createSecretStore } from './secret-store.mjs';
 
 import {FEISHU_SCOPES} from '../../../../packages/records/src/feishu.mjs';
+import {minutesSummaryBlocks} from '../../../../packages/records/src/minutes-summary.mjs';
 import {feishuBoard} from './feishu-board.mjs';
 import {createFeishuSdk} from './feishu-sdk.mjs';
 export {FEISHU_SCOPES};
@@ -62,9 +63,12 @@ function exportSnapshot(record, input) {
   requireThat(Buffer.byteLength(markdown) <= 500000, 'feishu_document_too_large', 400);
   const source = {minutesRevision:minutes.revision, transcriptRevision:minutes.transcriptRevision,
     notesRevision:input.includeNotes ? record.notesRevision : null, edited:Boolean(minutes.edited), draft:minutes !== record.minutes || record.capture !== 'completed'};
-  const boardNodes=includeBoard?feishuBoard(minutes,{theme:boardTheme,citations:input.includeEvidence?refs=>{const numbers=[...new Set((refs||[]).map(ref=>referenceMap.get(`${ref.segmentId}@${ref.revision}`)?.number).filter(Boolean))];return numbers.length?` [${numbers.join(', ')}]`:'';}:undefined}):[];
-  return {title, folderToken, destinationEmail, includeBoard, boardTheme, boardNodes, includeNotes:input.includeNotes, includeEvidence:input.includeEvidence, markdown, source,
-    fingerprint:digest(JSON.stringify({title, folderToken, destinationEmail, includeBoard, boardTheme, boardNodes, markdown, source}))};
+  const citations=input.includeEvidence?refs=>{const numbers=[...new Set((refs||[]).map(ref=>referenceMap.get(`${ref.segmentId}@${ref.revision}`)?.number).filter(Boolean))];return numbers.length?` [${numbers.join(', ')}]`:'';}:undefined;
+  const summaryBlocks=minutesSummaryBlocks(minutes,{citations});
+  requireThat(summaryBlocks.descendants.length<=1000&&Buffer.byteLength(JSON.stringify(summaryBlocks))<=500000,'feishu_document_too_large',400);
+  const boardNodes=includeBoard?feishuBoard(minutes,{theme:boardTheme,citations}):[];
+  return {title, folderToken, destinationEmail, includeBoard, boardTheme, boardNodes, summaryBlocks, includeNotes:input.includeNotes, includeEvidence:input.includeEvidence, markdown, source,
+    fingerprint:digest(JSON.stringify({title, folderToken, destinationEmail, includeBoard, boardTheme, boardNodes, summaryBlocks, markdown, source}))};
 }
 
 const publicExport = value => Object.fromEntries(['authMode','id','recordId','title','folderToken','destinationEmail','includeBoard','boardTheme','includeNotes','includeEvidence','source','fingerprint','status','stage','createdAt','updatedAt','documentId','url','error','automatic'].filter(key => value[key] !== undefined && value[key] !== null).map(key => [key,['includeBoard','includeNotes','includeEvidence','automatic'].includes(key)?Boolean(value[key]):value[key]]));
@@ -151,9 +155,9 @@ export async function createFeishu(repo, {sdkFactory=createFeishuSdk,now=Date.no
     const record=await ownedRecord(owner,recordId),snapshot=exportSnapshot(record,input);
     requireThat((await history(owner)).filter(value=>value.createdAt>now()-86400000).length<200,'feishu_export_limit',429);
     const draft=await repo.insert({id,kind:'feishu-export',owner,recordId,...snapshot,authMode:'app',connectionGeneration:conn.generation,status:'draft',stage:'preview',createdAt:now(),updatedAt:now(),automatic,...(rule?{ruleGeneration:rule.generation}:{})});
-    return {...publicExport(draft),markdown:draft.markdown,boardNodes:draft.boardNodes};
+    return {...publicExport(draft),markdown:draft.markdown,boardNodes:draft.boardNodes,summaryBlocks:draft.summaryBlocks};
   }
-  async function get(owner,id){const value=await ownedExport(owner,id);if(value.status==='publishing'&&value.updatedAt<now()-180000)await repo.change(id,current=>{if(current.status==='publishing'&&current.updatedAt<now()-180000){current.status=current.documentId?'partial':'unknown';current.error='feishu_interrupted';current.updatedAt=now();}});const current=await ownedExport(owner,id);return {...publicExport(current),...(current.status==='draft'?{markdown:current.markdown,boardNodes:current.boardNodes}:{})};}
+  async function get(owner,id){const value=await ownedExport(owner,id);if(value.status==='publishing'&&value.updatedAt<now()-180000)await repo.change(id,current=>{if(current.status==='publishing'&&current.updatedAt<now()-180000){current.status=current.documentId?'partial':'unknown';current.error='feishu_interrupted';current.updatedAt=now();}});const current=await ownedExport(owner,id);return {...publicExport(current),...(current.status==='draft'?{markdown:current.markdown,boardNodes:current.boardNodes,summaryBlocks:current.summaryBlocks}:{})};}
   async function run(owner,id){
     runningOwners.set(owner,(runningOwners.get(owner)||0)+1);
     let stage='convert';
@@ -164,7 +168,8 @@ export async function createFeishu(repo, {sdkFactory=createFeishuSdk,now=Date.no
       const guard=async()=>{if(value.automatic){const rule=await repo.get(autoId(owner));requireThat(rule?.enabled&&rule.generation===value.ruleGeneration,'feishu_automation_changed',409);}await ownedRecord(owner,value.recordId);const current=await load(owner);requireThat(current?.connected&&current.generation===value.connectionGeneration&&(await settings(owner)).connected,'feishu_connection_changed',409);};
       await guard();const signal=connectionSignal(owner,conn.generation);
       const client=clients.get(owner)?.sdk,converted=await request(client,`${api}/docx/v1/documents/blocks/convert`,{signal,body:{content_type:'markdown',content:value.markdown}});
-      const blocks=feishuBlocks(converted.data);
+      const blocks=feishuBlocks({first_level_block_ids:[...value.summaryBlocks.children_id,...converted.data.first_level_block_ids],blocks:[...value.summaryBlocks.descendants,...converted.data.blocks]});
+      requireThat(Buffer.byteLength(JSON.stringify(blocks))<=500000,'feishu_document_too_large',400);
       await guard();stage='create';await update({stage});
       const created=await request(client,`${api}/docx/v1/documents`,{signal,body:{title:value.title,...(value.folderToken?{folder_token:value.folderToken}:{})},write:true});
       const documentId=created.data?.document?.document_id;requireThat(documentToken(documentId),'feishu_write_unknown',502);
@@ -178,10 +183,12 @@ export async function createFeishu(repo, {sdkFactory=createFeishuSdk,now=Date.no
       };
       await update({url:await metadata()});
       await guard();stage='write';await update({stage});
-      await request(client,`${api}/docx/v1/documents/${documentId}/blocks/${documentId}/descendant?document_revision_id=-1&client_token=${id}`,{signal,body:blocks,write:true});
+      const written=await request(client,`${api}/docx/v1/documents/${documentId}/blocks/${documentId}/descendant?document_revision_id=-1&client_token=${id}`,{signal,body:blocks,write:true});
+      const relations=new Map((written.data?.block_id_relations||[]).map(item=>[item.temporary_block_id,item.block_id]));
+      requireThat(blocks.descendants.every(block=>typeof relations.get(block.block_id)==='string'&&relations.get(block.block_id)),'feishu_verification_failed',502);
       if(value.includeBoard){
         await guard();stage='board';await update({stage});
-        const block=await request(client,`${api}/docx/v1/documents/${documentId}/blocks/${documentId}/children?document_revision_id=-1&client_token=${id}-board`,{signal,body:{children:[{block_type:43,board:{}}],index:0},write:true});
+        const block=await request(client,`${api}/docx/v1/documents/${documentId}/blocks/${documentId}/children?document_revision_id=-1&client_token=${id}-board`,{signal,body:{children:[{block_type:43,board:{}}],index:value.summaryBlocks.children_id.length},write:true});
         const boardToken=block.data?.children?.find(item=>item.block_type===43)?.board?.token;
         requireThat(documentToken(boardToken),'feishu_verification_failed',502);await update({boardToken});await guard();
         for(let offset=0;offset<value.boardNodes.length;offset+=100){
@@ -195,8 +202,8 @@ export async function createFeishu(repo, {sdkFactory=createFeishuSdk,now=Date.no
         await guard();stage='transfer';await update({stage});
         await request(client,`${api}/drive/v1/permissions/${documentId}/members/transfer_owner?type=docx&stay_put=false&remove_old_owner=false&old_owner_perm=full_access`,{signal,body:{member_type:'email',member_id:value.destinationEmail},write:true});
       }
-      await update({status:'succeeded',stage:'completed',url,markdown:'',boardNodes:[]});
-    }catch(error){const value=await repo.get(id);await update({status:value.documentId?'partial':stage==='create'&&(error.uncertain||error.code==='feishu_write_unknown')?'unknown':'failed',stage,markdown:'',boardNodes:[],error:error instanceof DomainError?error.code:'feishu_unavailable'});}
+      await update({status:'succeeded',stage:'completed',url,markdown:'',boardNodes:[],summaryBlocks:null});
+    }catch(error){const value=await repo.get(id);await update({status:value.documentId?'partial':stage==='create'&&(error.uncertain||error.code==='feishu_write_unknown')?'unknown':'failed',stage,markdown:'',boardNodes:[],summaryBlocks:null,error:error instanceof DomainError?error.code:'feishu_unavailable'});}
     finally{const count=runningOwners.get(owner)-1;if(count)runningOwners.set(owner,count);else runningOwners.delete(owner);}
   }
   async function publish(owner,id,input){

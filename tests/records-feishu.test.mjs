@@ -24,7 +24,7 @@ function provider(){
     const body=options.body?String(options.body):'';calls.push({url,body,headers:options.headers});
     if(url.endsWith('/blocks/convert')){if(flags.convertGate)await flags.convertGate;return Response.json({code:0,data:{first_level_block_ids:['heading'],blocks:[{block_id:'heading',parent_id:'readonly',block_type:3,heading1:{elements:[{text_run:{content:'发布计划'}}]}}]}});}
     if(url.endsWith('/docx/v1/documents')){if(flags.createTimeout)throw new Error('network lost');return Response.json({code:0,data:{document:{document_id:documentId}}});}
-    if(url.includes('/descendant?')){if(flags.writeFail)return Response.json({code:1770001,msg:'private-upstream-message'},{status:400});return Response.json({code:0,data:{block_id_relations:[{temporary_block_id:'heading',block_id:'remote-heading'}]}});}
+    if(url.includes('/descendant?')){if(flags.writeFail)return Response.json({code:1770001,msg:'private-upstream-message'},{status:400});return Response.json({code:0,data:{block_id_relations:JSON.parse(body).descendants.filter(block=>!flags.missingNativeBlock||block.block_type!==24).map(block=>({temporary_block_id:block.block_id,block_id:`remote-${block.block_id}`}))}});}
     if(url.endsWith('/metas/batch_query'))return Response.json({code:0,data:{metas:[{doc_token:documentId,doc_type:'docx',title:'人工核对的会议纪要',url:`https://fixture.feishu.cn/docx/${documentId}`}],failed_list:[]}});
     if(url.includes('/children?'))return Response.json({code:0,data:{children:[{block_type:43,board:{token:'boardFixture123456789012'}}]}});
     if(url.includes('/whiteboards/')&&url.includes('/nodes?'))return Response.json({code:0,data:{ids:JSON.parse(body).nodes.map(node=>node.id)}});
@@ -254,11 +254,15 @@ test('saving unchanged credentials preserves an approved automation rule across 
 test('member destination and editable board are frozen and published before ownership transfer',async t=>{
  const h=await harness(t);await h.connect();
  const preview=await h.request(`/records/${h.recordId}/feishu/preview`,'POST',{title:'人工核对的会议纪要',folderToken:'',destinationEmail:'member@example.test',includeBoard:true,includeNotes:false,includeEvidence:true});
+ assert.ok(preview.body.summaryBlocks.descendants.some(block=>block.block_type===24));
  assert.equal(preview.status,201);assert.equal(preview.body.destinationEmail,'member@example.test');assert.ok(preview.body.boardNodes.length>1);
  await h.request(`/integrations/feishu/exports/${preview.body.id}/publish`,'POST',{confirmed:true});
  const receipt=await h.wait(preview.body.id);assert.equal(receipt.status,'succeeded');
  const urls=h.remote.calls.map(c=>c.url),nodes=urls.findIndex(url=>url.includes('/whiteboards/')&&url.includes('/nodes?')),transfer=urls.findIndex(url=>url.includes('/members/transfer_owner?'));
- assert.ok(nodes>0);assert.ok(transfer>nodes);assert.match(h.remote.calls[transfer].body,/member@example.test/);
+ assert.ok(nodes>0);assert.ok(transfer>nodes);
+ const written=JSON.parse(h.remote.calls.find(call=>call.url.includes('/descendant?')).body);
+ assert.deepEqual(written.children_id.slice(0,preview.body.summaryBlocks.children_id.length),preview.body.summaryBlocks.children_id);
+ assert.ok(written.descendants.some(block=>block.block_type===19));assert.match(h.remote.calls[transfer].body,/member@example.test/);
  assert.match(urls[transfer],/stay_put=false/);
  const invalid=await h.request(`/records/${h.recordId}/feishu/preview`,'POST',{title:'test',folderToken:'folderFixture123',destinationEmail:'member@example.test',includeBoard:false,includeNotes:false,includeEvidence:false});assert.equal(invalid.status,400);
 });
@@ -293,7 +297,7 @@ test('editable board has readable topic hierarchy and real diagram primitives',(
 
 });
 
-test('large editable board is inserted first and every bounded batch is verified',async t=>{
+test('large editable board follows the native summary and every bounded batch is verified',async t=>{
   const h=await harness(t);await h.connect();
   await h.app.repo.change(h.recordId,record=>{
     record.minutes.sections[0].items=Array.from({length:45},(_,index)=>({text:`核对事项 ${index+1}`,evidence:[{segmentId:'s1',revision:1}]}));
@@ -303,7 +307,7 @@ test('large editable board is inserted first and every bounded batch is verified
   assert.equal(preview.body.boardNodes[0].style.fill_color,'#1D1E20');
   await h.request(`/integrations/feishu/exports/${preview.body.id}/publish`,'POST',{confirmed:true});
   assert.equal((await h.wait(preview.body.id)).status,'succeeded');
-  const board=h.remote.calls.find(call=>call.url.includes('/children?'));assert.equal(JSON.parse(board.body).index,0);
+  const board=h.remote.calls.find(call=>call.url.includes('/children?'));assert.equal(JSON.parse(board.body).index,preview.body.summaryBlocks.children_id.length);
   const batches=h.remote.calls.filter(call=>call.url.includes('/whiteboards/')&&call.url.includes('/nodes?'));
   assert.ok(batches.length>1);assert.ok(batches.every(call=>JSON.parse(call.body).nodes.length<=100));
   assert.equal(batches.reduce((total,call)=>total+JSON.parse(call.body).nodes.length,0),preview.body.boardNodes.length);
@@ -319,4 +323,35 @@ test('saving and disabling Feishu configuration does not wait for the remote con
   const disabled=await h.request('/integrations/feishu','PATCH',{enabled:false});assert.equal(disabled.body.enabled,false);
  }finally{release();await configuring;}
  await new Promise(resolve=>setImmediate(resolve));assert.equal((await h.request('/integrations/feishu')).body.connected,false);
+});
+
+
+test('native summary publishes without a board, retains scope and clears frozen heavy content',async t=>{
+ const h=await harness(t);await h.connect();
+ await h.app.repo.change(h.recordId,record=>{record.minutes.highlights=[{text:'保留结论',evidence:[{segmentId:'s1',revision:1}]}];record.minutes.actions=[{text:'核对接口',owner:null,due:null,evidence:[{segmentId:'s1',revision:1}]}];});
+ const preview=await h.request(`/records/${h.recordId}/feishu/preview`,'POST',{title:'人工核对的会议纪要',includeBoard:false,includeNotes:false,includeEvidence:false});
+ assert.equal(preview.status,201);assert.equal(preview.body.boardNodes.length,0);
+ assert.doesNotMatch(JSON.stringify(preview.body.summaryBlocks),/private-saved-notes|引用版本一|后续修改|\[1\]/);
+ const fetched=await h.request(`/integrations/feishu/exports/${preview.body.id}`);assert.deepEqual(fetched.body.summaryBlocks,preview.body.summaryBlocks);
+ await h.request(`/integrations/feishu/exports/${preview.body.id}/publish`,'POST',{confirmed:true});assert.equal((await h.wait(preview.body.id)).status,'succeeded');
+ assert.ok(!h.remote.calls.some(call=>call.url.includes('/children?')||call.url.includes('/whiteboards/')));
+ const written=JSON.parse(h.remote.calls.find(call=>call.url.includes('/descendant?')).body);
+ assert.ok(written.descendants.some(block=>block.block_type===24));assert.ok(written.descendants.some(block=>block.block_type===31));
+ const saved=await h.app.repo.get(preview.body.id);assert.equal(saved.summaryBlocks,null);assert.equal(saved.markdown,'');
+});
+
+test('too many native blocks fail before any Feishu document is created',async t=>{
+ const h=await harness(t);await h.connect();await h.app.repo.change(h.recordId,record=>{record.minutes.actions=Array.from({length:140},(_,i)=>({text:`事项 ${i}`,owner:'原文负责人',due:'原文时间'}));});
+ const draft=await h.preview();assert.equal(draft.status,400);assert.equal(draft.body.error,'feishu_document_too_large');
+ assert.equal(h.remote.calls.filter(call=>call.url.endsWith('/docx/v1/documents')).length,0);
+});
+
+test('missing native block acknowledgement stops before board or transfer and never duplicates a document',async t=>{
+ const h=await harness(t);await h.connect();h.remote.flags.missingNativeBlock=true;
+ const preview=await h.request(`/records/${h.recordId}/feishu/preview`,'POST',{title:'人工核对的会议纪要',destinationEmail:'member@example.test',includeBoard:true,includeNotes:false,includeEvidence:true});
+ await h.request(`/integrations/feishu/exports/${preview.body.id}/publish`,'POST',{confirmed:true});
+ const result=await h.wait(preview.body.id);assert.equal(result.status,'partial');assert.equal(result.error,'feishu_verification_failed');
+ assert.ok(!h.remote.calls.some(call=>/children\?|whiteboards|transfer_owner/.test(call.url)));
+ await h.request(`/integrations/feishu/exports/${preview.body.id}/publish`,'POST',{confirmed:true});assert.equal(h.remote.calls.filter(call=>call.url.endsWith('/docx/v1/documents')).length,1);
+ assert.equal((await h.app.repo.get(preview.body.id)).summaryBlocks,null);
 });
