@@ -22,6 +22,13 @@ public class LingJiInstallerWindow {
   }
   [DllImport("user32.dll",CharSet=CharSet.Unicode,ExactSpelling=true,SetLastError=true)] static extern IntPtr CreateWindowExW(uint ex,string kind,string title,uint style,int x,int y,int width,int height,IntPtr parent,IntPtr menu,IntPtr instance,IntPtr data);
   [DllImport("user32.dll")] static extern bool DestroyWindow(IntPtr h);
+  public static bool WithinClient(IntPtr root,IntPtr control) {
+    Rect client,bounds;var origin=new Point();
+    return GetClientRect(root,out client)&&ClientToScreen(root,ref origin)&&GetWindowRect(control,out bounds)
+      &&bounds.Right>bounds.Left&&bounds.Bottom>bounds.Top
+      &&bounds.Left>=origin.X+client.Left&&bounds.Top>=origin.Y+client.Top
+      &&bounds.Right<=origin.X+client.Right&&bounds.Bottom<=origin.Y+client.Bottom;
+  }
   public static void VerifyControlLookup() {
     var root=CreateWindowExW(0,"STATIC","lookup fixture",0x90000000u,-10000,-10000,300,160,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero);
     if(root==IntPtr.Zero)throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
@@ -30,6 +37,9 @@ public class LingJiInstallerWindow {
       var button=CreateWindowExW(0,"BUTTON","same caption",0x50000000u,10,50,120,24,root,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero);
       var hidden=CreateWindowExW(0,"STATIC","same caption",0x40000000u,10,90,120,24,root,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero);
       if(label==IntPtr.Zero||button==IntPtr.Zero||hidden==IntPtr.Zero)throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+      var clipped=CreateWindowExW(0,"STATIC","clipped footer",0x50000000u,10,150,120,24,root,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero);
+      if(clipped==IntPtr.Zero)throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+      if(!WithinClient(root,label)||WithinClient(root,clipped))throw new Exception("Client bounds must reject clipped controls");
       var labels=FindVisibleControls(root,new[]{"same caption"},true);
       if(labels.Length!=1||labels[0]!=label||FindVisibleControls(root,new[]{"same caption"},false).Length!=2)throw new Exception("Native lookup must separate visible labels, buttons and hidden controls");
       Rect bounds;if(!GetWindowRect(labels[0],out bounds)||bounds.Right<=bounds.Left||bounds.Bottom<=bounds.Top)throw new Exception("Native label bounds missing");
@@ -258,7 +268,14 @@ Capture-Page 'welcome'
  Start-Sleep -Milliseconds 200
  $progressRoot=[System.Windows.Automation.AutomationElement]::FromHandle($script:handle)
  $progressCondition=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty,'让每一次讨论，都有回响。')
- if($null -ne $progressRoot.FindFirst([System.Windows.Automation.TreeScope]::Descendants,$progressCondition)){Capture-Page 'installing'}
+ if($null -ne $progressRoot.FindFirst([System.Windows.Automation.TreeScope]::Descendants,$progressCondition)){
+  $footer=@([LingJiInstallerWindow]::FindVisibleControls($script:handle,@('本地记录，安心整理。'),$true))
+  if($footer.Count -eq 1){
+    $inside=[LingJiInstallerWindow]::WithinClient($script:handle,$footer[0])
+    Capture-Page 'installing'
+    if(-not $inside){throw 'Installer footer is clipped by the client bounds'}
+  }else{Wait-Page '聆记已准备就绪' 5}
+ }
  Wait-Page '聆记已准备就绪' 300
  Assert-Separate @('应用与本地转录模型已安装完成。','应用已安装完成。') @('✓  无需启动转录服务器，即可开始记录','请在设置中配置云端转录与纪要服务。')
 Capture-Page 'finish'

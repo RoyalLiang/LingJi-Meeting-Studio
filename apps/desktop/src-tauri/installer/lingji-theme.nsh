@@ -394,7 +394,7 @@ Function LingJiProgressShow
     SendMessage $LingJiControl ${WM_SETFONT} $LingJiBodyFont 1
     SetCtlColors $LingJiControl 718177 transparent
     System::Call 'user32::SetPropW(p $LingJiControl,w "LingJiTextColor",p 0x778171)'
-    !insertmacro LingJiPlace $LingJiControl 49 470 550 26
+    !insertmacro LingJiPlace $LingJiControl 49 431 550 26
     GetDlgItem $0 $LingJiDialog 1004
     !insertmacro LingJiPlace $0 52 302 696 5
     GetDlgItem $0 $LingJiDialog 1006
