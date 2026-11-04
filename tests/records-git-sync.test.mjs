@@ -273,7 +273,7 @@ test('Skill cannot change a fixed archive mode or directory',async t=>{
     message(call('read_selected_meeting',{recordId:r.id}),{stopReason:'toolUse'}),
     message(call('manage_git_sync',{action:'archive',mode:'direct',directory:'other/path',content:'outside fixed policy'}),{stopReason:'toolUse'}),
     context=>{assert.ok(context.messages.some(m=>m.role==='toolResult'&&m.isError&&JSON.stringify(m).includes('git_scope_changed')));return message(JSON.stringify({summary:'无法归档',decisions:[{text:'保留来源',evidence:[{recordId:r.id,segmentId:'cited',revision:1}]}],actions:[]}));}
-  ]);const job=await h.sync.start('owner',r.id);assert.equal((await settled(h.sync,job.id)).status,'failed');assert.equal(h.network.writes.length,0);
+  ]);const job=await h.sync.start('owner',r.id);let waiting;for(let i=0;i<300;i++){waiting=await h.sync.get('owner',job.id);if(waiting.status==='waiting')break;await delay(10);}assert.equal(waiting.status,'waiting');assert.equal(waiting.interaction.kind,'continuation');assert.equal(h.network.writes.length,0);
 });
 
 test('Skill retry reconciles an uncertain staged commit without a duplicate write',async t=>{
@@ -327,4 +327,19 @@ test('a paused Git question preserves its answer slot without blocking other Age
   assert.equal(done.status,'completed',JSON.stringify(done));
   h.respond(first);const resumed=await h.sync.control('owner',started.id,'resume');assert.equal(resumed.interaction.id,waiting.interaction.id);
   await h.sync.respond('owner',started.id,{id:waiting.interaction.id,answer:'继续'});assert.equal((await settled(h.sync,started.id)).status,'succeeded');
+});
+
+test('a Skill final response needing human confirmation stays interactive instead of failing the sync',async t=>{
+ const h=await fixture(t,{timeoutMs:20}),version='b'.repeat(40),id='extension:human-followup';
+ await h.repo.insert({id,kind:'extension',owner:'owner',type:'skill',source:'https://git.example.test/root/skills',path:'skills/archive',name:'人工确认归档',version,enabled:true,content:'目标不明确时请先向用户确认，再归档到已选项目。'});
+ const policy={...h.policy,skillIds:[id],skillVersions:{[id]:version},mode:'',directory:''};await h.sync.save('owner',policy);const r=await h.record();
+ h.respond(r);const job=await h.sync.start('owner',r.id);let waiting;
+ for(let i=0;i<300;i++){waiting=await h.sync.get('owner',job.id);if(['waiting','failed'].includes(waiting.status))break;await delay(10);}
+ assert.equal(waiting.status,'waiting',JSON.stringify(waiting));assert.match(waiting.interaction.question,/归档整理结果/);assert.equal(h.network.writes.length,0);
+ const inputId=waiting.interaction.id;await h.restart();assert.equal((await h.sync.get('owner',job.id)).interaction.id,inputId);
+ const scope=await h.extensions.snapshot('owner',policy),guide=scope.guides[0];
+ h.fake.setResponses([context=>{assert.match(JSON.stringify(context),/已核对目标/);return message(call('read_selected_skill',{key:guide.key}),{stopReason:'toolUse'});},message(call('read_selected_meeting',{recordId:r.id}),{stopReason:'toolUse'}),message(call('manage_git_sync',{action:'archive',mode:'mr',directory:'docs/briefs',content:'# 已确认归档\n保留人工修订。'}),{stopReason:'toolUse'}),message(JSON.stringify({summary:'已完成归档',decisions:[],actions:[]}))]);
+ await assert.rejects(h.sync.respond('owner',job.id,{id:'outdated',answer:'已核对目标'}),{code:'agent_input_changed'});
+ await h.sync.respond('owner',job.id,{id:inputId,answer:'已核对目标与权限，请继续同一项目的同步。'});
+ const done=await settled(h.sync,job.id);assert.equal(done.status,'succeeded',JSON.stringify(done));assert.equal(h.network.mrs.length,1);
 });

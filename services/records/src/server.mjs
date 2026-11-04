@@ -1,3 +1,4 @@
+import {audioBackupSettings,saveAudioBackupSettings,prepareAudioBackup} from './audio-backup.mjs';
 import { createMeetingAgentRuntime } from './meeting-agent.mjs';
 import { createEncryptedSharing } from './encrypted-sharing.mjs';
 import { truncateText } from '../../../packages/records/src/text.mjs';
@@ -191,6 +192,12 @@ export async function createRecordServer(options = {}) {
       if (path === '/api/bootstrap' && req.method === 'GET') {
         send(res, 200, { email: user.email, csrf: auth.csrf(user), audioTransport: 'pcm-v1', audioMinutesDefault:user.autoAudioMinutes===true, localAccount: Boolean(options.localAccount), learning:{enabled:await learningEnabled(),...learningService.snapshot()}, meetingAutomation:meetingAutomationConfig(await readConfig(repo.root)), providers: providerStatus(await readConfig(repo.root)), limits: { maxMinutes: null, maxRecords: 200, maxChunkSeconds: 15 }, storage: repo.backend, canConfigure: canConfigure(user) }); return;
       }
+      if(path==='/api/settings/audio-backup'){
+        requireThat(canConfigure(user),'configuration_admin_required',403);
+        if(req.method==='GET'){send(res,200,await audioBackupSettings(repo,user.id));return;}
+        if(req.method==='PUT'){try{send(res,200,await saveAudioBackupSettings(repo,user.id,await readBody(req,10000)));}catch(error){if(error instanceof DomainError)throw error;throw new DomainError('audio_backup_directory_unwritable',400);}return;}
+        throw new DomainError('not_found',404);
+      }
       if (path === '/api/settings/providers/test' && req.method === 'POST') {
         requireThat(canConfigure(user), 'configuration_admin_required', 403);
         const {kind} = await readBody(req, 1000), config = await readConfig(repo.root);
@@ -219,7 +226,7 @@ export async function createRecordServer(options = {}) {
       }
       if (path === '/api/agent/tasks') {
         requireThat(agent, agentError, 503);
-        if (req.method === 'GET') { send(res, 200, {tasks:await agent.list(user.id)}); return; }
+        if (req.method === 'GET') { send(res, 200, {tasks:await agent.list(user.id,{view:url.searchParams.get('view')||'detail',detailId:url.searchParams.get('detail')||undefined})}); return; }
         if (req.method === 'POST') { send(res, 202, await agent.request(user.id, await readBody(req, 20000))); return; }
         throw new DomainError('not_found', 404);
       }
@@ -243,7 +250,7 @@ export async function createRecordServer(options = {}) {
       const config = recordMinutesConfig(input,savedConfig);
       requireThat(!input.autoMinutes || providerStatus(config).minutes, 'minutes_not_configured', 503);
       requireThat(!input.autoMinutes || !audioMinutesEnabled(config) || input.realtimeAudioConsent === true, 'realtime_audio_consent_required', 403);
-        const r = await repo.insert(createRecord(user.id, {...input,learningEnabled:await learningEnabled()}));
+        const value=createRecord(user.id, {...input,learningEnabled:await learningEnabled()});await prepareAudioBackup(repo,value);const r=await repo.insert(value);
         send(res, 201, publicRecord(r)); return;
       }
       if (path === '/api/records' && req.method === 'GET') {
@@ -484,7 +491,7 @@ export async function createRecordServer(options = {}) {
         emit(r, 'record.updated'); return publicRecord(r);
       });
       else if (action === '' && req.method === 'DELETE') result = await changeOwned(id, user, r => {
-        r.deleted = true; delete r.waveforms; r.generation++; r.title = '已删除'; r.segments = []; r.notes = ''; r.minutes = null; r.liveMinutes = null; r.minutesHistory = []; r.insights = null; r.jobs = []; r.shares = []; r.cleanup = 'pending';
+        r.deleted = true; delete r.waveforms; delete r.audioBackup; r.generation++; r.title = '已删除'; r.segments = []; r.notes = ''; r.minutes = null; r.liveMinutes = null; r.minutesHistory = []; r.insights = null; r.jobs = []; r.shares = []; r.cleanup = 'pending';
         emit(r, 'record.deleted'); return { deleted: true, cleanup: r.cleanup };
       });
       else if (action === 'encrypted-shares' && req.method === 'POST') result = await encryptedSharing.create(user.id, record, body);

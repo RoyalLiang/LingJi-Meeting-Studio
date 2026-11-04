@@ -1,3 +1,4 @@
+import {audioBackupPending,backupAudioRecord,cleanupAudioBackups} from './audio-backup.mjs';
 import { processFunasrAudio } from './funasr-transcription.mjs';
 import { processDoubaoModelAudio } from './doubao-model-transcription.mjs';
 import { doubaoAudioEnabled } from './config.mjs';
@@ -32,6 +33,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all', cacheConfig
   if (lane === 'realtime' || lane === 'all') await reconcileRealtime(repo, config);
   if(lane==='realtime'&&!realtimeEnabled(config))return;
   if(['translation','translation-live','translation-preview'].includes(lane)&&!providers.translate&&!providerStatus(config).translation)return;
+  if(lane==='all'||lane==='audio')void cleanupAudioBackups(repo).catch(()=>{});
   const records = await repo.listWork({ lane });
   if (lane === 'minutes') records.sort((a,b)=>Number(['sealed','completed'].includes(b.capture))-Number(['sealed','completed'].includes(a.capture)));
   async function processCandidate(candidate) {
@@ -41,7 +43,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all', cacheConfig
     if (candidate.deleted || Date.parse(candidate.deleteAt) < Date.now()) {
       closeSpeakerStreams(repo,candidate.id);closeRealtime(repo,candidate.id);
       await repo.change(candidate.id, r => {
-        if (!r.deleted) { r.deleted = true; delete r.waveforms; r.generation++; r.title = '已删除'; r.segments = []; r.notes = ''; r.minutes = null; r.liveMinutes = null;
+        if (!r.deleted) { r.deleted = true; delete r.waveforms; r.generation++; delete r.audioBackup; r.title = '已删除'; r.segments = []; r.notes = ''; r.minutes = null; r.liveMinutes = null;
           r.jobs = []; r.shares = []; r.minutesHistory = []; r.insights = null; emit(r, 'record.deleted'); }
         r.cleanup = 'pending';
       }, {returnRecord:false});
@@ -49,7 +51,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all', cacheConfig
     }
     if (lane === 'realtime') { await processRealtimeAudio(repo, candidate, config, providers.realtimeFactory); return; }
     if (lane === 'all' || lane === 'audio') {
-    const expired = candidate.chunks.filter(c => !c.expired && !candidate.retainAudio && Date.now() - (c.acceptedAt || Date.parse(candidate.createdAt)) > 86400000);
+    const expired = audioBackupPending(candidate)?[]:candidate.chunks.filter(c => !c.expired && !candidate.retainAudio && Date.now() - (c.acceptedAt || Date.parse(candidate.createdAt)) > 86400000);
     if (expired.length) {
       await repo.change(candidate.id, r => { delete r.waveforms; for (const c of r.chunks) if (expired.some(e => e.key === c.key)) { c.expired = true; if (c.state !== 'done') { c.attempts = 5; c.error = 'temporary_audio_expired'; r.transcription = 'failed'; delete c.lease; } } emit(r, 'audio.expired'); }, {returnRecord:false});
       await repo.cleanAudio(candidate.id, new Set(candidate.chunks.filter(c => !expired.some(e => e.key === c.key)).map(c => c.object)));
@@ -183,7 +185,8 @@ export async function runCycle(repo, providers = {}, { lane = 'all', cacheConfig
     }
     }
     if (lane !== 'all' && lane !== 'audio') return;
-    const latest = await repo.get(candidate.id);
+    let latest = await repo.get(candidate.id);
+    if(audioBackupPending(latest)&&await backupAudioRecord(repo,latest))latest=await repo.get(candidate.id);
     if (audioPurgeReady(latest)) {
       let purge = false;
       await repo.change(latest.id, r => { if (audioPurgeReady(r)) { delete r.waveforms; r.audioCleanup = true; purge = true; } }, {returnRecord:false});

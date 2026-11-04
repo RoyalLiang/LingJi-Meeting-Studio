@@ -99,3 +99,20 @@ test('an over-escaped checkpoint is rejected before compaction can stop making p
  const respond=context=>{if(context.messages.some(m=>m.role==='system'&&typeof m.content==='string'&&m.content.startsWith(MEETING_COMPACTION))){compactions++;return message('\u0000'.repeat(12000));}const output=context.messages.filter(m=>m.role==='toolResult').at(-1),page=output?JSON.parse(output.content.filter(c=>c.type==='text').map(c=>c.text).join('')):null;return message(call('read_selected_meeting',{recordId:record.id,page:page?.nextPage??0}),{stopReason:'toolUse'});};fake.setResponses(Array.from({length:60},()=>respond));const agent=await createMeetingAgentRuntime({repo,models,model:{provider:'checkpoint-budget',modelId:'test'}});
  try{const task=await agent.request('owner',{recordIds:[record.id],prompt:'保留全部来源',requestId:'checkpoint-budget',scopeConfirmed:true});let state;for(let i=0;i<300;i++){state=await agent.get('owner',task.id);if(['completed','failed','blocked'].includes(state.status))break;await new Promise(resolve=>setTimeout(resolve,10));}assert.equal(state.status,'failed');assert.equal(compactions,1);}finally{await agent.close();await repo.close();await rm(root,{recursive:true,force:true});}
 });
+
+
+test('native Pi compaction context cannot inherit archive tools from the normal agent bridge',async()=>{
+ const {configuredModels}=await import('../services/records/src/meeting-agent.mjs');
+ const {MEETING_COMPACTION}=await import('../services/records/src/meeting-agent-context.mjs');
+ const original=globalThis.fetch,root=await mkdtemp(join(tmpdir(),'lingji-native-compaction-'));
+ let compactInstruction=false;
+ globalThis.fetch=async(_url,options)=>{const body=JSON.parse(options.body);compactInstruction=body.messages[0].content.startsWith(MEETING_COMPACTION);const value=compactInstruction?{summary:'保留范围、引用和待确认问题。'}:{toolCalls:[{name:'request_user_input',arguments:{id:'q',question:'是否继续？'}}]};return Response.json({choices:[{message:{content:JSON.stringify(value)}}]});};
+ try{const bridge=configuredModels(root,{LLM_API_KEY:'synthetic',LLM_MODEL:'synthetic',LLM_API_URL:'https://fixture.invalid/v1/chat/completions',LLM_PROTOCOL:'chat-completions'},1000);const model=bridge.models.getModel(bridge.model.provider,bridge.model.modelId);
+ for(const context of [
+ {systemPrompt:'You are a context summarization assistant. Your task is to summarize the conversation.',messages:[{role:'user',content:[{type:'text',text:'合成上下文。'}],timestamp:Date.now()}]},
+ {messages:[{role:'system',content:'You are a context summarization assistant. Your task is to summarize the conversation.',timestamp:Date.now()},{role:'user',content:[{type:'text',text:'合成上下文。'}],timestamp:Date.now()}]}
+ ]){const output=await bridge.models.completeSimple(model,context,{maxTokens:1000});
+ assert.equal(compactInstruction,true,'native compaction must receive the text-only checkpoint instruction');assert.equal(output.stopReason,'stop');assert.ok(output.content.every(item=>item.type==='text'));}}
+
+ finally{globalThis.fetch=original;await rm(root,{recursive:true,force:true});}
+});

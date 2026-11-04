@@ -129,7 +129,8 @@ LRESULT CALLBACK themed(HWND window, UINT message, WPARAM w, LPARAM l, UINT_PTR 
     PBRANGE range{}; SendMessageW(window, PBM_GETRANGE, FALSE, reinterpret_cast<LPARAM>(&range));
     const int position = static_cast<int>(SendMessageW(window, PBM_GETPOS, 0, 0));
     wchar_t percentage[16]{}; swprintf_s(percentage, L"%d%%", std::clamp(MulDiv(100,position-range.iLow,std::max(1,range.iHigh-range.iLow)),0,100));
-    if (percentLabel) SetWindowTextW(percentLabel, percentage);
+    if (percentLabel) { wchar_t previous[16]{};GetWindowTextW(percentLabel,previous,16);
+      if(wcscmp(previous,percentage)!=0)SetWindowTextW(percentLabel,percentage); }
     InvalidateRect(window, nullptr, FALSE);
   }
   if (kind == 1 && (message == BM_SETCHECK || message == BM_SETSTATE || message == WM_SETFOCUS || message == WM_KILLFOCUS || message == WM_ENABLE || message == WM_UPDATEUISTATE)) InvalidateRect(window, nullptr, FALSE);
@@ -201,7 +202,7 @@ INT_PTR CALLBACK retryDialog(HWND window, UINT message, WPARAM w, LPARAM l) {
   if (message == WM_PAINT || message == WM_PRINTCLIENT) {
     PAINTSTRUCT paint{}; HDC dc = message == WM_PAINT ? BeginPaint(window,&paint) : reinterpret_cast<HDC>(w);
     RECT r{}; GetClientRect(window,&r);
-    if (state->image) paper(window,dc,false,window,state->image); else fill(dc,r,RGB(242,246,239));
+    if (state->image) paper(window,dc,false,window,state->image); else fill(dc,r,RGB(239,244,237));
     r.top = r.bottom-retryPx(*state,74); fill(dc,r,RGB(236,243,232));
     if (message == WM_PAINT) EndPaint(window,&paint);
     return TRUE;

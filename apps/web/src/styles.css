@@ -1078,3 +1078,5 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 input[type=checkbox],input[type=radio]{box-sizing:border-box;flex:none;align-self:center;inline-size:18px;block-size:18px;min-inline-size:18px;min-block-size:18px;max-inline-size:18px;max-block-size:18px;aspect-ratio:1;padding:0}
 input[type=radio]{border-radius:50%}
 select,.select-trigger{box-sizing:border-box;min-width:0}
+
+.audio-backup-fields{display:grid;grid-template-columns:minmax(0,1fr) 190px;gap:18px;margin-top:20px}.audio-backup-fields>label{display:grid;gap:8px;font-size:12px;min-width:0}.audio-backup-directory{display:flex;gap:8px;min-width:0}.audio-backup-directory input{min-width:0;flex:1;height:40px}.audio-backup-directory .button{flex:none;height:40px;font-size:12px}.audio-backup-fields .select-trigger{height:40px;min-height:40px}.audio-backup-hint{font-size:11px;line-height:1.7;color:var(--ink-3);margin:14px 0 0}.audio-backup-saved{font-size:12px;color:var(--accent);margin:10px 0 0}@media(max-width:650px){.audio-backup-fields{grid-template-columns:1fr}.audio-backup-directory{flex-wrap:wrap}.audio-backup-directory input{flex-basis:100%}}

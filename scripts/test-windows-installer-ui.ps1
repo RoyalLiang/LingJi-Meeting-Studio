@@ -147,6 +147,15 @@ function Click-Next {
  if([LingJiInstallerWindow]::ChildWindowFromPointEx($script:handle,$point,0) -ne $button){throw 'Installer page covers the primary button'}
  if(-not [LingJiInstallerWindow]::PostMessage($script:handle,0x0111,[IntPtr]1,$button)){throw 'Installer next action could not be posted'}
 }
+function Assert-Separate([string[]]$leftNames,[string[]]$rightNames) {
+  $rootElement=[System.Windows.Automation.AutomationElement]::FromHandle($script:handle)
+  $elements=$rootElement.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)
+  $left=@($elements | Where-Object {$leftNames -contains $_.Current.Name -and $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Text})
+  $right=@($elements | Where-Object {$rightNames -contains $_.Current.Name})
+  if($left.Count -ne 1 -or $right.Count -ne 1){throw 'Installer layout controls missing or ambiguous'}
+  $a=$left[0].Current.BoundingRectangle;$b=$right[0].Current.BoundingRectangle
+  if($a.IsEmpty -or $b.IsEmpty -or ($a.Left -lt $b.Right -and $b.Left -lt $a.Right -and $a.Top -lt $b.Bottom -and $b.Top -lt $a.Bottom)){throw ('Installer controls overlap: '+$left[0].Current.Name+' / '+$right[0].Current.Name)}
+}
 function Capture-Page([string]$name,[IntPtr]$target=[IntPtr]::Zero,[switch]$ThemedPrompt) {
  if($target -eq [IntPtr]::Zero){$target=$script:handle}
  [void][LingJiInstallerWindow]::SetForegroundWindow($target)
@@ -199,7 +208,9 @@ function Capture-Page([string]$name,[IntPtr]$target=[IntPtr]::Zero,[switch]$Them
  $initialWindow=$script:handle
  Wait-Page '安装本地 SenseVoice 离线转录模型（推荐）'
  if($WithoutModel){Uncheck-Checkbox '安装本地 SenseVoice 离线转录模型（推荐）'}
- Capture-Page 'welcome'
+ Assert-Separate @('安装聆记') @('安装本地 SenseVoice 离线转录模型（推荐）')
+Assert-Separate @('会议录音与智能纪要，随时开始。') @('安装位置')
+Capture-Page 'welcome'
  Capture-Page 'settings'
  Click-Next
  if($Upgrade){
@@ -215,10 +226,11 @@ function Capture-Page([string]$name,[IntPtr]$target=[IntPtr]::Zero,[switch]$Them
  }
  Start-Sleep -Milliseconds 200
  $progressRoot=[System.Windows.Automation.AutomationElement]::FromHandle($script:handle)
- $progressCondition=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty,'正在安装聆记')
+ $progressCondition=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty,'让每一次讨论，都有回响。')
  if($null -ne $progressRoot.FindFirst([System.Windows.Automation.TreeScope]::Descendants,$progressCondition)){Capture-Page 'installing'}
  Wait-Page '聆记已准备就绪' 300
- Capture-Page 'finish'
+ Assert-Separate @('应用与本地转录模型已安装完成。','应用已安装完成。') @('✓  无需启动转录服务器，即可开始记录','请在设置中配置云端转录与纪要服务。')
+Capture-Page 'finish'
  Uncheck-Checkbox '完成后启动聆记'
 
  Click-Next

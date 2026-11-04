@@ -22,8 +22,8 @@
 .git-field-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:18px 0 0}
 .git-field-grid .select{display:block;margin-top:8px}
 .git-field-grid .select.select-enhanced .select-trigger{width:100%;height:var(--git-control);min-height:var(--git-control);padding-block:0}
-.git-automation .git-check{display:flex;align-items:center;gap:8px;font-size:12px;margin:12px 0;cursor:pointer}
-.git-automation .git-check input[type=checkbox]{flex:none;accent-color:var(--accent);width:16px;height:16px;min-width:16px;min-height:16px;max-width:16px;max-height:16px;aspect-ratio:1;margin:0}
+.git-automation .git-check,.workspace-automation-actions .git-check{display:flex;align-items:center;gap:8px;font-size:12px;margin:12px 0;cursor:pointer}
+.git-automation .git-check input[type=checkbox],.workspace-automation-actions .git-check input[type=checkbox]{flex:none;accent-color:var(--accent);width:16px;height:16px;min-width:16px;min-height:16px;max-width:16px;max-height:16px;aspect-ratio:1;margin:0}
 .git-skill-options,.git-mcp{padding:0;border:0;margin:0 0 16px;display:flex;flex-wrap:wrap;gap:0 18px;min-width:0}
 .git-skill-options legend,.git-mcp legend{font-size:12px;margin-bottom:4px;color:var(--ink-2)}
 .git-skill-options .git-check,.git-mcp .git-check{margin:8px 0}
@@ -125,3 +125,9 @@
 @media(prefers-reduced-motion:reduce){.git-spin{animation:none}.git-progress i{transition:none}}
 
 .git-save::after{content:"";position:absolute;top:100%;left:0;right:0;height:32px;background:var(--bg);pointer-events:none}
+
+.workspace-automation-actions{flex:none;padding-inline:32px;background:var(--bg)}
+.workspace-automation-actions:empty{display:none}
+.workspace-automation-actions .git-save{position:static;margin:0;padding:16px 0}
+.workspace-automation-actions .git-save::after{display:none}
+@media(max-width:760px){.workspace-automation-actions{padding-inline:20px}.workspace-automation-actions .git-save{gap:10px;padding:12px 0 max(12px,env(safe-area-inset-bottom))}}

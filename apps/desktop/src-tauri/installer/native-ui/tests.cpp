@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <commctrl.h>
 #include <cstdio>
 #include <thread>
 #include <cstdlib>
@@ -23,7 +24,7 @@ bool retryTest(HWND owner, int response, bool closeWindow = false, LPCWSTR bitma
     HBITMAP image=CreateCompatibleBitmap(screen,bounds.right,bounds.bottom);
     HGDIOBJ previous=SelectObject(dc,image);
     SendMessageW(state.dialog,WM_PRINTCLIENT,reinterpret_cast<WPARAM>(dc),PRF_CLIENT);
-    COLORREF expected=RGB(242,246,239);
+    COLORREF expected=RGB(239,244,237);
     if (bitmap) {
       HBITMAP source=static_cast<HBITMAP>(LoadImageW(nullptr,bitmap,IMAGE_BITMAP,0,0,LR_LOADFROMFILE|LR_CREATEDIBSECTION));
       if (source) {
@@ -41,6 +42,18 @@ bool retryTest(HWND owner, int response, bool closeWindow = false, LPCWSTR bitma
   });
   const int result=LingJiRetry(owner,bitmap,nullptr,nullptr);probe.join();
   return checked && result==response && IsWindowEnabled(owner);
+}
+static int percentageUpdates=0;
+LRESULT CALLBACK countPercent(HWND window,UINT message,WPARAM w,LPARAM l,UINT_PTR,DWORD_PTR){if(message==WM_SETTEXT)++percentageUpdates;return DefSubclassProc(window,message,w,l);}
+bool stableProgressText(HWND owner,LPCWSTR bitmap){
+  INITCOMMONCONTROLSEX controls{sizeof(controls),ICC_PROGRESS_CLASS};InitCommonControlsEx(&controls);
+  HWND label=CreateWindowExW(0,L"STATIC",L"",WS_CHILD,0,0,100,30,owner,nullptr,GetModuleHandleW(nullptr),nullptr);
+  HWND bar=CreateWindowExW(0,PROGRESS_CLASSW,L"",WS_CHILD,0,40,500,6,owner,nullptr,GetModuleHandleW(nullptr),nullptr);
+  LingJiTheme(owner,bitmap,nullptr,nullptr,label);SetWindowSubclass(label,countPercent,90,0);
+  SendMessageW(bar,PBM_SETRANGE32,0,100);percentageUpdates=0;
+  for(int i=0;i<100;++i)SendMessageW(bar,PBM_SETPOS,42,0);
+  SendMessageW(bar,PBM_SETPOS,43,0);bool stable=percentageUpdates==2;
+  RemoveWindowSubclass(label,countPercent,90);DestroyWindow(bar);DestroyWindow(label);return stable;
 }
 int wmain(int argc, wchar_t* argv[]) {
   if (argc!=2) return 1;
@@ -66,6 +79,7 @@ int wmain(int argc, wchar_t* argv[]) {
   HWND owner=CreateWindowExW(0,L"STATIC",L"installer test owner",WS_OVERLAPPEDWINDOW,0,0,800,600,nullptr,nullptr,GetModuleHandleW(nullptr),nullptr);
   if (!owner) return 1;
   if (!retryTest(owner,IDRETRY) || !retryTest(owner,IDCANCEL) || !retryTest(owner,IDCANCEL,true) || !retryTest(owner,IDRETRY,false,argv[1])) ++failures;
+  if(!stableProgressText(owner,argv[1]))++failures;
   DestroyWindow(owner);
   std::printf("installer content-hash and themed-retry tests: %s\n",failures?"FAILED":"passed");
   return failures?1:0;

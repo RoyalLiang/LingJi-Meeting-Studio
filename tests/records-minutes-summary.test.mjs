@@ -42,3 +42,12 @@ test('empty or theme-only summaries keep containers valid without inventing deci
   assert.ok(!graph.descendants.some(block=>block.block_type===31));
   assert.doesNotThrow(()=>feishuBlocks({first_level_block_ids:graph.children_id,blocks:graph.descendants}));
 });
+
+test('compact no-board summary keeps full native action rows and valid column ratios',()=>{
+  const minutes=fixture();minutes.highlights[0].text='结论细节。'.repeat(100);minutes.actions=Array.from({length:60},(_,index)=>({...minutes.actions[0],text:`完整人工行动 ${index} `+'约束条件。'.repeat(40)}));
+  const graph=minutesSummaryBlocks(minutes,{overview:'compact'});
+  assert.doesNotThrow(()=>feishuBlocks({first_level_block_ids:graph.children_id,blocks:graph.descendants}));
+  assert.ok(graph.descendants.filter(block=>block.block_type===24).every(block=>block.grid.column_size>=2));
+  assert.equal(graph.descendants.filter(block=>block.block_type===31).reduce((total,block)=>total+block.table.property.row_size-1,0),60);
+  assert.match(content(graph),/完整人工行动 59/);assert.match(content(graph),/…/);
+});

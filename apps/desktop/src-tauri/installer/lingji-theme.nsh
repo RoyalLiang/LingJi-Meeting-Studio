@@ -24,6 +24,8 @@ Var LingJiTitleFont
 Var LingJiPathFont
 Var LingJiBodyFont
 Var LingJiBrandFont
+Var LingJiInstallHint
+Var LingJiHintIndex
 Var LingJiPercent
 Var LingJiThemeModule
 
@@ -353,79 +355,79 @@ Function LingJiProgressShow
     Pop $LingJiIcon
     ${NSD_SetIconFromInstaller} $LingJiIcon $LingJiIconImage
     !insertmacro LingJiPlace $LingJiIcon 49 35 34 34
-    ; MUI's instfiles page uses ordinary STATIC children, not an nsDialogs page.
     System::Call 'user32::CreateWindowExW(i 0,w "STATIC",w "聆记",i 0x50000000,i 0,i 0,i 0,i 0,p $LingJiDialog,p 0,p 0,p 0)p.s'
     Pop $LingJiControl
     SendMessage $LingJiControl ${WM_SETFONT} $LingJiBrandFont 1
     SetCtlColors $LingJiControl 273D35 transparent
     System::Call 'user32::SetPropW(p $LingJiControl,w "LingJiTextColor",p 0x353D27)'
     !insertmacro LingJiPlace $LingJiControl 98 39 500 34
-    System::Call 'user32::CreateWindowExW(i 0,w "STATIC",w "正在安装聆记",i 0x50000000,i 0,i 0,i 0,i 0,p $LingJiDialog,p 0,p 0,p 0)p.s'
-    Pop $LingJiControl
-    SendMessage $LingJiControl ${WM_SETFONT} $LingJiTitleFont 1
-    SetCtlColors $LingJiControl 273D35 transparent
-    System::Call 'user32::SetPropW(p $LingJiControl,w "LingJiTextColor",p 0x353D27)'
-    !insertmacro LingJiPlace $LingJiControl 52 106 650 48
-    System::Call 'user32::CreateWindowExW(i 0,w "STATIC",w "正在准备应用与本地转录能力",i 0x50000000,i 0,i 0,i 0,i 0,p $LingJiDialog,p 0,p 0,p 0)p.s'
+    System::Call 'user32::CreateWindowExW(i 0,w "STATIC",w "MEETING STUDIO",i 0x50000000,i 0,i 0,i 0,i 0,p $LingJiDialog,p 0,p 0,p 0)p.s'
     Pop $LingJiControl
     SendMessage $LingJiControl ${WM_SETFONT} $LingJiBodyFont 1
     SetCtlColors $LingJiControl 718177 transparent
     System::Call 'user32::SetPropW(p $LingJiControl,w "LingJiTextColor",p 0x778171)'
-    !insertmacro LingJiPlace $LingJiControl 52 155 650 30
-    System::Call 'user32::CreateWindowExW(i 0,w "STATIC",w "正在安装",i 0x50000000,i 0,i 0,i 0,i 0,p $LingJiDialog,p 0,p 0,p 0)p.s'
+    !insertmacro LingJiPlace $LingJiControl 52 145 696 24
+    System::Call 'user32::CreateWindowExW(i 0,w "STATIC",w "让每一次讨论，都有回响。",i 0x50000000,i 0,i 0,i 0,i 0,p $LingJiDialog,p 0,p 0,p 0)p.s'
     Pop $LingJiControl
-    SendMessage $LingJiControl ${WM_SETFONT} $LingJiBodyFont 1
+    SendMessage $LingJiControl ${WM_SETFONT} $LingJiTitleFont 1
     SetCtlColors $LingJiControl 273D35 transparent
     System::Call 'user32::SetPropW(p $LingJiControl,w "LingJiTextColor",p 0x353D27)'
-    !insertmacro LingJiPlace $LingJiControl 52 231 500 30
+    !insertmacro LingJiPlace $LingJiControl 52 180 696 54
+    System::Call 'user32::CreateWindowExW(i 0,w "STATIC",w "正在将聆记安装到你的电脑。",i 0x50000000,i 0,i 0,i 0,i 0,p $LingJiDialog,p 0,p 0,p 0)p.s'
+    Pop $LingJiInstallHint
+    SendMessage $LingJiInstallHint ${WM_SETFONT} $LingJiBodyFont 1
+    SetCtlColors $LingJiInstallHint 718177 transparent
+    System::Call 'user32::SetPropW(p $LingJiInstallHint,w "LingJiTextColor",p 0x778171)'
+    !insertmacro LingJiPlace $LingJiInstallHint 52 242 696 30
+    System::Call 'user32::CreateWindowExW(i 0,w "STATIC",w "正在安装应用文件",i 0x50000000,i 0,i 0,i 0,i 0,p $LingJiDialog,p 0,p 0,p 0)p.s'
+    Pop $LingJiControl
+    SendMessage $LingJiControl ${WM_SETFONT} $LingJiBodyFont 1
+    SetCtlColors $LingJiControl 718177 transparent
+    System::Call 'user32::SetPropW(p $LingJiControl,w "LingJiTextColor",p 0x778171)'
+    !insertmacro LingJiPlace $LingJiControl 52 330 500 30
     System::Call 'user32::CreateWindowExW(i 0,w "STATIC",w "0%",i 0x50000002,i 0,i 0,i 0,i 0,p $LingJiDialog,p 0,p 0,p 0)p.s'
     Pop $LingJiPercent
-    SendMessage $LingJiPercent ${WM_SETFONT} $LingJiBrandFont 1
-    SetCtlColors $LingJiPercent 276952 F2F6EF
-    System::Call 'user32::SetPropW(p $LingJiPercent,w "LingJiTextColor",p 0x526927)'
-    !insertmacro LingJiPlace $LingJiPercent 650 226 98 34
-    System::Call 'user32::CreateWindowExW(i 0,w "STATIC",w "",i 0x50000000,i 0,i 0,i 0,i 0,p $LingJiDialog,p 0,p 0,p 0)p.s'
+    SendMessage $LingJiPercent ${WM_SETFONT} $LingJiBodyFont 1
+    SetCtlColors $LingJiPercent 718177 transparent
+    System::Call 'user32::SetPropW(p $LingJiPercent,w "LingJiTextColor",p 0x778171)'
+    !insertmacro LingJiPlace $LingJiPercent 650 326 98 34
+    System::Call 'user32::CreateWindowExW(i 0,w "STATIC",w "本地记录，安心整理。",i 0x50000000,i 0,i 0,i 0,i 0,p $LingJiDialog,p 0,p 0,p 0)p.s'
     Pop $LingJiControl
-    System::Call 'user32::SetPropW(p $LingJiControl,w "LingJiTextColor",p 0xDCE6DD)'
-    !insertmacro LingJiPlace $LingJiControl 52 398 696 1
+    SendMessage $LingJiControl ${WM_SETFONT} $LingJiBodyFont 1
+    SetCtlColors $LingJiControl 718177 transparent
+    System::Call 'user32::SetPropW(p $LingJiControl,w "LingJiTextColor",p 0x778171)'
+    !insertmacro LingJiPlace $LingJiControl 49 470 550 26
+    StrCpy $LingJiHintIndex 0
+    ${NSD_CreateTimer} LingJiRotateHint 8000
     GetDlgItem $0 $LingJiDialog 1004
-    !insertmacro LingJiPlace $0 52 275 696 7
+    !insertmacro LingJiPlace $0 52 302 696 5
     GetDlgItem $0 $LingJiDialog 1006
     ShowWindow $0 0
     GetDlgItem $0 $LingJiDialog 1027
     ShowWindow $0 0
     GetDlgItem $0 $LingJiDialog 1016
     ShowWindow $0 0
-    System::Call 'user32::CreateWindowExW(i 0,w "STATIC",w "应用文件",i 0x50000000,i 0,i 0,i 0,i 0,p $LingJiDialog,p 0,p 0,p 0)p.s'
-    Pop $LingJiControl
-    SendMessage $LingJiControl ${WM_SETFONT} $LingJiBodyFont 1
-    SetCtlColors $LingJiControl 718177 transparent
-    System::Call 'user32::SetPropW(p $LingJiControl,w "LingJiTextColor",p 0x778171)'
-    !insertmacro LingJiPlace $LingJiControl 52 313 200 26
-    System::Call 'user32::CreateWindowExW(i 0,w "STATIC",w "本地转录模型",i 0x50000000,i 0,i 0,i 0,i 0,p $LingJiDialog,p 0,p 0,p 0)p.s'
-    Pop $LingJiControl
-    SendMessage $LingJiControl ${WM_SETFONT} $LingJiBodyFont 1
-    SetCtlColors $LingJiControl 718177 transparent
-    System::Call 'user32::SetPropW(p $LingJiControl,w "LingJiTextColor",p 0x778171)'
-    !insertmacro LingJiPlace $LingJiControl 285 313 220 26
-    System::Call 'user32::CreateWindowExW(i 0,w "STATIC",w "完成配置",i 0x50000000,i 0,i 0,i 0,i 0,p $LingJiDialog,p 0,p 0,p 0)p.s'
-    Pop $LingJiControl
-    SendMessage $LingJiControl ${WM_SETFONT} $LingJiBodyFont 1
-    SetCtlColors $LingJiControl 718177 transparent
-    System::Call 'user32::SetPropW(p $LingJiControl,w "LingJiTextColor",p 0x778171)'
-    !insertmacro LingJiPlace $LingJiControl 560 313 188 26
-    System::Call 'user32::CreateWindowExW(i 0,w "STATIC",w "安装过程中请勿关闭此窗口",i 0x50000000,i 0,i 0,i 0,i 0,p $LingJiDialog,p 0,p 0,p 0)p.s'
-    Pop $LingJiControl
-    SendMessage $LingJiControl ${WM_SETFONT} $LingJiBodyFont 1
-    SetCtlColors $LingJiControl 718177 transparent
-    System::Call 'user32::SetPropW(p $LingJiControl,w "LingJiTextColor",p 0x778171)'
-    !insertmacro LingJiPlace $LingJiControl 52 431 540 26
     Call LingJiHideChrome
     Call LingJiThemeControls
   ${EndIf}
 FunctionEnd
 
+Function LingJiRotateHint
+  ${If} $LingJiInstalling == 1
+    IntOp $LingJiHintIndex $LingJiHintIndex + 1
+    IntOp $LingJiHintIndex $LingJiHintIndex % 3
+    ${If} $LingJiHintIndex == 0
+      ${NSD_SetText} $LingJiInstallHint "正在将聆记安装到你的电脑。"
+    ${ElseIf} $LingJiHintIndex == 1
+      ${NSD_SetText} $LingJiInstallHint "录音与纪要留在本机，重要讨论随时回顾。"
+    ${Else}
+      ${NSD_SetText} $LingJiInstallHint "纪要保留来源，后续行动清晰可查。"
+    ${EndIf}
+  ${EndIf}
+FunctionEnd
+
 Function LingJiProgressLeave
+  ${NSD_KillTimer} LingJiRotateHint
   ${NSD_FreeIcon} $LingJiIconImage
   ${NSD_FreeBitmap} $LingJiImage
 FunctionEnd

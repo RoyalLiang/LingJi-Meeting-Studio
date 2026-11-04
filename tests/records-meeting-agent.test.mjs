@@ -304,3 +304,35 @@ test('an owner does not queue behind another owner running Agent',async t=>{
   const independent=await runtime.request('other',request([other],'second-owner'));assert.equal((await settled(runtime,independent.id,'other')).status,'completed');
   assert.equal((await runtime.get('owner',first.id)).status,'running');await runtime.cancel('owner',first.id);assert.equal((await settled(runtime,first.id)).status,'cancelled');
 });
+
+test('summary list reads the root index once and transfers details only for the selected task',async t=>{
+ const f=await fixture(t),large={...result(f.records),summary:'保留完整复盘内容。'.repeat(800)},p=provider(Array.from({length:12},()=>[reads(f.records),message(JSON.stringify(large))]).flat());
+ const open=Harness.open;let snapshots=0;
+ Harness.open=async(...args)=>{const h=await open(...args),snapshot=h.snapshot;h.snapshot=(...input)=>{snapshots++;return snapshot.apply(h,input);};return h;};
+ t.after(()=>{Harness.open=open;});
+ const runtime=await f.open(p),ids=[];
+ for(let i=0;i<12;i++){const task=await runtime.request('owner',request(f.records,`list-perf-${i}`));assert.equal((await settled(runtime,task.id)).status,'completed');ids.push(task.id);}
+ const full=await runtime.list('owner');snapshots=0;const summaries=await runtime.list('owner',{view:'summary',detailId:ids[0]});
+ const before=Buffer.byteLength(JSON.stringify(full)),after=Buffer.byteLength(JSON.stringify(summaries));
+ console.info(JSON.stringify({agentList:{tasks:ids.length,snapshots,beforeBytes:before,afterBytes:after}}));
+ assert.equal(summaries.filter(task=>task.result).length,1,'only explicitly selected task should include full results');
+ assert.deepEqual(summaries.find(task=>task.id===ids[0]).result,large);
+ assert.ok(summaries.filter(task=>task.id!==ids[0]).every(task=>task.preview.length<=321));
+ assert.ok(snapshots<=ids.length+3,`list repeated root snapshots ${snapshots} times`);
+ assert.ok(after<before*.25,'list summary should reduce transferred bytes by at least 75%');
+ assert.deepEqual(await runtime.list('other',{view:'summary',detailId:ids[0]}),[]);
+ await f.repo.change(f.records[0].id,record=>{record.segments[0].text='另一修订';record.segments[0].revision++;record.transcriptRevision++;});
+ assert.ok((await runtime.list('owner',{view:'summary'})).every(task=>task.stale));
+});
+
+test('interactive questions survive long waits and reused Skill question IDs require fresh answers',async t=>{
+ const f=await fixture(t),p=provider([reads(f.records),message(call('request_user_input',{id:'confirm',question:'选择归档分支？',options:['合并请求','直接提交']}),{stopReason:'toolUse'}),message(call('request_user_input',{id:'confirm',question:'是否附带笔记？',options:['附带','不附带']}),{stopReason:'toolUse'}),message(JSON.stringify(result(f.records)))]);
+ const runtime=await f.open(p),task=await runtime.request('owner',request(f.records,'question-reuse'),{jobId:'interactive-fixture',managed:false});
+ let state;await waitUntil(async()=>{state=await runtime.get('owner',task.id);return state.interaction?.question==='选择归档分支？';});
+ const first=state.interaction.id,now=Date.now;try{Date.now=()=>now()+175*60000;const delayed=await runtime.get('owner',task.id);assert.equal(delayed.interaction.id,first);assert.equal(delayed.status,'running');}finally{Date.now=now;}
+ await runtime.respond('owner',task.id,{id:first,answer:'合并请求'});
+ await waitUntil(async()=>{state=await runtime.get('owner',task.id);return state.interaction?.question==='是否附带笔记？'||state.status==='completed';});
+ assert.equal(state.interaction?.question,'是否附带笔记？','a reused Skill id must not silently reuse the earlier answer');assert.notEqual(state.interaction.id,first);
+ await assert.rejects(runtime.respond('owner',task.id,{id:first,answer:'旧问题回复'}),{code:'agent_input_changed'});
+ await runtime.respond('owner',task.id,{id:state.interaction.id,answer:'不附带'});assert.equal((await settled(runtime,task.id)).status,'completed');
+});

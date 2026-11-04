@@ -87,3 +87,5 @@
 @media(max-width:700px){.meeting-agent-center{padding-top:24px}.ma-heading{min-height:0;padding-bottom:20px}.ma-heading h1{font-size:26px}}
 
 .ma-extension-scope{padding:16px 8px 8px}.ma-prompt-templates{display:flex;flex-wrap:wrap;gap:8px}.ma-prompt-templates>.button{max-width:100%;height:auto;white-space:normal;text-align:left}.ma-composer textarea:focus-visible{outline-offset:2px}.ma-result .markdown-preview{margin:12px 0}.ma-toolbar .select-trigger>span{white-space:nowrap}.meeting-agent-center .ma-tools>.select{flex:none}
+
+.meeting-agent-center .ma-composer textarea:focus-visible{outline:none;box-shadow:none;border-color:var(--ma-accent)}

@@ -1,3 +1,4 @@
+import {audioBackupPending,audioBackupReady} from './audio-backup.mjs';
 import { canStartSpeechSource } from './asr-recovery.mjs';
 import { analysisInput } from '../../../packages/records/src/workspaces.mjs';
 import {flushAudioObject} from './audio-storage-sync.mjs';
@@ -21,6 +22,7 @@ function schedule(value, now=Date.now()) {
   if(value.deleted){due('audio',value.cleanup==='completed'?(value.cleanupAt||0)+600000:now);}
   else{
     due('audio',Math.min(Date.parse(value.deleteAt),(value.gcAt||0)+3600000));
+    if(audioBackupPending(value)&&audioBackupReady(value))due('audio',Math.max(value.audioBackup.retryAt||0,value.audioBackup.leaseUntil||0));
     due('learning',learningWorkAt(value,now));
     if(value.learning?.enabled&&value.capture==='completed'&&value.learning.revision!==value.transcriptRevision)due('learning',Math.max(now,value.learning.retryAt||0));
     due('minutes',automaticMinutesAt(value,now));

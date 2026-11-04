@@ -60,6 +60,20 @@ fn client_attention(window: WebviewWindow, state: State<'_, Client>) -> Result<(
 }
 
 #[tauri::command]
+async fn audio_backup_directory(window: WebviewWindow, state: State<'_, Client>, initial: Option<String>) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    authorize(&window, &state)?;
+    let app = window.app_handle().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut picker = app.dialog().file().set_parent(&window).set_title("选择原始音频备份目录");
+        if let Some(path) = initial.filter(|path| std::path::Path::new(path).is_dir()) {
+            picker = picker.set_directory(path);
+        }
+        picker.blocking_pick_folder().map(|path| path.into_path().map(|path| path.to_string_lossy().into_owned()).map_err(|error| error.to_string())).transpose()
+    }).await.map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
 fn integration_open(window: WebviewWindow, state: State<'_, Client>, url: String) -> Result<(), String> {
     authorize(&window, &state)?;
     integration_links::open(&url)
@@ -334,6 +348,7 @@ fn main() {
         recording_widget::recording_widget_update, recording_widget::recording_widget_state, recording_widget::recording_widget_ready, recording_widget::recording_widget_action,
         integration_open,
             client_attention,
+        audio_backup_directory,
         meeting_watch_configure,
         capture_start,
         capture_read,
@@ -356,6 +371,7 @@ fn main() {
         recording_widget::recording_widget_update, recording_widget::recording_widget_state, recording_widget::recording_widget_ready, recording_widget::recording_widget_action,
         integration_open,
             client_attention,
+        audio_backup_directory,
         meeting_watch_configure,
         capture_start,
         capture_read,
@@ -410,7 +426,7 @@ fn main() {
                 profile: profile.clone(),
                 origin: origin.clone(), captures: Arc::new(audio::Captures::default()), resident: resident::Resident::default(), _lock: binding._lock, _backend: backend, updates, api });
             app.add_capability(CapabilityBuilder::new("local-capture").window("main").local(false).remote(format!("{origin}/*"))
-                .permission("allow-integration-open").permission("allow-meeting-watch-configure").permission("allow-capture-start").permission("allow-capture-read").permission("allow-capture-ack").permission("allow-capture-progress").permission("allow-capture-stop").permission("allow-capture-inputs")
+                .permission("allow-integration-open").permission("allow-audio-backup-directory").permission("allow-client-attention").permission("allow-meeting-watch-configure").permission("allow-capture-start").permission("allow-capture-read").permission("allow-capture-ack").permission("allow-capture-progress").permission("allow-capture-stop").permission("allow-capture-inputs")
                 .permission("allow-recording-widget-update").permission("allow-client-close").permission("allow-client-ready").permission("allow-client-status").permission("allow-update-status").permission("allow-update-activity").permission("allow-update-check").permission("allow-update-download").permission("allow-update-install")
                 .permission("core:event:allow-listen").permission("core:event:allow-unlisten"))?;
             app.add_capability(CapabilityBuilder::new("recording-widget").window("recording-widget").local(false).remote(format!("{origin}/*"))

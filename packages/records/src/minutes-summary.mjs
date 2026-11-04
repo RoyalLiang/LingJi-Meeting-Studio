@@ -1,9 +1,9 @@
-import {minutesOverview} from './minutes-presentation.mjs';
+import {minutesOverview,minutesCompactOverview} from './minutes-presentation.mjs';
 
 // DocX descendants accepts GridColumn/TableCell when their children are present.
 // Keep this frozen graph as the source for both publication and preview.
-export function minutesSummaryBlocks(minutes,{citations=()=>''}={}) {
-  const view=minutesOverview(minutes),descendants=[],children_id=[];
+export function minutesSummaryBlocks(minutes,{citations=()=>'',overview='full'}={}) {
+  const view=overview==='full'?minutesOverview(minutes):minutesCompactOverview(minutes),descendants=[],children_id=[];
   const add=(block_type,key,data,children)=>{
     const block={block_id:`lingji-summary-${descendants.length+1}`,block_type,[key]:data,...(children?{children}: {})};
     descendants.push(block);return block.block_id;
@@ -15,11 +15,16 @@ export function minutesSummaryBlocks(minutes,{citations=()=>''}={}) {
   const callout=(label,items,color,background=color)=>add(19,'callout',{background_color:background,border_color:color},[
     text(label,{bold:true}),...(items.length?items.map(item=>text(cite(item),{type:12})):[text('纪要未列出')])
   ]);
+  if(overview!=='board'){
   children_id.push(text('总结',{type:4}));
-  children_id.push(callout(view.summaryLabel,view.summary,7,15));
-  const groups=[['关键决策',view.decisions,6],['下一步行动',view.actions.map(item=>({...item,text:`${item.text}\n负责人：${item.owner||'待确认'} · 时间：${item.due||'待确认'}`})),4],['风险与待确认',view.pending,3]];
-  const columns=groups.map(([label,items,color],index)=>add(25,'grid_column',{width_ratio:index===2?34:33},[callout(label,items,color)]));
-  children_id.push(add(24,'grid',{column_size:3},columns));
+  children_id.push(callout(view.summaryLabel,overview==='compact'?view.brief:view.summary,7,15));
+  const groups=overview==='compact'?view.themes.map((theme,index)=>[theme.title,[...(theme.summary?[{text:theme.summary,evidence:theme.evidence}]:[]),...theme.items],[6,4,3][index]]):[['关键决策',view.decisions,6],['下一步行动',view.actions.map(item=>({...item,text:`${item.text}\n负责人：${item.owner||'待确认'} · 时间：${item.due||'待确认'}`})),4],['风险与待确认',view.pending,3]];
+  if(groups.length===1){const [label,items,color]=groups[0];children_id.push(callout(label,items,color));}
+  else{
+    const columns=groups.map(([label,items,color],index)=>add(25,'grid_column',{width_ratio:index===groups.length-1?100-Math.floor(100/groups.length)*(groups.length-1):Math.floor(100/groups.length)},[callout(label,items,color)]));
+    children_id.push(add(24,'grid',{column_size:groups.length},columns));
+  }
+  }
   if(view.actions.length){
     children_id.push(text('推进安排与前置条件',{type:4}));
     const status={pending:'待确认',candidate:'候选',confirmed:'已确认',blocked:'受阻',completed:'已完成',done:'已完成'};
@@ -32,6 +37,7 @@ export function minutesSummaryBlocks(minutes,{citations=()=>''}={}) {
       children_id.push(add(31,'table',{property:{row_size:rows.length,column_size:4,column_width:[360,120,140,100]}},cells));
     }
   }
+  if(overview!=='full')children_id.push(text('完整纪要',{type:4}));
   return {children_id,descendants,index:-1};
 }
 

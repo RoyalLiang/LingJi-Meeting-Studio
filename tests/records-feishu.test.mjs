@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { createRecordServer } from '../services/records/src/server.mjs';
 import { feishuBlocks, feishuFolder, createFeishu } from '../services/records/src/integrations/feishu.mjs';
 import { exportMinutesMarkdown } from '../services/records/src/markdown-export.mjs';
-import {feishuBoard} from '../services/records/src/integrations/feishu-board.mjs';
+import {minutesBoard} from '../packages/records/src/minutes-presentation.mjs';
 import { createSecretStore } from '../services/records/src/integrations/secret-store.mjs';
 
 const documentId='docFixture123456';
@@ -24,7 +24,7 @@ function provider(){
     const body=options.body?String(options.body):'';calls.push({url,body,headers:options.headers});
     if(url.endsWith('/blocks/convert')){if(flags.convertGate)await flags.convertGate;return Response.json({code:0,data:{first_level_block_ids:['heading'],blocks:[{block_id:'heading',parent_id:'readonly',block_type:3,heading1:{elements:[{text_run:{content:'发布计划'}}]}}]}});}
     if(url.endsWith('/docx/v1/documents')){if(flags.createTimeout)throw new Error('network lost');return Response.json({code:0,data:{document:{document_id:documentId}}});}
-    if(url.includes('/descendant?')){if(flags.writeFail)return Response.json({code:1770001,msg:'private-upstream-message'},{status:400});return Response.json({code:0,data:{block_id_relations:JSON.parse(body).descendants.filter(block=>!flags.missingNativeBlock||block.block_type!==24).map(block=>({temporary_block_id:block.block_id,block_id:`remote-${block.block_id}`}))}});}
+    if(url.includes('/descendant?')){if(flags.writeFail)return Response.json({code:1770001,msg:'private-upstream-message'},{status:400});return Response.json({code:0,data:{block_id_relations:JSON.parse(body).descendants.filter(block=>!flags.missingNativeBlock||block.block_type!==4).map(block=>({temporary_block_id:block.block_id,block_id:`remote-${block.block_id}`}))}});}
     if(url.endsWith('/metas/batch_query'))return Response.json({code:0,data:{metas:[{doc_token:documentId,doc_type:'docx',title:'人工核对的会议纪要',url:`https://fixture.feishu.cn/docx/${documentId}`}],failed_list:[]}});
     if(url.includes('/children?'))return Response.json({code:0,data:{children:[{block_type:43,board:{token:'boardFixture123456789012'}}]}});
     if(url.includes('/whiteboards/')&&url.includes('/nodes?'))return Response.json({code:0,data:{ids:JSON.parse(body).nodes.map(node=>node.id)}});
@@ -254,7 +254,7 @@ test('saving unchanged credentials preserves an approved automation rule across 
 test('member destination and editable board are frozen and published before ownership transfer',async t=>{
  const h=await harness(t);await h.connect();
  const preview=await h.request(`/records/${h.recordId}/feishu/preview`,'POST',{title:'人工核对的会议纪要',folderToken:'',destinationEmail:'member@example.test',includeBoard:true,includeNotes:false,includeEvidence:true});
- assert.ok(preview.body.summaryBlocks.descendants.some(block=>block.block_type===24));
+ assert.ok(preview.body.summaryBlocks.descendants.some(block=>block.block_type===4));
  assert.equal(preview.status,201);assert.equal(preview.body.destinationEmail,'member@example.test');assert.ok(preview.body.boardNodes.length>1);
  await h.request(`/integrations/feishu/exports/${preview.body.id}/publish`,'POST',{confirmed:true});
  const receipt=await h.wait(preview.body.id);assert.equal(receipt.status,'succeeded');
@@ -262,7 +262,7 @@ test('member destination and editable board are frozen and published before owne
  assert.ok(nodes>0);assert.ok(transfer>nodes);
  const written=JSON.parse(h.remote.calls.find(call=>call.url.includes('/descendant?')).body);
  assert.deepEqual(written.children_id.slice(0,preview.body.summaryBlocks.children_id.length),preview.body.summaryBlocks.children_id);
- assert.ok(written.descendants.some(block=>block.block_type===19));assert.match(h.remote.calls[transfer].body,/member@example.test/);
+ assert.ok(written.descendants.some(block=>block.block_type===4));assert.match(h.remote.calls[transfer].body,/member@example.test/);
  assert.match(urls[transfer],/stay_put=false/);
  const invalid=await h.request(`/records/${h.recordId}/feishu/preview`,'POST',{title:'test',folderToken:'folderFixture123',destinationEmail:'member@example.test',includeBoard:false,includeNotes:false,includeEvidence:false});assert.equal(invalid.status,400);
 });
@@ -270,7 +270,7 @@ test('member destination and editable board are frozen and published before owne
 
 test('board keeps legacy and ambiguous topics from claiming unrelated sections or tables',()=>{
  const minutes={title:'会议',topics:[{title:'A'},{title:'B'},{id:'dup',title:'C'},{id:'dup',title:'D'}],sections:[{heading:'独立章节',items:[{text:'未归属内容'},{text:'含歧义内容',topicId:'dup'}]}],tables:[{title:'独立表格',columns:['值'],rows:[{cells:['原始值']}]}]};
- const nodes=feishuBoard(minutes),byText=new Map(nodes.filter(node=>node.text).map(node=>[node.text.text,node]));
+ const nodes=minutesBoard(minutes),byText=new Map(nodes.filter(node=>node.text).map(node=>[node.text.text,node]));
   const section=byText.get('独立章节'),other=byText.get('其他图表');
   assert.ok(byText.get('未归属内容').y>section.y&&byText.get('未归属内容').y<other.y);
   assert.ok(byText.get('含歧义内容').y>section.y&&byText.get('含歧义内容').y<other.y);
@@ -288,7 +288,7 @@ test('disabled automation retains its saved board and destination choices',async
 
 
 test('editable board has readable topic hierarchy and real diagram primitives',()=>{
-  const nodes=feishuBoard({title:'设计评审',sections:[{heading:'发布安排',items:[{text:'周五评审'}]}],actions:[]});
+  const nodes=minutesBoard({title:'设计评审',sections:[{heading:'发布安排',items:[{text:'周五评审'}]}],actions:[]});
   const byText=new Map(nodes.filter(node=>node.text).map(node=>[node.text.text,node]));
   const root=byText.get('设计评审'),topic=byText.get('发布安排'),detail=byText.get('周五评审');
   assert.ok(root.text.font_size>topic.text.font_size&&topic.text.font_size>detail.text.font_size);
@@ -303,13 +303,13 @@ test('large editable board follows the native summary and every bounded batch is
     record.minutes.sections[0].items=Array.from({length:45},(_,index)=>({text:`核对事项 ${index+1}`,evidence:[{segmentId:'s1',revision:1}]}));
   });
   const preview=await h.request(`/records/${h.recordId}/feishu/preview`,'POST',{title:'人工核对的会议纪要',folderToken:'',includeBoard:true,boardTheme:'dark',includeNotes:false,includeEvidence:true});
-  assert.equal(preview.status,201);assert.equal(preview.body.boardTheme,'dark');assert.ok(preview.body.boardNodes.length>100);
-  assert.equal(preview.body.boardNodes[0].style.fill_color,'#1D1E20');
+  assert.equal(preview.status,201);assert.equal(preview.body.boardTheme,'dark');assert.ok(preview.body.boardNodes.length>10&&preview.body.boardNodes.length<100);
+  assert.equal(preview.body.boardNodes[0].style.fill_color,'#1D1E20');assert.match(preview.body.markdown,/核对事项 45/);assert.doesNotMatch(JSON.stringify(preview.body.boardNodes),/核对事项 45/);
   await h.request(`/integrations/feishu/exports/${preview.body.id}/publish`,'POST',{confirmed:true});
   assert.equal((await h.wait(preview.body.id)).status,'succeeded');
-  const board=h.remote.calls.find(call=>call.url.includes('/children?'));assert.equal(JSON.parse(board.body).index,preview.body.summaryBlocks.children_id.length);
+  const board=h.remote.calls.find(call=>call.url.includes('/children?'));assert.equal(JSON.parse(board.body).index,0);
   const batches=h.remote.calls.filter(call=>call.url.includes('/whiteboards/')&&call.url.includes('/nodes?'));
-  assert.ok(batches.length>1);assert.ok(batches.every(call=>JSON.parse(call.body).nodes.length<=100));
+  assert.equal(batches.length,1);assert.ok(batches.every(call=>JSON.parse(call.body).nodes.length<=100));
   assert.equal(batches.reduce((total,call)=>total+JSON.parse(call.body).nodes.length,0),preview.body.boardNodes.length);
   assert.equal(new Set(batches.map(call=>new URL(call.url).searchParams.get('client_token'))).size,batches.length);
 });
@@ -336,7 +336,7 @@ test('native summary publishes without a board, retains scope and clears frozen 
  await h.request(`/integrations/feishu/exports/${preview.body.id}/publish`,'POST',{confirmed:true});assert.equal((await h.wait(preview.body.id)).status,'succeeded');
  assert.ok(!h.remote.calls.some(call=>call.url.includes('/children?')||call.url.includes('/whiteboards/')));
  const written=JSON.parse(h.remote.calls.find(call=>call.url.includes('/descendant?')).body);
- assert.ok(written.descendants.some(block=>block.block_type===24));assert.ok(written.descendants.some(block=>block.block_type===31));
+ assert.ok(written.descendants.some(block=>block.block_type===19));assert.ok(written.descendants.some(block=>block.block_type===31));
  const saved=await h.app.repo.get(preview.body.id);assert.equal(saved.summaryBlocks,null);assert.equal(saved.markdown,'');
 });
 

@@ -64,7 +64,7 @@ function exportSnapshot(record, input) {
   const source = {minutesRevision:minutes.revision, transcriptRevision:minutes.transcriptRevision,
     notesRevision:input.includeNotes ? record.notesRevision : null, edited:Boolean(minutes.edited), draft:minutes !== record.minutes || record.capture !== 'completed'};
   const citations=input.includeEvidence?refs=>{const numbers=[...new Set((refs||[]).map(ref=>referenceMap.get(`${ref.segmentId}@${ref.revision}`)?.number).filter(Boolean))];return numbers.length?` [${numbers.join(', ')}]`:'';}:undefined;
-  const summaryBlocks=minutesSummaryBlocks(minutes,{citations});
+  const summaryBlocks=minutesSummaryBlocks(minutes,{citations,overview:includeBoard?'board':'compact'});
   requireThat(summaryBlocks.descendants.length<=1000&&Buffer.byteLength(JSON.stringify(summaryBlocks))<=500000,'feishu_document_too_large',400);
   const boardNodes=includeBoard?feishuBoard(minutes,{theme:boardTheme,citations}):[];
   return {title, folderToken, destinationEmail, includeBoard, boardTheme, boardNodes, summaryBlocks, includeNotes:input.includeNotes, includeEvidence:input.includeEvidence, markdown, source,
@@ -188,7 +188,7 @@ export async function createFeishu(repo, {sdkFactory=createFeishuSdk,now=Date.no
       requireThat(blocks.descendants.every(block=>typeof relations.get(block.block_id)==='string'&&relations.get(block.block_id)),'feishu_verification_failed',502);
       if(value.includeBoard){
         await guard();stage='board';await update({stage});
-        const block=await request(client,`${api}/docx/v1/documents/${documentId}/blocks/${documentId}/children?document_revision_id=-1&client_token=${id}-board`,{signal,body:{children:[{block_type:43,board:{}}],index:value.summaryBlocks.children_id.length},write:true});
+        const block=await request(client,`${api}/docx/v1/documents/${documentId}/blocks/${documentId}/children?document_revision_id=-1&client_token=${id}-board`,{signal,body:{children:[{block_type:43,board:{}}],index:0},write:true});
         const boardToken=block.data?.children?.find(item=>item.block_type===43)?.board?.token;
         requireThat(documentToken(boardToken),'feishu_verification_failed',502);await update({boardToken});await guard();
         for(let offset=0;offset<value.boardNodes.length;offset+=100){

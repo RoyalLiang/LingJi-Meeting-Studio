@@ -67,6 +67,42 @@ function canvas(theme,citations){
   };
   return {p,nodes,rect,text,line,table,visual,measure};
 }
+// These are explicit excerpts; full source wording remains in the native minutes.
+const excerpt=(value,limit)=>{const chars=Array.from(String(value??'').replace(/\s+/g,' ').trim());return chars.length>limit?chars.slice(0,limit-1).join('')+'…':chars.join('');};
+export function minutesCompactOverview(minutes){
+  const view=minutesOverview(minutes),brief=(items,count,limit)=>items.slice(0,count).map(item=>({...item,text:excerpt(item.text,limit),evidence:(item.evidence||[]).slice(0,3)}));
+  const themes=view.layout.branches.slice(0,3).map(branch=>({title:excerpt(branch.title,24),summary:excerpt(branch.summary,90),evidence:(branch.evidence||[]).slice(0,3),items:brief((branch.items||[]).map(item=>({...item,text:minutesItemText(item)})),3,64)}));
+  if(!themes.length)themes.push({title:'会议要点',summary:'',evidence:[],items:brief(view.summary,3,64)});
+  const table=[...view.layout.branches.flatMap(branch=>branch.tables),...view.layout.unassigned.tables].find(value=>value.columns?.length>1&&value.columns.length<=4&&value.rows?.length);
+  return {...view,themes,brief:brief(view.summary,2,96),next:brief(view.actions,2,90),constraints:brief(view.pending,2,90),comparison:table?{...table,title:excerpt(table.title,44),columns:table.columns.map(value=>excerpt(value,24)),rows:table.rows.slice(0,4).map(row=>({...row,evidence:(row.evidence||[]).slice(0,3),cells:row.cells.map(value=>excerpt(value,44))}))}:null};
+}
+export function minutesOverviewBoard(minutes,{theme='light',citations}={}){
+  const view=minutesCompactOverview(minutes),c=canvas(theme,citations),{p,rect,text,table}=c,width=1120,pad=32,gap=18,inner=width-pad*2;
+  const background=rect(0,0,width,1,p.bg,null);let y=28;
+  y+=text(excerpt(minutes.title||'会议纪要',44),pad,y,inner,{size:25,bold:true})+12;
+  y+=text(`图文总览 · ${view.layout.branches.length||1} 个主题 · 转录 v${minutes.transcriptRevision??'?'}${minutes.edited?' · 人工修订':''}`,pad,y,inner,{size:12,color:p.muted})+20;
+  const conclusion=rect(pad,y,inner,1,p.figure,null);let cursor=y+16;
+  text(view.summaryLabel,pad+18,cursor,112,{size:14,bold:true,color:p.muted});
+  for(const item of view.brief.length?view.brief:[{text:'纪要未列出核心结论'}])cursor+=text(item.text,pad+142,cursor,inner-162,{size:17,bold:true,refs:item.evidence})+8;
+  conclusion.height=Math.max(66,cursor-y+8);y+=conclusion.height+22;
+  const cardWidth=(inner-gap*(view.themes.length-1))/view.themes.length,heights=[];
+  view.themes.forEach((value,index)=>{
+    const x=pad+index*(cardWidth+gap),color=p[['purple','green','amber'][index]],outer=rect(x,y,cardWidth,1,color[1],color[2]);
+    const titleHeight=Math.max(48,c.measure(value.title,cardWidth-32,17)+24);rect(x,y,cardWidth,titleHeight,color[1],null);text(value.title,x+16,y+12,cardWidth-32,{size:17,bold:true,color:color[0]});
+    const panel=rect(x+6,y+titleHeight,cardWidth-12,1,p.bg,null);let top=y+titleHeight+16;
+    if(value.summary)top+=text(value.summary,x+20,top,cardWidth-40,{size:15,bold:true,refs:value.evidence})+14;
+    for(const item of value.items)top+=text(`• ${item.text}`,x+20,top,cardWidth-40,{size:14,refs:item.evidence})+10;
+    if(!value.summary&&!value.items.length)top+=text('纪要未列出',x+20,top,cardWidth-40,{size:14,color:p.muted});
+    const height=Math.max(170,top-y+12);panel.height=height-titleHeight-6;outer.height=height;heights.push({height,panel,outer,titleHeight});
+  });
+  const height=Math.max(...heights.map(item=>item.height));for(const item of heights){item.outer.height=height;item.panel.height=height-item.titleHeight-6;}y+=height+22;
+  if(view.comparison){const grid=view.comparison;y+=table(`${grid.title||'对照与前置条件'} · 摘录`,grid.columns,grid.rows.map(row=>row.cells.map((cell,index)=>cell+(index===grid.columns.length-1&&citations?citations(row.evidence||[]):''))),pad,y,inner)+14;}
+  else{
+    const bottomWidth=(inner-gap)/2,panels=[];
+    for(const [index,label,items] of [[0,'下一步',view.next],[1,'约束与待确认',view.constraints]]){const x=pad+index*(bottomWidth+gap),panel=rect(x,y,bottomWidth,1,p.figure,null);let top=y+14;top+=text(label,x+16,top,bottomWidth-32,{size:15,bold:true})+10;for(const item of items.length?items:[{text:'纪要未列出'}])top+=text(item.text,x+16,top,bottomWidth-32,{size:14,refs:item.evidence})+10;panels.push({panel,height:top-y+4});}const bottomHeight=Math.max(...panels.map(item=>item.height));for(const item of panels)item.panel.height=bottomHeight;y+=bottomHeight+14;
+  }
+  y+=text('总览为原文摘录；完整讨论、行动安排与引用见下文。',pad,y,inner,{size:12,color:p.muted});background.height=y+24;return c.nodes;
+}
 export function minutesBoard(minutes,{theme='light',citations,includeSummary=true}={}){
   const view=minutesOverview(minutes),c=canvas(theme,citations),{p,rect,text,line,table,visual}=c;
   const width=1120,background=rect(0,0,width,1,p.bg),heading=(value,y)=>text(value,28,y,1064,{size:21,bold:true});

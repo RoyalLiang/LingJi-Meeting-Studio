@@ -92,7 +92,7 @@ function TaskContent({task,open}:{task:Task;open:(id:string)=>void}) {
       <p className="ma-empty-inline" role="status">{task.status==='queued'?'任务已进入队列。':task.status==='running'?'正在读取会议文字，等待首段结果…':task.status==='cancelling'?'已请求取消，等待服务确认…':task.status==='cancelled'?'任务已取消，没有生成有效结果。':task.status==='completed'?'任务已完成，但服务未返回可展示结果，请刷新核对。':task.status==='blocked'?'任务等待处理，请查看提示后重新确认。':'本次没有生成有效结果。'}</p>}
   </>;
 }
-export default function MeetingAgentCenter({records,openRecord}:{records:RecordListItem[];openRecord:(id:string)=>void}) {
+export default function MeetingAgentCenter({records,openRecord,footerTarget}:{records:RecordListItem[];openRecord:(id:string)=>void;footerTarget?:HTMLElement|null}) {
   const [extensions,setExtensions]=useState<InstalledExtension[]>([]),[extensionRefresh,setExtensionRefresh]=useState(0),[extensionError,setExtensionError]=useState('');
   const [skillId,setSkillId]=useState('meeting-review'),[pluginIds,setPluginIds]=useState<string[]>([]),[includeNotes,setIncludeNotes]=useState(false);
   useEffect(()=>{let active=true;api<{extensions:InstalledExtension[]}>('/extensions').then(value=>{if(active){setExtensions(value.extensions);setExtensionError('');}}).catch(()=>{if(active)setExtensionError('暂时无法读取扩展，请重试。');});return()=>{active=false;};},[extensionRefresh]);
@@ -105,7 +105,7 @@ export default function MeetingAgentCenter({records,openRecord}:{records:RecordL
   const chosen=records.filter(record=>selected.includes(record.id)),active=tasks.find(task=>task.id===(drawer?.kind==='task'?drawer.id:activeId));
   const available=records.filter(record=>record.capture!=='recording'&&record.segments>0);
   function setPending(next:Submission|null) { pendingRef.current=next;setPendingState(next); }
-  function storeTasks(next:Task[]) { tasksRef.current=next;setTasks(next); }
+  function storeTasks(next:Task[]) { if(JSON.stringify(tasksRef.current)===JSON.stringify(next))return;tasksRef.current=next;setTasks(next); }
   function upsert(task:Task) { storeTasks([task,...tasksRef.current.filter(item=>item.id!==task.id)].sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))); }
   useEffect(()=>{
     if(pendingRef.current)return;
@@ -123,7 +123,7 @@ export default function MeetingAgentCenter({records,openRecord}:{records:RecordL
       if (document.visibilityState==='hidden') {timer=setTimeout(()=>void poll(),30000);return;}
       controller=new AbortController();
       try {
-        const data=await api<{tasks:Task[]}>('/agent/tasks','GET',undefined,controller.signal);
+        const data=await api<{tasks:Task[]}>(`/agent/tasks?view=summary${activeId?'&detail='+encodeURIComponent(activeId):''}`,'GET',undefined,controller.signal);
         if (!Array.isArray(data.tasks)) throw new ApiError('invalid_response',502);
         const next=data.tasks.map(checkedTask).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
         if (stopped) return;
@@ -140,7 +140,7 @@ export default function MeetingAgentCenter({records,openRecord}:{records:RecordL
     }
     void poll();
     return()=>{stopped=true;clearTimeout(timer);controller?.abort();};
-  },[refresh]);
+  },[refresh,activeId]);
   useEffect(()=>{const open=()=>setView('schedule');window.addEventListener('lingji:git-configure',open);return()=>window.removeEventListener('lingji:git-configure',open);},[]);
   function navigate(next:View) { setView(next);setDrawer(null);setDetailError('');setFilter('all'); }
   function showSources() {setDraftSelected(selected);setDrawer({kind:'sources'});}
@@ -189,7 +189,7 @@ export default function MeetingAgentCenter({records,openRecord}:{records:RecordL
     {extensionError&&<FeedbackNotice key={extensionError} message={extensionError} error action={{label:'重试',run:()=>setExtensionRefresh(value=>value+1)}}/>}
     {view==='skills'&&<><div className="ma-toolbar"><h2>内置 Skill <span>1</span></h2></div><article className="ma-capability ma-skill-row"><div className="ma-icon"><Stack size={22}/></div><button type="button" className="ma-item-name" onClick={()=>setDrawer({kind:'skill'})}><strong>会议复盘</strong></button><span className="ma-muted">v1.0.0</span><span className="ma-state">内置</span><Button variant="ghost" aria-label="查看会议复盘" onClick={()=>setDrawer({kind:'skill'})}><CaretRight size={17}/></Button></article><RemoteExtensions type="skill" items={extensions.filter(item=>item.type==='skill')} changed={()=>setExtensionRefresh(value=>value+1)}/></>}
     {view==='plugins'&&<><div className="ma-toolbar"><h2>内置工具 <span>1</span></h2></div><article className="ma-capability"><div className="ma-icon"><FileText size={22}/></div><button type="button" className="ma-item-name" onClick={()=>setDrawer({kind:'plugin'})}><strong>会议资料</strong><span>只读本次选择的会议文字与来源引用。</span></button><span className="ma-muted">聆记</span><span className="ma-state">按任务授权</span><Button variant="ghost" aria-label="查看会议资料工具" onClick={()=>setDrawer({kind:'plugin'})}><CaretRight size={17}/></Button></article><div className="ma-permission"><ShieldCheck size={20}/><div><strong>运行前确认会议范围</strong><p>不读取其他会议，不修改纪要，不对外写入。</p></div></div><RemoteExtensions type="mcp" items={extensions.filter(item=>item.type==='mcp')} changed={()=>setExtensionRefresh(value=>value+1)}/></>}
-    {view==='schedule'&&<MeetingAutomation extensions={extensions}/>}
+    {view==='schedule'&&<MeetingAutomation extensions={extensions} footerTarget={footerTarget}/>}
     {view==='runs'&&<>
       <div className="ma-run-summary">{[{name:'进行中',count:tasks.filter(working).length},{name:'等待处理',count:tasks.filter(task=>['blocked','failed'].includes(task.status)).length},{name:'已完成',count:tasks.filter(task=>task.status==='completed').length}].map(item=><div key={item.name}><span>{item.name}</span><strong>{loading?'—':item.count}</strong></div>)}</div>
       <div className="ma-toolbar"><h2>全部任务 <span>{loading?'':tasks.length}</span></h2><div className="ma-tools"><Select menuMinWidth={168} label="筛选任务状态" value={filter} onChange={setFilter} options={[{value:'all',label:'全部状态'},{value:'active',label:'进行中'},{value:'attention',label:'等待处理'},{value:'completed',label:'已完成'}]}/><Button variant="ghost" aria-label="刷新任务" onClick={()=>setRefresh(value=>value+1)}><ArrowClockwise size={16}/></Button></div></div>

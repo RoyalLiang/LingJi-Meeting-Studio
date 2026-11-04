@@ -43,8 +43,9 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
   async function publicJob(job){
     if(job.agentId&&['queued','running','waiting'].includes(job.status)){
       const child=await agent.get(job.owner,job.agentId);
-      const visible=!child.stale&&!['blocked','cancelled'].includes(child.status);job={...job,...(visible&&child.interaction?{status:'waiting',interaction:child.interaction}:{interaction:undefined}),preview:visible?child.preview:undefined};
+      const visible=!child.stale&&!['blocked','cancelled'].includes(child.status),interaction=visible&&(child.interaction||(job.interaction?.kind==='continuation'?job.interaction:undefined));job={...job,...(interaction?{status:'waiting',interaction}:{interaction:undefined}),preview:visible?child.preview:undefined};
     }
+    if(!['queued','running','waiting'].includes(job.status))job={...job,interaction:undefined};
     if(!retained((await repo.getRecordAccess([job.recordId]))[0],job.owner))return {id:job.id,recordId:job.recordId,title:'会议已删除或过期',status:'blocked',phase:job.phase,error:'git_source_unavailable',createdAt:job.createdAt,updatedAt:job.updatedAt};
     return Object.fromEntries(['id','recordId','title','status','phase','error','createdAt','updatedAt','project','basis','minutesRevision','transcriptRevision','branch','baseBranch','directory','mode','commit','url','agentId','automatic','paused','interaction','preview','managed'].filter(k=>job[k]!==undefined).map(k=>[k,['automatic','paused','managed'].includes(k)?Boolean(job[k]):job[k]]));
   }
@@ -79,13 +80,18 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
       }else if(phase==='organize'){
         const {rule}=await guard(job,runtime.signal);
         if(!job.modelConfigHash){const config=await readConfig(repo.root);job=await update(job.id,{modelConfigHash:modelHash(config),model:config.LLM_MODEL||'injected-test-model'});}
-        const child=job.agentId?await agent.get(job.owner,job.agentId):await agent.request(job.owner,{recordIds:[job.recordId],prompt:rule.prompt,requestId:`git-sync:${digest(`${job.id}:${job.agentAttempt||0}`)}`,scopeConfirmed:true,minutesOnly:true,includeNotes:rule.includeNotes,skillId:rule.scope.skill.id,skillVersion:rule.scope.skill.version,skillIds:(rule.scope.skills||[rule.scope.skill]).map(s=>s.id),skillVersions:Object.fromEntries((rule.scope.skills||[rule.scope.skill]).map(s=>[s.id,s.version])),pluginIds:rule.scope.plugins.map(p=>p.id),pluginVersions:Object.fromEntries(rule.scope.plugins.map(p=>[p.id,p.version])),remoteToolsConfirmed:true},{jobId:job.id,managed:job.managed===true,root:rule.root,project:{id:job.project.id,path:job.project.path,defaultBranch:job.baseBranch},mode:rule.mode||null,directory:rule.directory||null,pendingArchive:Boolean(job.files),instruction:job.managed?'The user requirements and selected meeting/repository scope are immutable. Follow the selected Skills to choose the process, archive directory and write mode where not specified. Ask the user when necessary. Use manage_git_sync to archive before completing.':'Organize the meeting according to the selected guidance; the application will perform the archive.'});
+        const child=job.agentId?await agent.get(job.owner,job.agentId):await agent.request(job.owner,{recordIds:[job.recordId],prompt:rule.prompt,requestId:`git-sync:${digest(`${job.id}:${job.agentAttempt||0}`)}`,scopeConfirmed:true,minutesOnly:true,includeNotes:rule.includeNotes,skillId:rule.scope.skill.id,skillVersion:rule.scope.skill.version,skillIds:(rule.scope.skills||[rule.scope.skill]).map(s=>s.id),skillVersions:Object.fromEntries((rule.scope.skills||[rule.scope.skill]).map(s=>[s.id,s.version])),pluginIds:rule.scope.plugins.map(p=>p.id),pluginVersions:Object.fromEntries(rule.scope.plugins.map(p=>[p.id,p.version])),remoteToolsConfirmed:true},{jobId:job.id,managed:job.managed===true,root:rule.root,project:{id:job.project.id,path:job.project.path,defaultBranch:job.baseBranch},mode:rule.mode||null,directory:rule.directory||null,pendingArchive:Boolean(job.files),feedback:job.feedback||[],instruction:job.managed?'The user requirements and selected meeting/repository scope are immutable. Follow the selected Skills to choose the process, archive directory and write mode where not specified. Ask the user when necessary. Use manage_git_sync to archive before completing.':'Organize the meeting according to the selected guidance; the application will perform the archive.'});
         if(!job.agentId)job=await update(job.id,{agentId:child.id});
         if(['queued','running','cancelling'].includes(child.status)){await update(job.id,{status:child.interaction?'waiting':'running'});await runtime.sleepUntil(Date.now()+agentPollMs,{phase},taskContext);return;}
         const archived=await repo.get(job.id);if(job.managed&&archived.commit&&archived.url&&(archived.mode!=='mr'||archived.iid||archived.integrated)){await update(job.id,{status:'succeeded',phase:'done',error:null});await runtime.commit(()=>terminal({status:'completed',result:{jobId:job.id}}),taskContext);return;}
         requireThat(child.status==='completed'&&!child.stale&&child.result,child.error||'git_agent_failed',502);
         if(job.managed){
-          job=await repo.get(job.id);requireThat(job.commit&&job.url&&(job.mode!=='mr'||job.iid||job.integrated),job.remoteError||'git_agent_archive_required',409);
+          job=await repo.get(job.id);
+          if(!(job.commit&&job.url&&(job.mode!=='mr'||job.iid||job.integrated))){
+          requireThat(!job.writeStarted,'git_result_unknown',409);
+            if(!job.interaction)await update(job.id,{status:'waiting',error:null,interaction:{kind:'continuation',id:`continue:${child.id}`,question:`${child.result.summary}\n\n尚未收到可核对的仓库结果。请补充说明，继续核对并完成同一会议与项目的同步。`,options:['继续核对并完成同步']}});
+            await runtime.sleepUntil(Date.now()+agentPollMs,{phase},taskContext);return;
+          }
           await update(job.id,{status:'succeeded',phase:'done',error:null});await runtime.commit(()=>terminal({status:'completed',result:{jobId:job.id}}),taskContext);return;
         }
         const cite=item=>(item.evidence||[]).map(e=>`${e.segmentId}@${e.revision}`).join(', ');
@@ -230,7 +236,17 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
       async settings(owner){
 return {...publicRule(await load(owner)),recent:await Promise.all((await history(owner)).slice(0,20).map(publicJob))};},
       get:async(owner,id)=>publicJob(await jobFor(owner,id)),
-    respond:async(owner,id,input)=>{const job=await jobFor(owner,id);await guard(job);requireThat(job.agentId,'agent_input_changed',409);await agent.respond(owner,job.agentId,input);return publicJob(await repo.get(id));},
+    respond:async(owner,id,input)=>{const job=await jobFor(owner,id);await guard(job);requireThat(job.agentId,'agent_input_changed',409);
+      if(job.interaction?.kind==='continuation'){
+        requireThat(input?.id===job.interaction.id&&typeof input.answer==='string'&&input.answer.trim()&&input.answer.length<=4000,'agent_input_changed',409);
+        await repo.change(id,current=>{
+          requireThat(current.status==='waiting'&&current.interaction?.id===input.id,'agent_input_changed',409);
+          const feedback=[...(current.feedback||[]),{question:current.interaction.question,answer:input.answer.trim()}];
+          requireThat(JSON.stringify(feedback).length<=60000,'agent_input_too_large',413);
+          Object.assign(current,{feedback,agentAttempt:(current.agentAttempt||0)+1,agentId:null,interaction:null,status:'running',updatedAt:new Date().toISOString()});
+        });
+      }else await agent.respond(owner,job.agentId,input);
+      return publicJob(await repo.get(id));},
       control:(owner,id,action)=>enqueue(async()=>{
         let job=await jobFor(owner,id);if(job.status==='succeeded')return publicJob(job);
         requireThat(['pause','resume','retry'].includes(action),'invalid_git_sync',400);
