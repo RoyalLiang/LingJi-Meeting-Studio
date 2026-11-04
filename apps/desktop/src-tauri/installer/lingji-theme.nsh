@@ -24,8 +24,6 @@ Var LingJiTitleFont
 Var LingJiPathFont
 Var LingJiBodyFont
 Var LingJiBrandFont
-Var LingJiInstallHint
-Var LingJiHintIndex
 Var LingJiPercent
 Var LingJiThemeModule
 
@@ -374,11 +372,11 @@ Function LingJiProgressShow
     System::Call 'user32::SetPropW(p $LingJiControl,w "LingJiTextColor",p 0x353D27)'
     !insertmacro LingJiPlace $LingJiControl 52 180 696 54
     System::Call 'user32::CreateWindowExW(i 0,w "STATIC",w "正在将聆记安装到你的电脑。",i 0x50000000,i 0,i 0,i 0,i 0,p $LingJiDialog,p 0,p 0,p 0)p.s'
-    Pop $LingJiInstallHint
-    SendMessage $LingJiInstallHint ${WM_SETFONT} $LingJiBodyFont 1
-    SetCtlColors $LingJiInstallHint 718177 transparent
-    System::Call 'user32::SetPropW(p $LingJiInstallHint,w "LingJiTextColor",p 0x778171)'
-    !insertmacro LingJiPlace $LingJiInstallHint 52 242 696 30
+    Pop $LingJiControl
+    SendMessage $LingJiControl ${WM_SETFONT} $LingJiBodyFont 1
+    SetCtlColors $LingJiControl 718177 transparent
+    System::Call 'user32::SetPropW(p $LingJiControl,w "LingJiTextColor",p 0x778171)'
+    !insertmacro LingJiPlace $LingJiControl 52 242 696 30
     System::Call 'user32::CreateWindowExW(i 0,w "STATIC",w "正在安装应用文件",i 0x50000000,i 0,i 0,i 0,i 0,p $LingJiDialog,p 0,p 0,p 0)p.s'
     Pop $LingJiControl
     SendMessage $LingJiControl ${WM_SETFONT} $LingJiBodyFont 1
@@ -397,8 +395,6 @@ Function LingJiProgressShow
     SetCtlColors $LingJiControl 718177 transparent
     System::Call 'user32::SetPropW(p $LingJiControl,w "LingJiTextColor",p 0x778171)'
     !insertmacro LingJiPlace $LingJiControl 49 470 550 26
-    StrCpy $LingJiHintIndex 0
-    ${NSD_CreateTimer} LingJiRotateHint 8000
     GetDlgItem $0 $LingJiDialog 1004
     !insertmacro LingJiPlace $0 52 302 696 5
     GetDlgItem $0 $LingJiDialog 1006
@@ -412,22 +408,7 @@ Function LingJiProgressShow
   ${EndIf}
 FunctionEnd
 
-Function LingJiRotateHint
-  ${If} $LingJiInstalling == 1
-    IntOp $LingJiHintIndex $LingJiHintIndex + 1
-    IntOp $LingJiHintIndex $LingJiHintIndex % 3
-    ${If} $LingJiHintIndex == 0
-      ${NSD_SetText} $LingJiInstallHint "正在将聆记安装到你的电脑。"
-    ${ElseIf} $LingJiHintIndex == 1
-      ${NSD_SetText} $LingJiInstallHint "录音与纪要留在本机，重要讨论随时回顾。"
-    ${Else}
-      ${NSD_SetText} $LingJiInstallHint "纪要保留来源，后续行动清晰可查。"
-    ${EndIf}
-  ${EndIf}
-FunctionEnd
-
 Function LingJiProgressLeave
-  ${NSD_KillTimer} LingJiRotateHint
   ${NSD_FreeIcon} $LingJiIconImage
   ${NSD_FreeBitmap} $LingJiImage
 FunctionEnd
