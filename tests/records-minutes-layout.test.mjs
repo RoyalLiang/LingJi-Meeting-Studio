@@ -264,13 +264,14 @@ test('meeting highlights stay closed during capture and retain live content whil
  const waiting=render({capture:'sealed',liveMinutes:live,minutes:null,jobs:[{id:'final',scope:'final',status:'running'}]});
  assert.doesNotMatch(waiting,/后台仍在整理纪要与重点速览|个节点/);assert.match(waiting,/会中重点草稿/);
  const ended=render({capture:'completed',liveMinutes:live,minutes:final});
- assert.match(ended,/class="meeting-highlights"/);assert.match(ended,/会议最终重点/);assert.match(ended,/会中重点历史/);assert.match(ended,/会中重点草稿/);
+ assert.match(ended,/class="meeting-highlights is-collapsed"/);assert.match(ended,/展开重点内容/);assert.doesNotMatch(ended,/meeting-highlights-content|会中重点历史/);
+ assert.equal(final.highlights[0].text,'会议最终重点');assert.equal(live.highlights[0].text,'会中重点草稿');
 });
 
 
 test('an ended meeting without an AI job shows an empty state rather than indefinite processing', () => {
  const html=render({capture:'completed',minutes:null,liveMinutes:null,jobs:[],autoMinutes:{enabled:false,intervalSeconds:120}});
- assert.match(html,/尚未生成最终纪要/);assert.match(html,/整理会议重点/);assert.doesNotMatch(html,/正在整理最终重点/);
+ assert.match(html,/meeting-highlights is-collapsed/);assert.match(html,/展开重点内容/);assert.doesNotMatch(html,/meeting-highlights-content|正在整理最终重点/);
 });
 
 

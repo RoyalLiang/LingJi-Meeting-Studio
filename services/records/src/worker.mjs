@@ -17,7 +17,8 @@ import { fileURLToPath } from 'node:url';
 import { commitMinutes, commitTranscript, preserveMinutesProgress, emit, audioPurgeReady } from '../../../packages/records/src/record.mjs';
 import { createRepository } from './repository.mjs';
 import { readConfig } from './config.mjs';
-import { recordAsrConfig } from './vocabulary.mjs';
+import { recordAsrConfig, loadVocabulary } from './vocabulary.mjs';
+import { loadBuiltinVocabulary } from './builtin-vocabulary.mjs';
 import { commitIntents, ruleIntents } from '../../../packages/records/src/intents.mjs';
 import { providerStatus, analyzeIntents, generateMinutes, minutesTimeoutMs, transcribe, translateText } from './providers.mjs';
 
@@ -140,6 +141,10 @@ export async function runCycle(repo, providers = {}, { lane = 'all', cacheConfig
     }, {returnRecord:false});
     if (jobClaim) {
       try {
+        if(jobClaim.mode==='model'){
+          const personal=await loadVocabulary(repo,minutesCandidate.owner),builtin=await loadBuiltinVocabulary();
+          jobClaim={...jobClaim,meetingTitle:minutesCandidate.title,vocabularyEntries:personal.entries,vocabularyFingerprint:`${personal.fingerprint}:${builtin.hash}`};
+        }
         let json = '', lastPublished = 0, previewStream, previewTimer, previewRuntime;
       let publishing, previewDirty=false, previewClosed=false;
       const schedulePreview=()=>{

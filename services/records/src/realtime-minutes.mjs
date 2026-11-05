@@ -1,3 +1,4 @@
+import { withMinutesVocabulary } from './minutes-vocabulary.mjs';
 import { groundSpeakerSummaries, orderMinutesTimelines } from '../../../packages/records/src/minutes-quality.mjs';
 import { minutesTimeoutMs } from './minutes-deadline.mjs';
 import { minutesInstructions, normalizeMinutesOutput } from './minutes-prompts.mjs';
@@ -111,7 +112,7 @@ export async function generateRealtimeMinutes(repo, recordId, job, input, option
       await entry.client.ready;
       await feed(repo, record, entry, chunks.sort((a,b) => sourceTime(record,a) - sourceTime(record,b) || a.sequence - b.sequence));
       const audio = chunks.map(chunk => ({ ...entry.audio.get(chunk.key), chunkKey: chunk.key }));
-      const data = { transcript: refs, audio, notes: job.notes, context: job.liveContext, summaries: job.summaries, scope: job.scope, template: job.template, stage: job.stage, omittedEvidence:job.omittedEvidence };
+      const data = await withMinutesVocabulary({ transcript: refs, audio, notes: job.notes, context: job.liveContext, summaries: job.summaries, scope: job.scope, template: job.template, stage: job.stage, omittedEvidence:job.omittedEvidence },job);
       const inputItems = [...new Set(audio.map(item => item.itemId))].map(id => ({ type: 'item_reference', id }));
       inputItems.push({ type: 'message', role: 'user', content: [{ type: 'input_text', text: JSON.stringify(data) }] });
       const result = await entry.client.respond(inputItems, minutesInstructions(job,true), { ...options, timeoutMs: minutesTimeoutMs(job) });

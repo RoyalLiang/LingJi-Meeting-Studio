@@ -1,3 +1,4 @@
+import { withMinutesVocabulary } from './minutes-vocabulary.mjs';
 import { funasrConfigured, transcribeFunasr } from './funasr.mjs';
 import { localAsrConfigured } from './local-asr.mjs';
 import { waveHeader } from './audio-wav.mjs';
@@ -86,6 +87,7 @@ export async function generateMinutes(job, env = process.env, options = {}) {
 
   if (providerStatus(env).fixture) return { title: '开发测试纪要', sections: [{ heading: '测试摘要', items: job.summaries ? job.summaries.flatMap(summary=>summary.sections.flatMap(section=>section.items)).slice(0,8) : job.snapshot.filter(s=>!s.contextOnly).slice(0, 8).map(s => ({ text: s.text, evidence: [{ segmentId: s.id, revision: s.revision }] })) }], actions: [] };
   const wire=compactMinutesPayload(job);
+  wire.payload=await withMinutesVocabulary(wire.payload,job);
   requireThat(JSON.stringify(wire.payload).length < 180000, 'transcript_exceeds_model_budget', 422);
   const modelOptions={...options,timeoutMs:minutesTimeoutMs(job),jsonSchema:compactMinutesSchema(minutesSchema)};
   if(/^kimi-k3[.-]1-pro(?:-|$)/i.test(env.LLM_MODEL)){modelOptions.maxOutputTokens=16384;if(job.scope==='live'&&(!env.LLM_REASONING_EFFORT||env.LLM_REASONING_EFFORT==='auto'))modelOptions.reasoningEffort='low';}

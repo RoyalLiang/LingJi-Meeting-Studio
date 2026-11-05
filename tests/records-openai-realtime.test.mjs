@@ -300,3 +300,14 @@ test('HTTP bootstrap removes the advertised cap and requires separate raw-audio 
     assert.equal((await allowed.json()).realtimeAudioConsent,true);
   } finally {await app.stop();}
 }));
+
+test('Realtime minutes use the same matched terminology without rewriting transcript refs',async()=>fixture(async(config,state)=>temporary(async root=>{
+  const repo=await createRepository({root,databaseUrl:''});
+  try{
+    const {record,sources}=await recorded(repo,config);await processRealtimeAudio(repo,record,config);
+    const job={generation:record.generation,mode:'model',scope:'final',notes:'',snapshot:[{id:'vocab-s1',revision:1,sourceId:sources[0].id,startMs:0,endMs:1000,text:'星河调渡需要复核。'}],vocabularyEntries:[{kind:'terms',text:'星河调度',aliases:['星河调渡']}]};
+    await generateRealtimeMinutes(repo,record.id,job,config);
+    const request=state.requests.at(-1).response.input.find(item=>item.type==='message'),data=JSON.parse(request.content[0].text);
+    assert.ok(data.vocabulary.terms.includes('星河调度'));assert.deepEqual(data.vocabulary.aliases,[{from:'星河调渡',to:'星河调度'}]);assert.equal(data.transcript[0].text,job.snapshot[0].text);
+  }finally{closeRealtime(repo);await repo.close();}
+})));

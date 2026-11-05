@@ -259,3 +259,13 @@ test('audio-only pending response respects withdrawn raw-audio consent without c
   const after=await repo.get(record.id);assert.equal(after.segments.length,0);assert.equal(after.chunks[0].state,'pending');assert.equal(after.chunks[0].attempts,0);assert.equal(after.chunks[0].lease,undefined);assert.equal(after.usage.llmTokens,30);
  },async(_body,res)=>{entered();await new Promise(resolve=>{release=resolve;});res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({output_text:'{"text":"已发出的响应"}',usage:{total_tokens:30}}));});
 });
+
+test('Doubao minutes carry matched spelling references alongside the frozen audio mapping',async()=>fixture(async(repo,config,requests)=>{
+  const {record,source}=await recorded(repo,config),job=jobFor(record,source);
+  job.notes='本次讨论星河调渡。';job.vocabularyEntries=[{kind:'terms',text:'星河调度',aliases:['星河调渡']}];
+  await generateDoubaoAudioMinutes(repo,record.id,job,config);
+  const data=JSON.parse(requests[0].input.at(-1).content.at(-1).text);
+  assert.ok(data.vocabulary.terms.includes('星河调度'));
+  assert.deepEqual(data.vocabulary.aliases,[{from:'星河调渡',to:'星河调度'}]);
+  assert.equal(data.notes,job.notes);assert.equal(data.transcript[0].text,job.snapshot[0].text);
+}));

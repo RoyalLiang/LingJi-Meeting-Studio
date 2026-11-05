@@ -1,3 +1,4 @@
+import { withMinutesVocabulary } from './minutes-vocabulary.mjs';
 import { groundSpeakerSummaries, orderMinutesTimelines } from '../../../packages/records/src/minutes-quality.mjs';
 import { minutesTimeoutMs } from './minutes-deadline.mjs';
 import { normalizeConfig, configured } from './config.mjs';
@@ -59,7 +60,7 @@ export async function generateDoubaoAudioMinutes(repo, recordId, job, input, opt
   const chunks = job.stage === 'synthesis' ? [] : record.chunks.filter(chunk => !chunk.expired && chunk.sequence <= (record.sources.find(source => source.id === chunk.sourceId && source.epoch === chunk.epoch)?.watermark ?? -1) && refs.some(segment => segment.sourceId === chunk.sourceId && segment.startMs < sourceTime(record, chunk) + chunk.sampleCount / 16 && segment.endMs > sourceTime(record, chunk)));
   requireThat(job.stage === 'synthesis' || chunks.length > 0, 'audio_minutes_audio_unavailable', 409);
   const clips = await audioClips(repo, record, chunks);
-  const data = { transcript: refs, audio: clips.map(({ audio: _audio, ...mapping }) => mapping), notes: job.notes, context: job.liveContext, summaries: job.summaries, scope: job.scope, template: job.template, stage: job.stage, omittedEvidence:job.omittedEvidence };
+  const data = await withMinutesVocabulary({ transcript: refs, audio: clips.map(({ audio: _audio, ...mapping }) => mapping), notes: job.notes, context: job.liveContext, summaries: job.summaries, scope: job.scope, template: job.template, stage: job.stage, omittedEvidence:job.omittedEvidence },job);
   const result = await completeModelJson([
     { role: 'system', content: minutesInstructions(job,true) },
     { role: 'user', content: [...clips.flatMap(clip => [{ type: 'input_text', text: `音频 ${clip.clipId}，对应时间及来源见下方 audio 映射。` }, clip.audio]), { type: 'input_text', text: JSON.stringify(data) }] },

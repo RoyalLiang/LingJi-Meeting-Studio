@@ -84,6 +84,14 @@ void paintProgress(HWND window, HDC dc) {
 LRESULT CALLBACK themed(HWND window, UINT message, WPARAM w, LPARAM l, UINT_PTR kind, DWORD_PTR data) {
   if (message == WM_SHOWWINDOW && w && GetPropW(window,L"LingJiInstallingHide")) { ShowWindow(window,SW_HIDE); return 0; }
   if (message == WM_NCDESTROY) { RemoveWindowSubclass(window, themed, kind); return DefSubclassProc(window, message, w, l); }
+  if (window == percentLabel && message == WM_SETTEXT) {
+    // Store the caption without STATIC's immediate paint at a different baseline.
+    const bool visible=(GetWindowLongPtrW(window,GWL_STYLE)&WS_VISIBLE)!=0;
+    if(visible)DefSubclassProc(window,WM_SETREDRAW,FALSE,0);
+    const LRESULT result=DefSubclassProc(window,message,w,l);
+    if(visible){DefSubclassProc(window,WM_SETREDRAW,TRUE,0);InvalidateRect(window,nullptr,FALSE);}
+    return result;
+  }
   if (kind == 3) {
     if (message == WM_NCCALCSIZE) {
       RECT* r = w ? &reinterpret_cast<NCCALCSIZE_PARAMS*>(l)->rgrc[0] : reinterpret_cast<RECT*>(l);

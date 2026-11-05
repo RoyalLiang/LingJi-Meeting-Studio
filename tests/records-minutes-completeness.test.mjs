@@ -25,12 +25,10 @@ test('ending keeps the last validated highlights visible until final minutes and
  record.liveMinutes={...minutes('会中总结',record.segments),highlights:[{text:'早期重点仍可查',evidence:[ref(record.segments[0])]}]};
  record.jobs=[{id:'draining',scope:'live',status:'running',transcriptRevision:1}];
  const render=()=>renderToStaticMarkup(React.createElement(module.exports.MinutesPanel,{record,busy:false,onClose(){},generate:async()=>{},edit:async()=>true,cite(){},automate:async()=>{},inline:true})).match(/<aside[^>]*aria-label="会议重点"[\s\S]*?<\/aside>/)?.[0] || '';
- for(const capture of ['sealed','completed']){
-  record.capture=capture;
-  assert.match(render(),/早期重点仍可查/);assert.doesNotMatch(render(),/后台仍在整理纪要与重点速览|个节点/);
- }
+ record.capture='sealed';assert.match(render(),/早期重点仍可查/);
+ record.capture='completed';assert.match(render(),/meeting-highlights is-collapsed/);assert.match(render(),/会中总结/);assert.doesNotMatch(render(),/meeting-highlights-content/);
  record.jobs=[];record.minutes={...minutes('最终总结',record.segments),highlights:[{text:'最终重点',evidence:[ref(record.segments[0])]}]};
- const final=render();assert.match(final,/最终重点/);assert.match(final,/会中重点历史/);assert.match(final,/早期重点仍可查/);
+ const final=render();assert.match(final,/最终总结/);assert.match(final,/meeting-highlights is-collapsed/);assert.equal(record.liveMinutes.highlights[0].text,'早期重点仍可查');assert.equal(record.minutes.highlights[0].text,'最终重点');
  record.minutes.edited=true;assert.doesNotMatch(render(),/会中重点历史/,'manual deletions must not surface through automatic history');
 });
 

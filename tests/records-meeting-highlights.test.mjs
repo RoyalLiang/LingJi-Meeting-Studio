@@ -49,3 +49,9 @@ test('the focus headline follows the synthesized topic title rather than the fir
   assert.match(render({minutes:value,collapsed:true}),new RegExp('meeting-highlights-inline-lead">'+title+'<'));
  }
 });
+
+test('manual expansion reveals final highlights and retained live history',()=>{
+ const value={...minutes,title:'最终总结',highlights:[{text:'最终重点',evidence:[]}]},history={...minutes,highlights:[{text:'早期重点仍可查',evidence:[]}]};
+ const closed=render({minutes:value,history,collapsed:true});assert.doesNotMatch(closed,/meeting-highlights-content|早期重点仍可查/);
+ const expanded=render({minutes:value,history,collapsed:false});assert.match(expanded,/最终重点/);assert.match(expanded,/会中重点历史/);assert.match(expanded,/早期重点仍可查/);
+});

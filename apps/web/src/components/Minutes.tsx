@@ -61,9 +61,9 @@ export function MinutesPanel({ record, busy, onClose, generate, edit, cite, auto
   const [expanded,setExpanded] = useState(false);
   const [previewOpen,setPreviewOpen] = useState(false);
   const ended = record.capture === 'sealed' || record.capture === 'completed';
-  const [focusCollapsed,setFocusCollapsed] = useState(false);
+  const [focusCollapsed,setFocusCollapsed] = useState(record.capture==='completed');
   const [focusOpen,setFocusOpen] = useState(ended), focusTrigger = useRef<HTMLButtonElement>(null);
-  useEffect(() => { setFocusOpen(ended); setFocusCollapsed(false); }, [record.id, ended]);
+  useEffect(() => { setFocusOpen(ended); setFocusCollapsed(record.capture==='completed'); }, [record.id, ended]);
   const openFocus = () => { setFocusCollapsed(false); setFocusOpen(true); requestAnimationFrame(()=>document.getElementById(`meeting-highlights-${record.id}`)?.querySelector<HTMLButtonElement>('[aria-label="收起会议重点"]')?.focus({preventScroll:true})); };
   const closeFocus = () => { setFocusOpen(false); requestAnimationFrame(()=>focusTrigger.current?.focus({preventScroll:true})); };
   const submitting = useRef(false);
