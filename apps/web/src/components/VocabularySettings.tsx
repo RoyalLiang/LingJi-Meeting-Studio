@@ -26,8 +26,6 @@ export function VocabularySettings({ actionsTarget }: { actionsTarget: HTMLEleme
     finally { pending.current = false; if (active.current) setBusy(false); }
   }
   return <section className="settings-section vocabulary-settings" aria-label="转录词表"><div className="section-title"><BookOpenText size={19}/><h3>转录词表</h3></div>
-    <p className="settings-mode-note">全局词表 · 适用于所有会议</p>
-    {value && <p className="settings-mode-note">{value.builtin?.available ? `内置业务词表 ${value.builtin.entries.toLocaleString()} 条 · ${value.builtin.version}，按上下文用于转录与意图识别。` : '此运行环境未加载内置业务词表。'} 下方可补充个人常用词和名称。</p>}
     <form id="vocabulary-settings" onSubmit={submit}><div className="vocabulary-fields">{(['terms','names'] as const).map(key => <label key={key}>{key === 'terms' ? '常见词语集' : '名称集'}<textarea name={key} rows={5} maxLength={12000} disabled={!value || busy} value={value?.[key] || ''} onChange={e => setValue(current => current ? {...current,[key]:e.target.value} : current)} placeholder={key === 'terms' ? '每行一个正确词语，可用 | 添加误识别写法\nRedis Sentinel | Redis 森提诺\n集装箱' : '每行一个正确名称，可用 | 添加误识别写法\n聆记 | 灵记\n王晓明 | 王小明'}/></label>)}</div>
       {message && <FeedbackNotice key={message} message={message} error={error} warning={false}/>}
       {actionsTarget && createPortal(<div className="actions"><Button type="submit" form="vocabulary-settings" disabled={!value || busy}>保存词表</Button></div>, actionsTarget)}

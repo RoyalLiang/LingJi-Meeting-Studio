@@ -9,7 +9,7 @@ import type { Bootstrap } from '../model';
 import { protocolForAddress } from '../provider-settings';
 type Values = Record<string, string | boolean>;
 const secretKeys = new Set(['FUNASR_API_KEY', 'OPENAI_REALTIME_API_KEY', 'DOUBAO_API_KEY', 'ASR_API_KEY', 'DEEPGRAM_API_KEY', 'LLM_API_KEY', 'DOUBAO_TRANSLATION_API_KEY']);
-export function ProviderSettings({ saved, actionsTarget, initialProvider = 'doubao', initialMinutesMode = 'asr-llm' }: { saved: (state: Pick<Bootstrap,'providers'|'meetingAutomation'|'audioMinutesDefault'>) => void; actionsTarget: HTMLElement | null; initialProvider?: string; initialMinutesMode?: string }) {
+export function ProviderSettings({ saved, actionsTarget, beforeSave, initialProvider = 'doubao', initialMinutesMode = 'asr-llm' }: { saved: (state: Pick<Bootstrap,'providers'|'meetingAutomation'|'audioMinutesDefault'>) => void; actionsTarget: HTMLElement | null; beforeSave?:()=>Promise<void>|undefined; initialProvider?: string; initialMinutesMode?: string }) {
   const [values, setValues] = useState<Values | null>(null), [provider, setProvider] = useState(initialProvider);
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState<Record<string, string>>({ MINUTES_MODE: initialMinutesMode }), protocolTouched = useRef(false), pending = useRef(false);
@@ -29,6 +29,7 @@ export function ProviderSettings({ saved, actionsTarget, initialProvider = 'doub
     const submitted = Object.fromEntries(new FormData(e.currentTarget));
     pending.current = true; setBusy(true); setError(''); setNotice('');
     try {
+      await beforeSave?.();
       const { values: config, providers, meetingAutomation, audioMinutesDefault } = await api<{ values: Values } & Pick<Bootstrap,'providers'|'meetingAutomation'|'audioMinutesDefault'>>('/settings/providers', 'PUT', submitted);
       setValues(config);
       // Editing can continue during the request. Only reconcile the submitted values
@@ -89,7 +90,6 @@ export function ProviderSettings({ saved, actionsTarget, initialProvider = 'doub
       <input type="hidden" name="AUTO_MEETING_ENABLED" value={draft.AUTO_MEETING_ENABLED || 'false'}/><input type="hidden" name="AUTO_MEETING_BROWSER" value={draft.AUTO_MEETING_BROWSER || 'true'}/><input type="hidden" name="AUTO_MEETING_FEISHU" value={draft.AUTO_MEETING_FEISHU || 'true'}/>
       <label className="checkbox-label"><input type="checkbox" checked={draft.AUTO_MEETING_ENABLED==='true'} disabled={!values || !nativeMeeting} onChange={event=>setDraft(current=>({...current,AUTO_MEETING_ENABLED:String(event.target.checked)}))}/>允许音频调用触发自动录音</label>
       <div className="settings-dependent-fields"><label className="checkbox-label"><input type="checkbox" checked={draft.AUTO_MEETING_BROWSER!=='false'} disabled={!values || !nativeMeeting || draft.AUTO_MEETING_ENABLED!=='true'} onChange={event=>setDraft(current=>({...current,AUTO_MEETING_BROWSER:String(event.target.checked)}))}/>浏览器 · Chrome / Edge</label><label className="checkbox-label"><input type="checkbox" checked={draft.AUTO_MEETING_FEISHU!=='false'} disabled={!values || !nativeMeeting || draft.AUTO_MEETING_ENABLED!=='true'} onChange={event=>setDraft(current=>({...current,AUTO_MEETING_FEISHU:String(event.target.checked)}))}/>飞书</label></div>
-      <p className="settings-mode-note">{nativeMeeting ? '持续调用扬声器或麦克风约 4 秒后开始；全部调用停止约 10 秒后结束，只管理自动创建的记录。录制麦克风与系统音频，沿用当前转录和纪要设置。浏览器视频、音乐也可能触发；关闭联动不会结束当前录音。Windows 仅监听共享音频会话，独占音频不在首版覆盖范围。' : '支持 macOS / Windows 桌面的 Chrome / Edge 与飞书；Windows 仅覆盖共享音频会话，Linux 暂不启用。'}</p>
       {actionsTarget && createPortal(<div className="actions"><Button type="button" disabled={!values || audioOnly} aria-disabled={busy || !values || audioOnly} onClick={() => void test('asr')}><Plug size={16}/>测试转录</Button><Button type="button" disabled={!values} aria-disabled={busy || !values} onClick={() => void test('minutes')}>测试纪要</Button><Button disabled={!values} aria-disabled={busy || !values} type="submit" form="provider-settings" variant="primary">保存配置</Button></div>, actionsTarget)}
     </form>
   </div>;

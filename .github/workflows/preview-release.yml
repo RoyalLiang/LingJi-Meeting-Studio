@@ -31,6 +31,7 @@ jobs:
       sha: ${{ steps.source.outputs.sha }}
       version: ${{ steps.source.outputs.version }}
       controller_sha: ${{ steps.source.outputs.controller_sha }}
+      vocabulary_version: ${{ steps.source.outputs.vocabulary_version }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -61,11 +62,15 @@ jobs:
           export SOURCE_SHA WORKFLOW_SHA
           node --input-type=module <<'NODE'
           import {execFileSync} from 'node:child_process';
+          import {appendFileSync} from 'node:fs';
           import assert from 'node:assert/strict';
           import {assertReleaseEvent} from './scripts/publish-preview-release.mjs';
           assertReleaseEvent({eventName:process.env.GITHUB_EVENT_NAME,ref:process.env.GITHUB_REF,tag:process.env.RELEASE_TAG,commit:process.env.SOURCE_SHA,workflowSha:process.env.WORKFLOW_SHA});
           const cfg=JSON.parse(execFileSync('git',['show',process.env.SOURCE_SHA+':apps/desktop/src-tauri/tauri.preview.conf.json']));
           assert.equal('v'+cfg.version,process.env.RELEASE_TAG);
+          const vocabulary=JSON.parse(execFileSync('git',['show',process.env.SOURCE_SHA+':services/records/src/data/builtin-vocabulary.manifest.json']));
+          assert.ok(['20261105.2','20261105.3'].includes(vocabulary.version),'Unsupported vocabulary input version');
+          appendFileSync(process.env.GITHUB_OUTPUT,`vocabulary_version=${vocabulary.version}\n`);
           NODE
           echo "sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
           echo "version=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
@@ -93,8 +98,8 @@ jobs:
       - run: npm ci
       - name: Materialize private built-in vocabulary
         env:
-          TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART1: ${{ secrets.TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART1 }}
-          TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART2: ${{ secrets.TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART2 }}
+          TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART1: ${{ (needs.verify.outputs.vocabulary_version == '20261105.2' && secrets.TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART1) || (needs.verify.outputs.vocabulary_version == '20261105.3' && secrets.TTS_BUILTIN_VOCABULARY_20261105_3_PART1) }}
+          TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART2: ${{ (needs.verify.outputs.vocabulary_version == '20261105.2' && secrets.TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART2) || (needs.verify.outputs.vocabulary_version == '20261105.3' && secrets.TTS_BUILTIN_VOCABULARY_20261105_3_PART2) }}
         run: node scripts/materialize-builtin-vocabulary.mjs
       - name: Keep vocabulary payload outside Git
         run: git check-ignore --quiet services/records/src/data/builtin-vocabulary.private.json
@@ -160,8 +165,8 @@ jobs:
       - run: npm ci
       - name: Materialize private built-in vocabulary
         env:
-          TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART1: ${{ secrets.TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART1 }}
-          TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART2: ${{ secrets.TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART2 }}
+          TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART1: ${{ (needs.verify.outputs.vocabulary_version == '20261105.2' && secrets.TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART1) || (needs.verify.outputs.vocabulary_version == '20261105.3' && secrets.TTS_BUILTIN_VOCABULARY_20261105_3_PART1) }}
+          TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART2: ${{ (needs.verify.outputs.vocabulary_version == '20261105.2' && secrets.TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART2) || (needs.verify.outputs.vocabulary_version == '20261105.3' && secrets.TTS_BUILTIN_VOCABULARY_20261105_3_PART2) }}
         run: node scripts/materialize-builtin-vocabulary.mjs
       - name: Keep vocabulary payload outside Git
         run: git check-ignore --quiet services/records/src/data/builtin-vocabulary.private.json
@@ -327,8 +332,8 @@ jobs:
       - run: npm ci
       - name: Materialize private built-in vocabulary
         env:
-          TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART1: ${{ secrets.TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART1 }}
-          TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART2: ${{ secrets.TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART2 }}
+          TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART1: ${{ (needs.verify.outputs.vocabulary_version == '20261105.2' && secrets.TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART1) || (needs.verify.outputs.vocabulary_version == '20261105.3' && secrets.TTS_BUILTIN_VOCABULARY_20261105_3_PART1) }}
+          TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART2: ${{ (needs.verify.outputs.vocabulary_version == '20261105.2' && secrets.TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART2) || (needs.verify.outputs.vocabulary_version == '20261105.3' && secrets.TTS_BUILTIN_VOCABULARY_20261105_3_PART2) }}
         run: node scripts/materialize-builtin-vocabulary.mjs
       - name: Keep vocabulary payload outside Git
         run: git check-ignore --quiet services/records/src/data/builtin-vocabulary.private.json

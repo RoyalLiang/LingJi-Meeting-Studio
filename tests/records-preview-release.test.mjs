@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readdir, writeFile, readFile, rename, rm } from 'node:fs/promises';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -122,6 +122,32 @@ test('publication entry accepts only main manual dispatch or its exact version t
     {eventName:'pull_request',ref:'refs/tags/v0.1.1'},
     {eventName:'repository_dispatch',ref:'refs/heads/main'},
   ])assert.throws(()=>assertReleaseEvent({...base,...event}));
+});
+
+test('manual releases resolve vocabulary from the selected source rather than the controller',async t=>{
+  const directory=await mkdtemp(join(tmpdir(),'preview-vocabulary-source-'));
+  t.after(()=>rm(directory,{recursive:true,force:true}));
+  const git=(...args)=>execFileSync('git',['-C',directory,'-c','user.name=Fixture','-c','user.email=fixture@example.test','-c','commit.gpgsign=false',...args],{encoding:'utf8'}).trim();
+  git('init','-q');
+  const config='apps/desktop/src-tauri/tauri.preview.conf.json',manifest='services/records/src/data/builtin-vocabulary.manifest.json';
+  await mkdir(join(directory,'apps/desktop/src-tauri'),{recursive:true});
+  await mkdir(join(directory,'services/records/src/data'),{recursive:true});
+  const commit=async(version,vocabulary)=>{
+    await writeFile(join(directory,config),JSON.stringify({version}));
+    await writeFile(join(directory,manifest),JSON.stringify({version:vocabulary}));
+    git('add','--',config,manifest);git('commit','-qm','fixture');return git('rev-parse','HEAD');
+  };
+  const old=await commit('0.2.35','20261105.2'),current=await commit('0.2.36','20261105.3'),unknown=await commit('0.2.37','unknown');
+  const workflow=await readFile(new URL('../.github/workflows/preview-release.yml',import.meta.url),'utf8');
+  const block=workflow.match(/node --input-type=module <<'NODE'\n([\s\S]*?)\n {10}NODE/);
+  assert.ok(block,'The source-verification step must be exercised');
+  const script=block[1].replace(/^ {10}/gm,''),output=join(directory,'outputs');
+  for(const [source,tag,expected] of [[old,'v0.2.35','20261105.2'],[current,'v0.2.36','20261105.3'],[unknown,'v0.2.37',null]]){
+    await writeFile(output,'');
+    const result=spawnSync(process.execPath,['--input-type=module','-e',script],{cwd:fileURLToPath(new URL('..',import.meta.url)),encoding:'utf8',env:{...process.env,GIT_DIR:join(directory,'.git'),GIT_WORK_TREE:directory,GITHUB_OUTPUT:output,GITHUB_EVENT_NAME:'workflow_dispatch',GITHUB_REF:'refs/heads/main',RELEASE_TAG:tag,SOURCE_SHA:source,WORKFLOW_SHA:current}});
+    if(expected){assert.equal(result.status,0,result.stderr);assert.equal(await readFile(output,'utf8'),`vocabulary_version=${expected}\n`);}
+    else{assert.notEqual(result.status,0);assert.match(result.stderr,/Unsupported vocabulary input version/);assert.equal(await readFile(output,'utf8'),'');}
+  }
 });
 
 async function windowsFixture(options,mac) {
