@@ -139,14 +139,17 @@ test('manual releases resolve vocabulary from the selected source rather than th
   };
   const old=await commit('0.2.35','20261105.2'),current=await commit('0.2.36','20261105.3'),unknown=await commit('0.2.37','unknown');
   const workflow=await readFile(new URL('../.github/workflows/preview-release.yml',import.meta.url),'utf8');
-  const block=workflow.match(/node --input-type=module <<'NODE'\n([\s\S]*?)\n {10}NODE/);
-  assert.ok(block,'The source-verification step must be exercised');
-  const script=block[1].replace(/^ {10}/gm,''),output=join(directory,'outputs');
-  for(const [source,tag,expected] of [[old,'v0.2.35','20261105.2'],[current,'v0.2.36','20261105.3'],[unknown,'v0.2.37',null]]){
-    await writeFile(output,'');
-    const result=spawnSync(process.execPath,['--input-type=module','-e',script],{cwd:fileURLToPath(new URL('..',import.meta.url)),encoding:'utf8',env:{...process.env,GIT_DIR:join(directory,'.git'),GIT_WORK_TREE:directory,GITHUB_OUTPUT:output,GITHUB_EVENT_NAME:'workflow_dispatch',GITHUB_REF:'refs/heads/main',RELEASE_TAG:tag,SOURCE_SHA:source,WORKFLOW_SHA:current}});
-    if(expected){assert.equal(result.status,0,result.stderr);assert.equal(await readFile(output,'utf8'),`vocabulary_version=${expected}\n`);}
-    else{assert.notEqual(result.status,0);assert.match(result.stderr,/Unsupported vocabulary input version/);assert.equal(await readFile(output,'utf8'),'');}
+  const output=join(directory,'outputs');
+  for(const lineEnding of ['\n','\r\n']){
+    const block=workflow.replace(/\r?\n/g,lineEnding).match(/node --input-type=module <<'NODE'\r?\n([\s\S]*?)\r?\n {10}NODE/);
+    assert.ok(block,`The source-verification step must be exercised (${JSON.stringify(lineEnding)})`);
+    const script=block[1].replace(/^ {10}/gm,'');
+    for(const [source,tag,expected] of [[old,'v0.2.35','20261105.2'],[current,'v0.2.36','20261105.3'],[unknown,'v0.2.37',null]]){
+      await writeFile(output,'');
+      const result=spawnSync(process.execPath,['--input-type=module','-e',script],{cwd:fileURLToPath(new URL('..',import.meta.url)),encoding:'utf8',env:{...process.env,GIT_DIR:join(directory,'.git'),GIT_WORK_TREE:directory,GITHUB_OUTPUT:output,GITHUB_EVENT_NAME:'workflow_dispatch',GITHUB_REF:'refs/heads/main',RELEASE_TAG:tag,SOURCE_SHA:source,WORKFLOW_SHA:current}});
+      if(expected){assert.equal(result.status,0,result.stderr);assert.equal(await readFile(output,'utf8'),`vocabulary_version=${expected}\n`);}
+      else{assert.notEqual(result.status,0);assert.match(result.stderr,/Unsupported vocabulary input version/);assert.equal(await readFile(output,'utf8'),'');}
+    }
   }
 });
 
