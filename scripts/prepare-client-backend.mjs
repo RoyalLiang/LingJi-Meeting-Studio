@@ -76,6 +76,8 @@ export async function prepareClientBackend({ root = project, cacheRoot = join(pr
   for (const path of ['services/records/src', 'packages/records/src', 'scripts/alpha-learning']) {
     await cp(join(root, path), join(backend, path), { recursive: true, filter: includeBackendSource });
   }
+  // Installed Linux resources are owned by root; application users must be able to read this bundle.
+  await chmod(join(backend, 'services/records/src/data/builtin-vocabulary.private.json'), 0o644);
   const bundledVocabulary = await readBuiltinVocabulary(pathToFileURL(join(backend, 'services/records/src/data/')));
   assert.equal(bundledVocabulary.hash, builtinVocabulary.sha256, 'bundled vocabulary missing or changed');
   await mkdir(join(backend,'tools/neohorse'),{recursive:true});

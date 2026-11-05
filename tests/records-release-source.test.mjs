@@ -25,3 +25,27 @@ test('fixed release source ignores dirty changes and retains installer/build sou
   assert.deepEqual(await snapshotReleaseSource({root,ref}),source);
  }finally{await rm(root,{recursive:true,force:true});}
 });
+
+test('frozen builds carry verified private vocabulary separately from Git source inventory',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'lingji-private-source-'));
+ const manifestPath='services/records/src/data/builtin-vocabulary.manifest.json',privatePath='services/records/src/data/builtin-vocabulary.private.json';
+ try{
+  const git=(...args)=>execFileSync('git',args,{cwd:root,stdio:['ignore','pipe','pipe']}).toString().trim();git('init');
+  const bytes=Buffer.from(JSON.stringify({schemaVersion:1,version:'fixture.1',entries:[{text:'星河词条',kind:'term'}]}));
+  const manifest={schemaVersion:1,version:'fixture.1',entries:1,bytes:bytes.length,sha256:releaseHash(bytes)};
+  await mkdir(join(root,'services/records/src/data'),{recursive:true});
+  await writeFile(join(root,manifestPath),JSON.stringify(manifest));await writeFile(join(root,privatePath),bytes);
+  await writeFile(join(root,'.gitignore'),privatePath+'\n');
+  git('add','--','.gitignore',manifestPath);git('-c','user.name=Fixture','-c','user.email=fixture@local.test','commit','-m','fixture');const ref=git('rev-parse','HEAD');
+  assert.equal(git('ls-files','--',privatePath),'');
+  // A fixed ref owns the expected digest, even if the worktree manifest changes.
+  await writeFile(join(root,manifestPath),JSON.stringify({...manifest,sha256:'0'.repeat(64)}));
+  const frozen=join(root,'frozen'),source=await snapshotReleaseSource({root,ref,destination:frozen});
+  assert.deepEqual(await readFile(join(frozen,privatePath)),bytes);
+  assert.ok(source.files.some(file=>file.path===manifestPath));
+  assert.ok(!source.files.some(file=>file.path===privatePath));
+  assert.deepEqual(await snapshotReleaseSource({root,ref}),source);
+  await writeFile(join(root,privatePath),'{}');await assert.rejects(snapshotReleaseSource({root,ref}),/digest/);
+  await rm(join(root,privatePath));await assert.rejects(snapshotReleaseSource({root,ref}),{code:'ENOENT'});
+ }finally{await rm(root,{recursive:true,force:true});}
+});
