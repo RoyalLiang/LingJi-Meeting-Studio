@@ -1,9 +1,11 @@
+import {externalWrite} from './external-write.mjs';
+import {meetingTasks,openMeetingHarness} from './meeting-tasks.mjs';
 import {randomUUID} from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
 import {join} from 'node:path';
 import {BACKGROUND_CONTEXT as context} from '@earendil-works/chord/context';
 import {createModels} from '@earendil-works/pi-ai/models';
-import {Harness,defineDoc,defineTask,defineExtension,createRegistry} from '@earendil-works/pi-durable';
+import {defineDoc,defineTask,defineExtension,createRegistry} from '@earendil-works/pi-durable';
 import {openNodeSqliteStorage} from '@earendil-works/pi-durable/storage/sqlite/node';
 import {DomainError,digest,requireThat} from '../../../packages/records/src/record.mjs';
 import {gitRoot,gitTarget,gitSourceHash,gitArchivePath,gitFinal,gitCitations} from '../../../packages/records/src/git-sync.mjs';
@@ -16,13 +18,13 @@ const Index=defineDoc({kind:'git-sync.index.v1',version:1,scope:'session',initia
 const ruleId=owner=>`git-sync-rule:${digest(owner)}`;
 const now=()=>new Date().toISOString();
 const terminal=outcome=>({status:'terminal',outcome});
-const safeCode=error=>/^(?:git_[a-z_]+|remote_[a-z_]+|minutes_not_configured|extension_[a-z_]+|mcp_[a-z_]+|agent_[a-z_]+|invalid_agent_output|invalid_llm_response|provider_(?:[a-z_]+|http_[45]\d{2})|llm_[a-z_]+)$/.test(error?.code||'')?error.code:'git_sync_failed';
+const safeCode=error=>/^(?:git_[a-z_]+|external_write_(?:unknown|conflict)|remote_[a-z_]+|minutes_not_configured|extension_[a-z_]+|mcp_[a-z_]+|agent_[a-z_]+|invalid_agent_output|invalid_llm_response|provider_(?:[a-z_]+|http_[45]\d{2})|llm_[a-z_]+)$/.test(error?.code||'')?error.code:'git_sync_failed';
 const inline=value=>String(value).replace(/[<>]/g,c=>c==='<'?'&lt;':'&gt;').replace(/([\\`*_{}[\]#|])/g,'\\$1');
 const modelHash=config=>digest(JSON.stringify([config.LLM_MODEL||'',config.LLM_API_URL||'',config.LLM_PROTOCOL||'',config.LLM_REASONING_EFFORT||'']));
 const publicRule=rule=>rule?{configured:true,enabled:rule.enabled,root:rule.root,group:rule.group,projects:rule.projects,prompt:rule.prompt,skillId:rule.scope.skill.id,skillVersion:rule.scope.skill.version,skillIds:(rule.scope.skills||[rule.scope.skill]).map(s=>s.id),skillVersions:Object.fromEntries((rule.scope.skills||[rule.scope.skill]).map(s=>[s.id,s.version])),pluginIds:rule.scope.plugins.map(p=>p.id),pluginVersions:Object.fromEntries(rule.scope.plugins.map(p=>[p.id,p.version])),mappings:rule.mappings,aliases:rule.aliases,directory:rule.directory,mode:rule.mode,timezone:rule.timezone,includeNotes:rule.includeNotes,includeEvidence:rule.includeEvidence,hasToken:Boolean(rule.credentials),generation:rule.generation}:{configured:false,enabled:false};
 
 export async function createGitSync({repo,agent,extensions,localAccount=false,request,pollMs=30000,agentPollMs=1000,retryDelayMs=30000}={}){
-  const secrets=await createSecretStore(repo.root),git=createGitlab({request,localAccount});
+  const kernel=meetingTasks(repo),secrets=await createSecretStore(repo.root),git=createGitlab({request,localAccount});
   const lock=new DatabaseSync(join(repo.root,'git-sync-lock.sqlite'));
   try{lock.exec('PRAGMA busy_timeout=0; BEGIN EXCLUSIVE; CREATE TABLE IF NOT EXISTS owner_lock(v INTEGER)');}catch{lock.close();throw new DomainError('git_sync_busy',503);}
   let harness,root,timer,closing=false,busy=false,operations=Promise.resolve();const sourceCache=new Map(),saveIntents=new Map(),catalogCache=new Map();
@@ -44,15 +46,19 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
     const entries=new Map();for(const item of groups.flat())if(item?.question){const key=JSON.stringify([item.question,item.answer]);if(!entries.has(key))entries.set(key,item);}
     return [...entries.values()];
   }
-  async function publicJob(job,detail=false){
+  async function writeRemote(operation,rule,job,signal,beforeWrite){
+  return externalWrite({key:operation,fingerprint:digest(JSON.stringify([job.archiveKey,job.project.id,job.branch,job.files,job.mode])),load:()=>repo.get(job.id),save:(key,state)=>repo.change(job.id,row=>{row.writes||={};row.writes[key]=state;}),guard:()=>guard(job,signal,true),reconcile:()=>operation==='commit'?git.reconcileCommit(connection(rule),job,signal):git.reconcileMerge(connection(rule),job,signal),execute:()=>operation==='commit'?git.commit(connection(rule),job,signal,beforeWrite):git.mergeRequest(connection(rule),job,signal,beforeWrite)});
+ }
+ async function publicJob(job,detail=false){
+  if(detail)job={...job,kernelId:await kernel.adopt('git-sync',job.owner,job.id,[job.recordId])};
     if(!retained((await repo.getRecordAccess([job.recordId]))[0],job.owner))return {id:job.id,recordId:job.recordId,title:'会议已删除或过期',status:'blocked',phase:job.phase,error:'git_source_unavailable',createdAt:job.createdAt,updatedAt:job.updatedAt};
     if(job.agentId&&(detail||['queued','running','waiting'].includes(job.status))){
       const child=await agent.get(job.owner,job.agentId,{summary:!detail});
       const visible=!child.stale&&child.status!=='blocked',running=['queued','running','waiting'].includes(job.status),interaction=visible&&child.status!=='cancelled'&&running&&(child.interaction||(job.interaction?.kind==='continuation'?job.interaction:undefined));
-      job={...job,...(interaction?{status:'waiting',interaction}:{interaction:undefined}),preview:visible?child.preview:undefined,...(detail?{conversation:visible?conversation(job.feedback||[],child.conversation||[]):[]}:{} )};
+      job={...job,...(detail&&visible?{timeline:child.timeline,ledger:child.ledger}:{}),...(interaction?{status:'waiting',interaction}:{interaction:undefined}),preview:visible?child.preview:undefined,...(detail?{conversation:visible?conversation(job.feedback||[],child.conversation||[]):[]}:{} )};
     }else if(detail)job={...job,conversation:job.feedback||[]};
     if(!['queued','running','waiting'].includes(job.status))job={...job,interaction:undefined};
-    return Object.fromEntries(['id','recordId','title','status','phase','error','createdAt','updatedAt','project','basis','minutesRevision','transcriptRevision','branch','baseBranch','directory','mode','commit','url','agentId','automatic','paused','interaction','preview','managed',...(detail?['conversation']:[])].filter(k=>job[k]!==undefined).map(k=>[k,['automatic','paused','managed'].includes(k)?Boolean(job[k]):job[k]]));
+    return Object.fromEntries(['id','recordId','title','status','phase','error','createdAt','updatedAt','project','basis','minutesRevision','transcriptRevision','branch','baseBranch','directory','mode','commit','url','agentId','automatic','paused','interaction','preview','managed',...(detail?['conversation','timeline','ledger','kernelId']:[])].filter(k=>job[k]!==undefined).map(k=>[k,['automatic','paused','managed'].includes(k)?Boolean(job[k]):job[k]]));
   }
   const history=async owner=>(await repo.listMetadata('git-sync-job',owner,['recordId','status','phase','title','createdAt','updatedAt','ruleGeneration','error','project','basis','minutesRevision','transcriptRevision','branch','baseBranch','directory','mode','commit','url','agentId','automatic','paused','interaction','preview','managed'],{limit:1000})).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
   async function guard(job,signal,remote=false,ignorePause=false,full=false){
@@ -110,11 +116,11 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
       }else if(phase==='commit'){
         const {rule}=await guard(job,runtime.signal,true);
         const beforeWrite=async()=>{await guard(job,runtime.signal,true);job=await update(job.id,{writeStarted:true});await guard(job,runtime.signal);};
-        const result=await git.commit(connection(rule),job,runtime.signal,beforeWrite);await update(job.id,{...result,url:`${gitRoot(rule.root).origin}/${job.project.path}/-/commit/${result.commit}`});
+        const result=await writeRemote('commit',rule,job,runtime.signal,beforeWrite);await update(job.id,{...result,url:`${gitRoot(rule.root).origin}/${job.project.path}/-/commit/${result.commit}`});
       }else{
         const {rule}=await guard(job,runtime.signal,true);
         const beforeWrite=async()=>{await guard(job,runtime.signal,true);job=await update(job.id,{writeStarted:true});await guard(job,runtime.signal);};
-        const result=job.mode==='mr'&&!job.integrated?await git.mergeRequest(connection(rule),job,runtime.signal,beforeWrite):{url:`${gitRoot(rule.root).origin}/${job.project.path}/-/commit/${job.commit}`};
+        const result=job.mode==='mr'&&!job.integrated?await writeRemote('merge',rule,job,runtime.signal,beforeWrite):{url:`${gitRoot(rule.root).origin}/${job.project.path}/-/commit/${job.commit}`};
         await update(job.id,{...result,status:'succeeded',phase:'done',error:null});
         await runtime.commit(()=>terminal({status:'completed',result:{jobId:job.id}}),taskContext);return;
       }
@@ -126,7 +132,7 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
       const code=safeCode(error),blocked=['git_rule_changed','git_source_changed','git_model_changed','git_source_unavailable','git_target_unclear','git_target_changed','git_target_unavailable','git_default_branch_missing','git_repository_empty','git_target_conflict','git_archive_exists','extension_version_changed','extension_disabled'].includes(code);
       if(code!=='git_paused'){
         if(job.agentId)await agent.cancel(job.owner,job.agentId).catch(()=>{});
-        await update(job.id,{status:code==='git_result_unknown'?'unknown':blocked?'blocked':'failed',error:code});
+        await update(job.id,{status:['git_result_unknown','external_write_unknown'].includes(code)?'unknown':blocked?'blocked':'failed',error:code});
       }
       await runtime.commit(()=>terminal({status:'failed',error:{message:code}}),taskContext);
     }
@@ -176,7 +182,7 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
     const config=await readConfig(repo.root),configHash=modelHash(config),sourceHash=gitSourceHash(record,rule.includeNotes),archiveKey=digest(JSON.stringify([sourceHash,rule.fingerprint,configHash])),key=digest(`${owner}:${record.id}:${archiveKey}`),id=`git-sync:${key}`;
     const existing=await repo.get(id);if(existing)return publicJob(existing);
     const row={id,kind:'git-sync-job',owner,recordId,title:record.title,sourceHash,archiveKey,ruleGeneration:rule.generation,policyFingerprint:rule.fingerprint,modelConfigHash:configHash,model:config.LLM_MODEL||'injected-test-model',reasoningEffort:config.LLM_REASONING_EFFORT||'',rootGroup:rule.group,minutesRevision:record.minutesRevision,transcriptRevision:record.transcriptRevision,automatic,managed:rule.managed===true,phase:'resolve',status:'queued',createdAt:now(),updatedAt:now(),startedAt:now()};
-    await repo.insert(row);if(row.status==='queued'){try{await schedule(row);}catch(error){await update(id,{status:'failed',error:safeCode(error)});}}return publicJob(await repo.get(id),true);
+    await repo.insert(row);await kernel.adopt('git-sync',owner,id,[recordId]);if(row.status==='queued'){try{await schedule(row);}catch(error){await update(id,{status:'failed',error:safeCode(error)});}}return publicJob(await repo.get(id),true);
   }
   async function tick(){
     if(busy||closing)return;busy=true;
@@ -203,7 +209,7 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
   }
   try{
     const registry=createRegistry();registry.install(defineExtension({name:'git-sync@1',tasks:[Job]}));
-    harness=await Harness.open(await openNodeSqliteStorage(join(repo.root,'git-sync.sqlite')),{models:createModels(),registry,settings:{compaction:{enabled:false}}},context);root=await harness.root(context);
+    harness=await openMeetingHarness(repo,await openNodeSqliteStorage(join(repo.root,'git-sync.sqlite')),{models:createModels(),registry,settings:{compaction:{enabled:false}}},context);root=await harness.root(context);
     for(const rule of await repo.list('git-sync-rule'))for(const row of await history(rule.owner)){const job=await repo.get(row.id);if(['queued','running','waiting'].includes(job.status)&&!job.taskId)await schedule(job);}
     agent.setGitSyncHandler?.(async(owner,id,args,signal)=>{
       let job=await jobFor(owner,id);const {rule}=await guard(job,signal,!['read_file','list_files'].includes(args.action),false,!['read_file','list_files'].includes(args.action));
@@ -230,13 +236,13 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
       }else requireThat(args.action==='reconcile'&&job.files&&job.mode,'git_agent_archive_required',409);
       try{
       const beforeWrite=async()=>{await guard(job,signal,true);job=await update(id,{writeStarted:true});await guard(job,signal);};
-      const result=await git.commit(connection(rule),job,signal,beforeWrite);job=await update(id,{...result,url:`${gitRoot(rule.root).origin}/${job.project.path}/-/commit/${result.commit}`});
-      const merged=job.mode==='mr'&&!job.integrated?await git.mergeRequest(connection(rule),job,signal,beforeWrite):{url:job.url};
+      const result=await writeRemote('commit',rule,job,signal,beforeWrite);job=await update(id,{...result,url:`${gitRoot(rule.root).origin}/${job.project.path}/-/commit/${result.commit}`});
+      const merged=job.mode==='mr'&&!job.integrated?await writeRemote('merge',rule,job,signal,beforeWrite):{url:job.url};
       job=await update(id,{...merged,remoteError:null});return {commit:job.commit,url:job.url,mode:job.mode,filePath:job.filePath};
       }catch(error){await update(id,{remoteError:safeCode(error)});throw error;}
     });
     harness.resume();timer=setInterval(()=>void enqueue(tick).catch(()=>{}),Math.max(50,pollMs));timer.unref();
-    return {
+    const service={
     check,save:(owner,input)=>{const intent={};saveIntents.set(owner,intent);return save(owner,input,intent).finally(()=>{if(saveIntents.get(owner)===intent)saveIntents.delete(owner);});},preview,start:(owner,id)=>enqueue(()=>start(owner,id)),tick:()=>enqueue(tick),
       async status(owner){return {enabled:Boolean((await load(owner))?.enabled),recent:await Promise.all((await history(owner)).slice(0,20).map(job=>publicJob(job)))};},
       async settings(owner){
@@ -279,6 +285,10 @@ return {...publicRule(await load(owner)),recent:await Promise.all((await history
         }return publicJob(await repo.get(id),true);
       }),
       async close(){closing=true;clearInterval(timer);await operations;await harness.close(context);lock.close();}
-    };
-  }catch(error){clearInterval(timer);await harness?.close(context);lock.close();throw error;}
+  };
+  const unregister=kernel.register('git-sync',{sources:(_owner,input)=>[input.recordId],submit:(owner,input)=>service.start(owner,input.recordId),inspect:(owner,id)=>service.get(owner,id),cancel:(owner,id)=>service.cancel(owner,id)});
+  service.cancel=async(owner,id)=>{const current=await jobFor(owner,id);if(['succeeded','cancelled'].includes(current.status))return publicJob(current,true);await service.control(owner,id,'pause');if(current.agentId)await agent.cancel(owner,current.agentId).catch(()=>{});return enqueue(async()=>publicJob(await update(id,{paused:true,status:'cancelled'}),true));};
+  const close=service.close;service.close=async()=>{unregister();await close();};
+  return service;
+ }catch(error){clearInterval(timer);await harness?.close(context);lock.close();throw error;}
 }

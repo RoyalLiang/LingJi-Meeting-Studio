@@ -75,5 +75,24 @@ export function createGitlab({request=remoteRequest,localAccount=false}={}){
     const values=await call(connection,`/projects/${job.project.id}/repository/tree?ref=${encodeURIComponent(job.baseBranch)}&path=${encodeURIComponent(path)}&per_page=100&page=${page+1}`,{signal});requireThat(Array.isArray(values)&&values.length<=100&&values.every(item=>typeof item.path==='string'&&typeof item.name==='string'&&['tree','blob'].includes(item.type)),'git_invalid_response',502);
     return {files:values.map(({path,name,type})=>({path,name,type})),...(values.length===100?{nextPage:page+1}:{})};
   }
-  return {catalog,readFile,listFiles,project,commit,mergeRequest};
+ async function reconcileCommit(connection,job,signal){
+  await project(connection,job.project.id,job.rootGroup,signal);
+  for(const name of [...new Set([job.baseBranch,job.branch])]){
+   const ref=await branch(connection,job.project.id,name,signal);if(!ref)continue;
+   requireThat(/^[a-f0-9]{40}$/.test(ref.commit?.id),'git_invalid_response',502);
+   const values=await Promise.all(Object.keys(job.files).map(path=>file(connection,job.project.id,path,ref.commit.id,signal)));
+   if(values.every((value,i)=>value?.encoding==='base64'&&Buffer.from(value.content,'base64').toString('utf8')===Object.values(job.files)[i]))return {status:'confirmed',receipt:{commit:ref.commit.id,...(name===job.baseBranch?{integrated:true}:{})}};
+   requireThat(!values.some(Boolean),'git_write_conflict',409);
+  }
+  return {status:'absent'};
+ }
+ async function reconcileMerge(connection,job,signal){
+  await project(connection,job.project.id,job.rootGroup,signal);
+  const rows=await call(connection,`/projects/${job.project.id}/merge_requests?source_branch=${encodeURIComponent(job.branch)}&target_branch=${encodeURIComponent(job.baseBranch)}&scope=all&per_page=100`,{signal});
+  requireThat(Array.isArray(rows)&&rows.length<=1,'git_write_conflict',409);
+  if(!rows.length)return {status:'absent'};
+  // Reuse the complete remote-result validator, with a hard no-write fence.
+  return {status:'confirmed',receipt:await mergeRequest(connection,job,signal,()=>{throw new DomainError('git_result_unknown',409);})};
+ }
+ return {catalog,readFile,listFiles,project,commit,mergeRequest,reconcileCommit,reconcileMerge};
 }

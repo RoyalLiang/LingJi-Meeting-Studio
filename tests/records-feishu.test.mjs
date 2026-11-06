@@ -4,6 +4,7 @@ import { mkdtemp, rm, readFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRecordServer } from '../services/records/src/server.mjs';
+import {createRecord} from '../packages/records/src/record.mjs';
 import { feishuBlocks, feishuFolder, createFeishu } from '../services/records/src/integrations/feishu.mjs';
 import { exportMinutesMarkdown } from '../services/records/src/markdown-export.mjs';
 import {minutesBoard} from '../packages/records/src/minutes-presentation.mjs';
@@ -378,4 +379,17 @@ test('interrupted publication clears frozen page data and keeps recovery metadat
   assert.deepEqual(stored.boardTokens,['first-board','second-board']);assert.equal(stored.boardPage,2);if(hasDocument)assert.equal(stored.documentId,documentId);
  }
  assert.ok(!h.remote.calls.some(c=>c.url.endsWith('/docx/v1/documents')));
+});
+
+test('recording-priority Feishu queue survives long waits and restart without becoming an uncertain write',async t=>{
+ const h=await harness(t,{autoPollMs:3600000});await h.connect();const preview=await h.preview(),owner=(await h.app.repo.get(h.recordId)).owner;
+ const recording=createRecord(owner);recording.capture='recording';await h.app.repo.insert(recording);let clock=Date.now();
+ let service=await createFeishu(h.app.repo,{sdkFactory:h.remote.sdkFactory,now:()=>clock,autoPollMs:3600000});t.after(async()=>service.close());
+ await waitFor(async()=>(await service.settings(owner)).connected);
+ const queued=await service.publish(owner,preview.body.id,{confirmed:true});assert.equal(queued.status,'publishing');assert.equal(queued.stage,'queued');
+ clock+=181000;const delayed=await service.get(owner,preview.body.id);assert.equal(delayed.status,'publishing');assert.equal(delayed.stage,'queued');assert.equal(h.remote.calls.filter(call=>call.url.endsWith('/docx/v1/documents')).length,0);
+ await service.close();assert.equal((await h.app.repo.get(preview.body.id)).stage,'queued');
+ await h.app.repo.change(recording.id,row=>{row.capture='completed';});
+ service=await createFeishu(h.app.repo,{sdkFactory:h.remote.sdkFactory,now:()=>clock,autoPollMs:3600000});await waitFor(async()=>(await service.settings(owner)).connected);await service.automaticTick();
+ await waitFor(async()=>(await service.get(owner,preview.body.id)).status==='succeeded');assert.equal(h.remote.calls.filter(call=>call.url.endsWith('/docx/v1/documents')).length,1);
 });

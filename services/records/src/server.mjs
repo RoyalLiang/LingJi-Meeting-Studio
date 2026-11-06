@@ -1,3 +1,5 @@
+import {createMeetingTaskProducers} from './meeting-task-producers.mjs';
+import {meetingTasks} from './meeting-tasks.mjs';
 import {sendHttpPayload} from './http-response.mjs';
 import {audioBackupSettings,saveAudioBackupSettings,prepareAudioBackup} from './audio-backup.mjs';
 import { createMeetingAgentRuntime } from './meeting-agent.mjs';
@@ -85,6 +87,7 @@ export async function createRecordServer(options = {}) {
     console.error('[meeting-agent]', agentError);
     return null;
   });
+  const taskProducers=createMeetingTaskProducers(repo),stopTaskEvents=repo.subscribeChanges(ids=>taskProducers.sourceChanged(ids));
   const gitSync=agent?await createGitSync({repo,agent,extensions,localAccount:Boolean(options.localAccount),...options.gitSyncOptions}).catch(()=>null):null;
   const learningEnabled=async()=>{const config=await readConfig(repo.root);return config.RECORD_LEARNING_ENABLED==='true'||(config.RECORD_LEARNING_ENABLED!=='false'&&Boolean(options.localAccount));};
   const learningService = learningServiceFor(repo, options.learningProbe);
@@ -225,7 +228,23 @@ export async function createRecordServer(options = {}) {
       if (path === '/api/deletions' && req.method === 'GET') {
         send(res, 200, { deletions: (await repo.list()).filter(r => r.owner === user.id && r.deleted).map(r => ({ id: r.id, cleanup: r.cleanup || 'pending' })) }); return;
       }
-      if (path === '/api/agent/tasks') {
+      if(path==='/api/meeting-task-rules'){
+      if(req.method==='GET')send(res,200,{rules:await taskProducers.list(user.id)});
+      else if(req.method==='PUT')send(res,200,await taskProducers.save(user.id,await readBody(req,12000)));
+      else throw new DomainError('not_found',404);
+      return;
+    }
+    if(path==='/api/meeting-tasks'&&req.method==='POST'){send(res,202,await meetingTasks(repo).submit(user.id,await readBody(req,20000)));return;}
+    const meetingTaskRoute=path.match(/^\/api\/meeting-tasks\/(meeting-task(?::|%3A)[a-f0-9]{64})(\/(cancel|diagnostics))?$/);
+    if(meetingTaskRoute){
+      const kernel=meetingTasks(repo),id=decodeURIComponent(meetingTaskRoute[1]);
+      if(req.method==='GET'&&!meetingTaskRoute[2])send(res,200,await kernel.inspect(user.id,id));
+      else if(req.method==='GET'&&meetingTaskRoute[3]==='diagnostics')send(res,200,await kernel.diagnostics(user.id,id));
+      else if(req.method==='POST'&&meetingTaskRoute[3]==='cancel')send(res,200,await kernel.cancel(user.id,id));
+      else throw new DomainError('not_found',404);
+      return;
+    }
+    if (path === '/api/agent/tasks') {
         requireThat(agent, agentError, 503);
         if (req.method === 'GET') { send(res, 200, {tasks:await agent.list(user.id,{view:url.searchParams.get('view')||'detail',detailId:url.searchParams.get('detail')||undefined})}); return; }
         if (req.method === 'POST') { send(res, 202, await agent.request(user.id, await readBody(req, 20000))); return; }
@@ -516,7 +535,7 @@ export async function createRecordServer(options = {}) {
   });
   server.requestTimeout = 30000; server.headersTimeout = 15000;
   return { repo, server, localSession: () => auth.localSession?.(), start: () => new Promise(resolve => server.listen(options.port ?? Number(process.env.RECORD_API_PORT || 3030), options.host || '127.0.0.1', () => resolve(server.address()))),
-    stop: async () => { for (const stream of streams) stream.end(); await new Promise(resolve => server.close(resolve)); await feishu.close(); await gitSync?.close(); await agent?.close(); await repo.close(); } };
+    stop: async () => { for (const stream of streams) stream.end(); await new Promise(resolve => server.close(resolve)); stopTaskEvents(); taskProducers.close(); await feishu.close(); await gitSync?.close(); await agent?.close(); await meetingTasks(repo).close(); await repo.close(); } };
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const app = await createRecordServer(); console.log('[record-api]', await app.start());

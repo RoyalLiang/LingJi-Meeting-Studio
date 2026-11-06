@@ -226,7 +226,7 @@ test('terminal Pi retention and task lists use metadata without rereading bodies
   t.mock.method(f.repo, 'get', async id => { bodies++; return get(id); });
   t.mock.method(f.repo, 'getRecordAccess', async ids => { metadata++; assert.equal(ids.length, new Set(ids).size); return access(ids); });
   for (let i = 0; i < 10; i++) { assert.equal((await runtime.get('owner', task.id)).stale, false); assert.equal((await runtime.list('owner')).length, 2); }
-  const before = metadata; await delay(80); assert.ok(metadata > before, 'retention remains active'); assert.equal(bodies, 0);
+  const before = metadata; await delay(80); assert.equal(metadata, before, 'unchanged history uses the revision fast path'); assert.equal(bodies, 0);
   await f.repo.change(f.records[0].id, record => { record.owner = 'another-owner'; });
   await waitUntil(async () => (await piFiles(f.root)).length === 0);
   const hidden = await runtime.get('owner', task.id); assert.equal(hidden.status, 'blocked'); assert.equal(hidden.error, 'agent_scope_denied');

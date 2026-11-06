@@ -211,16 +211,16 @@ test('one explicit update action checks, downloads and installs once through the
  const unsafe=engineFixture();unsafe.activity({...idle,recording:true});await unsafe.engine.downloadAndInstall();assert.equal(unsafe.calls.some(([name])=>name==='update_install'),false);
 });
 
-test('settings update action follows automatic-download readiness and keeps recording blockers',async()=>{
+test('settings checks remain available separately from download and recording-blocked installation',async()=>{
  const {transform}=await import('esbuild');const source=await readFile(new URL('../apps/web/src/components/ClientUpdates.tsx',import.meta.url),'utf8');const code=(await transform(source.replace(/^import .*$/gm,''),{loader:'tsx',format:'cjs'})).code;
- const box={module:{exports:{}},updatePolicy,preferencesForPolicy,DownloadSimple:()=>null,Select:()=>null,Button:props=>({tag:'button',props})};box.React={createElement:(tag,props,...children)=>typeof tag==='function'?tag({...props,children}):({tag,props,children})};vm.runInNewContext(code,box);
- for(const [background,phase,reason,disabled,label] of [[false,'available','',false,'下载并更新'],[true,'available','',true,'立即更新'],[true,'downloading','',true,'立即更新'],[true,'ready','',false,'立即更新'],[true,'ready','正在录音',true,'立即更新']]){
-  let clicked=0;const tree=box.module.exports.ClientUpdateActions({updates:{native:true,status:{phase,currentVersion:'1'},settings:preferencesForPolicy(background?'background':'check'),installReason:reason,update:()=>{clicked++;}}});
-  const button=tree.children.flat().find(x=>x?.tag==='button');assert.equal(button.props.disabled,disabled);assert.ok(button.props.children.includes(label));if(!disabled){button.props.onClick();assert.equal(clicked,1);}
+ const box={module:{exports:{}},updatePolicy,preferencesForPolicy,ArrowsClockwise:()=>null,DownloadSimple:()=>null,Select:()=>null,Button:props=>({tag:'button',props})};box.React={createElement:(tag,props,...children)=>typeof tag==='function'?tag({...props,children}):({tag,props,children})};vm.runInNewContext(code,box);
+ for(const [phase,reason,installBlocked] of [['available','',false],['downloading','',true],['ready','',false],['ready','正在录音',true]]){
+  let checked=0,downloaded=0,installed=0;const tree=box.module.exports.ClientUpdateActions({updates:{native:true,status:{phase,currentVersion:'1'},installReason:reason,check:()=>checked++,download:()=>downloaded++,install:()=>installed++}}),buttons=tree.children.flat().filter(x=>x?.tag==='button');
+  assert.ok(buttons[0].props.children.includes('检查更新'));assert.equal(buttons[0].props.disabled,phase==='downloading');
+  if(phase!=='downloading'){buttons[0].props.onClick();assert.equal(checked,1);assert.equal(downloaded,0);assert.equal(installed,0);}
+  if(phase==='ready')assert.equal(buttons[1].props.disabled,installBlocked);
  }
 });
-
-
 test('release display keeps only change items and removes Markdown destinations and release metadata', () => {
   const notes = '# Preview v1.2.0\r\n\r\n## 版本改动与修复\r\n- 修复 **自动下载** 与 `离线转录`。\r\n  保留录音。\r\n- 优化 [设置页面](https://example.test/settings)。\r\n\r\n## 下载与安装\r\n[安装包](https://example.test/private-installer)\r\n## SHA-256\r\ndeadbeef\r\n## 构建来源与验证\r\nsource-secret';
   assert.deepEqual(updateReleaseItems(notes), ['修复 自动下载 与 离线转录', '优化 设置页面']);
@@ -277,7 +277,7 @@ test('settings update notes open in a separate dialog with no inline explanatory
  box.React={createElement:(tag,props,...children)=>typeof tag==='function'?tag({...props,children}):({tag,props,children})};vm.runInNewContext(code,box);
  const updates={native:true,status:{phase:'idle',currentVersion:'0.1.42',downloaded:0},settings:preferencesForPolicy('manual'),installReason:'',saveSettings(){},update(){}};
  const idle=box.module.exports.ClientUpdatesPanel({updates});assert.doesNotMatch(JSON.stringify(idle),/由你手动检查更新|启动后会自动检查更新/);
- const current=box.module.exports.ClientUpdatesPanel({updates:{...updates,status:{...updates.status,phase:'current'}}});assert.doesNotMatch(JSON.stringify(current),/当前已是最新版本|client-update-status/);
+ const current=box.module.exports.ClientUpdatesPanel({updates:{...updates,status:{...updates.status,phase:'current'}}});assert.match(JSON.stringify(current),/已是最新版本/);assert.match(JSON.stringify(current),/client-update-activity/);
 
  const availableUpdates={...updates,status:{...updates.status,phase:'available',version:'0.1.43',notes:'## 更新内容\n- 优化：保留完整原音'}};
  const render=()=>box.module.exports.ClientUpdatesPanel({updates:availableUpdates}),nodes=tree=>[tree,...(tree?.children||[]).flat(Infinity).filter(x=>x&&typeof x==='object').flatMap(nodes)];

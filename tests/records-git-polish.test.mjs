@@ -7,13 +7,13 @@ import {includeBackendDependency,includeBackendSource} from '../scripts/prepare-
 import vm from 'node:vm';
 import {transform} from 'esbuild';
 
-async function component(file,name,request){
+async function component(file,name,request,statusFeed=async()=>({enabled:true,recent:[]})){
   const source=await readFile(new URL('../apps/web/src/components/'+file,import.meta.url),'utf8');
   const code=(await transform(source,{loader:'tsx',jsx:'automatic',format:'cjs'})).code;
   const slots=[],effects=[];let cursor=0,initial=true;
   const jsx=(type,props)=>({type,props}),exports={};
   const react={useState:value=>{const i=cursor++;if(!(i in slots))slots[i]=typeof value==='function'?value():value;return [slots[i],value=>{slots[i]=typeof value==='function'?value(slots[i]):value;}];},useRef:value=>{const i=cursor++;return slots[i]??=( {current:value});},useCallback:fn=>fn,useMemo:fn=>fn(),useEffect:fn=>{if(initial)effects.push(fn);}};
-  const sandbox={exports,module:{exports},Intl,Date,Event,document:{visibilityState:'visible'},window:{dispatchEvent(){}},AbortController,setInterval:()=>1,clearInterval(){},require:id=>id==='react'?react:id==='react-dom'?{createPortal:node=>node}:id==='react/jsx-runtime'?{jsx,jsxs:jsx}:id==='../api'?{api:request,messageOf:error=>error.message,ApiError:Error,getAuthGeneration:()=>1}:id==='../git-sync-feed'?{invalidateGitSyncStatus(){},gitSyncStatus:async()=>({enabled:true,recent:[]})}:new Proxy({},{get:(_target,key)=>String(key)})};
+  const sandbox={exports,module:{exports},Intl,Date,Event,document:{visibilityState:'visible'},window:{dispatchEvent(){}},AbortController,setInterval:()=>1,clearInterval(){},require:id=>id==='react'?react:id==='react-dom'?{createPortal:node=>node}:id==='react/jsx-runtime'?{jsx,jsxs:jsx}:id==='../api'?{api:request,messageOf:error=>error.message,ApiError:Error,getAuthGeneration:()=>1}:id==='../git-sync-feed'?{invalidateGitSyncStatus(){},gitSyncStatus:statusFeed}:new Proxy({},{get:(_target,key)=>String(key)})};
   vm.runInNewContext(code,sandbox);
   const render=props=>{cursor=0;const tree=sandbox.module.exports[name](props);if(initial){initial=false;effects.splice(0).forEach(fn=>fn());}return tree;};
   return render;
@@ -30,6 +30,12 @@ test('Git future consent can be reselected after editing a scope-affecting optio
   tree=render(props);assert.equal(checkbox(tree,'允许将今后').props.checked,false);
   checkbox(tree,'允许将今后').props.onChange({target:{checked:true}});
   tree=render(props);assert.equal(checkbox(tree,'允许将今后').props.checked,true);
+});
+test('a removed selected task cannot prevent the latest Git task list from refreshing',async()=>{
+ const old={id:'old',title:'旧任务',status:'failed',phase:'organize',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()},fresh={...old,id:'new',title:'新任务'};
+ const render=await component('GitAutomation.tsx','GitAutomation',async path=>{if(path==='/workspaces')return {workspaces:[]};if(path.includes('/tasks/'))throw Object.assign(new Error('任务已不可用'),{status:404});return {configured:true,enabled:true,recent:[old],root:'https://git.example.test/root',prompt:'保持引用',skillIds:['meeting-review'],projects:[],mode:'mr'};},async()=>({enabled:true,recent:[fresh]}));
+ const props={extensions:[]};render(props);await new Promise(resolve=>setTimeout(resolve,0));let tree=render(props);nodes(tree).find(node=>node.type==='Button'&&words(node).startsWith('任务记录')).props.onClick();tree=render(props);nodes(tree).find(node=>node.props?.className==='git-history-row').props.onClick();await new Promise(resolve=>setTimeout(resolve,0));tree=render(props);
+ assert.ok(nodes(tree).some(node=>node.props?.className==='git-history-row'&&words(node).includes('新任务')));assert.ok(!nodes(tree).some(node=>node.props?.job?.id==='old'));
 });
 
 test('stale workspace analysis is an incident-scoped inline notice rather than a navigation toast',async()=>{

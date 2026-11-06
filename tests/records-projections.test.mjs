@@ -1,3 +1,4 @@
+import {createSettingsCache} from '../apps/web/src/settings-cache.ts';
 import {encodeStorage,decodeStorage} from '../services/records/src/storage-codec.mjs';
 import {recoverTemporaryAudio,recoverLocalWork} from '../services/records/src/desktop-backend.mjs';
 import {createAuth} from '../services/records/src/auth.mjs';
@@ -78,7 +79,7 @@ for(const deltaEnabled of [true,false])test(`SSE ${deltaEnabled?'delta':'rollbac
 test('binary audio negotiates explicitly, preserves CSRF and identity, and falls back for older APIs', async () => {
   const source = transpileTypeScript(await readFile(new URL('../apps/web/src/api.ts', import.meta.url), 'utf8')).replace(/^import .*$/gm, '').replace(/export /g, '');
   const requests = [], exports = {};
-  vm.runInNewContext(source + '\nObject.assign(exports,{uploadAudio,setAudioTransport,setCsrf});', {
+  vm.runInNewContext(source + '\nObject.assign(exports,{uploadAudio,setAudioTransport,setCsrf});', {createSettingsCache,
     exports, crypto: webcrypto, performance, Uint8Array, atob, AbortSignal, trace() {},
     fetch: async (url, options) => { requests.push({ url, ...options }); return { ok: true, json: async () => ({ watermark: 0 }) }; },
   });

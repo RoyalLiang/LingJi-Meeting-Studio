@@ -1,3 +1,4 @@
+import {createSettingsCache} from './settings-cache';
 import { trace } from './telemetry';
 import type { AudioChunk } from './model';
 let binaryAudio = false;
@@ -16,6 +17,15 @@ const messages: Record<string, string> = {
   agent_input_too_large:'所选内容过多，请分批选择后重试。',
   agent_timeout:'整理用时较长，已有内容保留，请稍后重试。',
   invalid_agent_output:'整理结果暂时无法核对，请重试。',
+  agent_model_changed:'模型配置已变更，请按当前配置重新确认运行。',
+  agent_child_failed:'分段提炼未完成，可查看任务过程后重试。',
+  agent_budget_exceeded:'任务预估超过已设置预算，请缩小会议范围或调整预算。',
+  agent_pricing_unavailable:'当前模型未配置单价，无法核算已启用的任务预算。',
+  llm_stream_failed:'模型流式响应中断，自动重试后仍未完成，请检查模型网关。',
+  llm_stream_incomplete:'模型响应未完整结束，转录已保留，可重新整理。',
+  llm_connection_failed:'无法连接模型服务，请检查 API 地址与网络。',
+  llm_response_too_large:'模型响应超过处理上限，请缩小任务范围。',
+  external_write_unknown:'外部写入结果不确定，请先核对远端结果后再继续。',
   agent_failed:'整理未完成，请稍后重试。',
 
   git_target_unclear:'标题没有明确项目或场地，且未绑定指定 Workspace，已暂停同步。',
@@ -166,7 +176,14 @@ const messages: Record<string, string> = {
   asr_context_requires_second_pass: '识别场景背景需要 bigmodel_async 二遍接口；切换接口前请清空背景。'
 };
 export class ApiError extends Error { constructor(public code: string, public status: number) { super(messages[code] || `操作未完成（${code}）`); } }
-export async function api<T>(path: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {
+const settingsCache=createSettingsCache(getAuthGeneration);
+export async function api<T>(path:string,method='GET',body?:unknown,signal?:AbortSignal):Promise<T>{
+ const cached=['/settings/providers','/settings/audio-backup'].includes(path);
+ if(method==='GET'&&cached)return settingsCache.read(path,()=>requestApi<T>(path,method,body),signal);
+ if(method!=='GET'&&path.startsWith('/settings/'))settingsCache.invalidate();
+ try{return await requestApi<T>(path,method,body,signal);}finally{if(method!=='GET'&&path.startsWith('/settings/'))settingsCache.invalidate();}
+}
+async function requestApi<T>(path: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {
   return request<T>(path, method, body === undefined ? undefined : JSON.stringify(body), { 'Content-Type': 'application/json' }, signal);
 }
 export async function uploadAudio<T>(path: string, chunk: AudioChunk): Promise<T> {

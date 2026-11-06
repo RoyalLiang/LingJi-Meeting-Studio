@@ -27,7 +27,7 @@ export function ClientUpdatesPanel({ updates }: { updates: ReturnType<typeof use
         ]}/><ClientUpdateActions updates={updates}/>
       </div>
     </div>
-    {description[status.phase] && <p className="client-update-status" role="status">{description[status.phase]}</p>}
+    <div className="client-update-activity" aria-live="polite"><div className="client-update-status"><strong>{status.phase === 'current' ? '已是最新版本' : status.phase === 'available' ? `发现新版本 v${status.version}` : description[status.phase] || `当前版本 v${status.currentVersion || version}`}</strong>{status.phase === 'ready' && installReason && <span>{installReason}</span>}</div>
     {status.phase === 'downloading' && <div className="update-download">
       <div className="update-download-meta"><span>{progress.size}</span><span>{progress.percent === null ? '大小待确认' : `${progress.percent}%`}</span></div>
       <div className={`update-download-track${progress.percent === null ? ' is-indeterminate' : ''}`} role="progressbar" aria-label="更新下载进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.percent ?? undefined} aria-valuetext={progress.size}>
@@ -35,7 +35,7 @@ export function ClientUpdatesPanel({ updates }: { updates: ReturnType<typeof use
       </div>
     </div>}
     {status.error && <FeedbackNotice key={status.error} message={status.error} error/>}
-    {status.phase === 'ready' && installReason && <p className="fine-print" role="status">{installReason}</p>}
+    </div>
     {items.length > 0 && <Button type="button" variant="ghost" className="update-notes-trigger" aria-haspopup="dialog" onClick={()=>setNotesOpen(true)}>更新内容</Button>}
     {notesOpen && <Modal className="update-notes-modal" title="更新内容" onClose={()=>setNotesOpen(false)}><ul className="update-notes-list">{items.map((item,index)=><li key={index}>{item}</li>)}</ul></Modal>}
   </section>;
@@ -43,11 +43,10 @@ export function ClientUpdatesPanel({ updates }: { updates: ReturnType<typeof use
 
 export function ClientUpdateActions({ updates }: { updates: ReturnType<typeof useClientUpdates> }) {
   if (!updates.native) return null;
-  const { status, settings, installReason } = updates;
+  const { status, installReason } = updates;
   const busy = ['checking', 'downloading', 'preparing', 'installing'].includes(status.phase);
-  const ready = status.phase === 'ready', background = updatePolicy(settings) === 'background';
-  return <div className="actions"><Button disabled={busy || status.phase === 'disabled' || (background && !ready) || (ready && Boolean(installReason))}
-    title={ready ? installReason || '使用已校验的更新安装包' : background ? '下载并校验完成后可更新' : '检查并下载更新，校验完成后继续安装'} onClick={() => void updates.update()}><DownloadSimple size={17}/>{ready || background ? '立即更新' : '下载并更新'}</Button></div>;
+  const ready = status.phase === 'ready', available = status.phase === 'available';
+  return <div className="actions"><Button disabled={busy || status.phase === 'disabled'} onClick={() => void updates.check()}><ArrowsClockwise size={17}/>{status.phase === 'checking' ? '正在检查…' : '检查更新'}</Button>{available && <Button onClick={() => void updates.download()}><DownloadSimple size={17}/>下载更新</Button>}{ready && <Button disabled={Boolean(installReason)} title={installReason || '使用已校验的更新安装包'} onClick={() => void updates.install()}><DownloadSimple size={17}/>安装并重启</Button>}</div>;
 }
 
 export function ClientVersion({ status }: { status: UpdateStatus }) {

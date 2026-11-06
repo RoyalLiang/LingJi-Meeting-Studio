@@ -1,3 +1,4 @@
+import {modelProfile} from './model-profile.mjs';
 import { readFile, writeFile, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -24,7 +25,7 @@ export const defaults = {
   DOUBAO_TRANSLATION_MODEL: 'doubao-seed-translation-250915',
   TRANSLATION_PROVIDER: 'auto',
 };
-const fields = ['AUTO_MEETING_ENABLED', 'AUTO_MEETING_BROWSER', 'AUTO_MEETING_FEISHU', 'LEARNING_SSH_HOST', 'LEARNING_REMOTE_BASE', 'TRANSLATION_PROVIDER', 'FUNASR_API_URL', 'FUNASR_MODEL', 'FUNASR_API_KEY', 'MINUTES_MODE', 'OPENAI_REALTIME_URL', 'OPENAI_REALTIME_MODEL', 'OPENAI_REALTIME_API_KEY', 'DOUBAO_TRANSLATION_API_URL', 'DOUBAO_TRANSLATION_API_KEY', 'DOUBAO_TRANSLATION_MODEL', 'DOUBAO_ASR_HOTWORDS', 'DOUBAO_ASR_CONTEXT', 'ASR_PROVIDER', 'DOUBAO_API_KEY', 'DOUBAO_ASR_URL', 'DOUBAO_ASR_RESOURCE_ID', 'ASR_API_URL', 'ASR_API_KEY', 'ASR_MODEL', 'DEEPGRAM_API_KEY', 'LLM_API_URL', 'LLM_API_KEY', 'LLM_MODEL', 'LLM_PROTOCOL', 'LLM_REASONING_EFFORT'];
+const fields = ['AUTO_MEETING_ENABLED', 'AUTO_MEETING_BROWSER', 'AUTO_MEETING_FEISHU', 'LEARNING_SSH_HOST', 'LEARNING_REMOTE_BASE', 'TRANSLATION_PROVIDER', 'FUNASR_API_URL', 'FUNASR_MODEL', 'FUNASR_API_KEY', 'MINUTES_MODE', 'OPENAI_REALTIME_URL', 'OPENAI_REALTIME_MODEL', 'OPENAI_REALTIME_API_KEY', 'DOUBAO_TRANSLATION_API_URL', 'DOUBAO_TRANSLATION_API_KEY', 'DOUBAO_TRANSLATION_MODEL', 'DOUBAO_ASR_HOTWORDS', 'DOUBAO_ASR_CONTEXT', 'ASR_PROVIDER', 'DOUBAO_API_KEY', 'DOUBAO_ASR_URL', 'DOUBAO_ASR_RESOURCE_ID', 'ASR_API_URL', 'ASR_API_KEY', 'ASR_MODEL', 'DEEPGRAM_API_KEY', 'LLM_API_URL', 'LLM_API_KEY', 'LLM_MODEL', 'LLM_PROTOCOL', 'LLM_REASONING_EFFORT','LLM_MODEL_PROFILES','MEETING_TASK_BUDGET_USD'];
 const secretFields = new Set(['FUNASR_API_KEY', 'OPENAI_REALTIME_API_KEY', 'DOUBAO_TRANSLATION_API_KEY', 'DOUBAO_API_KEY', 'ASR_API_KEY', 'DEEPGRAM_API_KEY', 'LLM_API_KEY']);
 export const configured = value => Boolean(value && !/^(your[-_]|replace|mock|<|xxx)/i.test(value));
 export const reasoningEfforts = ['auto', 'default', 'low', 'medium', 'high', 'xhigh', 'max'];
@@ -75,12 +76,14 @@ async function persistConfig(root, input, env) {
   requireThat(input && typeof input === 'object' && !Array.isArray(input), 'invalid_provider_config', 400);
   for (const key of fields) {
     if (!(key in input)) continue;
-    requireThat(typeof input[key] === 'string' && input[key].length <= 2048 && !/[\r\n]/.test(input[key]), 'invalid_provider_config', 400);
+    requireThat(typeof input[key] === 'string' && input[key].length <= (key==='LLM_MODEL_PROFILES'?20000:2048) && !/[\r\n]/.test(input[key]), 'invalid_provider_config', 400);
     // A blank password field preserves the configured secret. Clearing is explicit.
     values[key] = secretFields.has(key) && input[key] === '' ? current[key] : input[key].trim();
   }
   for (const key of input.clearSecrets || []) { requireThat(secretFields.has(key), 'invalid_secret_field', 400); values[key] = ''; }
   const next = { ...current, ...values };
+  if(next.LLM_MODEL_PROFILES)modelProfile(next);
+  if(next.MEETING_TASK_BUDGET_USD!==undefined)requireThat(Number.isFinite(Number(next.MEETING_TASK_BUDGET_USD))&&Number(next.MEETING_TASK_BUDGET_USD)>=0,'invalid_task_budget',400);
   for(const key of ['AUTO_MEETING_ENABLED','AUTO_MEETING_BROWSER','AUTO_MEETING_FEISHU'])requireThat(['true','false'].includes(next[key]),'invalid_meeting_automation',400);
   requireThat(next.AUTO_MEETING_ENABLED!=='true' || next.AUTO_MEETING_BROWSER==='true' || next.AUTO_MEETING_FEISHU==='true','invalid_meeting_automation',400);
   const learningTarget=learningServiceTarget(next);

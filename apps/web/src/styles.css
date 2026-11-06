@@ -968,8 +968,11 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 .settings-heading-row>.select { flex:1; min-width:min(160px,100%); }
 .settings-heading-row:has(.settings-subheading) { border-top:1px solid var(--border); margin-top:6px; padding-top:20px; }
 .settings-heading-row .settings-subheading { flex:none; margin:0; padding:0; border:0; }
-.client-update-status { color:var(--ink-2); font-size:12px; }
-.update-download { margin:16px 0; }
+.client-update-activity { margin-top:16px; padding:16px 18px; border:1px solid var(--border); border-radius:10px; background:var(--panel-2); }
+.client-update-status { display:grid; gap:6px; color:var(--ink-2); font-size:12px; line-height:1.6; min-height:20px; }
+.client-update-status strong { font-weight:500; }
+.client-update-status>span { color:var(--ink-3); }
+.update-download { margin:12px 0 0; }
 .update-download-meta { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:8px; font-size:12px; color:var(--ink-2); font-variant-numeric:tabular-nums; }
 .update-download-track { height:8px; width:100%; overflow:hidden; border-radius:999px; background:var(--border); }
 .update-download-track>span { display:block; height:100%; border-radius:inherit; background:var(--accent); transition:width 160ms linear; }
@@ -1092,3 +1095,5 @@ select,.select-trigger{box-sizing:border-box;min-width:0}
 .audio-backup-fields .select-trigger{height:44px;min-height:44px}
 .audio-backup-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
 @media(max-width:650px){.audio-backup-row{grid-template-columns:1fr;gap:8px}.audio-backup-heading{gap:12px}.audio-backup-directory{gap:8px}.audio-backup-directory .button{padding-inline:12px}}
+
+.model-capabilities{grid-column:1/-1;border-top:1px solid var(--border);margin-top:4px;padding-top:14px;font-size:12px;color:var(--ink-2)}.model-capabilities>summary{cursor:pointer;padding:2px 0 10px;list-style:none;font-weight:500}.model-capabilities>.settings-dependent-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 20px}.model-capabilities .checkbox-label{font-size:12px}.model-capabilities .field input{min-width:0}@media(max-width:560px){.model-capabilities>.settings-dependent-fields{grid-template-columns:1fr}}

@@ -148,7 +148,17 @@ export async function createRepository(options = {}) {
   }
 
   const workCursors = new Map(), legacyAnalysisInputs = new Map();
+  const listeners=new Set();
   const repository = {
+    subscribeChanges(listener){listeners.add(listener);return()=>listeners.delete(listener);},
+    async accessRevision() {
+      if (pool) return (await pool.query('SELECT pg_current_snapshot()::text AS revision')).rows[0].revision;
+      return `${db.prepare('PRAGMA data_version').get().data_version}:${db.prepare('SELECT total_changes() AS changes').get().changes}`;
+    },
+    async recordingActive() {
+      if (pool) return Boolean((await pool.query("SELECT 1 FROM record_list_projection WHERE COALESCE((data->>'deleted')::boolean,false)=false AND data->'summary'->>'capture' IN ('recording','sealed') AND (data->>'deleteAt')::timestamptz>now() LIMIT 1")).rows.length);
+      return Boolean(db.prepare("SELECT 1 FROM record_list_projection WHERE COALESCE(json_extract(data,'$.deleted'),0)=0 AND json_extract(data,'$.summary.capture') IN ('recording','sealed') AND json_extract(data,'$.deleteAt')>? LIMIT 1").get(new Date().toISOString()));
+    },
     root, backend: pool ? 'postgres' : 'sqlite', audioBackend: objects ? 's3' : 'filesystem',
     async listMetadata(kind, owner, fields, {recordId, status, limit=200, before}={}) {
       requireThat(typeof kind==='string'&&typeof owner==='string'&&Array.isArray(fields)&&fields.length<=40&&fields.every(key=>/^[A-Za-z][A-Za-z0-9]*$/.test(key))&&Number.isSafeInteger(limit)&&limit>0&&limit<=1000,'invalid_metadata_query',500);
@@ -388,5 +398,6 @@ export async function createRepository(options = {}) {
     const operation = repository[name];
     repository[name] = (...args) => telemetry.measure(`db.${name}`, { backend: repository.backend, ...(typeof args[0] === 'string' && name !== 'list' ? {recordId:args[0]} : {}) }, () => operation(...args));
   }
-  return repository;
+  for(const name of ['insert','change','changeMany']){const action=repository[name];repository[name]=async(...args)=>{const result=await action(...args);const values=[result,...(Array.isArray(result)?result:[])],ids=values.filter(value=>value?.kind==='record'&&value.capture==='completed').map(value=>value.id);if(ids.length)for(const listener of listeners)queueMicrotask(()=>Promise.resolve(listener(ids)).catch(()=>{}));return result;};}
+    return repository;
 }

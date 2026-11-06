@@ -1,3 +1,4 @@
+import {createSettingsCache} from '../apps/web/src/settings-cache.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -7,7 +8,7 @@ import {transpileTypeScript} from './helpers/typescript.mjs';
 test('Git status discards an earlier account response without clearing the new account request or cache',async()=>{
   const requests=[],exports={};
   const source=(await Promise.all(['api.ts','git-sync-feed.ts'].map(async file=>transpileTypeScript(await readFile(new URL(`../apps/web/src/${file}`,import.meta.url),'utf8')).replace(/^import .*$/gm,'').replace(/export /g,'')))).join('\n');
-  vm.runInNewContext(source+'\nObject.assign(exports,{setCsrf,gitSyncStatus});',{
+  vm.runInNewContext(source+'\nObject.assign(exports,{setCsrf,gitSyncStatus});',{createSettingsCache,
     exports,AbortSignal,DOMException,Date,performance,trace(){},
     fetch:()=>new Promise(resolve=>requests.push(value=>resolve({ok:true,json:async()=>value})))
   });
@@ -35,6 +36,6 @@ test('Git status discards an earlier account response without clearing the new a
 
 test('a confirmed mutation discards stale pending status without replacing the fresh request',async()=>{
  const requests=[],exports={};const source=(await Promise.all(['api.ts','git-sync-feed.ts'].map(async file=>transpileTypeScript(await readFile(new URL(`../apps/web/src/${file}`,import.meta.url),'utf8')).replace(/^import .*$/gm,'').replace(/export /g,'')))).join('\n');
- vm.runInNewContext(source+'\nObject.assign(exports,{gitSyncStatus,invalidateGitSyncStatus});',{exports,AbortSignal,DOMException,Date,performance,trace(){},fetch:()=>new Promise(resolve=>requests.push(value=>resolve({ok:true,json:async()=>value})))});
+ vm.runInNewContext(source+'\nObject.assign(exports,{gitSyncStatus,invalidateGitSyncStatus});',{createSettingsCache,exports,AbortSignal,DOMException,Date,performance,trace(){},fetch:()=>new Promise(resolve=>requests.push(value=>resolve({ok:true,json:async()=>value})))});
  const old=exports.gitSyncStatus(),discarded=assert.rejects(old,{name:'AbortError'});exports.invalidateGitSyncStatus();const fresh=exports.gitSyncStatus();assert.equal(requests.length,2);requests[0]({enabled:true,recent:[{status:'waiting'}]});await discarded;assert.equal(exports.gitSyncStatus(),fresh);const value={enabled:true,recent:[{status:'running'}]};requests[1](value);assert.equal(await fresh,value);assert.equal(await exports.gitSyncStatus(),value);
 });

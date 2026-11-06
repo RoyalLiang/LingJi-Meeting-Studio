@@ -1,3 +1,4 @@
+import {TaskTimeline,type TaskMetric,type TaskLedger} from './TaskTimeline';
 import {createPortal} from 'react-dom';
 import {useCallback,useEffect,useId,useRef,useState} from 'react';
 import {GitBranch,Check,Spinner,WarningCircle,FolderSimple,CaretDown,CaretRight} from '@phosphor-icons/react';
@@ -15,7 +16,7 @@ type Project={id:number;name:string;path:string;default_branch:string};
 type Mapping={workspaceId:string;projectId:number};
 type Alias={name:string;projectId:number};
 type Exchange={id?:string;question:string;options?:string[];answer?:string};
-export type GitJob={conversation?:Exchange[];managed?:boolean;interaction?:{id:string;question:string;options:string[]};preview?:string;id:string;recordId:string;title:string;status:string;phase:string;error?:string;project?:Project;basis?:string;minutesRevision?:number;transcriptRevision?:number;branch?:string;baseBranch?:string;mode?:string;commit?:string;url?:string;createdAt:string;updatedAt:string};
+export type GitJob={kernelId?:string;timeline?:TaskMetric[];ledger?:TaskLedger;conversation?:Exchange[];managed?:boolean;interaction?:{id:string;question:string;options:string[]};preview?:string;id:string;recordId:string;title:string;status:string;phase:string;error?:string;project?:Project;basis?:string;minutesRevision?:number;transcriptRevision?:number;branch?:string;baseBranch?:string;mode?:string;commit?:string;url?:string;createdAt:string;updatedAt:string};
 type Policy={configured:boolean;enabled:boolean;root?:string;group?:{id:number;full_path:string};projects?:Project[];prompt?:string;skillId?:string;skillVersion?:string;skillIds?:string[];skillVersions?:Record<string,string>;pluginIds?:string[];mappings?:Mapping[];aliases?:Alias[];directory?:string;mode?:string;timezone?:string;includeNotes?:boolean;includeEvidence?:boolean;hasToken?:boolean;recent:GitJob[]};
 type Match={recordId:string;title:string;status:string;basis?:string;reason?:string;project?:Project};
 type Workspace={id:string;name:string};
@@ -43,7 +44,7 @@ export function GitTask({job,close,changed}:{job:GitJob;close:()=>void;changed:(
   const elapsed=Math.max(0,Math.floor(((active(job)?clock:Date.parse(job.updatedAt))-Date.parse(job.createdAt))/1000));
   const reply=(value:string)=>void control('respond',{id:job.interaction?.id,answer:value});
   const composer=(<form className="git-composer" onSubmit={e=>{e.preventDefault();if(answer.trim())reply(answer.trim());}}><label htmlFor={replyId}>你的回复</label><textarea id={replyId} aria-label="回复 Agent" placeholder="补充说明，或选择上方选项…" value={answer} maxLength={4000} disabled={busy} onChange={e=>{setAnswer(e.target.value);replyDrafts.set(draftKey(job),e.target.value);if(replyDrafts.size>30)replyDrafts.delete(replyDrafts.keys().next().value!);}} onKeyDown={e=>{if((e.metaKey||e.ctrlKey)&&e.key==='Enter'&&answer.trim()){e.preventDefault();reply(answer.trim());}}}/><div><span>Ctrl / ⌘ + Enter 发送</span><Button type="submit" variant="primary" disabled={busy||!answer.trim()}>{busy?'正在发送…':'发送回复'}</Button></div></form>);
-  return <Modal title={job.title} onClose={close} className="git-task-modal ma-layer" footer={<div className="git-task-footer">{job.interaction&&composer}<div className="git-task-actions">{job.url&&<ExternalLink href={job.url}>打开仓库结果</ExternalLink>}<span/>{job.status!=='succeeded'&&<Button disabled={busy} onClick={()=>void control(active(job)?'pause':job.status==='paused'?'resume':'retry')}>{active(job)?'暂停':job.status==='paused'?'继续同步':'核对并重试'}</Button>}<Button onClick={close}>关闭</Button></div></div>}>
+  return <Modal title={job.title} onClose={close} className="git-task-modal" footer={<div className="git-task-footer">{job.interaction&&composer}<div className="git-task-actions">{job.url&&<ExternalLink href={job.url}>打开仓库结果</ExternalLink>}<span/>{job.status!=='succeeded'&&<Button disabled={busy} onClick={()=>void control(active(job)?'pause':job.status==='paused'?'resume':'retry')}>{active(job)?'暂停':job.status==='paused'?'继续同步':'核对并重试'}</Button>}<Button onClick={close}>关闭</Button></div></div>}>
     <div className="git-task-title"><span><GitBranch size={15}/>{job.project?.path||'目标待确认'}</span></div>
         <div className="git-run-summary"><div className={`git-task-state ${job.status}`} role="status">{active(job)&&!job.interaction?<Spinner className="git-spin" size={17}/>:job.status==='succeeded'?<Check size={17}/>:<WarningCircle size={17}/>}<strong>{labels[job.status]||job.status}</strong></div><span className="git-run-time">{Math.floor(elapsed/60)} 分 {elapsed%60} 秒</span></div>
     <ol className="git-run-steps" aria-label="同步步骤">{taskSteps.map((step,index)=><li key={step} className={index<progress?'complete':index===progress?`current ${job.status}`:''}><span>{index<progress?<Check size={12}/>:index+1}</span><span>{step}</span></li>)}</ol>
@@ -55,7 +56,7 @@ export function GitTask({job,close,changed}:{job:GitJob;close:()=>void;changed:(
       {job.interaction&&<div className="git-interaction" aria-label="回复同步 Agent" ref={questionRef}><article className="git-message"><span className="git-message-author">Agent <span>需要你确认</span></span><MarkdownPreview text={job.interaction.question}/>{!!job.interaction.options.length&&<div className="git-reply-options">{job.interaction.options.map(option=><Button key={option} disabled={busy} onClick={()=>reply(option)}>{option}</Button>)}</div>}</article></div>}
       {!exchanges.length&&!job.preview&&!job.interaction&&<p className="git-section-hint">{active(job)?'Agent 的进展与问题会显示在这里。':'此任务没有可恢复的问答或进展记录。'}</p>}
     </section>
-<details className="git-task-more"><summary>同步详情<CaretDown size={15}/></summary><dl className="git-task-details"><div><dt>归属依据</dt><dd>{job.basis==='workspace'?'Workspace 映射':job.basis==='title'?'标题匹配':'待确认'}</dd></div><div><dt>写入方式</dt><dd>{job.mode==='direct'?'默认分支':job.mode==='mr'?'归档分支 + Merge Request':'由 Skill 决定'}</dd></div>{job.branch&&<div><dt>分支</dt><dd>{job.branch}</dd></div>}{job.commit&&<div><dt>提交</dt><dd>{job.commit}</dd></div>}</dl></details>
+<TaskTimeline timeline={job.timeline} ledger={job.ledger} kernelId={job.kernelId}/><details className="git-task-more"><summary>同步详情<CaretDown size={15}/></summary><dl className="git-task-details"><div><dt>归属依据</dt><dd>{job.basis==='workspace'?'Workspace 映射':job.basis==='title'?'标题匹配':'待确认'}</dd></div><div><dt>写入方式</dt><dd>{job.mode==='direct'?'默认分支':job.mode==='mr'?'归档分支 + Merge Request':'由 Skill 决定'}</dd></div>{job.branch&&<div><dt>分支</dt><dd>{job.branch}</dd></div>}{job.commit&&<div><dt>提交</dt><dd>{job.commit}</dd></div>}</dl></details>
     {error&&<FeedbackNotice key={error} message={error} error/>}
   </Modal>;
 }
@@ -64,7 +65,20 @@ export function GitAutomation({extensions,footerTarget}:{extensions:InstalledExt
   const pending=useRef(false),mounted=useRef(true),draftRevision=useRef(0),taskId=useRef<string|null>(null),taskVersion=useRef(0),catalogVersion=useRef(0),catalogCache=useRef<{key:string;at:number;promise?:Promise<{projects:Project[];group:{full_path:string}}>}>({key:'',at:0}),connectionKey=useRef('');
   connectionKey.current=JSON.stringify([root,token]);
   const load=useCallback(async(initial=false)=>{
-    if(!initial){const selected=taskId.current,revision=taskVersion.current;const [value,detail]=await Promise.all([gitSyncStatus(),selected?api<GitJob>(`${base}/tasks/${encodeURIComponent(selected)}`):Promise.resolve(null)]);if(!mounted.current)return;setPolicy(current=>current?{...current,...value}:null);if(selected===taskId.current&&revision===taskVersion.current&&detail)setTask(detail);return;}
+  if(!initial){
+   const selected=taskId.current,revision=taskVersion.current,[value,detail]=await Promise.allSettled([gitSyncStatus(),selected?api<GitJob>(`${base}/tasks/${encodeURIComponent(selected)}`):Promise.resolve(null)]);
+   if(!mounted.current)return;
+   if(value.status==='fulfilled')setPolicy(current=>current?{...current,...value.value}:null);
+   if(selected===taskId.current&&revision===taskVersion.current){
+    if(detail.status==='fulfilled'&&detail.value)setTask(detail.value);
+    else if(detail.status==='rejected'){
+     if(detail.reason instanceof ApiError&&detail.reason.status===404){taskId.current=null;taskVersion.current++;setTask(null);}
+     setError(messageOf(detail.reason));
+    }
+   }
+   if(value.status==='rejected')throw value.reason;
+   return;
+  }
     const value=await api<Policy>(base);if(!mounted.current)return;setPolicy(value);
     if(initial&&'configured' in value&&value.configured&&draftRevision.current===0){setRoot(value.root||'');setProjects(value.projects||[]);setPrompt(value.prompt||'');setSkillIds(value.skillIds||[value.skillId||'meeting-review']);setPlugins(value.pluginIds||[]);setMappings(value.mappings||[]);setAliases(value.aliases||[]);setDirectory(value.directory??'');setMode(value.mode??'');setNotes(Boolean(value.includeNotes));setEvidence(Boolean(value.includeEvidence));setEnabled(value.enabled);setConsent(value.enabled);setRemoteConsent(Boolean(value.pluginIds?.length));setDirectConsent(value.mode==='direct');}
   },[]);

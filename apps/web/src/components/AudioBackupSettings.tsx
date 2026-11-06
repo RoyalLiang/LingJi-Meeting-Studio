@@ -34,7 +34,6 @@ export function AudioBackupSettings({registerSave}:{registerSave?:(save:(()=>Pro
       <div className="audio-backup-fields"><div className="audio-backup-row"><label htmlFor={directoryId}>{isTauri()?'备份目录':'服务端备份目录'}</label><div className="audio-backup-directory"><input id={directoryId} aria-label="备份目录" value={value.directory} disabled={!value.enabled||busy} readOnly={isTauri()} placeholder="选择用于保存音频的文件夹" onChange={event=>edit({directory:event.target.value})}/>{isTauri()&&<Button type="button" disabled={!value.enabled||busy} onClick={()=>void choose()}>选择文件夹</Button>}</div></div>
       <div className="audio-backup-row"><span>自动清理</span><Select label="音频备份自动清理" disabled={!value.enabled||busy} value={String(value.retentionDays)} onChange={retentionDays=>edit({retentionDays:Number(retentionDays)})} options={[{value:'0',label:'永不清理'},...[7,30,90,180].map(days=>({value:String(days),label:`${days} 天后`}))]}/></div>
       </div>
-      <p className="settings-hint">新备份使用无损压缩（.wav.gz），解压后即可播放。会议重命名会同步到备份目录；已有音频保持原格式。</p>
       <Toast message={saved?'音频备份设置已保存':''} dismiss={()=>setSaved(false)}/>
       {value.error&&<FeedbackNotice message={value.error==='audio_backup_rename_failed'?'备份名称未同步，请检查备份目录是否可用。已保存的音频仍保留在原目录。':'部分音频备份未完成，请检查目录或磁盘。应用内原音会保留至备份成功或会议到期。'} warning/>}
       {dirty&&<div className="audio-backup-actions">{actions}</div>}</>}

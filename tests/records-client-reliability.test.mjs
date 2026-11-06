@@ -1,10 +1,11 @@
+import {createSettingsCache} from '../apps/web/src/settings-cache.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {transformSync,buildSync} from 'esbuild';
 import vm from 'node:vm';
 const code=transformSync(await readFile(new URL('../apps/web/src/api.ts',import.meta.url),'utf8'),{loader:'ts',format:'cjs'}).code;
-function client(fetch){const module={exports:{}};vm.runInNewContext(code,{module,exports:module.exports,require:()=>({trace(){}}),performance,crypto,AbortController,AbortSignal:{timeout:()=>AbortSignal.timeout(5),any:AbortSignal.any.bind(AbortSignal)},fetch,setTimeout,clearTimeout,Uint8Array});return module.exports;}
+function client(fetch){const module={exports:{}};vm.runInNewContext(code,{module,exports:module.exports,require:id=>id.includes('settings-cache')?{createSettingsCache}:{trace(){}},performance,crypto,AbortController,AbortSignal:{timeout:()=>AbortSignal.timeout(5),any:AbortSignal.any.bind(AbortSignal)},fetch,setTimeout,clearTimeout,Uint8Array});return module.exports;}
 test('stalled service request times out so a local audio lane can recover',async()=>{
   const h=client((_,init)=>new Promise((resolve,reject)=>init.signal.addEventListener('abort',()=>reject(init.signal.reason),{once:true})));
   const keepAlive=setTimeout(()=>{},100);try{await assert.rejects(h.serviceFetch('/api/health'),{code:'service_unavailable'});}finally{clearTimeout(keepAlive);}
