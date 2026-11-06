@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
-import {compileMeetingMinutesBoard,minutesSkillDsl} from '../packages/records/src/meeting-minutes-skill.mjs';
+import {compileMeetingMinutesBoard,minutesSkillDsl,wrapSkillText} from '../packages/records/src/meeting-minutes-skill.mjs';
 import {boardSvg} from '../packages/records/src/minutes-presentation.mjs';
 
 const base=new URL('../services/records/src/data/skills/meeting-minutes/',import.meta.url);
@@ -33,7 +33,7 @@ test('all twelve cards use editable native geometry with valid parents, attachme
   for(const card of cards){
     const nodes=compileMeetingMinutesBoard({title:'卡片验证',sections:[{title:card.type,items:[card]}]}),ids=new Set(nodes.map(n=>n.id)),world=worldNodes(nodes);
     assert.equal(ids.size,nodes.length);assert.ok(nodes.length<3000);
-    assert.ok(nodes.some(n=>n.type==='section'));assert.ok(nodes.some(n=>n.type==='group'));
+    assert.ok(nodes.some(n=>n.id==='sec0'&&n.type==='group'));assert.ok(nodes.some(n=>n.id==='sec0_heading'&&n.type==='text_shape'));assert.ok(!nodes.some(n=>n.type==='section'));
     for(const node of world){
       if(node.parent_id)assert.ok(ids.has(node.parent_id));
       if(node.type==='connector')for(const end of ['start','end'])assert.ok(ids.has(node.connector[end].attached_object.id));
@@ -87,8 +87,8 @@ test('zero and tiny funnel percentages keep their source labels without zero-wid
 
 test('native sections provide semantic titles and coordinate frames through nested logical groups',()=>{
   const data={sections:[{title:'结论',color:'blue',items:['保留原文']},{title:'行动',color:'green',items:[{type:'action-list',actions:[{t:'补齐用例',owner:'林',s:'todo'},{t:'核对字段',s:'active'}]}]},{title:'风险',color:'amber',items:['尚未上线']}]},nodes=compileMeetingMinutesBoard(data),world=worldNodes(nodes);
-  const sections=world.filter(n=>n.type==='section');
-  assert.deepEqual(sections.map(n=>n.section.title),['结论','行动','风险']);assert.equal(new Set(sections.map(n=>n.style.fill_color)).size,3);
+  const headings=world.filter(n=>/^sec\d+_heading$/.test(n.id));
+  assert.deepEqual(headings.map(n=>n.text.text),['结论','行动','风险']);assert.ok(headings.every(n=>n.text.font_size>=24&&n.text.font_weight==='bold'));assert.ok(!nodes.some(n=>n.type==='section'));
   for(const node of world.filter(n=>n.parent_id&&n.type!=='connector')){
     const parent=world.find(n=>n.id===node.parent_id);
     assert.ok(node.x>=parent.x-.2&&node.y>=parent.y-.2,node.id);
@@ -126,7 +126,15 @@ test('negated and tentative status labels never imply acceptance or completion t
 
 test('long tentative dates stay within their timeline row and section',()=>{
   const time='日期待上级批准，当前只是假设时间。'.repeat(10),nodes=worldNodes(compileMeetingMinutesBoard({sections:[{title:'时间待确认',items:[{type:'timeline',events:[{time,t:'首轮核对'},{time:'时间待确认',t:'下一轮核对'}]}]}]}));
-  const date=nodes.find(n=>n.id==='s0_c0_date0'),next=nodes.find(n=>n.id==='s0_c0_date1'),section=nodes.find(n=>n.type==='section');
+  const date=nodes.find(n=>n.id==='s0_c0_date0'),next=nodes.find(n=>n.id==='s0_c0_date1'),section=nodes.find(n=>n.id==='sec0');
   assert.ok(next.y>=date.y+date.height);assert.ok(next.y+next.height<=section.y+section.height);
   assert.equal(date.text.text.replaceAll('\n',''),time);
+});
+
+
+test('CJK line wrapping keeps punctuation with adjacent text and retains all characters',()=>{
+ const source='需要核对配置（保留当前值），不要把假设当作结论。下一项需要再次确认！';
+ const lines=wrapSkillText(source,114,18);assert.equal(lines.join(''),source);
+ assert.ok(lines.every(line=>!/[，。！？、；：）】》」』]/u.test(line[0])));
+ assert.ok(lines.every(line=>!/[（【《「『]/u.test(line.at(-1))));
 });

@@ -3,7 +3,7 @@ import {minutesOverview} from './minutes-presentation.mjs';
 import {minutesItemText} from './minutes-quality.mjs';
 
 // Native adaptation of the bundled meeting-minutes compiler; no Python runtime or model call.
-export const MEETING_MINUTES_SKILL='meeting-minutes/20261106-native-v2';
+export const MEETING_MINUTES_SKILL='meeting-minutes/20261106-routed-v3';
 const status=value=>({done:'已完成',completed:'已完成',active:'进行中',todo:'待办',pending:'待推进',candidate:'候选',confirmed:'已确认',blocked:'受阻',unconfirmed:'待确认'})[value]||value||'';
 const join=values=>values.filter(value=>value!==undefined&&value!==null&&value!=='').join('\n');
 const round=value=>Math.round(value*10)/10;
@@ -16,7 +16,11 @@ export function wrapSkillText(value,width,size=16){
     let line='',used=0;
     for(const char of raw.trim()){
       const code=char.codePointAt(0),weight=code<128?.56:code>=0x2e80?1:.75;
-      if(used+weight>limit&&line){lines.push(line);line='';used=0;}
+      if(used+weight>limit&&line){
+        const chars=Array.from(line),last=chars.at(-1),carry=/[，。！？、；：）】》」』,.!?;:)]/u.test(char)||/[（【《「『(]/u.test(last)?chars.pop():'';
+        const previous=carry?chars.join(''):line;if(previous)lines.push(previous);line=carry;
+        const carryCode=carry.codePointAt(0);used=carry?(carryCode<128?.56:carryCode>=0x2e80?1:.75):0;
+      }
       line+=char;used+=weight;
     }
     if(line)lines.push(line);
@@ -130,7 +134,7 @@ export function compileMeetingMinutesBoard(data,{theme='light'}={}){
           const bx=x+col*(cw+gap),startAt=nodes.length,item=group(prefix+'_panel'+(offset+col),bx,y,cw,80),accepted=/^(?:最终)?(?:已)?(?:采纳|确定|选定)[\s✓✔✅]*$/u.test(String(e.tag||'').trim()),fill=accepted?p.greenSoft:p.paper;
           const background=box('panel_bg'+(offset+col),bx,y,cw,80,{fill,stroke:accepted?p.green:p.line});let cy=y+24;
           if(e.tag){chip(prefix+'_panel_tag'+(offset+col),e.tag,bx+20,cy,{w:cw-40,fill:accepted?p.greenSoft:p.amberSoft});cy+=46;}
-          cy+=label('panel_title'+(offset+col),e.t||e.title||'',bx+20,cy,cw-40,{size:22,bold:true}).height+20;
+          if(e.t||e.title)cy+=label('panel_title'+(offset+col),e.t||e.title,bx+20,cy,cw-40,{size:22,bold:true}).height+20;
           if(e.d||e.desc)cy+=label('panel_desc'+(offset+col),e.d||e.desc,bx+20,cy,cw-40,{size:18}).height+20;
           for(const [bi,value] of (e.items||[]).entries()){
             box(`panel_bullet${offset+col}_${bi}`,bx+22,cy+9,6,6,{kind:'ellipse',fill:accepted?p.green:p.blue,stroke:null});cy+=label(`panel_item${offset+col}_${bi}`,String(value),bx+42,cy,cw-62,{size:18}).height+18;
@@ -155,46 +159,58 @@ export function compileMeetingMinutesBoard(data,{theme='light'}={}){
         y+=rowH+24;
       }
     }else if(kind==='action-list'){
-      const actions=payload['action-list'],buckets=[...new Set(actions.map(a=>status(a.s??'todo')||'待确认'))],cols=Math.min(3,Math.max(1,buckets.length)),gap=32,cw=(inner-gap*(cols-1))/cols;
-      for(let offset=0;offset<buckets.length;offset+=cols){let rowBottom=y;
-        for(const [col,bucket] of buckets.slice(offset,offset+cols).entries()){
-          const bx=x+col*(cw+gap),items=actions.map((a,i)=>({a,i})).filter(({a})=>(status(a.s??'todo')||'待确认')===bucket),[accent,fill]=tone(bucket);
-          chip(prefix+'_lane'+(offset+col),`${bucket} · ${items.length}`,bx,y,{w:cw,fill});let cy=y+48;
-          for(const {a,i} of items){const startAt=nodes.length,entry=group(prefix+'_action'+i,bx,cy,cw,100),panel=box('action_panel'+i,bx,cy,cw,100,{fill:p.paper,stroke:p.line});let iy=cy+18;
-            if(a.p){chip(prefix+'_priority'+i,a.p,bx+16,iy,{w:64,fill:tone(a.p)[1]});iy+=46;}
-            iy+=label('action_text'+i,a.t??a.title??'',bx+16,iy,cw-32,{size:18,bold:true}).height+20;
-            iy+=label('action_owner'+i,a.owner||'负责人待确认',bx+16,iy,cw-32,{size:16}).height+10;
-            iy+=label('action_due'+i,a.due||'时间待确认',bx+16,iy,cw-32,{size:16}).height+18;
-            entry.height=panel.height=round(iy-cy);parent(startAt,entry.id);cy=iy+20;
-          }
-          box('lane_rule'+(offset+col),bx,y+34,cw,1,{fill:accent,stroke:null});rowBottom=Math.max(rowBottom,cy);
-        }y=rowBottom+24;
+      const actions=payload['action-list'],buckets=[...new Set(actions.map(a=>status(a.s??'unconfirmed')||'待确认'))],gap=32;
+      const action=(a,i,bx,by,cw)=>{
+        const startAt=nodes.length,entry=group(prefix+'_action'+i,bx,by,cw,100),panel=box('action_panel'+i,bx,by,cw,100,{fill:p.paper,stroke:p.line});let cy=by+18;
+        if(a.p){chip(prefix+'_priority'+i,a.p,bx+16,cy,{w:64,fill:tone(a.p)[1]});cy+=46;}
+        cy+=label('action_text'+i,a.t??a.title??'',bx+16,cy,cw-32,{size:18,bold:true}).height+20;
+        const owner=!a.owner||a.owner==='待确认'?'负责人待确认':a.owner,due=!a.due||a.due==='待确认'?'时间待确认':a.due;
+        cy+=label('action_meta'+i,`${owner} · ${due}`,bx+16,cy,cw-32,{size:16}).height+18;
+        entry.height=panel.height=round(cy-by);parent(startAt,entry.id);return entry;
+      };
+      if(buckets.length===1){
+        const [bucket]=buckets,[accent,fill]=tone(bucket),cw=(inner-gap)/2;
+        chip(prefix+'_lane0',`${bucket} · ${actions.length}`,x,y,{w:inner,fill});box('lane_rule0',x,y+34,inner,1,{fill:accent,stroke:null});y+=52;
+        for(let offset=0;offset<actions.length;offset+=2){
+          const row=actions.slice(offset,offset+2).map((a,col)=>action(a,offset+col,x+col*(cw+gap),y,cw));
+          y+=Math.max(...row.map(n=>n.height))+20;
+        }
+      }else{
+        const cols=Math.min(3,Math.max(1,buckets.length)),cw=(inner-gap*(cols-1))/cols;
+        for(let offset=0;offset<buckets.length;offset+=cols){let bottom=y;
+          for(const [col,bucket] of buckets.slice(offset,offset+cols).entries()){
+            const bx=x+col*(cw+gap),items=actions.map((a,i)=>({a,i})).filter(({a})=>(status(a.s??'unconfirmed')||'待确认')===bucket),[accent,fill]=tone(bucket);
+            chip(prefix+'_lane'+(offset+col),`${bucket} · ${items.length}`,bx,y,{w:cw,fill});box('lane_rule'+(offset+col),bx,y+34,cw,1,{fill:accent,stroke:null});let cy=y+52;
+            for(const {a,i} of items)cy+=action(a,i,bx,cy,cw).height+20;
+            bottom=Math.max(bottom,cy);
+          }y=bottom+24;
+        }
       }
     }else if(kind==='risk-matrix'){
       const risks=payload['risk-matrix'],cols=Math.min(2,Math.max(1,risks.length)),gap=32,cw=(inner-gap*(cols-1))/cols;
       for(let offset=0;offset<risks.length;offset+=cols){let rowBottom=y;
         for(const [col,r] of risks.slice(offset,offset+cols).entries()){
           const bx=x+col*(cw+gap),startAt=nodes.length,index=offset+col,entry=group(prefix+'_risk'+index,bx,y,cw,100),[accent,fill]=tone(r.level||'unconfirmed'),panel=box('risk_panel'+index,bx,y,cw,100,{fill,stroke:accent});let cy=y+20;
-          chip(prefix+'_risk_level'+index,String(r.level||'待确认').toUpperCase(),bx+20,cy,{w:100,fill});cy+=48;
+          chip(prefix+'_risk_level'+index,String(r.level||'未评级').toUpperCase(),bx+20,cy,{w:100,fill});cy+=48;
           cy+=label('risk_text'+index,r.risk||'',bx+20,cy,cw-40,{size:21,bold:true}).height+24;
-          cy+=label('risk_mitigation'+index,join(['缓解措施',r.mitigation||'']),bx+20,cy,cw-40,{size:18}).height+20;
+          cy+=label('risk_mitigation'+index,join(['缓解措施',r.mitigation||'待确认']),bx+20,cy,cw-40,{size:18}).height+20;
           if(r.owner)cy+=label('risk_owner'+index,r.owner,bx+20,cy,cw-40,{size:16,bold:true}).height+18;
           entry.height=panel.height=round(cy-y+6);parent(startAt,entry.id);rowBottom=Math.max(rowBottom,cy+6);
         }y=rowBottom+28;
       }
     }else{
-      const grid=table(prefix+'_table',c.headers||[],c.rows||[],x,y,{statusGroups:kind==='status-table'});y+=grid.height+28;container.width=Math.max(width,grid.width+64);
+      const grid=table(prefix+'_table',c.headers||[],c.rows||[],x,y,{statusGroups:kind==='status-table'&&c.mergeFirstColumn!==false});y+=grid.height+28;container.width=Math.max(width,grid.width+64);
     }
     if(y<=top+28){y+=label('empty','暂无记录',x,y,inner,{size:18}).height+24;}
     container.height=round(Math.max(100,y-top));parent(start,container.id);return container;
   }
   let y=32;
-  y+=text('wb_title',data.title??data.t??'会议纪要',48,y,1136,{size:30,bold:true,color:dark?'#ffffff':p.ink}).height+16;
-  if(data.subtitle??data.sub)y+=text('wb_subtitle',data.subtitle??data.sub,48,y,1136,{size:16,color:dark?'#ffffff':p.ink}).height+24;
+  y+=text('wb_title',data.title??data.t??'会议纪要',48,y,1040,{size:30,bold:true,color:dark?'#ffffff':p.ink}).height+16;
+  if(data.subtitle??data.sub)y+=text('wb_subtitle',data.subtitle??data.sub,48,y,1040,{size:16,color:dark?'#ffffff':p.ink}).height+24;
   if(data.summary??data.sum){const value=data.summary??data.sum,h=measured(value,1040,22,40);shape('wb_summary_panel',48,y,1040,h,{fill:p.blueSoft,stroke:null});text('wb_summary',value,68,y+20,1000,{size:22,bold:true});y+=h+28;}
-  const sectionColors={blue:'#f3f5fc',green:'#f1f9f2',amber:'#fffcf2',indigo:'#f5f1fd',slate:'#f5f6f7'};
   for(const [si,section] of (data.sections??data.sec??[]).entries()){
-    y+=36;const start=nodes.length,title=section.title??section.t??'议题',outer=add({id:`sec${si}`,type:'section',x:24,y:round(y),width:1088,height:100,section:{title},style:{fill_color:sectionColors[section.color]||sectionColors.slate,fill_opacity:dark?0:100}});y+=32;
+    const title=section.title??section.t??'议题',sameTitle=title===(data.title??data.t);y+=sameTitle?12:36;const start=nodes.length,outer=group(`sec${si}`,24,y,1088,100);y+=sameTitle?0:24;
+    if(title!==(data.title??data.t))y+=text(`sec${si}_heading`,title,64,y,1008,{size:26,bold:true}).height+24;
     for(const [ii,item] of (section.items??section.b??[]).entries()){
       if(typeof item==='string'||item&&typeof item==='object'&&!item.type)y+=text(`sec${si}_note${ii}`,typeof item==='string'?item:item.text??item.t??'',64,y,1008,{size:18}).height+20;
       else{const card=renderCard(item,y,`s${si}_c${ii}`,{skipTitle:item.title===title});y+=card.height+16;}
@@ -219,17 +235,59 @@ export function compileMeetingMinutesBoard(data,{theme='light'}={}){
 
 export function minutesSkillDsl(minutes,{citations}={}){
   const view=minutesOverview(minutes),cite=refs=>citations?citations(refs||[]):'',text=item=>minutesItemText(item)+cite(item.evidence),cited=item=>item.text+cite(item.evidence),sections=[];
-  if(view.summary.length)sections.push({title:view.summaryLabel,color:'blue',items:view.summary.map(cited)});
-  if(view.decisions.length)sections.push({title:'关键决策',color:'indigo',items:view.decisions.map(cited)});
-  if(view.actions.length)sections.push({title:'推进安排与前置条件',color:'green',items:[{type:'action-list',actions:view.actions.map(a=>({t:a.text+cite(a.evidence),owner:a.owner||'待确认',due:a.due||'待确认',s:a.status||'unconfirmed'}))}]});
-  if(view.pending.length)sections.push({title:'风险与待确认',color:'amber',items:view.pending.map(cited)});
+  const actions=items=>({type:'action-list',actions:items.map(a=>({t:cited(a),owner:a.owner||'待确认',due:a.due||'待确认',s:a.status||'unconfirmed'}))});
+  const decisions=items=>items.map(item=>({type:'quote-decision',text:cited(item)}));
+  if(view.summary.length)sections.push({title:view.summaryLabel,color:'blue',items:[{type:'grid',cols:2,items:view.summary.map(item=>({d:cited(item)}))}]});
+  if(view.decisions.length)sections.push({title:'关键决策',color:'indigo',items:decisions(view.decisions)});
+  if(view.actions.length)sections.push({title:'推进安排与前置条件',color:'green',items:[actions(view.actions)]});
   const branches=[...view.layout.branches];
   if(view.layout.unassigned.visuals.length||view.layout.unassigned.tables.length)branches.push({title:'补充图表',...view.layout.unassigned});
   for(const branch of branches){
-    const items=[];if(branch.summary)items.push(branch.summary+cite(branch.evidence));items.push(...(branch.items||[]).map(text));
-    for(const chart of branch.visuals||[])items.push(chart.kind==='timeline'?{type:'timeline',title:chart.title,events:chart.entries.map(e=>({t:e.label,d:e.text+cite(e.evidence),s:'',meta:'按会议提及顺序 · 时间保留原话'}))}:{type:'table',title:chart.title,headers:['对象',`数值（${chart.unit||'原单位'}）`],rows:chart.entries.map(e=>[e.label,e.valueText+cite(e.evidence)])});
-    for(const grid of branch.tables||[])items.push({type:'table',title:grid.title,headers:grid.columns,rows:grid.rows.map(row=>row.cells.map((cell,i)=>cell+(i===grid.columns.length-1?cite(row.evidence):'')))});
+    const items=[],source=branch.items||[],facts=source.filter(i=>!['risk','question','decision','action'].includes(i.kind));
+    if(branch.summary)items.push(branch.summary+cite(branch.evidence));
+    if(facts.length)items.push({type:'grid',title:'事实与现状',cols:2,items:facts.map(item=>({d:text(item)}))});
+    const risks=source.filter(i=>i.kind==='risk');
+    if(risks.length)items.push({type:'risk-matrix',title:'风险与影响',risks:risks.map(item=>({risk:text(item),mitigation:item.mitigation||'待确认',...(item.level?{level:item.level}:{}),...(item.owner?{owner:item.owner}:{})}))});
+    const questions=source.filter(i=>i.kind==='question');
+    if(questions.length)items.push({type:'status-table',mergeFirstColumn:false,title:'待确认事项',headers:['待确认事项','当前状态'],rows:questions.map(item=>[text(item),['pending','unconfirmed'].includes(item.status)?'待确认':status(item.status)||'待确认'])});
+    items.push(...decisions(source.filter(i=>i.kind==='decision').map(item=>({...item,text:minutesItemText(item)}))));
+    const proposed=source.filter(i=>i.kind==='action');if(proposed.length)items.push({...actions(proposed.map(item=>({...item,text:minutesItemText(item)}))),title:'讨论中的行动候选'});
+    for(const chart of branch.visuals||[])items.push(chart.kind==='timeline'?{type:'timeline',title:chart.title,events:chart.entries.map(e=>({time:e.label,t:e.text+cite(e.evidence),s:'',meta:'按会议提及顺序 · 时间保留原话'}))}:{type:'table',title:chart.title,headers:['对象',`数值（${chart.unit||'原单位'}）`],rows:chart.entries.map(e=>[e.label,e.valueText+cite(e.evidence)])});
+    for(const grid of branch.tables||[])items.push({type:grid.columns.some(c=>/状态|健康|进展/.test(c))?'status-table':'table',mergeFirstColumn:false,title:grid.title,headers:grid.columns,rows:grid.rows.map(row=>row.cells.map((cell,i)=>cell+(i===grid.columns.length-1?cite(row.evidence):'')))});
     sections.push({title:branch.title,items});
   }
   return {title:minutes.title||'会议纪要',subtitle:`转录 v${minutes.transcriptRevision??'?'} · 纪要 v${minutes.revision??'?'}${minutes.edited?' · 人工修订':''}`,sections};
+}
+
+// Split independent entries, never infer a graph or truncate a source paragraph.
+export function compileMeetingMinutesPages(data,options={}){
+  const maxHeight=1000,pages=[];
+  const listFields={grid:'items','risk-matrix':'risks','action-list':'actions',timeline:'events',table:'rows','status-table':'rows'};
+  for(const section of data.sections||[]){
+    if(!section.items?.length)continue;
+    let pending=[],part=0;
+    const title=()=>part?`${section.title}（续${part+1}）`:section.title;
+    const render=items=>compileMeetingMinutesBoard({title:title(),subtitle:[data.title,data.subtitle].filter(Boolean).join(' · '),sections:[{...section,title:title(),items}]},options);
+    const fits=items=>{
+      try{return render(items)[0].height<=maxHeight;}
+      catch(error){if(error.code==='feishu_document_too_large')return false;throw error;}
+    };
+    const flush=()=>{if(pending.length){pages.push({title:title(),nodes:render(pending)});pending=[];part++;}};
+    const append=item=>{if(pending.length&&!fits([...pending,item]))flush();pending.push(item);};
+    for(const item of section.items){
+      const field=item&&typeof item==='object'?listFields[aliases[item.type]||item.type]:undefined,entries=field&&item[field];
+      if(!Array.isArray(entries)||!entries.length){append(item);continue;}
+      let chunk=[];
+      for(const entry of entries){
+        const candidate={...item,[field]:[...chunk,entry]};
+        if(chunk.length&&!fits([candidate])){append({...item,[field]:chunk});chunk=[];}
+        chunk.push(entry);
+      }
+      if(chunk.length)append({...item,[field]:chunk});
+    }
+    flush();
+  }
+  if(!pages.length)pages.push({title:data.title||'会议纪要',nodes:compileMeetingMinutesBoard(data,options)});
+  requireThat(pages.reduce((sum,p)=>sum+p.nodes.length,0)<=3000&&Buffer.byteLength(JSON.stringify(pages))<=500000,'feishu_document_too_large',400);
+  return pages;
 }

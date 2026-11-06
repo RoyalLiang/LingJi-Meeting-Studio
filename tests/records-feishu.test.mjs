@@ -26,8 +26,8 @@ function provider(){
     if(url.endsWith('/docx/v1/documents')){if(flags.createTimeout)throw new Error('network lost');return Response.json({code:0,data:{document:{document_id:documentId}}});}
     if(url.includes('/descendant?')){if(flags.writeFail)return Response.json({code:1770001,msg:'private-upstream-message'},{status:400});return Response.json({code:0,data:{block_id_relations:JSON.parse(body).descendants.filter(block=>!flags.missingNativeBlock||block.block_type!==4).map(block=>({temporary_block_id:block.block_id,block_id:`remote-${block.block_id}`}))}});}
     if(url.endsWith('/metas/batch_query'))return Response.json({code:0,data:{metas:[{doc_token:documentId,doc_type:'docx',title:'人工核对的会议纪要',url:`https://fixture.feishu.cn/docx/${documentId}`}],failed_list:[]}});
-    if(url.includes('/children?'))return Response.json({code:0,data:{children:[{block_type:43,board:{token:'boardFixture123456789012'}}]}});
-    if(url.includes('/whiteboards/')&&url.includes('/nodes?'))return Response.json({code:0,data:{ids:JSON.parse(body).nodes.map(node=>node.id)}});
+    if(url.includes('/children?')){const index=(remote.boardResources||0)+1;remote.boardResources=index;return Response.json({code:0,data:{children:JSON.parse(body).children.map(block=>block.block_type===43?{block_type:43,board:{token:`boardFixture123456789012-${index}`}}:block)}});}
+    if(url.includes('/whiteboards/')&&url.includes('/nodes?')){remote.boardWrites=(remote.boardWrites||0)+1;if(flags.boardFailAt===remote.boardWrites)return Response.json({code:1770001},{status:400});return Response.json({code:0,data:{ids:JSON.parse(body).nodes.map(node=>node.id)}});}
     if(url.includes('/members/transfer_owner?'))return Response.json({code:0,data:{}});
     throw new Error('Unexpected fixture URL');
   }};
@@ -297,20 +297,20 @@ test('editable board has readable topic hierarchy and real diagram primitives',(
 
 });
 
-test('large editable skill board preserves all details in a single verified request',async t=>{
+test('large editable minutes publish readable pages with one connected scene per request',async t=>{
   const h=await harness(t);await h.connect();
   await h.app.repo.change(h.recordId,record=>{
     record.minutes.sections[0].items=Array.from({length:120},(_,index)=>({text:`核对事项 ${index+1}`,evidence:[{segmentId:'s1',revision:1}]}));
   });
   const preview=await h.request(`/records/${h.recordId}/feishu/preview`,'POST',{title:'人工核对的会议纪要',folderToken:'',includeBoard:true,boardTheme:'dark',includeNotes:false,includeEvidence:true});
-  assert.equal(preview.status,201);assert.equal(preview.body.boardTheme,'dark');assert.ok(preview.body.boardNodes.length>100&&preview.body.boardNodes.length<3000);
-  assert.equal(preview.body.boardNodes[0].style.fill_color,'#1D1E20');assert.match(preview.body.markdown,/核对事项 120/);assert.match(JSON.stringify(preview.body.boardNodes),/核对事项 120/);
+  assert.equal(preview.status,201);assert.equal(preview.body.boardTheme,'dark');assert.ok(preview.body.boardPages.length>1);assert.ok(preview.body.boardPages.every(page=>page.nodes[0].height<=1000));
+  assert.equal(preview.body.boardNodes[0].style.fill_color,'#1D1E20');assert.match(preview.body.markdown,/核对事项 120/);assert.match(JSON.stringify(preview.body.boardPages),/核对事项 120/);
   await h.request(`/integrations/feishu/exports/${preview.body.id}/publish`,'POST',{confirmed:true});
   assert.equal((await h.wait(preview.body.id)).status,'succeeded');
   const board=h.remote.calls.find(call=>call.url.includes('/children?'));assert.equal(JSON.parse(board.body).index,0);
   const batches=h.remote.calls.filter(call=>call.url.includes('/whiteboards/')&&call.url.includes('/nodes?'));
-  assert.equal(batches.length,1);assert.ok(batches.every(call=>JSON.parse(call.body).nodes.length<=3000));
-  assert.equal(batches.reduce((total,call)=>total+JSON.parse(call.body).nodes.length,0),preview.body.boardNodes.length);
+  assert.equal(batches.length,preview.body.boardPages.length);assert.ok(batches.every(call=>JSON.parse(call.body).nodes.length<=3000));
+  assert.equal(batches.reduce((total,call)=>total+JSON.parse(call.body).nodes.length,0),preview.body.boardPages.reduce((sum,page)=>sum+page.nodes.length,0));
   assert.equal(new Set(batches.map(call=>new URL(call.url).searchParams.get('client_token'))).size,batches.length);
 });
 
@@ -354,4 +354,28 @@ test('missing native block acknowledgement stops before board or transfer and ne
  assert.ok(!h.remote.calls.some(call=>/children\?|whiteboards|transfer_owner/.test(call.url)));
  await h.request(`/integrations/feishu/exports/${preview.body.id}/publish`,'POST',{confirmed:true});assert.equal(h.remote.calls.filter(call=>call.url.endsWith('/docx/v1/documents')).length,1);
  assert.equal((await h.app.repo.get(preview.body.id)).summaryBlocks,null);
+});
+
+test('a later board page failure preserves a partial receipt and never transfers or creates a second document',async t=>{
+ const h=await harness(t);await h.connect();
+ await h.app.repo.change(h.recordId,r=>{r.minutes.sections[0].items=Array.from({length:40},(_,i)=>({text:`保留条目 ${i}`,kind:'fact',evidence:[{segmentId:'s1',revision:1}]}));});
+ const draft=await h.request(`/records/${h.recordId}/feishu/preview`,'POST',{title:'人工核对的会议纪要',folderToken:'',destinationEmail:'preview@example.test',includeBoard:true,includeNotes:false,includeEvidence:true});
+ assert.equal(draft.status,201);assert.ok(draft.body.boardPages.length>1);h.remote.flags.boardFailAt=2;
+ await h.request(`/integrations/feishu/exports/${draft.body.id}/publish`,'POST',{confirmed:true});const receipt=await h.wait(draft.body.id);
+ assert.equal(receipt.status,'partial');assert.equal(receipt.documentId,documentId);
+ const stored=await h.app.repo.get(draft.body.id);assert.equal(stored.boardTokens.length,2);assert.deepEqual(stored.boardPages,[]);
+ assert.ok(!h.remote.calls.some(c=>c.url.includes('transfer_owner')));
+ await h.request(`/integrations/feishu/exports/${draft.body.id}/publish`,'POST',{confirmed:true});assert.equal(h.remote.calls.filter(c=>c.url.endsWith('/docx/v1/documents')).length,1);
+});
+
+test('interrupted publication clears frozen page data and keeps recovery metadata',async t=>{
+ const h=await harness(t);await h.connect();
+ for(const hasDocument of [false,true]){
+  const draft=await h.request(`/records/${h.recordId}/feishu/preview`,'POST',{title:'人工核对的会议纪要',folderToken:'',includeBoard:true,includeNotes:false,includeEvidence:true});
+  await h.app.repo.change(draft.body.id,v=>{v.status='publishing';v.updatedAt=Date.now()-180001;v.boardPage=2;v.boardTokens=['first-board','second-board'];if(hasDocument)v.documentId=documentId;});
+  const result=await h.request(`/integrations/feishu/exports/${draft.body.id}`);assert.equal(result.body.status,hasDocument?'partial':'unknown');
+  const stored=await h.app.repo.get(draft.body.id);assert.equal(stored.markdown,'');assert.deepEqual(stored.boardNodes,[]);assert.deepEqual(stored.boardPages,[]);assert.equal(stored.summaryBlocks,null);
+  assert.deepEqual(stored.boardTokens,['first-board','second-board']);assert.equal(stored.boardPage,2);if(hasDocument)assert.equal(stored.documentId,documentId);
+ }
+ assert.ok(!h.remote.calls.some(c=>c.url.endsWith('/docx/v1/documents')));
 });
