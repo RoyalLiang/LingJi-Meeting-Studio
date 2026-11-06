@@ -1,6 +1,9 @@
+import {gunzipSync} from 'node:zlib';
+import {mkdir,rename as renameDirectory} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
 import test from 'node:test';import assert from 'node:assert/strict';import{mkdtemp,rm,readFile,writeFile,readdir,utimes,realpath}from'node:fs/promises';import{join}from'node:path';import{tmpdir}from'node:os';import{randomUUID}from'node:crypto';
 import{createRepository}from'../services/records/src/repository.mjs';import{createRecord,audioPurgeReady,publicRecord}from'../packages/records/src/record.mjs';import{audioBackupSettings,saveAudioBackupSettings,prepareAudioBackup,backupAudioRecord,cleanupAudioBackups}from'../services/records/src/audio-backup.mjs';import{runCycle}from'../services/records/src/worker.mjs';
-async function fixture(t,days=0){const root=await mkdtemp(join(tmpdir(),'lingji-audio-backup-')),destination=await mkdtemp(join(tmpdir(),'lingji-audio-copy-')),repo=await createRepository({root,databaseUrl:''});t.after(async()=>{await repo.close();await rm(root,{recursive:true,force:true});await rm(destination,{recursive:true,force:true});});await saveAudioBackupSettings(repo,'owner',{enabled:true,directory:destination,retentionDays:days});return{repo,destination,async record(){const r=createRecord('owner',{title:'接口/联调',retainAudio:false});await prepareAudioBackup(repo,r);const sourceId=randomUUID(),pcm=Buffer.from([1,0,2,0,3,0]),object=await repo.putAudio(r.id,pcm);r.capture='completed';r.transcription='ready';r.sources=[{id:sourceId,kind:'microphone',watermark:0,lastSequence:0,asr:{state:'ready'}}];r.chunks=[{key:'sample',sourceId,sequence:0,sampleOffset:0,sampleCount:3,sampleRate:16000,state:'done',attempts:0,acceptedAt:Date.now(),...object}];await repo.insert(r);return{r,pcm,object:object.object};},async files(){const parent=join(destination,'聆记音频备份');const [owner]=await readdir(parent);const base=join(parent,owner),folders=(await readdir(base)).filter(name=>!name.startsWith('.'));const folder=join(base,folders[0]);return{folder,files:(await readdir(folder)).filter(name=>name.endsWith('.wav'))};}};}
+async function fixture(t,days=0){const root=await mkdtemp(join(tmpdir(),'lingji-audio-backup-')),destination=await mkdtemp(join(tmpdir(),'lingji-audio-copy-')),repo=await createRepository({root,databaseUrl:''});t.after(async()=>{await repo.close();await rm(root,{recursive:true,force:true});await rm(destination,{recursive:true,force:true});});await saveAudioBackupSettings(repo,'owner',{enabled:true,directory:destination,retentionDays:days});return{repo,destination,async record(pcm=Buffer.from([1,0,2,0,3,0])){const r=createRecord('owner',{title:'接口/联调',retainAudio:false});await prepareAudioBackup(repo,r);const sourceId=randomUUID(),object=await repo.putAudio(r.id,pcm);r.capture='completed';r.transcription='ready';r.sources=[{id:sourceId,kind:'microphone',watermark:0,lastSequence:0,asr:{state:'ready'}}];r.chunks=[{key:'sample',sourceId,sequence:0,sampleOffset:0,sampleCount:pcm.length/2,sampleRate:16000,state:'done',attempts:0,acceptedAt:Date.now(),...object}];await repo.insert(r);return{r,pcm,object:object.object};},async files(){const parent=join(destination,'聆记音频备份');const [owner]=await readdir(parent);const base=join(parent,owner),folders=(await readdir(base)).filter(name=>!name.startsWith('.'));const folder=join(base,folders[0]);return{folder,files:(await readdir(folder)).filter(name=>/\.wav(?:\.gz)?$/.test(name))};}};}
 test('a streaming WAV backup preserves samples and completes before normal raw-audio purge',async t=>{const f=await fixture(t),{r,pcm,object}=await f.record();assert.equal(audioPurgeReady(await f.repo.get(r.id)),false);await runCycle(f.repo,{});const saved=await f.repo.get(r.id);assert.equal(saved.audioBackup.status,'saved');assert.doesNotMatch(JSON.stringify(publicRecord(saved).audioBackup),/directory|marker|folder|attempt/);assert.equal(saved.audioPurged,true);const{folder,files}=await f.files(),wave=await readFile(join(folder,files[0]));assert.equal(wave.subarray(0,4).toString(),'RIFF');assert.equal(wave.readUInt32LE(24),16000);assert.deepEqual(wave.subarray(44),pcm);await assert.rejects(f.repo.readAudio(object));});
 test('never-clean retains backups and settings remain owner scoped',async t=>{const f=await fixture(t),{r}=await f.record(),now=Date.now();await backupAudioRecord(f.repo,r,now);const{folder,files}=await f.files();await cleanupAudioBackups(f.repo,now+400*86400000);assert.ok((await readFile(join(folder,files[0]))).length>44);assert.deepEqual(await audioBackupSettings(f.repo,'other'),{enabled:false,directory:'',retentionDays:0});await assert.rejects(saveAudioBackupSettings(f.repo,'owner',{enabled:true,directory:'../relative',retentionDays:0}),{code:'invalid_audio_backup_directory'});});
 test('retention removes only registered unmodified WAV files and preserves user additions',async t=>{const f=await fixture(t,7),{r}=await f.record(),now=Date.now();await backupAudioRecord(f.repo,r,now);const{folder,files}=await f.files();await writeFile(join(folder,'notes.txt'),'用户的文件');await cleanupAudioBackups(f.repo,now+8*86400000);await assert.rejects(readFile(join(folder,files[0])));assert.equal(await readFile(join(folder,'notes.txt'),'utf8'),'用户的文件');});
@@ -46,4 +49,45 @@ test('retention preserves same-size modified audio even if its timestamp was res
   const manifest=JSON.parse(await readFile(join(folder,'.lingji-backup.json'),'utf8')),path=join(folder,files[0]),bytes=await readFile(path);bytes[44]^=1;await writeFile(path,bytes);
   const modified=manifest.files[0];await utimes(path,new Date(modified.mtimeMs),new Date(modified.mtimeMs));
   await cleanupAudioBackups(f.repo,now+8*86400000);assert.deepEqual(await readFile(path),bytes);
+});
+
+test('renaming an ended meeting reconciles its saved backup after original audio was purged',async t=>{
+  const f=await fixture(t),{r}=await f.record();await runCycle(f.repo,{}, {lane:'audio'});
+  const old=await f.files();assert.equal((await f.repo.get(r.id)).audioPurged,true);
+  await f.repo.change(r.id,value=>{value.title='自动结束后的正式会议名';value.titleEdited=true;});
+  await runCycle(f.repo,{}, {lane:'audio'});
+  const renamed=await f.files();assert.notEqual(renamed.folder,old.folder);assert.match(renamed.folder,/自动结束后的正式会议名/);
+  assert.equal((await f.repo.get(r.id)).audioBackup.status,'saved');
+  assert.deepEqual(renamed.files,old.files);
+});
+
+test('large new backups are lossless compressed WAVs and survive retention checks',async t=>{
+  const f=await fixture(t,7),pcm=Buffer.alloc(32000);for(let i=0;i<16000;i++)pcm.writeInt16LE(Math.round(12000*Math.sin(i/12)),i*2);
+  const {r}=await f.record(pcm),now=Date.now();await backupAudioRecord(f.repo,r,now);
+  const {folder,files}=await f.files();assert.equal(files.length,1);assert.match(files[0],/\.wav\.gz$/);
+  const packed=await readFile(join(folder,files[0])),wave=gunzipSync(packed);assert.deepEqual(wave.subarray(44),pcm);assert.ok(packed.length<wave.length);
+  const manifest=JSON.parse(await readFile(join(folder,'.lingji-backup.json'),'utf8'));assert.equal(manifest.format,'lingji-audio-backup/v2');assert.equal(manifest.files[0].decodedSha256,createHash('sha256').update(wave).digest('hex'));
+  await f.repo.change(r.id,value=>{value.audioBackup.status='pending';});await backupAudioRecord(f.repo,await f.repo.get(r.id),now);assert.equal((await f.repo.get(r.id)).audioBackup.status,'saved');
+  await cleanupAudioBackups(f.repo,now+8*86400000);await assert.rejects(readFile(join(folder,files[0])));
+});
+
+test('legacy pending backups keep their ordinary WAV format',async t=>{
+  const f=await fixture(t),{r}=await f.record(Buffer.alloc(32000));await f.repo.change(r.id,value=>{delete value.audioBackup.compression;});
+  await backupAudioRecord(f.repo,await f.repo.get(r.id));const {folder,files}=await f.files();assert.match(files[0],/\.wav$/);assert.equal((await readFile(join(folder,files[0]))).length,32044);
+});
+
+test('backup rename recovers after the directory moved before database acknowledgement',async t=>{
+  const f=await fixture(t),{r}=await f.record();await backupAudioRecord(f.repo,r);const {folder}=await f.files(),target=folder.replace('接口_联调','恢复后的标题');
+  await f.repo.change(r.id,value=>{value.title='恢复后的标题';value.audioBackup.renameTo=target.split('/').at(-1);});await renameDirectory(folder,target);
+  await backupAudioRecord(f.repo,await f.repo.get(r.id));const next=await f.repo.get(r.id);assert.equal(next.audioBackup.folder,target.split('/').at(-1));assert.equal(next.audioBackup.renameTo,undefined);assert.equal(next.audioBackup.status,'saved');
+});
+
+test('backup rename never replaces an existing foreign directory',async t=>{
+  const f=await fixture(t),{r}=await f.record();await backupAudioRecord(f.repo,r);const {folder,files}=await f.files(),target=folder.replace('接口_联调','名称冲突');await mkdir(target);await writeFile(join(target,'private.txt'),'保留用户文件');
+  await f.repo.change(r.id,value=>{value.title='名称冲突';});await backupAudioRecord(f.repo,await f.repo.get(r.id));const next=await f.repo.get(r.id);assert.equal(next.audioBackup.status,'saved');assert.equal(next.audioBackup.error,'audio_backup_rename_failed');assert.equal(await readFile(join(target,'private.txt'),'utf8'),'保留用户文件');assert.ok((await readFile(join(folder,files[0]))).length);
+});
+
+test('background reconciliation updates legacy saved folder names even with retention disabled',async t=>{
+ const f=await fixture(t),{r}=await f.record();await backupAudioRecord(f.repo,r);const before=await f.repo.get(r.id);await f.repo.change(r.id,row=>{row.title='升级前已改名';});
+ await cleanupAudioBackups(f.repo);const after=await f.repo.get(r.id);assert.notEqual(after.audioBackup.folder,before.audioBackup.folder);assert.match(after.audioBackup.folder,/升级前已改名/);assert.equal(after.audioBackup.status,'saved');
 });

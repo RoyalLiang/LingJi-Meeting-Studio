@@ -343,3 +343,43 @@ test('a Skill final response needing human confirmation stays interactive instea
  await h.sync.respond('owner',job.id,{id:inputId,answer:'已核对目标与权限，请继续同一项目的同步。'});
  const done=await settled(h.sync,job.id);assert.equal(done.status,'succeeded',JSON.stringify(done));assert.equal(h.network.mrs.length,1);
 });
+
+test('failed Git tasks retain answered questions across restart and retry without bloating lists',async t=>{
+  const h=await fixture(t);await h.sync.save('owner',h.policy);const r=await h.record();
+  h.fake.setResponses([
+    message(call('read_selected_meeting',{recordId:r.id}),{stopReason:'toolUse'}),
+    message(call('request_user_input',{id:'destination',question:'确认保留人工修订？',options:['保留']}),{stopReason:'toolUse'}),
+    message('invalid final JSON')
+  ]);
+  const job=await h.sync.start('owner',r.id);let waiting;
+  for(let i=0;i<200;i++){waiting=await h.sync.get('owner',job.id);if(waiting.interaction)break;await delay(10);}
+  assert.ok(waiting.interaction);await h.sync.respond('owner',job.id,{id:waiting.interaction.id,answer:'保留人工修订'});
+  const failed=await settled(h.sync,job.id);assert.equal(failed.status,'failed');
+  assert.deepEqual(failed.conversation.map(({question,answer})=>({question,answer})),[{question:'确认保留人工修订？',answer:'保留人工修订'}]);
+  assert.equal((await h.sync.status('owner')).recent[0].conversation,undefined);
+  await h.restart();assert.deepEqual((await h.sync.get('owner',job.id)).conversation,failed.conversation);
+  h.fake.setResponses([
+    context=>{assert.match(JSON.stringify(context),/保留人工修订/);return message(call('read_selected_meeting',{recordId:r.id}),{stopReason:'toolUse'});},
+    message(JSON.stringify({summary:'已保留修订',decisions:[{text:'保留人工修订',evidence:[{recordId:r.id,segmentId:'cited',revision:1}]}],actions:[]}))
+  ]);
+  await h.sync.control('owner',job.id,'retry');const done=await settled(h.sync,job.id);assert.equal(done.status,'succeeded',JSON.stringify(done));
+  assert.equal(done.conversation.length,1);assert.equal(h.network.writes.filter(w=>w.path.endsWith('/repository/commits')).length,1);
+  await h.repo.change(r.id,row=>{row.deleted=true;});assert.equal((await h.sync.get('owner',job.id)).conversation,undefined);
+});
+
+test('disabled configuration saves all edited preferences without enabling future writes',async t=>{
+ const h=await fixture(t);await h.sync.save('owner',h.policy);
+ const draft={...h.policy,enabled:false,confirmed:false,prompt:'关闭期间更新的整理指令',mode:'direct',directConfirmed:false,directory:'docs/updated'};
+ const saved=await h.sync.save('owner',draft);assert.equal(saved.enabled,false);assert.equal(saved.prompt,draft.prompt);assert.equal(saved.directory,draft.directory);assert.equal(saved.mode,'direct');
+ await h.restart();const read=await h.sync.settings('owner');assert.equal(read.prompt,draft.prompt);assert.equal(read.directory,draft.directory);assert.equal(h.network.writes.length,0);
+ await assert.rejects(h.sync.save('owner',{...draft,enabled:true}),{code:'git_confirmation_required'});
+});
+
+test('scope preview returns the freshly checked project catalog for dropdown refresh',async t=>{
+ const h=await fixture(t);await h.sync.save('owner',h.policy);const preview=await h.sync.preview('owner',h.policy);assert.deepEqual(preview.projects.map(({id,path})=>({id,path})),projects.map(({id,path})=>({id,path})));
+});
+
+test('saving a disabled draft fences writes before a slow changed-connection validation',async t=>{
+ const h=await fixture(t);await h.sync.save('owner',h.policy);let release,entered;const gate=new Promise(r=>{release=r;}),seen=new Promise(r=>{entered=r;});h.network.allowToken('new-draft-token');h.network.onRead(async()=>{entered();await gate;});
+ const saving=h.sync.save('owner',{...h.policy,enabled:false,confirmed:false,token:'new-draft-token',prompt:'新配置'});await seen;try{assert.equal((await h.sync.settings('owner')).enabled,false);assert.equal(h.network.writes.length,0);}finally{release();}assert.equal((await saving).prompt,'新配置');
+});

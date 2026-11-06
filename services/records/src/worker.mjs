@@ -1,4 +1,4 @@
-import {audioBackupPending,backupAudioRecord,cleanupAudioBackups} from './audio-backup.mjs';
+import {audioBackupPending,audioBackupNeedsWork,backupAudioRecord,cleanupAudioBackups} from './audio-backup.mjs';
 import { processFunasrAudio } from './funasr-transcription.mjs';
 import { processDoubaoModelAudio } from './doubao-model-transcription.mjs';
 import { doubaoAudioEnabled } from './config.mjs';
@@ -191,7 +191,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all', cacheConfig
     }
     if (lane !== 'all' && lane !== 'audio') return;
     let latest = await repo.get(candidate.id);
-    if(audioBackupPending(latest)&&await backupAudioRecord(repo,latest))latest=await repo.get(candidate.id);
+    if(audioBackupNeedsWork(latest)&&await backupAudioRecord(repo,latest))latest=await repo.get(candidate.id);
     if (audioPurgeReady(latest)) {
       let purge = false;
       await repo.change(latest.id, r => { if (audioPurgeReady(r)) { delete r.waveforms; r.audioCleanup = true; purge = true; } }, {returnRecord:false});

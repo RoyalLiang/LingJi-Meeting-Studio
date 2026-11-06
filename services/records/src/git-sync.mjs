@@ -16,7 +16,7 @@ const Index=defineDoc({kind:'git-sync.index.v1',version:1,scope:'session',initia
 const ruleId=owner=>`git-sync-rule:${digest(owner)}`;
 const now=()=>new Date().toISOString();
 const terminal=outcome=>({status:'terminal',outcome});
-const safeCode=error=>/^(?:git_[a-z_]+|remote_[a-z_]+|minutes_not_configured|extension_[a-z_]+|mcp_[a-z_]+|agent_[a-z_]+|invalid_agent_output|provider_[a-z_]+|llm_[a-z_]+)$/.test(error?.code||'')?error.code:'git_sync_failed';
+const safeCode=error=>/^(?:git_[a-z_]+|remote_[a-z_]+|minutes_not_configured|extension_[a-z_]+|mcp_[a-z_]+|agent_[a-z_]+|invalid_agent_output|invalid_llm_response|provider_(?:[a-z_]+|http_[45]\d{2})|llm_[a-z_]+)$/.test(error?.code||'')?error.code:'git_sync_failed';
 const inline=value=>String(value).replace(/[<>]/g,c=>c==='<'?'&lt;':'&gt;').replace(/([\\`*_{}[\]#|])/g,'\\$1');
 const modelHash=config=>digest(JSON.stringify([config.LLM_MODEL||'',config.LLM_API_URL||'',config.LLM_PROTOCOL||'',config.LLM_REASONING_EFFORT||'']));
 const publicRule=rule=>rule?{configured:true,enabled:rule.enabled,root:rule.root,group:rule.group,projects:rule.projects,prompt:rule.prompt,skillId:rule.scope.skill.id,skillVersion:rule.scope.skill.version,skillIds:(rule.scope.skills||[rule.scope.skill]).map(s=>s.id),skillVersions:Object.fromEntries((rule.scope.skills||[rule.scope.skill]).map(s=>[s.id,s.version])),pluginIds:rule.scope.plugins.map(p=>p.id),pluginVersions:Object.fromEntries(rule.scope.plugins.map(p=>[p.id,p.version])),mappings:rule.mappings,aliases:rule.aliases,directory:rule.directory,mode:rule.mode,timezone:rule.timezone,includeNotes:rule.includeNotes,includeEvidence:rule.includeEvidence,hasToken:Boolean(rule.credentials),generation:rule.generation}:{configured:false,enabled:false};
@@ -40,14 +40,19 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
     return full?{...value,record}:value;
   }
   async function jobFor(owner,id){const job=await repo.get(id);requireThat(job?.kind==='git-sync-job'&&job.owner===owner,'git_task_not_found',404);return job;}
-  async function publicJob(job){
-    if(job.agentId&&['queued','running','waiting'].includes(job.status)){
-      const child=await agent.get(job.owner,job.agentId);
-      const visible=!child.stale&&!['blocked','cancelled'].includes(child.status),interaction=visible&&(child.interaction||(job.interaction?.kind==='continuation'?job.interaction:undefined));job={...job,...(interaction?{status:'waiting',interaction}:{interaction:undefined}),preview:visible?child.preview:undefined};
-    }
-    if(!['queued','running','waiting'].includes(job.status))job={...job,interaction:undefined};
+  function conversation(...groups){
+    const entries=new Map();for(const item of groups.flat())if(item?.question){const key=JSON.stringify([item.question,item.answer]);if(!entries.has(key))entries.set(key,item);}
+    return [...entries.values()];
+  }
+  async function publicJob(job,detail=false){
     if(!retained((await repo.getRecordAccess([job.recordId]))[0],job.owner))return {id:job.id,recordId:job.recordId,title:'会议已删除或过期',status:'blocked',phase:job.phase,error:'git_source_unavailable',createdAt:job.createdAt,updatedAt:job.updatedAt};
-    return Object.fromEntries(['id','recordId','title','status','phase','error','createdAt','updatedAt','project','basis','minutesRevision','transcriptRevision','branch','baseBranch','directory','mode','commit','url','agentId','automatic','paused','interaction','preview','managed'].filter(k=>job[k]!==undefined).map(k=>[k,['automatic','paused','managed'].includes(k)?Boolean(job[k]):job[k]]));
+    if(job.agentId&&(detail||['queued','running','waiting'].includes(job.status))){
+      const child=await agent.get(job.owner,job.agentId,{summary:!detail});
+      const visible=!child.stale&&child.status!=='blocked',running=['queued','running','waiting'].includes(job.status),interaction=visible&&child.status!=='cancelled'&&running&&(child.interaction||(job.interaction?.kind==='continuation'?job.interaction:undefined));
+      job={...job,...(interaction?{status:'waiting',interaction}:{interaction:undefined}),preview:visible?child.preview:undefined,...(detail?{conversation:visible?conversation(job.feedback||[],child.conversation||[]):[]}:{} )};
+    }else if(detail)job={...job,conversation:job.feedback||[]};
+    if(!['queued','running','waiting'].includes(job.status))job={...job,interaction:undefined};
+    return Object.fromEntries(['id','recordId','title','status','phase','error','createdAt','updatedAt','project','basis','minutesRevision','transcriptRevision','branch','baseBranch','directory','mode','commit','url','agentId','automatic','paused','interaction','preview','managed',...(detail?['conversation']:[])].filter(k=>job[k]!==undefined).map(k=>[k,['automatic','paused','managed'].includes(k)?Boolean(job[k]):job[k]]));
   }
   const history=async owner=>(await repo.listMetadata('git-sync-job',owner,['recordId','status','phase','title','createdAt','updatedAt','ruleGeneration','error','project','basis','minutesRevision','transcriptRevision','branch','baseBranch','directory','mode','commit','url','agentId','automatic','paused','interaction','preview','managed'],{limit:1000})).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
   async function guard(job,signal,remote=false,ignorePause=false,full=false){
@@ -61,7 +66,7 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
     if(remote){const catalog=await git.catalog(connection(rule),signal),match=gitTarget(record,catalog.projects,rule.mappings,rule.aliases);requireThat(catalog.group.id===job.rootGroup.id&&match.status==='eligible'&&match.project.id===job.project.id&&match.project.default_branch===job.baseBranch,'git_target_changed',409);}
     return {rule,record};
   }
-  async function update(id,values){const current=await repo.get(id);if(Object.entries(values).every(([key,value])=>JSON.stringify(current[key])===JSON.stringify(value)))return current;return repo.change(id,row=>{const unavailable=row.error==='git_source_unavailable'||values.error==='git_source_unavailable';Object.assign(row,values,{updatedAt:now()});if(unavailable)Object.assign(row,{status:'blocked',error:'git_source_unavailable',files:null,original:null,title:''});return structuredClone(row);});}
+  async function update(id,values){const current=await repo.get(id);if(Object.entries(values).every(([key,value])=>JSON.stringify(current[key])===JSON.stringify(value)))return current;return repo.change(id,row=>{const unavailable=row.error==='git_source_unavailable'||values.error==='git_source_unavailable';Object.assign(row,values,{updatedAt:now()});if(unavailable)Object.assign(row,{status:'blocked',error:'git_source_unavailable',files:null,original:null,title:'',feedback:null,interaction:null,preview:null});return structuredClone(row);});}
   const phases=['resolve','prepare','organize','commit','merge'];
   function phaseHandler(phase){return async(task,runtime,taskContext)=>{
     let job=await repo.get(task.input.jobId);
@@ -138,16 +143,17 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
     const catalog=await git.catalog({root:rootValue,token});catalogCache.set(owner,{key:digest(rootValue+':'+token),at:Date.now(),catalog});if(catalogCache.size>32)catalogCache.delete(catalogCache.keys().next().value);return catalog;
   }
   async function save(owner,input,intent){
-    requireThat(typeof input.enabled==='boolean','invalid_git_sync',400);const current=await load(owner);
-    if(!input.enabled)return enqueue(async()=>{const latest=await load(owner);if(latest)await repo.change(latest.id,r=>{r.enabled=false;r.generation=randomUUID();});return publicRule(await load(owner));});
-    requireThat(input.confirmed===true&&typeof input.prompt==='string'&&input.prompt.trim().length>=1&&input.prompt.length<=2000&&typeof input.includeNotes==='boolean'&&typeof input.includeEvidence==='boolean'&&['','mr','direct'].includes(input.mode||''),'git_confirmation_required',400);
-    requireThat(input.mode!=='direct'||input.directConfirmed===true,'git_direct_confirmation_required',400);
+    requireThat(typeof input.enabled==='boolean','invalid_git_sync',400);let current=await load(owner);
+    if(!input.enabled&&current?.enabled){await enqueue(async()=>{requireThat(saveIntents.get(owner)===intent,'git_rule_changed',409);await repo.change(current.id,row=>{row.enabled=false;row.generation=randomUUID();});});current=await load(owner);}
+    if(!input.enabled&&input.root===undefined&&input.prompt===undefined)return enqueue(async()=>{requireThat(saveIntents.get(owner)===intent,'git_rule_changed',409);const latest=await load(owner);if(latest)await repo.change(latest.id,r=>{r.enabled=false;r.generation=randomUUID();});return publicRule(await load(owner));});
+    requireThat((!input.enabled||input.confirmed===true)&&typeof input.prompt==='string'&&input.prompt.trim().length>=1&&input.prompt.length<=2000&&typeof input.includeNotes==='boolean'&&typeof input.includeEvidence==='boolean'&&['','mr','direct'].includes(input.mode||''),'git_confirmation_required',400);
+    requireThat(!input.enabled||input.mode!=='direct'||input.directConfirmed===true,'git_direct_confirmation_required',400);
     const timezone=input.timezone||'UTC';requireThat(typeof timezone==='string'&&timezone.length<=100,'git_timezone_invalid',400);try{new Intl.DateTimeFormat('en-CA',{timeZone:timezone});}catch{throw new DomainError('git_timezone_invalid',400);}
     const rootValue=gitRoot(input.root).url,token=input.token||(current?.root===rootValue?connection(current).token:'');
     requireThat(typeof token==='string'&&token.length<=16000&&!/[^\x21-\x7e]/.test(token),'invalid_git_sync',400);
     const recent=catalogCache.get(owner),sameConnection=current?.root===rootValue&&connection(current).token===token;
-    const catalog=recent?.key===digest(rootValue+':'+token)&&Date.now()-recent.at<30000?recent.catalog:sameConnection?{group:current.group,projects:current.projects}:await check(owner,input);
-    const {group,projects}=catalog,scope=await extensions.snapshot(owner,input);
+    const catalog=recent?.key===digest(rootValue+':'+token)&&(sameConnection||Date.now()-recent.at<30000)?recent.catalog:sameConnection?{group:current.group,projects:current.projects}:await check(owner,input);
+    const {group,projects}=catalog,scope=await extensions.snapshot(owner,input.enabled?input:{...input,remoteToolsConfirmed:true}); // Disabled drafts store selections only; enabling rechecks explicit tool consent.
     const managed=scope.skills.some(skill=>skill.id!=='meeting-review');requireThat(managed||input.mode,'git_write_mode_required',400);
     requireThat(Array.isArray(input.mappings)&&input.mappings.length<=50&&Array.isArray(input.aliases)&&input.aliases.length<=100,'invalid_git_sync',400);
     for(const mapping of input.mappings){const workspace=await repo.get(mapping.workspaceId);requireThat(workspace?.kind==='workspace'&&workspace.owner===owner&&projects.some(p=>p.id===mapping.projectId),'git_mapping_invalid',400);}
@@ -156,7 +162,7 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
     let directory;try{directory=managed&&!input.directory?.trim()?'':gitArchivePath(typeof input.directory==='string'&&input.directory.trim()?input.directory.trim():'docs/meetings');}catch{throw new DomainError('git_directory_invalid',400);}
     const policy={root:rootValue,group,projects,timezone,prompt:input.prompt.trim(),scope,mappings:input.mappings.map(({workspaceId,projectId})=>({workspaceId,projectId})),aliases:input.aliases.map(({name,projectId})=>({name:name.trim(),projectId})),directory,mode:input.mode||'',managed,includeNotes:input.includeNotes,includeEvidence:input.includeEvidence};
     const fingerprint=digest(JSON.stringify({...policy,projects:undefined})),unchanged=current?.enabled&&current.fingerprint===fingerprint&&connection(current).token===token;
-    const next={id:ruleId(owner),kind:'git-sync-rule',owner,...policy,fingerprint,enabled:true,generation:unchanged?current.generation:randomUUID(),enabledAt:unchanged?current.enabledAt:Date.now(),excluded:unchanged?current.excluded:(await repo.listSummaries(owner,'all','')).filter(r=>r.capture==='completed').map(r=>r.id),credentials:token?secrets.seal(ruleId(owner),{token}):null};
+    const next={id:ruleId(owner),kind:'git-sync-rule',owner,...policy,fingerprint,enabled:input.enabled,generation:unchanged?current.generation:randomUUID(),enabledAt:unchanged?current.enabledAt:Date.now(),excluded:unchanged?current.excluded:(await repo.listSummaries(owner,'all','')).filter(r=>r.capture==='completed').map(r=>r.id),credentials:token?secrets.seal(ruleId(owner),{token}):null};
     return enqueue(async()=>{
       const latest=await load(owner);
       await extensions.validate(owner,scope);
@@ -164,13 +170,13 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
       if(current)await repo.change(current.id,r=>Object.assign(r,next));else await repo.insert(next);return publicRule(next);
     });
   }
-  async function preview(owner,input){const rule=input?.root?input:await load(owner);requireThat(rule,'git_not_configured',409);requireThat(Array.isArray(rule.mappings)&&rule.mappings.length<=50&&Array.isArray(rule.aliases)&&rule.aliases.length<=100&&rule.aliases.every(a=>typeof a.name==='string'&&a.name.length<=100),'invalid_git_sync',400);const {projects}=input?.root?await check(owner,input):await git.catalog(connection(rule));const results=[];for(const summary of await repo.listSummaries(owner,'all','')){const r=await recordFor(owner,summary.id),target=gitTarget(r,projects,rule.mappings,rule.aliases);results.push({recordId:r.id,title:r.title,workspaceId:r.workspaceId,...target});}return {results};}
+  async function preview(owner,input){const rule=input?.root?input:await load(owner);requireThat(rule,'git_not_configured',409);requireThat(Array.isArray(rule.mappings)&&rule.mappings.length<=50&&Array.isArray(rule.aliases)&&rule.aliases.length<=100&&rule.aliases.every(a=>typeof a.name==='string'&&a.name.length<=100),'invalid_git_sync',400);const {projects,group}=input?.root?await check(owner,input):await git.catalog(connection(rule));const results=[];for(const summary of await repo.listSummaries(owner,'all','')){const r=await recordFor(owner,summary.id),target=gitTarget(r,projects,rule.mappings,rule.aliases);results.push({recordId:r.id,title:r.title,workspaceId:r.workspaceId,...target});}return {results,projects,group};}
   async function start(owner,recordId,automatic=false){
     const rule=await load(owner);requireThat(rule?.enabled,'git_not_configured',409);const record=await recordFor(owner,recordId);requireThat(gitFinal(record),'git_minutes_not_ready',409);
     const config=await readConfig(repo.root),configHash=modelHash(config),sourceHash=gitSourceHash(record,rule.includeNotes),archiveKey=digest(JSON.stringify([sourceHash,rule.fingerprint,configHash])),key=digest(`${owner}:${record.id}:${archiveKey}`),id=`git-sync:${key}`;
     const existing=await repo.get(id);if(existing)return publicJob(existing);
     const row={id,kind:'git-sync-job',owner,recordId,title:record.title,sourceHash,archiveKey,ruleGeneration:rule.generation,policyFingerprint:rule.fingerprint,modelConfigHash:configHash,model:config.LLM_MODEL||'injected-test-model',reasoningEffort:config.LLM_REASONING_EFFORT||'',rootGroup:rule.group,minutesRevision:record.minutesRevision,transcriptRevision:record.transcriptRevision,automatic,managed:rule.managed===true,phase:'resolve',status:'queued',createdAt:now(),updatedAt:now(),startedAt:now()};
-    await repo.insert(row);if(row.status==='queued'){try{await schedule(row);}catch(error){await update(id,{status:'failed',error:safeCode(error)});}}return publicJob(await repo.get(id));
+    await repo.insert(row);if(row.status==='queued'){try{await schedule(row);}catch(error){await update(id,{status:'failed',error:safeCode(error)});}}return publicJob(await repo.get(id),true);
   }
   async function tick(){
     if(busy||closing)return;busy=true;
@@ -181,7 +187,7 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
       for(;;){
         const batch=await repo.listMetadata('git-sync-job',rule.owner,['recordId','createdAt','error'],{limit:1000,before});
         const access=new Map((await repo.getRecordAccess([...new Set(batch.map(row=>row.recordId))])).map(r=>[r.id,r]));
-        for(const item of batch)if(!retained(access.get(item.recordId),rule.owner)&&item.error!=='git_source_unavailable'){await update(item.id,{status:'blocked',error:'git_source_unavailable',files:null,original:null,title:''});sourceCache.delete(`${item.recordId}:true`);sourceCache.delete(`${item.recordId}:false`);}
+        for(const item of batch)if(!retained(access.get(item.recordId),rule.owner)&&item.error!=='git_source_unavailable'){await update(item.id,{status:'blocked',error:'git_source_unavailable',files:null,original:null,title:'',feedback:null,interaction:null,preview:null});sourceCache.delete(`${item.recordId}:true`);sourceCache.delete(`${item.recordId}:false`);}
         if(batch.length<1000)break;const last=batch.at(-1);before=[last.createdAt,last.id];
       }
       if(!rule.enabled||rows.some(r=>['queued','running','waiting'].includes(r.status)))continue;
@@ -232,10 +238,10 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
     harness.resume();timer=setInterval(()=>void enqueue(tick).catch(()=>{}),Math.max(50,pollMs));timer.unref();
     return {
     check,save:(owner,input)=>{const intent={};saveIntents.set(owner,intent);return save(owner,input,intent).finally(()=>{if(saveIntents.get(owner)===intent)saveIntents.delete(owner);});},preview,start:(owner,id)=>enqueue(()=>start(owner,id)),tick:()=>enqueue(tick),
-      async status(owner){return {enabled:Boolean((await load(owner))?.enabled),recent:await Promise.all((await history(owner)).slice(0,20).map(publicJob))};},
+      async status(owner){return {enabled:Boolean((await load(owner))?.enabled),recent:await Promise.all((await history(owner)).slice(0,20).map(job=>publicJob(job)))};},
       async settings(owner){
-return {...publicRule(await load(owner)),recent:await Promise.all((await history(owner)).slice(0,20).map(publicJob))};},
-      get:async(owner,id)=>publicJob(await jobFor(owner,id)),
+return {...publicRule(await load(owner)),recent:await Promise.all((await history(owner)).slice(0,20).map(job=>publicJob(job)))};},
+      get:async(owner,id)=>publicJob(await jobFor(owner,id),true),
     respond:async(owner,id,input)=>{const job=await jobFor(owner,id);await guard(job);requireThat(job.agentId,'agent_input_changed',409);
       if(job.interaction?.kind==='continuation'){
         requireThat(input?.id===job.interaction.id&&typeof input.answer==='string'&&input.answer.trim()&&input.answer.length<=4000,'agent_input_changed',409);
@@ -245,8 +251,15 @@ return {...publicRule(await load(owner)),recent:await Promise.all((await history
           requireThat(JSON.stringify(feedback).length<=60000,'agent_input_too_large',413);
           Object.assign(current,{feedback,agentAttempt:(current.agentAttempt||0)+1,agentId:null,interaction:null,status:'running',updatedAt:new Date().toISOString()});
         });
-      }else await agent.respond(owner,job.agentId,input);
-      return publicJob(await repo.get(id));},
+      }else {
+        requireThat(typeof input?.id==='string'&&typeof input.answer==='string'&&input.answer.trim()&&input.answer.length<=4000,'invalid_agent_request',400);
+        const child=await agent.get(owner,job.agentId),question=child.interaction;
+        requireThat(question?.id===input?.id,'agent_input_changed',409);
+        const feedback=conversation(job.feedback||[],(child.conversation||[]).filter(item=>item.answer!==undefined),[{question:question.question,answer:input.answer?.trim()}]);
+        requireThat(JSON.stringify(feedback).length<=60000,'agent_input_too_large',413);
+        await agent.respond(owner,job.agentId,input);await update(id,{feedback});
+      }
+      return publicJob(await repo.get(id),true);},
       control:(owner,id,action)=>enqueue(async()=>{
         let job=await jobFor(owner,id);if(job.status==='succeeded')return publicJob(job);
         requireThat(['pause','resume','retry'].includes(action),'invalid_git_sync',400);
@@ -262,8 +275,8 @@ return {...publicRule(await load(owner)),recent:await Promise.all((await history
           await guard(job,undefined,false,true);
 
           const child=job.agentId?await agent.get(owner,job.agentId):null;
-          job=await update(id,{paused:false,status:'queued',phase:job.project?job.phase:'resolve',error:null,rateAttempts:0,startedAt:now(),...(child&&(['failed','blocked','cancelled'].includes(child.status)||job.managed&&job.error&&child.status==='completed')?{agentId:null,agentAttempt:(job.agentAttempt||0)+1}:{})});await schedule(job);
-        }return publicJob(await repo.get(id));
+          job=await update(id,{paused:false,status:'queued',phase:job.project?job.phase:'resolve',error:null,rateAttempts:0,startedAt:now(),...(child&&(['failed','blocked','cancelled'].includes(child.status)||job.managed&&job.error&&child.status==='completed')?{agentId:null,agentAttempt:(job.agentAttempt||0)+1,feedback:conversation(job.feedback||[],(child.conversation||[]).filter(item=>item.answer!==undefined))}:{})});await schedule(job);
+        }return publicJob(await repo.get(id),true);
       }),
       async close(){closing=true;clearInterval(timer);await operations;await harness.close(context);lock.close();}
     };

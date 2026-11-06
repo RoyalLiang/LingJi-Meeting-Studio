@@ -1,3 +1,4 @@
+import {sendHttpPayload} from './http-response.mjs';
 import {audioBackupSettings,saveAudioBackupSettings,prepareAudioBackup} from './audio-backup.mjs';
 import { createMeetingAgentRuntime } from './meeting-agent.mjs';
 import { createEncryptedSharing } from './encrypted-sharing.mjs';
@@ -116,7 +117,7 @@ export async function createRecordServer(options = {}) {
     void request.then(release, release);
     return request;
   };
-  const sendPayload = (res,status,payload,headers={}) => {res.writeHead(status,{'Content-Length':Buffer.byteLength(payload),'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...headers});res.end(payload);};
+  const sendPayload = (res,status,payload,headers={}) => sendHttpPayload(res,status,payload,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...headers});
   const send = (res,status,data,headers) => sendPayload(res,status,JSON.stringify(data),headers);
   const recordResponses=new Map();let responseBytes=0;
   const forgetResponse=id=>{const cached=recordResponses.get(id);if(cached){responseBytes-=cached.payload.length;recordResponses.delete(id);}};

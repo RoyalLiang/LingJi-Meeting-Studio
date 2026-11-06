@@ -36,4 +36,5 @@ test('Git sync HTTP enforces auth, CSRF, explicit consent, owner boundaries and 
   assert.equal(result.body.status,'succeeded',JSON.stringify(result));assert.equal(network.mrs.length,1);
   assert.equal((await request('/integrations/git-sync','GET',undefined,other)).body.recent.length,0);
   assert.ok(!JSON.stringify((await request('/integrations/git-sync')).body).includes(policy.token));
+  const disabled=await request('/integrations/git-sync','PUT',{...policy,enabled:false,confirmed:false,prompt:'关闭后保存的指令',directory:'docs/updated'});assert.equal(disabled.status,200);const reread=await request('/integrations/git-sync');assert.equal(reread.body.enabled,false);assert.equal(reread.body.prompt,'关闭后保存的指令');assert.equal(reread.body.directory,'docs/updated');
 });

@@ -4,6 +4,40 @@ import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {renderMarkdown} from '../apps/web/src/markdown.mjs';
 import {includeBackendDependency,includeBackendSource} from '../scripts/prepare-client-backend.mjs';
+import vm from 'node:vm';
+import {transform} from 'esbuild';
+
+async function component(file,name,request){
+  const source=await readFile(new URL('../apps/web/src/components/'+file,import.meta.url),'utf8');
+  const code=(await transform(source,{loader:'tsx',jsx:'automatic',format:'cjs'})).code;
+  const slots=[],effects=[];let cursor=0,initial=true;
+  const jsx=(type,props)=>({type,props}),exports={};
+  const react={useState:value=>{const i=cursor++;if(!(i in slots))slots[i]=typeof value==='function'?value():value;return [slots[i],value=>{slots[i]=typeof value==='function'?value(slots[i]):value;}];},useRef:value=>{const i=cursor++;return slots[i]??=( {current:value});},useCallback:fn=>fn,useMemo:fn=>fn(),useEffect:fn=>{if(initial)effects.push(fn);}};
+  const sandbox={exports,module:{exports},Intl,Date,Event,document:{visibilityState:'visible'},window:{dispatchEvent(){}},AbortController,setInterval:()=>1,clearInterval(){},require:id=>id==='react'?react:id==='react-dom'?{createPortal:node=>node}:id==='react/jsx-runtime'?{jsx,jsxs:jsx}:id==='../api'?{api:request,messageOf:error=>error.message,ApiError:Error,getAuthGeneration:()=>1}:id==='../git-sync-feed'?{invalidateGitSyncStatus(){},gitSyncStatus:async()=>({enabled:true,recent:[]})}:new Proxy({},{get:(_target,key)=>String(key)})};
+  vm.runInNewContext(code,sandbox);
+  const render=props=>{cursor=0;const tree=sandbox.module.exports[name](props);if(initial){initial=false;effects.splice(0).forEach(fn=>fn());}return tree;};
+  return render;
+}
+function nodes(tree){if(!tree||typeof tree!=='object')return [];return [tree,...[tree.props?.children].flat(Infinity).flatMap(nodes)];}
+const words=node=>typeof node==='string'?node:!node||typeof node!=='object'?'':[node.props?.children].flat(Infinity).map(words).join('');
+const checkbox=(tree,label)=>nodes(nodes(tree).find(n=>n.type==='label'&&words(n).includes(label))).find(n=>n.type==='input');
+
+test('Git future consent can be reselected after editing a scope-affecting option',async()=>{
+  const render=await component('GitAutomation.tsx','GitAutomation',async path=>path==='/workspaces'?{workspaces:[]}:{configured:true,enabled:true,root:'https://git.example.test/project-hub',prompt:'整理已确认内容',skillIds:['meeting-review'],projects:[],recent:[],mode:'mr'});
+  const props={extensions:[]};render(props);await new Promise(resolve=>setTimeout(resolve,0));
+  let tree=render(props);assert.equal(checkbox(tree,'允许将今后').props.checked,true);
+  nodes(tree).find(n=>n.type==='textarea').props.onChange({target:{value:'保留完整引用与人工修订'}});
+  tree=render(props);assert.equal(checkbox(tree,'允许将今后').props.checked,false);
+  checkbox(tree,'允许将今后').props.onChange({target:{checked:true}});
+  tree=render(props);assert.equal(checkbox(tree,'允许将今后').props.checked,true);
+});
+
+test('stale workspace analysis is an incident-scoped inline notice rather than a navigation toast',async()=>{
+  const render=await component('WorkspaceHome.tsx','WorkspaceHome',async()=>({workspace:{name:'项目资料'},totals:{meetings:1,completed:1,withTranscript:1,withMinutes:0,staleMinutes:0,seconds:60},activity:[],topics:[],summaries:[],decisions:[],actions:[],topicCount:0,analysis:{status:'stale',runId:'incident-a',preview:'',coverage:{included:1,available:1}}}));
+  const props={scope:'workspace-a',records:[],query:'',modelReady:true,disabled:false};render(props);await new Promise(resolve=>setTimeout(resolve,0));
+  const notice=nodes(render(props)).find(n=>n.type==='FeedbackNotice'&&n.props.message.includes('旧分析已隐藏'));
+  assert.ok(notice);assert.equal(notice.props.inline,true);assert.match(notice.props.dismissalKey,/workspace-a.*incident-a/);
+});
 
 test('GFM renders nested content, escaped pipes, tasks, code, and isolated footnotes',()=>{
   const html=renderMarkdown('# 标题\n\n- **重点**\n  - 嵌套 `code`\n- [x] 已确认\n\n| 内容 | 结果 |\n| --- | --- |\n| A \\| B | 好 |\n\n```js\nconst value = "<script>";\n```\n\n引用[^1]\n\n[^1]: 片段一','source-one');
@@ -27,4 +61,16 @@ test('backend pruning preserves vendored notices and every traversed parent',asy
     assert.equal(includeBackendDependency(path),true,name);
     const segments=path.split('/');for(let end=1;end<segments.length;end++)assert.equal(includeBackendDependency(segments.slice(0,end).join('/')),true,name);
   }
+});
+
+test('Git save submits disabled edits and adopts the persisted normalized configuration',async()=>{
+ const requests=[],policy={configured:true,enabled:true,root:'https://git.example.test/root',prompt:'原指令',skillIds:['meeting-review'],projects:[],recent:[],mode:'mr',directory:'docs/meetings'};
+ const render=await component('GitAutomation.tsx','GitAutomation',async(path,method,body)=>{requests.push({path,method,body});if(path==='/workspaces')return{workspaces:[]};if(method==='PUT')return{...policy,...body,prompt:body.prompt.trim(),directory:'docs/updated'};return policy;});const props={extensions:[]};render(props);await new Promise(r=>setTimeout(r,0));let tree=render(props);
+ nodes(tree).find(n=>n.type==='textarea').props.onChange({target:{value:'  已关闭时更新  '}});tree=render(props);checkbox(tree,'启用 Git').props.onChange({target:{checked:false}});tree=render(props);nodes(tree).find(n=>n.type==='Button'&&words(n)==='保存设置').props.onClick();await new Promise(r=>setTimeout(r,0));tree=render(props);
+ assert.equal(requests.filter(r=>r.method==='PUT').length,1);assert.equal(requests.find(r=>r.method==='PUT').body.enabled,false);assert.equal(nodes(tree).find(n=>n.type==='textarea').props.value,'已关闭时更新');assert.equal(nodes(tree).find(n=>n.type==='input'&&n.props.placeholder==='docs/meetings').props.value,'docs/updated');assert.equal(checkbox(tree,'启用 Git').props.checked,false);
+});
+
+test('Git project dropdown refreshes on open, coalesces quick reopens and uses single-line options',async()=>{
+ let checks=0;const policy={configured:true,enabled:true,root:'https://git.example.test/root',prompt:'整理',skillIds:['meeting-review'],projects:[{id:10,name:'项目',path:'old/path'}],mappings:[{workspaceId:'workspace',projectId:10}],recent:[],mode:'mr'};
+ const render=await component('GitAutomation.tsx','GitAutomation',async path=>path==='/workspaces'?{workspaces:[{id:'workspace',name:'项目'}]}:path.endsWith('/check')?(checks++,{projects:[{id:10,name:'项目',path:'new/current/path'},{id:20,name:'新仓库',path:'new/repository'}],group:{full_path:'root'}}):policy);const props={extensions:[]};render(props);await new Promise(r=>setTimeout(r,0));let tree=render(props),select=nodes(tree).find(n=>n.type==='Select'&&n.props.label==='映射目标项目 1');assert.equal(select.props.singleLine,true);select.props.onOpen();await new Promise(r=>setTimeout(r,0));tree=render(props);select=nodes(tree).find(n=>n.type==='Select'&&n.props.label==='映射目标项目 1');assert.equal(select.props.options[0].label,'new/current/path');assert.equal(select.props.options.length,2);select.props.onOpen();await new Promise(r=>setTimeout(r,0));assert.equal(checks,1);
 });

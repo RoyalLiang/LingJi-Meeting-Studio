@@ -336,3 +336,9 @@ test('interactive questions survive long waits and reused Skill question IDs req
  await assert.rejects(runtime.respond('owner',task.id,{id:first,answer:'旧问题回复'}),{code:'agent_input_changed'});
  await runtime.respond('owner',task.id,{id:state.interaction.id,answer:'不附带'});assert.equal((await settled(runtime,task.id)).status,'completed');
 });
+
+test('configured Agent preserves safe transport codes without exposing upstream response text',async t=>{
+ const f=await fixture(t);t.mock.method(globalThis,'fetch',async()=>new Response('secret-upstream-body',{status:422}));
+ const runtime=await f.open({env:{LLM_API_KEY:'explicit-test-key',LLM_MODEL:'fixture-http',LLM_API_URL:'https://fixture.invalid/chat/completions',LLM_PROTOCOL:'chat-completions'}}),task=await runtime.request('owner',request(f.records.slice(0,1)));
+ const failed=await settled(runtime,task.id);assert.equal(failed.status,'failed');assert.equal(failed.error,'provider_http_422');assert.doesNotMatch(JSON.stringify(failed),/secret-upstream-body|explicit-test-key/);
+});

@@ -28,8 +28,8 @@ const Payload = defineDoc({ kind: 'meeting.payload.v1', version: 1, scope: 'sess
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const terminal = outcome => ({ status: 'terminal', outcome });
 const blockedCodes = new Set(['agent_scope_denied', 'agent_source_unavailable']);
-const safeCodes = new Set([...blockedCodes, 'minutes_not_configured', 'invalid_agent_output', 'agent_timeout', 'provider_unauthorized', 'provider_rate_limited', 'provider_budget_exceeded', 'llm_model_unavailable', 'agent_input_too_large', 'extension_disabled', 'extension_version_changed', 'mcp_scope_required', 'mcp_tool_failed', 'mcp_connection_failed', 'remote_unavailable']);
-const safeError = error => safeCodes.has(error?.code) ? error.code : 'agent_failed';
+const safeCodes = new Set([...blockedCodes, 'minutes_not_configured', 'invalid_agent_output', 'agent_timeout', 'provider_unauthorized', 'provider_rate_limited', 'provider_budget_exceeded', 'llm_model_unavailable', 'llm_timeout', 'llm_connection_failed', 'invalid_llm_response', 'llm_stream_interrupted', 'agent_input_too_large', 'extension_disabled', 'extension_version_changed', 'mcp_scope_required', 'mcp_tool_failed', 'mcp_connection_failed', 'remote_unavailable']);
+const safeError = error => (safeCodes.has(error?.code)||/^provider_http_[45]\d{2}$/.test(error?.code||'')) ? error.code : 'agent_failed';
 
 function assistant(model, content, stopReason = 'stop', errorMessage) {
   return { role: 'assistant', content, api: model.api, provider: model.provider, model: model.id, stopReason,
@@ -261,9 +261,9 @@ export async function createMeetingAgentRuntime({ repo, extensions, env = proces
         runtime.signal.throwIfAborted();
 
         requireThat(!timedOut,'agent_timeout',504);
-        requireThat(settled.status === 'done', 'agent_failed', 502);
+        requireThat(settled.status === 'done', safeError({code:settled.reason==='model_error'?settled.detail:undefined}), 502);
         const entry = await job.root.commit(tx => tx.entry(AssistantEntry, settled.answer), context), answer = entry?.model?.[0];
-        requireThat(answer?.stopReason === 'stop', safeCodes.has(answer?.errorMessage) ? answer.errorMessage : 'agent_failed', 502);
+        requireThat(answer?.stopReason === 'stop', safeError({code:answer?.errorMessage}), 502);
         let value;
         try { value = JSON.parse(answer.content.filter(item => item.type === 'text').map(item => item.text).join('')); }
         catch { throw new DomainError('invalid_agent_output', 502); }
@@ -330,7 +330,7 @@ export async function createMeetingAgentRuntime({ repo, extensions, env = proces
       let error = outcome?.error ? safeError({ code: outcome.error.message }) : undefined, result = outcome?.status === 'completed' ? payload.result : undefined, stale = false;
       try { const current = await currentSourceHashes(input, access || await accessMap(input.sourceIds)); stale = current.some((value, i) => value !== data.sourceHashes[i]); }
       catch (failure) { status = 'blocked'; error = safeError(failure); result = undefined; }
-      return { ...base, skills:(data.extensions?.skills||[data.extensions?.skill||skill]).map(({id,name,version})=>({id,name,version})), skill:data.extensions?.skill ? {id:data.extensions.skill.id,name:data.extensions.skill.name,version:data.extensions.skill.version} : skill, progress:{read:payload.readIds.length,total:data.sources.length,pagesRead:Object.values(payload.readPages||{}).reduce((sum,pages)=>sum+pages.length,0),totalPages:Object.values(data.pageCounts||{}).reduce((sum,n)=>sum+n,0)||data.sources.length}, includeNotes:data.includeNotes===true, plugins:(data.extensions?.plugins||[]).map(({id,name,version})=>({id,name,version})), status, interaction:payload.pendingInput&&payload.inputs?.[payload.pendingInput]?.answer===undefined?payload.inputs[payload.pendingInput]:undefined, prompt: data.prompt, sources: data.sources, preview: status==='blocked'?'':summary?String(result?.summary || payload.preview || '').slice(0,320):result?.summary || payload.preview || '', ...(!summary && result ? { result } : {}), ...(error ? { error } : {}), stale };
+      return { ...base, skills:(data.extensions?.skills||[data.extensions?.skill||skill]).map(({id,name,version})=>({id,name,version})), skill:data.extensions?.skill ? {id:data.extensions.skill.id,name:data.extensions.skill.name,version:data.extensions.skill.version} : skill, progress:{read:payload.readIds.length,total:data.sources.length,pagesRead:Object.values(payload.readPages||{}).reduce((sum,pages)=>sum+pages.length,0),totalPages:Object.values(data.pageCounts||{}).reduce((sum,n)=>sum+n,0)||data.sources.length}, includeNotes:data.includeNotes===true, plugins:(data.extensions?.plugins||[]).map(({id,name,version})=>({id,name,version})), status, ...(!summary&&status!=='blocked'&&!stale?{conversation:Object.values(payload.inputs||{}).map(({id,question,options,answer})=>({id,question,options,...(answer!==undefined?{answer}:{})}))}:{}), interaction:status!=='blocked'&&!stale&&payload.pendingInput&&payload.inputs?.[payload.pendingInput]?.answer===undefined?payload.inputs[payload.pendingInput]:undefined, prompt: data.prompt, sources: data.sources, preview: status==='blocked'?'':summary?String(result?.summary || payload.preview || '').slice(0,320):result?.summary || payload.preview || '', ...(!summary && result ? { result } : {}), ...(error ? { error } : {}), stale };
     }
 
     const runtime = {
@@ -372,7 +372,7 @@ export async function createMeetingAgentRuntime({ repo, extensions, env = proces
         return publicTask(task,access,item,view==='summary'&&String(task.id)!==detailId);
       }));
     },
-      async get(ownerId, id) { return publicTask(await indexed(ownerId, id)); },
+      async get(ownerId, id, {summary=false}={}) { return publicTask(await indexed(ownerId, id),undefined,undefined,summary); },
       async respond(ownerId,id,input){
       const task=await indexed(ownerId,id);requireThat(task.state.status!=='terminal','agent_input_changed',409);await authorized(task.input);
       requireThat(typeof input.id==='string'&&typeof input.answer==='string'&&input.answer.trim().length>0&&input.answer.length<=4000,'invalid_agent_request',400);

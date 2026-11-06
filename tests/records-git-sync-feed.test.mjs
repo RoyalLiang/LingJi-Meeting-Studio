@@ -31,3 +31,10 @@ test('Git status discards an earlier account response without clearing the new a
   assert.equal(requests.length,3,'logout must invalidate the previous account’s cached result');
   const empty={enabled:false,recent:[]};requests[2](empty);assert.equal(await loggedOut,empty);
 });
+
+
+test('a confirmed mutation discards stale pending status without replacing the fresh request',async()=>{
+ const requests=[],exports={};const source=(await Promise.all(['api.ts','git-sync-feed.ts'].map(async file=>transpileTypeScript(await readFile(new URL(`../apps/web/src/${file}`,import.meta.url),'utf8')).replace(/^import .*$/gm,'').replace(/export /g,'')))).join('\n');
+ vm.runInNewContext(source+'\nObject.assign(exports,{gitSyncStatus,invalidateGitSyncStatus});',{exports,AbortSignal,DOMException,Date,performance,trace(){},fetch:()=>new Promise(resolve=>requests.push(value=>resolve({ok:true,json:async()=>value})))});
+ const old=exports.gitSyncStatus(),discarded=assert.rejects(old,{name:'AbortError'});exports.invalidateGitSyncStatus();const fresh=exports.gitSyncStatus();assert.equal(requests.length,2);requests[0]({enabled:true,recent:[{status:'waiting'}]});await discarded;assert.equal(exports.gitSyncStatus(),fresh);const value={enabled:true,recent:[{status:'running'}]};requests[1](value);assert.equal(await fresh,value);assert.equal(await exports.gitSyncStatus(),value);
+});
