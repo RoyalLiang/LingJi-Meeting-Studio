@@ -54,8 +54,8 @@ test('numeric comparison draws quantities while ambiguous values remain text',()
 });
 
 test('Feishu bundled skill preserves the full meeting in editable native cards',()=>{
-  const nodes=feishuBoard(fixture()),text=nodes.filter(node=>node.text).map(node=>node.text.text).join('\n');
+  const nodes=feishuBoard(fixture()),text=nodes.flatMap(node=>[node.section?.title,node.text?.text,...(node.table?.cells||[]).map(c=>c.text?.text)]).filter(Boolean).join('\n');
   assert.match(text,/接口评审/);assert.match(text,/核心结论/);assert.match(text,/推进节点/);
   assert.ok(nodes.length<3000);assert.ok(nodes[0].height>0);
-  assert.ok(nodes.every(node=>['composite_shape','connector'].includes(node.type)));
+  assert.ok(nodes.every(node=>['composite_shape','text_shape','section','group','table','connector'].includes(node.type)));
 });

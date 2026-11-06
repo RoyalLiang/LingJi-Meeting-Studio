@@ -3,9 +3,7 @@ import {minutesOverview} from './minutes-presentation.mjs';
 import {minutesItemText} from './minutes-quality.mjs';
 
 // Native adaptation of the bundled meeting-minutes compiler; no Python runtime or model call.
-export const MEETING_MINUTES_SKILL='meeting-minutes/20261106';
-const palettes={light:{canvas:'#F2F4F5',surface:'#FCFDFD',soft:'#E8EDEE',ink:'#1F2329',accent:'#5178C6'},dark:{canvas:'#1D1E20',surface:'#282A2E',soft:'#3C3F46',ink:'#E5E6E9',accent:'#B7BBF2'}};
-const sectionTones={blue:['#D6E5FF','#5178C6'],green:['#D8EEDC','#2E8B57'],amber:['#F8E7BA','#B88627'],indigo:['#E4E0F7','#7864B5'],slate:['#E0E7EE','#6D8097']};
+export const MEETING_MINUTES_SKILL='meeting-minutes/20261106-native-v2';
 const status=value=>({done:'已完成',completed:'已完成',active:'进行中',todo:'待办',pending:'待推进',candidate:'候选',confirmed:'已确认',blocked:'受阻',unconfirmed:'待确认'})[value]||value||'';
 const join=values=>values.filter(value=>value!==undefined&&value!==null&&value!=='').join('\n');
 const round=value=>Math.round(value*10)/10;
@@ -28,122 +26,193 @@ export function wrapSkillText(value,width,size=16){
 
 export function compileMeetingMinutesBoard(data,{theme='light'}={}){
   requireThat(data&&typeof data==='object'&&!Array.isArray(data),'invalid_meeting_minutes_skill',400);
-  const p=palettes[theme];requireThat(p,'invalid_meeting_minutes_skill',400);
+  requireThat(['light','dark'].includes(theme),'invalid_meeting_minutes_skill',400);
   requireThat(Buffer.byteLength(JSON.stringify(data))<=500000,'feishu_document_too_large',400);
-  const nodes=[],links=[];
-  const box=(id,text,x,y,width,{size=16,bold=false,fill=p.surface,ink=p.ink,minimum=48,align='left'}={})=>{
-    const lines=wrapSkillText(text,width,size),height=round(Math.max(minimum,lines.length*size*1.42+24));
-    const node={id,type:'composite_shape',x:round(x),y:round(y),width:round(width),height,composite_shape:{type:'round_rect'},text:{text:lines.join('\n'),font_size:size,font_weight:bold?'bold':'regular',text_color:ink,horizontal_align:align,vertical_align:'mid'},style:{fill_color:fill,fill_opacity:100,border_color:fill,border_width:'extra_narrow',border_style:'none'}};
-    nodes.push(node);requireThat(nodes.length<=3000,'feishu_document_too_large',400);return node;
+  const dark=theme==='dark',p={canvas:dark?'#1D1E20':'#ffffff',paper:dark?'#2b2f36':'#ffffff',ink:dark?'#ffffff':'#1f2329',muted:dark?'#ffffff':'#1f2329',line:dark?'#646a73':'#dee0e3',soft:dark?'#2b2f36':'#f5f5f5',blue:'#5178c6',blueSoft:dark?'#2b2f36':'#f0f4fc',green:'#509863',greenSoft:dark?'#2b2f36':'#dff5e5',amber:'#d4b45b',amberSoft:dark?'#2b2f36':'#fef1ce',red:'#d25d5a',redSoft:dark?'#2b2f36':'#fee3e2',purple:'#8569cb',purpleSoft:dark?'#2b2f36':'#eae2fe'};
+  const nodes=[],links=[],width=1040,inner=976;
+  const add=node=>{nodes.push(node);requireThat(nodes.length<=3000,'feishu_document_too_large',400);return node;};
+  const measured=(value,w,size=18,padding=24)=>round(Math.max(size*1.5,wrapSkillText(value,w,size).length*size*1.5)+padding);
+  const text=(id,value,x,y,w,{size=18,bold=false,color=p.ink,align='left',minimum=0}={})=>{
+    const lines=wrapSkillText(value,w,size),height=round(Math.max(minimum,size*1.5,lines.length*size*1.5));
+    return add({id,type:'text_shape',x:round(x),y:round(y),width:round(w),height,text:{text:lines.join('\n'),font_size:size,font_weight:bold?'bold':'regular',text_color:color,horizontal_align:align,vertical_align:'top'},style:{fill_opacity:0,border_style:'none'}});
   };
-  const link=(id,a,b,vertical=false)=>links.push({id,a,b,vertical});
-  function card(raw,top,prefix){
+  const shape=(id,x,y,w,h,{fill=p.paper,stroke=p.line,kind='round_rect',value='',size=16,bold=false,color=p.ink}={})=>add({id,type:'composite_shape',x:round(x),y:round(y),width:round(w),height:round(h),composite_shape:{type:kind},text:{text:wrapSkillText(value,w,size).join('\n'),font_size:size,font_weight:bold?'bold':'regular',text_color:color,horizontal_align:'center',vertical_align:'mid'},style:{fill_color:fill,fill_opacity:100,border_color:stroke||fill,border_width:'extra_narrow',border_style:stroke?'solid':'none',border_radius:{top_left:12,top_right:12,bottom_left:12,bottom_right:12}}});
+  const group=(id,x,y,w,h)=>add({id,type:'group',x:round(x),y:round(y),width:round(w),height:round(h)});
+  const parent=(start,id)=>{for(const node of nodes.slice(start))if(!node.parent_id&&node.id!==id)node.parent_id=id;};
+  const tone=value=>{
+    const state=String(value||'').toLowerCase().replace(/[\s\ufe0f]/gu,'');
+    if(['high','p0','blocked','阻塞','受阻','高风险','🔴','🔴阻塞'].includes(state))return [p.red,p.redSoft];
+    if(['done','completed','已完成','正常','low','低风险','🟢','🟢正常'].includes(state))return [p.green,p.greenSoft];
+    if(['active','进行中'].includes(state))return [p.blue,p.blueSoft];
+    if(['med','medium','p1','关注','中风险','🟡','🟡关注'].includes(state))return [p.amber,p.amberSoft];
+    return [p.line,p.soft];
+  };
+  const chip=(id,value,x,y,{w=116,fill=p.soft}={})=>shape(id,x,y,w,30,{fill,stroke:null,value,size:14,bold:true});
+  const connect=(id,a,b,parentId,{vertical=false,arrow=true,color=p.line}={})=>links.push({id,a,b,parentId,vertical,arrow,color});
+  const table=(id,headers,rows,x,y,{statusGroups=false}={})=>{
+    const count=Math.max(headers.length,...rows.map(r=>r.length),1);requireThat(count<=40,'invalid_meeting_minutes_skill',400);
+    const all=[...(headers.length?[headers]:[]),...rows],weights=Array.from({length:count},(_,c)=>Math.max(6,Math.min(32,Math.max(...[headers,...rows].map(r=>Array.from(String(r[c]??'')).length))))),total=weights.reduce((a,b)=>a+b,0);
+    const extra=Math.max(0,inner-96*count),sizes=weights.map(w=>round(96+extra*w/total));
+    if(!all.length)all.push(['暂无记录']);
+    const heights=all.map(row=>round(Math.max(58,...sizes.map((w,c)=>measured(String(row[c]??''),w,16,28))))),cells=[],spans=rows.map(()=>1);
+    if(statusGroups)for(let i=0;i<rows.length;){let end=i+1;while(end<rows.length&&rows[i].length&&rows[end].length&&rows[i][0]===rows[end][0]){spans[i]++;spans[end]=0;end++;}i=end;}
+    for(const [ri,row] of all.entries())for(let ci=0;ci<count;ci++){
+      const dataIndex=ri-(headers.length?1:0);if(statusGroups&&dataIndex>=0&&ci===0&&spans[dataIndex]===0)continue;
+      const value=String(row[ci]??''),isHeader=headers.length&&ri===0,cellTone=tone(value),fill=isHeader?p.blueSoft:cellTone[0]!==p.line?cellTone[1]:p.paper;
+      const cell={row_index:ri+1,col_index:ci+1,text:{text:wrapSkillText(value,sizes[ci],16).join('\n'),font_size:16,font_weight:isHeader?'bold':'regular',text_color:p.ink,horizontal_align:!isHeader&&/^[\d.,%+\-¥$ ]+$/.test(value.trim())?'right':'left',vertical_align:'mid'},style:{fill_color:fill}};
+      if(statusGroups&&dataIndex>=0&&ci===0&&spans[dataIndex]>1)cell.merge_info={row_span:spans[dataIndex],col_span:1};cells.push(cell);
+    }
+    return add({id,type:'table',x:round(x),y:round(y),width:round(sizes.reduce((a,b)=>a+b,0)),height:round(heights.reduce((a,b)=>a+b,0)),text:{font_size:16,text_color:p.ink,horizontal_align:'left',vertical_align:'mid'},style:{fill_color:p.paper,border_color:p.line,border_width:'extra_narrow',border_style:'solid'},table:{meta:{row_num:all.length,col_num:count,row_sizes:heights,col_sizes:sizes},cells}});
+  };
+  function renderCard(raw,top,prefix,{skipTitle=false}={}){
     requireThat(raw&&typeof raw==='object'&&!Array.isArray(raw),'invalid_meeting_minutes_skill',400);
-    const c={...raw},type=String(c.type||'table').toLowerCase().trim(),kind=aliases[type]||type;
-    requireThat(kinds.has(kind),'invalid_meeting_minutes_skill',400);
-    const generic=c.items||c.list||c.data||[];
-    const payload={flow:c.steps||c.events||generic,timeline:c.events||c.steps||generic,kpi:c.metrics||generic,'action-list':c.actions||c.todos||c.tasks||generic,'risk-matrix':c.risks||generic,'funnel-metric':c.bars||c.steps||generic};
-    const background=box(prefix+'_background','',48,top,1040),x=72,width=992;
-    let y=top+24;
-    const add=(key,text,bx,by,bw,options)=>box(prefix+'_'+key,text,bx,by,bw,options);
-    if(c.title){const n=add('title',c.title,x,y,width,{size:22,bold:true});y+=n.height+24;}
-    if(kind==='flow'||kind==='timeline'){
-      const entries=payload[kind],cw=(width-48)/2;let previous;
-      for(let offset=0;offset<entries.length;offset+=2){
-        const row=[];
-        for(const [col,entry] of entries.slice(offset,offset+2).entries()){
-          const state=entry.s??entry.status??'pending',meta=[entry.time,entry.owner,entry.meta].filter(Boolean),label=status(state);
-          if(!meta.join(' ').includes(label))meta.push(label);
-          const n=add('stage'+(offset+col),join([meta.join(' · '),entry.t||entry.title,entry.d||entry.desc]),x+col*(cw+48),y,cw,{fill:state==='active'?p.soft:p.surface});
-          row.push(n);if(previous)link(prefix+'_stage_link'+(offset+col),previous,n,col===0);previous=n;
+    const c={...raw},type=String(c.type||'table').toLowerCase().trim(),kind=aliases[type]||type;requireThat(kinds.has(kind),'invalid_meeting_minutes_skill',400);
+    const generic=c.items||c.list||c.data||[],payload={flow:c.steps||c.events||generic,timeline:c.events||c.steps||generic,kpi:c.metrics||generic,'action-list':c.actions||c.todos||c.tasks||generic,'risk-matrix':c.risks||generic,'funnel-metric':c.bars||c.steps||generic};
+    const start=nodes.length,container=group(prefix+'_group',48,top,width,80),x=80;
+    let y=top+28;
+    const label=(key,value,bx,by,bw,opts)=>text(prefix+'_'+key,value,bx,by,bw,opts),box=(key,bx,by,bw,bh,opts)=>shape(prefix+'_'+key,bx,by,bw,bh,opts),line=(key,a,b,opts)=>connect(prefix+'_'+key,a,b,container.id,opts);
+    if(c.title&&!skipTitle)y+=label('title',c.title,x,y,inner,{size:24,bold:true}).height+28;
+    if(kind==='flow'){
+      const entries=payload.flow,columns=Math.min(4,Math.max(1,entries.length)),gap=40,cw=(inner-gap*(columns-1))/columns;let previous;
+      for(let offset=0;offset<entries.length;offset+=columns){
+        const staged=[];
+        for(const [col,e] of entries.slice(offset,offset+columns).entries()){
+          const bx=x+col*(cw+gap),state=e.s??e.status??'pending',[accent,fill]=tone(state),title=e.t||e.title||'',desc=e.d||e.desc||'',meta=join([e.time,e.owner,e.meta]);
+          const h=80+measured(title,cw-32,20,0)+20+(desc?measured(desc,cw-32,17,0)+18:0)+(meta?measured(meta,cw-32,15,0)+18:0),panel=box('stage'+(offset+col),bx,y,cw,h,{fill,stroke:state==='active'?p.blue:p.line});
+          box('number'+(offset+col),bx+18,y+18,32,32,{kind:'ellipse',fill:accent,stroke:null,value:String(offset+col+1),size:20,color:['active','done','completed'].includes(state)?'#ffffff':p.ink,bold:true});
+          if(status(state))chip(prefix+'_state'+(offset+col),status(state),bx+58,y+20,{w:Math.max(94,cw-76),fill});
+          let cy=y+70;cy+=label('stage_title'+(offset+col),title,bx+16,cy,cw-32,{size:20,bold:true}).height+16;
+          if(desc)cy+=label('stage_desc'+(offset+col),desc,bx+16,cy,cw-32,{size:17}).height+16;
+          if(meta)cy+=label('stage_meta'+(offset+col),meta,bx+16,cy,cw-32,{size:15}).height+18;
+          panel.height=round(Math.max(h,cy-y));staged.push(panel);
+          if(previous)line('flow_link'+(offset+col),previous,panel,{vertical:col===0,color:p.blue});previous=panel;
         }
-        const height=Math.max(48,...row.map(n=>n.height));for(const n of row)n.height=height;y+=height+48;
+        const h=Math.max(80,...staged.map(n=>n.height));for(const panel of staged)panel.height=h;y+=h+48;
       }
     }else if(kind==='branch'){
-      const root=add('root',c.root||'',x,y,width,{bold:true,fill:p.soft});y+=root.height+32;
-      const hub=add('hub',c.hub||'',x,y,width,{bold:true});link(prefix+'_root_hub',root,hub,true);y+=hub.height+40;
-      for(const [bi,branch] of (c.branches||[]).entries()){
-        let previous=hub;
-        for(const [i,e] of branch.entries()){
-          const n=add(`branch${bi}_${i}`,join([e.t||e.title,e.d||e.desc,status(e.s??e.status??'pending')]),x+56,y,width-56);
-          link(prefix+`_branch_link${bi}_${i}`,previous,n,true);previous=n;y+=n.height+24;
-        }
-        y+=16;
+      const rootText=c.root||'',rootH=Math.max(74,measured(rootText,420,20,32)),root=box('root',x+(inner-420)/2,y,420,rootH,{kind:'flow_chart_round_rect2',value:rootText,size:20,bold:true,fill:p.blueSoft,stroke:p.blue});y+=rootH+36;
+      const hubText=c.hub||'',hubH=Math.max(144,measured(hubText,200,20,64)),hub=box('hub',x+(inner-300)/2,y,300,hubH,{kind:'flow_chart_diamond',value:hubText,size:20,bold:true,fill:p.blueSoft,stroke:p.blue});line('root_hub',root,hub,{vertical:true,color:p.blue});y+=hubH+52;
+      const branches=c.branches||[],cols=Math.min(3,Math.max(1,branches.length)),gap=48,cw=(inner-gap*(cols-1))/cols;
+      for(let offset=0;offset<branches.length;offset+=cols){let bottom=y;
+        for(const [col,entries] of branches.slice(offset,offset+cols).entries()){
+          let cy=y,previous=hub;
+          for(const [i,e] of entries.entries()){
+            const state=e.s??e.status??'pending',content=join([e.t||e.title,e.d||e.desc,status(state)]),[accent,fill]=tone(state),h=Math.max(96,measured(content,cw,19,36));
+            const node=box(`branch${offset+col}_${i}`,x+col*(cw+gap),cy,cw,h,{value:content,size:19,fill,stroke:accent});line(`branch_link${offset+col}_${i}`,previous,node,{vertical:true,color:state==='active'?p.blue:p.line});previous=node;cy+=h+40;
+          }
+          bottom=Math.max(bottom,cy);
+        }y=bottom+24;
       }
     }else if(kind==='kpi'){
-      for(const [i,m] of payload[kind].entries()){
-        y+=add(`metric${i}_label`,m.label||'',x,y,width).height+8;const cw=(width-48)/2;
-        const a=add(`metric${i}_baseline`,join([m.fromLabel??'基线',m.from??'']),x,y,cw,{size:22});
-        const b=add(`metric${i}_current`,m.to??'',x+cw+48,y,cw,{size:32,ink:p.accent,bold:true});y+=Math.max(a.height,b.height)+8;
-        y+=add(`metric${i}_delta`,[m.toLabel??'当前值',m.delta].filter(Boolean).join(' · '),x+cw+48,y,cw).height+32;
+      for(const [i,m] of payload.kpi.entries()){
+        y+=label(`metric${i}_label`,m.label||'',x,y,inner,{size:20,bold:true}).height+24;
+        const left=x,right=x+inner/2+24,cw=inner/2-24,baseline=String(m.from??''),current=String(m.to??''),h=Math.max(204,measured(current,cw-40,64,112),measured(baseline,cw-40,48,100));
+        box(`metric${i}_baseline_panel`,left,y,cw,h,{fill:p.soft,stroke:null});box(`metric${i}_current_panel`,right,y,cw,h,{fill:p.blueSoft,stroke:null});
+        label(`metric${i}_from_label`,m.fromLabel??'基线',left+24,y+18,cw-48,{size:16});label(`metric${i}_from`,baseline,left+24,y+54,cw-48,{size:48,bold:true});
+        label(`metric${i}_to_label`,m.toLabel??'当前值',right+24,y+18,cw-48,{size:16});label(`metric${i}_to`,current,right+24,y+50,cw-48,{size:64,bold:true,color:p.blue});
+        if(m.delta)chip(prefix+`_metric${i}_delta`,m.delta,right+24,y+h-44,{w:Math.max(150,Math.min(cw-48,String(m.delta).length*14+32)),fill:p.greenSoft});
+        y+=h+36;
+      }
+    }else if(kind==='timeline'){
+      const events=payload.timeline;let previous;
+      for(const [i,e] of events.entries()){
+        const state=e.s??e.status??'pending',[accent,fill]=tone(state),heading=join([e.t||e.title,e.d||e.desc]),meta=[e.owner,e.meta].filter(Boolean).join(' · '),h=Math.max(110,measured(heading,inner-260,19,36)+(meta?measured(meta,inner-260,16,0)+12:0));
+        const date=label('date'+i,e.time||'',x,y+8,150,{size:22,bold:true});const dot=box('dot'+i,x+174,y+12,18,18,{kind:'ellipse',fill:accent,stroke:null});
+        const panel=box('event'+i,x+220,y,inner-220,h,{fill,stroke:null});let cy=y+18;cy+=label('event_text'+i,heading,x+240,cy,inner-260,{size:19,bold:true}).height+12;
+        if(meta)cy+=label('event_meta'+i,meta,x+240,cy,inner-260,{size:16}).height+10;
+        if(status(state)){chip(prefix+'_event_status'+i,status(state),x+240,cy,{fill});cy+=40;}
+        panel.height=Math.max(panel.height,cy-y+12);if(previous)line('timeline_link'+i,previous,dot,{vertical:true,arrow:false,color:p.line});previous=dot;y+=Math.max(panel.height,date.height+8)+28;
       }
     }else if(kind==='grid'||kind==='pros-cons'){
-      const entries=kind==='grid'?c.items||[]:[c.left||{},c.right||{}],columns=kind==='grid'?Math.min(3,Math.max(1,Math.trunc(Number(c.cols)||2))):2,cw=(width-24*(columns-1))/columns;
-      for(let offset=0;offset<entries.length;offset+=columns){
-        const row=entries.slice(offset,offset+columns).map((e,col)=>add('panel'+(offset+col),join([e.t||e.title,e.tag,e.d||e.desc,(e.items||[]).map(v=>'• '+v).join('\n')]),x+col*(cw+24),y,cw,{fill:p.soft}));
-        y+=Math.max(48,...row.map(n=>n.height))+24;
+      const entries=kind==='grid'?c.items||[]:[c.left||{},c.right||{}],cols=kind==='grid'?Math.min(3,Math.max(1,Math.trunc(Number(c.cols)||2))):2,gap=32,cw=(inner-gap*(cols-1))/cols;
+      for(let offset=0;offset<entries.length;offset+=cols){let bottom=y;
+        for(const [col,e] of entries.slice(offset,offset+cols).entries()){
+          const bx=x+col*(cw+gap),startAt=nodes.length,item=group(prefix+'_panel'+(offset+col),bx,y,cw,80),accepted=/^(?:最终)?(?:已)?(?:采纳|确定|选定)[\s✓✔✅]*$/u.test(String(e.tag||'').trim()),fill=accepted?p.greenSoft:p.paper;
+          const background=box('panel_bg'+(offset+col),bx,y,cw,80,{fill,stroke:accepted?p.green:p.line});let cy=y+24;
+          if(e.tag){chip(prefix+'_panel_tag'+(offset+col),e.tag,bx+20,cy,{w:cw-40,fill:accepted?p.greenSoft:p.amberSoft});cy+=46;}
+          cy+=label('panel_title'+(offset+col),e.t||e.title||'',bx+20,cy,cw-40,{size:22,bold:true}).height+20;
+          if(e.d||e.desc)cy+=label('panel_desc'+(offset+col),e.d||e.desc,bx+20,cy,cw-40,{size:18}).height+20;
+          for(const [bi,value] of (e.items||[]).entries()){
+            box(`panel_bullet${offset+col}_${bi}`,bx+22,cy+9,6,6,{kind:'ellipse',fill:accepted?p.green:p.blue,stroke:null});cy+=label(`panel_item${offset+col}_${bi}`,String(value),bx+42,cy,cw-62,{size:18}).height+18;
+          }
+          item.height=background.height=round(cy-y+10);parent(startAt,item.id);bottom=Math.max(bottom,cy+10);
+        }y=bottom+28;
       }
-      if(c.verdict)y+=add('verdict',c.verdict,x,y,width,{bold:true}).height+24;
+      if(c.verdict){const h=measured(c.verdict,inner-40,20,36);box('verdict_panel',x,y,inner,h,{fill:p.greenSoft,stroke:null});label('verdict',c.verdict,x+20,y+18,inner-40,{size:20,bold:true});y+=h+28;}
     }else if(kind==='quote-decision'){
-      y+=add('quote',join([c.speaker,c.role,c.text,c.impact]),x,y,width,{size:22,fill:p.soft}).height+24;
+      if(c.speaker)y+=label('speaker',c.speaker,x,y,inner,{size:18,bold:true}).height+18;
+      if(c.role){chip(prefix+'_role',c.role,x,y,{w:Math.min(inner,Math.max(180,String(c.role).length*16+32)),fill:p.amberSoft});y+=50;}
+      y+=label('quote',c.text||'',x+16,y,inner-32,{size:30,bold:true}).height+28;
+      if(c.impact)y+=label('impact',c.impact,x+16,y,inner-32,{size:18}).height+20;
     }else if(kind==='funnel-metric'){
-      for(const [i,e] of payload[kind].entries()){
-        y+=add(`funnel${i}_label`,[e.label,e.val,e.note].filter(v=>v!==undefined&&v!=='').join(' · '),x,y,width).height+8;
+      let previous;
+      for(const [i,e] of payload['funnel-metric'].entries()){
         const pct=Number(e.pct??0);requireThat(Number.isFinite(pct)&&pct>=0&&pct<=100,'invalid_meeting_minutes_skill',400);
-        add(`funnel${i}_track`,'',x,y,width,{fill:p.soft,minimum:16}).height=16;
-        if(pct>0)add(`funnel${i}_bar`,'',x,y,Math.max(.1,width*pct/100),{fill:p.accent,minimum:16}).height=16;y+=40;
+        const rowH=Math.max(94,measured(e.label||'',212,18,28),measured(join([e.val,e.note]),212,18,28)),plot=480,w=Math.max(.1,plot*pct/100),bx=x+248+(plot-w)/2;
+        label('funnel_label'+i,e.label||'',x,y+14,220,{size:18,bold:true});
+        const value=join([e.val,e.note]);label('funnel_value'+i,value,x+768,y+12,inner-768,{size:18,bold:true});
+        if(pct>0){const node=box('funnel'+i,bx,y,w,rowH,{kind:'flow_chart_trapezoid',fill:i===payload['funnel-metric'].length-1?p.green:p.blue,stroke:null});if(previous)line('funnel_link'+i,previous,node,{vertical:true,color:p.line});previous=node;}
+        y+=rowH+24;
+      }
+    }else if(kind==='action-list'){
+      const actions=payload['action-list'],buckets=[...new Set(actions.map(a=>status(a.s??'todo')||'待确认'))],cols=Math.min(3,Math.max(1,buckets.length)),gap=32,cw=(inner-gap*(cols-1))/cols;
+      for(let offset=0;offset<buckets.length;offset+=cols){let rowBottom=y;
+        for(const [col,bucket] of buckets.slice(offset,offset+cols).entries()){
+          const bx=x+col*(cw+gap),items=actions.map((a,i)=>({a,i})).filter(({a})=>(status(a.s??'todo')||'待确认')===bucket),[accent,fill]=tone(bucket);
+          chip(prefix+'_lane'+(offset+col),`${bucket} · ${items.length}`,bx,y,{w:cw,fill});let cy=y+48;
+          for(const {a,i} of items){const startAt=nodes.length,entry=group(prefix+'_action'+i,bx,cy,cw,100),panel=box('action_panel'+i,bx,cy,cw,100,{fill:p.paper,stroke:p.line});let iy=cy+18;
+            if(a.p){chip(prefix+'_priority'+i,a.p,bx+16,iy,{w:64,fill:tone(a.p)[1]});iy+=46;}
+            iy+=label('action_text'+i,a.t??a.title??'',bx+16,iy,cw-32,{size:18,bold:true}).height+20;
+            iy+=label('action_owner'+i,a.owner||'负责人待确认',bx+16,iy,cw-32,{size:16}).height+10;
+            iy+=label('action_due'+i,a.due||'时间待确认',bx+16,iy,cw-32,{size:16}).height+18;
+            entry.height=panel.height=round(iy-cy);parent(startAt,entry.id);cy=iy+20;
+          }
+          box('lane_rule'+(offset+col),bx,y+34,cw,1,{fill:accent,stroke:null});rowBottom=Math.max(rowBottom,cy);
+        }y=rowBottom+24;
+      }
+    }else if(kind==='risk-matrix'){
+      const risks=payload['risk-matrix'],cols=Math.min(2,Math.max(1,risks.length)),gap=32,cw=(inner-gap*(cols-1))/cols;
+      for(let offset=0;offset<risks.length;offset+=cols){let rowBottom=y;
+        for(const [col,r] of risks.slice(offset,offset+cols).entries()){
+          const bx=x+col*(cw+gap),startAt=nodes.length,index=offset+col,entry=group(prefix+'_risk'+index,bx,y,cw,100),[accent,fill]=tone(r.level||'unconfirmed'),panel=box('risk_panel'+index,bx,y,cw,100,{fill,stroke:accent});let cy=y+20;
+          chip(prefix+'_risk_level'+index,String(r.level||'待确认').toUpperCase(),bx+20,cy,{w:100,fill});cy+=48;
+          cy+=label('risk_text'+index,r.risk||'',bx+20,cy,cw-40,{size:21,bold:true}).height+24;
+          cy+=label('risk_mitigation'+index,join(['缓解措施',r.mitigation||'']),bx+20,cy,cw-40,{size:18}).height+20;
+          if(r.owner)cy+=label('risk_owner'+index,r.owner,bx+20,cy,cw-40,{size:16,bold:true}).height+18;
+          entry.height=panel.height=round(cy-y+6);parent(startAt,entry.id);rowBottom=Math.max(rowBottom,cy+6);
+        }y=rowBottom+28;
       }
     }else{
-      let headers=c.headers||[],rows=c.rows||[];
-      if(kind==='action-list'){headers=['状态','优先级','待办事项','责任人','截止时间'];rows=payload[kind].map(a=>[status(a.s??'todo'),a.p||'',a.t??a.title??'',a.owner||'',a.due||'']);}
-      if(kind==='risk-matrix'){headers=['等级','风险事项','缓解措施','责任人'];rows=payload[kind].map(r=>[String(r.level||'med').toUpperCase(),r.risk||'',r.mitigation||'',r.owner||'']);}
-      const count=Math.max(headers.length,...rows.map(r=>r.length),1);requireThat(count<=40,'invalid_meeting_minutes_skill',400);
-      const weights=Array.from({length:count},(_,col)=>Math.max(6,Math.min(32,Math.max(...[headers,...rows].map(r=>Array.from(String(r[col]??'')).length)))));
-      const total=weights.reduce((a,b)=>a+b,0),extra=Math.max(0,width-8*(count-1)-96*count),widths=weights.map(w=>96+extra*w/total);
-      background.width=round(Math.max(background.width,widths.reduce((a,b)=>a+b,0)+8*(count-1)+48));
-      const height=row=>Math.max(48,...widths.map((w,col)=>wrapSkillText(row[col]??'',w).length*16*1.42+24));
-      const heights=[headers.length?height(headers):0,...rows.map(height)],spans=rows.map(()=>1);
-      if(kind==='status-table')for(let i=0;i<rows.length;){let end=i+1;while(end<rows.length&&rows[i].length&&rows[end].length&&rows[i][0]===rows[end][0]){spans[i]++;spans[end]=0;end++;}i=end;}
-      for(const [ri,row] of [headers,...rows].entries()){
-        if(ri===0&&!headers.length)continue;let cx=x;
-        for(let ci=0;ci<count;ci++){
-          const raw=String(row[ci]??'');
-          if(!(ri>0&&ci===0&&kind==='status-table'&&spans[ri-1]===0)){
-            let h=heights[ri];if(ri>0&&ci===0&&kind==='status-table')h=heights.slice(ri,ri+spans[ri-1]).reduce((a,b)=>a+b,0)+8*(spans[ri-1]-1);
-            const n=add(`cell${ri}_${ci}`,raw,cx,y,widths[ci],{fill:ri===0?p.soft:p.surface,bold:ri===0,align:ri&&/^[\d.,%+\-¥$ ]+$/.test(raw.trim())?'right':'left'});n.height=round(h);
-          }
-          cx+=widths[ci]+8;
-        }
-        y+=heights[ri]+8;
-      }
-      y+=16;
+      const grid=table(prefix+'_table',c.headers||[],c.rows||[],x,y,{statusGroups:kind==='status-table'});y+=grid.height+28;container.width=Math.max(width,grid.width+64);
     }
-    background.height=round(Math.max(96,y-top));return background.height;
+    if(y<=top+28){y+=label('empty','暂无记录',x,y,inner,{size:18}).height+24;}
+    container.height=round(Math.max(100,y-top));parent(start,container.id);return container;
   }
-  let y=40;
-  const heading=(id,text,size,fill=p.surface)=>{const n=box(id,text,48,y,1040,{size,bold:size>=22,fill});y+=n.height+16;return n;};
-  heading('wb_title',data.title??data.t??'会议纪要',32,p.canvas);
-  if(data.subtitle??data.sub)heading('wb_subtitle',data.subtitle??data.sub,16,p.canvas);
-  if(data.summary??data.sum)heading('wb_summary',data.summary??data.sum,20,p.soft);
+  let y=32;
+  y+=text('wb_title',data.title??data.t??'会议纪要',48,y,1136,{size:30,bold:true,color:dark?'#ffffff':p.ink}).height+16;
+  if(data.subtitle??data.sub)y+=text('wb_subtitle',data.subtitle??data.sub,48,y,1136,{size:16,color:dark?'#ffffff':p.ink}).height+24;
+  if(data.summary??data.sum){const value=data.summary??data.sum,h=measured(value,1040,22,40);shape('wb_summary_panel',48,y,1040,h,{fill:p.blueSoft,stroke:null});text('wb_summary',value,68,y+20,1000,{size:22,bold:true});y+=h+28;}
+  const sectionColors={blue:'#f3f5fc',green:'#f1f9f2',amber:'#fffcf2',indigo:'#f5f1fd',slate:'#f5f6f7'};
   for(const [si,section] of (data.sections??data.sec??[]).entries()){
-    y+=32;
-    const start=nodes.length,top=y,tone=sectionTones[section.color]||sectionTones.slate;
-    const frame=box(`sec${si}_frame`,'',32,top,1072,{fill:p.surface});frame.style.border_style='solid';frame.style.border_color=theme==='dark'?p.soft:'#CBD5E1';
-    const stripe=box(`sec${si}_accent`,'',32,top,8,{fill:tone[1]});
-    y+=16;
-    const header=heading(`sec${si}_title`,`${String(si+1).padStart(2,'0')}  ${section.title??section.t??'议题'}`,24,theme==='dark'?p.soft:tone[0]);
+    y+=36;const start=nodes.length,title=section.title??section.t??'议题',outer=add({id:`sec${si}`,type:'section',x:24,y:round(y),width:1088,height:100,section:{title},style:{fill_color:sectionColors[section.color]||sectionColors.slate,fill_opacity:dark?0:100}});y+=32;
     for(const [ii,item] of (section.items??section.b??[]).entries()){
-      if(typeof item==='string'||item&&typeof item==='object'&&!item.type)heading(`sec${si}_note${ii}`,typeof item==='string'?item:item.text??item.t??'',16);
-      else y+=card(item,y,`s${si}_c${ii}`)+24;
+      if(typeof item==='string'||item&&typeof item==='object'&&!item.type)y+=text(`sec${si}_note${ii}`,typeof item==='string'?item:item.text??item.t??'',64,y,1008,{size:18}).height+20;
+      else{const card=renderCard(item,y,`s${si}_c${ii}`,{skipTitle:item.title===title});y+=card.height+16;}
     }
-    frame.height=round(y-top+8);frame.width=round(Math.max(1072,...nodes.slice(start+2).map(n=>n.x+n.width+16-32)));
-    stripe.height=frame.height;header.width=frame.width-32;y=top+frame.height;
+    outer.height=round(Math.max(120,y-outer.y+16));outer.width=round(Math.max(1088,...nodes.slice(start+1).map(n=>n.x+(n.width||0)-outer.x+24)));parent(start,outer.id);y=outer.y+outer.height;
   }
-  const canvasWidth=Math.max(1136,...nodes.map(n=>n.x+n.width+48));
-  const background=box('wb_canvas','',0,0,canvasWidth,{minimum:y+40,fill:p.canvas});nodes.pop();nodes.unshift(background);
-  for(const {id,a,b,vertical} of links){
-    const endpoint=(n,start)=>({attached_object:{id:n.id,snap_to:vertical?(start?'bottom':'top'):(start?'right':'left'),position:vertical?{x:.5,y:start?1:0}:{x:start?1:0,y:.5}},arrow_style:start?'none':'triangle_arrow'});
-    nodes.push({id,type:'connector',style:{border_color:p.ink,border_width:'narrow',border_style:'solid'},connector:{shape:'right_angled_polyline',start:endpoint(a,true),end:endpoint(b,false)}});
+  const canvasWidth=Math.max(1136,...nodes.map(n=>n.x+(n.width||0)+32)),canvas=shape('wb_canvas',0,0,canvasWidth,y+32,{fill:p.canvas,stroke:null});canvas.locked=true;nodes.pop();nodes.unshift(canvas);
+  for(const {id,a,b,parentId,vertical,arrow,color} of links){
+    const end=(n,start)=>({attached_object:{id:n.id,snap_to:vertical?(start?'bottom':'top'):(start?'right':'left'),position:vertical?{x:.5,y:start?1:0}:{x:start?1:0,y:.5}},arrow_style:start||!arrow?'none':'triangle_arrow'});
+    add({id,type:'connector',parent_id:parentId,style:{border_color:color,border_width:'narrow',border_style:'solid'},connector:{shape:'right_angled_polyline',start:end(a,true),end:end(b,false)}});
+  }
+  const original=new Map(nodes.map(n=>[n.id,{...n}]));
+  // Feishu groups collect nodes without translating their coordinates. Sections
+  // provide the coordinate frame, even through one or more nested groups.
+  for(const node of nodes)if(node.parent_id&&Number.isFinite(node.x)&&Number.isFinite(node.y)){
+    let frame=original.get(node.parent_id);
+    while(frame?.type==='group')frame=original.get(frame.parent_id);
+    node.x=round(node.x-(frame?.x||0));node.y=round(node.y-(frame?.y||0));
   }
   requireThat(nodes.length<=3000&&Buffer.byteLength(JSON.stringify(nodes))<=500000,'feishu_document_too_large',400);return nodes;
 }

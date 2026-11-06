@@ -153,25 +153,57 @@ export function minutesBoard(minutes,{theme='light',citations,includeSummary=tru
 const escape=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const numeric=value=>Number.isFinite(value)?value:0;
 export function boardSvg(nodes,{responsiveTheme=false}={}){
-  const byId=new Map(nodes.map(node=>[node.id,node]));
-  const position=end=>{const ref=end?.attached_object,target=byId.get(ref?.id);return target?{x:target.x+target.width*(ref.position?.x??.5),y:target.y+target.height*(ref.position?.y??.5)}:end?.position;};
-  const shapes=nodes.filter(node=>['text_shape','composite_shape','connector'].includes(node.type)&&(node.type==='connector'?position(node.connector?.start)&&position(node.connector?.end):Number.isFinite(node.x)&&Number.isFinite(node.y)));
+  const original=new Map(nodes.map(node=>[node.id,node])),resolved=new Map();
+  const frameOf=node=>{
+    const seen=new Set();let parent=original.get(node?.parent_id);
+    while(parent?.type==='group'){
+      if(seen.has(parent.id))return undefined;
+      seen.add(parent.id);parent=original.get(parent.parent_id);
+    }
+    return parent;
+  };
+  const locate=(node,seen=new Set())=>{
+    if(resolved.has(node.id))return resolved.get(node.id);
+    if(seen.has(node.id))return {...node,x:numeric(node.x),y:numeric(node.y)};
+    seen.add(node.id);const parent=frameOf(node),origin=parent?locate(parent,seen):{x:0,y:0};
+    const result={...node,x:numeric(node.x)+origin.x,y:numeric(node.y)+origin.y};resolved.set(node.id,result);return result;
+  };
+  const world=nodes.map(node=>locate(node)),byId=new Map(world.map(node=>[node.id,node]));
+  const position=(end,node)=>{const ref=end?.attached_object,target=byId.get(ref?.id),parent=byId.get(frameOf(node)?.id);return target?{x:target.x+target.width*(ref.position?.x??.5),y:target.y+target.height*(ref.position?.y??.5)}:end?.position?{x:numeric(end.position.x)+(parent?.x||0),y:numeric(end.position.y)+(parent?.y||0)}:undefined;};
+  const shapes=world.filter(node=>['text_shape','composite_shape','connector','section','table'].includes(node.type)&&(node.type==='connector'?position(node.connector?.start,node)&&position(node.connector?.end,node):Number.isFinite(node.x)&&Number.isFinite(node.y)));
   if(!shapes.length)return '';
-  const width=Math.max(...shapes.map(node=>numeric(node.x)+(node.width||0))),height=Math.max(...shapes.map(node=>numeric(node.y)+(node.height||0)));
+  const width=Math.max(...world.map(node=>node.x+numeric(node.width))),height=Math.max(...world.map(node=>node.y+numeric(node.height)));
   const map=new Map();for(const [key,value] of Object.entries(themes.light))if(Array.isArray(value))value.forEach((color,i)=>map.set(color,themes.dark[key][i]));else map.set(value,themes.dark[key]);
   const color=value=>/^#[\da-f]{6}$/i.test(value||'')?(responsiveTheme&&map.has(value)?`var(--b${value.slice(1)},${value})`:value):'none';
   const css=responsiveTheme?`<style>@media(prefers-color-scheme:dark){.minutes-canvas{${[...map].map(([a,b])=>`--b${a.slice(1)}:${b}`).join(';')}}}</style>`:'';
+  const words=(value,x,y,{size=16,bold=false,ink='#1f2329',align='left',ratio=1.5}={})=>`<text x="${numeric(x)}" y="${numeric(y)}" text-anchor="${align==='right'?'end':align==='center'?'middle':'start'}" fill="${color(ink)}" font-size="${numeric(size)}" font-weight="${bold?600:400}">${String(value||'').split('\n').map((line,i)=>`<tspan x="${numeric(x)}" dy="${i?size*ratio:0}">${escape(line)}</tspan>`).join('')}</text>`;
   const content=shapes.map(node=>{
-    const {x,y,width:w,height:h}=node;
-    if(node.type==='connector'){const a=position(node.connector?.start),b=position(node.connector?.end);if(!a||!b)return '';const mid=numeric(a.x)+(numeric(b.x)-numeric(a.x))/2;const path=node.connector?.shape==='right_angled_polyline'?`M${numeric(a.x)} ${numeric(a.y)}H${mid}V${numeric(b.y)}H${numeric(b.x)}`:`M${numeric(a.x)} ${numeric(a.y)}L${numeric(b.x)} ${numeric(b.y)}`;return `<path d="${path}" fill="none" stroke="${color(node.style?.border_color)}" stroke-width="1.2"/>`;}
+    const {x,y}=node,w=numeric(node.width),h=numeric(node.height);
+    if(node.type==='connector'){
+      const a=position(node.connector?.start,node),b=position(node.connector?.end,node);if(!a||!b)return '';
+      const vertical=['top','bottom'].includes(node.connector?.end?.attached_object?.snap_to),middle=vertical?numeric(a.y)+(numeric(b.y)-numeric(a.y))/2:numeric(a.x)+(numeric(b.x)-numeric(a.x))/2;
+      const path=node.connector?.shape==='right_angled_polyline'?(vertical?`M${a.x} ${a.y}V${middle}H${b.x}V${b.y}`:`M${a.x} ${a.y}H${middle}V${b.y}H${b.x}`):`M${a.x} ${a.y}L${b.x} ${b.y}`;
+      const stroke=color(node.style?.border_color),direction=vertical?Math.sign(b.y-a.y)||1:Math.sign(b.x-a.x)||1;
+      const arrow=node.connector?.end?.arrow_style&&node.connector.end.arrow_style!=='none'?`<path d="${vertical?`M${b.x} ${b.y}L${b.x-4} ${b.y-9*direction}L${b.x+4} ${b.y-9*direction}Z`:`M${b.x} ${b.y}L${b.x-9*direction} ${b.y-4}L${b.x-9*direction} ${b.y+4}Z`}" fill="${stroke}"/>`:'';
+      return `<path d="${path}" fill="none" stroke="${stroke}" stroke-width="1.4"/>${arrow}`;
+    }
+    if(node.type==='section')return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="14" fill="${node.style?.fill_opacity===0?'none':color(node.style?.fill_color)}" stroke="${color(node.style?.fill_color)}"/>${words(node.section?.title,x+8,Math.max(16,y-10),{size:14,bold:true,ink:node.style?.fill_opacity===0?'#ffffff':'#1f2329'})}`;
+    if(node.type==='table'){
+      const rows=node.table?.meta?.row_sizes||[],cols=node.table?.meta?.col_sizes||[],sum=(values,end)=>values.slice(0,end).reduce((a,b)=>a+numeric(b),0);
+      return (node.table?.cells||[]).map(cell=>{
+        const row=Math.max(0,cell.row_index-1),col=Math.max(0,cell.col_index-1),cx=x+sum(cols,col),cy=y+sum(rows,row),cw=sum(cols,col+(cell.merge_info?.col_span||1))-sum(cols,col),ch=sum(rows,row+(cell.merge_info?.row_span||1))-sum(rows,row),t=cell.text||{},size=numeric(t.font_size)||16,lines=String(t.text||'').split('\n'),align=t.horizontal_align||'left',tx=align==='right'?cx+cw-14:align==='center'?cx+cw/2:cx+14,ty=cy+(ch-lines.length*size*1.5)/2+size*1.15;
+        return `<rect x="${cx}" y="${cy}" width="${cw}" height="${ch}" fill="${color(cell.style?.fill_color||node.style?.fill_color)}" stroke="${color(node.style?.border_color)}" stroke-width="1"/>${words(t.text,tx,ty,{size,bold:t.font_weight==='bold',ink:t.text_color||node.text?.text_color,align})}`;
+      }).join('');
+    }
     if(node.type==='text_shape'){
-      const size=numeric(node.text?.font_size)||16;
-      return `<text x="${x}" y="${y+size*1.15}" fill="${color(node.text?.text_color)}" font-size="${size}" font-weight="${node.text?.font_weight==='bold'?600:400}">${String(node.text?.text||'').split('\n').map((value,i)=>`<tspan x="${x}" dy="${i?size*1.6:0}">${escape(value)}</tspan>`).join('')}</text>`;
+      const size=numeric(node.text?.font_size)||16,lines=String(node.text?.text||'').split('\n'),ratio=Math.max(1.2,Math.min(1.8,h/(Math.max(1,lines.length)*size))),align=node.text?.horizontal_align||'left',tx=align==='right'?x+w:align==='center'?x+w/2:x;
+      return words(node.text?.text,tx,y+size*1.15,{size,bold:node.text?.font_weight==='bold',ink:node.text?.text_color,align,ratio});
     }
     if(node.type==='composite_shape'){
-      const lines=String(node.text?.text||'').split('\n'),size=numeric(node.text?.font_size)||16,align=node.text?.horizontal_align,tx=align==='right'?x+w-16:align==='center'?x+w/2:x+16,ty=y+(h-lines.length*size*1.42)/2+size*1.1;
-      const text=node.text?.text?`<text x="${tx}" y="${ty}" text-anchor="${align==='right'?'end':align==='center'?'middle':'start'}" fill="${color(node.text?.text_color)}" font-size="${size}" font-weight="${node.text?.font_weight==='bold'?600:400}">${lines.map((line,i)=>`<tspan x="${tx}" dy="${i?size*1.42:0}">${escape(line)}</tspan>`).join('')}</text>`:'';
-      return `<rect x="${x}" y="${y}" width="${numeric(w)}" height="${numeric(h)}" rx="${numeric(node.style?.border_radius?.top_left??5)}" fill="${color(node.style?.fill_color)}" stroke="${node.style?.border_style==='none'?'none':color(node.style?.border_color)}"/>${text}`;
+      const fill=color(node.style?.fill_color),stroke=node.style?.border_style==='none'?'none':color(node.style?.border_color),style=`fill="${fill}" stroke="${stroke}"`,kind=node.composite_shape?.type;
+      const figure=kind==='ellipse'?`<ellipse cx="${x+w/2}" cy="${y+h/2}" rx="${w/2}" ry="${h/2}" ${style}/>`:kind==='flow_chart_diamond'?`<path d="M${x+w/2} ${y}L${x+w} ${y+h/2}L${x+w/2} ${y+h}L${x} ${y+h/2}Z" ${style}/>`:kind==='flow_chart_trapezoid'?`<path d="M${x} ${y}H${x+w}L${x+w*.85} ${y+h}H${x+w*.15}Z" ${style}/>`:`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${kind==='flow_chart_round_rect2'?Math.min(w,h)/2:numeric(node.style?.border_radius?.top_left??5)}" ${style}/>`;
+      const t=node.text||{},size=numeric(t.font_size)||16,lines=String(t.text||'').split('\n'),align=t.horizontal_align||'center',tx=align==='right'?x+w-16:align==='center'?x+w/2:x+16,ty=y+(h-lines.length*size*1.42)/2+size*1.1;
+      return figure+(t.text?words(t.text,tx,ty,{size,bold:t.font_weight==='bold',ink:t.text_color,align,ratio:1.42}):'');
     }
     return '';
   }).join('');
