@@ -53,7 +53,7 @@ test('numeric comparison draws quantities while ambiguous values remain text',()
   minutes.visuals[0].entries[0].valueText='10～20';const ambiguous=minutesBoard(minutes);assert.ok(!ambiguous.some(node=>node.type==='composite_shape'&&node.height===15));
 });
 
-test('Feishu bundled skill preserves the full meeting in editable native cards',()=>{
+test('Feishu overview uses editable native elements beside the complete document',()=>{
   const nodes=feishuBoard(fixture()),text=nodes.flatMap(node=>[node.section?.title,node.text?.text,...(node.table?.cells||[]).map(c=>c.text?.text)]).filter(Boolean).join('\n');
   assert.match(text,/接口评审/);assert.match(text,/核心结论/);assert.match(text,/推进节点/);
   assert.ok(nodes.length<3000);assert.ok(nodes[0].height>0);

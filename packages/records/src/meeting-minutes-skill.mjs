@@ -3,7 +3,7 @@ import {minutesOverview} from './minutes-presentation.mjs';
 import {minutesItemText} from './minutes-quality.mjs';
 
 // Native adaptation of the bundled meeting-minutes compiler; no Python runtime or model call.
-export const MEETING_MINUTES_SKILL='meeting-minutes/20261106-routed-v3';
+export const MEETING_MINUTES_SKILL='meeting-minutes/20261106-overview-v4';
 const status=value=>({done:'已完成',completed:'已完成',active:'进行中',todo:'待办',pending:'待推进',candidate:'候选',confirmed:'已确认',blocked:'受阻',unconfirmed:'待确认'})[value]||value||'';
 const join=values=>values.filter(value=>value!==undefined&&value!==null&&value!=='').join('\n');
 const round=value=>Math.round(value*10)/10;

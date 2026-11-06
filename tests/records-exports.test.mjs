@@ -77,7 +77,7 @@ test('generated exports group each topic once and keep its table and timeline be
  assert.match(markdown,/^#### 信号规则$/m);assert.match(markdown,/^#### 联调节点$/m);
  assert.ok(markdown.indexOf('信号规则')<markdown.indexOf('### 迁移'));
  assert.ok(markdown.indexOf('联调节点')<markdown.indexOf('### 迁移'));
- assert.equal(board.filter(node=>node.id.endsWith('_heading')&&node.text?.text==='机场信号').length,1);
+ assert.ok(board.some(node=>node.text?.text?.includes('联调节点')));
  assert.ok(!board.some(node=>node.text?.text?.includes('已过期窗口草稿')));
  record.minutes.edited=true;assert.match(exportMinutesMarkdown(record),/已过期窗口草稿/);
  record.minutes.edited=false;assert.equal(JSON.stringify(record),before);
