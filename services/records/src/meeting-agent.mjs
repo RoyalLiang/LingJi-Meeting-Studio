@@ -28,7 +28,7 @@ const Payload = defineDoc({ kind: 'meeting.payload.v1', version: 1, scope: 'sess
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const terminal = outcome => ({ status: 'terminal', outcome });
 const blockedCodes = new Set(['agent_scope_denied', 'agent_source_unavailable']);
-const safeCodes = new Set([...blockedCodes, 'minutes_not_configured', 'invalid_agent_output', 'agent_timeout', 'provider_unauthorized', 'provider_rate_limited', 'llm_model_unavailable', 'agent_input_too_large', 'extension_disabled', 'extension_version_changed', 'mcp_scope_required', 'mcp_tool_failed', 'mcp_connection_failed', 'remote_unavailable']);
+const safeCodes = new Set([...blockedCodes, 'minutes_not_configured', 'invalid_agent_output', 'agent_timeout', 'provider_unauthorized', 'provider_rate_limited', 'provider_budget_exceeded', 'llm_model_unavailable', 'agent_input_too_large', 'extension_disabled', 'extension_version_changed', 'mcp_scope_required', 'mcp_tool_failed', 'mcp_connection_failed', 'remote_unavailable']);
 const safeError = error => safeCodes.has(error?.code) ? error.code : 'agent_failed';
 
 function assistant(model, content, stopReason = 'stop', errorMessage) {

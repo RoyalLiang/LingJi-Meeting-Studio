@@ -44,7 +44,8 @@ export async function completeModelJson(messages, input = process.env, { onDelta
   if (!response.ok) {
     let result; try { result=await response.json(); } catch { /* Upstream bodies may contain sensitive details. */ }
     const code=result?.error?.code;await reportUsage(result?.usage);
-    throw new DomainError(code === 'InvalidEndpointOrModel.NotFound' ? 'llm_model_unavailable' : response.status === 401 ? 'provider_unauthorized' : response.status === 429 ? 'provider_rate_limited' : `provider_http_${response.status}`, 502);
+    const budgetExceeded=result?.error?.type==='budget_exceeded'||code==='budget_exceeded';
+    throw new DomainError(budgetExceeded ? 'provider_budget_exceeded' : code === 'InvalidEndpointOrModel.NotFound' ? 'llm_model_unavailable' : response.status === 401 ? 'provider_unauthorized' : response.status === 429 ? 'provider_rate_limited' : `provider_http_${response.status}`, 502);
   }
   let text = '', firstTokenMs = null, completed = false, finishReason;
   const streamed = (response.headers.get('content-type') || '').includes('text/event-stream');

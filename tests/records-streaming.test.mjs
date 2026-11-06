@@ -15,6 +15,20 @@ async function endpoint(handler, run) {
   finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 }
 const credentials = { LLM_MODEL: 'fixture-model', LLM_API_KEY: 'fixture-key' };
+
+test('provider budget exhaustion is actionable without exposing the upstream key details', async () => {
+  for (const [error, expected] of [
+    [{type:'budget_exceeded',code:'422',message:'Budget has been exceeded! Key=private-key-label (sk-private)'},'provider_budget_exceeded'],
+    [{code:'budget_exceeded',message:'private-key-label'},'provider_budget_exceeded'],
+    [{type:'invalid_request_error',code:'422',message:'private-key-label'},'provider_http_422']
+  ]) {
+    await endpoint((_req,res)=>{res.writeHead(422,{'Content-Type':'application/json'});res.end(JSON.stringify({error}));},async base=>{
+      await assert.rejects(completeJson([{role:'user',content:'Synthetic connectivity check.'}],{...credentials,LLM_API_URL:base}),failure=>{
+        assert.equal(failure.code,expected);assert.equal(failure.message,expected);assert.equal(failure.status,502);return true;
+      });
+    });
+  }
+});
 for(const protocol of ['responses','chat-completions'])test(`${protocol} terminal frame completes minutes even when the provider keeps SSE open`,async()=>{
  const usage={input_tokens:2,output_tokens:1,total_tokens:3};
  await endpoint((_req,res)=>{

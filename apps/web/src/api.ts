@@ -136,6 +136,7 @@ const messages: Record<string, string> = {
   provider_model_unavailable: '模型不存在或当前密钥无访问权限，请填写已开通的模型 / ep- 接入点 ID。',
   provider_credentials_rejected: '模型密钥被拒绝，请核对对应平台与区域。',
   provider_rate_limited: '模型服务限流或配额不足，请稍后重试。',
+  provider_budget_exceeded: '模型服务额度已用完，请联系管理员提高额度或更换有额度的密钥。',
   llm_endpoint_not_api: '模型服务返回了网页，请在设置中填写完整的模型 API 地址后重新整理。',
   llm_timeout: '模型整理超过处理时限，转录已保留，可稍后重新整理或使用更快的模型。',
   invalid_llm_response: '模型未返回有效的 JSON 结果，请检查模型与协议后重新整理。',
