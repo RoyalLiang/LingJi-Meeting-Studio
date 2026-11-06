@@ -153,20 +153,26 @@ export function minutesBoard(minutes,{theme='light',citations,includeSummary=tru
 const escape=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const numeric=value=>Number.isFinite(value)?value:0;
 export function boardSvg(nodes,{responsiveTheme=false}={}){
-  const shapes=nodes.filter(node=>['text_shape','composite_shape','connector'].includes(node.type)&&Number.isFinite(node.x)&&Number.isFinite(node.y));
+  const byId=new Map(nodes.map(node=>[node.id,node]));
+  const position=end=>{const ref=end?.attached_object,target=byId.get(ref?.id);return target?{x:target.x+target.width*(ref.position?.x??.5),y:target.y+target.height*(ref.position?.y??.5)}:end?.position;};
+  const shapes=nodes.filter(node=>['text_shape','composite_shape','connector'].includes(node.type)&&(node.type==='connector'?position(node.connector?.start)&&position(node.connector?.end):Number.isFinite(node.x)&&Number.isFinite(node.y)));
   if(!shapes.length)return '';
-  const width=Math.max(...shapes.map(node=>node.x+(node.width||0))),height=Math.max(...shapes.map(node=>node.y+(node.height||0)));
+  const width=Math.max(...shapes.map(node=>numeric(node.x)+(node.width||0))),height=Math.max(...shapes.map(node=>numeric(node.y)+(node.height||0)));
   const map=new Map();for(const [key,value] of Object.entries(themes.light))if(Array.isArray(value))value.forEach((color,i)=>map.set(color,themes.dark[key][i]));else map.set(value,themes.dark[key]);
   const color=value=>/^#[\da-f]{6}$/i.test(value||'')?(responsiveTheme&&map.has(value)?`var(--b${value.slice(1)},${value})`:value):'none';
   const css=responsiveTheme?`<style>@media(prefers-color-scheme:dark){.minutes-canvas{${[...map].map(([a,b])=>`--b${a.slice(1)}:${b}`).join(';')}}}</style>`:'';
   const content=shapes.map(node=>{
     const {x,y,width:w,height:h}=node;
-    if(node.type==='connector'){const a=node.connector?.start?.position,b=node.connector?.end?.position;if(!a||!b)return '';return `<path d="M${numeric(a.x)} ${numeric(a.y)}L${numeric(b.x)} ${numeric(b.y)}" fill="none" stroke="${color(node.style?.border_color)}" stroke-width="1.2"/>`;}
+    if(node.type==='connector'){const a=position(node.connector?.start),b=position(node.connector?.end);if(!a||!b)return '';const mid=numeric(a.x)+(numeric(b.x)-numeric(a.x))/2;const path=node.connector?.shape==='right_angled_polyline'?`M${numeric(a.x)} ${numeric(a.y)}H${mid}V${numeric(b.y)}H${numeric(b.x)}`:`M${numeric(a.x)} ${numeric(a.y)}L${numeric(b.x)} ${numeric(b.y)}`;return `<path d="${path}" fill="none" stroke="${color(node.style?.border_color)}" stroke-width="1.2"/>`;}
     if(node.type==='text_shape'){
       const size=numeric(node.text?.font_size)||16;
       return `<text x="${x}" y="${y+size*1.15}" fill="${color(node.text?.text_color)}" font-size="${size}" font-weight="${node.text?.font_weight==='bold'?600:400}">${String(node.text?.text||'').split('\n').map((value,i)=>`<tspan x="${x}" dy="${i?size*1.6:0}">${escape(value)}</tspan>`).join('')}</text>`;
     }
-    if(node.type==='composite_shape')return `<rect x="${x}" y="${y}" width="${numeric(w)}" height="${numeric(h)}" rx="${numeric(node.style?.border_radius?.top_left??5)}" fill="${color(node.style?.fill_color)}" stroke="${node.style?.border_style==='none'?'none':color(node.style?.border_color)}"/>`;
+    if(node.type==='composite_shape'){
+      const lines=String(node.text?.text||'').split('\n'),size=numeric(node.text?.font_size)||16,align=node.text?.horizontal_align,tx=align==='right'?x+w-16:align==='center'?x+w/2:x+16,ty=y+(h-lines.length*size*1.42)/2+size*1.1;
+      const text=node.text?.text?`<text x="${tx}" y="${ty}" text-anchor="${align==='right'?'end':align==='center'?'middle':'start'}" fill="${color(node.text?.text_color)}" font-size="${size}" font-weight="${node.text?.font_weight==='bold'?600:400}">${lines.map((line,i)=>`<tspan x="${tx}" dy="${i?size*1.42:0}">${escape(line)}</tspan>`).join('')}</text>`:'';
+      return `<rect x="${x}" y="${y}" width="${numeric(w)}" height="${numeric(h)}" rx="${numeric(node.style?.border_radius?.top_left??5)}" fill="${color(node.style?.fill_color)}" stroke="${node.style?.border_style==='none'?'none':color(node.style?.border_color)}"/>${text}`;
+    }
     return '';
   }).join('');
   return `<svg class="minutes-canvas" viewBox="0 0 ${width} ${height}" role="img" aria-label="会议总览与主题图表" style="display:block;width:100%;height:auto;font-family:system-ui,sans-serif"><title>会议总览与主题图表</title>${css}${content}</svg>`;

@@ -1,0 +1,20 @@
+{
+  "id": "meeting-minutes/20261106",
+  "archiveSha256": "9578cdbaaa70a04f60ad6c812e8627b02dfedfcb20993e709bdbf4a37786490d",
+  "runtime": "packages/records/src/meeting-minutes-skill.mjs",
+  "scope": "Feishu export only; skill content is not executable assistant authority",
+  "files": {
+    "SKILL.md": "12fa0317937c6a61ef9cb40ae2b8b4250c0d345092eefa4318eb84a67c632876",
+    "examples/sample-feishu-board-payload.json": "afc37fae2a9067e29f7c64498fcabef0a88bbc39a12cccb15cae1e07f0980d50",
+    "examples/sample-feishu-docx-preview.html": "9fd677ddf7720bf4919d997f04c04cecf6265e0d3b679562b599baeb7d64ce3c",
+    "examples/sample-feishu-screenshot.json": "e3ea98b2ba8e497c63bd40061b93689a0654823248ccd12f574ae2c4da9b7178",
+    "examples/sample-output.html": "2f74e96a006ac2bd42ac41ef98613b32f4c851d0c7f9e7725d9d78357a91f770",
+    "examples/sample-output.md": "42779431ec14990b0768d2d0adf8a5553520d44ac5e92a861098d750478eb581",
+    "references/board-design.md": "dc7bfe15d550130a2f1b60962505b45337a503b153220c9e981e937978ce0f9c",
+    "references/dsl-and-cards.md": "34d060a83aad9f2873c6c6407c786740e0e6756814d10790fb602a6208a1acaf",
+    "references/feishu-native-mapping.md": "87e5f545eb1a73c8e87bfa94baa1c8acb61fbfc547788c51b5b858b7b43b2520",
+    "scripts/compile_minutes.py": "074dddaf34c3ffc5dfbc3882d9f9e04061c39f0ec1ffe139e3aa36a776b19889",
+    "scripts/feishu_board_drawer.py": "fd781f212e90f41be9b0bd0549fb0a04cd674aa04b664dec1a9d6a42e1a29af4",
+    "scripts/test_meeting_minutes.py": "a666b6ec9294df0be7bc5b80398952070636bc6b011d8fd4408a7e8643180283"
+  }
+}

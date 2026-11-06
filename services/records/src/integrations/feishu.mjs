@@ -7,6 +7,7 @@ import {FEISHU_SCOPES} from '../../../../packages/records/src/feishu.mjs';
 import {minutesSummaryBlocks} from '../../../../packages/records/src/minutes-summary.mjs';
 import {feishuBoard} from './feishu-board.mjs';
 import {createFeishuSdk} from './feishu-sdk.mjs';
+import {MEETING_MINUTES_SKILL} from '../../../../packages/records/src/meeting-minutes-skill.mjs';
 export {FEISHU_SCOPES};
 const api = 'https://open.feishu.cn/open-apis';
 const autoId = owner => `feishu-auto:${digest(owner)}`;
@@ -62,7 +63,7 @@ function exportSnapshot(record, input) {
   const markdown = exportMinutesMarkdown(record, {...input,includeTitle:false,referenceMap}), minutes = minutesForExport(record);
   requireThat(Buffer.byteLength(markdown) <= 500000, 'feishu_document_too_large', 400);
   const source = {minutesRevision:minutes.revision, transcriptRevision:minutes.transcriptRevision,
-    notesRevision:input.includeNotes ? record.notesRevision : null, edited:Boolean(minutes.edited), draft:minutes !== record.minutes || record.capture !== 'completed'};
+    notesRevision:input.includeNotes ? record.notesRevision : null, edited:Boolean(minutes.edited), draft:minutes !== record.minutes || record.capture !== 'completed',...(includeBoard?{exportSkill:MEETING_MINUTES_SKILL}:{})};
   const citations=input.includeEvidence?refs=>{const numbers=[...new Set((refs||[]).map(ref=>referenceMap.get(`${ref.segmentId}@${ref.revision}`)?.number).filter(Boolean))];return numbers.length?` [${numbers.join(', ')}]`:'';}:undefined;
   const summaryBlocks=minutesSummaryBlocks(minutes,{citations,overview:includeBoard?'board':'compact'});
   requireThat(summaryBlocks.descendants.length<=1000&&Buffer.byteLength(JSON.stringify(summaryBlocks))<=500000,'feishu_document_too_large',400);
@@ -191,11 +192,9 @@ export async function createFeishu(repo, {sdkFactory=createFeishuSdk,now=Date.no
         const block=await request(client,`${api}/docx/v1/documents/${documentId}/blocks/${documentId}/children?document_revision_id=-1&client_token=${id}-board`,{signal,body:{children:[{block_type:43,board:{}}],index:0},write:true});
         const boardToken=block.data?.children?.find(item=>item.block_type===43)?.board?.token;
         requireThat(documentToken(boardToken),'feishu_verification_failed',502);await update({boardToken});await guard();
-        for(let offset=0;offset<value.boardNodes.length;offset+=100){
-          await guard();const batch=value.boardNodes.slice(offset,offset+100);
-          const createdNodes=await request(client,`${api}/board/v1/whiteboards/${boardToken}/nodes?client_token=${id}-${offset}`,{signal,body:{nodes:batch},write:true});
-          requireThat(Array.isArray(createdNodes.data?.ids)&&createdNodes.data.ids.length===batch.length,'feishu_verification_failed',502);
-        }
+        // Attached object IDs are request-local: send shapes and their connectors together.
+        const createdNodes=await request(client,`${api}/board/v1/whiteboards/${boardToken}/nodes?client_token=${id}-0`,{signal,body:{nodes:value.boardNodes},write:true});
+        requireThat(Array.isArray(createdNodes.data?.ids)&&createdNodes.data.ids.length===value.boardNodes.length,'feishu_verification_failed',502);
       }
       stage='verify';await update({stage});const url=await metadata();
       if(value.destinationEmail){

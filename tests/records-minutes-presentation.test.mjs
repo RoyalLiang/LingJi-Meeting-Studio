@@ -53,9 +53,9 @@ test('numeric comparison draws quantities while ambiguous values remain text',()
   minutes.visuals[0].entries[0].valueText='10～20';const ambiguous=minutesBoard(minutes);assert.ok(!ambiguous.some(node=>node.type==='composite_shape'&&node.height===15));
 });
 
-test('Feishu editable overview uses thematic excerpts and a bounded height',()=>{
+test('Feishu bundled skill preserves the full meeting in editable native cards',()=>{
   const nodes=feishuBoard(fixture()),text=nodes.filter(node=>node.text).map(node=>node.text.text).join('\n');
-  assert.match(text,/图文总览/);assert.match(text,/核心结论/);assert.match(text,/完整讨论/);
-  assert.ok(nodes.length<100);assert.ok(nodes[0].height<1400);
-  assert.ok(nodes.every(node=>['composite_shape','text_shape'].includes(node.type)));
+  assert.match(text,/接口评审/);assert.match(text,/核心结论/);assert.match(text,/推进节点/);
+  assert.ok(nodes.length<3000);assert.ok(nodes[0].height>0);
+  assert.ok(nodes.every(node=>['composite_shape','connector'].includes(node.type)));
 });

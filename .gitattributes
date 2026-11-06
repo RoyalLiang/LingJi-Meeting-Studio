@@ -1,0 +1,2 @@
+# Preserve the supplied skill archive bytes and its manifest hashes on every platform.
+services/records/src/data/skills/meeting-minutes/** -text

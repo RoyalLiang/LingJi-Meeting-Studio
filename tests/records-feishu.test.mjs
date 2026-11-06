@@ -297,19 +297,19 @@ test('editable board has readable topic hierarchy and real diagram primitives',(
 
 });
 
-test('large editable board follows the native summary and every bounded batch is verified',async t=>{
+test('large editable skill board preserves all details in a single verified request',async t=>{
   const h=await harness(t);await h.connect();
   await h.app.repo.change(h.recordId,record=>{
-    record.minutes.sections[0].items=Array.from({length:45},(_,index)=>({text:`核对事项 ${index+1}`,evidence:[{segmentId:'s1',revision:1}]}));
+    record.minutes.sections[0].items=Array.from({length:120},(_,index)=>({text:`核对事项 ${index+1}`,evidence:[{segmentId:'s1',revision:1}]}));
   });
   const preview=await h.request(`/records/${h.recordId}/feishu/preview`,'POST',{title:'人工核对的会议纪要',folderToken:'',includeBoard:true,boardTheme:'dark',includeNotes:false,includeEvidence:true});
-  assert.equal(preview.status,201);assert.equal(preview.body.boardTheme,'dark');assert.ok(preview.body.boardNodes.length>10&&preview.body.boardNodes.length<100);
-  assert.equal(preview.body.boardNodes[0].style.fill_color,'#1D1E20');assert.match(preview.body.markdown,/核对事项 45/);assert.doesNotMatch(JSON.stringify(preview.body.boardNodes),/核对事项 45/);
+  assert.equal(preview.status,201);assert.equal(preview.body.boardTheme,'dark');assert.ok(preview.body.boardNodes.length>100&&preview.body.boardNodes.length<3000);
+  assert.equal(preview.body.boardNodes[0].style.fill_color,'#1D1E20');assert.match(preview.body.markdown,/核对事项 120/);assert.match(JSON.stringify(preview.body.boardNodes),/核对事项 120/);
   await h.request(`/integrations/feishu/exports/${preview.body.id}/publish`,'POST',{confirmed:true});
   assert.equal((await h.wait(preview.body.id)).status,'succeeded');
   const board=h.remote.calls.find(call=>call.url.includes('/children?'));assert.equal(JSON.parse(board.body).index,0);
   const batches=h.remote.calls.filter(call=>call.url.includes('/whiteboards/')&&call.url.includes('/nodes?'));
-  assert.equal(batches.length,1);assert.ok(batches.every(call=>JSON.parse(call.body).nodes.length<=100));
+  assert.equal(batches.length,1);assert.ok(batches.every(call=>JSON.parse(call.body).nodes.length<=3000));
   assert.equal(batches.reduce((total,call)=>total+JSON.parse(call.body).nodes.length,0),preview.body.boardNodes.length);
   assert.equal(new Set(batches.map(call=>new URL(call.url).searchParams.get('client_token'))).size,batches.length);
 });
