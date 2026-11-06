@@ -12,14 +12,26 @@ export async function loadVocabulary(repo, owner) {
   return { entries, fingerprint: digest(JSON.stringify(sets.map(s => [s?.id, s?.revision || 0]))) };
 }
 
-export async function loadRecordVocabulary(repo, record) {
+export async function loadRecordVocabulary(repo, record, { contexts, includeRelated = true } = {}) {
   const vocabulary = await loadVocabulary(repo, record.owner, record.workspaceId || 'inbox');
-  const context = [record.title, record.notes, ...record.segments.slice(-3).map(s => s.text)].join(' ');
+  contexts ||= [[record.title, record.notes, ...record.segments.slice(-3).map(s => s.text)].join(' ')];
+  const context = contexts.join('\n');
   const known = new Set(vocabulary.entries.map(entry => entry.text));
   const reading = await loadRecognitionLexicon();
   const builtin = await loadBuiltinVocabulary();
-  const selected = selectBuiltinVocabulary(builtin, context).filter(entry => !known.has(entry.text));
-  const common = ['auto', 'zh', 'zhen'].includes(record.language) ? commonVocabulary.filter(entry => !known.has(entry.text) && context.includes(entry.text)) : [];
+  const builtinWords = new Set(builtin.entries.map(entry => entry.text.normalize('NFKC').toLowerCase()));
+  // Balance review windows so a later topic cannot displace all earlier references.
+  const windows = contexts.map(text => selectBuiltinVocabulary(builtin, text, { includeRelated }));
+  const selected = [], selectedWords = new Set();
+  let used = 0, names = 0;
+  for (let i = 0; i < 64 && selected.length < 64; i++) for (const window of windows) {
+    const entry = window[i];
+    if (!entry || known.has(entry.text) || selectedWords.has(entry.text)) continue;
+    const size = [...entry.text].length + 1;
+    if (used + size > 1400 || (entry.kind === 'names' && names >= 8) || selected.length >= 64) continue;
+    selected.push(entry); selectedWords.add(entry.text); used += size; names += Number(entry.kind === 'names');
+  }
+  const common = ['auto', 'zh', 'zhen'].includes(record.language) ? commonVocabulary.filter(entry => !known.has(entry.text) && !builtinWords.has(entry.text.normalize('NFKC').toLowerCase()) && context.includes(entry.text)) : [];
   const entries = [], included = new Set();
   for (const entry of [...vocabulary.entries, ...selected, ...common]) {
     const key = entry.text.normalize('NFKC').toLowerCase();
@@ -33,10 +45,18 @@ export async function recordAsrConfig(repo, record, config) {
   return { ...config, ASR_VOCABULARY_HINTS: vocabularyHints(entries, [record.title, record.notes, ...record.segments.slice(-3).map(s => s.text)].join(' ')) };
 }
 
-export async function correctionCandidates(repo, record, { model = false, config, complete = completeModelJson } = {}) {
-  const vocabulary = await loadRecordVocabulary(repo, record);
-  // Bound one manual review to recent utterances; users can still edit earlier text.
+export async function loadCorrectionVocabulary(repo, record) {
   const segments = [...record.segments].sort((a,b) => a.startMs-b.startMs).slice(-120);
+  const contexts = [];
+  for (let i = 0; i < segments.length; i += 20) contexts.push([record.title, record.notes, ...segments.slice(i, i + 20).map(s => s.text)].join(' '));
+  if (!contexts.length) contexts.push([record.title, record.notes].join(' '));
+  return { ...await loadRecordVocabulary(repo, record, { contexts, includeRelated: false }), segments };
+}
+
+export async function correctionCandidates(repo, record, { model = false, config, complete = completeModelJson } = {}) {
+  const vocabulary = await loadCorrectionVocabulary(repo, record);
+  // Bound one manual review to recent utterances; users can still edit earlier text.
+  const segments = vocabulary.segments;
   const candidates = vocabularyCandidates(segments, vocabulary.entries);
   const reading = await loadRecognitionLexicon();
   const phonetic = reading.available && ['auto', 'zh', 'zhen'].includes(record.language) ? phoneticCandidates(segments, vocabulary.entries, reading) : { candidates: [], reviewedSegments: 0 };
@@ -64,6 +84,8 @@ export async function correctionCandidates(repo, record, { model = false, config
         requireThat(segment && typeof proposal.original === 'string' && proposal.original.length <= 100 && vocabulary.entries.some(e => e.text === proposal.replacement), 'invalid_corrections', 502);
         const start = segment.text.indexOf(proposal.original);
         requireThat(correctionSpan(segment.text, start, proposal.original) && segment.text.indexOf(proposal.original, start + proposal.original.length) < 0, 'invalid_corrections', 502);
+        const reference = vocabulary.entries.find(entry => entry.text === proposal.replacement);
+        if (reference.match === 'exact' && proposal.original.normalize('NFKC').toLowerCase() !== proposal.replacement.normalize('NFKC').toLowerCase()) continue;
         if (proposal.original === proposal.replacement || candidates.some(c => c.segmentId === segment.id && c.start === start && c.replacement === proposal.replacement)) continue;
         candidates.push({ segmentId: segment.id, revision: segment.revision, start, original: proposal.original, replacement: proposal.replacement, method: 'model' });
       }

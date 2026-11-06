@@ -3,6 +3,7 @@ export function phoneticCandidates(segments, entries, lexicon) {
   let reviewedSegments = 0, limited = false;
   const byFirst = new Map(), canonical = new Set(entries.map(entry => entry.text));
   for (const entry of entries) {
+    if (entry.match === 'exact') continue;
     const chars = Array.from(entry.text);
     if (chars.length < 2 || chars.length > 12 || chars.some(char => !data.readings[char])) continue;
     const sounds = chars.map(char => data.readings[char]);

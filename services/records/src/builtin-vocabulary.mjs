@@ -20,7 +20,9 @@ export function parseBuiltinVocabulary(bytes, manifest) {
     known.add(key);
     const frequency = entry.frequency ?? 1;
     if (!Number.isSafeInteger(frequency) || frequency < 1 || frequency > 1_000_000) throw new Error('invalid_builtin_vocabulary_frequency');
-    return { text: entry.text, kind: entry.kind === 'name' ? 'names' : 'terms', aliases: [], builtin: true, anchors: entry.anchors || [], frequency };
+    const match = entry.match ?? 'contextual';
+    if (!['exact', 'contextual'].includes(match)) throw new Error('invalid_builtin_vocabulary_match');
+    return { text: entry.text, kind: entry.kind === 'name' ? 'names' : 'terms', aliases: [], builtin: true, anchors: entry.anchors || [], frequency, match };
   });
   const terms = new Set(entries.filter(e => e.kind === 'terms').map(e => e.text));
   for (const entry of entries) if (!Array.isArray(entry.anchors) || entry.anchors.length > 4
@@ -88,7 +90,7 @@ function oneEdit(a, b) {
 }
 
 // Retrieval supplies spelling references, never replacements or new evidence.
-export function selectBuiltinVocabulary(pack, input, { limit = 64, budget = 1400 } = {}) {
+export function selectBuiltinVocabulary(pack, input, { limit = 64, budget = 1400, includeRelated = true } = {}) {
   if (!pack.available || !input?.trim()) return [];
   const bounded = (input.length > 12_000 ? input.slice(0, 1200) + '\n' + input.slice(-10_799) : input).normalize('NFKC');
   const context = normalized(bounded);
@@ -108,7 +110,7 @@ export function selectBuiltinVocabulary(pack, input, { limit = 64, budget = 1400
     const tie = createHash('sha256').update(word).digest('hex');
     if (score) { ranked.push({entry, score, tie}); exactWords.add(entry.text); }
     // Fuzzy retrieval is limited to longer Chinese terms; names require an exact mention.
-    if (!score && entry.kind === 'terms' && /^[\p{Script=Han}]{3,12}$/u.test(word) && overlap >= Math.max(1, word.length - 3)) {
+    if (!score && entry.match !== 'exact' && entry.kind === 'terms' && /^[\p{Script=Han}]{3,12}$/u.test(word) && overlap >= Math.max(1, word.length - 3)) {
       fuzzy.push({entry, word, overlap, tie});
     }
   }
@@ -131,11 +133,11 @@ export function selectBuiltinVocabulary(pack, input, { limit = 64, budget = 1400
     if (found) ranked.push({ entry, score: 20 + word.length, tie });
   }
   const related = new Set();
-  for (const word of exactWords) for (const id of pack.related?.get(word) || []) related.add(id);
+  if (includeRelated) for (const word of exactWords) for (const id of pack.related?.get(word) || []) related.add(id);
   const retrieved = new Set(ranked.map(candidate => candidate.entry));
   for (const id of related) {
     const entry = pack.entries[id];
-    if (!retrieved.has(entry)) ranked.push({entry, score: 5 + Math.min(Math.log2(entry.frequency + 1), 16) / 100, related: true, tie: createHash('sha256').update(entry.text).digest('hex')});
+    if (entry.match !== 'exact' && !retrieved.has(entry)) ranked.push({entry, score: 5 + Math.min(Math.log2(entry.frequency + 1), 16) / 100, related: true, tie: createHash('sha256').update(entry.text).digest('hex')});
   }
   ranked.sort((a, b) => b.score - a.score || a.tie.localeCompare(b.tie));
   const result = []; let used = 0, names = 0, relatedCount = 0;

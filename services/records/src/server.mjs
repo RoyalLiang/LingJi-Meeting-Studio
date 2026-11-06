@@ -15,7 +15,7 @@ import { clientUpdateBarrier } from './client-update.mjs';
 import { performance } from 'node:perf_hooks';
 import { setTranslationTarget } from '../../../packages/records/src/translation.mjs';
 import { workspaceRoutes, requireWorkspace } from './workspace-routes.mjs';
-import { loadRecordVocabulary, correctionCandidates } from './vocabulary.mjs';
+import { loadCorrectionVocabulary, correctionCandidates } from './vocabulary.mjs';
 import { acceptVocabularyCorrection } from '../../../packages/records/src/vocabulary.mjs';
 import { setAutomation } from '../../../packages/records/src/automation.mjs';
 import http from 'node:http';
@@ -426,7 +426,7 @@ export async function createRecordServer(options = {}) {
       const body = await readBody(req, bodyLimit);
       let result;
       if (action === 'corrections' && req.method === 'POST') {
-        const vocabulary = await loadRecordVocabulary(repo, record);
+        const vocabulary = await loadCorrectionVocabulary(repo, record);
         requireThat(body.fingerprint === vocabulary.fingerprint, 'vocabulary_revision_conflict', 409);
         result = await changeOwned(id, user, r => {
           requireThat(r.workspaceId === record.workspaceId, 'vocabulary_revision_conflict', 409);
