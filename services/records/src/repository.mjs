@@ -74,7 +74,10 @@ export async function createRepository(options = {}) {
     await pool.query("CREATE INDEX IF NOT EXISTS record_work_due ON record_aggregates (((data->>'nextWorkAt')::bigint)) WHERE data->>'kind'='record'");
   } else {
     const { DatabaseSync } = await import('node:sqlite'); db = new DatabaseSync(join(root, 'records.sqlite'));
-    db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS aggregates (id TEXT PRIMARY KEY, data TEXT NOT NULL)');
+    // A previous backend/worker may still be releasing its write lock on restart.
+    // Install the wait policy before journal_mode, which also needs that lock.
+    db.exec('PRAGMA busy_timeout=5000');
+    db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS aggregates (id TEXT PRIMARY KEY, data TEXT NOT NULL)');
     db.exec("CREATE INDEX IF NOT EXISTS aggregate_kind_owner ON aggregates(json_extract(data, '$.kind'),json_extract(data, '$.owner'))");
     db.exec("CREATE INDEX IF NOT EXISTS work_due ON aggregates(json_extract(data, '$.nextWorkAt'))");
     db.exec('CREATE TABLE IF NOT EXISTS aggregate_payloads(id TEXT PRIMARY KEY, payload BLOB NOT NULL)');
