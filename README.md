@@ -129,7 +129,7 @@
 | --- | --- | --- |
 | macOS Apple Silicon | macOS 14.6 或更新版本 | `Lingji-版本-macos-arm64.dmg` |
 | Windows x64 | Windows 10 / 11、WebView2 | `Lingji-版本-windows-x64-setup.exe` |
-| Linux x64 | 已验证 Ubuntu 24.04，其他发行版待验 | `Lingji-版本-linux-amd64.deb` |
+| Linux x64 | Ubuntu 22.04 / 24.04，按本版 CI 回执核对 | `Lingji-版本-linux-amd64.deb` |
 
 1. 安装客户端：macOS 将应用拖入“应用程序”；Windows 运行 EXE；Linux 在下载目录运行 `sudo apt install ./Lingji-版本-linux-amd64.deb`。
 2. 进入**设置 → 模型与转录服务**，选择并测试转录和纪要服务。

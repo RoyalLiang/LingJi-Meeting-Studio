@@ -184,7 +184,9 @@ export function boardSvg(nodes,{responsiveTheme=false}={}){
       const vertical=['top','bottom'].includes(node.connector?.end?.attached_object?.snap_to),middle=vertical?numeric(a.y)+(numeric(b.y)-numeric(a.y))/2:numeric(a.x)+(numeric(b.x)-numeric(a.x))/2;
       const path=node.connector?.shape==='right_angled_polyline'?(vertical?`M${a.x} ${a.y}V${middle}H${b.x}V${b.y}`:`M${a.x} ${a.y}H${middle}V${b.y}H${b.x}`):`M${a.x} ${a.y}L${b.x} ${b.y}`;
       const stroke=color(node.style?.border_color),direction=vertical?Math.sign(b.y-a.y)||1:Math.sign(b.x-a.x)||1;
-      const arrow=node.connector?.end?.arrow_style&&node.connector.end.arrow_style!=='none'?`<path d="${vertical?`M${b.x} ${b.y}L${b.x-4} ${b.y-9*direction}L${b.x+4} ${b.y-9*direction}Z`:`M${b.x} ${b.y}L${b.x-9*direction} ${b.y-4}L${b.x-9*direction} ${b.y+4}Z`}" fill="${stroke}"/>`:'';
+      const length=Math.hypot(b.x-a.x,b.y-a.y)||1,unit=node.connector?.shape==='right_angled_polyline'?(vertical?{x:0,y:direction}:{x:direction,y:0}):{x:(b.x-a.x)/length,y:(b.y-a.y)/length};
+      const back={x:b.x-unit.x*9,y:b.y-unit.y*9};
+      const arrow=node.connector?.end?.arrow_style&&node.connector.end.arrow_style!=='none'?`<path d="M${b.x} ${b.y}L${back.x-unit.y*4} ${back.y+unit.x*4}L${back.x+unit.y*4} ${back.y-unit.x*4}Z" fill="${stroke}"/>`:'';
       return `<path d="${path}" fill="none" stroke="${stroke}" stroke-width="1.4"/>${arrow}`;
     }
     if(node.type==='section')return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="14" fill="${node.style?.fill_opacity===0?'none':color(node.style?.fill_color)}" stroke="${color(node.style?.fill_color)}"/>${words(node.section?.title,x+8,Math.max(16,y-10),{size:14,bold:true,ink:node.style?.fill_opacity===0?'#ffffff':'#1f2329'})}`;

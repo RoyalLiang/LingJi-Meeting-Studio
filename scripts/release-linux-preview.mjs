@@ -10,6 +10,7 @@ assert.equal(process.platform,'linux','DEB packaging requires Linux');
 assert.equal(process.arch,'x64','This preview targets Linux x64');
 assert.equal(process.env.GITHUB_ACTIONS,'true','Package installation requires disposable GitHub-hosted CI');
 assert.equal(process.env.RUNNER_ENVIRONMENT,'github-hosted','Never replace a developer installation during verification');
+assert.match(await readFile('/etc/os-release','utf8'),/^VERSION_ID="22\.04"$/m,'Build on the oldest supported Ubuntu to preserve its ABI');
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const capture=(command,args)=>execFileSync(command,args,{cwd:root,maxBuffer:8*1024*1024}).toString().trim();
 const sourceRevision=capture('git',['rev-parse','--verify',`${process.env.TTS_RELEASE_SOURCE_REF||'HEAD'}^{commit}`]);
@@ -46,6 +47,9 @@ try{
   const packageName=capture('dpkg-deb',['-f',path,'Package']);assert.match(packageName,/^[a-z0-9][a-z0-9+.-]+$/);
   assert.equal(capture('dpkg-deb',['-f',path,'Version']),config.version);
   assert.equal(capture('dpkg-deb',['-f',path,'Architecture']),'amd64');
+ const dependencies=capture('dpkg-deb',['-f',path,'Depends']);
+ assert.ok(dependencies.split(',').some(group=>group.split('|').some(dep=>/^libasound2(?:\s|$)/.test(dep.trim()))),'Package must resolve ALSA on Ubuntu 22.04');
+ assert.ok(!dependencies.split(',').some(group=>/^\s*libasound2t64\b/.test(group)&&!group.includes('|')),'A t64-only dependency excludes Ubuntu 22.04');
   // Installation and removal are confined to the disposable runner, never meeting data.
   installed=packageName;
   await run('sudo',['apt-get','install','-y',path]);
@@ -64,13 +68,16 @@ try{
     }
   }
   assert.match(capture('file',[binary]),/ELF 64-bit.*x86-64/);
+ const glibc=[...capture('objdump',['-T',binary]).matchAll(/GLIBC_(\d+)\.(\d+)/g)].map(m=>[Number(m[1]),Number(m[2])]);
+ assert.ok(glibc.length>0&&glibc.every(([major,minor])=>major<2||major===2&&minor<=35),'Binary requires a newer glibc than Ubuntu 22.04');
+ const glibcMaximum=glibc.sort((a,b)=>b[0]-a[0]||b[1]-a[1])[0].join('.');
   assert.ok(files.some(file=>file.endsWith('.desktop')));
   await run('xvfb-run',['-a',process.execPath,'scripts/test-standalone-package.mjs',join(stage,'package-smoke-linux-x64.json')],frozen,{NATIVE_CLIENT_EXECUTABLE:binary,TTS_VERIFY_BUNDLED_ASR:'1'});
   await run(node,['scripts/test-bundled-asr.mjs',backend,join(stage,'bundled-asr-linux-x64.json')],frozen);
   const bundledAsr=JSON.parse(await readFile(join(stage,'bundled-asr-linux-x64.json')));assert.equal(bundledAsr.nativeInference,true);
   await run('sudo',['apt-get','remove','-y',packageName]);installed=null;
   await assert.rejects(access(binary),{code:'ENOENT'},'Uninstall left the executable installed');
-  const metadata={version:config.version,channel:'preview',platform:'linux',architecture:'x64',artifact,sourceRevision,sourceDirty:false,frozenSourceBuild:true,signing:'unsigned',sha256:releaseHash(await readFile(path)),source,bundledAsr,
+  const metadata={version:config.version,channel:'preview',platform:'linux',architecture:'x64',baselineUbuntu:'22.04',dependencies,glibcMaximum,artifact,sourceRevision,sourceDirty:false,frozenSourceBuild:true,signing:'unsigned',sha256:releaseHash(await readFile(path)),source,bundledAsr,
     validation:{debVerified:true,installedAppProbe:true,resourcesVerified:true,uninstallVerified:true,productionSmoke:true,bundledAsrTested:true,realAudioDevicesTested:false,realProvidersTested:false,freshMachineTested:false}};
   await writeFile(join(stage,'release-linux-x64.json'),JSON.stringify(metadata,null,2)+'\n');
   await writeFile(join(stage,'SHA256SUMS-linux-x64.txt'),`${metadata.sha256}  ${artifact}\n`);

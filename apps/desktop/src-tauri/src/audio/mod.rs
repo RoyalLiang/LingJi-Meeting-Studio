@@ -49,16 +49,45 @@ pub struct Captures {
 fn audio_host(system: bool) -> Result<cpal::Host, String> {
     #[cfg(target_os = "linux")]
     {
-        if cpal::available_hosts().contains(&cpal::HostId::PipeWire) {
-            return cpal::host_from_id(cpal::HostId::PipeWire)
-                .map_err(|e| format!("PipeWire 不可用：{e}"));
+        if cpal::available_hosts().contains(&cpal::HostId::PulseAudio) {
+            return cpal::host_from_id(cpal::HostId::PulseAudio)
+                .map_err(|e| format!("PulseAudio / PipeWire Pulse 不可用：{e}"));
         }
         if system {
-            return Err("系统音频需要正在运行的 PipeWire。请启动 PipeWire，或显式选择麦克风；不会自动改用麦克风。".into());
+            return Err("系统音频需要正在运行的 PulseAudio 或 PipeWire Pulse 服务。请启动音频服务，或显式选择麦克风；不会自动改用麦克风。".into());
         }
     }
     let _ = system;
     Ok(cpal::default_host())
+}
+
+#[cfg(target_os = "linux")]
+fn system_device(host: &cpal::Host) -> Result<cpal::Device, String> {
+    // Use the server's actual monitor source rather than guessing its name.
+    let output = host.default_output_device().ok_or("默认输出设备不可用")?;
+    let sink = output.id().map_err(|e| e.to_string())?;
+    let (sender, receiver) = mpsc::sync_channel(1);
+    std::thread::spawn(move || {
+        let result = (|| {
+            let name = std::ffi::CString::new("Lingji system capture").unwrap();
+            let client = pulseaudio::Client::from_env(name).map_err(|e| e.to_string())?;
+            let sink = std::ffi::CString::new(sink.id()).map_err(|e| e.to_string())?;
+            let info = futures::executor::block_on(client.sink_info_by_name(sink))
+                .map_err(|e| e.to_string())?;
+            info.monitor_source_name.ok_or("默认输出没有监视音源".to_string())?
+                .into_string().map_err(|e| e.to_string())
+        })();
+        let _ = sender.send(result);
+    });
+    let monitor = receiver.recv_timeout(Duration::from_secs(3))
+        .map_err(|e| format!("查询系统音频超时或失败：{e}"))??;
+    host.device_by_id(&cpal::DeviceId::new(cpal::HostId::PulseAudio, monitor))
+        .ok_or("默认输出的监视音源不可用；不会自动改用麦克风".into())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn system_device(host: &cpal::Host) -> Result<cpal::Device, String> {
+    host.default_output_device().ok_or("默认输出设备不可用".into())
 }
 
 fn default_microphone_id(devices: &[Input]) -> Result<Option<&str>, String> {
@@ -332,7 +361,7 @@ impl Captures {
                 };
                 let selected = microphone_id(selected.as_deref(), &devices)?;
                 let device = if worker_kind == "display" {
-                    host.default_output_device()
+                        Some(system_device(&host)?)
                 } else if let Some(id) = selected {
                     let id = id.parse().map_err(|_| "音频设备标识无效")?;
                     host.device_by_id(&id)
@@ -340,15 +369,25 @@ impl Captures {
                     host.default_input_device()
                 }
                 .ok_or("所选音频设备不可用，请重新选择")?;
-                let config = if worker_kind == "display" {
+                    #[cfg(not(target_os = "linux"))]
+                    let config = if worker_kind == "display" {
                     device.default_output_config()
                 } else {
                     device.default_input_config()
                 }
                 .map_err(|e| e.to_string())?;
                 let (raw, frames) = raw_input_channel();
-                let stream_config = config.config();
-                let stream = match config.sample_format() {
+                    #[cfg(target_os = "linux")]
+                    let config = device.default_input_config().map_err(|e| e.to_string())?;
+                    let stream_config = config.config();
+                    // PulseAudio converts the server's native S24/S32/U8 format.
+                    #[cfg(target_os = "linux")]
+                    let sample_format = if host.id() == cpal::HostId::PulseAudio {
+                        cpal::SampleFormat::F32
+                    } else { config.sample_format() };
+                    #[cfg(not(target_os = "linux"))]
+                    let sample_format = config.sample_format();
+                    let stream = match sample_format {
                     cpal::SampleFormat::F32 => input_stream::<f32>(
                         &device,
                         &stream_config,
@@ -512,6 +551,36 @@ impl Drop for Captures {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "requires the disposable CI PulseAudio null sink"]
+    fn linux_monitor_captures_output_without_microphone() {
+        assert_eq!(std::env::var("TTS_LINUX_AUDIO_TEST").as_deref(), Ok("1"));
+        let host = audio_host(true).unwrap();
+        assert_eq!(host.default_output_device().unwrap().id().unwrap().id(), "lingji_ci");
+        let captures = Captures::default();
+        let started = captures.start("display", None).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(12);
+        let mut samples = 0u32;
+        let mut nonzero = false;
+        while std::time::Instant::now() < deadline && samples < 16_000 {
+            let packet = captures.read(&started.id).unwrap();
+            if packet.is_empty() {
+                std::thread::sleep(Duration::from_millis(20));
+                continue;
+            }
+            let field = |at| u32::from_le_bytes(packet[at..at + 4].try_into().unwrap());
+            assert_eq!(field(4), samples);
+            assert_eq!(packet.len(), 12 + field(8) as usize * 2);
+            nonzero |= packet[12..].chunks_exact(2).any(|b| i16::from_le_bytes([b[0], b[1]]).unsigned_abs() > 100);
+            captures.acknowledge(&started.id, field(0), field(4), field(8)).unwrap();
+            samples += field(8);
+        }
+        captures.stop(&started.id, true).unwrap();
+        assert!(samples >= 16_000, "system monitor did not deliver one second of PCM");
+        assert!(nonzero, "system monitor did not capture the CI output tone");
+    }
     #[test]
     fn exhausted_restart_budget_still_persists_all_tail_samples() {
         let packets=PacketQueue::new().unwrap();let mut pipeline=Pipeline::new(48_000,2).unwrap();

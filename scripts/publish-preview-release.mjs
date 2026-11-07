@@ -98,7 +98,7 @@ export function previewNotes({tag,commit,workflowSha,metadata,runUrl,guide='',wi
   return `## 版本改动与修复\n${changes}\n\n`+
     `## 下载与安装\n| 系统 | 安装包 |\n| --- | --- |\n${downloads}\n\n`+
     `macOS 14.6+ Apple Silicon：打开 DMG，将应用拖入 Applications。Windows 10/11 x64：运行 EXE，选择安装位置、快捷方式和本地模型（默认勾选）。`+
-    (linux?`Linux x64：本版在 Ubuntu 24.04 构建及验证，下载后运行 \`sudo apt install ./`+linux.artifact+`\`，由 apt 安装系统依赖。其他发行版与旧版系统兼容性尚未验证。`:'')+
+    (linux?`Linux x64：本版在 Ubuntu ${linux.baselineUbuntu||'24.04'} 构建及验证，下载后运行 \`sudo apt install ./`+linux.artifact+`\`，由 apt 安装系统依赖。其他发行版与旧版系统兼容性尚未验证。`:'')+
     `各安装包内置 Node 24 和离线转录资源，无需另装 Node 或 Python。\n\n`+
     `升级前结束录音、完成补传、退出应用并备份数据。macOS 使用 ad-hoc 签名，未进行 Developer ID 签名及 Apple 公证；`+
     (windows?'**未进行 Windows 代码签名。** ':'')+`详细操作见[本版安装说明](${guideUrl})。\n\n`+

@@ -1,6 +1,6 @@
 [package]
 name = "tts-client"
-version = "0.2.47"
+version = "0.2.48"
 description = "TTS desktop client with native audio capture"
 edition = "2021"
 rust-version = "1.90"
@@ -42,7 +42,9 @@ windows-core = "=0.62.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 tauri = { version = "=2.12.3", features = ["tray-icon"] }
-cpal = { version = "=0.18.2", features = ["pipewire"] }
+cpal = { version = "=0.18.2", features = ["pulseaudio"] }
+pulseaudio = "0.3"
+futures = "0.3"
 
 [features]
 smoke-test = []
