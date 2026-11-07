@@ -13,9 +13,9 @@ export function TaskTimeline({timeline=[],ledger,kernelId}:{timeline?:TaskMetric
   const link=document.createElement('a');link.href=url;link.download='lingji-task-diagnostic.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
  }catch(error){setError(messageOf(error));}finally{setExporting(false);}};
  if(!timeline.length&&!ledger&&!kernelId)return null;
- return <details className="task-timeline"><summary><span>任务过程与用量</span><span>{ledger?`${ledger.rounds} 轮 · ${ledger.totalTokens.toLocaleString()} tokens`:`${timeline.length} 项记录`}</span></summary><div className="task-timeline-body">
+ return <section className="task-timeline" aria-label="任务过程与用量"><div className="task-timeline-heading"><span>任务过程与用量</span><span>{ledger?`${ledger.rounds} 轮 · ${ledger.totalTokens.toLocaleString()} tokens`:`${timeline.length} 项记录`}</span></div><div className="task-timeline-body">
  {ledger&&<dl className="task-ledger"><div><dt>模型轮次</dt><dd>{ledger.rounds}</dd></div><div><dt>上下文压缩</dt><dd>{ledger.compactions}</dd></div><div><dt>已报告 token</dt><dd>{ledger.totalTokens.toLocaleString()}</dd></div></dl>}
  <ol>{timeline.map((item,index)=><li key={`${item.startedAt}:${index}`}><span>{names[item.name||item.kind]||'任务阶段'}{item.count?` · ${item.count} 个子任务`:''}</span><time>{(Math.max(0,item.elapsedMs)/1000).toFixed(1)} 秒</time>{item.usageReported===false&&<small>供应商未报告用量</small>}</li>)}</ol>
  {kernelId&&<Button variant="ghost" disabled={exporting} onClick={()=>void download()}>{exporting?'正在导出…':'导出脱敏诊断包'}</Button>}{error&&<p role="alert">{error}</p>}
- </div></details>;
+ </div></section>;
 }

@@ -163,7 +163,7 @@ Windows 默认勾选安装本地 SenseVoice 模型，可取消；macOS 与 Linux
 
 回到客户端可查看或撤销链接。删除本机会议不会自动撤销分享，删除前请先处理链接；撤销无法收回已保存的副本。[分享使用说明](https://rookiecode.com/publish)。
 
-加密分享从 v0.2.22 起提供。请使用新版客户端；[安装说明与版本范围](docs/releases/v0.2.22-preview.md)列出对应版本及验证边界。
+请使用当前桌面测试版；[安装说明](docs/releases/github-client.md)列出平台条件与验证边界。
 
 ### 导入已有资料，导出下一步成果
 
@@ -209,7 +209,7 @@ npm run check:docs
 | 想继续了解 | 文档 |
 | --- | --- |
 | 安装、本地模型与高级服务 | [本地转录](docs/engineering/funasr.md) · [发布与安装流程](docs/releases/actions-preview.md) |
-| 纪要阅读、引用与回放 | [智能纪要](docs/engineering/intelligent-minutes.md) · [录音播放](docs/design/recording-playback.md) |
+| 纪要阅读、引用与回放 | [智能纪要](docs/engineering/intelligent-minutes.md) · [录音播放](docs/engineering/native-client.md) |
 | 翻译、术语与纠错 | [多语种与词表](docs/engineering/multilingual-vocabulary.md) · [识别质量](docs/engineering/asr-quality.md) |
 | 目录、历史分析与扩展 | [工作目录](docs/engineering/workspaces.md) · [飞书与远程扩展](docs/engineering/feishu-and-remote-extensions.md) |
 | 飞书配置与导出权限 | [飞书 SDK 协同](docs/engineering/feishu-sdk.md) |

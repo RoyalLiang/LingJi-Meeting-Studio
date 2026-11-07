@@ -4,7 +4,7 @@ async function walk(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
   return (await Promise.all(entries.map(entry => entry.isDirectory() ? walk(join(directory, entry.name)) : [join(directory, entry.name)]))).flat();
 }
-const files = [...await walk('docs'), 'README.md', 'AGENTS.md', 'CONTEXT.md', 'implementation_plan.md'].filter(file => file.endsWith('.md'));
+const files = [...await walk('docs'), 'README.md', 'AGENTS.md', 'CONTEXT.md'].filter(file => file.endsWith('.md'));
 const errors = [];
 for (const file of files) {
   const text = await readFile(file, 'utf8'); let fence = '';

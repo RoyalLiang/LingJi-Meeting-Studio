@@ -1,4 +1,4 @@
-import { requireThat } from '../../../packages/records/src/record.mjs';
+import { requireThat,digest } from '../../../packages/records/src/record.mjs';
 
 // An unknown gateway/model deliberately keeps the compatible JSON transport.
 // Operators can supply measured catalog facts per exact model, never by name prefix.
@@ -35,3 +35,5 @@ export function estimateTask(profile, { characters, pages, maxRounds }) {
   const cost = profile.prices ? (inputTokens * Math.max(profile.prices.input, profile.prices.cacheRead) + outputTokens * profile.prices.output) / 1e6 : null;
   return { inputTokens, outputTokens, rounds, cost, currency: 'USD', pricingKnown: Boolean(profile.prices) };
 }
+
+export const modelConfigFingerprint=config=>digest(JSON.stringify([config.LLM_MODEL,config.LLM_API_URL,config.LLM_PROTOCOL,config.LLM_REASONING_EFFORT,config.LLM_MODEL_PROFILES||'',config.MEETING_TASK_BUDGET_USD||'',config.LLM_API_KEY]));

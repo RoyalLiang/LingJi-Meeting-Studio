@@ -1,3 +1,4 @@
+import {modelConfigFingerprint} from './model-profile.mjs';
 import {externalWrite} from './external-write.mjs';
 import {meetingTasks,openMeetingHarness} from './meeting-tasks.mjs';
 import {randomUUID} from 'node:crypto';
@@ -69,12 +70,12 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
     const current=await repo.get(job.id);requireThat(ignorePause||!current.paused,'git_paused',409);
     const source=await sourceFor(job.owner,job.recordId,rule.includeNotes,full),record=source.record;
     requireThat(source.ready&&source.hash===job.sourceHash,'git_source_changed',409);
-    if(job.modelConfigHash)requireThat(modelHash(await readConfig(repo.root))===job.modelConfigHash,'git_model_changed',409);
+    if(job.modelConfigHash){const config=await readConfig(repo.root);requireThat(modelHash(config)===job.modelConfigHash&&(!job.runtimeConfigHash||modelConfigFingerprint(config)===job.runtimeConfigHash),'git_model_changed',409);}
     await extensions.validate(job.owner,rule.scope);
     if(remote){const catalog=await git.catalog(connection(rule),signal),match=gitTarget(record,catalog.projects,rule.mappings,rule.aliases);requireThat(catalog.group.id===job.rootGroup.id&&match.status==='eligible'&&match.project.id===job.project.id&&match.project.default_branch===job.baseBranch,'git_target_changed',409);}
     return {rule,record};
   }
-  async function update(id,values){const current=await repo.get(id);if(Object.entries(values).every(([key,value])=>JSON.stringify(current[key])===JSON.stringify(value)))return current;return repo.change(id,row=>{const unavailable=row.error==='git_source_unavailable'||values.error==='git_source_unavailable';Object.assign(row,values,{updatedAt:now()});if(unavailable)Object.assign(row,{status:'blocked',error:'git_source_unavailable',files:null,original:null,title:'',feedback:null,interaction:null,preview:null});return structuredClone(row);});}
+  async function update(id,values){const current=await repo.get(id);if(Object.entries(values).every(([key,value])=>JSON.stringify(current[key])===JSON.stringify(value)))return current;return repo.change(id,row=>{const unavailable=row.error==='git_source_unavailable'||values.error==='git_source_unavailable';Object.assign(row,values,{...(row.paused&&values.paused!==false&&['running','queued','waiting'].includes(values.status)?{status:'paused'}:{}),updatedAt:now()});if(unavailable)Object.assign(row,{status:'blocked',error:'git_source_unavailable',files:null,original:null,title:'',feedback:null,interaction:null,preview:null});return structuredClone(row);});}
   const phases=['resolve','prepare','organize','commit','merge'];
   function phaseHandler(phase){return async(task,runtime,taskContext)=>{
     let job=await repo.get(task.input.jobId);
@@ -140,6 +141,11 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
     }
   };}
   const Job=defineTask({name:'git-sync@1',version:1,initial:input=>({phase:input.phase||'resolve'}),phases:Object.fromEntries(phases.map(p=>[p,phaseHandler(p)])),abort:async(_task,runtime,taskContext)=>runtime.commit(()=>terminal({status:'aborted',result:{}}),taskContext)});
+  async function stopActiveChild(job){
+    if(!job.agentId)return;
+    const child=await agent.get(job.owner,job.agentId);
+    if(['queued','running','cancelling'].includes(child.status)&&!child.interaction)await agent.cancel(job.owner,job.agentId);
+  }
   async function schedule(job){
     const id=await root.commit(async tx=>{const index=await tx.doc(Index),previous=index.jobs.filter(j=>j.jobId===job.id).at(-1);if(previous&&(await tx.task(previous.taskId))?.state.status!=='terminal')return previous.taskId;const taskId=await tx.createTask(Job,{jobId:job.id,phase:phases.includes(job.phase)?job.phase:'resolve'},{ownership:{kind:'conversation'}});index.jobs.push({jobId:job.id,taskId});return taskId;},context);
     await update(job.id,{taskId:id});harness.resume();
@@ -182,8 +188,13 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
   async function start(owner,recordId,automatic=false){
     const rule=await load(owner);requireThat(rule?.enabled,'git_not_configured',409);const record=await recordFor(owner,recordId);requireThat(gitFinal(record),'git_minutes_not_ready',409);
     const config=await readConfig(repo.root),configHash=modelHash(config),sourceHash=gitSourceHash(record,rule.includeNotes),archiveKey=digest(JSON.stringify([sourceHash,rule.fingerprint,configHash])),key=digest(`${owner}:${record.id}:${archiveKey}`),id=`git-sync:${key}`;
-    const existing=await repo.get(id);if(existing)return publicJob(existing);
-    const row={id,kind:'git-sync-job',owner,recordId,title:record.title,sourceHash,archiveKey,ruleGeneration:rule.generation,policyFingerprint:rule.fingerprint,modelConfigHash:configHash,model:config.LLM_MODEL||'injected-test-model',reasoningEffort:config.LLM_REASONING_EFFORT||'',rootGroup:rule.group,minutesRevision:record.minutesRevision,transcriptRevision:record.transcriptRevision,automatic,managed:rule.managed===true,phase:'resolve',status:'queued',createdAt:now(),updatedAt:now(),startedAt:now()};
+    const existing=await repo.get(id);if(existing){
+      if(existing.status!=='superseded')return publicJob(existing,true);
+      requireThat(!existing.writeStarted,'git_result_unknown',409);
+      const revived=await update(id,{status:'queued',paused:false,phase:'resolve',error:null,authorizationGeneration:rule.generation,runtimeConfigHash:modelConfigFingerprint(config),agentId:null,agentAttempt:(existing.agentAttempt||0)+1,rateAttempts:0,startedAt:now()});
+      await guard(revived);await schedule(revived);return publicJob(await repo.get(id),true);
+    }
+    const row={id,kind:'git-sync-job',owner,recordId,title:record.title,sourceHash,archiveKey,ruleGeneration:rule.generation,policyFingerprint:rule.fingerprint,modelConfigHash:configHash,runtimeConfigHash:modelConfigFingerprint(config),model:config.LLM_MODEL||'injected-test-model',reasoningEffort:config.LLM_REASONING_EFFORT||'',rootGroup:rule.group,minutesRevision:record.minutesRevision,transcriptRevision:record.transcriptRevision,automatic,managed:rule.managed===true,phase:'resolve',status:'queued',createdAt:now(),updatedAt:now(),startedAt:now()};
     await repo.insert(row);await kernel.adopt('git-sync',owner,id,[recordId]);if(row.status==='queued'){try{await schedule(row);}catch(error){await update(id,{status:'failed',error:safeCode(error)});}}return publicJob(await repo.get(id),true);
   }
   async function tick(){
@@ -243,14 +254,17 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
       job=await update(id,{...merged,remoteError:null});return {commit:job.commit,url:job.url,mode:job.mode,filePath:job.filePath};
       }catch(error){await update(id,{remoteError:safeCode(error)});throw error;}
     });
-    harness.resume();timer=setInterval(()=>void enqueue(tick).catch(()=>{}),Math.max(50,pollMs));timer.unref();
+    for(const rule of await repo.list('git-sync-rule'))for(const job of await history(rule.owner))if(job.paused||job.status==='paused')await stopActiveChild(job);
+  harness.resume();timer=setInterval(()=>void enqueue(tick).catch(()=>{}),Math.max(50,pollMs));timer.unref();
     const service={
     check,save:(owner,input)=>{const intent={};saveIntents.set(owner,intent);return save(owner,input,intent).finally(()=>{if(saveIntents.get(owner)===intent)saveIntents.delete(owner);});},preview,start:(owner,id)=>enqueue(()=>start(owner,id)),tick:()=>enqueue(tick),
       async status(owner){return {enabled:Boolean((await load(owner))?.enabled),recent:await Promise.all((await history(owner)).slice(0,20).map(job=>publicJob(job)))};},
       async settings(owner){
 return {...publicRule(await load(owner)),recent:await Promise.all((await history(owner)).slice(0,20).map(job=>publicJob(job)))};},
       get:async(owner,id)=>publicJob(await jobFor(owner,id),true),
-    respond:async(owner,id,input)=>{const job=await jobFor(owner,id);await guard(job);requireThat(job.agentId,'agent_input_changed',409);
+    respond:async(owner,id,input)=>{let job=await jobFor(owner,id);const config=await readConfig(repo.root);
+      if(!job.writeStarted&&job.runtimeConfigHash&&modelHash(config)===job.modelConfigHash&&job.runtimeConfigHash!==modelConfigFingerprint(config))job=await update(id,{runtimeConfigHash:modelConfigFingerprint(config)});
+      await guard(job);requireThat(job.agentId,'agent_input_changed',409);
       if(job.interaction?.kind==='continuation'){
         requireThat(input?.id===job.interaction.id&&typeof input.answer==='string'&&input.answer.trim()&&input.answer.length<=4000,'agent_input_changed',409);
         await repo.change(id,current=>{
@@ -265,7 +279,14 @@ return {...publicRule(await load(owner)),recent:await Promise.all((await history
         requireThat(question?.id===input?.id,'agent_input_changed',409);
         const feedback=conversation(job.feedback||[],(child.conversation||[]).filter(item=>item.answer!==undefined),[{question:question.question,answer:input.answer?.trim()}]);
         requireThat(JSON.stringify(feedback).length<=60000,'agent_input_too_large',413);
-        await agent.respond(owner,job.agentId,input);await update(id,{feedback});
+        if(!job.writeStarted&&await agent.configurationMatches?.(owner,job.agentId)===false){
+          // Keep the answer before replacing the old configured model; never wake it with a stale key.
+          job=await update(id,{paused:true,status:'paused',feedback});
+          if(job.taskId){await harness.abortTask(job.taskId,context);await harness.waitForTask(job.taskId,context);}
+          await agent.cancel(owner,job.agentId);
+          job=await update(id,{paused:false,status:'queued',runtimeConfigHash:modelConfigFingerprint(config),agentId:null,agentAttempt:(job.agentAttempt||0)+1,interaction:null,phase:'organize',files:null});
+          await schedule(job);
+        }else{await agent.respond(owner,job.agentId,input);await update(id,{feedback});}
       }
       return publicJob(await repo.get(id),true);},
       control:(owner,id,action,input={})=>enqueue(async()=>{
@@ -275,12 +296,23 @@ return {...publicRule(await load(owner)),recent:await Promise.all((await history
         job=await update(id,{paused:true,status:'paused'});
         // The durable pause fence blocks new writes even if a transport is slow to cancel.
         if(job.taskId)void harness.abortTask(job.taskId,context).catch(()=>{});
+        await stopActiveChild(job);
+        job=await update(id,{paused:true,status:'paused'});
         }else{
           if(job.taskId){await harness.abortTask(job.taskId,context);await harness.waitForTask(job.taskId,context);}
-          const rule=await load(owner),record=await recordFor(owner,job.recordId),sameSource=rule&&gitSourceHash(record,rule.includeNotes)===job.sourceHash,sameModel=modelHash(await readConfig(repo.root))===job.modelConfigHash;
+          const config=await readConfig(repo.root);
+          const rule=await load(owner),record=await recordFor(owner,job.recordId),sameSource=rule&&gitSourceHash(record,rule.includeNotes)===job.sourceHash,sameModel=modelHash(config)===job.modelConfigHash;
           if(clarification){requireThat(action==='retry'&&job.status==='failed'&&job.phase==='organize'&&!job.writeStarted,'agent_input_changed',409);requireThat(sameSource,'git_source_changed',409);requireThat(sameModel,'git_model_changed',409);requireThat(rule?.fingerprint===job.policyFingerprint,'git_rule_changed',409);}
-        if(action==='retry'&&rule?.enabled&&sameSource&&sameModel&&rule.fingerprint===job.policyFingerprint&&rule.generation!==(job.authorizationGeneration||job.ruleGeneration))job=await update(id,{authorizationGeneration:rule.generation,reauthorizedAt:now()});
-          if(action==='retry'&&!job.writeStarted&&rule?.enabled&&((job.authorizationGeneration||job.ruleGeneration)!==rule.generation||!sameSource||!sameModel)){await update(id,{status:'superseded',error:null,files:null,original:null});return start(owner,job.recordId);}
+        if(['retry','resume'].includes(action)&&rule?.enabled&&sameSource&&sameModel&&rule.fingerprint===job.policyFingerprint&&rule.generation!==(job.authorizationGeneration||job.ruleGeneration))job=await update(id,{authorizationGeneration:rule.generation,reauthorizedAt:now()});
+          if(['retry','resume'].includes(action)&&!job.writeStarted&&rule?.enabled&&((job.authorizationGeneration||job.ruleGeneration)!==rule.generation||!sameSource||!sameModel)){await update(id,{status:'superseded',error:null,files:null,original:null});return start(owner,job.recordId);}
+          const previousChild=job.agentId?await agent.get(owner,job.agentId):null;
+          const runtimeChanged=job.runtimeConfigHash?job.runtimeConfigHash!==modelConfigFingerprint(config):previousChild&&await agent.configurationMatches?.(owner,job.agentId)===false;
+          const refreshNeeded=runtimeChanged||previousChild?.error==='agent_model_changed';
+          if(refreshNeeded&&!job.writeStarted){
+            if(previousChild?.interaction||job.interaction?.kind==='continuation'){job=await update(id,{runtimeConfigHash:modelConfigFingerprint(config)});}
+            else{await stopActiveChild(job);
+            job=await update(id,{runtimeConfigHash:modelConfigFingerprint(config),agentId:null,agentAttempt:(job.agentAttempt||0)+1,phase:job.project?'organize':'resolve',files:null,feedback:conversation(job.feedback||[],(previousChild?.conversation||[]).filter(item=>item.answer!==undefined))});}
+          }
           await guard(job,undefined,false,true);
 
           const child=job.agentId?await agent.get(owner,job.agentId):null;

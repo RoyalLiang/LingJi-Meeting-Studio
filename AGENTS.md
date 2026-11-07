@@ -3,8 +3,10 @@
 ## Project working agreements
 
 - 本项目使用 Git 管理。每轮更新完成验证后必须显式提交本轮文件并推送到远端；提交说明包含目的与验证结果。该要求是用户对后续项目更新的持续授权，无需再次询问是否 commit、push、构建或发布。保留未完成阶段的工作进度，不将它描述为已交付。
-- 每轮产品更新在推送时创建递增且未使用的 `vX.Y.Z` 测试版标签，通过后台 Git/命令行/GitHub API 触发现有 `preview-release.yml` GitHub Actions，完成构建、macOS Apple Silicon 测试安装包和 Release 发布。默认递增 patch 版本；版本配置、安装说明和标签保持一致。核对远端 main 为本轮基线的祖先后，优先原子推送 main 与新标签；不得 force push、移动已发布标签或覆盖已发布附件。
-- 发版必须使用 GitHub Actions 后台工作流，不使用浏览器页面或手工上传本地打包产物。等待并检查 verify/build/publish 结果；发布后仅通过 Actions 结果和 GitHub API 核对远端源码 SHA、标签、Release 状态及附件名称、大小、digest 等元数据，提供 Actions、Release 和安装包链接。后续版本测试并发布后，不下载附件做额外验证、解包或安装复测，除非用户另行明确要求；缺少摘要等元数据时如实报告，不通过下载补验，也不宣称已验证下载文件或安装行为。CI、权限或网络阻塞必须明确报告，不能把仅本地提交或 workflow 已启动描述为已发布。同一轮的发布回执补记提交并推送，沿用该版本证据，不为回执循环创建新版本。
+- Linux 与 Windows 安装包直接在 WGS 主机当前代码目录构建，macOS Apple Silicon 继续使用 GitHub Actions。WGS 当前目录为 `/home/westwell/builds/lingji-preview-20261107/source-240245aa`；该目录名不是版本凭证，以固定源码 SHA 和完整文件摘要为准。整个目录加锁后串行构建两个平台，构建前后核对源码，分别准备目标平台资源，不复制每版源码目录、不假冒 GitHub-hosted 环境、不重置未知改动。构建在隔离容器内进行，不安装到 WGS 主机或影响业务服务。
+- 每轮产品更新创建递增且未使用的 `vX.Y.Z` 测试版标签，通过后台 Git/命令行触发 `preview-release.yml`。重建版本从 `v0.3.0` 起，之后默认递增 patch；版本配置、安装说明和标签一致。核对远端 main 为本轮基线祖先后，优先原子推送 main 与新标签。除用户明确授权的历史重写外，不 force push，不移动已发布标签或覆盖附件。
+- 发布必须由 GitHub Actions 后台工作流完成，不使用浏览器发布页或手工上传本地打包产物。WGS 一次性 runner 生成 Linux/Windows 产物，Windows Actions 验证同一个 NSIS，Linux 保留 Ubuntu 22.04/24.04 验证；macOS 构建和原生检查继续在 Actions。等待 verify、各平台验证和 publish 全部成功。发布后仅通过 Actions 和 API 核对远端 SHA、标签、Release 状态及附件名称、大小、digest，并提供链接；未经另行明确要求不下载、解包或安装复测，不宣称文件下载或安装验证。缺少摘要如实报告。
+- 设计探索、一次性实施计划、原始验证输出和发布流水保存在 gitignored `.agent-runtime/`。版本说明只写最终用户可见行为，不加入探索需求、内部优化过程、实现计划、排查记录或提交流水。维护当前使用、配置与运维文档；同版回执沿用已有证据，不循环创建新版本。
 - 本轮引入的 bug 修复使用 `git commit --amend --no-edit` 合并到本轮最近的本地未推送提交；需要改变提交意图时更新说明。先核对提交归属和远程状态；不改写用户原有提交、已共享或已推送历史，不自动 force push。若没有可安全 amend 的本轮提交，先形成独立的本轮改造提交作为基线。
 - 提交显式列出的本轮文件；IDE 配置及无关用户改动不纳入。未配置远程时仅提交本地，不推送。
 
@@ -20,7 +22,7 @@
 - Node 回归运行 `npm test`；新增服务与脚本运行 `npm run lint`（ESLint），新 Web 运行 `npm run typecheck` 和 `npm run build:web`。这些检查不覆盖全部历史代码。Go 实验在 `services/engine-go` 运行 `go test ./...`。
 - 新 Record 协议包含 record/session/source/epoch/sequence；SQLite/文件、PG/S3、真实供应商是不同验证层。短批次识别不能标记为供应商流式 partial。
 - 浏览器原生采集、Postgres、真实 ASR/LLM、长会话与部署验证必须单独报告，不能由 mock 测试代替。
-- 可维护的实现实践见 `docs/engineering/practices.md`；新架构建议先落 proposed ADR，不默认视为用户已批准实现。
+- 可维护的实现实践见 `docs/engineering/practices.md`；新架构建议先保存在 `.agent-runtime/design/` 并标为 proposed，不默认视为用户已批准实现。
 
 ## Agent skills
 
@@ -34,7 +36,7 @@
 
 ### Domain docs
 
-单一词汇表 `CONTEXT.md`；架构决策放在 `docs/adr/`，新决策初始标为 proposed。见 `docs/agents/domain.md`。
+单一词汇表 `CONTEXT.md`；探索性架构提案放在 gitignored `.agent-runtime/design/`，已验证的当前约定维护在工程文档中。见 `docs/agents/domain.md`。
 
 Cold start:
 

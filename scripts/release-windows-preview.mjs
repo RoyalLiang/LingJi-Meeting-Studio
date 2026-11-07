@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import {execFileSync,spawn} from 'node:child_process';
-import {access,copyFile,mkdir,mkdtemp,readFile,readdir,rename,rm,symlink,writeFile} from 'node:fs/promises';
+import {access,copyFile,mkdir,mkdtemp,readFile,rename,rm,symlink,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {dirname,join,resolve} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {readReleaseSource,snapshotReleaseSource,releaseHash} from './release-source.mjs';
+import {verifyWgsInput} from './wgs-build-contract.mjs';
 
 assert.equal(process.platform,'win32','Windows packaging requires Windows CI or a Windows development host');
 assert.equal(process.arch,'x64','This preview targets Windows x64');
@@ -45,15 +46,18 @@ try{
  await mkdir(join(frozen,'.agent-runtime'),{recursive:true});
  const runtimeCache=join(root,'.agent-runtime/runtimes');
  try{await access(runtimeCache);await symlink(runtimeCache,join(frozen,'.agent-runtime/runtimes'),'junction');}catch(error){if(error.code!=='ENOENT')throw error;}
- await run('npm',['run','build:web'],frozen);
- await run(process.execPath,['scripts/installer-background.mjs','--check'],frozen);
- const cargoTarget=join(root,'apps/desktop/src-tauri/target');
- await run('npm',['run','build:native','--workspace','@tts/desktop','--','--config','src-tauri/tauri.preview.conf.json','--config','src-tauri/tauri.windows.conf.json','--bundles','nsis'],frozen,{CARGO_TARGET_DIR:cargoTarget});
- const bundle=join(cargoTarget,'release/bundle/nsis');
- const installers=(await readdir(bundle)).filter(name=>name.endsWith('.exe'));assert.equal(installers.length,1);
- const artifact=`Lingji-${config.version}-windows-x64-setup.exe`;
- await copyFile(join(bundle,installers[0]),join(stage,artifact));
- const bytes=await readFile(join(stage,artifact));assert.equal(bytes.toString('ascii',0,2),'MZ');
+ const prebuilt=process.env.TTS_PREBUILT_DIRECTORY;
+  assert.ok(prebuilt,'Windows installers must be built in the current WGS source directory');
+  await verifyWgsInput(prebuilt,{version:config.version,sourceRevision,source});
+  const archive=join(prebuilt,'resources.tar.gz');
+  const entries=execFileSync('tar',['-tf',archive],{encoding:'utf8',maxBuffer:8*1024*1024}).trim().split(/\r?\n/);
+  assert.ok(entries.length&&entries.every(path=>/^(runtime|client-backend)\//.test(path)&&!path.split('/').includes('..')&&!path.includes('\\')),'Unsafe WGS resources archive');
+  await mkdir(join(frozen,'apps/desktop/src-tauri/resources'),{recursive:true});
+  await run('tar',['-xf',archive,'-C',join(frozen,'apps/desktop/src-tauri/resources')],frozen);
+  await run(join(prebuilt,'lingji-ui-tests.exe'),[join(frozen,'apps/desktop/src-tauri/installer/background.bmp')],frozen);
+  const artifact=`Lingji-${config.version}-windows-x64-setup.exe`;
+  await copyFile(join(prebuilt,'windows-setup.exe'),join(stage,artifact));
+  const bytes=await readFile(join(stage,artifact));assert.equal(bytes.toString('ascii',0,2),'MZ');
  assert.equal(bytes.readUInt16LE(bytes.readUInt32LE(0x3c)+4),0x14c,'NSIS bootstrap is a PE32 executable');
  console.log('Windows packaging: Verify silent installation');
  const installerSmoke=join(stage,'installer-smoke.json');
@@ -82,7 +86,7 @@ try{
  assert.equal(upgradeDefault.unchangedModelsNotRewritten,true);assert.equal(upgradeDefault.changedResourceUpdated,true);assert.equal(upgradeDefault.singleInstallerWindow,true);
  const upgrade=JSON.parse(await readFile(join(scratch,'upgrade/upgrade-model-smoke.json')));
  assert.equal(upgrade.existingModelPreserved,true);assert.ok(upgrade.verifiedModelFiles>0);
- const metadata={modelSelection:{defaultInstallsModel:true,optOutSkipsModel:true,cloudOnlyApp:cloudOnly,upgrade,upgradeDefault},bundledAsr:localAsr,version:config.version,channel:'preview',platform:'windows',architecture:'x64',artifact,sourceRevision,sourceDirty:false,frozenSourceBuild:true,signing:'unsigned',sha256:releaseHash(bytes),source,
+ const metadata={modelSelection:{defaultInstallsModel:true,optOutSkipsModel:true,cloudOnlyApp:cloudOnly,upgrade,upgradeDefault},bundledAsr:localAsr,version:config.version,channel:'preview',platform:'windows',architecture:'x64',artifact,sourceRevision,sourceDirty:false,frozenSourceBuild:false,sourceBuildMode:'guarded-current-directory',builder:'wgs',sourceVerifiedAfterBuild:true,signing:'unsigned',sha256:releaseHash(bytes),source,
   runtime:{node:smoke.node,sqlite:smoke.sqlite},validation:{peVerified:true,installerSilentSmoke:true,installedAppProbe:true,resourcesVerified:true,uninstallVerified:true,productionSmoke:true,realAudioDevicesTested:false,realProvidersTested:false,bundledAsrTested:true,freshMachineTested:false},
   timestamp:new Date().toISOString()};
  await writeFile(join(stage,'release-windows-x64.json'),JSON.stringify(metadata,null,2)+'\n');

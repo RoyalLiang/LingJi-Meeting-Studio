@@ -1,0 +1,32 @@
+name: Reset release history for 0.3.0
+on:
+  push:
+    branches: [dev_history_reset_030]
+permissions:
+  contents: write
+concurrency:
+  group: history-reset-030
+  cancel-in-progress: false
+jobs:
+  reset:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '26.12.1'
+      - name: Execute the backed-up exact release and ref inventory
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESET_RELEASE_VERSION: '0.3.0'
+        run: node scripts/reset-preview-history.mjs
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: always()
+        with:
+          name: history-reset-030-receipt
+          path: .agent-runtime/history-reset-receipt.json
+          if-no-files-found: warn
+          retention-days: 14

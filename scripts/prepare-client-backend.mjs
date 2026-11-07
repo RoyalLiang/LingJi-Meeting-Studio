@@ -36,8 +36,8 @@ export function includeBackendDependency(path){
   return true;
 }
 
-export async function prepareClientBackend({ root = project, cacheRoot = join(project, '.agent-runtime/runtimes') } = {}) {
-  const target = `${process.platform === 'win32' ? 'win' : process.platform}-${process.arch}`;
+export async function prepareClientBackend({ root = project, cacheRoot = join(project, '.agent-runtime/runtimes'), platform = process.env.TTS_TARGET_PLATFORM || process.platform, arch = process.env.TTS_TARGET_ARCH || process.arch } = {}) {
+  const target = `${platform === 'win32' ? 'win' : platform}-${arch}`;
   assert.ok(runtimes[target], `Bundled runtime is not configured for ${target}`);
   const [extension, expected] = runtimes[target];
   const archive = `node-v${version}-${target}.${extension}`;
@@ -59,18 +59,21 @@ export async function prepareClientBackend({ root = project, cacheRoot = join(pr
   const extracted = join(cache, `node-v${version}-${target}`);
   // Copy from the verified archive every time, including when a cache exists.
   await rm(extracted, { recursive: true, force: true });
-  execFileSync('tar', ['-xf', tar, '-C', cache]);
-  const binary = join(extracted, ...(process.platform === 'win32' ? ['node.exe'] : ['bin', 'node']));
-  const verified = JSON.parse(execFileSync(binary, ['--input-type=module', '-e', 'import {DatabaseSync} from "node:sqlite";const db=new DatabaseSync(":memory:");db.exec("CREATE VIRTUAL TABLE f USING fts5(content)");console.log(JSON.stringify({node:process.version,sqlite:db.prepare("SELECT sqlite_version() v").get().v,fts5:true,platform:process.platform,arch:process.arch}));db.close()'], { encoding: 'utf8' }));
-  assert.equal(verified.node, `v${version}`); assert.equal(verified.sqlite, '3.54.0'); assert.equal(verified.arch, process.arch);
-  assert.equal(verified.platform, process.platform);
+  if(extension==='zip'&&process.platform!=='win32')execFileSync('unzip',['-q',tar,'-d',cache]);
+  else execFileSync('tar', ['-xf', tar, '-C', cache]);
+  const binary = join(extracted, ...(platform === 'win32' ? ['node.exe'] : ['bin', 'node']));
+  const nativeTarget = platform === process.platform && arch === process.arch;
+  const verified = nativeTarget ? JSON.parse(execFileSync(binary, ['--input-type=module', '-e', 'import {DatabaseSync} from "node:sqlite";const db=new DatabaseSync(":memory:");db.exec("CREATE VIRTUAL TABLE f USING fts5(content)");console.log(JSON.stringify({node:process.version,sqlite:db.prepare("SELECT sqlite_version() v").get().v,fts5:true,platform:process.platform,arch:process.arch}));db.close()'], { encoding: 'utf8' })) : {node: `v${version}`, sqlite: '3.54.0', platform, arch, probeDeferred: true};
+  assert.equal(verified.node, `v${version}`); assert.equal(verified.sqlite, '3.54.0'); assert.equal(verified.arch, arch);
+  assert.equal(verified.platform, platform);
   const resources = join(root, 'apps/desktop/src-tauri/resources');
   const builtinVocabulary = await materializeBuiltinVocabulary({ base: pathToFileURL(join(root, 'services/records/src/data/')) });
   const runtime = join(resources, 'runtime'), backend = join(resources, 'client-backend');
+  await rm(runtime, {recursive:true,force:true});
   await mkdir(runtime, { recursive: true });
   await rm(backend, { recursive: true, force: true });
   await mkdir(backend, { recursive: true });
-  const runtimeBinary = join(runtime, process.platform === 'win32' ? 'node.exe' : 'node');
+  const runtimeBinary = join(runtime, platform === 'win32' ? 'node.exe' : 'node');
   await copyFile(binary, runtimeBinary); await chmod(runtimeBinary, 0o755);
   await copyFile(join(extracted, 'LICENSE'), join(runtime, 'LICENSE'));
   for (const path of ['services/records/src', 'packages/records/src', 'scripts/alpha-learning']) {
@@ -100,14 +103,16 @@ export async function prepareClientBackend({ root = project, cacheRoot = join(pr
     await cp(directory, join(backend, 'node_modules', name), { recursive: true, dereference: true, filter: includeBackendDependency });
     pending.push(...Object.keys(pkg.dependencies || {}));
   }
-  const localAsr = await prepareLocalAsr({ destination: join(backend, 'local-asr'), cacheRoot: join(cacheRoot, 'local-asr') });
+  const localAsr = await prepareLocalAsr({ destination: join(backend, 'local-asr'), cacheRoot: join(cacheRoot, 'local-asr'), platform, arch });
   // Verify the packaged import graph, rather than accidentally resolving from
   // the repository's node_modules or source-only provider files.
+  if (nativeTarget) {
   const isolated = await mkdtemp(join(tmpdir(), 'lingji-backend-import-'));
   try {
     await cp(backend, isolated, { recursive: true, dereference: true });
     execFileSync(binary, ['--input-type=module', '-e', 'await import(process.argv[1]);const {readdir}=await import("node:fs/promises");const {join}=await import("node:path");const {pathToFileURL}=await import("node:url");for(const file of await readdir(process.argv[2]))if(file.endsWith(".js"))await import(pathToFileURL(join(process.argv[2],file)));', pathToFileURL(join(isolated, 'services/records/src/desktop-backend.mjs')).href, join(isolated,'node_modules/@earendil-works/pi-ai/dist/providers')]);
   } finally { await rm(isolated, { recursive: true, force: true }); }
+  }
   const metadata = { ...verified, archive, archiveSha256: expected, dependencies: Object.fromEntries(modules), localAsr, builtinVocabulary, backendBundled: true, externalDevelopmentServiceRequired: false };
   await writeFile(join(runtime, 'runtime.json'), JSON.stringify(metadata, null, 2) + '\n');
   return metadata;

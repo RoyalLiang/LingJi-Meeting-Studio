@@ -27,8 +27,8 @@ export function ClientUpdatesPanel({ updates }: { updates: ReturnType<typeof use
         ]}/><ClientUpdateActions updates={updates}/>
       </div>
     </div>
-    <div className="client-update-activity" aria-live="polite"><div className="client-update-status"><strong>{status.phase === 'current' ? '已是最新版本' : status.phase === 'available' ? `发现新版本 v${status.version}` : description[status.phase] || `当前版本 v${status.currentVersion || version}`}</strong>{status.phase === 'ready' && installReason && <span>{installReason}</span>}</div>
-    {status.phase === 'downloading' && <div className="update-download">
+    <div className="client-update-activity"><div className="client-update-status" role="status" aria-live="polite"><strong>{status.phase === 'current' ? '已是最新版本' : status.phase === 'available' ? `发现新版本 v${status.version}` : description[status.phase] || `当前版本 v${status.currentVersion || version}`}</strong>{status.phase === 'ready' && installReason && <span>{installReason}</span>}</div>
+    {<div className="update-download" hidden={status.phase !== 'downloading'}>
       <div className="update-download-meta"><span>{progress.size}</span><span>{progress.percent === null ? '大小待确认' : `${progress.percent}%`}</span></div>
       <div className={`update-download-track${progress.percent === null ? ' is-indeterminate' : ''}`} role="progressbar" aria-label="更新下载进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.percent ?? undefined} aria-valuetext={progress.size}>
         <span style={{width:progress.percent === null ? '30%' : `${progress.percent}%`}}/>
@@ -36,7 +36,7 @@ export function ClientUpdatesPanel({ updates }: { updates: ReturnType<typeof use
     </div>}
     {status.error && <FeedbackNotice key={status.error} message={status.error} error/>}
     </div>
-    {items.length > 0 && <Button type="button" variant="ghost" className="update-notes-trigger" aria-haspopup="dialog" onClick={()=>setNotesOpen(true)}>更新内容</Button>}
+    <Button type="button" variant="ghost" disabled={!items.length} className="update-notes-trigger" aria-haspopup="dialog" onClick={()=>setNotesOpen(true)}>更新内容</Button>
     {notesOpen && <Modal className="update-notes-modal" title="更新内容" onClose={()=>setNotesOpen(false)}><ul className="update-notes-list">{items.map((item,index)=><li key={index}>{item}</li>)}</ul></Modal>}
   </section>;
 }
@@ -46,7 +46,7 @@ export function ClientUpdateActions({ updates }: { updates: ReturnType<typeof us
   const { status, installReason } = updates;
   const busy = ['checking', 'downloading', 'preparing', 'installing'].includes(status.phase);
   const ready = status.phase === 'ready', available = status.phase === 'available';
-  return <div className="actions"><Button disabled={busy || status.phase === 'disabled'} onClick={() => void updates.check()}><ArrowsClockwise size={17}/>{status.phase === 'checking' ? '正在检查…' : '检查更新'}</Button>{available && <Button onClick={() => void updates.download()}><DownloadSimple size={17}/>下载更新</Button>}{ready && <Button disabled={Boolean(installReason)} title={installReason || '使用已校验的更新安装包'} onClick={() => void updates.install()}><DownloadSimple size={17}/>安装并重启</Button>}</div>;
+  return <div className="actions"><Button disabled={busy || status.phase === 'disabled'} onClick={() => void updates.check()}><ArrowsClockwise size={17}/>{status.phase === 'checking' ? '正在检查…' : '检查更新'}</Button><Button disabled={busy || (ready ? Boolean(installReason) : !available)} title={ready ? installReason || '使用已校验的更新安装包' : undefined} onClick={() => void (ready ? updates.install() : updates.download())}><DownloadSimple size={17}/>{ready ? '安装并重启' : '下载更新'}</Button></div>;
 }
 
 export function ClientVersion({ status }: { status: UpdateStatus }) {

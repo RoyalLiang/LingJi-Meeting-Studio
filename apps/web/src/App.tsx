@@ -6,7 +6,7 @@ import { useRecordingWidget } from './useRecordingWidget';
 import { capturedDurationMs } from './audio/signal';
 import { useRecordingDuration } from './useRecordingDuration';
 import {useLearningService} from './useLearningService';
-import {LearningReview} from './components/LearningReview';
+
 import { TranscriptionNotice } from './components/TranscriptionNotice';
 import { FeedbackNotice } from './components/FeedbackNotice';
 import {GitSyncNotifier} from './components/GitSyncNotifier';
@@ -32,10 +32,10 @@ import { RecordingPlayback } from './components/RecordingPlayback';
 import { CitationContext } from './components/CitationContext';
 import type { CitationSelection } from './citation-context';
 import { ShareDialog } from './components/ShareDialog';
-import { SharedMeeting, type SharedMeetingData } from './components/SharedMeeting';
+import type {SharedMeetingData} from './components/SharedMeeting';
 import { currentMinutesJob } from './minutes-views';
 import { VocabularySettings as VocabularySettingsForm } from './components/VocabularySettings';
-import { TranscriptHistory } from './components/Transcript';
+
 import { TranslationSettings } from './components/TranslationSettings';
 import { DeviceSettings as DeviceSettingsForm } from './components/DeviceSettings';
 import { MeetingControls } from './components/MeetingControls';
@@ -43,14 +43,20 @@ import { MeetingFinish } from './components/MeetingFinish';
 import { RecordTitle } from './components/RecordTitle';
 import { CaptureSetup } from './components/CaptureSetup';
 import { Button, Modal, Status, Empty, Download } from './components/ui';
-import { TranslationPanel } from './components/TranslationPanel';
-import { MinutesPanel } from './components/Minutes';
-import { CurrentDiscussion } from './components/CurrentDiscussion';
+
+
+
 import { Notes } from './components/Notes';
 import { CaptureController, capabilities, importAudio, type CaptureIssue } from './audio/controller';
 import type { CaptureSignal } from './audio/signal';
 import { clearRecordAudio, setLocalQueueBackend, drainQueue, localManifests, pendingCount, setQueueRecords, downloadPendingAudio } from './audio/queue';
 
+const SharedMeeting=lazy(()=>import('./components/SharedMeeting').then(module=>({default:module.SharedMeeting})));
+const TranscriptHistory=lazy(()=>import('./components/Transcript').then(module=>({default:module.TranscriptHistory})));
+const MinutesPanel=lazy(()=>import('./components/Minutes').then(module=>({default:module.MinutesPanel})));
+const CurrentDiscussion=lazy(()=>import('./components/CurrentDiscussion').then(module=>({default:module.CurrentDiscussion})));
+const TranslationPanel=lazy(()=>import('./components/TranslationPanel').then(module=>({default:module.TranslationPanel})));
+const LearningReview=lazy(()=>import('./components/LearningReview').then(module=>({default:module.LearningReview})));
 const ProviderSettings = memo(lazy(() => import('./components/ProviderSettings').then(module=>({default:module.ProviderSettings}))));
 const VocabularySettings = memo(VocabularySettingsForm);
 const DeviceSettings = memo(DeviceSettingsForm);
@@ -96,7 +102,7 @@ function SharedView({ token }: { token: string }) {
     void load(); const timer = setInterval(() => void load(), 15000);
     return () => { clearInterval(timer); controller.abort(); };
   }, [token]);
-  return <SharedMeeting data={data} error={error}/>;
+  return <Suspense fallback={<p role="status">正在加载共享纪要…</p>}><SharedMeeting data={data} error={error}/></Suspense>;
 }
 export default function App() {
   const shared = location.pathname.match(/^\/share\/([A-Za-z0-9_-]+)$/);
@@ -447,14 +453,14 @@ function Workspace() {
         {!recording && <div className="sub-actions">{!['sealed','completed'].includes(record.capture) && <Button variant="ghost" onClick={() => setModal('import-text')}><FileText size={16}/>导入文字</Button>}</div>}
         </div>}
       </div>
-        {record.capture === 'completed' && record.usage.samples > 0 && record.pendingChunks === 0 && record.segments.length === 0 && <FeedbackNotice key={`empty:${id}:${record.transcriptRevision}`} message="音频已处理完成，但未识别出可用语音。请检查麦克风输入、系统权限或共享音轨，再开始一段试录。"/>}<MinutesPanel focusTarget={focusTarget} focusSuspended={translationOpen} historyActionsRef={setMinutesActions} key={`minutes:${record.id}`} audioOnly={boot.providers.minutesMode === 'doubao-audio-only'} inline settingsOpen={minutesSettingsOpen} closeSettings={() => setMinutesSettingsOpen(false)} modelReady={minutesAvailable(boot.providers,record.realtimeAudioConsent)} realtimeMode={['openai-realtime', 'doubao-audio', 'doubao-audio-only'].includes(boot.providers.minutesMode || '') && (record.realtimeAudioConsent || !boot.providers.textMinutes || boot.providers.minutesMode==='doubao-audio-only')} automate={async (enabled, intervalSeconds) => { await mutate(`/records/${id}/automation`, 'PATCH', {enabled,intervalSeconds,realtimeAudioConsent: enabled && (record.realtimeAudioConsent || !boot.providers.textMinutes || boot.providers.minutesMode==='doubao-audio-only') && ['openai-realtime', 'doubao-audio', 'doubao-audio-only'].includes(boot.providers.minutesMode || '')}); }} record={record} busy={busy} onClose={()=>{}} cite={cite} generate={async (template,mode) => { await mutate(`/records/${id}/minutes`, 'POST', { template,mode,scope: record.capture === 'completed' ? 'final' : 'live',retry:true,realtimeAudioConsent: mode === 'model' && ['openai-realtime', 'doubao-audio', 'doubao-audio-only'].includes(boot.providers.minutesMode || '') }, false); }} edit={async minutes => { return mutate(`/records/${id}/minutes`, 'PATCH', { revision: minutes.revision, minutes:manualMinutesContent(minutes) }); }}/>
-        <TranscriptHistory actionsTarget={minutesActions} key={`transcript:${record.id}`} record={record} changed={refreshTranscript} save={saveTranscript}/>
+        {record.capture === 'completed' && record.usage.samples > 0 && record.pendingChunks === 0 && record.segments.length === 0 && <FeedbackNotice key={`empty:${id}:${record.transcriptRevision}`} message="音频已处理完成，但未识别出可用语音。请检查麦克风输入、系统权限或共享音轨，再开始一段试录。"/>}<Suspense fallback={<p className="meeting-loading" role="status">正在加载纪要…</p>}><MinutesPanel focusTarget={focusTarget} focusSuspended={translationOpen} historyActionsRef={setMinutesActions} key={`minutes:${record.id}`} audioOnly={boot.providers.minutesMode === 'doubao-audio-only'} inline settingsOpen={minutesSettingsOpen} closeSettings={() => setMinutesSettingsOpen(false)} modelReady={minutesAvailable(boot.providers,record.realtimeAudioConsent)} realtimeMode={['openai-realtime', 'doubao-audio', 'doubao-audio-only'].includes(boot.providers.minutesMode || '') && (record.realtimeAudioConsent || !boot.providers.textMinutes || boot.providers.minutesMode==='doubao-audio-only')} automate={async (enabled, intervalSeconds) => { await mutate(`/records/${id}/automation`, 'PATCH', {enabled,intervalSeconds,realtimeAudioConsent: enabled && (record.realtimeAudioConsent || !boot.providers.textMinutes || boot.providers.minutesMode==='doubao-audio-only') && ['openai-realtime', 'doubao-audio', 'doubao-audio-only'].includes(boot.providers.minutesMode || '')}); }} record={record} busy={busy} onClose={()=>{}} cite={cite} generate={async (template,mode) => { await mutate(`/records/${id}/minutes`, 'POST', { template,mode,scope: record.capture === 'completed' ? 'final' : 'live',retry:true,realtimeAudioConsent: mode === 'model' && ['openai-realtime', 'doubao-audio', 'doubao-audio-only'].includes(boot.providers.minutesMode || '') }, false); }} edit={async minutes => { return mutate(`/records/${id}/minutes`, 'PATCH', { revision: minutes.revision, minutes:manualMinutesContent(minutes) }); }}/>
+        <TranscriptHistory actionsTarget={minutesActions} key={`transcript:${record.id}`} record={record} changed={refreshTranscript} save={saveTranscript}/></Suspense>
           <Notes key={`notes:${record.id}`} record={record} save={async (notes, notesRevision) => { return mutate(`/records/${id}`, 'PATCH', { notes, notesRevision }); }}/>
 
       </>}
       </div></div><div className="workspace-automation-actions" ref={setGitActions}/><div className="content-follow-actions" data-content-follow-actions/></div>
-      {!agentOpen && id && record && !['sealed','completed'].includes(record.capture) && <CurrentDiscussion audioOnly={boot.providers.minutesMode === 'doubao-audio-only'} key={`discussion:${record.id}`} record={record} minutes={(record.liveMinutes || record.minutes) || null} job={currentMinutesJob(record)} modelReady={minutesAvailable(boot.providers,record.realtimeAudioConsent)}/>}
-      {!agentOpen && record && translationOpen && <TranslationPanel key={`translation:${record.id}`} record={record} ready={boot.providers.translation ?? minutesAvailable(boot.providers)} close={()=>setTranslationOpen(false)} configure={()=>{setTranslationOpen(false);setModal('settings');}} save={async target=>{const recordId=record.id;const saved=await api<RecordDetail>(`/records/${recordId}`,'PATCH',{translationTarget:target});setRecord(current=>current?.id===recordId && (current.translationRevision||0)<=(saved.translationRevision||0)?{...current,translationTarget:saved.translationTarget,translationRevision:saved.translationRevision}:current);}} inspect={segment=>cite({segmentId:segment.id,revision:segment.revision},record.segments,record.transcriptRevision)}/>}
+      {!agentOpen && id && record && !['sealed','completed'].includes(record.capture) && <Suspense fallback={<p role="status">正在加载讨论…</p>}><CurrentDiscussion audioOnly={boot.providers.minutesMode === 'doubao-audio-only'} key={`discussion:${record.id}`} record={record} minutes={(record.liveMinutes || record.minutes) || null} job={currentMinutesJob(record)} modelReady={minutesAvailable(boot.providers,record.realtimeAudioConsent)}/></Suspense>}
+      {!agentOpen && record && translationOpen && <Suspense fallback={<p role="status">正在加载翻译…</p>}><TranslationPanel key={`translation:${record.id}`} record={record} ready={boot.providers.translation ?? minutesAvailable(boot.providers)} close={()=>setTranslationOpen(false)} configure={()=>{setTranslationOpen(false);setModal('settings');}} save={async target=>{const recordId=record.id;const saved=await api<RecordDetail>(`/records/${recordId}`,'PATCH',{translationTarget:target});setRecord(current=>current?.id===recordId && (current.translationRevision||0)<=(saved.translationRevision||0)?{...current,translationTarget:saved.translationTarget,translationRevision:saved.translationRevision}:current);}} inspect={segment=>cite({segmentId:segment.id,revision:segment.revision},record.segments,record.transcriptRevision)}/></Suspense>}
     </main><input ref={fileInput} className="sr-only" type="file" accept="audio/*" aria-label="导入音频文件" onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void onImport(file); }}/>
       {meetingAutomation && <Toast key={meetingAutomation.key} message={meetingAutomation.message} persistent warning dismiss={meetingAutomation.cancel} action={{label:'取消联动',run:meetingAutomation.cancel}}/>}
       <Toast message={error || toast.message} error={Boolean(error)} messageKey={error || toast.key} dismiss={dismissToast}/>
@@ -468,7 +474,7 @@ function Workspace() {
 </Modal>}
     {modal === 'delete' && record && <Modal title="删除这条记录？" onClose={() => setModal(null)}><p>“{record.title}”将停止本机访问，旧处理任务失效，后台随后清理原音。公网加密链接不会自动撤销，请先在分享窗口撤销；否则仍可读取至到期。</p><div className="actions"><Button variant="danger" disabled={busy} onClick={async () => { const deletedId = id; if (await mutate(`/records/${id}`, 'DELETE')) { selectRecord(''); setModal(null); try { await clearRecordAudio(deletedId); } catch { setError('云端已禁访；本机音频缓冲清理失败，请在浏览器设置中清理此站点数据。'); } await loadList(); } }}>删除记录</Button><Button onClick={() => setModal(null)}>保留记录</Button></div></Modal>}
     {modal === 'import-text' && record && <Modal title="导入已有转录" onClose={() => setModal(null)} wide><form onSubmit={async e => { e.preventDefault(); const text = new FormData(e.currentTarget).get('text'); if (await mutate(`/records/${id}/import-text`, 'POST', { text })) setModal(null); }}><label>转录正文<textarea name="text" rows={12} required maxLength={100000} placeholder="按自然段粘贴已有转录。导入文本不会生成虚构的音频时间。"/></label><Button disabled={busy} variant="primary" type="submit">导入文字</Button></form></Modal>}
-    {modal === 'learning' && record && <LearningReview record={record} service={learningService} close={()=>setModal(null)}/>}
+    {modal === 'learning' && record && <Suspense fallback={<p role="status">正在加载学习评审…</p>}><LearningReview record={record} service={learningService} close={()=>setModal(null)}/></Suspense>}
     {modal === 'share' && record && <ShareDialog key={record.id} record={record} localAccount={localBackend} close={() => setModal(null)} notify={showToast}/>}
     {evidence && <CitationContext key={`${evidence.reference.segmentId}:${evidence.reference.revision}`} selection={evidence} close={() => setEvidence(null)}/>}
   </div>;

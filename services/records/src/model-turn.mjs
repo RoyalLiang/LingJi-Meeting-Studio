@@ -1,3 +1,4 @@
+import {readModelTurnResponse} from './model-turn-stream.mjs';
 import { normalizeConfig, configured } from './config.mjs';
 import { modelEndpoint } from './llm.mjs';
 import { modelProfile } from './model-profile.mjs';
@@ -37,18 +38,16 @@ export async function completeModelTurn(transcript, input, {jsonSchema, signal, 
   const tools=(transcript.tools || getCurrentTools(transcript.messages||[])).map(tool=>responses ? {type:'function',name:tool.name,description:tool.description,parameters:tool.parameters,strict:false} : {type:'function',function:{name:tool.name,description:tool.description,parameters:tool.parameters,strict:false}});
   const format=jsonSchema&&profile.strictOutput ? {type:'json_schema',name:'meeting_result',schema:jsonSchema,strict:true} : {type:'json_object'};
   const messages=messagesFor(transcript,responses), body=responses ? {model:env.LLM_MODEL,input:messages,store:false,text:{format},max_output_tokens:profile.maxOutputTokens} : {model:env.LLM_MODEL,messages,response_format:format.type==='json_schema'?{type:'json_schema',json_schema:{name:format.name,schema:format.schema,strict:true}}:format,max_completion_tokens:profile.maxOutputTokens};
-  if (tools.length) Object.assign(body,{tools,parallel_tool_calls:profile.parallelTools});
+  Object.assign(body,{stream:true,...(!responses?{stream_options:{include_usage:true}}:{})});
+ if (tools.length) Object.assign(body,{tools,parallel_tool_calls:profile.parallelTools});
   if (!['auto','default',undefined].includes(env.LLM_REASONING_EFFORT)) Object.assign(body,responses?{reasoning:{effort:env.LLM_REASONING_EFFORT}}:{reasoning_effort:env.LLM_REASONING_EFFORT});
   const deadline=AbortSignal.timeout(timeoutMs), requestSignal=signal?AbortSignal.any([signal,deadline]):deadline;
-  const started=Date.now(); await onRequest?.();
+  const started=Date.now();let reportedUsage={}; await onRequest?.();
   try {
     const response=await fetch(modelEndpoint(env.LLM_API_URL,env.LLM_PROTOCOL),{method:'POST',headers:{Authorization:`Bearer ${env.LLM_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify(body),signal:requestSignal});
-    // Bounded reads also protect the buffered native-tool path.
-    const reader=response.body?.getReader(), decoder=new TextDecoder();let source='',bytes=0;
-    if(reader) try { while(true){const next=await reader.read();if(next.done)break;bytes+=next.value.length;requireThat(bytes<=2000000,'llm_response_too_large',502);source+=decoder.decode(next.value,{stream:true});}source+=decoder.decode(); } finally {await reader.cancel().catch(()=>{});reader.releaseLock();}
-    let result;try{result=JSON.parse(source);}catch{throw new DomainError('invalid_llm_response',502);}
-    if(!response.ok) throw new DomainError(result?.error?.type==='budget_exceeded'||result?.error?.code==='budget_exceeded'?'provider_budget_exceeded':response.status===401?'provider_unauthorized':response.status===429?'provider_rate_limited':`provider_http_${response.status}`,502);
-    const usage=tokenUsage(result.usage);if(Object.keys(usage).length)await onUsage?.({...usage,model:env.LLM_MODEL,protocol:env.LLM_PROTOCOL});
+    const result=await readModelTurnResponse(response,responses,{onUsage:async raw=>{const next=tokenUsage(raw);if(Object.keys(next).length){reportedUsage={...reportedUsage,...next};await onUsage?.({...reportedUsage,model:env.LLM_MODEL,protocol:env.LLM_PROTOCOL});}}});
+  if(!response.ok) throw new DomainError(result?.error?.type==='budget_exceeded'||result?.error?.code==='budget_exceeded'?'provider_budget_exceeded':response.status===401?'provider_unauthorized':response.status===429?'provider_rate_limited':`provider_http_${response.status}`,502);
+    const usage={...reportedUsage,...tokenUsage(result.usage)};
     const continuation=responses?(result.output||[]).filter(item=>item.type==='reasoning').map(item=>({type:'thinking',thinking:'',thinkingSignature:JSON.stringify({protocol:'responses',item})})):typeof result.choices?.[0]?.message?.reasoning_content==='string'?[{type:'thinking',thinking:'',thinkingSignature:JSON.stringify({protocol:'chat-completions',reasoning_content:result.choices[0].message.reasoning_content})}]:[];
     requireThat(!responses||!result.status||result.status==='completed','llm_stream_incomplete',502);
     requireThat(responses||!['length','content_filter'].includes(result.choices?.[0]?.finish_reason),'llm_stream_incomplete',502);

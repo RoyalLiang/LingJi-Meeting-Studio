@@ -4,12 +4,25 @@
 #include <bcrypt.h>
 #include <algorithm>
 #include <cwchar>
+#include <cstring>
 
 namespace {
 constexpr COLORREF jade = RGB(39, 105, 82), ink = RGB(39, 61, 53), muted = RGB(113, 129, 119);
 HWND rootWindow = nullptr, folderEdit = nullptr, browseButton = nullptr, percentLabel = nullptr;
 HBITMAP background = nullptr;
-int px(int value) { return MulDiv(value, static_cast<int>(GetDpiForWindow(rootWindow)), 96); }
+UINT windowDpi(HWND window) {
+  using Query = UINT (WINAPI *)(HWND);
+  static const Query query = [] {
+    Query result = nullptr;
+    const auto address = GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetDpiForWindow");
+    static_assert(sizeof(result) == sizeof(address));
+    std::memcpy(&result, &address, sizeof(result));
+    return result;
+  }();
+  const UINT dpi = query ? query(window) : 96;
+  return dpi ? dpi : 96;
+}
+int px(int value) { return MulDiv(value, static_cast<int>(windowDpi(rootWindow)), 96); }
 void fill(HDC dc, RECT r, COLORREF color) {
   HBRUSH brush = CreateSolidBrush(color); FillRect(dc, &r, brush); DeleteObject(brush);
 }
@@ -181,13 +194,13 @@ INT_PTR CALLBACK retryDialog(HWND window, UINT message, WPARAM w, LPARAM l) {
   if (message == WM_INITDIALOG) {
     state = reinterpret_cast<RetryDialog*>(l); state->window = window;
     SetWindowLongPtrW(window,GWLP_USERDATA,reinterpret_cast<LONG_PTR>(state));
-    HWND owner = GetWindow(window,GW_OWNER); state->dpi = owner ? GetDpiForWindow(owner) : 96;
+    HWND owner = GetWindow(window,GW_OWNER); state->dpi = windowDpi(owner);
     if (!state->dpi) state->dpi = 96;
     RECT bounds{0,0,retryPx(*state,560),retryPx(*state,260)}, parent{};
     AdjustWindowRectEx(&bounds,WS_POPUP|WS_CAPTION|WS_SYSMENU|DS_MODALFRAME,FALSE,WS_EX_DLGMODALFRAME);
     GetWindowRect(owner,&parent);
     const int width = static_cast<int>(bounds.right-bounds.left), height = static_cast<int>(bounds.bottom-bounds.top);
-    MONITORINFO monitor{sizeof(monitor)}; GetMonitorInfoW(MonitorFromWindow(owner,MONITOR_DEFAULTTONEAREST),&monitor);
+    MONITORINFO monitor{}; monitor.cbSize=sizeof(monitor); GetMonitorInfoW(MonitorFromWindow(owner,MONITOR_DEFAULTTONEAREST),&monitor);
     const int x = std::clamp(static_cast<int>(parent.left+(parent.right-parent.left-width)/2),static_cast<int>(monitor.rcWork.left),static_cast<int>(std::max(monitor.rcWork.left,monitor.rcWork.right-width)));
     const int y = std::clamp(static_cast<int>(parent.top+(parent.bottom-parent.top-height)/2),static_cast<int>(monitor.rcWork.top),static_cast<int>(std::max(monitor.rcWork.top,monitor.rcWork.bottom-height)));
     SetWindowPos(window,nullptr,x,y,width,height,SWP_NOZORDER);

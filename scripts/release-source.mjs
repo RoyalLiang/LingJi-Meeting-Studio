@@ -5,7 +5,7 @@ import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import {dirname,join} from 'node:path';
 import {parseBuiltinVocabulary} from '../services/records/src/builtin-vocabulary.mjs';
 
-const paths=['package.json','package-lock.json','apps/web','apps/desktop/package.json','apps/desktop/src-tauri','apps/desktop/assets','scripts','tools/neohorse','services/records/src','packages/records/src','docs/releases'];
+const paths=['package.json','package-lock.json','apps/web','apps/desktop/package.json','apps/desktop/src-tauri','apps/desktop/assets','scripts','tools/neohorse','tools/release','services/records/src','packages/records/src','docs/releases'];
 export const releaseHash=bytes=>createHash('sha256').update(bytes).digest('hex');
 export async function readReleaseSource(root,ref,path){
   if(ref){assert.match(ref,/^[a-f0-9]{40}$/);return execFileSync('git',['show',`${ref}:${path}`],{cwd:root,maxBuffer:8*1024*1024});}

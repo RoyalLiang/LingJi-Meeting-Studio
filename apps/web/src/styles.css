@@ -1029,6 +1029,15 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 .transcript-disclosure.is-toolbar>summary { display:none; }
 .settings-modal .section-title h3 { margin:0; color:var(--ink-1); font-size:15px; font-weight:600; }
 .settings-modal .client-update-status { margin:6px 0 0; }
+.client-update-policy { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; flex-wrap:wrap; }
+.client-update-policy .actions { flex-wrap:nowrap; }
+.client-update-policy .actions .button { min-width:116px; }
+.client-update-status { min-height:58px; overflow-wrap:anywhere; }
+.client-update-activity { display:grid; grid-template-columns:minmax(0,1fr) minmax(180px,40%); align-items:center; gap:16px; padding:12px 16px; }
+.settings-modal .client-update-activity .client-update-status { margin:0; }
+.client-update-activity .update-download { margin:0; }
+@media(max-width:480px) { .client-update-activity { grid-template-columns:minmax(0,1fr); gap:8px; } }
+.update-download[hidden] { display:block; visibility:hidden; }
 .settings-modal .update-notes-trigger.button { margin-top:8px; min-height:24px; padding:2px 0; border:0; background:transparent; color:var(--ink-2); font-size:12px; }
 .update-notes-modal .modal-body { overflow:auto; }
 .update-notes-list { margin:0; padding-left:18px; line-height:1.8; font-size:13px; }

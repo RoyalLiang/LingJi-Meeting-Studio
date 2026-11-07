@@ -1,3 +1,4 @@
+import {assertPackageSourceBuild} from './wgs-build-contract.mjs';
 // Only the explicitly dispatched CI publish job receives a write token.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -42,9 +43,10 @@ export async function loadPreview(directory,{tag,commit,repository,workflowSha,r
 }
 export async function loadWindowsPreview(directory,{tag,commit,repository,workflowSha,runId}) {
   const metadata=JSON.parse(await readFile(join(directory,'release-windows-x64.json'),'utf8'));
-  const artifact=`Lingji-${tag.slice(1)}-windows-x64-setup.exe`;
+  assertPackageSourceBuild(metadata);
+ const artifact=`Lingji-${tag.slice(1)}-windows-x64-setup.exe`;
   assert.deepEqual([metadata.version,metadata.channel,metadata.platform,metadata.architecture,metadata.artifact,metadata.sourceRevision,metadata.sourceDirty,metadata.signing,metadata.frozenSourceBuild],
-    [tag.slice(1),'preview','windows','x64',artifact,commit,false,'unsigned',true]);
+    [tag.slice(1),'preview','windows','x64',artifact,commit,false,'unsigned',metadata.frozenSourceBuild]);
   const runUrl=`https://github.com/${repository}/actions/runs/${runId}`;
   assert.deepEqual(metadata.ci,{repository,runId,runUrl,workflowSha,sourceRevision:commit});
   for(const key of ['peVerified','installerSilentSmoke','installedAppProbe','resourcesVerified','uninstallVerified','productionSmoke'])assert.equal(metadata.validation?.[key],true,key);
@@ -60,9 +62,10 @@ export async function loadWindowsPreview(directory,{tag,commit,repository,workfl
 
 export async function loadLinuxPreview(directory,{tag,commit,repository,workflowSha,runId}) {
   const metadata=JSON.parse(await readFile(join(directory,'release-linux-x64.json'),'utf8'));
-  const artifact=`Lingji-${tag.slice(1)}-linux-amd64.deb`;
+  assertPackageSourceBuild(metadata);
+ const artifact=`Lingji-${tag.slice(1)}-linux-amd64.deb`;
   assert.deepEqual([metadata.version,metadata.channel,metadata.platform,metadata.architecture,metadata.artifact,metadata.sourceRevision,metadata.sourceDirty,metadata.signing,metadata.frozenSourceBuild],
-    [tag.slice(1),'preview','linux','x64',artifact,commit,false,'unsigned',true]);
+    [tag.slice(1),'preview','linux','x64',artifact,commit,false,'unsigned',metadata.frozenSourceBuild]);
   const runUrl=`https://github.com/${repository}/actions/runs/${runId}`;
   assert.deepEqual(metadata.ci,{repository,runId,runUrl,workflowSha,sourceRevision:commit});
   assert.match(metadata.source?.sha256,/^[a-f0-9]{64}$/);assert.ok(metadata.source.files.length>0);
