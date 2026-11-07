@@ -12,7 +12,7 @@ async function component(file,name,request,statusFeed=async()=>({enabled:true,re
   const code=(await transform(source,{loader:'tsx',jsx:'automatic',format:'cjs'})).code;
   const slots=[],effects=[];let cursor=0,initial=true;
   const jsx=(type,props)=>({type,props}),exports={};
-  const react={useState:value=>{const i=cursor++;if(!(i in slots))slots[i]=typeof value==='function'?value():value;return [slots[i],value=>{slots[i]=typeof value==='function'?value(slots[i]):value;}];},useRef:value=>{const i=cursor++;return slots[i]??=( {current:value});},useCallback:fn=>fn,useMemo:fn=>fn(),useEffect:fn=>{if(initial)effects.push(fn);}};
+  const react={useId:()=>`field-${cursor++}`,useState:value=>{const i=cursor++;if(!(i in slots))slots[i]=typeof value==='function'?value():value;return [slots[i],value=>{slots[i]=typeof value==='function'?value(slots[i]):value;}];},useRef:value=>{const i=cursor++;return slots[i]??=( {current:value});},useCallback:fn=>fn,useMemo:fn=>fn(),useEffect:fn=>{if(initial)effects.push(fn);}};
   const sandbox={exports,module:{exports},Intl,Date,Event,document:{visibilityState:'visible'},window:{dispatchEvent(){}},AbortController,setInterval:()=>1,clearInterval(){},require:id=>id==='react'?react:id==='react-dom'?{createPortal:node=>node}:id==='react/jsx-runtime'?{jsx,jsxs:jsx}:id==='../api'?{api:request,messageOf:error=>error.message,ApiError:Error,getAuthGeneration:()=>1}:id==='../git-sync-feed'?{invalidateGitSyncStatus(){},gitSyncStatus:statusFeed}:new Proxy({},{get:(_target,key)=>String(key)})};
   vm.runInNewContext(code,sandbox);
   const render=props=>{cursor=0;const tree=sandbox.module.exports[name](props);if(initial){initial=false;effects.splice(0).forEach(fn=>fn());}return tree;};
@@ -21,6 +21,15 @@ async function component(file,name,request,statusFeed=async()=>({enabled:true,re
 function nodes(tree){if(!tree||typeof tree!=='object')return [];return [tree,...[tree.props?.children].flat(Infinity).flatMap(nodes)];}
 const words=node=>typeof node==='string'?node:!node||typeof node!=='object'?'':[node.props?.children].flat(Infinity).map(words).join('');
 const checkbox=(tree,label)=>nodes(nodes(tree).find(n=>n.type==='label'&&words(n).includes(label))).find(n=>n.type==='input');
+
+test('Git task displays recording wait and reading progress instead of an empty running message',async()=>{
+  const render=await component('GitAutomation.tsx','GitTask',async()=>({}));
+  const job={id:'synthetic',recordId:'source',title:'合成任务',status:'queued',phase:'organize',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),activity:{state:'queued',reason:'recording',startedAt:Date.now()},progress:{read:0,total:1,pagesRead:0,totalPages:3}};
+  let text=words(render({job,close(){},changed(){}}));
+  assert.match(text,/正在录音，后台整理将在停止采集后继续/);assert.match(text,/已阅读 0\/3 页会议材料/);
+  text=words(render({job:{...job,status:'running',activity:{state:'running',startedAt:Date.now()},progress:{...job.progress,pagesRead:1}},close(){},changed(){}}));
+  assert.match(text,/正在请求模型，用量将在响应后更新/);assert.match(text,/已阅读 1\/3 页会议材料/);
+});
 
 test('Git future consent can be reselected after editing a scope-affecting option',async()=>{
   const render=await component('GitAutomation.tsx','GitAutomation',async path=>path==='/workspaces'?{workspaces:[]}:{configured:true,enabled:true,root:'https://git.example.test/project-hub',prompt:'整理已确认内容',skillIds:['meeting-review'],projects:[],recent:[],mode:'mr'});

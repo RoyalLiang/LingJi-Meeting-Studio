@@ -34,13 +34,15 @@ export function meetingTasks(repo, {maxConcurrent=2, maxPerOwner=2, now=Date.now
     try {
       if(!queue.length)return;
       for(const item of [...queue])if(item.sourceIds?.length)try{await guard({kind:'meeting-task',owner:item.owner,sourceIds:item.sourceIds});}catch(error){const index=queue.indexOf(item);if(index>=0){queue.splice(index,1);item.reject(error);}}
-      if(await repo.recordingActive?.())return;
+      const reportWait=async(item,reason)=>{if(item.reason===reason)return;item.reason=reason;try{await item.onWait?.(reason);}catch(error){const index=queue.indexOf(item);if(index>=0){queue.splice(index,1);item.reject(error);}}};
+      if(await repo.recordingActive?.()){for(const item of [...queue])await reportWait(item,'recording');return;}
       for(let i=0;i<queue.length&&active.size<maxConcurrent;){
         const item=queue[i];if([...active.values()].filter(value=>value.owner===item.owner).length>=maxPerOwner){i++;continue;}
         queue.splice(i,1);if(item.signal?.aborted){item.reject(item.signal.reason);continue;}
         const token=Symbol();active.set(token,item);
         item.resolve(()=>{active.delete(token);void pump().catch(()=>{});});
       }
+      for(const item of [...queue])await reportWait(item,'capacity');
     }finally{pumping=false;}
   }
   const timer=setInterval(()=>void pump().catch(()=>{}),250);timer.unref();
@@ -52,10 +54,10 @@ export function meetingTasks(repo, {maxConcurrent=2, maxPerOwner=2, now=Date.now
       const previous=adapters.get(kind);adapters.set(kind,adapter);
       return ()=>{if(adapters.get(kind)===adapter){if(previous)adapters.set(kind,previous);else adapters.delete(kind);}};
     },
-    async capacity(owner,signal,sourceIds){
+    async capacity(owner,signal,sourceIds,onWait){
       requireThat(!closing,'agent_runtime_closed',503);signal?.throwIfAborted();
       return new Promise((resolve,reject)=>{
-        const item={owner,signal,sourceIds,resolve:value=>{signal?.removeEventListener('abort',abort);resolve(value);},reject:error=>{signal?.removeEventListener('abort',abort);reject(error);}};
+        const item={owner,signal,sourceIds,onWait,resolve:value=>{signal?.removeEventListener('abort',abort);resolve(value);},reject:error=>{signal?.removeEventListener('abort',abort);reject(error);}};
         const abort=()=>{const index=queue.indexOf(item);if(index>=0)queue.splice(index,1);item.reject(signal.reason);};
         signal?.addEventListener('abort',abort,{once:true});queue.push(item);void pump().catch(reject);
       });
@@ -107,9 +109,10 @@ export function meetingTasks(repo, {maxConcurrent=2, maxPerOwner=2, now=Date.now
     },
     async diagnostics(owner,id){
       const task=await kernel.inspect(owner,id);
+      const activity=task.activity?Object.fromEntries(['state','reason','startedAt'].filter(key=>task.activity[key]!==undefined).map(key=>[key,task.activity[key]])):undefined;
       // Allowlist only. Never export prompts, titles, questions, source text,
       // tool arguments/results, remote URLs or provider error bodies.
-      return {schema:'lingji.task-diagnostic.v1',taskKind:task.taskKind,status:task.status,phase:task.phase,error:task.error,progress:task.progress,ledger:task.ledger,timeline:(task.timeline||[]).map(({kind,startedAt,elapsedMs,usage,usageReported,pricingKnown,name})=>({kind,startedAt,elapsedMs,usage,usageReported,pricingKnown,name})),terminal:terminal.has(task.status),exportedAt:new Date(now()).toISOString()};
+      return {schema:'lingji.task-diagnostic.v1',taskKind:task.taskKind,status:task.status,phase:task.phase,error:task.error,progress:task.progress,...(activity?{activity}:{}),ledger:task.ledger,timeline:(task.timeline||[]).map(({kind,startedAt,elapsedMs,usage,usageReported,pricingKnown,name})=>({kind,startedAt,elapsedMs,usage,usageReported,pricingKnown,name})),terminal:terminal.has(task.status),exportedAt:new Date(now()).toISOString()};
     },
     async close(){closing=true;clearInterval(timer);for(const item of queue.splice(0))item.reject(new DomainError('agent_runtime_closed',503));await Promise.allSettled([...handles].map(async([handle,context])=>handle.close(context)));handles.clear();kernels.delete(repo);}
   };

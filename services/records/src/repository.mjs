@@ -159,8 +159,8 @@ export async function createRepository(options = {}) {
       return `${db.prepare('PRAGMA data_version').get().data_version}:${db.prepare('SELECT total_changes() AS changes').get().changes}`;
     },
     async recordingActive() {
-      if (pool) return Boolean((await pool.query("SELECT 1 FROM record_list_projection WHERE COALESCE((data->>'deleted')::boolean,false)=false AND data->'summary'->>'capture' IN ('recording','sealed') AND (data->>'deleteAt')::timestamptz>now() LIMIT 1")).rows.length);
-      return Boolean(db.prepare("SELECT 1 FROM record_list_projection WHERE COALESCE(json_extract(data,'$.deleted'),0)=0 AND json_extract(data,'$.summary.capture') IN ('recording','sealed') AND json_extract(data,'$.deleteAt')>? LIMIT 1").get(new Date().toISOString()));
+      if (pool) return Boolean((await pool.query("SELECT 1 FROM record_list_projection WHERE COALESCE((data->>'deleted')::boolean,false)=false AND data->'summary'->>'capture'='recording' AND (data->>'deleteAt')::timestamptz>now() LIMIT 1")).rows.length);
+      return Boolean(db.prepare("SELECT 1 FROM record_list_projection WHERE COALESCE(json_extract(data,'$.deleted'),0)=0 AND json_extract(data,'$.summary.capture')='recording' AND json_extract(data,'$.deleteAt')>? LIMIT 1").get(new Date().toISOString()));
     },
     root, backend: pool ? 'postgres' : 'sqlite', audioBackend: objects ? 's3' : 'filesystem',
     async listMetadata(kind, owner, fields, {recordId, status, limit=200, before}={}) {
