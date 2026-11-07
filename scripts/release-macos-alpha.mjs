@@ -57,6 +57,9 @@ try {
   const frozen = join(scratch, 'source');
   const revision = sourceRef || capture('git', ['rev-parse', 'HEAD']);
   const source = await sourceSnapshot(frozen);
+  const fixtureCache=join(root,'.agent-runtime/runtimes/asr-fixtures');
+  const {prepareAsrFixtures}=await import(pathToFileURL(join(frozen,'scripts/asr-test-fixtures.mjs')).href);
+  await prepareAsrFixtures(fixtureCache);
   assert.equal((await sourceSnapshot()).sha256, source.sha256, 'Inputs changed while taking the source snapshot; retry.');
   const sourceStatus = sourceRef ? '' : capture('git', ['status', '--porcelain=v1', '--', ...source.files.map(file => file.path)]);
   // Reuse installed dependencies, but compile frozen application sources in an isolated Cargo target.
@@ -129,7 +132,7 @@ try {
     NATIVE_CLIENT_EXECUTABLE: binary, TTS_VERIFY_BUNDLED_ASR: '1',
   }, frozen);
   const checksum = createHash('sha256').update(await readFile(dmg)).digest('hex');
-  await run(join(installedApp, 'Contents/Resources/runtime/node'), ['scripts/test-bundled-asr.mjs', join(installedApp, 'Contents/Resources/client-backend'), join(release, 'bundled-asr-macos-arm64.json')], {}, frozen);
+  await run(join(installedApp, 'Contents/Resources/runtime/node'), ['scripts/test-bundled-asr.mjs', join(installedApp, 'Contents/Resources/client-backend'), join(release, 'bundled-asr-macos-arm64.json')], {TTS_ASR_FIXTURE_CACHE:fixtureCache}, frozen);
   await writeFile(join(release, 'SHA256SUMS.txt'), `${checksum}  ${dmgName}\n`);
   await writeFile(join(release, 'release.json'), JSON.stringify({
     bundledAsr: JSON.parse(await readFile(join(release, 'bundled-asr-macos-arm64.json'))),

@@ -96,6 +96,12 @@ jobs:
         run: test "$(uname -m)" = arm64 && node -e "if(process.arch!=='arm64')process.exit(1)"
       - run: rustup toolchain install 1.92.0 --profile minimal && rustup default 1.92.0
       - run: npm ci
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: .agent-runtime/runtimes
+          key: lingji-public-runtimes-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/prepare-client-backend.mjs', 'services/records/src/local-asr-resources.json', 'scripts/asr-test-fixtures.mjs') }}
+      - name: Prepare pinned public ASR samples before package verification
+        run: node scripts/asr-test-fixtures.mjs
       - name: Materialize private built-in vocabulary
         env:
           TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART1: ${{ (needs.verify.outputs.vocabulary_version == '20261105.2' && secrets.TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART1) || (needs.verify.outputs.vocabulary_version == '20261105.3' && secrets.TTS_BUILTIN_VOCABULARY_20261105_3_PART1) || (needs.verify.outputs.vocabulary_version == '20261106.4' && secrets.TTS_BUILTIN_VOCABULARY_20261106_4_PART1) }}
@@ -163,6 +169,12 @@ jobs:
           node-version: '24.21.0'
       - run: rustup toolchain install 1.92.0 --profile minimal; rustup default 1.92.0
       - run: npm ci
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: .agent-runtime/runtimes
+          key: lingji-public-runtimes-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/prepare-client-backend.mjs', 'services/records/src/local-asr-resources.json', 'scripts/asr-test-fixtures.mjs') }}
+      - name: Prepare pinned public ASR samples before package verification
+        run: node scripts/asr-test-fixtures.mjs
       - name: Materialize private built-in vocabulary
         env:
           TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART1: ${{ (needs.verify.outputs.vocabulary_version == '20261105.2' && secrets.TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART1) || (needs.verify.outputs.vocabulary_version == '20261105.3' && secrets.TTS_BUILTIN_VOCABULARY_20261105_3_PART1) || (needs.verify.outputs.vocabulary_version == '20261106.4' && secrets.TTS_BUILTIN_VOCABULARY_20261106_4_PART1) }}
@@ -330,6 +342,12 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev pulseaudio pulseaudio-utils xvfb xauth
       - run: rustup toolchain install 1.92.0 --profile minimal && rustup default 1.92.0
       - run: npm ci
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: .agent-runtime/runtimes
+          key: lingji-public-runtimes-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/prepare-client-backend.mjs', 'services/records/src/local-asr-resources.json', 'scripts/asr-test-fixtures.mjs') }}
+      - name: Prepare pinned public ASR samples before package verification
+        run: node scripts/asr-test-fixtures.mjs
       - name: Materialize private built-in vocabulary
         env:
           TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART1: ${{ (needs.verify.outputs.vocabulary_version == '20261105.2' && secrets.TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART1) || (needs.verify.outputs.vocabulary_version == '20261105.3' && secrets.TTS_BUILTIN_VOCABULARY_20261105_3_PART1) || (needs.verify.outputs.vocabulary_version == '20261106.4' && secrets.TTS_BUILTIN_VOCABULARY_20261106_4_PART1) }}
@@ -373,6 +391,12 @@ jobs:
           node-version: '24.21.0'
           cache: npm
       - run: npm ci
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: .agent-runtime/runtimes
+          key: lingji-public-runtimes-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/prepare-client-backend.mjs', 'services/records/src/local-asr-resources.json', 'scripts/asr-test-fixtures.mjs') }}
+      - name: Prepare pinned public ASR samples before package verification
+        run: node scripts/asr-test-fixtures.mjs
       - run: sudo apt-get update && sudo apt-get install -y xvfb xauth
       - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
         with:

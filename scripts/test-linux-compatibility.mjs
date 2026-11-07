@@ -1,3 +1,4 @@
+import {prepareAsrFixtures} from './asr-test-fixtures.mjs';
 import assert from 'node:assert/strict';
 import {execFileSync,spawn} from 'node:child_process';
 import {mkdir,readFile,readdir,writeFile} from 'node:fs/promises';
@@ -8,6 +9,7 @@ assert.equal(process.platform,'linux');assert.equal(process.arch,'x64');
 assert.equal(process.env.GITHUB_ACTIONS,'true','Installation tests require a disposable runner');
 assert.equal(process.env.RUNNER_ENVIRONMENT,'github-hosted','Never replace a developer installation');
 assert.match(await readFile('/etc/os-release','utf8'),/^VERSION_ID="24\.04"$/m);
+const fixtureCache=resolve('.agent-runtime/runtimes/asr-fixtures');await prepareAsrFixtures(fixtureCache);
 const directory=resolve(process.argv[2]),output=resolve(process.argv[3]),metadata=JSON.parse(await readFile(join(directory,'release-linux-x64.json'),'utf8'));
 await mkdir(dirname(output),{recursive:true});
 const files=(await readdir(directory)).filter(n=>n.endsWith('.deb'));assert.equal(files.length,1);
@@ -22,6 +24,6 @@ try{
   const packageFiles=capture('dpkg-query',['-L',packageName]).split('\n'),binary=packageFiles.find(p=>p==='/usr/bin/tts-client'),node=packageFiles.find(p=>p.endsWith('/runtime/node'));assert.ok(binary&&node);
   const backend=join(dirname(dirname(node)),'client-backend');
   await run('xvfb-run',['-a',process.execPath,'scripts/test-standalone-package.mjs',output],{NATIVE_CLIENT_EXECUTABLE:binary,TTS_VERIFY_BUNDLED_ASR:'1'});
-  await run(node,['scripts/test-bundled-asr.mjs',backend,output.replace(/\.json$/,'.asr.json')]);
+  await run(node,['scripts/test-bundled-asr.mjs',backend,output.replace(/\.json$/,'.asr.json')],{TTS_ASR_FIXTURE_CACHE:fixtureCache});
   const result=JSON.parse(await readFile(output,'utf8'));result.ubuntuCompatibility={system:'24.04',builtOn:'22.04',packageSha256:metadata.sha256,sourceRevision:metadata.sourceRevision};await writeFile(output,JSON.stringify(result,null,2)+'\n');
 }finally{if(installed)await run('sudo',['apt-get','remove','-y',packageName]);}

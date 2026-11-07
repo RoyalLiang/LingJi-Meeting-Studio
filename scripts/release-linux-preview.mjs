@@ -3,7 +3,7 @@ import {execFileSync,spawn} from 'node:child_process';
 import {access,copyFile,mkdir,mkdtemp,readFile,readdir,rename,rm,symlink,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {dirname,join,resolve} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 import {readReleaseSource,snapshotReleaseSource,releaseHash} from './release-source.mjs';
 
 assert.equal(process.platform,'linux','DEB packaging requires Linux');
@@ -31,6 +31,9 @@ let installed;
 try{
   const frozen=join(scratch,'source');
   const source=await snapshotReleaseSource({root,ref:sourceRevision,destination:frozen});
+  const fixtureCache=join(root,'.agent-runtime/runtimes/asr-fixtures');
+  const {prepareAsrFixtures}=await import(pathToFileURL(join(frozen,'scripts/asr-test-fixtures.mjs')).href);
+  await prepareAsrFixtures(fixtureCache);
   await symlink(join(root,'node_modules'),join(frozen,'node_modules'));
   for(const workspace of ['apps/web','apps/desktop']){
     const modules=join(root,workspace,'node_modules');
@@ -73,7 +76,7 @@ try{
  const glibcMaximum=glibc.sort((a,b)=>b[0]-a[0]||b[1]-a[1])[0].join('.');
   assert.ok(files.some(file=>file.endsWith('.desktop')));
   await run('xvfb-run',['-a',process.execPath,'scripts/test-standalone-package.mjs',join(stage,'package-smoke-linux-x64.json')],frozen,{NATIVE_CLIENT_EXECUTABLE:binary,TTS_VERIFY_BUNDLED_ASR:'1'});
-  await run(node,['scripts/test-bundled-asr.mjs',backend,join(stage,'bundled-asr-linux-x64.json')],frozen);
+  await run(node,['scripts/test-bundled-asr.mjs',backend,join(stage,'bundled-asr-linux-x64.json')],frozen,{TTS_ASR_FIXTURE_CACHE:fixtureCache});
   const bundledAsr=JSON.parse(await readFile(join(stage,'bundled-asr-linux-x64.json')));assert.equal(bundledAsr.nativeInference,true);
   await run('sudo',['apt-get','remove','-y',packageName]);installed=null;
   await assert.rejects(access(binary),{code:'ENOENT'},'Uninstall left the executable installed');

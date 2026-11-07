@@ -3,7 +3,7 @@ import {execFileSync,spawn} from 'node:child_process';
 import {access,copyFile,mkdir,mkdtemp,readFile,readdir,rename,rm,symlink,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {dirname,join,resolve} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 import {readReleaseSource,snapshotReleaseSource,releaseHash} from './release-source.mjs';
 
 assert.equal(process.platform,'win32','Windows packaging requires Windows CI or a Windows development host');
@@ -33,6 +33,9 @@ async function run(command,args,cwd,env={}){
 let buildFailure;
 try{
  const frozen=join(scratch,'source');const source=await snapshotReleaseSource({root,ref:sourceRevision,destination:frozen});
+  const fixtureCache=join(root,'.agent-runtime/runtimes/asr-fixtures');
+  const {prepareAsrFixtures}=await import(pathToFileURL(join(frozen,'scripts/asr-test-fixtures.mjs')).href);
+  await prepareAsrFixtures(fixtureCache);
  assert.equal((await snapshotReleaseSource({root,ref:sourceRevision})).sha256,source.sha256);
  await symlink(join(root,'node_modules'),join(frozen,'node_modules'),'junction');
  for(const workspace of ['apps/web','apps/desktop']){
@@ -54,7 +57,7 @@ try{
  assert.equal(bytes.readUInt16LE(bytes.readUInt32LE(0x3c)+4),0x14c,'NSIS bootstrap is a PE32 executable');
  console.log('Windows packaging: Verify silent installation');
  const installerSmoke=join(stage,'installer-smoke.json');
- await run('pwsh.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',join(frozen,'scripts/test-windows-installer.ps1'),'-Installer',join(stage,artifact),'-Root',join(scratch,'installation'),'-Output',installerSmoke,'-ProbeScript',join(frozen,'scripts/test-standalone-package.mjs'),'-SourceRoot',frozen],frozen);
+ await run('pwsh.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',join(frozen,'scripts/test-windows-installer.ps1'),'-Installer',join(stage,artifact),'-Root',join(scratch,'installation'),'-Output',installerSmoke,'-ProbeScript',join(frozen,'scripts/test-standalone-package.mjs'),'-SourceRoot',frozen],frozen,{TTS_ASR_FIXTURE_CACHE:fixtureCache});
  const install=JSON.parse(await readFile(installerSmoke));
  assert.equal(install.installed,true);assert.equal(install.uninstalled,true);assert.equal(install.resourcesVerified,true);
  const smokePath=join(stage,'package-smoke-windows-x64.json');

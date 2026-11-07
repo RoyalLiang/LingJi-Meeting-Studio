@@ -12,18 +12,26 @@ const lock = JSON.parse(await readFile(new URL('../services/records/src/local-as
 async function digest(path, algorithm = 'sha256', encoding = 'hex') {
   const hash = createHash(algorithm); for await (const bytes of createReadStream(path)) hash.update(bytes); return hash.digest(encoding);
 }
-async function download(url, file, algorithm, expected, encoding = 'hex') {
+export async function downloadPinned(url, file, algorithm, expected, encoding = 'hex', fetcher = fetch) {
   try { if (await digest(file, algorithm, encoding) === expected) return file; } catch (error) { if (error.code !== 'ENOENT') throw error; }
   await mkdir(dirname(file), { recursive: true });
-  const temporary = `${file}.${randomUUID()}.tmp`;
-  try {
-    const response = await fetch(url, { signal: AbortSignal.timeout(300000) });
-    assert.ok(response.ok && response.body, `Local ASR resource download failed: ${response.status}`);
-    await pipeline(Readable.fromWeb(response.body), createWriteStream(temporary, { flags: 'wx' }));
-    assert.equal(await digest(temporary, algorithm, encoding), expected, `Local ASR resource digest mismatch: ${url}`);
-    await rename(temporary, file);
-  } finally { await rm(temporary, { force: true }); }
-  return file;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const temporary = `${file}.${randomUUID()}.tmp`;
+    try {
+      const response = await fetcher(url, { signal: AbortSignal.timeout(300000) });
+      if (!response.ok) { const error = new Error(`Local ASR resource download failed: ${response.status}`); error.status = response.status; throw error; }
+      assert.ok(response.body, 'Local ASR resource response has no body');
+      await pipeline(Readable.fromWeb(response.body), createWriteStream(temporary, { flags: 'wx' }));
+      assert.equal(await digest(temporary, algorithm, encoding), expected, `Local ASR resource digest mismatch: ${url}`);
+      await rename(temporary, file);
+      return file;
+    } catch (error) {
+      const code = error.cause?.code || error.code || '';
+      const transient = error instanceof TypeError || ['AbortError', 'TimeoutError'].includes(error.name) || error.status === 408 || error.status === 429 || error.status >= 500 || /^(ECONN|EAI_|ETIMEDOUT|UND_ERR)/.test(code);
+      if (!transient || attempt === 2) throw error;
+      await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+    } finally { await rm(temporary, { force: true }); }
+  }
 }
 async function filesAt(root, prefix = '') {
   const files = [];
@@ -42,7 +50,7 @@ export async function prepareLocalAsr({ destination, cacheRoot, platform = proce
   try {
     for (const pkg of [lock.packages.common, lock.packages[target]]) {
       const [algorithm, expected] = pkg.integrity.split('-');
-      const archive = await download(pkg.url, join(cacheRoot, `${pkg.name}-${pkg.version}.tgz`), algorithm, expected, 'base64');
+      const archive = await downloadPinned(pkg.url, join(cacheRoot, `${pkg.name}-${pkg.version}.tgz`), algorithm, expected, 'base64');
       const extracted = join(stage, 'node_modules', pkg.name);
       const paths = execFileSync('tar', ['-tzf', archive], { encoding: 'utf8' }).trim().split(/\r?\n/);
       assert.ok(paths.length < 1000 && paths.every(path => path.startsWith('package/') && !path.split('/').includes('..') && !path.includes('\\')));
@@ -51,7 +59,7 @@ export async function prepareLocalAsr({ destination, cacheRoot, platform = proce
       assert.equal(JSON.parse(await readFile(join(extracted, 'package.json'), 'utf8')).version, pkg.version);
     }
     for (const resource of lock.files) {
-      const cached = await download(resource.url, join(cacheRoot, resource.sha256), 'sha256', resource.sha256);
+      const cached = await downloadPinned(resource.url, join(cacheRoot, resource.sha256), 'sha256', resource.sha256);
       assert.equal((await stat(cached)).size, resource.bytes);
       await mkdir(dirname(join(stage, resource.path)), { recursive: true });
       await cp(cached, join(stage, resource.path));
