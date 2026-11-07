@@ -19,6 +19,7 @@ const ruleId=owner=>`git-sync-rule:${digest(owner)}`;
 const now=()=>new Date().toISOString();
 const terminal=outcome=>({status:'terminal',outcome});
 const safeCode=error=>/^(?:git_[a-z_]+|external_write_(?:unknown|conflict)|remote_[a-z_]+|minutes_not_configured|extension_[a-z_]+|mcp_[a-z_]+|agent_[a-z_]+|invalid_agent_output|invalid_llm_response|provider_(?:[a-z_]+|http_[45]\d{2})|llm_[a-z_]+)$/.test(error?.code||'')?error.code:'git_sync_failed';
+const recoverable=code=>/^(?:provider_http_50[234]|llm_(?:timeout|connection_failed|stream_(?:failed|incomplete|interrupted))|invalid_agent_output)$/.test(code||'');
 const inline=value=>String(value).replace(/[<>]/g,c=>c==='<'?'&lt;':'&gt;').replace(/([\\`*_{}[\]#|])/g,'\\$1');
 const modelHash=config=>digest(JSON.stringify([config.LLM_MODEL||'',config.LLM_API_URL||'',config.LLM_PROTOCOL||'',config.LLM_REASONING_EFFORT||'']));
 const publicRule=rule=>rule?{configured:true,enabled:rule.enabled,root:rule.root,group:rule.group,projects:rule.projects,prompt:rule.prompt,skillId:rule.scope.skill.id,skillVersion:rule.scope.skill.version,skillIds:(rule.scope.skills||[rule.scope.skill]).map(s=>s.id),skillVersions:Object.fromEntries((rule.scope.skills||[rule.scope.skill]).map(s=>[s.id,s.version])),pluginIds:rule.scope.plugins.map(p=>p.id),pluginVersions:Object.fromEntries(rule.scope.plugins.map(p=>[p.id,p.version])),mappings:rule.mappings,aliases:rule.aliases,directory:rule.directory,mode:rule.mode,timezone:rule.timezone,includeNotes:rule.includeNotes,includeEvidence:rule.includeEvidence,hasToken:Boolean(rule.credentials),generation:rule.generation}:{configured:false,enabled:false};
@@ -55,10 +56,11 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
     if(job.agentId&&(detail||['queued','running','waiting'].includes(job.status))){
       const child=await agent.get(job.owner,job.agentId,{summary:!detail});
       const visible=!child.stale&&child.status!=='blocked',running=['queued','running','waiting'].includes(job.status),interaction=visible&&child.status!=='cancelled'&&running&&(child.interaction||(job.interaction?.kind==='continuation'?job.interaction:undefined));
-      job={...job,...(detail&&visible?{timeline:child.timeline,ledger:child.ledger,progress:child.progress,activity:child.activity}:{}),...(visible&&running&&job.phase==='organize'&&child.status==='queued'?{status:'queued'}:{}),...(interaction?{status:'waiting',interaction}:{interaction:undefined}),preview:visible?child.preview:undefined,...(detail?{conversation:visible?conversation(job.feedback||[],child.conversation||[]):[]}:{} )};
+      job={...job,...(job.status==='failed'&&job.error==='agent_failed'&&visible&&child.status==='failed'&&child.error?{error:child.error}:{}),...(detail&&visible?{timeline:child.timeline,ledger:child.ledger,progress:child.progress,activity:child.activity}:{}),...(visible&&running&&job.phase==='organize'&&child.status==='queued'?{status:'queued'}:{}),...(interaction?{status:'waiting',interaction}:{interaction:undefined}),preview:visible?child.preview:undefined,...(detail?{conversation:visible?conversation(job.feedback||[],child.conversation||[]):[]}:{} )};
     }else if(detail)job={...job,conversation:job.feedback||[]};
     if(!['queued','running','waiting'].includes(job.status))job={...job,interaction:undefined};
-    return Object.fromEntries(['id','recordId','title','status','phase','error','createdAt','updatedAt','project','basis','minutesRevision','transcriptRevision','branch','baseBranch','directory','mode','commit','url','agentId','automatic','paused','interaction','preview','managed',...(detail?['conversation','timeline','ledger','kernelId','progress','activity']:[])].filter(k=>job[k]!==undefined).map(k=>[k,['automatic','paused','managed'].includes(k)?Boolean(job[k]):job[k]]));
+    if(detail)job={...job,canRetryWithFeedback:job.status==='failed'&&job.phase==='organize'&&!job.writeStarted&&recoverable(job.error)};
+    return Object.fromEntries(['id','recordId','title','status','phase','error','createdAt','updatedAt','project','basis','minutesRevision','transcriptRevision','branch','baseBranch','directory','mode','commit','url','agentId','automatic','paused','interaction','preview','managed',...(detail?['conversation','timeline','ledger','kernelId','progress','activity','canRetryWithFeedback']:[])].filter(k=>job[k]!==undefined).map(k=>[k,['automatic','paused','managed'].includes(k)?Boolean(job[k]):job[k]]));
   }
   const history=async owner=>(await repo.listMetadata('git-sync-job',owner,['recordId','status','phase','title','createdAt','updatedAt','ruleGeneration','error','project','basis','minutesRevision','transcriptRevision','branch','baseBranch','directory','mode','commit','url','agentId','automatic','paused','interaction','preview','managed'],{limit:1000})).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
   async function guard(job,signal,remote=false,ignorePause=false,full=false){
@@ -266,8 +268,8 @@ return {...publicRule(await load(owner)),recent:await Promise.all((await history
         await agent.respond(owner,job.agentId,input);await update(id,{feedback});
       }
       return publicJob(await repo.get(id),true);},
-      control:(owner,id,action)=>enqueue(async()=>{
-        let job=await jobFor(owner,id);if(job.status==='succeeded')return publicJob(job);
+      control:(owner,id,action,input={})=>enqueue(async()=>{
+        let job=await jobFor(owner,id);requireThat(input?.answer===undefined||(typeof input.answer==='string'&&input.answer.trim()&&input.answer.length<=4000),'invalid_agent_request',400);const clarification=input?.answer?.trim();if(job.status==='succeeded'){requireThat(!clarification,'agent_input_changed',409);return publicJob(job);}
         requireThat(['pause','resume','retry'].includes(action),'invalid_git_sync',400);
         if(action==='pause'){
         job=await update(id,{paused:true,status:'paused'});
@@ -276,12 +278,15 @@ return {...publicRule(await load(owner)),recent:await Promise.all((await history
         }else{
           if(job.taskId){await harness.abortTask(job.taskId,context);await harness.waitForTask(job.taskId,context);}
           const rule=await load(owner),record=await recordFor(owner,job.recordId),sameSource=rule&&gitSourceHash(record,rule.includeNotes)===job.sourceHash,sameModel=modelHash(await readConfig(repo.root))===job.modelConfigHash;
-          if(action==='retry'&&rule?.enabled&&sameSource&&sameModel&&rule.fingerprint===job.policyFingerprint&&rule.generation!==(job.authorizationGeneration||job.ruleGeneration))job=await update(id,{authorizationGeneration:rule.generation,reauthorizedAt:now()});
+          if(clarification){requireThat(action==='retry'&&job.status==='failed'&&job.phase==='organize'&&!job.writeStarted,'agent_input_changed',409);requireThat(sameSource,'git_source_changed',409);requireThat(sameModel,'git_model_changed',409);requireThat(rule?.fingerprint===job.policyFingerprint,'git_rule_changed',409);}
+        if(action==='retry'&&rule?.enabled&&sameSource&&sameModel&&rule.fingerprint===job.policyFingerprint&&rule.generation!==(job.authorizationGeneration||job.ruleGeneration))job=await update(id,{authorizationGeneration:rule.generation,reauthorizedAt:now()});
           if(action==='retry'&&!job.writeStarted&&rule?.enabled&&((job.authorizationGeneration||job.ruleGeneration)!==rule.generation||!sameSource||!sameModel)){await update(id,{status:'superseded',error:null,files:null,original:null});return start(owner,job.recordId);}
           await guard(job,undefined,false,true);
 
           const child=job.agentId?await agent.get(owner,job.agentId):null;
-          job=await update(id,{paused:false,status:'queued',phase:job.project?job.phase:'resolve',error:null,rateAttempts:0,startedAt:now(),...(child&&(['failed','blocked','cancelled'].includes(child.status)||job.managed&&job.error&&child.status==='completed')?{agentId:null,agentAttempt:(job.agentAttempt||0)+1,feedback:conversation(job.feedback||[],(child.conversation||[]).filter(item=>item.answer!==undefined))}:{})});await schedule(job);
+        if(clarification)requireThat(recoverable(child?.error||job.error),'agent_input_changed',409);
+        const feedback=conversation(job.feedback||[],(child?.conversation||[]).filter(item=>item.answer!==undefined),clarification?[{question:'同步中断后的补充说明',answer:clarification}]:[]);requireThat(JSON.stringify(feedback).length<=60000,'agent_input_too_large',413);
+          job=await update(id,{paused:false,status:'queued',phase:job.project?job.phase:'resolve',error:null,rateAttempts:0,startedAt:now(),...(child&&(['failed','blocked','cancelled'].includes(child.status)||job.managed&&job.error&&child.status==='completed')?{agentId:null,agentAttempt:(job.agentAttempt||0)+1,feedback}:{})});await schedule(job);
         }return publicJob(await repo.get(id),true);
       }),
       async close(){closing=true;clearInterval(timer);await operations;await harness.close(context);lock.close();}

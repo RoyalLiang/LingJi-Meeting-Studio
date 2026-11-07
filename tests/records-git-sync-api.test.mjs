@@ -34,6 +34,8 @@ test('Git sync HTTP enforces auth, CSRF, explicit consent, owner boundaries and 
   const path='/integrations/git-sync/tasks/'+encodeURIComponent(started.body.id);assert.equal((await request(path,'GET',undefined,other)).status,404);
   let result;for(let i=0;i<200;i++){result=await request(path);if(['succeeded','failed','blocked','unknown'].includes(result.body.status))break;await delay(15);}
   assert.equal(result.body.status,'succeeded',JSON.stringify(result));assert.equal(network.mrs.length,1);
+  assert.equal((await request(path+'/retry','POST',{confirmed:true,answer:'补'.repeat(4000)})).body.error,'agent_input_changed');
+  assert.equal((await request(path+'/retry','POST',{confirmed:true,answer:'补'.repeat(4001)})).body.error,'invalid_agent_request');
   assert.equal((await request('/integrations/git-sync','GET',undefined,other)).body.recent.length,0);
   assert.ok(!JSON.stringify((await request('/integrations/git-sync')).body).includes(policy.token));
   const disabled=await request('/integrations/git-sync','PUT',{...policy,enabled:false,confirmed:false,prompt:'关闭后保存的指令',directory:'docs/updated'});assert.equal(disabled.status,200);const reread=await request('/integrations/git-sync');assert.equal(reread.body.enabled,false);assert.equal(reread.body.prompt,'关闭后保存的指令');assert.equal(reread.body.directory,'docs/updated');

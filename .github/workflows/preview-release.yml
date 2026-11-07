@@ -199,7 +199,7 @@ jobs:
       - run: npm run build:web
       - run: node scripts/prepare-client-backend.mjs
       - name: Git sync admission, progress and restart regression on Windows
-        run: '& ".\apps\desktop\src-tauri\resources\runtime\node.exe" --test tests/records-git-sync-progress.test.mjs tests/records-meeting-tasks.test.mjs'
+        run: '& ".\apps\desktop\src-tauri\resources\runtime\node.exe" --test tests/records-agent-compaction.test.mjs tests/records-git-sync-progress.test.mjs tests/records-meeting-tasks.test.mjs tests/records-git-sync.test.mjs tests/records-git-polish.test.mjs'
       - name: Isolated bundled backend startup
         env:
           CLIENT_NODE_EXECUTABLE: ${{ github.workspace }}\apps\desktop\src-tauri\resources\runtime\node.exe
@@ -360,7 +360,7 @@ jobs:
       - run: node --test tests/records-preview-release.test.mjs tests/records-local-asr.test.mjs tests/records-release-source.test.mjs
       - run: npm run build:web && node scripts/prepare-client-backend.mjs
       - name: Git sync admission, progress and restart regression on Linux
-        run: apps/desktop/src-tauri/resources/runtime/node --test tests/records-git-sync-progress.test.mjs tests/records-meeting-tasks.test.mjs
+        run: apps/desktop/src-tauri/resources/runtime/node --test tests/records-agent-compaction.test.mjs tests/records-git-sync-progress.test.mjs tests/records-meeting-tasks.test.mjs tests/records-git-sync.test.mjs tests/records-git-polish.test.mjs
       - name: Linux native regression
         run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --features smoke-test -- --test-threads=1
       - name: Verify Linux system monitor through the PulseAudio protocol

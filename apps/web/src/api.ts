@@ -7,6 +7,7 @@ let csrf = '', authGeneration = 0;
 export const setCsrf = (token: string) => { if (csrf !== token) authGeneration++; csrf = token; };
 export const getAuthGeneration = () => authGeneration;
 const messages: Record<string, string> = {
+  provider_http_504:'模型服务响应超时，已保存内容可稍后继续处理。',
   git_repository_empty:'仓库尚未初始化，请先创建默认分支，再使用合并请求同步。',
   git_default_branch_missing:'仓库默认分支不存在，请在 GitLab 中修正默认分支后重试。',
   git_mapping_invalid:'请为每个 Workspace 选择当前分组中可见的目标仓库。',

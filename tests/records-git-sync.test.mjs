@@ -383,3 +383,39 @@ test('saving a disabled draft fences writes before a slow changed-connection val
  const h=await fixture(t);await h.sync.save('owner',h.policy);let release,entered;const gate=new Promise(r=>{release=r;}),seen=new Promise(r=>{entered=r;});h.network.allowToken('new-draft-token');h.network.onRead(async()=>{entered();await gate;});
  const saving=h.sync.save('owner',{...h.policy,enabled:false,confirmed:false,token:'new-draft-token',prompt:'新配置'});await seen;try{assert.equal((await h.sync.settings('owner')).enabled,false);assert.equal(h.network.writes.length,0);}finally{release();}assert.equal((await saving).prompt,'新配置');
 });
+
+
+test('failed sync accepts a bounded clarification before retrying the same archive',async t=>{
+  const h=await fixture(t);await h.sync.save('owner',h.policy);const r=await h.record();
+  h.fake.setResponses([message('invalid JSON')]);const start=await h.sync.start('owner',r.id);
+  assert.equal((await settled(h.sync,start.id)).status,'failed');
+  await assert.rejects(h.sync.control('owner',start.id,'retry',{answer:'x'.repeat(4001)}),{code:'invalid_agent_request'});
+  h.fake.setResponses([message(call('read_selected_meeting',{recordId:r.id}),{stopReason:'toolUse'}),context=>{
+    assert.match(JSON.stringify(context),/只同步已确认结论/);
+    return message(JSON.stringify({summary:'补充后完成归档',decisions:[{text:'保留人工修订',evidence:[{recordId:r.id,segmentId:'cited',revision:1}]}],actions:[]}));
+  }]);
+  const retry=await h.sync.control('owner',start.id,'retry',{answer:'只同步已确认结论'});
+  assert.equal(retry.id,start.id);assert.equal((await settled(h.sync,start.id)).status,'succeeded');
+  assert.equal(h.network.writes.filter(item=>item.path.endsWith('/repository/commits')).length,1);
+});
+
+
+test('managed Git checkpoint with no decisions enters continuation instead of a format failure',async t=>{
+  const h=await fixture(t),id='extension:checkpoint',version='c'.repeat(40);
+  await h.repo.insert({id,kind:'extension',owner:'owner',type:'skill',source:'https://git.example.test/root/skills',path:'skills/archive',name:'归档检查点',version,enabled:true,content:'保持原会议和仓库范围，核对后归档。'});
+  const policy={...h.policy,skillIds:[id],skillVersions:{[id]:version},mode:'',directory:''};await h.sync.save('owner',policy);const r=await h.record(),scope=await h.extensions.snapshot('owner',policy),guide=scope.guides[0];
+  const read=()=>[message(call('read_selected_skill',{key:guide.key}),{stopReason:'toolUse'}),message(call('read_selected_meeting',{recordId:r.id}),{stopReason:'toolUse'})];
+  h.fake.setResponses([...read(),message(JSON.stringify({summary:'续接检查点，仍需完成仓库核对。',decisions:[],actions:[]}))]);
+  const start=await h.sync.start('owner',r.id);let waiting;
+  for(let i=0;i<200;i++){waiting=await h.sync.get('owner',start.id);if(['waiting','failed'].includes(waiting.status))break;await delay(10);}
+  assert.equal(waiting.status,'waiting',JSON.stringify(waiting));assert.ok(waiting.interaction);assert.equal(h.network.writes.length,0);
+  h.fake.setResponses([...read(),message(call('manage_git_sync',{action:'archive',mode:'mr',directory:'docs/meetings',content:'# 已确认会议归档'}),{stopReason:'toolUse'}),message(JSON.stringify({summary:'已完成归档',decisions:[],actions:[]}))]);
+  await h.sync.respond('owner',start.id,{id:waiting.interaction.id,answer:'按原范围继续完成同步。'});
+  assert.equal((await settled(h.sync,start.id)).status,'succeeded');assert.equal(h.network.mrs.length,1);
+});
+
+test('ordinary meeting review still rejects an uncited empty result',async t=>{
+  const h=await fixture(t);await h.sync.save('owner',h.policy);const r=await h.record();
+  h.fake.setResponses([message(call('read_selected_meeting',{recordId:r.id}),{stopReason:'toolUse'}),message(JSON.stringify({summary:'只有一段摘要',decisions:[],actions:[]}))]);
+  const start=await h.sync.start('owner',r.id);assert.equal((await settled(h.sync,start.id)).error,'invalid_agent_output');assert.equal(h.network.writes.length,0);
+});

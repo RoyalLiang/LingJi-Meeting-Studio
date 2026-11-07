@@ -96,3 +96,20 @@ test('opening task records and returning to grouped settings preserves an unsave
  nodes(tree).find(n=>n.type==='textarea').props.onChange({target:{value:'尚未保存的整理指令'}});tree=render(props);nodes(tree).find(n=>n.type==='Button'&&words(n).startsWith('任务记录')).props.onClick();tree=render(props);assert.equal(nodes(tree).find(n=>n.props?.className==='git-settings').props.hidden,true);
  nodes(tree).find(n=>n.type==='Button'&&words(n)==='返回同步设置').props.onClick();tree=render(props);assert.equal(nodes(tree).find(n=>n.props?.className==='git-settings').props.hidden,false);assert.equal(nodes(tree).find(n=>n.type==='textarea').props.value,'尚未保存的整理指令');assert.equal(checkbox(tree,'允许将今后').props.checked,false);assert.equal(requests.filter(r=>r.method==='PUT').length,0);
 });
+
+
+test('task timeline keeps reported usage without displaying cost estimates',async()=>{
+  const render=await component('TaskTimeline.tsx','TaskTimeline',async()=>({}));
+  const text=words(render({timeline:[],ledger:{rounds:4,compactions:5,totalTokens:39911,cost:12.34}}));
+  assert.match(text,/39,911/);assert.doesNotMatch(text,/费用|USD|12\.34/);
+});
+
+test('a recoverable failed Git task submits clarification to the existing retry route',async()=>{
+  const requests=[],render=await component('GitAutomation.tsx','GitTask',async(path,method,body)=>{requests.push({path,method,body});return {...job,status:'queued',canRetryWithFeedback:false};});
+  const job={id:'synthetic',recordId:'source',title:'合成同步',status:'failed',phase:'organize',error:'provider_http_504',canRetryWithFeedback:true,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+  const props={job,close(){},changed(){}};let tree=render(props);
+  const textarea=nodes(tree.props.footer).find(node=>node.type==='textarea');assert.ok(textarea,'failed task must offer clarification');
+  textarea.props.onChange({target:{value:'只同步确认内容'}});tree=render(props);
+  nodes(tree.props.footer).find(node=>node.type==='Button'&&words(node)==='继续同步').props.onClick();await new Promise(resolve=>setTimeout(resolve,0));
+  assert.equal(requests[0].path,'/integrations/git-sync/tasks/synthetic/retry');assert.equal(requests[0].body.answer,'只同步确认内容');
+});

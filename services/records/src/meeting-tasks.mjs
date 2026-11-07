@@ -109,7 +109,7 @@ export function meetingTasks(repo, {maxConcurrent=2, maxPerOwner=2, now=Date.now
     },
     async diagnostics(owner,id){
       const task=await kernel.inspect(owner,id);
-      const activity=task.activity?Object.fromEntries(['state','reason','startedAt'].filter(key=>task.activity[key]!==undefined).map(key=>[key,task.activity[key]])):undefined;
+      const activity=task.activity?Object.fromEntries(['state','reason','kind','startedAt'].filter(key=>task.activity[key]!==undefined).map(key=>[key,task.activity[key]])):undefined;
       // Allowlist only. Never export prompts, titles, questions, source text,
       // tool arguments/results, remote URLs or provider error bodies.
       return {schema:'lingji.task-diagnostic.v1',taskKind:task.taskKind,status:task.status,phase:task.phase,error:task.error,progress:task.progress,...(activity?{activity}:{}),ledger:task.ledger,timeline:(task.timeline||[]).map(({kind,startedAt,elapsedMs,usage,usageReported,pricingKnown,name})=>({kind,startedAt,elapsedMs,usage,usageReported,pricingKnown,name})),terminal:terminal.has(task.status),exportedAt:new Date(now()).toISOString()};

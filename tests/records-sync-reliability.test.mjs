@@ -41,14 +41,14 @@ test('long meetings read all pages, compact through Pi and retain a citation fro
  }finally{await agent.close();await repo.close();await rm(root,{recursive:true,force:true});}
 });
 
-test('configured JSON transport compacts batched source pages below its request budget',async()=>{
+test('configured JSON transport keeps compaction streaming through a gateway and reads every page',async()=>{
  const {MEETING_COMPACTION,meetingSourcePages}=await import('../services/records/src/meeting-agent-context.mjs');
  const original=globalThis.fetch,root=await mkdtemp(join(tmpdir(),'lingji-paged-json-')),repo=await createRepository({root,databaseUrl:''});
  const record=createRecord('owner',{title:'长会议 JSON 桥接'});record.transcriptRevision=1;record.segments=Array.from({length:100},(_,i)=>({id:'seg-'+i,revision:1,text:('JSON \"value\" \\\\ synthetic.').repeat(160),startMs:i*1000,endMs:(i+1)*1000}));await repo.insert(record);
  let nextPage=0,compactions=0,largest=0;const total=meetingSourcePages({recordId:record.id,title:record.title,transcriptRevision:1,segments:record.segments},12000).length;
  globalThis.fetch=async(_url,options)=>{
   const body=JSON.parse(options.body);let output;
-  if(body.messages[0].content.startsWith(MEETING_COMPACTION)){compactions++;output={summary:'已读取分页；保留全部引用标识和待确认条件。'};}
+    if(body.messages[0].content.startsWith(MEETING_COMPACTION)){compactions++;if(!body.stream)return Response.json({error:{code:'gateway_timeout'}},{status:504});output={summary:'已读取分页；保留全部引用标识和待确认条件。'};}
   else {const transcript=JSON.parse(body.messages[1].content);largest=Math.max(largest,JSON.stringify(transcript).length);
    output=nextPage<total?{toolCalls:Array.from({length:Math.min(8,total-nextPage)},()=>({name:'read_selected_meeting',arguments:{recordId:record.id,page:nextPage++}}))}:{result:{summary:'全部分页完成',decisions:[{text:'最后一段仍待确认',evidence:[{recordId:record.id,segmentId:'seg-99',revision:1}]}],actions:[]}};
   }
