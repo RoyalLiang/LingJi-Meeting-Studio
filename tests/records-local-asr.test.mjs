@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { LocalAsrClient, LOCAL_ASR_MODEL, verifyLocalAsrAssets } from '../services/records/src/local-asr.mjs';
+import { LocalAsrClient, LOCAL_ASR_MODEL, LOCAL_STREAMING_ASR_MODEL, verifyLocalAsrAssets } from '../services/records/src/local-asr.mjs';
 import { normalizeConfig, publicConfig, saveConfig, readConfig } from '../services/records/src/config.mjs';
 import { providerStatus } from '../services/records/src/providers.mjs';
 
@@ -68,6 +68,11 @@ test('bundled resource validation detects missing/corrupt data and rejects paths
     const manifest = { model: LOCAL_ASR_MODEL, runtime: '1.13.8', platform: process.platform, arch: process.arch, files, nativeFiles };
     const save = () => writeFile(join(root, 'manifest.json'), JSON.stringify(manifest));
     await save(); await verifyLocalAsrAssets(root);
+    manifest.streamingModel = { model: LOCAL_STREAMING_ASR_MODEL };
+    files.push({ path: 'zipformer/encoder-epoch-99-avg-1.int8.onnx', bytes: 4, sha256: '0'.repeat(64) });
+    await save(); await verifyLocalAsrAssets(root);
+    await assert.rejects(verifyLocalAsrAssets(root, { model: LOCAL_STREAMING_ASR_MODEL }), { code: 'local_asr_assets_invalid' });
+    files.pop(); delete manifest.streamingModel; await save();
     await writeFile(join(root, names[0]), 'changed');
     await assert.rejects(verifyLocalAsrAssets(root), { code: 'local_asr_assets_invalid' });
     files[0].path = '../outside'; await save();

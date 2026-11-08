@@ -1,3 +1,6 @@
+import {createConnectors,connectorRoutes} from './connectors.mjs';
+import { createNativeAudio } from './native-audio.mjs';
+import { minutesModelRouting } from './model-roles.mjs';
 import {createMeetingTaskProducers} from './meeting-task-producers.mjs';
 import {meetingTasks} from './meeting-tasks.mjs';
 import {sendHttpPayload} from './http-response.mjs';
@@ -7,7 +10,7 @@ import { createEncryptedSharing } from './encrypted-sharing.mjs';
 import { truncateText } from '../../../packages/records/src/text.mjs';
 import { isIP } from 'node:net';
 import { manualMinutesContent, minutesActionText } from '../../../packages/records/src/minutes-quality.mjs';
-import { recordingWaveform, waveformKey, validWaveform, chunkWaveform } from './waveform.mjs';
+import { recordingWaveform, waveformKey, validWaveform } from './waveform.mjs';
 import { meetingAutomationConfig, doubaoAudioEnabled } from './config.mjs';
 import { audioMinutesEnabled, recordMinutesConfig } from './config.mjs';
 import { testDoubaoAudio } from './doubao-audio-minutes.mjs';
@@ -24,7 +27,7 @@ import { setAutomation } from '../../../packages/records/src/automation.mjs';
 import http from 'node:http';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { createRecord, addSource, acknowledge, seal, pause, publicRecord, editSegment, requestMinutes, validateMinutes,
+import { createRecord, addSource, seal, pause, publicRecord, editSegment, requestMinutes, validateMinutes,
   digest, DomainError, requireThat, emit, autoNameRecord } from '../../../packages/records/src/record.mjs';
 import { createRepository } from './repository.mjs';
 import { createAuth } from './auth.mjs';
@@ -77,7 +80,9 @@ export function exportRecord(record, format = 'markdown') {
   return exportMinutesMarkdown(record);
 }
 export async function createRecordServer(options = {}) {
-  const repo = options.repo || await createRepository(options); const auth = await createAuth(repo, { seedDevelopment: !options.repo, ...options });
+  const repo = options.repo || await createRepository(options); const nativeAudio = options.localAccount && options.nativeInstance ? await createNativeAudio(repo, { instanceId: options.nativeInstance }) : null;
+  await nativeAudio?.idle();
+  const auth = await createAuth(repo, { seedDevelopment: !options.repo, ...options });
   const encryptedSharing = createEncryptedSharing(repo, options.encryptedSharing);
   const feishu = await createFeishu(repo, options.feishuOptions);
   const extensions = await createExtensions(repo, {localAccount:Boolean(options.localAccount),...options.extensionOptions});
@@ -89,7 +94,8 @@ export async function createRecordServer(options = {}) {
   });
   const taskProducers=createMeetingTaskProducers(repo),stopTaskEvents=repo.subscribeChanges(ids=>taskProducers.sourceChanged(ids));
   const gitSync=agent?await createGitSync({repo,agent,extensions,localAccount:Boolean(options.localAccount),...options.gitSyncOptions}).catch(()=>null):null;
-  const learningEnabled=async()=>{const config=await readConfig(repo.root);return config.RECORD_LEARNING_ENABLED==='true'||(config.RECORD_LEARNING_ENABLED!=='false'&&Boolean(options.localAccount));};
+  const connectors=createConnectors(repo,{feishu,gitSync});
+ const learningEnabled=async()=>{const config=await readConfig(repo.root);return config.RECORD_LEARNING_ENABLED==='true'||(config.RECORD_LEARNING_ENABLED!=='false'&&Boolean(options.localAccount));};
   const learningService = learningServiceFor(repo, options.learningProbe);
   const requireLearning = async () => {
     requireThat(await learningEnabled(), 'learning_disabled', 503);
@@ -182,9 +188,14 @@ export async function createRecordServer(options = {}) {
       const user = await auth.user(req);
       if (path === '/api/client/update-barrier' && req.method === 'GET') { send(res, 200, await clientUpdateBarrier(repo, user.id)); return; }
       if (!['GET', 'HEAD'].includes(req.method)) auth.checkCsrf(req, user);
-      if (await feishuRoutes({req,res,path,user,feishu,readBody,send})) return;
+      if (path === '/api/client/native-captures' && req.method === 'POST') {
+      requireThat(nativeAudio && req.headers['x-native-instance'] === options.nativeInstance, 'not_found', 404);
+      const body = await readBody(req, 2048); send(res, 200, await (body.action === 'cancel' ? nativeAudio.cancel(user, body) : nativeAudio.bind(user, body))); return;
+    }
+    if(await connectorRoutes({req,res,path,user,connectors,readBody,send}))return;
+  if (await feishuRoutes({req,res,path,user,feishu,connectors,readBody,send})) return;
       if (await extensionRoutes({req,res,path,user,extensions,readBody,send})) return;
-    if (await gitSyncRoutes({req,res,path,user,gitSync,readBody,send})) return;
+    if (await gitSyncRoutes({req,res,path,user,gitSync,connectors,readBody,send})) return;
       if (path === '/api/auth/logout' && req.method === 'POST') {
         await repo.change(user.id, u => { u.authVersion++; }); send(res, 200, { ok: true }, { 'Set-Cookie': auth.clear() }); return;
       }
@@ -194,7 +205,7 @@ export async function createRecordServer(options = {}) {
         send(res, 200, { enabled, ...(enabled && supported ? learningService.read() : { available:false, status:'disabled', checkedAt:null }) }); return;
       }
       if (path === '/api/bootstrap' && req.method === 'GET') {
-        send(res, 200, { email: user.email, csrf: auth.csrf(user), audioTransport: 'pcm-v1', audioMinutesDefault:user.autoAudioMinutes===true, localAccount: Boolean(options.localAccount), learning:{enabled:await learningEnabled(),...learningService.snapshot()}, meetingAutomation:meetingAutomationConfig(await readConfig(repo.root)), providers: providerStatus(await readConfig(repo.root)), limits: { maxMinutes: null, maxRecords: 200, maxChunkSeconds: 15 }, storage: repo.backend, canConfigure: canConfigure(user) }); return;
+        send(res, 200, { email: user.email, csrf: auth.csrf(user), audioTransport: 'pcm-v1', nativeAudioTransport: nativeAudio ? 'native-file-v1' : null, audioMinutesDefault:user.autoAudioMinutes===true, localAccount: Boolean(options.localAccount), learning:{enabled:await learningEnabled(),...learningService.snapshot()}, meetingAutomation:meetingAutomationConfig(await readConfig(repo.root)), providers: providerStatus(await readConfig(repo.root)), limits: { maxMinutes: null, maxRecords: 200, maxChunkSeconds: 15 }, storage: repo.backend, canConfigure: canConfigure(user) }); return;
       }
       if(path==='/api/settings/audio-backup'){
         requireThat(canConfigure(user),'configuration_admin_required',403);
@@ -257,7 +268,7 @@ export async function createRecordServer(options = {}) {
         if (req.method === 'POST' && agentRoute[2]) { send(res, 200, await agent.cancel(user.id,agentRoute[1])); return; }
         throw new DomainError('not_found', 404);
       }
-      if (await workspaceRoutes({ req, res, path, repo, user, readBody, send })) return;
+      if (await workspaceRoutes({ req, res, path, repo, user, readBody, send, agent })) return;
       if (path === '/api/records' && req.method === 'POST') {
         const all = (await repo.listRecordHeaders(user.id)).filter(r => !r.deleted);
         requireThat(all.length < 200, 'record_limit', 429); const input = await readBody(req, 4000);
@@ -274,7 +285,7 @@ export async function createRecordServer(options = {}) {
         send(res, 201, publicRecord(r)); return;
       }
       if (path === '/api/records' && req.method === 'GET') {
-        const query = (url.searchParams.get('q') || '').toLowerCase().slice(0, 200);
+        const query = (url.searchParams.get('q') || '').slice(0, 200);
         const scope = url.searchParams.get('workspace') || 'all'; await requireWorkspace(repo, user.id, scope);
         const records = await repo.listSummaries(user.id,scope,query);
         send(res, 200, { records }); return;
@@ -282,6 +293,14 @@ export async function createRecordServer(options = {}) {
       const route = path.match(/^\/api\/records\/([a-f0-9-]{36})(?:\/(.*))?$/);
       requireThat(route, 'not_found', 404); const id = route[1], action = route[2] || '';
       if(action===''&&req.method==='GET'){sendPayload(res,200,await readRecordResponse(id,user));return;}
+      if (action === 'audio' && req.method === 'POST') {
+        const {body,bytes}=await readAudio(req);
+        requireThat(bytes.length===body.sampleCount*2&&bytes.length>0&&bytes.length<=480000,'audio_size_mismatch',400);
+        requireThat(digest(bytes)===body.digest,'audio_digest_mismatch',400);
+        const ack=await repo.ingestAudio(user.id,id,{...body,traceId},bytes);
+        telemetry.event('audio.ack',{traceId,recordId:id,sourceId:body.sourceId,sequence:body.sequence,bytes:bytes.length,durationMs:performance.now()-started});
+        send(res,200,ack);return;
+      }
       const record = await owned(id, user);
       if(await learningRoutes({req,res,url,action,repo,user,record,readBody,send,csrf:auth.csrf(user),requireLearning,learningService}))return;
       if (action === 'automation' && req.method === 'PATCH') {
@@ -438,21 +457,6 @@ export async function createRecordServer(options = {}) {
         res.writeHead(200, { 'Content-Type': ['json', 'issues'].includes(format) ? 'application/json' : format === 'ics' ? 'text/calendar; charset=utf-8' : 'text/markdown; charset=utf-8',
           'Content-Disposition': attachmentHeader(record.title, format === 'markdown' ? 'md' : format === 'issues' ? 'issues.json' : format), 'Cache-Control': 'no-store' }); res.end(exported); return;
       }
-      if (action === 'audio' && req.method === 'POST') {
-        const { body, bytes } = await readAudio(req); requireThat(bytes.length === body.sampleCount * 2 && bytes.length > 0 && bytes.length <= 480000, 'audio_size_mismatch', 400);
-        requireThat(digest(bytes) === body.digest, 'audio_digest_mismatch', 400);
-        const preflight = acknowledge({...record,sources:record.sources.map(source=>({...source})),chunks:[...record.chunks],usage:{...record.usage},events:[]}, { sessionId: body.sessionId, sourceId: body.sourceId, epoch: body.epoch, sequence: body.sequence, sampleOffset: body.sampleOffset, sampleCount: body.sampleCount, sampleRate: body.sampleRate, digest: body.digest, object: 'preflight' });
-        if (record.chunks.some(c => c.sourceId === body.sourceId && c.epoch === body.epoch && c.sequence === body.sequence)) { send(res, 200, preflight); return; }
-        const object = await repo.putAudio(id, bytes), envelope=chunkWaveform(bytes);
-        const ack = await changeOwned(id, user, r => {
-        requireThat(r.owner === user.id, 'not_found', 404);
-        const result=acknowledge(r,{sessionId:body.sessionId,sourceId:body.sourceId,epoch:body.epoch,sequence:body.sequence,sampleOffset:body.sampleOffset,sampleCount:body.sampleCount,sampleRate:body.sampleRate,traceId,...object});
-        r.chunks.find(chunk=>chunk.sourceId===body.sourceId&&chunk.epoch===body.epoch&&chunk.sequence===body.sequence).waveform=envelope;
-        return result;
-      });
-      telemetry.event('audio.ack', {traceId, recordId:id, sourceId:body.sourceId, sequence:body.sequence, bytes:bytes.length, durationMs:performance.now()-started});
-        send(res, 200, ack); return;
-      }
       if (action === 'shares' && req.method === 'GET') { send(res, 200, { shares: record.shares.map(({ hash, ...s }) => s) }); return; }
       if (action === 'encrypted-shares' && req.method === 'GET') { send(res, 200, { shares: await encryptedSharing.list(user.id, id) }); return; }
       const editBytes=action==='minutes'&&req.method==='PATCH'&&record.minutes?Math.max(Buffer.byteLength(JSON.stringify(record.minutes)),Buffer.byteLength(JSON.stringify(manualMinutesContent(record.minutes)))):0;
@@ -489,7 +493,7 @@ export async function createRecordServer(options = {}) {
         requireThat(['model', 'extractive'].includes(mode), 'invalid_minutes_mode', 400);
         requireThat(mode === 'extractive' || providerStatus(config).minutes || providerStatus(config).fixture, 'minutes_not_configured', 503);
         requireThat(mode !== 'model' || !audioMinutesEnabled(config) || record.realtimeAudioConsent || body.realtimeAudioConsent === true, 'realtime_audio_consent_required', 403);
-      result = await changeOwned(id, user, r => { if (mode === 'model' && body.realtimeAudioConsent === true) r.realtimeAudioConsent = true; return requestMinutes(r, { ...body, mode, modelVersion: mode === 'extractive' ? 'local-extractive-v1' : minutesModelVersion(config) || 'default' }); });
+      result = await changeOwned(id, user, r => { if (mode === 'model' && body.realtimeAudioConsent === true) r.realtimeAudioConsent = true; return requestMinutes(r, { ...body, mode, modelVersion: mode === 'extractive' ? 'local-extractive-v1' : minutesModelVersion(config) || 'default', modelRouting: mode === 'extractive' ? '' : minutesModelRouting(config) }); });
       }
       else if (action === 'minutes' && req.method === 'PATCH') result = await changeOwned(id, user, r => {
         requireThat(r.minutes && body.revision === r.minutesRevision, 'minutes_revision_conflict');
@@ -548,8 +552,8 @@ export async function createRecordServer(options = {}) {
     }
   });
   server.requestTimeout = 30000; server.headersTimeout = 15000;
-  return { repo, server, localSession: () => auth.localSession?.(), start: () => new Promise(resolve => server.listen(options.port ?? Number(process.env.RECORD_API_PORT || 3030), options.host || '127.0.0.1', () => resolve(server.address()))),
-    stop: async () => { for (const stream of streams) stream.end(); await new Promise(resolve => server.close(resolve)); stopTaskEvents(); taskProducers.close(); await feishu.close(); await gitSync?.close(); await agent?.close(); await meetingTasks(repo).close(); await repo.close(); } };
+  return { repo, server, nativeAudio, localSession: () => auth.localSession?.(), start: () => new Promise(resolve => server.listen(options.port ?? Number(process.env.RECORD_API_PORT || 3030), options.host || '127.0.0.1', () => resolve(server.address()))),
+    stop: async () => { for (const stream of streams) stream.end(); await new Promise(resolve => server.close(resolve)); stopTaskEvents(); taskProducers.close(); await nativeAudio?.close(); await feishu.close(); await gitSync?.close(); await agent?.close(); await meetingTasks(repo).close(); await repo.close(); } };
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const app = await createRecordServer(); console.log('[record-api]', await app.start());

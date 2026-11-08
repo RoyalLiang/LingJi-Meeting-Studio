@@ -82,16 +82,23 @@ pub fn bind_with_lock(directory: &Path, api_url: &str, lock: File) -> Result<Bin
         BTreeMap::new()
     };
     let hash = Sha256::digest(api_url.as_bytes());
-    let port = if let Some(port) = profiles.get(api_url) {
-        *port
+    let listener = if let Some(port) = profiles.get(api_url) {
+        TcpListener::bind(("127.0.0.1", *port)).map_err(|_| format!("本机端口 {port} 被占用；请释放此端口后重试。为保留离线队列，客户端不会自动更换来源地址。"))?
     } else {
         let start = 49_152 + u16::from_le_bytes([hash[0], hash[1]]) % 16_384;
-        (0..16_384)
-            .map(|n| 49_152 + ((u32::from(start - 49_152) + n) % 16_384) as u16)
-            .find(|port| !profiles.values().any(|value| value == port))
-            .ok_or("客户端配置数量超过限制")?
+        let mut available = None;
+        for n in 0..16_384 {
+            let port = 49_152 + ((u32::from(start - 49_152) + n) % 16_384) as u16;
+            if profiles.values().any(|value| *value == port) { continue; }
+            match TcpListener::bind(("127.0.0.1", port)) {
+                Ok(listener) => { available = Some(listener); break; }
+                Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => continue,
+                Err(error) => return Err(format!("本机会议服务无法绑定端口：{error}")),
+            }
+        }
+        available.ok_or("没有可用的本机会议服务端口")?
     };
-    let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|_| format!("本机端口 {port} 被占用；请释放此端口后重试。为保留离线队列，客户端不会自动更换来源地址。"))?;
+    let port = listener.local_addr().map_err(|error| error.to_string())?.port();
     listener.set_nonblocking(true).map_err(|e| e.to_string())?;
     profiles.insert(api_url.to_string(), port);
     fs::write(
@@ -148,4 +155,14 @@ mod tests {
         drop(third);
         fs::remove_dir_all(root).unwrap();
     }
+    #[test]
+    fn fresh_profile_skips_occupied_port_but_registered_origin_stays_fixed() {
+        let root=tempfile::tempdir().unwrap();let api="https://fresh-profile.test";
+        let hash=Sha256::digest(api.as_bytes());let initial=49_152+u16::from_le_bytes([hash[0],hash[1]])%16_384;
+        let occupied=TcpListener::bind(("127.0.0.1",initial));
+        let first=bind(root.path(),api).unwrap();assert_ne!(first.listener.local_addr().unwrap().port(),initial);
+        let selected=first.listener.local_addr().unwrap().port();drop(first);
+        let _blocker=TcpListener::bind(("127.0.0.1",selected)).unwrap();assert!(bind(root.path(),api).is_err());drop(occupied);
+    }
+
 }

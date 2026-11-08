@@ -1,3 +1,5 @@
+import { createWorkerWakeup } from './worker-wakeup.mjs';
+import { minutesModelRouting } from './model-roles.mjs';
 import {audioBackupPending,audioBackupNeedsWork,backupAudioRecord,cleanupAudioBackups} from './audio-backup.mjs';
 import { processFunasrAudio } from './funasr-transcription.mjs';
 import { processDoubaoModelAudio } from './doubao-model-transcription.mjs';
@@ -35,9 +37,21 @@ export async function runCycle(repo, providers = {}, { lane = 'all', cacheConfig
   if(lane==='realtime'&&!realtimeEnabled(config))return;
   if(['translation','translation-live','translation-preview'].includes(lane)&&!providers.translate&&!providerStatus(config).translation)return;
   if(lane==='all'||lane==='audio')void cleanupAudioBackups(repo).catch(()=>{});
-  const records = await repo.listWork({ lane });
+  const localAudio = lane === 'audio' && baseConfig.ASR_PROVIDER === 'sensevoice-local' && baseConfig.MINUTES_MODE !== 'doubao-audio-only' && !providers.transcribe && !providerStatus(baseConfig).fixture;
+  const records = await repo.listWork({ lane, metadataOnly: localAudio });
   if (lane === 'minutes') records.sort((a,b)=>Number(['sealed','completed'].includes(b.capture))-Number(['sealed','completed'].includes(a.capture)));
   async function processCandidate(candidate) {
+    if (candidate.$metadataOnly) {
+      const currentConfig=recordMinutesConfig(candidate,baseConfig);
+      const hot=candidate.$collections===2 && candidate.$audioVersion===2 && candidate.capture==='recording' && !candidate.deleted && Date.parse(candidate.deleteAt)>Date.now() && Date.now()-(candidate.gcAt || 0)<=3600000 && !audioBackupPending(candidate) && currentConfig.MINUTES_MODE!=='doubao-audio-only';
+      if (hot && !await repo.localAsrNeedsCleanup(candidate)) {
+        closeSpeakerStreams(repo,candidate.id);
+        candidate.segments=await repo.localAsrTail(candidate.id);
+        const audioConfig=await recordAsrConfig(repo,candidate,currentConfig);
+        await processFunasrAudio(repo,candidate,audioConfig,providers.funasr,providers.localStreaming); return;
+      }
+      candidate=await repo.get(candidate.id); if (!candidate) return;
+    }
     const config=recordMinutesConfig(candidate,baseConfig);
     if (lane !== 'all' && lane !== 'audio' && lane !== 'realtime' && (candidate.deleted || Date.parse(candidate.deleteAt) < Date.now())) return;
     if (candidate.deleted && candidate.cleanup === 'completed' && Date.now() - (candidate.cleanupAt || 0) < 600000) return;
@@ -92,7 +106,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all', cacheConfig
       }
     }
     }
-    if (funasrMode) { closeSpeakerStreams(repo,candidate.id); await processFunasrAudio(repo,candidate,config); }
+    if (funasrMode) { closeSpeakerStreams(repo,candidate.id); await processFunasrAudio(repo,candidate,config,providers.funasr,providers.localStreaming); }
     if (config.MINUTES_MODE === 'doubao-audio-only' && !providerStatus(config).fixture) { closeSpeakerStreams(repo,candidate.id); await processDoubaoModelAudio(repo,candidate,config); }
     if (speakerMode) await processSpeakerSources(repo,candidate,audioConfig);
     // Two independent sources can progress together; a source remains strictly ordered.
@@ -123,7 +137,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all', cacheConfig
     }
     let jobClaim;
     if (lane === 'all' || (lane === 'minutes' && (automaticMinutesAt(candidate) <= Date.now() || candidate.jobs.some(job => job.status === 'queued' || (job.status === 'running' && (!Number.isFinite(job.lease) || job.lease <= Date.now())))))) {
-    if (providerStatus(config).minutes && (lane === 'all' || automaticMinutesAt(candidate) <= Date.now())) await repo.change(candidate.id, r => { if (!audioMinutesEnabled(config) || r.realtimeAudioConsent) queueAutomaticMinutes(r, minutesModelVersion(config)); }, {returnRecord:false});
+    if (providerStatus(config).minutes && (lane === 'all' || automaticMinutesAt(candidate) <= Date.now())) await repo.change(candidate.id, r => { if (!audioMinutesEnabled(config) || r.realtimeAudioConsent) queueAutomaticMinutes(r, minutesModelVersion(config), Date.now(), minutesModelRouting(config)); }, {returnRecord:false});
     const minutesCandidate = await repo.get(candidate.id);
     const now=Date.now(), reclaimable=job=>job.status==='queued'||(job.status==='running'&&(!Number.isFinite(job.lease)||job.lease<=now));
     if (minutesCandidate.jobs.some(reclaimable)) await repo.change(candidate.id, r => {
@@ -212,17 +226,35 @@ export async function runCycle(repo, providers = {}, { lane = 'all', cacheConfig
   }));
 }
 export async function startWorker() {
-  const repo = await createRepository(); let stop = false;
-  process.on('SIGTERM', () => { stop = true; }); process.on('SIGINT', () => { stop = true; });
+  const repo = await createRepository(), wakeup = createWorkerWakeup(repo);
+  let stop = false;
+  const shutdown = () => { stop = true; wakeup.close(); };
+  process.on('SIGTERM', shutdown); process.on('SIGINT', shutdown);
   console.log(`[record-worker] ${repo.backend}; durable audio and minutes queue`);
-  await Promise.all(['audio', 'realtime', 'minutes', 'intents', 'translation', 'translation-live', 'translation-preview', 'workspace', 'learning'].map(async lane => {
-  while (!stop) {
-   try { await runCycle(repo, {}, { lane }); } catch (e) { console.error('[record-worker]', lane, e.code || e.name); }
-   await new Promise(resolve => setTimeout(resolve, lane === 'audio' ? 250 : 500));
+  try {
+    await Promise.all(['audio', 'realtime', 'minutes', 'intents', 'translation', 'translation-live', 'translation-preview', 'workspace', 'learning'].map(async lane => {
+      let earliest = 0, first = true;
+      const floor = lane === 'audio' ? 250 : 500;
+      while (!stop) {
+        while (!stop && Date.now() < earliest) await wakeup.wait(wakeup.cursor(), earliest - Date.now());
+        if (stop) break;
+        const cursor = wakeup.cursor(); earliest = Date.now() + floor;
+        let due = Infinity;
+        try {
+          due = await repo.nextWorkAt(lane);
+          if (first || lane === 'audio' || lane === 'realtime' || lane === 'workspace' || lane === 'learning' || due <= Date.now()) {
+            await runCycle(repo, {}, { lane }); due = await repo.nextWorkAt(lane);
+          }
+          first = false;
+        } catch (error) { console.error('[record-worker]', lane, error.code || error.name); due = Date.now() + 1000; }
+        if (stop) break;
+        await wakeup.wait(cursor, Math.min(lane === 'workspace' || lane === 'learning' ? 5000 : 30000, Math.max(floor, due - Date.now())));
+      }
+    }));
+  } finally {
+    shutdown(); process.off('SIGTERM', shutdown); process.off('SIGINT', shutdown);
+    closeSpeakerStreams(repo); closeRealtime(repo); await repo.close();
   }
- }));
-  closeSpeakerStreams(repo);closeRealtime(repo);
-  await repo.close();
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) await startWorker();

@@ -14,7 +14,7 @@ async function stopHarness({ backgroundWait = Promise.resolve(), refreshFails = 
   const state = { busy: false, phase: 'idle', recording: true, record: current, modal: 'finish', error: '', calls: [] };
   const controller = { active: true, async stop() { this.active = false; state.calls.push('local-stop'); } };
   const sandbox = {
-    exports: {}, stopping: { current: false }, capture: { current: controller }, activeId: { current: current.id },
+    exports: {}, pendingStop: {current:null}, stopping: { current: false }, capture: { current: controller }, activeId: { current: current.id },
     setBusy: value => { state.busy = value; }, setCapturePhase: value => { state.phase = value; },
     setError: value => { state.error = value; }, setRecording: value => { state.recording = value; },
     rememberRecord: value => { state.record = value; }, setModal: value => { state.modal = value; },

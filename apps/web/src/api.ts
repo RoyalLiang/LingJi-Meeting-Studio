@@ -8,6 +8,8 @@ let csrf = '', authGeneration = 0;
 export const setCsrf = (token: string) => { if (csrf !== token) authGeneration++; csrf = token; };
 export const getAuthGeneration = () => authGeneration;
 const messages: Record<string, string> = {
+  storage_not_ready: '数据仍在整理，请稍后重试。', invalid_connector_request:'连接请求格式无效，请刷新后重试。', connector_not_found:'该连接尚未启用。', connector_unavailable:'连接暂不可用，请检查配置。', connector_operation_unsupported:'此连接不支持该操作。', connector_task_mismatch:'该任务不属于当前连接。', invalid_knowledge_question:'请输入 2–1000 字的具体问题。', knowledge_query_too_broad:'请加入项目名、决策或负责人等具体关键词。', agent_knowledge_changed:'知识依据已更新，请重新提问。', invalid_knowledge_query: '搜索条件无效，请缩短关键词后重试。', knowledge_retracted: '原文或纪要已修订，请刷新后查看新条目。', knowledge_revision_conflict: '该条目已在其他窗口更新，请刷新后再确认。', knowledge_not_found: '条目已失效或不在当前目录中，请刷新。', invalid_knowledge_review: '请选择有效的确认状态。', invalid_minutes_terms: '术语缺少有效的原文依据，请重新整理。', invalid_model_roles: '任务模型选择无效，请检查模型 ID。',
+  invalid_model_role: '不支持这个模型用途。',
   invalid_history_query:'记录分页信息无效，请刷新后重试。',
   builtin_skill_validation_failed:'内置 Skill 样例未通过或回执已过期，请使用验证通过的版本。',
   pi_minutes_round_limit:'本轮整理超过工具处理轮次，已保留转录，请稍后重试。',
@@ -113,6 +115,7 @@ const messages: Record<string, string> = {
   invalid_vocabulary: '词表格式无效：每集最多 12000 字符，两集合计最多 200 条，每项最多 50 字、8 个别名。', vocabulary_revision_conflict: '词表已变更，请重新打开设置或检查纠错后重试。', invalid_correction: '纠错候选与当前词表或原文不一致，请重新检查。', invalid_corrections: '模型返回的候选不符合原文或词表，未修改转录。', invalid_recognition_language: '识别语言无效，请重新选择。', recognition_language_busy: '请暂停录音并等待当前音频处理完成后切换识别语言。',
 
   invalid_llm_reasoning_effort: '推理强度无效，请在模型设置中重新选择。',
+  voiceprint_library_changed: '声纹库已更新，请关闭窗口后重新选择。', invalid_search_query: '搜索内容无效，请使用不超过 200 字的关键词。', invalid_voiceprint_source: '请选择有效的音频发言片段。', invalid_voiceprint_name: '请填写不超过 80 字的发言人名称。', voiceprint_consent_required: '保存前需要确认发言人已同意。', voiceprint_source_changed: '发言片段已更新，请关闭窗口后重新选择。', voiceprint_audio_unavailable: '这段声音不可用于声纹，请选择没有重叠发言且仍保留原音的片段。', voiceprint_clip_duration: '请选择 2–30 秒的独立发言片段。', voiceprint_unavailable: '本地声纹模型尚未准备好，请检查本地模型资源。', invalid_voiceprint_scope: '请进入一个工作目录后管理声纹。', voiceprint_not_found: '声纹已删除或不属于当前工作目录。', voiceprint_limit: '当前工作目录的声纹数量已达上限，请先删除不再使用的声音。', voiceprint_request_conflict: '保存请求已变更，请关闭窗口后重试。', voiceprint_storage_invalid: '声纹数据校验失败，请删除该条目后重新加入。',
   local_asr_assets_missing: '本地模型未安装或资源缺失。请选择云端转录服务，或重新安装并勾选本地模型。已保存的录音不受影响。',
   local_asr_assets_invalid: '本地语音模型校验未通过，请重新安装完整安装包后重试。已保存的录音不受影响。',
   local_asr_unavailable: '本地转录引擎已中断，可重新处理。录音已保留，应用会自动重新启动引擎。',

@@ -1,0 +1,172 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, writeFile, rm, stat } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { randomUUID } from 'node:crypto';
+import { createRepository } from '../services/records/src/repository.mjs';
+import { voiceprints } from '../services/records/src/voiceprints.mjs';
+import { normalizedVoice, voiceSimilarity, validDiarization, labelLocalTurns } from '../services/records/src/local-speakers.mjs';
+import { LOCAL_SPEAKER_MODEL } from '../services/records/src/local-asr.mjs';
+import { workspaceRoutes } from '../services/records/src/workspace-routes.mjs';
+import { createRecord, addSource, acknowledge, commitTranscriptBatch, digest, pause, editSegment } from '../packages/records/src/record.mjs';
+
+const vector = index => Array.from({ length: 512 }, (_, at) => at === index ? 1 : 0);
+async function fixture(work) {
+  const root = await mkdtemp(join(tmpdir(), 'lingji-voiceprint-')), prior = process.env.LINGJI_LOCAL_ASR_DIR;
+  process.env.LINGJI_LOCAL_ASR_DIR = root;
+  await writeFile(join(root, 'manifest.json'), JSON.stringify({ speakerModels: { model: LOCAL_SPEAKER_MODEL } }));
+  const repo = await createRepository({ root });
+  try {
+    const record = createRecord('owner', { language: 'zh', autoMinutes: false }), source = addSource(record, { kind: 'microphone' }); await repo.insert(record);
+    for (let sequence = 0; sequence < 3; sequence++) {
+      const bytes = Buffer.alloc(32000, 5), object = await repo.putAudio(record.id, bytes);
+      await repo.change(record.id, r => acknowledge(r, { sessionId: source.sessionId, sourceId: source.id, epoch: source.epoch, sequence, sampleOffset: sequence * 16000, sampleCount: 16000, sampleRate: 16000, digest: digest(bytes), ...object }));
+    }
+    await repo.change(record.id, r => { pause(r, [{ sessionId: source.sessionId, sourceId: source.id, epoch: source.epoch, lastSequence: 2 }]); commitTranscriptBatch(r, r.chunks.map(chunk => chunk.key), '这是一段获得授权的独立发言。', r.generation, 'local-model', { provider: 'sensevoice-local' }); });
+    const current = await repo.get(record.id), segment = current.segments[0], input = { recordId: record.id, segmentId: segment.id, revision: segment.revision, name: '小林', consent: true, libraryRevision: 0, requestId: randomUUID() };
+    await work({ root, repo, record: current, segment, source, input });
+  } finally {
+    if (prior === undefined) delete process.env.LINGJI_LOCAL_ASR_DIR; else process.env.LINGJI_LOCAL_ASR_DIR = prior;
+    await repo.close(); await rm(root, { recursive: true, force: true });
+  }
+}
+
+test('local speaker vectors are bounded and volatile; canonical turns contain exact audio evidence without vectors', async () => fixture(async ({ record, source }) => {
+  assert.equal(normalizedVoice([1]), null); assert.equal(normalizedVoice(Array(512).fill(Infinity)), null); assert.equal(normalizedVoice(Array(512).fill(0)), null);
+  assert.equal(voiceSimilarity(vector(0), vector(1)), 0);
+  const turns = [{ text: '第一位发言。', startMs: 0, endMs: 1000, embedding: vector(0), overlap: false }, { text: '第二位发言。', startMs: 1000, endMs: 3000, embedding: vector(1), overlap: false }];
+  const slices = turns.map(turn => ({ start: turn.startMs * 16, end: turn.endMs * 16, overlap: turn.overlap, embedding: turn.embedding }));
+  assert.equal(validDiarization(slices, 3000), true); assert.equal(validDiarization(slices, 2999), false);
+  const labeled = labelLocalTurns(record, turns); assert.notEqual(labeled[0].speakerId, labeled[1].speakerId); assert.equal(labelLocalTurns(record, [turns[0]])[0].speakerId, labeled[0].speakerId);
+  assert.equal(JSON.stringify(labeled).includes('embedding'), false);
+  for (const chunk of record.chunks) chunk.state = 'pending'; record.segments = [];
+  commitTranscriptBatch(record, record.chunks.map(chunk => chunk.key), turns.map(turn => turn.text).join(' '), record.generation, 'sensevoice', { provider: 'sensevoice-local', turns: labeled });
+  assert.equal(record.segments.length, 2); assert.equal(record.segments[0].chunkKeys.length, 1); assert.equal(record.segments[1].chunkKeys.length, 2);
+  assert.equal(record.segments[0].speakerId, labeled[0].speakerId); assert.equal(record.segments[0].sourceId, source.id);
+  assert.equal(JSON.stringify(record).includes('embedding'), false);
+  const overlap = labelLocalTurns(record, [{ ...turns[0], overlap: true }]); assert.equal(overlap[0].speakerId, undefined);
+}));
+
+test('workspace voiceprints require opt in, encrypt vectors, isolate owners/scopes, match only on request, and revoke idempotently', async () => fixture(async ({ root, repo, input }) => {
+  let calls = 0;
+  const registry = voiceprints(repo, { infer: async (pcm, config, options) => { calls++; assert.equal(pcm.length, 96000); assert.equal(options.embedding, true); return { embedding: vector(0) }; } });
+  await assert.rejects(registry.enroll('owner', 'inbox', { ...input, consent: false }), { code: 'voiceprint_consent_required' });
+  await assert.rejects(registry.enroll('other', 'inbox', input), { code: 'record_not_found' });
+  await assert.rejects(registry.enroll('owner', randomUUID(), input), { code: 'record_not_found' });
+  await assert.rejects(registry.enroll('owner', 'inbox', { ...input, revision: 99 }), { code: 'voiceprint_source_changed' });
+  const enrolled = await registry.enroll('owner', 'inbox', input); assert.equal(enrolled.name, '小林');
+  await registry.enroll('owner', 'inbox', input); assert.equal(calls, 1);
+  const stored = (await repo.list('voiceprints')).find(value => value.entries.length);
+  assert.equal(stored.entries[0].sealed.includes('vector'), false); assert.equal(JSON.stringify(stored).includes('"vector"'), false); assert.equal(stored.entries[0].consentVersion, 1);
+  if (process.platform !== 'win32') assert.equal((await stat(join(root, 'integrations.key'))).mode & 0o777, 0o600);
+  assert.deepEqual((await registry.list('other', 'inbox')).entries, []);
+  assert.deepEqual((await registry.match('owner', 'inbox', input)).matches, [{ id: enrolled.id, name: '小林', similarity: 1 }]);
+  const published = JSON.stringify(await registry.list('owner', 'inbox')); assert.equal(published.includes('sealed'), false); assert.equal(published.includes('vector'), false);
+  await registry.revoke('owner', 'inbox', enrolled.id); await registry.revoke('owner', 'inbox', enrolled.id);
+  assert.deepEqual((await registry.list('owner', 'inbox')).entries, []);
+  assert.deepEqual(await registry.match('owner', 'inbox', input), { matches: [] });
+  await assert.rejects(registry.enroll('owner', 'inbox', input), { code: 'voiceprint_library_changed' });
+  assert.equal((await repo.get(stored.id)).entries.length, 0);
+}));
+
+test('enrollment rejects source edits during inference and route access requires the owning workspace', async () => fixture(async ({ repo, record, input }) => {
+  const registry = voiceprints(repo, { infer: async () => { await repo.change(record.id, r => editSegment(r, input.segmentId, {revision:input.revision,text:'编辑后的内容',speaker:''})); return { embedding: vector(0) }; } });
+  await assert.rejects(registry.enroll('owner', 'inbox', input), { code: 'voiceprint_source_changed' });
+  assert.deepEqual((await registry.list('owner', 'inbox')).entries, []);
+  let response;
+  await workspaceRoutes({ req: { method: 'GET', url: '/api/workspaces/inbox/voiceprints' }, res: {}, path: '/api/workspaces/inbox/voiceprints', repo, user: { id: 'owner' }, readBody: async () => ({}), send: (_, status, body) => { response = { status, body }; } });
+  assert.equal(response.status, 200); assert.equal(response.body.available, true);
+  await assert.rejects(workspaceRoutes({ req: { method: 'GET' }, res: {}, path: `/api/workspaces/${randomUUID()}/voiceprints`, repo, user: { id: 'owner' } }), { code: 'workspace_not_found' });
+}));
+
+test('voiceprint inference rejects expired or overlapping source audio and unknown request bodies', async () => fixture(async ({ repo, record, input }) => {
+  const registry = voiceprints(repo, { infer: async () => assert.fail('invalid clip must not reach native model') });
+  await assert.rejects(registry.enroll('owner', 'inbox', null), { code: 'voiceprint_consent_required' });
+  await repo.change(record.id, r => { r.segments[0].overlappingSpeech = true; });
+  await assert.rejects(registry.enroll('owner', 'inbox', input), { code: 'voiceprint_audio_unavailable' });
+  await repo.change(record.id, r => { delete r.segments[0].overlappingSpeech; r.chunks[0].expired = true; });
+  await assert.rejects(registry.enroll('owner', 'inbox', input), { code: 'voiceprint_audio_unavailable' });
+}));
+
+async function nativeFailureFixture(mode, work) {
+  const { mkdir } = await import('node:fs/promises'), { dirname } = await import('node:path'), { createHash } = await import('node:crypto');
+  const { openLocalAsr, closeLocalAsr, LOCAL_ASR_MODEL } = await import('../services/records/src/local-asr.mjs');
+  const root = await mkdtemp(join(tmpdir(), 'lingji-speaker-crash-')), files = [];
+  try {
+    const sdk = `const fs=require('node:fs'),path=require('node:path');exports.OfflineRecognizer=class {constructor(c){fs.writeFileSync(path.join(path.dirname(c.modelConfig.senseVoice.model),'../core-started'),'1')}createStream(){return {acceptWaveform(){}}}decode(){}getResult(){return {text:'健康的最终正文',lang:'<|zh|>'}}};exports.Vad=class{reset(){}acceptWaveform(){}flush(){}isEmpty(){return false}};exports.SpeakerEmbeddingExtractor=class{constructor(c){fs.writeFileSync(path.join(path.dirname(c.model),'../speaker-started'),'1');${mode === 'crash' ? 'process.exit(7)' : mode === 'stall' ? 'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,60000)' : ''}}createStream(){return {acceptWaveform(){},inputFinished(){}}}isReady(){return true}compute(){const v=new Float32Array(512);v[0]=1;return v}};exports.OfflineSpeakerDiarization=class{process(){return [{start:.2,end:1,speaker:0},{start:1.5,end:2.5,speaker:1}]}};`;
+    const contents = { 'sensevoice/model.int8.onnx': 'test model', 'sensevoice/tokens.txt': 'test tokens', 'silero_vad.onnx': 'test vad', 'speakers/segmentation.int8.onnx': 'test segmentation', 'speakers/embedding.onnx': 'test embedding', 'node_modules/sherpa-onnx-node/index.js': sdk, 'node_modules/sherpa-onnx-node/package.json': '{"main":"index.js"}', 'package.json': '{}' };
+    const prefix = `node_modules/sherpa-onnx-${process.platform === 'win32' ? 'win' : process.platform}-${process.arch}/`, nativeFiles = ['sherpa.node', 'a.dylib', 'b.dylib'].map(name => prefix + name);
+    for (const path of nativeFiles) contents[path] = 'synthetic resource';
+    for (const [path, value] of Object.entries(contents)) {
+      const bytes = Buffer.from(value); await mkdir(dirname(join(root, path)), { recursive: true }); await writeFile(join(root, path), bytes);
+      files.push({ path, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') });
+    }
+    await writeFile(join(root, 'manifest.json'), JSON.stringify({ model: LOCAL_ASR_MODEL, runtime: '1.13.8', platform: process.platform, arch: process.arch, files, nativeFiles, speakerModels: { model: LOCAL_SPEAKER_MODEL } }));
+    openLocalAsr(); await work(root);
+  } finally { await closeLocalAsr(); openLocalAsr(); await rm(root, { recursive: true, force: true }); }
+}
+
+test('optional speaker process crash falls back to healthy SenseVoice without losing final audio', { timeout: 15000 }, async () => nativeFailureFixture('crash', async root => {
+  const { transcribeLocalAsr } = await import('../services/records/src/local-asr.mjs'); const started = performance.now();
+  const result = await transcribeLocalAsr(Buffer.alloc(96000), { LINGJI_LOCAL_ASR_DIR: root }, { metadata: true, diarize: true });
+  assert.equal(result.text, '健康的最终正文'); assert.equal(result.diarizationError, 'local_diarization_unavailable'); assert.ok(performance.now() - started < 3000);
+  const second = await transcribeLocalAsr(Buffer.alloc(96000), { LINGJI_LOCAL_ASR_DIR: root }, { metadata: true, diarize: true }); assert.equal(second.text, '健康的最终正文');
+}));
+
+test('shutdown during optional speaker startup cannot reopen the final inference registry', { timeout: 15000 }, async () => nativeFailureFixture('stall', async root => {
+  const { transcribeLocalAsr, closeLocalAsr } = await import('../services/records/src/local-asr.mjs');
+  const pending = transcribeLocalAsr(Buffer.alloc(96000), { LINGJI_LOCAL_ASR_DIR: root }, { metadata: true, diarize: true });
+  const rejected = assert.rejects(pending, { code: 'local_asr_shutdown' });
+  let started = false;
+  for (let i = 0; i < 150; i++) { try { await stat(join(root, 'speaker-started')); started = true; break; } catch {} await new Promise(done => setTimeout(done, 10)); }
+  assert.equal(started, true); await closeLocalAsr(); await rejected;
+  await assert.rejects(stat(join(root, 'core-started')), { code: 'ENOENT' });
+}));
+
+test('partial diarization keeps uncovered speech in canonical final turns', async () => nativeFailureFixture('partial', async root => {
+  const { transcribeLocalAsr } = await import('../services/records/src/local-asr.mjs');
+  const result = await transcribeLocalAsr(Buffer.alloc(96000), { LINGJI_LOCAL_ASR_DIR: root }, { metadata: true, diarize: true });
+  assert.equal(result.diarizationError, undefined); assert.equal(result.turns.length, 5);
+  assert.deepEqual(result.turns.map(turn => [turn.startMs, turn.endMs]), [[0, 200], [200, 1000], [1000, 1500], [1500, 2500], [2500, 3000]]);
+  assert.equal(result.turns.reduce((duration, turn) => duration + turn.endMs - turn.startMs, 0), 3000);
+  assert.equal(result.turns[2].embedding, undefined);
+}));
+
+test('more than 64 diarization slices fail explicitly so callers can use complete final audio', async () => nativeFailureFixture('partial', async root => {
+  const { createLocalSpeakerInference } = await import('../services/records/src/local-speaker-inference.mjs');
+  const inference = await createLocalSpeakerInference(root, {
+    SpeakerEmbeddingExtractor: class {},
+    OfflineSpeakerDiarization: class { process() { return Array.from({ length: 70 }, (_, i) => ({ start: i * .375, end: i * .375 + .3, speaker: 0 })); } },
+  });
+  assert.throws(() => inference.diarize(new Float32Array(420000)), /too_many_speaker_slices/);
+}));
+
+test('revoke before first vault insertion invalidates delayed enrollment without retaining tombstones', async () => fixture(async ({ repo, input }) => {
+  const registry = voiceprints(repo, { infer: async () => ({ embedding: vector(0) }) }), insert = repo.insert.bind(repo);
+  let release, reached; const gate = new Promise(done => { release = done; }), ready = new Promise(done => { reached = done; }); let intercepted = false;
+  repo.insert = async value => { if (value.kind === 'voiceprints' && !intercepted) { intercepted = true; reached(); await gate; } return insert(value); };
+  const pending = registry.enroll('owner', 'inbox', input), rejected = assert.rejects(pending, { code: 'voiceprint_library_changed' });
+  await ready; const first = await registry.revoke('owner', 'inbox', input.requestId, 0); release(); await rejected;
+  assert.equal(first.revision, 1); assert.deepEqual(await registry.revoke('owner', 'inbox', input.requestId, 0), first);
+  const stored = (await repo.list('voiceprints'))[0]; assert.equal(stored.entries.length, 0); assert.equal(stored.revoked, undefined);
+}));
+
+test('revocation remains available after many prior library changes', async () => fixture(async ({ repo, input }) => {
+  const registry = voiceprints(repo, { infer: async () => ({ embedding: vector(0) }) });
+  await registry.enroll('owner', 'inbox', input); const stored = (await repo.list('voiceprints'))[0];
+  await repo.change(stored.id, value => { value.revision = 10000; });
+  await registry.revoke('owner', 'inbox', input.requestId, 0);
+  assert.equal((await registry.list('owner', 'inbox')).entries.length, 0);
+}));
+
+test('same-speaker pauses retain ASR context without crossing another or unknown speaker boundary',async()=>nativeFailureFixture('partial',async root=>{
+ const {createLocalSpeakerInference}=await import('../services/records/src/local-speaker-inference.mjs');let spans=[{start:0.1,end:0.8,speaker:0},{start:1.4,end:2,speaker:0},{start:2.5,end:3,speaker:0}];const embedded=[];
+ const inference=await createLocalSpeakerInference(root,{
+  SpeakerEmbeddingExtractor:class{createStream(){return {acceptWaveform:({samples})=>embedded.push(samples.length),inputFinished(){}};}isReady(){return true;}compute(){return vector(0);}},
+  OfflineSpeakerDiarization:class{process(){return spans;}},
+ });
+ const same=inference.diarize(new Float32Array(48000));assert.equal(same.length,1);assert.equal(same[0].start,1600);assert.equal(same[0].end,48000);assert.deepEqual(embedded,[28800]);
+ spans=[{start:0.1,end:0.8,speaker:0},{start:1,end:1.8,speaker:1},{start:2,end:2.8,speaker:0}];assert.deepEqual(inference.diarize(new Float32Array(48000)).map(turn=>turn.cluster),[0,1,0]);
+ spans=[{start:0.1,end:0.9,speaker:0},{start:0.8,end:1.4,speaker:1},{start:2,end:2.8,speaker:0}];const unknown=inference.diarize(new Float32Array(48000));assert.equal(unknown.length,2);assert.equal(unknown[0].overlap,true);assert.equal(unknown[0].embedding,undefined);assert.equal(unknown[1].cluster,0);
+}));

@@ -1,3 +1,6 @@
+pub mod applications;
+mod dsp;
+mod native_spool;
 mod packet_queue;
 use packet_queue::PacketQueue;
 pub mod pipeline;
@@ -38,12 +41,40 @@ struct Capture {
     stop: Arc<AtomicBool>,
     discard: Arc<AtomicBool>,
     receiver: Arc<PacketQueue>,
+    armed: Arc<AtomicBool>,
+    processing: Arc<Mutex<Option<dsp::Processor>>>,
+    binding: Mutex<Option<serde_json::Value>>,
+    native_pending: AtomicBool,
+    native_bound: AtomicBool,
+    native_purged: AtomicBool,
+    user_disabled: AtomicBool,
     error: Arc<Mutex<Option<String>>>,
+}
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeStatus {
+    pub record_id: String, pub recording: bool, pub microphone_on: bool, pub paused: bool,
+    pub can_resume: bool, pub duration_ms: u64, pub rms: f64, pub pending_count: u64,
 }
 #[derive(Default)]
 pub struct Captures {
     sessions: Mutex<HashMap<String, Arc<Capture>>>,
     next: AtomicU64,
+    intents: Mutex<HashMap<(String,String), bool>>,
+}
+
+fn native_timeline_end(source: &serde_json::Value, samples: u64) -> u64 {
+    let base = source["timelineOffsetMs"].as_f64().filter(|value|value.is_finite() && *value >= 0.0).unwrap_or(0.0);
+    (base + samples as f64 / 16.0).ceil() as u64
+}
+enum CaptureStream {
+    Device {stream:cpal::Stream,#[cfg(target_os="macos")] application:Option<applications::macos::Tap>},
+    #[cfg(target_os="windows")]
+    Application(applications::windows::Capture),
+}
+impl CaptureStream {
+    fn play(&self)->Result<(),String>{match self {Self::Device{stream,..}=>stream.play().map_err(|e|e.to_string()),#[cfg(target_os="windows")]Self::Application(_)=>Ok(())}}
+    fn check(&mut self)->Result<(),String>{match self {Self::Device{#[cfg(target_os="macos")]application,..}=>{#[cfg(target_os="macos")]if let Some(tap)=application{tap.refresh()?;}Ok(())},#[cfg(target_os="windows")]Self::Application(stream)=>stream.check()}}
 }
 
 fn audio_host(system: bool) -> Result<cpal::Host, String> {
@@ -210,6 +241,7 @@ fn input_stream<T>(
     error: Arc<Mutex<Option<String>>>,
     stop: Arc<AtomicBool>,
     rebuild: Arc<AtomicBool>,
+    armed: Arc<AtomicBool>,
 ) -> Result<cpal::Stream, String>
 where
     T: cpal::SizedSample,
@@ -218,7 +250,7 @@ where
     let failure = error.clone();
     let failed = stop.clone();
     let warned = AtomicBool::new(false);
-    device.build_input_stream(*config, move |data: &[T], _| { queue_input(&sender, data, &error, &stop); }, move |e| { handle_stream_error(e, &failure, &failed, &warned, &rebuild); }, None)
+    device.build_input_stream(*config, move |data: &[T], _| { if !armed.load(Ordering::Acquire) { return; } queue_input(&sender, data, &error, &stop); }, move |e| { handle_stream_error(e, &failure, &failed, &warned, &rebuild); }, None)
         .map_err(|e| e.to_string())
 }
 
@@ -244,7 +276,9 @@ fn prepare_restart(sender: &PacketQueue, pipeline: &mut Pipeline, frames: Receiv
 
 impl Captures {
     pub fn active(&self) -> bool {
-        !self.sessions.lock().unwrap().is_empty()
+        self.sessions.try_lock().map_or(true, |sessions| sessions.values().any(|session| {
+            !session.native_bound.load(Ordering::Acquire) || !session.stop.load(Ordering::Acquire) || session.native_pending.load(Ordering::Acquire)
+        }))
     }
     #[cfg(feature = "smoke-test")]
     pub fn synthetic(&self, kind: &str) -> Result<Started, String> {
@@ -253,14 +287,22 @@ impl Captures {
 
     #[cfg(feature = "smoke-test")]
     fn synthetic_source(&self, kind: &str, frame_limit: Option<(usize, mpsc::SyncSender<()>)>) -> Result<Started, String> {
+        self.synthetic_source_mode(kind, frame_limit, true)
+    }
+    #[cfg(feature = "smoke-test")]
+    pub fn prepare_synthetic(&self, kind: &str) -> Result<Started, String> { self.synthetic_source_mode(kind, None, false) }
+    #[cfg(feature = "smoke-test")]
+    fn synthetic_source_mode(&self, kind: &str, frame_limit: Option<(usize, mpsc::SyncSender<()>)>, armed_initially: bool) -> Result<Started, String> {
         let id = format!("fixture-{}", self.next.fetch_add(1, Ordering::Relaxed));
         let stop = Arc::new(AtomicBool::new(false));
         let discard = Arc::new(AtomicBool::new(false));
         let error = Arc::new(Mutex::new(None));
         let packets = Arc::new(PacketQueue::new()?);
         let receiver = packets.clone();
+        let armed = Arc::new(AtomicBool::new(armed_initially));
+        let processing=Arc::new(Mutex::new(None));
         let mut sessions = self.sessions.lock().unwrap();
-        if sessions.values().any(|s| s.kind == kind) {
+        if sessions.values().any(|s| s.kind == kind && !s.stop.load(Ordering::Acquire)) {
             return Err("此合成音源已接入".into());
         }
         sessions.insert(
@@ -270,6 +312,7 @@ impl Captures {
                 stop: stop.clone(),
                 discard: discard.clone(),
                 receiver,
+                processing: processing.clone(), armed: armed.clone(), binding: Mutex::new(None), native_pending: AtomicBool::new(false), native_bound: AtomicBool::new(false), native_purged: AtomicBool::new(false), user_disabled: AtomicBool::new(false),
                 error: error.clone(),
             }),
         );
@@ -280,6 +323,8 @@ impl Captures {
                 let mut offset = 0;
                 let mut frames = 0;
                 while !stop.load(Ordering::Acquire) && frame_limit.as_ref().is_none_or(|(limit, _)| frames < *limit) {
+                    if !armed.load(Ordering::Acquire) { std::thread::sleep(Duration::from_millis(10)); continue; }
+                    pipe.set_processing(processing.lock().unwrap().take());
                     let data: Vec<f32> = (0..960)
                         .flat_map(|n| {
                             let v = ((offset + n) as f32 * 440.0 * std::f32::consts::TAU
@@ -305,6 +350,7 @@ impl Captures {
                 Ok::<(), String>(())
             })();
             if let Err(e) = result {
+                stop.store(true, Ordering::Release);
                 *error.lock().unwrap() = Some(e);
             }
         });
@@ -313,12 +359,14 @@ impl Captures {
             label: "合成音源 · 不采集真实设备".into(),
         })
     }
-    pub fn start(&self, kind: &str, selected: Option<&str>) -> Result<Started, String> {
+    pub fn start(&self, kind: &str, selected: Option<&str>) -> Result<Started, String> { self.start_mode(kind, selected, true) }
+    pub fn prepare(&self, kind: &str, selected: Option<&str>) -> Result<Started, String> { self.start_mode(kind, selected, false) }
+    fn start_mode(&self, kind: &str, selected: Option<&str>, armed_initially: bool) -> Result<Started, String> {
         if !["display", "microphone"].contains(&kind) {
             return Err("未知音源".into());
         }
         let mut sessions = self.sessions.lock().unwrap();
-        if sessions.values().any(|s| s.kind == kind) {
+        if sessions.values().any(|s| s.kind == kind && !s.stop.load(Ordering::Acquire)) {
             return Err("此音源已接入".into());
         }
         let id = format!("native-{}", self.next.fetch_add(1, Ordering::Relaxed));
@@ -327,6 +375,8 @@ impl Captures {
         let error = Arc::new(Mutex::new(None));
         let packets = Arc::new(PacketQueue::new()?);
         let receiver = packets.clone();
+        let armed = Arc::new(AtomicBool::new(armed_initially));
+        let processing=Arc::new(Mutex::new(None));
         let (ready, started) = mpsc::sync_channel(1);
         sessions.insert(
             id.clone(),
@@ -335,6 +385,7 @@ impl Captures {
                 stop: stop.clone(),
                 discard: discard.clone(),
                 receiver,
+                processing: processing.clone(), armed: armed.clone(), binding: Mutex::new(None), native_pending: AtomicBool::new(false), native_bound: AtomicBool::new(false), native_purged: AtomicBool::new(false), user_disabled: AtomicBool::new(false),
                 error: error.clone(),
             }),
         );
@@ -353,16 +404,28 @@ impl Captures {
                 loop {
                 let rebuild = Arc::new(AtomicBool::new(false));
                 let opened = (|| {
+                let application_target=if worker_kind=="display" {selected.as_deref().filter(|value|!matches!(*value,""|"default"|"system")).map(applications::Target::parse).transpose()?}else{None};
+                #[cfg(target_os="windows")]
+                if let Some(target)=application_target {return applications::windows::open(target,worker_error.clone(),worker_stop.clone(),armed.clone()).map(|(stream,frames,label)|(CaptureStream::Application(stream),frames,cpal::SupportedStreamConfig::new(2,48_000,cpal::SupportedBufferSize::Unknown,cpal::SampleFormat::F32),label));}
+                #[cfg(not(any(target_os="macos",target_os="windows")))]
+                if application_target.is_some(){return Err("此系统暂不支持按应用选择声音，请明确选择系统所有应用或麦克风。".into());}
                 let host = audio_host(worker_kind == "display")?;
+                #[cfg(target_os="macos")]
+                let mut application=None;
+                #[allow(unused_mut)]
+                let mut label_override:Option<String>=None;
                 let devices = if worker_kind == "microphone" {
                     input_list(&host)?
                 } else {
                     Vec::new()
                 };
-                let selected = microphone_id(selected.as_deref(), &devices)?;
+                let selected_input = if worker_kind=="microphone" {microphone_id(selected.as_deref(), &devices)?}else{None};
                 let device = if worker_kind == "display" {
-                        Some(system_device(&host)?)
-                } else if let Some(id) = selected {
+                        #[cfg(target_os="macos")]
+                        {if let Some(target)=application_target {let (device,tap,label)=applications::macos::Tap::open(&host,target)?;application=Some(tap);label_override=Some(label);Some(device)}else{Some(system_device(&host)?)}}
+                        #[cfg(not(target_os="macos"))]
+                        {Some(system_device(&host)?)}
+                } else if let Some(id) = selected_input {
                     let id = id.parse().map_err(|_| "音频设备标识无效")?;
                     host.device_by_id(&id)
                 } else {
@@ -370,7 +433,7 @@ impl Captures {
                 }
                 .ok_or("所选音频设备不可用，请重新选择")?;
                     #[cfg(not(target_os = "linux"))]
-                    let config = if worker_kind == "display" {
+                    let config = if worker_kind == "display" && label_override.is_none() {
                     device.default_output_config()
                 } else {
                     device.default_input_config()
@@ -395,6 +458,7 @@ impl Captures {
                         worker_error.clone(),
                         worker_stop.clone(),
                         rebuild.clone(),
+                        armed.clone(),
                     ),
                     cpal::SampleFormat::I16 => input_stream::<i16>(
                         &device,
@@ -403,6 +467,7 @@ impl Captures {
                         worker_error.clone(),
                         worker_stop.clone(),
                         rebuild.clone(),
+                        armed.clone(),
                     ),
                     cpal::SampleFormat::U16 => input_stream::<u16>(
                         &device,
@@ -411,21 +476,23 @@ impl Captures {
                         worker_error.clone(),
                         worker_stop.clone(),
                         rebuild.clone(),
+                        armed.clone(),
                     ),
                     format => Err(format!("尚未支持设备格式 {format}")),
                 }?;
                 if worker_stop.load(Ordering::Acquire) {
                     return Err("采集启动已取消".into());
                 }
-                stream.play().map_err(|e| e.to_string())?;
+                let stream=CaptureStream::Device{stream,#[cfg(target_os="macos")]application};
+                stream.play()?;
                 let label = device
                     .description()
                     .map_err(|e| e.to_string())?
                     .name()
                     .to_string();
-                    Ok::<_,String>((stream,frames,config,label))
+                    Ok::<_,String>((stream,frames,config,label_override.unwrap_or(label)))
                 })();
-                let (stream,frames,config,label) = match opened {
+                let (mut stream,frames,config,label) = match opened {
                     Ok(value) => value,
                     Err(_) if announced.is_none() && !worker_stop.load(Ordering::Acquire) && restarts<3 => {
                         restarts+=1;
@@ -443,8 +510,9 @@ impl Captures {
                 };
                 if let Some(ready) = announced.take() { ready.send(Ok(label)).map_err(|_| "采集启动已取消")?; }
                 while !worker_stop.load(Ordering::Acquire) && !rebuild.load(Ordering::Acquire) {
+                    if let Err(message)=stream.check(){*worker_error.lock().unwrap()=Some(message);worker_stop.store(true,Ordering::Release);}
                     match frames.recv_timeout(Duration::from_millis(200)) {
-                        Ok(data) => send_packets(&packets, pipeline.push(&data)?)?,
+                        Ok(data) => {pipeline.set_processing(processing.lock().unwrap().take());send_packets(&packets, pipeline.push(&data)?)?;},
                         Err(mpsc::RecvTimeoutError::Timeout) => {}
                         Err(_) => break,
                     }
@@ -464,6 +532,7 @@ impl Captures {
                 }
             })();
             if let Err(message) = result {
+                worker_stop.store(true, Ordering::Release);
                 *worker_error.lock().unwrap() = Some(message.clone());
                 let _ = ready.send(Err(message));
             }
@@ -483,6 +552,119 @@ impl Captures {
         Ok(Started { id, label })
     }
 
+    pub fn set_native_kind(&self, record_id: &str, kind: &str, enabled: bool) -> Result<(), String> {
+        if !["display", "microphone"].contains(&kind) || record_id.len() != 36 { return Err("音源选择无效".into()); }
+        let mut intents = self.intents.lock().unwrap(); intents.insert((record_id.into(), kind.into()), enabled);
+        if !enabled {
+            let sessions: Vec<_> = self.sessions.lock().unwrap().values().cloned().collect();
+            for session in sessions.into_iter().filter(|session| session.kind == kind) {
+                let binding=session.binding.lock().unwrap().clone();
+                if binding.as_ref().is_none_or(|value|value["recordId"] == record_id) {
+                    session.user_disabled.store(true,Ordering::Release); session.stop.store(true,Ordering::Release);
+                }
+            }
+        }
+        Ok(())
+    }
+    pub fn abandon_prepared(&self, id: &str) {
+        let session=self.sessions.lock().unwrap().get(id).cloned();
+        if let Some(session)=session { if session.native_bound.load(Ordering::Acquire) { let _=self.stop_direct(id,"source"); } else { let _=self.stop(id,true); } }
+    }
+    pub fn refresh_native_pending(&self) {
+        let sessions: Vec<_> = self.sessions.lock().unwrap().values().cloned().collect();
+        for session in sessions { if session.native_bound.load(Ordering::Acquire) {
+            match session.receiver.native_progress() {
+                Ok((_, receipt, _, _)) => {
+                    session.native_purged.store(receipt.purged, Ordering::Release);
+                    if receipt.error.is_some() { session.stop.store(true, Ordering::Release); }
+                    session.native_pending.store(!(receipt.finished || receipt.purged), Ordering::Release);
+                }
+                Err(_) => { session.native_pending.store(true, Ordering::Release); session.stop.store(true, Ordering::Release); }
+            }
+        } }
+    }
+    pub fn native_status(&self) -> Option<NativeStatus> {
+        let descriptors = self.direct_sessions();
+        let current = descriptors.iter().find(|value| value["stopped"] == false).or_else(|| descriptors.last())?;
+        let record_id = current["recordId"].as_str()?.to_string();
+        let mut status = NativeStatus { record_id: record_id.clone(), recording:false,microphone_on:false,paused:false,can_resume:false,duration_ms:0,rms:0.0,pending_count:0 };
+        let mut sealed = false; let mut purged = false;
+        let sessions = self.sessions.lock().unwrap().clone();
+        for descriptor in descriptors.iter().filter(|value| value["recordId"] == record_id) {
+            let session = sessions.get(descriptor["id"].as_str()?)?;
+            let capturing = !session.stop.load(Ordering::Acquire);
+            status.recording |= capturing;
+            status.microphone_on |= capturing && session.kind == "microphone";
+            sealed |= session.receiver.action() == "seal";
+            let produced = session.receiver.progress().0;
+            status.duration_ms = status.duration_ms.max(native_timeline_end(&descriptor["source"], produced));
+            match session.receiver.native_progress() {
+                Ok((manifest, receipt, rms, _)) => { purged |= receipt.purged; if !receipt.purged { status.pending_count += (manifest.last_sequence - receipt.watermark).max(0) as u64; } if capturing { status.rms = status.rms.max(rms as f64); } }
+                Err(_) => status.pending_count += 1,
+            }
+        }
+        status.paused = !status.recording && !sealed && !purged;
+        status.can_resume = status.paused && status.pending_count == 0; Some(status)
+    }
+    pub fn stop_record(&self, record_id: &str, action: &str) -> Result<(), String> {
+        let descriptors = self.direct_sessions(); let mut failure = None;
+        for value in descriptors.iter().filter(|value| value["recordId"] == record_id) {
+            if let Err(error) = self.stop_direct(value["id"].as_str().ok_or("音频连接无效")?, action) { failure.get_or_insert(error); }
+        }
+        match failure { Some(error) => Err(error), None => Ok(()) }
+    }
+    pub fn direct_sessions(&self) -> Vec<serde_json::Value> {
+        let mut sessions: Vec<_> = self.sessions.lock().unwrap().iter().filter_map(|(id, session)| {
+            let binding = session.binding.lock().unwrap().clone()?;
+            Some((id.rsplit('-').next().unwrap_or("").parse::<u64>().unwrap_or(0), serde_json::json!({"id":id,"label":binding["source"]["label"],"source":binding["source"],"recordId":binding["recordId"],"stopped":session.stop.load(Ordering::Acquire),"action":session.receiver.action(),"purged":session.native_purged.load(Ordering::Acquire),"disconnected":session.user_disabled.load(Ordering::Acquire)})))
+        }).collect();
+        sessions.sort_by_key(|(serial, _)| *serial); sessions.into_iter().map(|(_, value)| value).collect()
+    }
+    pub fn direct_timeline(&self, record_id: &str) -> u64 {
+        let sessions: Vec<_> = self.sessions.lock().unwrap().values().cloned().collect();
+        sessions.into_iter().filter_map(|session| {
+            let binding = session.binding.lock().unwrap().clone()?;
+            if binding.get("recordId").and_then(|value| value.as_str()) != Some(record_id) { return None; }
+            Some(native_timeline_end(&binding["source"], session.receiver.progress().0))
+        }).max().unwrap_or(0)
+    }
+    pub fn bind_direct(&self, id: &str, root: &std::path::Path, binding: serde_json::Value) -> Result<(), String> {
+        let session = self.sessions.lock().unwrap().get(id).cloned().ok_or("采集已结束")?;
+        if session.armed.load(Ordering::Acquire) || session.stop.load(Ordering::Acquire) { return Err("音频连接已失效".into()); }
+        let lease = binding.get("leaseId").and_then(|value| value.as_str()).ok_or("音频连接响应无效")?;
+        if binding.get("protocol").and_then(|value| value.as_str()) != Some("native-file-v1") || binding.get("source").and_then(|value| value.get("id")).and_then(|value| value.as_str()).is_none() { return Err("音频连接响应无效".into()); }
+        session.receiver.bind_native(native_spool::NativeSpool::bind(root, lease)?)?;
+        let candidates = self.sessions.lock().unwrap().clone();
+        let removable: Vec<_> = candidates.into_iter().filter_map(|(other_id, other)| {
+            (other_id != id && other.stop.load(Ordering::Acquire) && other.native_bound.load(Ordering::Acquire) && other.receiver.native_progress().is_ok_and(|(_, receipt, _, _)| receipt.finished || receipt.purged)).then_some(other_id)
+        }).collect();
+        { let mut sessions=self.sessions.lock().unwrap(); for other_id in removable { sessions.remove(&other_id); } }
+        *session.binding.lock().unwrap() = Some(binding);
+        session.native_bound.store(true, Ordering::Release);
+        session.native_pending.store(true, Ordering::Release);
+        let intents=self.intents.lock().unwrap();
+        let binding=session.binding.lock().unwrap(); let record_id=binding.as_ref().and_then(|value|value["recordId"].as_str()).unwrap_or("");
+        if session.stop.load(Ordering::Acquire) || intents.get(&(record_id.into(),session.kind.clone())) == Some(&false) { return Err("此音源接入已取消".into()); }
+        let offset=(binding.as_ref().and_then(|value|value["source"]["timelineOffsetMs"].as_f64()).unwrap_or(0.0)*16.0).round() as u64;
+        *session.processing.lock().unwrap()=Some(dsp::Processor::new(record_id,session.kind=="microphone",offset)?);
+        session.armed.store(true, Ordering::Release); Ok(())
+    }
+    pub fn direct_progress(&self, id: &str) -> Result<serde_json::Value, String> {
+        let session = self.sessions.lock().unwrap().get(id).cloned().ok_or("采集已结束")?;
+        let (manifest, receipt, rms, quiet) = session.receiver.native_progress()?;
+        session.native_pending.store(!(receipt.finished || receipt.purged), Ordering::Release);
+        let failure = session.error.lock().unwrap().clone();
+        Ok(serde_json::json!({"sampleEnd": manifest.sample_end, "acknowledgedSampleEnd": receipt.sample_end, "bufferedBytes": if receipt.purged {0} else {(manifest.sample_end-receipt.sample_end)*2}, "rms":rms,"quietSeconds":quiet,"stopped":session.stop.load(Ordering::Acquire),"finished":receipt.finished,"error":receipt.error.or(failure)}))
+    }
+    pub fn stop_direct(&self, id: &str, action: &str) -> Result<serde_json::Value, String> {
+        let session = self.sessions.lock().unwrap().get(id).cloned().ok_or("采集已结束")?;
+        session.receiver.native_action(action)?;
+        session.stop.store(true, Ordering::Release); session.receiver.wait_closed()?;
+        let manifest = session.receiver.native_manifest()?;
+        let binding = session.binding.lock().unwrap().clone().ok_or("音频连接无效")?;
+        let source = binding.get("source").ok_or("音频连接无效")?;
+        Ok(serde_json::json!({"sourceId":source["id"],"sessionId":source["sessionId"],"epoch":source["epoch"],"lastSequence":manifest.last_sequence,"sampleEnd":manifest.sample_end}))
+    }
     pub fn read(&self, id: &str) -> Result<Vec<u8>, String> {
         let session = self
             .sessions
@@ -492,6 +674,7 @@ impl Captures {
             .cloned()
             .ok_or("采集已结束")?;
         // WASAPI/PipeWire may provide no packets while the output is idle. An idle output is not a failed device.
+        if session.native_bound.load(Ordering::Acquire) { return Err("本机直传音频无需页面读取".into()); }
         let result = session.receiver.pending();
         match result {
             Ok(Some(bytes)) => Ok(bytes),
@@ -511,18 +694,21 @@ impl Captures {
 
     pub fn progress(&self, id: &str) -> Result<Progress, String> {
         let session = self.sessions.lock().unwrap().get(id).cloned().ok_or("采集已结束")?;
+        if session.native_bound.load(Ordering::Acquire) { return Err("请通过本机直传进度接口读取状态".into()); }
         let (sample_end, acknowledged_sample_end, buffered_bytes) = session.receiver.progress();
         Ok(Progress { sample_end, acknowledged_sample_end, buffered_bytes })
     }
 
     pub fn acknowledge(&self, id: &str, sequence: u32, sample_offset: u32, sample_count: u32) -> Result<(), String> {
         let session = self.sessions.lock().unwrap().get(id).cloned().ok_or("采集已结束")?;
+        if session.native_bound.load(Ordering::Acquire) { return Err("本机直传音频由后台确认".into()); }
         session.receiver.acknowledge(sequence, sample_offset, sample_count)
     }
 
     pub fn stop(&self, id: &str, discard: bool) -> Result<(), String> {
         let mut sessions = self.sessions.lock().unwrap();
         if let Some(session) = sessions.get(id) {
+            if session.native_bound.load(Ordering::Acquire) { return Err("本机直传录音需要保存尾部后停止".into()); }
             session.discard.store(discard, Ordering::Release);
             session.stop.store(true, Ordering::Release);
             if discard { session.receiver.cancel(); }
@@ -533,12 +719,17 @@ impl Captures {
         Ok(())
     }
 
-    pub fn stop_all(&self) {
-        for session in self.sessions.lock().unwrap().values() {
-            session.discard.store(true, Ordering::Release);
+    pub fn stop_all(&self) { let _ = self.stop_all_safe(); }
+    pub fn stop_all_safe(&self) -> Result<(), String> {
+        let sessions: Vec<_> = self.sessions.lock().unwrap().values().cloned().collect();
+        for session in &sessions {
+            if session.receiver.direct() { let _ = session.receiver.native_action("pause"); }
+            else { session.discard.store(true, Ordering::Release); session.receiver.cancel(); }
             session.stop.store(true, Ordering::Release);
-            session.receiver.cancel();
         }
+        let mut failure = None;
+        for session in sessions { if session.receiver.direct() { if let Err(error) = session.receiver.wait_closed() { failure.get_or_insert(error); } } }
+        match failure { Some(error) => Err(error), None => Ok(()) }
     }
 }
 
@@ -820,4 +1011,48 @@ mod tests {
             Some("selected")
         );
     }
+    #[cfg(feature = "smoke-test")]
+    #[test]
+    fn stopped_direct_kind_reopens_without_losing_pending_tail_or_timeline() {
+        let root=tempfile::tempdir().unwrap();let captures=Captures::default();
+        let first=captures.prepare_synthetic("display").unwrap();let lease="c".repeat(64);std::fs::create_dir(root.path().join(&lease)).unwrap();
+        let binding=serde_json::json!({"protocol":"native-file-v1","leaseId":lease,"recordId":"record","source":{"id":"first","sessionId":"session","epoch":"epoch","label":"synthetic","timelineOffsetMs":2004.9375}});
+        captures.bind_direct(&first.id,root.path(),binding).unwrap();
+        assert!(captures.read(&first.id).is_err());assert!(captures.stop(&first.id,true).is_err());assert!(captures.native_status().unwrap().recording);
+        std::thread::sleep(Duration::from_millis(80));
+        let manifest=captures.stop_direct(&first.id,"pause").unwrap();let samples=manifest["sampleEnd"].as_u64().unwrap();assert!(samples>0);
+        assert_eq!(captures.direct_timeline("record"),(2004.9375 + samples as f64 / 16.0).ceil() as u64);
+        let second=captures.prepare_synthetic("display").unwrap();let lease2="d".repeat(64);std::fs::create_dir(root.path().join(&lease2)).unwrap();
+        let binding=serde_json::json!({"protocol":"native-file-v1","leaseId":lease2,"recordId":"record","source":{"id":"second","sessionId":"session2","epoch":"epoch2","label":"synthetic","timelineOffsetMs":captures.direct_timeline("record")}});
+        captures.bind_direct(&second.id,root.path(),binding).unwrap();
+        assert_eq!(captures.direct_sessions().len(),2,"unacknowledged source must remain visible to the native barrier");
+        captures.stop_direct(&second.id,"pause").unwrap();assert!(captures.active());
+    }
+
+    #[cfg(feature = "smoke-test")]
+    #[test]
+    fn only_confirmed_raw_purge_releases_native_pending_after_record_deletion() {
+        let root=tempfile::tempdir().unwrap();let captures=Captures::default();let started=captures.prepare_synthetic("display").unwrap();let lease="e".repeat(64);let directory=root.path().join(&lease);std::fs::create_dir(&directory).unwrap();
+        captures.bind_direct(&started.id,root.path(),serde_json::json!({"protocol":"native-file-v1","leaseId":lease,"recordId":"record","source":{"id":"source","label":"synthetic","sessionId":"session","epoch":"epoch","timelineOffsetMs":0}})).unwrap();
+        std::thread::sleep(Duration::from_millis(75));captures.stop_direct(&started.id,"pause").unwrap();
+        let path=directory.join("receipt.json");
+        for error in ["native_packet_corrupt","record_expired"] {
+            std::fs::write(&path,serde_json::json!({"schema":1,"leaseId":lease,"watermark":-1,"sampleEnd":0,"finished":false,"error":error}).to_string()).unwrap();
+            captures.refresh_native_pending();assert!(captures.active(),"an error alone is not a durable ACK or completed purge");
+        }
+        for file in std::fs::read_dir(&directory).unwrap() { let path=file.unwrap().path();if path.extension().is_some_and(|value|value=="pcm") {std::fs::remove_file(path).unwrap();} }
+        std::fs::write(&path,serde_json::json!({"schema":1,"leaseId":lease,"watermark":-1,"sampleEnd":0,"finished":false,"error":"record_expired","purged":true}).to_string()).unwrap();
+        captures.refresh_native_pending();assert!(!captures.active());let status=captures.native_status().unwrap();assert!(!status.paused);assert!(!status.can_resume);assert_eq!(status.pending_count,0);
+    }
+
+    #[cfg(feature = "smoke-test")]
+    #[test]
+    fn microphone_disabled_during_prepare_never_arms_or_writes_pcm() {
+        let root=tempfile::tempdir().unwrap();let captures=Captures::default();let record_id="00000000-0000-4000-8000-000000000001";
+        captures.set_native_kind(record_id,"microphone",true).unwrap();let started=captures.prepare_synthetic("microphone").unwrap();
+        captures.set_native_kind(record_id,"microphone",false).unwrap();let lease="f".repeat(64);let directory=root.path().join(&lease);std::fs::create_dir(&directory).unwrap();
+        assert!(captures.bind_direct(&started.id,root.path(),serde_json::json!({"protocol":"native-file-v1","leaseId":lease,"recordId":record_id,"source":{"id":"source","kind":"microphone","label":"synthetic","sessionId":"session","epoch":"epoch","timelineOffsetMs":0}})).is_err());
+        captures.abandon_prepared(&started.id);assert!(!captures.active());assert!(!std::fs::read_dir(directory).unwrap().any(|file|file.unwrap().path().extension().is_some_and(|value|value=="pcm")));
+    }
+
 }

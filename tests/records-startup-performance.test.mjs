@@ -34,7 +34,7 @@ test('bootstrap reuses the unfiltered record list to initialize the workspace', 
   const pending = [], calls = []; let initialized=false;
   const sandbox = { exports: {}, useCallback: fn => fn, bootRequest: { current: null }, bootListReady:{current:false}, listView:{current:{query:'',scope:'all'}}, cacheEpoch: { current: 0 }, recordCache: { current: new Map() },
     api: async path => { calls.push(path); if (path === '/bootstrap') return { csrf:'fixture', localAccount: true }; return new Promise(resolve => pending.push(() => resolve(path === '/records' ? { records: [] } : { workspaces: [] }))); },
-    setError() {}, setCsrf() {}, setAudioTransport() {}, setLocalQueueBackend() {}, setQueueRecords() {}, setDirectories() {}, setRecords() { initialized=true; }, setBoot() {}, setAuthReady() {}, setLoading() {},
+    setError() {}, setCsrf() {}, setAudioTransport() {}, setNativeAudioTransport() {}, nativeCaptureSessions:async()=>[], setLocalQueueBackend() {}, setQueueRecords() {}, setDirectories() {}, setRecords() { initialized=true; }, setBoot() {}, setAuthReady() {}, setLoading() {},
     messageOf: error => error.message, ApiError: class extends Error {}, Promise,
   };
   vm.runInNewContext(compiled, sandbox);
@@ -136,7 +136,7 @@ test('a late seal response cannot restore saving state over the newer durable ev
  const saving={...complete,cursor:'11',capture:'sealed',sources:[{...complete.sources[0],watermark:3}]};
  let displayed,resolveSeal,waiting=false;
  const seal=new Promise(resolve=>{resolveSeal=resolve;});
- const sandbox={exports:{},useCallback:fn=>fn,recordCache:{current:new Map()},mounted:{current:true},activeId:{current:'record'},stopping:{current:false},capture:{current:{stop:async()=>{}}},AbortSignal,
+ const sandbox={exports:{},useCallback:fn=>fn,recordCache:{current:new Map()},mounted:{current:true},activeId:{current:'record'},pendingStop:{current:null},stopping:{current:false},capture:{current:{stop:async()=>{}}},AbortSignal,
   setRecord:value=>{displayed=value;},setBusy(){},setCapturePhase(){},setError(error){assert.equal(error,'');},setRecording(){},setModal(){},showToast(){},localManifests:async()=>[],upload:async()=>{},refresh:async()=>{},loadList:async()=>{},messageOf:error=>error.message,
   api:async(_path,method)=>{if(method==='GET')return saving;waiting=true;return seal;}};
  vm.runInNewContext(code,sandbox);

@@ -117,7 +117,7 @@ export async function startDesktopBackend({ root, port = 0, workers = true } = {
   stage='work_recovery';
   await recoverLocalWork(repo);
   stage='record_server';
-  const app = await createRecordServer({ repo, port, host: '127.0.0.1', seedDevelopment: false, localAccount: true });
+  const app = await createRecordServer({ repo, port, host: '127.0.0.1', seedDevelopment: false, localAccount: true, nativeInstance: process.env.LINGJI_NATIVE_INSTANCE });
   stage='listen';
   const address = await app.start();
   stage='local_session';

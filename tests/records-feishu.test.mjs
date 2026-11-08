@@ -393,3 +393,28 @@ test('recording-priority Feishu queue survives long waits and restart without be
  service=await createFeishu(h.app.repo,{sdkFactory:h.remote.sdkFactory,now:()=>clock,autoPollMs:3600000});await waitFor(async()=>(await service.settings(owner)).connected);await service.automaticTick();
  await waitFor(async()=>(await service.get(owner,preview.body.id)).status==='succeeded');assert.equal(h.remote.calls.filter(call=>call.url.endsWith('/docx/v1/documents')).length,1);
 });
+
+test('connector v1 publishes frozen Feishu previews once, rejects forged scope and keeps unknown writes uncertain',async t=>{
+ const h=await harness(t,{autoPollMs:3600000});await h.connect();
+ const metadata=await h.request('/connectors');assert.equal(metadata.status,200);const descriptor=metadata.body.connectors.find(item=>item.id==='feishu');assert.equal(descriptor.recovery,'reconcile-only');assert.ok(!descriptor.operations.includes('retry'));assert.doesNotMatch(JSON.stringify(metadata.body),/fixture-app-secret|fixture-access-token/);
+ const preview=await h.request('/connectors/feishu/preview','POST',{protocolVersion:1,input:{recordId:h.recordId,options:{title:'人工核对的会议纪要',folderToken:'',includeNotes:false,includeEvidence:true}}});assert.equal(preview.status,200,JSON.stringify(preview));const id=preview.body.preview.id;
+ assert.doesNotMatch(preview.body.preview.markdown,/private-saved-notes|后续修改/);
+ const intent={protocolVersion:1,requestId:'feishu-connector-one',confirmed:true,input:{exportId:id}};
+ assert.equal((await h.request('/connectors/feishu/tasks','POST',{...intent,confirmed:false})).body.error,'feishu_confirmation_required');
+ assert.equal((await h.request('/connectors/feishu/tasks','POST',{...intent,input:{exportId:id,automatic:true}})).body.error,'invalid_connector_request');
+ const [first,repeated]=await Promise.all([h.request('/connectors/feishu/tasks','POST',intent),h.request('/connectors/feishu/tasks','POST',intent)]);assert.equal(first.status,202,JSON.stringify(first));assert.equal(first.body.taskId,repeated.body.taskId);await h.wait(id);
+ const taskPath='/connectors/feishu/tasks/'+encodeURIComponent(first.body.taskId);assert.equal((await h.request(taskPath)).body.task.status,'succeeded');assert.equal(h.remote.calls.filter(call=>call.url.endsWith('/docx/v1/documents')).length,1);
+ const another=await h.preview();assert.equal((await h.request('/connectors/feishu/tasks','POST',{...intent,input:{exportId:another.body.id}})).body.error,'agent_request_conflict');
+ const before=h.remote.calls.length;assert.equal((await h.request(taskPath+'/retry','POST',{protocolVersion:1,confirmed:true})).body.error,'connector_operation_unsupported');assert.equal((await h.request('/connectors/uninstalled/preview','POST',{protocolVersion:1,input:{}})).body.error,'connector_not_found');assert.equal(h.remote.calls.length,before);
+ const other=await fetch(`${h.base}/auth/register`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'connector-other@example.test',password:'fixture-password'})});const otherCookie=other.headers.get('set-cookie').split(';')[0];assert.equal((await fetch(h.base+taskPath,{headers:{Cookie:otherCookie}})).status,404);
+ h.remote.flags.createTimeout=true;const uncertain=await h.preview(),uncertainIntent={...intent,requestId:'feishu-connector-uncertain',input:{exportId:uncertain.body.id}};
+ const uncertainTask=await h.request('/connectors/feishu/tasks','POST',uncertainIntent);assert.equal((await h.wait(uncertain.body.id)).status,'unknown');const writes=h.remote.calls.filter(call=>call.url.endsWith('/docx/v1/documents')).length;
+ assert.equal((await h.request('/connectors/feishu/tasks','POST',uncertainIntent)).body.task.status,'unknown');assert.equal(h.remote.calls.filter(call=>call.url.endsWith('/docx/v1/documents')).length,writes);assert.ok(uncertainTask.body.taskId);
+});
+
+test('connector v1 cancellation during recording-priority queue makes no Feishu write',async t=>{
+ const h=await harness(t,{autoPollMs:3600000});await h.connect();const preview=await h.preview(),owner=(await h.app.repo.get(h.recordId)).owner,blocker=createRecord(owner);blocker.capture='recording';await h.app.repo.insert(blocker);
+ const intent={protocolVersion:1,requestId:'feishu-connector-cancel',confirmed:true,input:{exportId:preview.body.id}},task=await h.request('/connectors/feishu/tasks','POST',intent);assert.equal(task.status,202);
+ const cancelled=await h.request('/connectors/feishu/tasks/'+encodeURIComponent(task.body.taskId)+'/cancel','POST',{protocolVersion:1});assert.equal(cancelled.status,200,JSON.stringify(cancelled));assert.equal(cancelled.body.task.status,'cancelled');
+ await h.app.repo.change(blocker.id,value=>{value.capture='completed';});assert.equal(h.remote.calls.filter(call=>call.url.endsWith('/docx/v1/documents')).length,0);
+});

@@ -54,7 +54,7 @@ test('transactional projection deltas, rollback, lightweight listing and derived
     assert.equal(exported.apply(applied,delta),applied);assert.equal(exported.apply({...original,cursor:'999'},delta).cursor,'999');
     assert.equal(exported.apply({...original,cursor:'0'},delta),null);
     await assert.rejects(repo.change(record.id,r=>{r.title='WRONG';emit(r,'changed',{});throw new Error('rollback');}));
-    const summary=await repo.listSummaries('owner','all','secret_transcript');assert.equal(summary[0].title,'Projection');assert.ok(!JSON.stringify(summary).includes('SECRET_TRANSCRIPT'));assert.equal((await repo.listSummaries('other')).length,0);
+    const summary=await repo.listSummaries('owner','all','secret_transcript');assert.equal(summary[0].title,'Projection');assert.ok(summary[0].search.snippet.includes('SECRET_TRANSCRIPT'));assert.equal(typeof summary[0].segments,'number');assert.ok(!('searchBody' in summary[0])&&!('minutes' in summary[0])&&!('chunks' in summary[0]));assert.ok(!JSON.stringify(await repo.listSummaries('owner')).includes('SECRET_TRANSCRIPT'));assert.equal((await repo.listSummaries('other')).length,0);
     assert.equal((await repo.eventsAfter(record.id,original.cursor)).cursor,feed.cursor);
     await repo.close();const db=new DatabaseSync(join(root,'records.sqlite'));db.exec('DELETE FROM record_feed_meta; DELETE FROM record_feed_events; DELETE FROM record_list_projection');db.close();
     repo=await createRepository({root});assert.equal((await repo.eventsAfter(record.id,'0')).events.length,2);assert.equal((await repo.listSummaries('owner')).length,1);

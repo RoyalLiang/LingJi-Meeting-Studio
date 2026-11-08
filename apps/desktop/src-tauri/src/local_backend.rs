@@ -24,6 +24,8 @@ pub struct LocalBackend {
     input: Mutex<Option<ChildStdin>>,
     pub url: String,
     pub cookie: String,
+    pub native_root: std::path::PathBuf,
+    pub native_instance: String,
 }
 
 impl LocalBackend {
@@ -48,6 +50,9 @@ impl LocalBackend {
             return Err("安装包缺少客户端后台运行时；开发环境请先运行 node scripts/prepare-client-backend.mjs".into());
         }
         let root = directory.join("backend");
+        let mut identity = [0u8; 16];
+        getrandom::fill(&mut identity).map_err(|_| "原生录音连接标识不可用")?;
+        let native_instance: String = identity.iter().map(|byte| format!("{byte:02x}")).collect();
         fs::create_dir_all(&root).map_err(|e| e.to_string())?;
         let log = root.join("runtime.log");
         let mut log_options = OpenOptions::new();
@@ -68,6 +73,7 @@ impl LocalBackend {
             .current_dir(&root)
             .env_clear()
             .env("NODE_ENV", "desktop")
+            .env("LINGJI_NATIVE_INSTANCE", &native_instance)
             .env("LINGJI_LOCAL_ASR_DIR", asr)
             .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
             .stdin(Stdio::piped())
@@ -144,6 +150,8 @@ impl LocalBackend {
             child: Mutex::new(child),
             url: handshake.url,
             cookie: handshake.cookie,
+            native_root: root.join("audio/native"),
+            native_instance,
         })
     }
 }
@@ -173,7 +181,7 @@ mod shutdown_tests {
         #[cfg(windows)]
         let mut command={let mut command=Command::new("powershell.exe");command.args(["-NoProfile","-NonInteractive","-Command","$input | Out-Null; Start-Sleep -Milliseconds 200"]);command};
         let mut child=command.stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
-        let backend=LocalBackend{input:Mutex::new(child.stdin.take()),child:Mutex::new(child),url:String::new(),cookie:String::new()};
+        let backend=LocalBackend{input:Mutex::new(child.stdin.take()),child:Mutex::new(child),url:String::new(),cookie:String::new(),native_root:std::path::PathBuf::new(),native_instance:String::new()};
         backend.stop().unwrap();assert!(backend.child.lock().unwrap().try_wait().unwrap().is_some());backend.stop().unwrap();
     }
 }

@@ -2,6 +2,17 @@ use crate::{resident, Client};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindow};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
+
+pub fn native_heartbeat(app: &AppHandle) {
+    let client = app.state::<Client>();
+    let Some(status) = client.captures.native_status() else { return; };
+    let report = Report { recording:status.recording,microphone_on:status.microphone_on,paused:status.paused,can_resume:status.can_resume,busy:false,duration_ms:status.duration_ms,rms:status.rms };
+    { let widget = app.state::<RecordingWidget>(); if let Ok(mut widget) = widget.0.lock() { widget.update(report.clone()); }; }
+    if !report.recording && !report.paused { if let Some(floating)=app.get_webview_window("recording-widget") { let _=floating.hide(); } }
+    let _ = app.emit_to("recording-widget", "recording-widget-state", report);
+    client.menu_bar.report(crate::menu_status::Report { authenticated:true,record_title:"当前会议".into(),capture:if status.recording {"recording"} else if status.paused {"paused"} else {"sealed"}.into(),recording:status.recording,busy:false,pending_count:status.pending_count,connection:"local".into() });
+}
 
 const WIDTH: f64 = 340.0;
 const HEIGHT: f64 = 42.0;
@@ -273,6 +284,38 @@ pub async fn release_held_ready(app: &AppHandle) -> Result<(), String> {
     show_when_ready(app).await
 }
 
+pub async fn native_action(app: &AppHandle, action: &str) -> Result<bool, String> {
+    let client = app.state::<Client>();
+    if client.resident.renderer_ready() { return Ok(false); }
+    let Some(status) = client.captures.native_status() else { return Ok(false); };
+    match action {
+        "expand" => resident::show(app),
+        "toggle" if status.recording => {
+            let captures = client.captures.clone(); let id = status.record_id;
+            tauri::async_runtime::spawn_blocking(move || captures.stop_record(&id,"pause")).await.map_err(|error|error.to_string())??;
+        }
+        "finish" => {
+            let dialog = app.dialog().message("结束本场会议并整理纪要？").title("结束会议").buttons(MessageDialogButtons::OkCancelCustom("结束并整理".into(),"继续会议".into()));
+            if tauri::async_runtime::spawn_blocking(move || dialog.blocking_show()).await.map_err(|error|error.to_string())? {
+                let captures=client.captures.clone(); let id=status.record_id;
+                tauri::async_runtime::spawn_blocking(move || captures.stop_record(&id,"seal")).await.map_err(|error|error.to_string())??;
+                resident::show(app);
+            }
+        }
+        "toggle" if status.can_resume => { client.resident.queue_action("status-resume"); resident::show(app); }
+        "microphone" if status.recording && status.microphone_on => {
+            client.captures.set_native_kind(&status.record_id,"microphone",false)?;
+            for source in client.captures.direct_sessions().iter().filter(|source|source["recordId"]==status.record_id && source["source"]["kind"]=="microphone" && source["stopped"]==false) {
+                let captures=client.captures.clone(); let id=source["id"].as_str().ok_or("音源无效")?.to_string();
+                tauri::async_runtime::spawn_blocking(move || captures.stop_direct(&id,"source")).await.map_err(|error|error.to_string())??;
+            }
+        }
+        "microphone" if status.recording || status.can_resume => { client.resident.queue_action("status-microphone"); resident::show(app); }
+        _ => return Err("录音状态正在更新，请稍后重试".into()),
+    }
+    native_heartbeat(app); Ok(true)
+}
+
 fn authorize_widget(window: &WebviewWindow, client: &Client) -> Result<(), String> {
     if window.label() != "recording-widget"
         || window
@@ -319,7 +362,7 @@ pub async fn recording_widget_ready(
     show_when_ready(&app).await
 }
 #[tauri::command]
-pub fn recording_widget_action(
+pub async fn recording_widget_action(
     app: AppHandle,
     window: WebviewWindow,
     client: State<'_, Client>,
@@ -327,6 +370,7 @@ pub fn recording_widget_action(
     action: String,
 ) -> Result<(), String> {
     authorize_widget(&window, &client)?;
+    if native_action(&app, &action).await? { return Ok(()); }
     let report = widget
         .0
         .lock()

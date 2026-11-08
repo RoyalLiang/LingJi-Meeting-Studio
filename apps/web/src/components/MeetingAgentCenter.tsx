@@ -1,3 +1,5 @@
+import {KnowledgeAnswer} from './KnowledgeQuestion';
+import type {KnowledgeReference} from '../model';
 import {TaskTimeline,type TaskMetric,type TaskLedger} from './TaskTimeline';
 import {FeedbackNotice} from './FeedbackNotice';
 import { useEffect, useRef, useState } from 'react';
@@ -20,7 +22,7 @@ type Task = {kernelId?:string;timeline?:TaskMetric[];ledger?:TaskLedger;
   skill:{id:string;version:string;name?:string};
   progress?:{read:number;total:number;pagesRead?:number;totalPages?:number}; includeNotes?:boolean; plugins?:{id:string;name:string;version:string}[];
   sources:{recordId:string;title:string;transcriptRevision:number;minutesRevision:number}[];
-  preview:string; result?:{summary:string;decisions:{text:string;evidence:Evidence[]}[];actions:{text:string;owner?:string;evidence:Evidence[]}[]};
+  preview:string; result?:{summary:string;answers?:{text:string;evidence:Evidence[]}[];insufficientEvidence?:boolean;coverage?:{indexedMeetings:number;usedMeetings:number;usedEntries:number;truncated:boolean};decisions:{text:string;evidence:Evidence[]}[];actions:{text:string;owner?:string;evidence:Evidence[]}[]};
   error?:string; stale:boolean;
 };
 type RequestBody = { recordIds:string[]; prompt:string; requestId:string; scopeConfirmed:true;skillId:string;skillVersion:string;pluginVersions:Record<string,string>;pluginIds:string[];includeNotes:boolean;remoteToolsConfirmed:true };
@@ -83,14 +85,14 @@ function when(value:string) {
 function EvidenceLinks({items,task,open}:{items:Evidence[];task:Task;open:(id:string)=>void}) {
   return <div className="ma-evidence">{items.map((item,index)=><button type="button" key={`${item.recordId}:${item.segmentId}:${item.revision}:${index}`} onClick={()=>open(item.recordId)} title={`片段 ${item.segmentId} · 转录 v${item.revision}`} aria-label={`${task.sources.find(source=>source.recordId===item.recordId)?.title||'来源会议'} · 原文引用 · 转录 v${item.revision} · 片段 ${item.segmentId}`}><FileText size={12}/><span>{task.sources.find(source=>source.recordId===item.recordId)?.title||'来源会议'} · 原文引用 · v{item.revision}</span><ArrowUpRight size={12}/></button>)}</div>;
 }
-function TaskContent({task,open}:{task:Task;open:(id:string)=>void}) {
+function TaskContent({task,open}:{task:Task;open:(id:string,reference?:KnowledgeReference)=>void}) {
   return <>
     <div className="ma-task-state"><span className={`ma-state ${task.status}`}>{labels[task.status]}</span><span>{task.skill.name||'会议复盘'} · {task.skill.version.slice(0,12)} · {task.sources.length} 场会议</span></div>
     {task.stale&&<FeedbackNotice key={`${task.id}:stale`} message="会议内容已有更新，此处保留运行时引用的版本。"/>}
     {task.error&&<FeedbackNotice key={task.id+':'+task.error} message={safeError(task.error)} error/>}
     {working(task)&&task.progress&&<p className="ma-read-progress">已读取 {task.progress.read}/{task.progress.total} 场会议{(task.progress.totalPages||0)>task.progress.total?` · ${task.progress.pagesRead||0}/${task.progress.totalPages} 页`:""}，正在整理。</p>}<section><h3>整理目标</h3><p className="ma-preserve">{task.prompt}</p></section>
     <section><h3>会议范围</h3><div className="ma-sources">{task.sources.map(source=><button type="button" key={source.recordId} onClick={()=>open(source.recordId)}><FileText size={15}/><span>{source.title}<small>转录 v{source.transcriptRevision} · 纪要 v{source.minutesRevision}</small></span><ArrowUpRight size={13}/></button>)}</div></section>
-    {task.result?<section className="ma-result"><h3>独立整理结果</h3><MarkdownPreview text={task.result.summary}/><h4>决策</h4>{task.result.decisions.length?task.result.decisions.map((item,index)=><article key={index}><MarkdownPreview text={item.text}/><EvidenceLinks items={item.evidence} task={task} open={open}/></article>):<p className="ma-muted">本次没有形成决策条目。</p>}<h4>行动候选</h4>{task.result.actions.length?task.result.actions.map((item,index)=><article key={index}><p>{item.text}{item.owner&&<span className="ma-owner"> · {item.owner}</span>}</p><EvidenceLinks items={item.evidence} task={task} open={open}/></article>):<p className="ma-muted">本次没有形成行动候选。</p>}<p className="ma-result-note">结果独立保存，行动候选待人工确认。</p></section>:
+    {task.result?.answers?<KnowledgeAnswer task={task} open={open}/>:task.result?<section className="ma-result"><h3>独立整理结果</h3><MarkdownPreview text={task.result.summary}/><h4>决策</h4>{task.result.decisions.length?task.result.decisions.map((item,index)=><article key={index}><MarkdownPreview text={item.text}/><EvidenceLinks items={item.evidence} task={task} open={open}/></article>):<p className="ma-muted">本次没有形成决策条目。</p>}<h4>行动候选</h4>{task.result.actions.length?task.result.actions.map((item,index)=><article key={index}><p>{item.text}{item.owner&&<span className="ma-owner"> · {item.owner}</span>}</p><EvidenceLinks items={item.evidence} task={task} open={open}/></article>):<p className="ma-muted">本次没有形成行动候选。</p>}<p className="ma-result-note">结果独立保存，行动候选待人工确认。</p></section>:
       task.preview?<section><h3>{working(task)?'正在生成草稿':'未完成的草稿'}</h3><div className="ma-preview" aria-live="polite"><MarkdownPreview text={task.preview}/></div></section>:
       <p className="ma-empty-inline" role="status">{task.status==='queued'?'任务已进入队列。':task.status==='running'?'正在读取会议文字，等待首段结果…':task.status==='cancelling'?'已请求取消，等待服务确认…':task.status==='cancelled'?'任务已取消，没有生成有效结果。':task.status==='completed'?'任务已完成，但服务未返回可展示结果，请刷新核对。':task.status==='blocked'?'任务等待处理，请查看提示后重新确认。':'本次没有生成有效结果。'}</p>}
     <TaskTimeline timeline={task.timeline} ledger={task.ledger} kernelId={task.kernelId}/>

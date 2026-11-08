@@ -13,6 +13,14 @@ const recognizer = new sherpa.OfflineRecognizer({
   modelConfig: { senseVoice: { model: join(directory, 'sensevoice/model.int8.onnx'), language: 'auto', useInverseTextNormalization: 1 }, tokens: join(directory, 'sensevoice/tokens.txt'), numThreads: 4, provider: 'cpu', debug: 0 },
 });
 const vad = new sherpa.Vad({ sileroVad: { model: join(directory, 'silero_vad.onnx'), threshold: .5, minSilenceDuration: .35, minSpeechDuration: .1, windowSize: 512, maxSpeechDuration: 30 }, sampleRate: 16000, numThreads: 1, provider: 'cpu', debug: 0 }, 35);
+function recognize(samples) {
+  const stream = recognizer.createStream();
+  stream.acceptWaveform({ sampleRate: 16000, samples }); recognizer.decode(stream);
+  const result = recognizer.getResult(stream);
+  const text = result.text.replace(/<\|[^|]*\|>/g, '').trim();
+  const language = result.lang && result.lang.replace(/^<\|(zh|en|ja|ko|yue)\|>$/u, '$1');
+  return { text, ...(['zh', 'en', 'ja', 'ko', 'yue'].includes(language) ? { language } : {}) };
+}
 const send = value => process.stdout.write(JSON.stringify(value) + '\n');
 send({ protocol: 1, ready: true, model: LOCAL_ASR_MODEL });
 for await (const line of createInterface({ input: process.stdin, crlfDelay: Infinity })) {
@@ -20,7 +28,7 @@ for await (const line of createInterface({ input: process.stdin, crlfDelay: Infi
   let request;
   try {
     request = JSON.parse(line);
-    if (!Number.isSafeInteger(request.id) || typeof request.pcm !== 'string' || !/^[A-Za-z0-9+/]*={0,2}$/.test(request.pcm)) process.exit(1);
+    if (!Number.isSafeInteger(request.id) || typeof request.pcm !== 'string' || !/^[A-Za-z0-9+/]*={0,2}$/.test(request.pcm) || request.diarize !== undefined && typeof request.diarize !== 'boolean' || request.embedding !== undefined && typeof request.embedding !== 'boolean' || request.diarize && request.embedding) process.exit(1);
     const bytes = Buffer.from(request.pcm, 'base64');
     if (!bytes.length || bytes.length > 960000 || bytes.length % 2) process.exit(1);
     const samples = new Float32Array(bytes.length / 2);
@@ -30,22 +38,11 @@ for await (const line of createInterface({ input: process.stdin, crlfDelay: Infi
       const block = new Float32Array(512); block.set(samples.subarray(i, i + 512)); vad.acceptWaveform(block);
     }
     vad.flush();
-    // VAD filters silent windows. Keep the original utterance context: directly
-    // cropping its boundaries was observed to alter initial words in real probes.
-    let text = '', language;
-    if (!vad.isEmpty()) {
-      const stream = recognizer.createStream();
-      stream.acceptWaveform({ sampleRate: 16000, samples }); recognizer.decode(stream);
-      const result = recognizer.getResult(stream);
-      text = result.text.replace(/<\|[^|]*\|>/g, '').trim();
-      const detected = typeof result.lang === 'string' ? result.lang.replace(/^<\|(zh|en|ja|ko|yue)\|>$/u, '$1') : '';
-      if (text && ['zh', 'en', 'ja', 'ko', 'yue'].includes(detected)) language = detected;
-    }
-    send({ id: request.id, text, ...(language ? { language } : {}) });
+    if (vad.isEmpty()) { send({ id: request.id, text: '' }); continue; }
+    send({ id: request.id, ...recognize(samples) });
   } catch {
     if (!request?.id) process.exit(1);
-    send({ id: request.id, error: 'inference_failed' });
+    send({ id: request.id, error: 'local_asr_inference_failed' });
   }
 }
-// Parent termination closes stdin, including when the backend is forcibly killed.
 process.exit(0);

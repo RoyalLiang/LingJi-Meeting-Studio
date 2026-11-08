@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';import{createRequire}from'node:module';import{resolve}from'node:path';import vm from'node:vm';import{build}from'esbuild';import React from'react';import{renderToStaticMarkup}from'react-dom/server';
 const require=createRequire(resolve('package.json'));
-async function load(entry){const output=await build({entryPoints:[entry],bundle:true,write:false,platform:'node',format:'cjs',jsx:'automatic',loader:{'.css':'empty'},external:['react','react/jsx-runtime','react-dom']});const module={exports:{}};vm.runInNewContext(output.outputFiles[0].text,{module,exports:module.exports,require,console});return module.exports;}
+async function load(entry){const output=await build({entryPoints:[entry],bundle:true,write:false,platform:'node',format:'cjs',jsx:'automatic',define:{'process.env.NODE_ENV':'"production"'},loader:{'.css':'empty'},external:['react','react/jsx-runtime','react-dom']});const module={exports:{}};vm.runInNewContext(output.outputFiles[0].text,{module,exports:module.exports,require,console});return module.exports;}
 const {MinutesTree}=await load('apps/web/src/components/MinutesViews.tsx');
 const {applyRecordDelta}=await load('apps/web/src/record-subscription.ts');const {Transcript}=await load('apps/web/src/components/Transcript.tsx');const {updateMinutesDraftItem}=await load('apps/web/src/components/Minutes.tsx');
 const delta=(cursor,changes={})=>({baseCursor:String(cursor),cursor:String(cursor+1),set:{pendingChunks:1},remove:[],segments:{upsert:[],remove:[],...changes}});

@@ -566,3 +566,13 @@ test('legacy pending question keeps its child and input slot when the model conf
  await h.sync.respond('owner',start.id,{id:resumed.interaction.id,answer});const done=await settled(h.sync,start.id);
  assert.equal(done.status,'succeeded',JSON.stringify(done));assert.equal(done.agentId,waiting.agentId);assert.equal(h.fake.state.callCount,3);assert.equal(h.network.mrs.length,1);
 });
+
+for(const cause of ['source','model'])test(`connector ${cause==='source'?'retry':'resume'} returns a replacement task when ${cause} changes`,async t=>{
+ const {createConnectors}=await import('../services/records/src/connectors.mjs'),h=await fixture(t);await h.sync.save('owner',h.policy);const record=await h.record('普通讨论');
+ let connectors=createConnectors(h.repo,{feishu:{},gitSync:h.sync});const envelope={protocolVersion:1,requestId:'connector-replacement',confirmed:true,input:{recordId:record.id}};
+ const first=await connectors.submit('owner','git',envelope);await settled(h.sync,first.id);await h.restart();connectors=createConnectors(h.repo,{feishu:{},gitSync:h.sync});assert.equal((await connectors.submit('owner','git',envelope)).id,first.id);
+ if(cause==='source')await h.repo.change(record.id,value=>{value.title='另一个普通讨论';});
+ else {await h.sync.control('owner',first.id,'pause');await writeFile(join(h.root,'providers.json'),JSON.stringify({LLM_REASONING_EFFORT:'high'}));}
+ const next=await connectors.control('owner','git',first.kernelId,cause==='source'?'retry':'resume',{confirmed:true});
+ assert.notEqual(next.id,first.id);assert.notEqual(next.kernelId,first.kernelId);assert.equal((await connectors.inspect('owner','git',next.kernelId)).id,next.id);assert.equal((await h.sync.get('owner',first.id)).status,'superseded');assert.equal(h.network.writes.length,0);
+});

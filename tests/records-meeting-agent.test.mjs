@@ -194,7 +194,7 @@ for (const compressAggregates of [false, true]) {
     record.segments = [{ id: 'access-segment', revision: 1, text: 'sensitive-source-'.repeat(5000), startMs: 0, endMs: 1 }];
     await repo.insert(record);
     const initial = (await repo.getRecordAccess([record.id, record.id, 'missing']))[0];
-    assert.deepEqual(Object.keys(initial).sort(), ['deleteAt', 'deleted', 'id', 'kind', 'owner', 'version']);
+    assert.deepEqual(Object.keys(initial).sort(), ['capture','deleteAt','deleted','id','kind','owner','version']);
     assert.equal(initial.kind, 'record'); assert.equal(initial.owner, 'access-owner'); assert.equal(initial.deleted, false);
     assert.equal((await repo.getRecordAccess([])).length, 0); assert.ok(!JSON.stringify(initial).includes('sensitive-source'));
     assert.equal((await repo.getRecordAccess([record.id])).length, 1);

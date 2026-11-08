@@ -125,7 +125,12 @@ impl StatusBar {
                 | "status-update-background"
                 | "status-update-install" => {
                     show(app);
-                    if let Some(w) = app.get_webview_window("main") {
+                    if !app.state::<crate::Client>().resident.renderer_ready() && ["status-pause","status-resume","status-finish"].contains(&event.id.as_ref()) {
+                    let handle=app.clone(); let action=if event.id.as_ref()=="status-finish" {"finish"} else {"toggle"};
+                    tauri::async_runtime::spawn(async move { if let Err(error)=crate::recording_widget::native_action(&handle,action).await { eprintln!("[native-control] {error}"); } });
+                    return;
+                }
+                if let Some(w) = app.get_webview_window("main") {
                         let _ = w.emit("client-menu-action", event.id.as_ref());
                     }
                 }

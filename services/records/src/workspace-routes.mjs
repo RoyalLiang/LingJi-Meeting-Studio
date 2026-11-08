@@ -1,3 +1,4 @@
+import { voiceprints } from './voiceprints.mjs';
 import { createWorkspace, workspaceFields, retainedRecords, virtualScopes, workspaceOverview, analysisId, requestWorkspaceAnalysis, publicWorkspaceAnalysis } from '../../../packages/records/src/workspaces.mjs';
 import { requireThat, emit } from '../../../packages/records/src/record.mjs';
 import { providerStatus } from './providers.mjs';
@@ -12,7 +13,7 @@ export async function requireWorkspace(repo, owner, scope) {
   requireThat(workspace?.kind === 'workspace' && workspace.owner === owner, 'workspace_not_found', 404);
   return workspace;
 }
-export async function workspaceRoutes({ req, res, path, repo, user, readBody, send }) {
+export async function workspaceRoutes({ req, res, path, repo, user, readBody, send, agent }) {
   if (!path.startsWith('/api/workspaces')) return false;
   if (path === '/api/workspaces') {
     if (req.method === 'GET') {
@@ -38,9 +39,28 @@ export async function workspaceRoutes({ req, res, path, repo, user, readBody, se
     });
     send(res, 200, { archived: [...new Set(ids)].length, workspaceId: destination === 'inbox' ? null : destination }); return true;
   }
-  const route = path.match(/^\/api\/workspaces\/(all|inbox|[a-f0-9-]{36})(?:\/(overview|analysis|analysis\/cancel|vocabulary))?$/);
+  const route = path.match(/^\/api\/workspaces\/(all|inbox|[a-f0-9-]{36})(?:\/(overview|analysis|analysis\/cancel|vocabulary|knowledge(?:\/(?:question|[a-f0-9]{64}))?|voiceprints(?:\/(?:match|[a-f0-9-]{36}))?))?$/);
   requireThat(route, 'not_found', 404);
   const scope = route[1], action = route[2] || '', workspace = await requireWorkspace(repo, user.id, scope);
+  if (action === 'voiceprints' && req.method === 'GET') { send(res, 200, await voiceprints(repo).list(user.id, scope)); return true; }
+  if (action === 'voiceprints' && req.method === 'POST') { send(res, 200, await voiceprints(repo).enroll(user.id, scope, await readBody(req, 3000))); return true; }
+  if (action === 'voiceprints/match' && req.method === 'POST') { send(res, 200, await voiceprints(repo).match(user.id, scope, await readBody(req, 2000))); return true; }
+  if (action.startsWith('voiceprints/') && req.method === 'DELETE') { const body = await readBody(req, 1000); send(res, 200, await voiceprints(repo).revoke(user.id, scope, action.split('/')[1], body.libraryRevision)); return true; }
+  if(action==='knowledge/question'&&req.method==='POST'){
+  requireThat(agent,'agent_unavailable',503);
+  const input=await readBody(req,5000);
+  requireThat(typeof input.requestId==='string'&&input.requestId.length>=1&&input.requestId.length<=128,'invalid_agent_request',400);
+  const knowledge=await repo.retrieveKnowledge(user.id,scope,input.question);
+  const task=await agent.requestKnowledge(user.id,input,knowledge);
+  send(res,200,{task,coverage:knowledge.coverage,...(!task?{summary:'当前知识条目中没有找到足够依据，请换一个具体的问题或先完成相关会议纪要。',insufficientEvidence:true}:{} )});return true;
+ }
+ if (action === 'knowledge' && req.method === 'GET') {
+    const url = new URL(req.url, 'http://local');
+    send(res, 200, await repo.listKnowledge(user.id, scope, {query:url.searchParams.get('q') || '',kind:url.searchParams.get('kind') || '',status:url.searchParams.get('status') || '',offset:Number(url.searchParams.get('offset') || 0)})); return true;
+  }
+  if (action.startsWith('knowledge/') && req.method === 'PATCH') {
+    send(res, 200, await repo.reviewKnowledge(user.id,scope,action.split('/')[1],await readBody(req,2000))); return true;
+  }
   if (action === 'vocabulary') {
     const id = vocabularyId(user.id, scope), current = await repo.get(id);
     const pack = await loadBuiltinVocabulary();

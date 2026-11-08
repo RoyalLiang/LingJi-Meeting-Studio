@@ -5,6 +5,7 @@ export function validateMinutesStructure(result, snapshot, requireThat, {aggrega
   const sources = new Set(snapshot.map(segment => `${segment.id}:${segment.revision}`));
  const count=aggregate?Math.max(aggregateParts,sources.size):1, evidenceLimit=aggregate?Math.max(500,sources.size):500;
   const evidence = refs => Array.isArray(refs) && refs.length > 0 && refs.length <= evidenceLimit && refs.every(ref => ref && typeof ref.segmentId === 'string' && Number.isInteger(ref.revision) && sources.has(`${ref.segmentId}:${ref.revision}`));
+  if (result.terms !== undefined) requireThat(Array.isArray(result.terms) && result.terms.length <= 30 * count && result.terms.every(item => item && typeof item.text === 'string' && item.text.trim() && item.text.length <= 160 && typeof item.definition === 'string' && item.definition.trim() && item.definition.length <= 2000 && evidence(item.evidence)), 'invalid_minutes_terms', 422);
   const topicIds = new Set();
   if (result.topics !== undefined) {
     requireThat(Array.isArray(result.topics) && result.topics.length <= 30*count && result.topics.every(topic => topic && typeof topic === 'object'), 'invalid_minutes_topics', 422);

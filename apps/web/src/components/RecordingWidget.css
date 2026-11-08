@@ -2,7 +2,7 @@ html.recording-capsule-mode,html.recording-capsule-mode body{background:transpar
 .recording-capsule-mode #root{padding:2px;}
 .recording-capsule{height:38px;display:flex;align-items:center;gap:8px;padding:0 8px 0 10px;border:1px solid var(--border);border-radius:20px;background:var(--glass-strong);box-shadow:none;user-select:none;box-sizing:border-box;}
 .capsule-status{display:flex;align-items:center;gap:6px;min-width:0;flex:1;}
-.capsule-status>div{display:flex;align-items:center;gap:6px;min-width:0;font-size:11px;color:var(--ink-2);max-width:175px;}
+.capsule-status>div{display:flex;align-items:center;gap:6px;min-width:0;font-size:13px;color:var(--ink-2);max-width:175px;}
 .capsule-status>div>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:66px;}
 .capsule-status time{flex:none;font:12px var(--mono);font-variant-numeric:tabular-nums;}
 .capsule-dot{width:7px;height:7px;border-radius:50%;background:var(--ink-3);flex:none;}

@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { commitTranscriptBatch, emit, requireThat } from '../../../packages/records/src/record.mjs';
+import { labelLocalTurns } from './local-speakers.mjs';
 import { readConfig } from './config.mjs';
 import { transcribeFunasr } from './funasr.mjs';
-import { LOCAL_ASR_MODEL } from './local-asr.mjs';
+import { LOCAL_ASR_MODEL, LOCAL_STREAMING_ASR_MODEL, localStreamingAsrConfigured, localSpeakersConfigured, transcribeLocalStreaming, transcribeLocalAsr } from './local-asr.mjs';
 
 const RATE = 16000, MAX_SAMPLES = RATE * 30, MAX_CHUNKS = 128;
 const enabled = config => ['funasr', 'sensevoice-local'].includes(config.ASR_PROVIDER) && config.MINUTES_MODE !== 'doubao-audio-only';
@@ -27,18 +28,23 @@ function batchEnd(parts, chunks, stopped, oldestAt, now) {
   return 0;
 }
 
-export async function processFunasrAudio(repo, candidate, config, transcriber = transcribeFunasr) {
+export async function processFunasrAudio(repo, candidate, config, transcriber = transcribeFunasr, stream = transcribeLocalStreaming) {
   async function work() {
     let claim;
-    await repo.change(candidate.id, r => {
+    const bounded=config.ASR_PROVIDER==='sensevoice-local' && typeof repo.changeLocalAsr==='function';
+    const online=bounded && localStreamingAsrConfigured(config);
+    const changeState=(operation) => bounded ? repo.changeLocalAsr(candidate.id,claim,operation,{streaming:online}) : repo.change(candidate.id,operation,{returnRecord:false});
+    const inspect=() => bounded ? repo.inspectLocalAsr(candidate.id,claim) : repo.get(candidate.id);
+    await changeState( r => {
       if (r.deleted || Date.parse(r.deleteAt) <= Date.now()) return;
       const now = Date.now();
       for (const source of r.sources) {
+      const streaming=config.ASR_PROVIDER==='sensevoice-local'&&localStreamingAsrConfigured(config)&&['auto','zh','en'].includes(r.language)&&(!source.asr?.streamingLanguage||['zh','en'].includes(source.asr.streamingLanguage))&&(source.asr?.previewRetryAt||0)<=now;
         if (source.asr?.state === 'failed' && source.asr.provider !== config.ASR_PROVIDER && source.asr.attempts !== 0) continue;
         const pending = r.chunks.filter(c => c.sourceId === source.id && c.epoch === source.epoch && c.state !== 'done').sort((a,b) => a.sequence-b.sequence);
         const first = pending[0];
         if (!first || first.expired || first.attempts >= 5 || (first.lease || 0) > now || first.sequence > source.watermark
-          || ((first.retryAt || 0) > now && !(source.stopped && first.batchWaiting))) continue;
+          || ((first.retryAt || 0) > now && !(first.batchWaiting&&(source.stopped||streaming&&source.watermark>(source.asr?.streamedWatermark??-1))))) continue;
         const chunks = []; let samples = 0;
         for (const chunk of pending) {
           const previous = chunks.at(-1);
@@ -53,13 +59,13 @@ export async function processFunasrAudio(repo, candidate, config, transcriber = 
         const boundary = r.chunks.some(c => c.sourceId === source.id && c.sequence === chunks.at(-1).sequence+1 && c.state === 'done');
         if (source.stopped && source.watermark < source.lastSequence && samples < MAX_SAMPLES && !boundary) continue;
         const stopped = source.stopped || boundary || samples + (pending[chunks.length]?.sampleCount || 0) > MAX_SAMPLES;
-        if (samples < RATE * 2 && !stopped && now - first.acceptedAt < 20000) continue;
+        if (samples < RATE * (streaming?1:2) && !stopped && now - first.acceptedAt < 20000) continue;
         const fence = randomUUID();
         for (const chunk of chunks) { chunk.fence = fence; chunk.lease = now + 180000; chunk.state = 'processing'; }
-        claim = { generation:r.generation, sourceId:source.id, epoch:source.epoch, language:r.language, chunks:structuredClone(chunks), fence, stopped, oldestAt:first.acceptedAt };
+        claim = { streaming,generation:r.generation, sourceId:source.id, epoch:source.epoch, language:r.language, chunks:structuredClone(chunks), fence, stopped, oldestAt:first.acceptedAt };
         break;
       }
-    }, {returnRecord:false});
+    });
     if (!claim) return;
     const owns = r => !r.deleted && r.generation === claim.generation && Date.parse(r.deleteAt) > Date.now()
       && claim.chunks.every(c => r.chunks.some(current => current.key === c.key && current.fence === claim.fence && current.state === 'processing'));
@@ -76,19 +82,42 @@ export async function processFunasrAudio(repo, candidate, config, transcriber = 
         const bytes = await repo.readAudio(c.object);
         requireThat(bytes.length === c.sampleCount * 2, 'invalid_funasr_audio', 422); return bytes;
       })));
-      const latest = await repo.get(candidate.id);
+      const latest = await inspect();
       if (!owns(latest)) return;
       const latestSource = latest.sources.find(s=>s.id===claim.sourceId && s.epoch===claim.epoch);
       const extra = latest.chunks.find(c=>c.sourceId===claim.sourceId && c.sequence===claim.chunks.at(-1).sequence+1 && c.state!=='done' && !c.expired && c.attempts<5 && (c.lease||0)<=Date.now() && (c.retryAt||0)<=Date.now());
       const tailGrew = latestSource.stopped && extra && claim.chunks.length<MAX_CHUNKS && claim.chunks.reduce((sum,c)=>sum+c.sampleCount,0)+extra.sampleCount<=MAX_SAMPLES;
-      if (tailGrew) { await repo.change(candidate.id,r=>{if(owns(r))release(r);}, {returnRecord:false}); return; }
+      if (tailGrew) { await changeState(r=>{if(owns(r))release(r);}); return; }
       const draining = latestSource.stopped && latestSource.watermark === latestSource.lastSequence;
-      const end = batchEnd(parts, claim.chunks, claim.stopped || draining, claim.oldestAt, Date.now());
-      if (!end) { await repo.change(candidate.id, r => { if (owns(r)) release(r,!latestSource.stopped); }, {returnRecord:false}); return; }
+      if(claim.streaming && !claim.stopped && !draining){
+      try{
+        const pcm=Buffer.concat(parts),known=claim.language==='auto'?latestSource.asr?.streamingLanguage:claim.language;
+        const language=known?Promise.resolve(known):pcm.length>=RATE*4?transcribeLocalAsr(pcm.subarray(0,RATE*8),config,{metadata:true}).then(result=>result.language):Promise.resolve(undefined);
+        const [preview,detected]=await Promise.all([Promise.resolve().then(()=>stream(pcm,config,{key:`${candidate.id}:${claim.sourceId}:${claim.epoch}:${claim.generation}`,sampleOffset:claim.chunks[0].sampleOffset,final:claim.stopped||draining})),language]);
+        const current=await readConfig(repo.root);
+        if(sameService(config,current))await changeState(r=>{
+          if(!owns(r))return;
+          const source=r.sources.find(source=>source.id===claim.sourceId&&source.epoch===claim.epoch),previous=source.asr?.preview;
+          source.asr={...source.asr,provider:config.ASR_PROVIDER,state:'running',streaming:!detected||['zh','en'].includes(detected),streamingLanguage:detected,streamedWatermark:claim.chunks.at(-1).sequence};
+          delete source.asr.previewError;delete source.asr.previewRetryAt;
+          if(['zh','en'].includes(detected)&&preview.text.trim()){
+            const startMs=(source.timelineOffsetMs||0)+(preview.startSample??claim.chunks[0].sampleOffset)/16;
+            source.asr.preview={text:preview.text,startMs,updatedAt:Date.now()};
+            source.asr.runtime={...source.asr.runtime,streaming:true,modelVersion:LOCAL_STREAMING_ASR_MODEL};
+            if(previous?.text!==preview.text||previous.startMs!==startMs)emit(r,'asr.partial',{sourceId:source.id,transport:'sherpa-online'});
+          }else if((!preview.text.trim()||detected&&!['zh','en'].includes(detected))&&source.asr.preview){delete source.asr.preview;delete source.asr.translation;emit(r,'asr.preview-cleared',{sourceId:source.id});}
+        });
+      }catch{
+        const current=await readConfig(repo.root);
+        if(sameService(config,current))await changeState(r=>{if(!owns(r))return;const source=r.sources.find(source=>source.id===claim.sourceId&&source.epoch===claim.epoch);source.asr={...source.asr,provider:config.ASR_PROVIDER,previewError:'local_streaming_asr_failed',previewRetryAt:Date.now()+30000,streaming:false};emit(r,'asr.preview-unavailable',{sourceId:source.id});});
+      }
+    }
+    const end = batchEnd(parts, claim.chunks, claim.stopped || draining, claim.oldestAt, Date.now());
+      if (!end) { await changeState( r => { if (owns(r)) release(r,!latestSource.stopped); }); return; }
       const selected = claim.chunks.slice(0,end);
       if (end < claim.chunks.length) {
         let released = false;
-        await repo.change(candidate.id,r=>{
+        await changeState(r=>{
           if (!owns(r)) return;
           const suffix = new Set(claim.chunks.slice(end).map(c=>c.key));
           for (const chunk of r.chunks.filter(c=>suffix.has(c.key))) {
@@ -96,25 +125,25 @@ export async function processFunasrAudio(repo, candidate, config, transcriber = 
             if (chunk.batchWaiting) { delete chunk.batchWaiting; delete chunk.retryAt; }
           }
           released = true;
-        }, {returnRecord:false});
+        });
         if (!released) return;
         claim.chunks = selected;
       }
       const currentConfig = await readConfig(repo.root);
-      if (!sameService(config,currentConfig)) { await repo.change(candidate.id,r=>{if(owns(r))release(r);}, {returnRecord:false}); return; }
+      if (!sameService(config,currentConfig)) { await changeState(r=>{if(owns(r))release(r);}); return; }
       // Recheck the durable claim immediately before sending audio to the service.
-      const current = await repo.get(candidate.id);
+      const current = await inspect();
       if (!owns(current)) return;
-      const result = await transcriber(Buffer.concat(parts.slice(0,end)), {language:claim.language}, config, {metadata:true});
+      const result = await transcriber(Buffer.concat(parts.slice(0,end)), {language:claim.language}, config, {metadata:true,diarize:config.ASR_PROVIDER==='sensevoice-local'&&localSpeakersConfigured(config)});
       const text = typeof result === 'string' ? result : result.text;
       const afterConfig = await readConfig(repo.root);
       await repo.change(candidate.id, r => {
         if (!owns(r)) return;
         if (!sameService(config,afterConfig)) { release(r); return; }
-        commitTranscriptBatch(r, selected.map(c=>c.key), text, claim.generation, config.ASR_PROVIDER === 'sensevoice-local' ? LOCAL_ASR_MODEL : config.FUNASR_MODEL, {provider:config.ASR_PROVIDER, language:result.language});
+        commitTranscriptBatch(r, selected.map(c=>c.key), text, claim.generation, config.ASR_PROVIDER === 'sensevoice-local' ? LOCAL_ASR_MODEL : config.FUNASR_MODEL, {provider:config.ASR_PROVIDER, language:result.language, ...(config.ASR_PROVIDER==='sensevoice-local'&&result.turns?{turns:labelLocalTurns(r,result.turns)}:{})});
         release(r);
         const source = r.sources.find(s=>s.id===claim.sourceId && s.epoch===claim.epoch);
-        source.asr = {provider:config.ASR_PROVIDER,state:source.stopped && r.chunks.filter(c=>c.sourceId===source.id).every(c=>c.state==='done') ? 'completed' : 'queued'};
+        source.asr = {...(result.diarizationError?{identityWarning:result.diarizationError}:{}),provider:config.ASR_PROVIDER,state:source.stopped && r.chunks.filter(c=>c.sourceId===source.id).every(c=>c.state==='done') ? 'completed' : 'queued'};
       }, {returnRecord:false});
     } catch (error) {
       const afterConfig = await readConfig(repo.root).catch(() => config);

@@ -46,7 +46,35 @@ fn hop_header(name: &str) -> bool {
     ) || name.starts_with("x-forwarded-")
 }
 
+async fn native_json_response(mut response: reqwest::Response) -> Result<serde_json::Value, String> {
+            if !response.status().is_success() { return Err("原生音频连接未获授权，请重新打开会议后重试".into()); }
+            let mut bytes = Vec::new();
+            while let Some(chunk) = response.chunk().await.map_err(|_| "本机音频服务未响应")? {
+                if bytes.len() + chunk.len() > 524288 { return Err("本机音频服务响应超过限制".into()); }
+                bytes.extend_from_slice(&chunk);
+            }
+            serde_json::from_slice(&bytes).map_err(|_| "本机音频服务响应无效".into())
+        }
+
 impl Proxy {
+    pub async fn native_bind(&self, instance: &str, body: serde_json::Value) -> Result<serde_json::Value, String> {
+        let bootstrap = native_json_response(self.client.get(format!("{}/api/bootstrap", self.upstream))
+            .timeout(std::time::Duration::from_secs(15)).send().await.map_err(|_| "本机服务未就绪")?).await?;
+        let csrf = bootstrap.get("csrf").and_then(|value| value.as_str()).ok_or("本机音频连接未获授权")?;
+        native_json_response(self.client.post(format!("{}/api/client/native-captures", self.upstream))
+            .header("Content-Type", "application/json").header("X-CSRF-Token", csrf).header("X-Native-Instance", instance)
+            .body(serde_json::to_vec(&body).map_err(|_| "音源参数无效")?)
+            .timeout(std::time::Duration::from_secs(15)).send().await.map_err(|_| "本机音频服务未响应")?).await
+    }
+    #[cfg(feature = "smoke-test")]
+    pub async fn evolution_probe_request(&self, path: &str, body: Option<serde_json::Value>) -> Result<serde_json::Value, String> {
+        if let Some(body) = body {
+            let bootstrap=native_json_response(self.client.get(format!("{}/api/bootstrap",self.upstream)).send().await.map_err(|_|"本机测试服务不可用")?).await?;
+            let csrf=bootstrap["csrf"].as_str().ok_or("本机测试授权不可用")?;
+            native_json_response(self.client.post(format!("{}{path}",self.upstream)).header("Content-Type","application/json").header("X-CSRF-Token",csrf)
+                .body(body.to_string()).timeout(std::time::Duration::from_secs(15)).send().await.map_err(|_|"本机测试服务不可用")?).await
+        } else { native_json_response(self.client.get(format!("{}{path}",self.upstream)).timeout(std::time::Duration::from_secs(15)).send().await.map_err(|_|"本机测试服务不可用")?).await }
+    }
     #[cfg(test)]
     pub fn new(
         upstream: String,
@@ -526,4 +554,26 @@ mod tests {
         task.abort();
         upstream_task.abort();
     }
+}
+
+// Authentication can redirect before the first page finishes, including during native recording recovery.
+pub fn allow_main_navigation(url: &url::Url, origin: &str, loaded: bool, active: bool) -> bool {
+    url.origin().ascii_serialization() == origin && (!loaded || !active)
+}
+
+#[cfg(test)]
+#[test]
+fn initial_same_origin_redirects_finish_before_recording_navigation_is_locked() {
+    let origin="http://127.0.0.1:3030";
+    let startup=url::Url::parse("http://127.0.0.1:3030/?clientKey=synthetic").unwrap();
+    let home=url::Url::parse("http://127.0.0.1:3030/").unwrap();
+    for url in [&startup,&home] {
+        assert!(allow_main_navigation(url,origin,false,true));
+        assert!(!allow_main_navigation(url,origin,true,true));
+        assert!(allow_main_navigation(url,origin,true,false));
+    }
+    let external=url::Url::parse("https://example.invalid/").unwrap();
+    for loaded in [false,true] { for active in [false,true] {
+        assert!(!allow_main_navigation(&external,origin,loaded,active));
+    }}
 }

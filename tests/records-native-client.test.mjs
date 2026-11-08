@@ -91,7 +91,7 @@ test('native permission/device failures do not create a simulated stream', async
   assert.deepEqual(commands, ['capture_start']);
 });
 
-async function controllerHarness({ beforeStart, capacityFailure = false } = {}) {
+async function controllerHarness({ beforeStart, capacityFailure = false, direct = false } = {}) {
   const starts = [], uploads = [], sessions = new Map(); let sourceId = 0;
   const invoke = async (command, args) => {
     if (command === 'capture_start') {
@@ -110,16 +110,25 @@ async function controllerHarness({ beforeStart, capacityFailure = false } = {}) 
     api: async (_url, _method, body) => ({ id: `source-${sourceId++}`, sessionId: 'session', epoch: `epoch-${sourceId}`, ...body }),
     persistNativeChunk: async (id, chunk) => uploads.push({ id, chunk }),
     makeChunk: async (id, epoch, sequence, offset, buffer, sessionId) => ({ sourceId: id, epoch, sequence, sampleOffset: offset, sampleCount: buffer.byteLength / 2, sessionId }),
+    restoreNativeDirect: () => { throw new Error("unexpected restore"); }, controlNativeRecord: async () => {}, setNativeKind:async()=>{}, stoppedNativeManifest:async id=>({sourceId:id,sessionId:"restored-session",epoch:"restored-epoch",lastSequence:5,sampleEnd:80079}),
+    nativeAudioDirect: () => direct,
+    startNativeDirect: async (recordId, kind, deviceId, onError) => {
+      starts.push({recordId,kind,deviceId}); await beforeStart?.({kind,deviceId});
+      const source = {id:`direct-${sourceId++}`,sessionId:'direct-session',epoch:'direct-epoch',kind,label:'synthetic',watermark:-1,lastSequence:null};
+      const stream = {id:source.id,label:source.label,source,done:Promise.resolve(),stop:async()=>{stream.manifest={sourceId:source.id,sessionId:source.sessionId,epoch:source.epoch,lastSequence:2,sampleEnd:32079};}};
+      sessions.set(source.id,{notify:onError}); return stream;
+    },
     startNativeStream: (kind, device, onPacket, onError) => openNativeStream(invoke, kind, device, onPacket, onError),
   };
   const signalCode = stripTypeScriptTypes(await readFile(new URL('../apps/web/src/audio/signal.ts', import.meta.url), 'utf8'));
   const signalUrl = `data:text/javascript;base64,${Buffer.from(signalCode).toString('base64')}`;
   let code = stripTypeScriptTypes(await readFile(new URL('../apps/web/src/audio/native-controller.ts', import.meta.url), 'utf8'));
+  code = code.replace("import {preferredPlayback} from './playback-devices';", "const preferredPlayback = () => globalThis.nativeControllerFixture.preferredPlayback?.() || 'system';");
   code = code.replace("import { preferredDevice } from './devices';", "const preferredDevice = () => 'default';")
     .replace("import { api } from '../api';", 'const { api } = globalThis.nativeControllerFixture;')
     .replace("import { persistNativeChunk, makeChunk, ensureAudioCapacity } from './queue';", 'const { persistNativeChunk, makeChunk, ensureAudioCapacity } = globalThis.nativeControllerFixture;')
     .replace("from './signal'", `from '${signalUrl}'`)
-    .replace("import { startNativeStream } from './native-runtime';", 'const { startNativeStream } = globalThis.nativeControllerFixture;');
+    .replace("import { startNativeStream, startNativeDirect, restoreNativeDirect, controlNativeRecord, stoppedNativeManifest, setNativeKind, nativeAudioDirect } from './native-runtime';", 'const { startNativeStream, startNativeDirect, restoreNativeDirect, controlNativeRecord, stoppedNativeManifest, setNativeKind, nativeAudioDirect } = globalThis.nativeControllerFixture;');
   const module = await import(`data:text/javascript;base64,${Buffer.from(code + `\n// fixture ${Math.random()}`).toString('base64')}`);
   const errors = [];
   const controller = new module.NativeCaptureController('record', () => {}, error => errors.push(error), () => {}, () => {});
@@ -193,7 +202,7 @@ test('native microphone-off persists across repeated starts and an empty paused 
   const onlyMicrophone = await controllerHarness({ beforeStart: ({ kind }) => { if (kind === 'display') throw new Error('fixture system audio denied'); } });
   assert.deepEqual(await onlyMicrophone.controller.startMeeting(), [{ kind: 'display', message: 'fixture system audio denied' }]);
   await onlyMicrophone.controller.pause(); await onlyMicrophone.controller.disconnect('microphone');
-  assert.deepEqual(await onlyMicrophone.controller.startMeeting(), []); assert.deepEqual(await onlyMicrophone.controller.startMeeting(), []);
+  assert.match((await onlyMicrophone.controller.startMeeting())[0].message,/请选择/); assert.match((await onlyMicrophone.controller.startMeeting())[0].message,/请选择/);
   assert.deepEqual(onlyMicrophone.starts.map(start => start.kind), ['display', 'microphone']); assert.equal(onlyMicrophone.controller.active, false);
   await onlyMicrophone.controller.stop();
 });
@@ -343,4 +352,104 @@ test('native progress advances while local persistence is blocked, without ackno
  assert.equal(reads,1);assert.equal(acks,0,'display progress must not claim local persistence');
  const stopped=stream.stop();release();await stopped;assert.equal(acks,1);
  const polls=progressCalls;await new Promise(resolve=>setTimeout(resolve,550));assert.equal(progressCalls,polls,'timer stops with the stream');
+});
+
+
+test('native direct controller never enters IndexedDB and retains produced fences across disconnect and pause', async () => {
+  const h = await controllerHarness({direct:true,capacityFailure:true});
+  assert.deepEqual(await h.controller.startMeeting(),[]);
+  await h.controller.disconnect('microphone');
+  assert.equal(h.controller.active,true);
+  await h.controller.pause();
+  assert.equal(h.controller.active,false);assert.equal(h.uploads.length,0);
+  assert.equal(h.controller.nativeManifests.length,2);
+  assert.ok(h.controller.nativeManifests.every(item=>item.lastSequence===2&&item.sampleEnd===32079));
+  await h.controller.startMeeting();
+  assert.deepEqual(h.starts.map(item=>item.kind),['display','microphone','display']);
+  await h.controller.stop();
+});
+
+const directCode=stripTypeScriptTypes(await readFile(new URL('../apps/web/src/audio/native-direct.ts',import.meta.url),'utf8'));
+const {openNativeDirect}=await import(`data:text/javascript;base64,${Buffer.from(directCode).toString('base64')}`);
+test('direct renderer polls metadata only and serializes stop while retaining exact produced tail', async()=>{
+  const calls=[],progress=[],errors=[];
+  const invoke=async(command,args)=>{calls.push([command,args]);
+    if(command==='capture_direct_start')return{id:'native-1',label:'synthetic',source:{id:'source',sessionId:'session',epoch:'epoch'}};
+    if(command==='capture_direct_progress')return{sampleEnd:32079,acknowledgedSampleEnd:16000,bufferedBytes:32158,rms:.2,quietSeconds:0,stopped:false,finished:false};
+    if(command==='capture_direct_stop')return{sourceId:'source',sessionId:'session',epoch:'epoch',lastSequence:2,sampleEnd:32079};
+    throw Error('PCM must never cross the renderer');};
+  const stream=await openNativeDirect(invoke,'record','display','default',e=>errors.push(e),p=>progress.push(p));
+  try{await new Promise(resolve=>setTimeout(resolve,550));await Promise.all([stream.stop(),stream.stop()]);await stream.done;
+    assert.equal(progress.length,1);assert.equal(errors.length,0);assert.equal(stream.manifest.sampleEnd,32079);
+    assert.deepEqual(calls.map(([command])=>command),['capture_direct_start','capture_direct_progress','capture_direct_stop']);
+  }finally{await stream.stop();}
+});
+test('direct renderer can retry a failed stop without losing its native source fence',async()=>{
+  let stops=0;const stream=await openNativeDirect(async(command)=>{
+    if(command==='capture_direct_start')return{id:'native-1',label:'synthetic',source:{id:'source'}};
+    if(command==='capture_direct_stop'){if(++stops===1)throw Error('transient disk failure');return{sourceId:'source',sessionId:'session',epoch:'epoch',lastSequence:0,sampleEnd:79};}
+    throw Error('unexpected poll');},'record','microphone','default',()=>{},()=>{});
+  try{await assert.rejects(stream.stop(),/transient/);await stream.stop();assert.equal(stream.manifest.sampleEnd,79);assert.equal(stops,2);}finally{await stream.stop();}
+});
+
+
+test('native metadata observation failure preserves the controller source handle until an actual stop',async()=>{
+  const h=await controllerHarness({direct:true});await h.controller.startMeeting();
+  h.sessions.get('direct-0').notify(Error('transient IPC'),true);
+  assert.equal(h.controller.active,true);assert.equal(h.controller.sources.length,2);assert.equal(h.controller.nativeManifests.length,0);
+  await h.controller.stop();assert.equal(h.controller.nativeManifests.length,2);assert.equal(h.errors.length,1);
+});
+test('direct progress rejection remains retryable and never announces a stopped source',async()=>{
+  const errors=[];let polls=0,stops=0;
+  const stream=await openNativeDirect(async command=>{
+    if(command==='capture_direct_start')return{id:'native',label:'synthetic',source:{id:'source'}};
+    if(command==='capture_direct_progress'){polls++;throw Error('temporary IPC loss');}
+    if(command==='capture_direct_stop'){stops++;return{sourceId:'source',sessionId:'session',epoch:'epoch',lastSequence:1,sampleEnd:16079};}
+  },'record','display','default',(error,retaining)=>errors.push({error,retaining}),()=>{});
+  try{await new Promise(resolve=>setTimeout(resolve,1050));assert.equal(polls,2);assert.equal(errors.length,1);assert.equal(errors[0].retaining,true);assert.equal(stops,0);assert.equal(stream.manifest,undefined);
+    await stream.stop();assert.equal(stream.manifest.sampleEnd,16079);assert.equal(stops,1);
+  }finally{await stream.stop();}
+});
+
+
+test('actual App seal retry preserves native controller, intent and unacknowledged produced fence',async()=>{
+  const {transform}=await import('esbuild'),app=await readFile(new URL('../apps/web/src/App.tsx',import.meta.url),'utf8');
+  const start=app.indexOf('  async function stopCapture('),end=app.indexOf('  function captureAllowed()',start);assert.ok(start>=0&&end>start);
+  const code=(await transform(app.slice(start,end)+'\nexports.stopCapture=stopCapture;',{loader:'ts',format:'cjs'})).code;
+  let stops=0;const calls=[],recording=[];
+  const controller={active:true,stop:async()=>{if(++stops===1)throw Error('transient close fsync');controller.active=false;},finishNative:async mode=>calls.push({mode}),nativeManifests:[{sourceId:'s',sessionId:'session',epoch:'epoch',lastSequence:5,sampleEnd:80079}]};
+  const capture={current:controller},pendingStop={current:null},record={id:'r',title:'before',capture:'recording',sources:[{id:'s',sessionId:'session',epoch:'epoch',lastSequence:null,watermark:2}]},noop=()=>{};
+  const scope={capture,pendingStop,stopping:{current:false},activeId:{current:'r'},setBusy:noop,setCapturePhase:noop,setError:noop,setRecording:value=>recording.push(value),setModal:noop,messageOf:e=>e.message,localManifests:async()=>[],api:async(path,method,body)=>{calls.push({path,method,body});return record;},rememberRecord:noop,upload:async()=>{},refresh:async()=>{},loadList:async()=>{},showToast:noop,AbortSignal};
+  const exports={};new Function(...Object.keys(scope),'exports',code)(...Object.values(scope),exports);
+  assert.equal(await exports.stopCapture('seal','renamed'),false);assert.equal(capture.current,controller);assert.equal(recording.at(-1),true);assert.equal(calls.length,0);
+  assert.equal(await exports.stopCapture('pause','',true),true);assert.equal(stops,2);assert.equal(capture.current,null);assert.equal(pendingStop.current,null);
+  const sealed=calls.find(call=>call.path?.endsWith('/seal'));assert.equal(sealed.body.sources[0].lastSequence,5);assert.equal(sealed.body.sources[0].sessionId,'session');assert.ok(calls.some(call=>call.mode==='seal'));assert.ok(calls.some(call=>call.method==='PATCH'&&call.body.title==='renamed'));
+});
+
+
+test('restored paused native controller recovers produced fences before it permits finalization',async()=>{
+ const h=await controllerHarness({direct:true});await h.controller.restore([{id:'retained-native',recordId:'record',source:{id:'retained-native',kind:'display'},label:'synthetic',stopped:true,action:'pause'}]);
+ assert.equal(h.controller.active,false);assert.equal(h.controller.nativeManifests[0].lastSequence,5);assert.equal(h.controller.nativeManifests[0].sampleEnd,80079);
+});
+
+
+test('turning microphone off while direct start is pending never attaches that lane',async()=>{
+ let release,requested;const pending=new Promise(resolve=>release=resolve),starting=new Promise(resolve=>requested=resolve);
+ const h=await controllerHarness({direct:true,beforeStart:async({kind})=>{if(kind==='microphone'){requested();await pending;}}});
+ const started=h.controller.startMeeting();await starting;await h.controller.disconnect('microphone');release();assert.deepEqual(await started,[]);
+ assert.deepEqual(h.controller.sources.map(source=>source.kind),['display']);assert.equal(h.uploads.length,0);assert.equal(h.controller.nativeManifests.length,1);await h.controller.stop();
+});
+test('native window restore keeps manually disabled microphone out of resume choices',async()=>{
+ const h=await controllerHarness({direct:true});await h.controller.restore([
+ {id:'old-display',recordId:'record',source:{id:'old-display',kind:'display'},label:'synthetic',stopped:true,action:'pause'},
+ {id:'old-microphone',recordId:'record',source:{id:'old-microphone',kind:'microphone'},label:'synthetic',stopped:true,action:'pause',disconnected:true}]);
+ await h.controller.startMeeting();assert.deepEqual(h.starts.map(source=>source.kind),['display']);await h.controller.stop();
+});
+
+
+test('native application selection remains explicit and a stale app never falls back to system audio',async()=>{
+ const h=await controllerHarness({direct:true,beforeStart:({deviceId})=>{if(deviceId==='app:123:1700000000000012')throw new Error('所选应用已退出，请重新选择应用。');}});
+ globalThis.nativeControllerFixture.preferredPlayback=()=> 'app:123:1700000000000012';
+ const issues=await h.controller.startMeeting();assert.equal(issues[0].kind,'display');assert.match(issues[0].message,/重新选择/);
+ assert.deepEqual(h.starts.filter(item=>item.kind==='display').map(item=>item.deviceId),['app:123:1700000000000012']);assert.deepEqual(h.controller.sources.map(source=>source.kind),['microphone']);await h.controller.stop();
 });

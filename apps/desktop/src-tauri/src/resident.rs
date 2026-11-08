@@ -6,12 +6,21 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 #[derive(Default)]
 pub struct Resident {
     ready: AtomicBool,
+    authenticated: AtomicBool,
+    last_report: std::sync::Mutex<Option<std::time::Instant>>,
     waiting: AtomicBool,
     serial: AtomicU64,
     exiting: AtomicBool,
+    pending_action: std::sync::Mutex<Option<String>>,
 }
 
 impl Resident {
+    pub fn renderer_ready(&self) -> bool { self.ready.load(Ordering::Acquire) && self.authenticated.load(Ordering::Acquire) && self.last_report.lock().unwrap().is_some_and(|time|time.elapsed() <= std::time::Duration::from_secs(5)) }
+    pub fn authenticated(&self, value: bool) { self.authenticated.store(value, Ordering::Release); *self.last_report.lock().unwrap()=Some(std::time::Instant::now()); }
+    pub fn queue_action(&self, action: &str) { *self.pending_action.lock().unwrap() = Some(action.into()); }
+    pub fn deliver_action(&self, window: &WebviewWindow) {
+        if let Some(action) = self.pending_action.lock().unwrap().take() { let _ = window.emit("client-menu-action", action); }
+    }
     pub fn ready(&self) { self.ready.store(true, Ordering::Release); }
     fn begin(&self) -> Option<u64> {
         self.waiting.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).ok()?;
@@ -26,19 +35,29 @@ impl Resident {
     }
 }
 
+pub fn main_destroyed(app: &AppHandle) {
+    app.state::<Client>().resident.ready.store(false, Ordering::Release);
+    app.state::<Client>().resident.authenticated.store(false, Ordering::Release);
+    crate::recording_widget::main_hidden(app);
+}
 pub fn show(app: &AppHandle) {
-    crate::recording_widget::main_shown(app);
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
-    }
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let window = match handle.get_webview_window("main") { Some(window) => Ok(window), None => crate::create_main_window(&handle) };
+        match window {
+            Ok(window) => { crate::recording_widget::main_shown(&handle); let _ = window.unminimize(); let _ = window.show(); let _ = window.set_focus(); }
+            Err(error) => eprintln!("[main-window] {error}"),
+        }
+    });
 }
 
 fn finish(app: &AppHandle) {
     let state = app.state::<Client>();
     state.resident.exiting.store(true, Ordering::Release);
-    state.captures.stop_all();
+    if let Err(error) = state.captures.stop_all_safe() {
+        state.resident.exiting.store(false, Ordering::Release); state.resident.cancel();
+        app.dialog().message(error).title("录音尾部尚未保存").show(|_| {}); return;
+    }
     app.exit(0);
 }
 

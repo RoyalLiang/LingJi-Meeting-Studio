@@ -30,7 +30,7 @@ function harness(api, {search='',modules={}} = {}) {
     module: { exports }, exports,
     require: name => name === 'react' ? { memo:component=>component, useState, useRef, useEffect, useCallback, lazy: () => component } : name === 'react/jsx-runtime' ? {
       jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }), Fragment: Symbol('fragment')
-    } : name === './useClientUpdates' ? { useClientUpdates: () => ({native:false,status:{phase:'idle',currentVersion:'0.1.47',downloaded:0}}) } : name === './api' ? { api, ApiError: class ApiError extends Error { constructor(message, status) { super(message); this.status = status; } }, setCsrf() {}, setAudioTransport() {}, messageOf: error => error.message } : modules[name] || generic,
+    } : name === './useClientUpdates' ? { useClientUpdates: () => ({native:false,status:{phase:'idle',currentVersion:'0.1.47',downloaded:0}}) } : name === './audio/native-runtime' ? {setNativeAudioTransport(){},nativeCaptureSessions:async()=>[]} : name === './api' ? { api, ApiError: class ApiError extends Error { constructor(message, status) { super(message); this.status = status; } }, setCsrf() {}, setAudioTransport() {}, messageOf: error => error.message } : modules[name] || generic,
     location: { pathname: '/', search }, localStorage: { getItem: () => null }, navigator: { onLine: true },
     URLSearchParams, AbortController, document: { documentElement: { dataset: {} } },
     FormData: class { constructor(form) { this.form = form; } *[Symbol.iterator]() { yield* Object.entries(this.form); } },

@@ -1,3 +1,4 @@
+import { roleModelConfig } from './model-roles.mjs';
 import { randomUUID } from 'node:crypto';
 import { analysisMessages, inputHash, retainedRecords, validateWorkspaceAnalysis } from '../../../packages/records/src/workspaces.mjs';
 import { completeJson, providerStatus } from './providers.mjs';
@@ -32,7 +33,7 @@ export async function processWorkspaceAnalysis(repo, config, providers = {}) {
         if (checking) return; checking = true;
         try { if (!(await valid())) controller.abort(); } catch { controller.abort(); } finally { checking = false; }
       }, 750); timer.unref?.();
-      const output = await (providers.completeJson || completeJson)(analysisMessages(candidate.snapshot), config, {
+      const output = await (providers.completeJson || completeJson)(analysisMessages(candidate.snapshot), roleModelConfig(config, 'analysis'), {
         signal: controller.signal,
         onDelta: async (delta, runtime) => {
           draft += delta;

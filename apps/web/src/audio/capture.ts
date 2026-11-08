@@ -1,4 +1,4 @@
-import {importDuration,pcmWaveInfo} from './import-duration';
+import { streamAudioImport, waitForImportUpload } from './stream-import';
 import { preferredDevice, openMicrophone } from './devices';
 import { api } from '../api';
 import type { RecordDetail, Source, SourceKind } from '../model';
@@ -171,39 +171,14 @@ export class CaptureController {
     this.streams = []; this.nodes = []; this.contexts = []; this.sources = []; this.writes = []; this.writeFailure = undefined; this.onMeter(0); this.signals = []; this.onSignals([]);
   }
 }
-export async function importAudio(file: File, record: RecordDetail, progress: (value: number) => void) {
-  if (file.size > 64 * 1024 * 1024) throw new Error('音频文件超过 64 MB，请先拆分；浏览器解码需要足够内存。');
-  const wave=await pcmWaveInfo(file);
-  if(!wave)await importDuration(file);
-  let context:AudioContext|undefined;
-  try {
-    let samples:number,read:(offset:number,length:number)=>Promise<ArrayBuffer>;
-    if(wave){
-      samples=wave.samples;
-      read=async(offset,length)=>{
-        const bytes=await file.slice(wave.offset+offset*wave.channels*2,wave.offset+(offset+length)*wave.channels*2).arrayBuffer();
-        if(bytes.byteLength!==length*wave.channels*2)throw new Error('WAV 音频数据不完整，请检查原文件。');
-        if(wave.channels===1)return bytes;
-        const source=new DataView(bytes),pcm=new ArrayBuffer(length*2),target=new DataView(pcm);
-        for(let i=0;i<length;i++)target.setInt16(i*2,Math.round((source.getInt16(i*4,true)+source.getInt16(i*4+2,true))/2),true);
-        return pcm;
-      };
-    }else{
-      context=new AudioContext({sampleRate:16000});
-      const decoded=await context.decodeAudioData(await file.arrayBuffer());
-      const channels=Array.from({length:decoded.numberOfChannels},(_,index)=>decoded.getChannelData(index));samples=decoded.length;
-      read=async(offset,length)=>{
-        const pcm=new ArrayBuffer(length*2),view=new DataView(pcm);
-        for(let i=0;i<length;i++){let sample=0;for(const channel of channels)sample+=channel[offset+i];sample/=channels.length;view.setInt16(i*2,Math.round(Math.max(-1,Math.min(1,sample))*32767),true);}
-        return pcm;
-      };
-    }
-    const source = await api<Source>(`/records/${record.id}/sources`, 'POST', { kind: 'import', label: file.name });
-    for(let offset=0,sequence=0;offset<samples;offset+=160000,sequence++){
-      const length=Math.min(160000,samples-offset),pcm=await read(offset,length);
-      await enqueue(record.id,await makeChunk(source.id,source.epoch,sequence,offset,pcm,source.sessionId));
-      if(sequence%8===7)await drainQueue();progress((offset+length)/samples);
-    }
-    await drainQueue();
-  }finally{await context?.close();}
+export async function importAudio(file: File, record: RecordDetail, progress: (value: number) => void, signal?: AbortSignal) {
+  let source: Awaited<ReturnType<typeof api<Source>>> | undefined, sequence = 0, offset = 0;
+  await streamAudioImport(file, async pcm => {
+    signal?.throwIfAborted();
+    source ??= await api<Source>(`/records/${record.id}/sources`, 'POST', {kind:'import',label:file.name});
+    await enqueue(record.id, await makeChunk(source.id, source.epoch, sequence++, offset, pcm, source.sessionId));
+    offset += pcm.byteLength / 2;
+    if (sequence % 4 === 0) await waitForImportUpload(drainQueue(), signal);
+  }, progress, signal);
+  await waitForImportUpload(drainQueue(), signal);
 }

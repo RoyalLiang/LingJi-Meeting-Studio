@@ -1,7 +1,11 @@
-// Keep the installed release readable even when the update service reports no newer release.
+// Available even when the update service reports no newer release.
 export const currentReleaseNotes = `## 更新内容
-- 修复扩展中心、飞书与 Git 同步页面滚动，支持翻阅完整任务记录。
-- 会中纪要与重点速览接入资料和 Skill 工具，按整理阶段自动调整思考强度。
-- 优化长会议上下文压缩、引用修正与用量记录，减少无效重试。
-- 内置会议复盘支持风险登记表与 ADR 草稿，Skill 更新先校验自带样例。
+
+- 桌面录音可在关闭主窗口后继续，重新打开即可恢复工作台；停止时保留并排空尾部音频。
+- macOS 和支持版本 Windows 可选择会议应用声音；麦克风增加降噪与回声处理。
+- 本地中文、英文字幕先显示实时草稿，再进行正式校正，并支持本地说话人区分。
+- 工作目录可主动登记声纹，匹配姓名仍需人工确认。
+- 目录知识支持确认、出处核对和跨会议问答；依据更新后阻止展示旧回答。
+- 改善长会议滚动、关键词检索和长音频导入，可分别配置翻译、纪要与分析模型。
+- 飞书与 Git 提供统一连接器接口，可持续追踪恢复后的任务。
 `;

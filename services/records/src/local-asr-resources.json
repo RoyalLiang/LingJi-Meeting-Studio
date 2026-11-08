@@ -79,6 +79,79 @@
       "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/v1.28.2/ThirdPartyNotices.txt",
       "bytes": 325054,
       "sha256": "0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2"
+    },
+    {
+      "path": "zipformer/decoder-epoch-99-avg-1.int8.onnx",
+      "url": "https://huggingface.co/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/exp/32/decoder-epoch-99-avg-1.int8.onnx",
+      "bytes": 3486740,
+      "sha256": "4b618d383af304cfae281dbf0a53e8bf442c2f0502256cd5694bd6567ebdd834"
+    },
+    {
+      "path": "zipformer/encoder-epoch-99-avg-1.int8.onnx",
+      "url": "https://huggingface.co/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/exp/32/encoder-epoch-99-avg-1.int8.onnx",
+      "bytes": 42980793,
+      "sha256": "db6f51551762e40e549166fe041ea3e45464370b595e9ad23f06478ec3794fbb"
+    },
+    {
+      "path": "zipformer/joiner-epoch-99-avg-1.int8.onnx",
+      "url": "https://huggingface.co/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/exp/32/joiner-epoch-99-avg-1.int8.onnx",
+      "bytes": 3228485,
+      "sha256": "bdda356d6f9b8c2d7cee9ee0e26075fa537490f7fd06520be408d287073667b9"
+    },
+    {
+      "path": "zipformer/tokens.txt",
+      "url": "https://huggingface.co/csukuangfj/k2fsa-zipformer-bilingual-zh-en-t/resolve/e2382758de9a0219b4efe682b95af30b399db3b8/data/lang_char_bpe/tokens.txt",
+      "bytes": 56317,
+      "sha256": "a8e0e4ec53810e433789b54a5c0134a7eaa2ffca595a6334d54c00da858841d3"
+    },
+    {
+      "path": "speakers/segmentation.int8.onnx",
+      "url": "https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0/resolve/9403a6902bb58e3d5ae8c7e77c3422de279db2e0/model.int8.onnx",
+      "bytes": 1540506,
+      "sha256": "d582f4b4c6b48205de7e0643c57df0df5615a3c176189be3fc461e9d18827b5d"
+    },
+    {
+      "path": "licenses/speaker-segmentation-MIT.txt",
+      "url": "https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0/resolve/9403a6902bb58e3d5ae8c7e77c3422de279db2e0/LICENSE",
+      "bytes": 1061,
+      "sha256": "14d7016ad68e7394d6e6b78d96cc2ae431c905287b89674cfdf021e79e62b8ba"
+    },
+    {
+      "path": "speakers/embedding.onnx",
+      "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx",
+      "bytes": 39593761,
+      "sha256": "1a331345f04805badbb495c775a6ddffcdd1a732567d5ec8b3d5749e3c7a5e4b"
+    },
+    {
+      "path": "licenses/speaker-embedding-Apache-2.0.txt",
+      "url": "https://raw.githubusercontent.com/modelscope/3D-Speaker/065629c313eaf1a01c65c640c46d77e61e9607b4/LICENSE",
+      "bytes": 11357,
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
     }
-  ]
+  ],
+  "streamingModel": {
+    "model": "zipformer-small-bilingual-zh-en-2023-02-16-int8-chunk32",
+    "sourceModel": "csukuangfj/k2fsa-zipformer-bilingual-zh-en-t",
+    "modelRevision": "e2382758de9a0219b4efe682b95af30b399db3b8",
+    "license": "Apache-2.0",
+    "languages": [
+      "zh",
+      "en"
+    ]
+  },
+  "speakerModels": {
+    "model": "pyannote3-eres2net-base-512-v1",
+    "dimension": 512,
+    "segmentation": {
+      "source": "csukuangfj/sherpa-onnx-pyannote-segmentation-3-0",
+      "revision": "9403a6902bb58e3d5ae8c7e77c3422de279db2e0",
+      "license": "MIT"
+    },
+    "embedding": {
+      "source": "modelscope/3D-Speaker",
+      "license": "Apache-2.0",
+      "assetId": 198893098,
+      "licenseRevision": "065629c313eaf1a01c65c640c46d77e61e9607b4"
+    }
+  }
 }

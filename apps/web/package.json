@@ -1,7 +1,7 @@
 {
   "name": "@tts/web",
   "private": true,
-  "version": "0.3.7",
+  "version": "0.3.8",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,9 +11,11 @@
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
+    "@tanstack/react-virtual": "3.14.26",
     "@tauri-apps/api": "2.12.3",
     "dompurify": "^3.4.12",
     "marked": "^18.0.6",
+    "mediabunny": "1.65.2",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },

@@ -14,6 +14,7 @@ pub struct Pipeline {
     resampled: Vec<Vec<f32>>,
     microphone_filter: Option<HighPass>,
     output: Vec<i16>,
+    processing: Option<super::dsp::Processor>,
     received: u64,
     produced: u64,
     delay: usize,
@@ -77,6 +78,7 @@ impl Pipeline {
             microphone_filter: None,
             output: Vec::new(),
             received: 0,
+            processing: None,
             produced: 0,
             delay,
             sequence: 0,
@@ -87,6 +89,9 @@ impl Pipeline {
     pub fn with_microphone_filter(mut self) -> Self {
         self.microphone_filter=Some(HighPass::default());
         self
+    }
+    pub fn set_processing(&mut self, processor: Option<super::dsp::Processor>) {
+        if self.processing.is_none() { self.processing=processor; }
     }
     pub fn push(&mut self, data: &[f32]) -> Result<Vec<Vec<u8>>, String> {
         if !data.len().is_multiple_of(self.channels) {
@@ -106,21 +111,26 @@ impl Pipeline {
         Ok(self.packets(false))
     }
 
-    fn append(&mut self, samples: &[f32]) {
+    fn append(&mut self, samples: &[f32]) -> Result<(),String> {
         let skip = self.delay.min(samples.len());
         self.delay -= skip;
+        let start=self.output.len();
         for value in &samples[skip..] {
             let value = self.microphone_filter.as_mut().map_or(*value, |filter| filter.sample(*value));
             self.output
                 .push((value.clamp(-1.0, 1.0) * 32767.0).round() as i16);
             self.produced += 1;
         }
+        if let Some(processor)=&mut self.processing {
+            let raw=self.output.split_off(start);self.output.extend(processor.push(&raw,false)?);
+        }
+        Ok(())
     }
 
     fn process(&mut self, finish: bool) -> Result<(), String> {
         if self.resampler.is_none() {
             let input = std::mem::take(&mut self.input);
-            self.append(&input);
+            self.append(&input)?;
             self.input=input; self.input.clear();
             return Ok(());
         }
@@ -146,7 +156,7 @@ impl Pipeline {
             .process_into_buffer(&self.block, &mut self.resampled, None).map_err(|e| e.to_string())?;
         let output = std::mem::take(&mut self.resampled);
         let take = remaining.map_or(written, |need| written.min(self.delay.min(written) + need));
-        self.append(&output[0][..take]);
+        self.append(&output[0][..take])?;
         self.resampled=output;
         Ok(())
     }
@@ -178,12 +188,14 @@ impl Pipeline {
 
     pub fn flush(&mut self) -> Result<Vec<Vec<u8>>, String> {
         self.process(true)?;
+        if let Some(processor)=&mut self.processing {self.output.extend(processor.push(&[],true)?);}
         Ok(self.packets(true))
     }
     pub fn reconfigure(&mut self, rate: u32, channels: usize) -> Result<Vec<Vec<u8>>, String> {
         let mut next = Self::new(rate, channels)?;
         let packets = self.flush()?;
         next.microphone_filter=self.microphone_filter.take();
+        next.processing=self.processing.take();
         next.sequence=self.sequence;
         next.offset=self.offset;
         *self=next;
@@ -191,6 +203,7 @@ impl Pipeline {
     }
     pub fn finish(mut self) -> Result<Vec<Vec<u8>>, String> {
         self.process(true)?;
+        if let Some(processor)=&mut self.processing {self.output.extend(processor.push(&[],true)?);}
         Ok(self.packets(true))
     }
 }
@@ -198,6 +211,20 @@ impl Pipeline {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn dsp_preserves_packet_fences_and_short_tail_across_device_rebuild() {
+        let mut pipe=Pipeline::new(48_000,2).unwrap().with_microphone_filter();
+        pipe.set_processing(Some(super::super::dsp::Processor::new("pipeline-dsp",true,0).unwrap()));
+        let mut packets=pipe.push(&vec![0.1;48_037*2]).unwrap();
+        packets.extend(pipe.reconfigure(44_100,1).unwrap());
+        packets.extend(pipe.push(&vec![0.1;44_153]).unwrap());packets.extend(pipe.finish().unwrap());
+        let mut offset=0;
+        for (seq,packet) in packets.iter().enumerate() {
+            let read=|at|u32::from_le_bytes(packet[at..at+4].try_into().unwrap());
+            assert_eq!(read(0),seq as u32);assert_eq!(read(4),offset);assert_eq!(packet.len(),12+read(8) as usize*2);offset+=read(8);
+        }
+        assert_eq!(offset,48_037*16_000/48_000+44_153*16_000/44_100);
+    }
     #[test]
     fn format_rebuild_preserves_microphone_filter_history_without_a_new_pop() {
         for new_rate in [16_000,44_100,48_000] {

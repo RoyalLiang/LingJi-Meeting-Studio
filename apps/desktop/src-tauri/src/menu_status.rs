@@ -50,6 +50,7 @@ pub fn present(report: &Report, native_active: bool, fresh: bool) -> Presentatio
         .take(36)
         .collect();
     let connection = match report.connection.as_str() {
+        "local" => "本机录音",
         "connected" => "后台已连接",
         "connecting" => "正在连接后台",
         "reconnecting" => "正在重新连接",

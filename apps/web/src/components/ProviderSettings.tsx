@@ -1,12 +1,12 @@
 import { createPortal } from 'react-dom';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { CloudCheck, GearSix, Plug } from '@phosphor-icons/react';
+import { CaretDown, CloudCheck, GearSix, Plug } from '@phosphor-icons/react';
 import { api, messageOf } from '../api';
 import { Button, Status } from './ui';
 import { Select } from './Select';
 import { Toast } from './Toast';
 import type { Bootstrap } from '../model';
-import { protocolForAddress } from '../provider-settings';
+import { protocolForAddress, modelRoleLabels, modelRoleValues, updateModelRole } from '../provider-settings';
 type Values = Record<string, string | boolean>;
 const secretKeys = new Set(['FUNASR_API_KEY', 'OPENAI_REALTIME_API_KEY', 'DOUBAO_API_KEY', 'ASR_API_KEY', 'DEEPGRAM_API_KEY', 'LLM_API_KEY', 'DOUBAO_TRANSLATION_API_KEY']);
 export function ProviderSettings({ saved, actionsTarget, beforeSave, initialProvider = 'doubao', initialMinutesMode = 'asr-llm' }: { saved: (state: Pick<Bootstrap,'providers'|'meetingAutomation'|'audioMinutesDefault'>) => void; actionsTarget: HTMLElement | null; beforeSave?:()=>Promise<void>|undefined; initialProvider?: string; initialMinutesMode?: string }) {
@@ -47,6 +47,8 @@ export function ProviderSettings({ saved, actionsTarget, beforeSave, initialProv
     } catch (e) { setError(messageOf(e)); }
     finally { pending.current = false; setBusy(false); }
   }
+  const roleValues = modelRoleValues(draft.LLM_ROLE_MODELS);
+  const setRoleModel = (role: string, model: string) => setDraft(current => ({ ...current, LLM_ROLE_MODELS: updateModelRole(current.LLM_ROLE_MODELS, role, model) }));
   const field = (key: string, label: string, secret = false, placeholder = '') => <label key={key}><span className="settings-field-label" title={label}><span>{label}</span>{secret && <Status>{values?.[key] ? '已设置' : '未设置'}</Status>}</span><input name={key} type={secret ? 'password' : 'text'} autoComplete="off" disabled={!values} value={draft[key] || ''} onChange={event => {
     const value = event.target.value;
     setDraft(current => ({ ...current, [key]: value, ...(key === 'LLM_API_URL' && !protocolTouched.current ? { LLM_PROTOCOL: protocolForAddress(value) } : {}) }));
@@ -80,8 +82,17 @@ export function ProviderSettings({ saved, actionsTarget, beforeSave, initialProv
         {field('LLM_API_URL','服务地址',false,'https://服务域名/v1 或完整接口地址')}{field('LLM_MODEL','模型 / 接入点 ID',false,'填写已开通的 model ID 或 ep-…')}
         <label>推理强度<Select label="推理强度" name="LLM_REASONING_EFFORT" disabled={!values} value={draft.LLM_REASONING_EFFORT || 'auto'} onChange={value=>setDraft(current=>({...current,LLM_REASONING_EFFORT:value}))} options={[{value:'auto',label:'自动'},{value:'low',label:'低'},{value:'medium',label:'中'},{value:'high',label:'高'},{value:'xhigh',label:'更高'}]}/></label>{field('LLM_API_KEY','模型Key',true)}
       </div>
-      <div className="settings-heading-row"><div className="settings-subheading"><CloudCheck size={18}/><h4>翻译服务</h4></div><Select label="翻译模型" name="TRANSLATION_PROVIDER" disabled={!values} value={draft.TRANSLATION_PROVIDER || 'auto'} onChange={value => setDraft(current => ({...current,TRANSLATION_PROVIDER:value}))} options={[{value:'auto',label:'自动选择'},{value:'text-model',label:'当前文字模型'},{value:'doubao-seed',label:'豆包 Seed 专用翻译'}]}/></div>
-      {draft.TRANSLATION_PROVIDER === 'text-model' ? <p className="settings-mode-note">翻译使用上方文字模型的连接配置。</p> : <div className="settings-dependent-fields"><h4 className="settings-model-title">专用翻译模型</h4>{field('DOUBAO_TRANSLATION_MODEL','翻译模型 / 接入点 ID',false,'doubao-seed-translation-250915')}{field('DOUBAO_TRANSLATION_API_URL','翻译服务地址（可选）',false,'留空沿用上方完整模型服务地址')}{field('DOUBAO_TRANSLATION_API_KEY','翻译 API Key（可选）',true)}</div>}
+      <input type="hidden" name="LLM_ROLE_MODELS" value={draft.LLM_ROLE_MODELS || ''}/>
+    <details className="settings-model-routing"><summary><span>按任务选择模型</span><span className="settings-routing-state">{!values ? '加载中' : Object.keys(roleValues).length ? `${Object.keys(roleValues).length} 项已设置` : '沿用默认'}</span><CaretDown size={15} aria-hidden="true"/></summary>
+    <div className="settings-dependent-fields">
+      {modelRoleLabels.map(([role, label]) => {
+        const audio = ['minutesMap', 'minutesFinal'].includes(role) && ['openai-realtime', 'doubao-audio', 'doubao-audio-only'].includes(draft.MINUTES_MODE);
+        const dedicated = role === 'translation' && draft.TRANSLATION_PROVIDER === 'doubao-seed';
+        return <label key={role}><span className="settings-field-label"><span>{label}</span></span><input aria-label={label + '模型'} disabled={!values || audio || dedicated} value={audio || dedicated ? '' : roleValues[role] || ''} placeholder={audio ? '使用上方音频模型' : dedicated ? '使用专用翻译模型' : '跟随默认模型'} title={audio ? '音频纪要使用上方音频模型' : dedicated ? '当前使用专用翻译服务' : undefined} onChange={event => setRoleModel(role, event.target.value)} onBlur={event => setRoleModel(role, event.target.value.trim())}/></label>;
+      })}
+    </div></details>
+    <div className="settings-heading-row"><div className="settings-subheading"><CloudCheck size={18}/><h4>翻译服务</h4></div><Select label="翻译模型" name="TRANSLATION_PROVIDER" disabled={!values} value={draft.TRANSLATION_PROVIDER || 'auto'} onChange={value => setDraft(current => ({...current,TRANSLATION_PROVIDER:value}))} options={[{value:'auto',label:'自动选择'},{value:'text-model',label:'当前文字模型'},{value:'doubao-seed',label:'豆包 Seed 专用翻译'}]}/></div>
+      {(draft.TRANSLATION_PROVIDER === 'text-model' || ((!draft.TRANSLATION_PROVIDER || draft.TRANSLATION_PROVIDER === 'auto') && roleValues.translation)) ? <p className="settings-mode-note">翻译使用文字模型的连接配置；任务模型留空时沿用默认模型。</p> : <div className="settings-dependent-fields"><h4 className="settings-model-title">专用翻译模型</h4>{field('DOUBAO_TRANSLATION_MODEL','翻译模型 / 接入点 ID',false,'doubao-seed-translation-250915')}{field('DOUBAO_TRANSLATION_API_URL','翻译服务地址（可选）',false,'留空沿用上方完整模型服务地址')}{field('DOUBAO_TRANSLATION_API_KEY','翻译 API Key（可选）',true)}</div>}
       <div className="settings-heading-row"><div className="settings-subheading"><CloudCheck size={18}/><h4>学习与评审</h4><Status>{draft.LEARNING_SSH_HOST && draft.LEARNING_REMOTE_BASE ? '已填写' : '未配置'}</Status></div></div>
       <div className="settings-dependent-fields">{field('LEARNING_SSH_HOST','SSH 主机',false,'填写已配置的 SSH 主机别名或域名')}{field('LEARNING_REMOTE_BASE','远端服务目录',false,'填写服务所在的绝对目录')}</div>
       <div className="settings-heading-row"><div className="settings-subheading"><CloudCheck size={18}/><h4>后台会议联动</h4></div></div>

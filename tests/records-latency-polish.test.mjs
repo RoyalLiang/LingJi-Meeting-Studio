@@ -31,14 +31,12 @@ async function hooked(entry){
 }
 function elements(node,predicate,result=[]){if(!node||typeof node!=='object')return result;if(predicate(node))result.push(node);for(const child of [node.props?.children].flat(Infinity))elements(child,predicate,result);return result;}
 
-test('segment pages pin paused reads and editors, and latest reaches the actual final page',async()=>{
- const h=await hooked('apps/web/src/components/SegmentPage.tsx'),items=Array.from({length:60},(_,i)=>({id:'s'+i}));
- let page=h.render(h.useSegmentPage,items,true);assert.equal(page.page,0);
- page=h.render(h.useSegmentPage,[...items,{id:'s60'}],false);assert.equal(page.page,0);assert.ok(page.items.some(s=>s.id==='s59'));
- const anchored=h.render(h.useSegmentPage,[{id:'earlier'},...items],false,'s59');assert.equal(anchored.page,1);assert.ok(anchored.items.some(s=>s.id==='s59'));
- page.latest();page=h.render(h.useSegmentPage,[...items,{id:'s60'}],false);assert.equal(page.page,1);assert.equal(page.items[0].id,'s60');
- page.select(0);page=h.render(h.useSegmentPage,[...items,{id:'s60'}],true);assert.equal(page.page,0);
+test('virtual transcript range stays bounded and retains an offscreen editing row',async()=>{
+  const {segmentRange}=await import('../apps/web/src/virtual-segments.ts');
+  const visible=segmentRange(500,510,10000,10);assert.ok(visible.length<=50);assert.ok(visible.includes(500)&&visible.includes(510)&&visible.includes(10));
+  assert.equal(segmentRange(0,5,10000).length,30);assert.deepEqual(segmentRange(0,0,0),[]);
 });
+
 test('retained partial minutes stay read-only and are fenced by notes, template and generation',async()=>{
  const h=await hooked('apps/web/src/components/Minutes.tsx'),record=createRecord('fixture');record.capture='recording';record.transcriptRevision=1;
  record.segments=[{id:'s',revision:1,text:'合成发言',speaker:'',sourceId:'text-import',startMs:0,endMs:1000}];

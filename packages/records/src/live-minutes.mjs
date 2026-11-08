@@ -108,7 +108,7 @@ export function mergeLiveMinutes(previous, incoming, snapshot) {
   if(outdated){
     const visualItems=(incoming.visuals || []).flatMap(visual=>visual.entries.map(entry=>({text:`${visual.title}：${entry.label} ${entry.text || `${entry.valueText}${visual.unit || ''}`}`,evidence:entry.evidence})));
     const items=[...incoming.sections.flatMap(section=>section.items),...(incoming.decisions || []),...(incoming.actions || []),...(incoming.highlights || []),...visualItems,...(incoming.corrections || [])];
-    incoming={...incoming,sections:[{heading:'迟到内容待复核',items:items.map(item=>review(item,guardRoot,'早于当前有效状态，未更改已有决定',guardTime))}],decisions:[],actions:[],topics:[],tables:[],visuals:[],highlights:[],speakerSummaries:[],currentDiscussion:[],corrections:[]};
+    incoming={...incoming,sections:[{heading:'迟到内容待复核',items:items.map(item=>review(item,guardRoot,'早于当前有效状态，未更改已有决定',guardTime))}],decisions:[],actions:[],topics:[],tables:[],visuals:[],highlights:[],speakerSummaries:[],currentDiscussion:[],terms:[],corrections:[]};
   }
   const applied=new Map(), related=[];
   for(const correction of [...(incoming.corrections || [])].sort((a,b)=>time(a,freshEvidence)-time(b,freshEvidence))){
@@ -123,7 +123,7 @@ export function mergeLiveMinutes(previous, incoming, snapshot) {
     });
     base={...base,
       sections:base.sections.map(section=>({...section,items:section.items.filter(keep).map(item=>touches(item)?review(item,root,'与已更正事实共享引用，原内容保留',time(correction,freshEvidence)):item)})),
-      decisions:active(base.decisions),actions:active(base.actions),
+      decisions:active(base.decisions),actions:active(base.actions),terms:active(base.terms),
       highlights:active(base.highlights),
       topics:(base.topics || []).map(topic=>touches(topic)?{...topic,summary:''}:topic),
       tables:(base.tables || []).filter(table=>!table.rows.some(touches)),
@@ -180,6 +180,7 @@ export function mergeLiveMinutes(previous, incoming, snapshot) {
   return orderMinutesTimelines({
     ...incoming, title: incoming.title, sections, topics,
     actions: mergeItems(base.actions, (incoming.actions || []).map(remapItem)), decisions: mergeItems(base.decisions, (incoming.decisions || []).map(remapItem)),
+    terms: mergeItems(base.terms, (incoming.terms || []).map(remapItem)),
     speakerSummaries: [...speakers.values()], tables: [...tables.values()].slice(-6),
     highlights: mergeItems(incoming.highlights?.map(remapItem), base.highlights), visuals: [...visuals.values()].slice(-4),
     ...(incoming.currentDiscussion ? {currentDiscussion:incoming.currentDiscussion.map(remapItem)} : {}),

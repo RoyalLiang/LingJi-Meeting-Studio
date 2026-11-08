@@ -1,3 +1,4 @@
+import {PlaybackSourceSettings} from './PlaybackSourceSettings';
 import {FeedbackNotice} from './FeedbackNotice';
 import { useCallback, useEffect, useState } from 'react';
 import { Microphone } from '@phosphor-icons/react';
@@ -12,6 +13,7 @@ export function DeviceSettings({ disabled = false, compact = false }: { disabled
   const missing = selected !== 'default' && !devices.some(d => d.id === selected);
   return <div className={compact ? 'device-compact' : 'settings-section device-settings'}>{!compact && <div className="section-title"><Microphone size={19}/><h3>音频设置</h3></div>}
     <Select label="录音麦克风" disabled={disabled} value={missing ? 'default' : selected} onChange={id => { setPreferredDevice(id); setSelected(id); }} options={[{value:'default',label:'自动'},...devices.map(d => ({value:d.id,label:d.label}))]}/>
+    {!compact && <PlaybackSourceSettings disabled={disabled}/>}
     {!compact && <MicrophoneTest disabled={disabled} refresh={refresh}/>}
     {error && <FeedbackNotice key={error} message={error} error/>}
   </div>;

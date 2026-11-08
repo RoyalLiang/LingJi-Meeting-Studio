@@ -326,7 +326,7 @@ return {...publicRule(await load(owner)),recent:await Promise.all((await history
       }),
       async close(){closing=true;clearInterval(timer);await operations;await harness.close(context);lock.close();}
   };
-  const unregister=kernel.register('git-sync',{sources:(_owner,input)=>[input.recordId],submit:(owner,input)=>service.start(owner,input.recordId),inspect:(owner,id)=>service.get(owner,id),cancel:(owner,id)=>service.cancel(owner,id)});
+  const unregister=kernel.register('git-sync',{validate:(_owner,input)=>{requireThat(input?.confirmed===true,'git_confirmation_required',400);},sources:(_owner,input)=>[input.recordId],submit:(owner,input)=>service.start(owner,input.recordId),inspect:(owner,id)=>service.get(owner,id),cancel:(owner,id)=>service.cancel(owner,id)});
   service.cancel=async(owner,id)=>{const current=await jobFor(owner,id);if(['succeeded','cancelled'].includes(current.status))return publicJob(current,true);await service.control(owner,id,'pause');if(current.agentId)await agent.cancel(owner,current.agentId).catch(()=>{});return enqueue(async()=>publicJob(await update(id,{paused:true,status:'cancelled'}),true));};
   const close=service.close;service.close=async()=>{unregister();await close();};
   return service;

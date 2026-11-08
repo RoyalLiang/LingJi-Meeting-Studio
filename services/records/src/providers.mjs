@@ -1,3 +1,4 @@
+import { roleModelConfig, minutesRoleConfig } from './model-roles.mjs';
 import {minutesReasoningEffort} from './minutes-reasoning.mjs';
 import {readModelFacts} from './model-facts.mjs';
 import { withMinutesVocabulary } from './minutes-vocabulary.mjs';
@@ -85,7 +86,7 @@ export async function generateMinutes(job, env = process.env, options = {}) {
     for(let i=0;i<items.length;i+=100)sections.push({heading:'讨论摘录',items:items.slice(i,i+100)});
     return {title:'本地提取纪要',method:'extractive',sections,actions:hints.items.filter(i=>i.kind==='action').map(({text,evidence})=>({text,evidence,owner:null,due:null})),usageTokens:0};
   }
-  if (job.modelVersion && job.modelVersion !== 'default') env = {...env,LLM_MODEL:job.modelVersion};
+  env = minutesRoleConfig(job, env);
 
   if (providerStatus(env).fixture) return { title: '开发测试纪要', sections: [{ heading: '测试摘要', items: job.summaries ? job.summaries.flatMap(summary=>summary.sections.flatMap(section=>section.items)).slice(0,8) : job.snapshot.filter(s=>!s.contextOnly).slice(0, 8).map(s => ({ text: s.text, evidence: [{ segmentId: s.id, revision: s.revision }] })) }], actions: [] };
   const wire=compactMinutesPayload(job);
@@ -122,7 +123,7 @@ export async function generateMinutes(job, env = process.env, options = {}) {
 
 }
 export async function translateText(text, target, env = process.env, options = {}) {
-  const config = normalizeConfig(env), connection = translationConnection(config);
+  const config = roleModelConfig(normalizeConfig(env), 'translation'), connection = translationConnection(config);
   requireThat(connection.url && configured(connection.key) && connection.model, 'translation_not_configured', 503);
   if (connection.provider === 'doubao-seed') return translateSeedText(text, target, config, options);
   requireThat(['zh','en','ja','es','fr','de'].includes(target), 'invalid_translation_target', 400);
@@ -133,6 +134,7 @@ export async function translateText(text, target, env = process.env, options = {
 }
 
 export async function analyzeIntents(snapshot, env = process.env, context) {
+  env = roleModelConfig(normalizeConfig(env), 'intents');
   const vocabulary = await builtinVocabularyContext(snapshot.map(segment => segment.text || '').join('\n'));
   const base = context?{transcript:snapshot,context}:snapshot;
   requireThat(JSON.stringify(base).length <= 180000, 'intent_input_too_large', 422);

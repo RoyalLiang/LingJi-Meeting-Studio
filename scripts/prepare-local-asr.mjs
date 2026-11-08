@@ -64,7 +64,7 @@ export async function prepareLocalAsr({ destination, cacheRoot, platform = proce
       await mkdir(dirname(join(stage, resource.path)), { recursive: true });
       await cp(cached, join(stage, resource.path));
     }
-    const notice = `聆记本地转录\n\nSenseVoiceSmall by FunAudioLLM / Alibaba DAMO Academy.\nONNX conversion and native inference by k2-fsa/sherpa-onnx.\nModel revision: ${lock.modelRevision}\nRuntime: sherpa-onnx ${lock.runtime}; ONNX Runtime ${lock.onnxruntime}.\nSilero VAD by Silero Team.\n\nModel weights and software have separate licenses. See licenses/ for the model agreement, Apache-2.0, MIT and third-party notices.\nOriginal model: https://huggingface.co/FunAudioLLM/SenseVoiceSmall\nConverted model: https://k2-fsa.github.io/sherpa/onnx/sense-voice/pretrained.html\n`;
+    const notice = `聆记本地转录\n\nSenseVoiceSmall by FunAudioLLM / Alibaba DAMO Academy.\nONNX conversion and native inference by k2-fsa/sherpa-onnx.\nModel revision: ${lock.modelRevision}\nRuntime: sherpa-onnx ${lock.runtime}; ONNX Runtime ${lock.onnxruntime}.\nSilero VAD by Silero Team.\nStreaming drafts: Zipformer small bilingual Chinese/English by the k2-fsa community.\nSource model: https://huggingface.co/${lock.streamingModel.sourceModel}/tree/${lock.streamingModel.modelRevision}\nStreaming model license: Apache-2.0; shared license text is included below.\n\nModel weights and software have separate licenses. See licenses/ for the model agreement, Apache-2.0, MIT and third-party notices.\nOriginal model: https://huggingface.co/FunAudioLLM/SenseVoiceSmall\nConverted model: https://k2-fsa.github.io/sherpa/onnx/sense-voice/pretrained.html\n`;
     await writeFile(join(stage, 'NOTICE.txt'), notice);
     const files = [], nativeFiles = [];
     for (const path of await filesAt(stage)) {
@@ -75,7 +75,7 @@ export async function prepareLocalAsr({ destination, cacheRoot, platform = proce
     // macOS re-signs native libraries during bundling. Verify model/data/JS
     // hashes here; native payload provenance is pinned by npm SRI and the final
     // installer digest/signature, and each library's presence is checked at use.
-    const manifest = { schema: 1, model: lock.model, runtime: lock.runtime, onnxruntime: lock.onnxruntime, platform, arch, modelRevision: lock.modelRevision, packages: [lock.packages.common, lock.packages[target]], files, nativeFiles };
+    const manifest = { schema: 1, model: lock.model, runtime: lock.runtime, onnxruntime: lock.onnxruntime, platform, arch, modelRevision: lock.modelRevision, streamingModel:lock.streamingModel, speakerModels:lock.speakerModels, packages: [lock.packages.common, lock.packages[target]], files, nativeFiles };
     await writeFile(join(stage, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
     await mkdir(dirname(destination), { recursive: true });
     await rm(destination, { recursive: true, force: true });

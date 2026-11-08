@@ -37,13 +37,13 @@ export function automaticMinutesAt(record, now = Date.now()) {
   return Math.max(auto.enabledAt || Date.parse(record.createdAt), auto.lastRequestedAt || 0) + interval * 1000;
 }
 
-export function queueAutomaticMinutes(record, modelVersion, now = Date.now()) {
+export function queueAutomaticMinutes(record, modelVersion, now = Date.now(), modelRouting = '') {
   if (automaticMinutesAt(record, now) > now) return;
   const scope = record.capture === 'completed' ? 'final' : 'live';
   const previous = checkpointJob(record, scope);
-  const job = requestMinutes(record, { mode: 'model', scope, automatic: true, modelVersion, ...(previous?.status === 'failed' ? {template: previous.template} : {}) });
+  const job = requestMinutes(record, { mode: 'model', scope, automatic: true, modelVersion, modelRouting, ...(previous?.status === 'failed' ? {template: previous.template} : {}) });
   if (record.capture === 'paused') job.pausedCheckpoint = true;
-  if (previous?.status === 'failed' && previous.modelVersion === job.modelVersion) {
+  if (previous?.status === 'failed' && previous.modelVersion === job.modelVersion && (previous.modelRouting ?? '') === (job.modelRouting ?? '')) {
     job.retryAttempt = (previous.retryAttempt || 1) + 1;
     job.retryOf = previous.retryOf || previous.id;
   } else job.retryAttempt = 1;

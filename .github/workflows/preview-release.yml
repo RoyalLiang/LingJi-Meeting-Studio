@@ -133,6 +133,16 @@ jobs:
           NODE
           fi
           exit "$native_status"
+      - name: Native background recording and renderer recovery smoke
+        run: |
+          cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --features smoke-test
+          node scripts/test-native-evolution.mjs .agent-runtime/native-evolution-macos.json
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: always()
+        with:
+          name: macos-native-evolution-${{ needs.verify.outputs.sha }}
+          path: .agent-runtime/native-evolution-macos.json
+          if-no-files-found: ignore
       - name: Build and verify isolated preview package
         env:
           TTS_RELEASE_SOURCE_REF: ${{ needs.verify.outputs.sha }}
@@ -308,6 +318,20 @@ jobs:
         with:
           name: windows-native-${{ github.sha }}
           path: .agent-runtime/windows-native.json
+          if-no-files-found: ignore
+      - name: Native background recording and renderer recovery smoke
+        env:
+          NATIVE_CLIENT_EXECUTABLE: ${{ github.workspace }}\apps\desktop\src-tauri\target\debug\tts-client.exe
+        run: |
+          $PSNativeCommandUseErrorActionPreference=$false
+          node scripts/test-native-evolution.mjs .agent-runtime/native-evolution-windows.json *> .agent-runtime/windows-evolution.log
+          $probeStatus=$LASTEXITCODE
+          if($probeStatus -ne 0){Get-Content .agent-runtime/windows-evolution.log -Tail 60;exit $probeStatus}
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: always()
+        with:
+          name: windows-native-evolution-${{ needs.verify.outputs.sha }}
+          path: .agent-runtime/native-evolution-windows.json
           if-no-files-found: ignore
       - name: Verify the WGS-built Windows preview installer
         timeout-minutes: 60

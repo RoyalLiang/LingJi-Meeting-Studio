@@ -1,0 +1,9 @@
+MediaBunny 1.65.2 — Copyright 2026-present Vanilagy and contributors.
+Used without modification for streamed local audio decoding and resampling.
+License: Mozilla Public License 2.0 (mediabunny-MPL-2.0.txt).
+Source: https://registry.npmjs.org/mediabunny/-/mediabunny-1.65.2.tgz
+Project: https://github.com/Vanilagy/mediabunny
+
+TanStack Virtual — Copyright TanStack contributors.
+License: MIT (tanstack-virtual-MIT.txt).
+Source: https://github.com/TanStack/virtual

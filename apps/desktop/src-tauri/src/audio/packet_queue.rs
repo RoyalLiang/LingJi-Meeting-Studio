@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::sync::{Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
+use super::native_spool::{NativeSpool, Manifest, Receipt};
 
 const MAX_PACKET_BYTES: usize = 12 + 16_000 * 2;
 
@@ -8,6 +9,10 @@ const MAX_PACKET_BYTES: usize = 12 + 16_000 * 2;
 // automatically removed temporary file rather than stopping capture or growing RAM.
 pub(super) struct PacketQueue {
     state: Mutex<State>,
+    native: Mutex<Option<Arc<NativeSpool>>>,
+    native_action: Mutex<String>,
+    close_error: Mutex<Option<String>>,
+    close_action: Mutex<Option<String>>,
     available: Condvar,
 }
 
@@ -40,6 +45,7 @@ impl PacketQueue {
 
     fn with_file(file: File) -> Self {
         Self {
+            native: Mutex::new(None), native_action: Mutex::new("source".into()), close_error: Mutex::new(None), close_action: Mutex::new(None),
             state: Mutex::new(State {
                 file,
                 read: 0,
@@ -53,6 +59,44 @@ impl PacketQueue {
         }
     }
 
+    pub fn bind_native(&self, spool: NativeSpool) -> Result<(), String> {
+        let state = self.state.lock().unwrap();
+        if state.closed || state.written != 0 || self.native.lock().unwrap().is_some() { return Err("此采集连接已经开始".into()); }
+        *self.native.lock().unwrap() = Some(Arc::new(spool)); Ok(())
+    }
+    pub fn direct(&self) -> bool { self.native.lock().unwrap().is_some() }
+    pub fn native_manifest(&self) -> Result<Manifest, String> {
+        Ok(self.native.lock().unwrap().as_ref().ok_or("此采集不是本机直传")?.manifest())
+    }
+    pub fn native_progress(&self) -> Result<(Manifest, Receipt, f32, f64), String> {
+        self.native.lock().unwrap().as_ref().ok_or("此采集不是本机直传")?.progress()
+    }
+    pub fn native_action(&self, action: &str) -> Result<(), String> {
+        if !["source", "pause", "seal"].contains(&action) { return Err("停止方式无效".into()); }
+        { let mut current = self.native_action.lock().unwrap();
+          if *current != "seal" && (*current != "pause" || action == "seal") { *current = action.into(); }
+        }
+        if action != "source" && self.state.lock().unwrap().closed {
+            if let Some(spool) = self.native.lock().unwrap().as_ref() { spool.control(action)?; }
+        }
+        Ok(())
+    }
+    pub fn action(&self) -> String { self.native_action.lock().unwrap().clone() }
+    pub fn wait_closed(&self) -> Result<(), String> {
+        let state = self.state.lock().unwrap();
+        let (state, _) = self.available.wait_timeout_while(state, std::time::Duration::from_secs(10), |state| !state.closed).unwrap();
+        if !state.closed { return Err("录音尾部正在保存，请稍后重试".into()); }
+        let error = self.close_error.lock().unwrap().clone();
+        if error.is_some() {
+            if let Some(spool) = self.native.lock().unwrap().as_ref() {
+                let action = self.close_action.lock().unwrap().clone().ok_or("录音停止方式无效")?;
+                spool.close(&action)?;
+                let desired = self.action(); if desired != "source" { spool.control(&desired)?; }
+                *self.close_error.lock().unwrap() = None;
+            } else { return Err(error.unwrap()); }
+        }
+        Ok(())
+    }
     pub fn writer(&self) -> WriterGuard<'_> {
         WriterGuard(self)
     }
@@ -64,6 +108,11 @@ impl PacketQueue {
         let mut state = self.state.lock().unwrap();
         if state.closed {
             return Err("本地音频采集已停止".into());
+        }
+        if let Some(spool) = self.native.lock().unwrap().as_ref() {
+            spool.push(packet)?;
+            state.produced_samples = u32::from_le_bytes(packet[4..8].try_into().unwrap()) as u64 + u32::from_le_bytes(packet[8..12].try_into().unwrap()) as u64;
+            return Ok(());
         }
         let written = state.written;
         state
@@ -89,6 +138,7 @@ impl PacketQueue {
     }
 
     pub fn pending(&self) -> Result<Option<Vec<u8>>, String> {
+        if self.direct() { return Err("本机直传音频无需通过页面读取".into()); }
         let mut state = self.state.lock().unwrap();
         while state.read == state.written && !state.closed {
             state = self.available.wait(state).unwrap();
@@ -110,6 +160,7 @@ impl PacketQueue {
     }
 
     pub fn acknowledge(&self, sequence: u32, offset: u32, samples: u32) -> Result<(), String> {
+        if self.direct() { return Err("本机直传音频由后台确认".into()); }
         let mut state = self.state.lock().unwrap();
         if samples == 0 || samples > 16_000 { return Err("本地音频确认长度无效".into()); }
         let identity = (sequence, offset, samples);
@@ -136,6 +187,11 @@ impl PacketQueue {
 
     pub fn progress(&self) -> (u64, u64, u64) {
         let state = self.state.lock().unwrap();
+        if let Some(spool) = self.native.lock().unwrap().as_ref() {
+            let end = spool.manifest().sample_end;
+            let acknowledged = spool.progress().map(|(_, receipt, _, _)| if receipt.purged {end} else {receipt.sample_end}).unwrap_or(0);
+            return (end, acknowledged, end.saturating_sub(acknowledged) * 2);
+        }
         let acknowledged = state.last_ack.map(|(_, offset, samples)| offset as u64 + samples as u64).unwrap_or(0);
         (state.produced_samples, acknowledged, state.written - state.read)
     }
@@ -149,7 +205,14 @@ impl PacketQueue {
     // A normal stop closes the writer after resampling the tail. All queued
     // packets remain readable before EOF; discard explicitly cancels a reader.
     pub fn close(&self) {
-        self.state.lock().unwrap().closed = true;
+        let mut state = self.state.lock().unwrap();
+        if state.closed { return; }
+        if let Some(spool) = self.native.lock().unwrap().as_ref() {
+            let action = self.action(); *self.close_action.lock().unwrap() = Some(action.clone());
+            if let Err(error) = spool.close(&action) { *self.close_error.lock().unwrap() = Some(error); }
+        }
+        state.closed = true;
+        drop(state);
         self.available.notify_all();
     }
 
@@ -235,4 +298,23 @@ mod tests {
         let file=tempfile::NamedTempFile::new().unwrap();let queue=PacketQueue::with_file(File::open(file.path()).unwrap());
         assert!(queue.push(&packet(0,1)).unwrap_err().contains("读写失败"));assert_eq!(queue.state.lock().unwrap().written,0);queue.close();assert!(queue.pending().unwrap().is_none());
     }
+    #[test]
+    fn direct_progress_keeps_published_tail_when_directory_sync_fails() {
+        let root=tempfile::tempdir().unwrap(); let lease="a".repeat(64);std::fs::create_dir(root.path().join(&lease)).unwrap();
+        let queue=PacketQueue::new().unwrap();queue.bind_native(NativeSpool::bind(root.path(),&lease).unwrap()).unwrap();
+        super::super::native_spool::fail_next_directory_sync();
+        assert!(queue.push(&packet(0,16000)).is_err());
+        assert_eq!(queue.progress().0,16000);assert_eq!(queue.native_progress().unwrap().0.sample_end,16000);
+        queue.close();queue.wait_closed().unwrap();assert!(root.path().join(&lease).join("000000.pcm").exists());
+    }
+    #[test]
+    fn direct_stop_can_retry_its_immutable_manifest_after_io_recovers() {
+        let root=tempfile::tempdir().unwrap();let lease="b".repeat(64);std::fs::create_dir(root.path().join(&lease)).unwrap();
+        let queue=PacketQueue::new().unwrap();queue.bind_native(NativeSpool::bind(root.path(),&lease).unwrap()).unwrap();queue.push(&packet(0,79)).unwrap();
+        super::super::native_spool::fail_next_directory_sync();queue.close();assert!(queue.close_error.lock().unwrap().is_some());
+        super::super::native_spool::fail_next_directory_sync();assert!(queue.wait_closed().is_err());
+        queue.wait_closed().unwrap();assert!(queue.close_error.lock().unwrap().is_none());
+        assert_eq!(queue.native_progress().unwrap().0.sample_end,79);assert!(root.path().join(&lease).join("000000.pcm").exists());
+    }
+
 }

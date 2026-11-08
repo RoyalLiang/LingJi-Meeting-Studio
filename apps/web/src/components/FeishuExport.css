@@ -42,7 +42,7 @@
 .feishu-section-heading,.feishu-section-heading>div{display:flex;align-items:center;gap:12px}
 .feishu-section-heading{justify-content:space-between;flex-wrap:wrap}
 .feishu-section-heading h2{margin:0;font-size:17px}
-.feishu-rule-state,.feishu-saved{font-size:12px;color:var(--ink-3)}
+.feishu-rule-state,.feishu-saved{font-size:13px;color:var(--ink-3)}
 .feishu-export .feishu-enable{display:flex!important;align-items:center;gap:8px;font-size:13px;font-weight:400}
 .feishu-fields{display:grid;grid-template-columns:minmax(140px,.65fr) minmax(0,1.35fr);gap:16px;align-items:end}
 .feishu-options{border:0;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:12px 24px;min-width:0}
@@ -50,7 +50,7 @@
 .feishu-options .checkbox-label{border:0!important;background:none!important;padding:0!important;min-height:32px}
 .feishu-export .feishu-consent{display:flex!important;align-items:flex-start;gap:10px;font-size:13px;font-weight:400;line-height:1.6}
 .feishu-consent input{flex-shrink:0;margin-top:3px}
-.feishu-target-hint{font-size:12px;line-height:1.6;color:var(--ink-3);margin:0}
+.feishu-target-hint{font-size:13px;line-height:1.6;color:var(--ink-3);margin:0}
 .feishu-actions{justify-content:flex-end}
 .feishu-actions .feishu-saved{margin-right:auto}
 .export-modal .meeting-export{display:grid;gap:20px;min-width:0}
@@ -73,18 +73,18 @@
 .automation-history{display:grid;gap:12px;margin-top:20px;padding:20px;border:0;border-radius:12px;background:var(--bg)}
 .automation-history>header{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .automation-history h3{margin:0;font-size:14px;font-weight:600}
-.automation-history h3 span{margin-left:6px;font-size:12px;color:var(--ink-3);font-weight:400}
+.automation-history h3 span{margin-left:6px;font-size:13px;color:var(--ink-3);font-weight:400}
 .automation-history-list{display:grid;gap:0}
 .automation-history article{display:grid;gap:6px;padding:14px 0;min-width:0;border-top:1px solid var(--border)}
 .automation-history article:first-child{padding-top:0;border-top:0}
 .automation-history article:last-child{padding-bottom:0}
 .automation-history-main{display:flex;align-items:center;gap:12px;min-width:0}
 .automation-history-main strong{flex:1;min-width:0;font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.automation-history-state{flex:none;font-size:12px;color:var(--ink-3);padding:3px 8px;border-radius:99px;background:var(--panel-2)}
+.automation-history-state{flex:none;font-size:13px;color:var(--ink-3);padding:3px 8px;border-radius:99px;background:var(--panel-2)}
 .automation-history-state.succeeded{color:var(--up)}
 .automation-history-state.failed,.automation-history-state.partial,.automation-history-state.unknown{color:var(--down)}
 .automation-history-state.publishing{color:var(--accent)}
-.automation-history-main a{flex:none;font-size:12px;white-space:nowrap}
-.automation-history time{font-size:12px;color:var(--ink-3)}
-.automation-history-error{margin:0;color:var(--down);font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+.automation-history-main a{flex:none;font-size:13px;white-space:nowrap}
+.automation-history time{font-size:13px;color:var(--ink-3)}
+.automation-history-error{margin:0;color:var(--down);font-size:13px;line-height:1.6;overflow-wrap:anywhere}
 @media(max-width:600px){.automation-history{padding:16px}.automation-history-main{gap:8px;flex-wrap:wrap}.automation-history-main strong{flex-basis:calc(100% - 100px)}}

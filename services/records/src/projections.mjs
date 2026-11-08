@@ -1,5 +1,6 @@
+import { recordSearchBody, foldSearchText } from './record-search.mjs';
 import { analysisInput, meetingSeconds, workspaceOverviewInput } from '../../../packages/records/src/workspaces.mjs';
-import { publicRecord } from '../../../packages/records/src/record.mjs';
+import { publicRecord,publicTranscription } from '../../../packages/records/src/record.mjs';
 
 export const cursorKey = cursor => String(cursor).padStart(20, '0');
 export function projectionDelta(before, after) {
@@ -19,7 +20,8 @@ export function deriveProjection(record, before) {
   if (record.kind !== 'record') return null;
   const events = record.events || [], last = events.at(-1);
   const delta = before && before.cursor !== record.cursor ? projectionDelta(before, publicRecord(record)) : null;
-  return { list: {overview:record.deleted?null:workspaceOverviewInput(record),owner:record.owner,deleted:!!record.deleted,deleteAt:record.deleteAt,search:record.deleted ? '' : `${record.title} ${record.segments.map(s=>s.text).join(' ')} ${JSON.stringify(record.minutes||'')}`.toLowerCase(),summary:{id:record.id,title:record.title,workspaceId:record.workspaceId||null,createdAt:record.createdAt,updatedAt:record.updatedAt,capture:record.capture,transcription:record.transcription,segments:record.segments.length,hasMinutes:!!record.minutes,seconds:meetingSeconds(record)}}, meta: { cleanup:record.cleanup,analysisInput: analysisInput(record), id: record.id, owner: record.owner, deleted: !!record.deleted, deleteAt: record.deleteAt,
+  const searchBody = record.deleted ? '' : recordSearchBody(record);
+  return { list: {searchBody,searchVersion:3,overview:record.deleted?null:workspaceOverviewInput(record),owner:record.owner,deleted:!!record.deleted,deleteAt:record.deleteAt,search:foldSearchText(searchBody),summary:{id:record.id,title:record.title,workspaceId:record.workspaceId||null,createdAt:record.createdAt,updatedAt:record.updatedAt,capture:record.capture,transcription:publicTranscription(record),segments:record.segments.length,hasMinutes:!!record.minutes,minutesRevision:record.minutesRevision,transcriptRevision:record.transcriptRevision,generation:record.generation,seconds:meetingSeconds(record)}}, meta: { capture:record.capture,cleanup:record.cleanup,analysisInput: analysisInput(record), id: record.id, owner: record.owner, deleted: !!record.deleted, deleteAt: record.deleteAt,
     cursor: record.cursor, first: record.deleted ? record.cursor : events[0]?.cursor || record.cursor },
     events: record.deleted ? [] : events.filter(event => !before || BigInt(event.cursor) > BigInt(before.cursor)).map(event =>
       ({ ...event, projection: !!delta, ...(delta && event === last ? { delta } : {}) })) };

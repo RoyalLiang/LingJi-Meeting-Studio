@@ -1,7 +1,9 @@
+import { roleModelConfig } from './model-roles.mjs';
 import {modelEndpoint} from './llm.mjs';
 import { DomainError, requireThat } from '../../../packages/records/src/record.mjs';
 
 export function translationConnection(config) {
+  config = roleModelConfig(config, 'translation');
   const dedicated = config.DOUBAO_TRANSLATION_API_URL || config.DOUBAO_TRANSLATION_API_KEY || (config.DOUBAO_TRANSLATION_MODEL && config.DOUBAO_TRANSLATION_MODEL !== 'doubao-seed-translation-250915');
   const seed = config.TRANSLATION_PROVIDER === 'doubao-seed' || ((!config.TRANSLATION_PROVIDER || config.TRANSLATION_PROVIDER === 'auto') && (dedicated || /^https:\/\/ark\.[a-z0-9-]+\.volces\.com\//u.test(config.LLM_API_URL || '')));
   if (!seed) return { provider:'text-model', url:config.LLM_API_URL, key:config.LLM_API_KEY, model:config.LLM_MODEL };

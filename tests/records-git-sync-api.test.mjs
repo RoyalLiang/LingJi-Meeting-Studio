@@ -38,5 +38,13 @@ test('Git sync HTTP enforces auth, CSRF, explicit consent, owner boundaries and 
   assert.equal((await request(path+'/retry','POST',{confirmed:true,answer:'补'.repeat(4001)})).body.error,'invalid_agent_request');
   assert.equal((await request('/integrations/git-sync','GET',undefined,other)).body.recent.length,0);
   assert.ok(!JSON.stringify((await request('/integrations/git-sync')).body).includes(policy.token));
+  const descriptor=(await request('/connectors')).body.connectors.find(item=>item.id==='git');assert.ok(descriptor.operations.includes('retry'));assert.equal(descriptor.recovery,'guarded-resume');
+  assert.equal((await request('/connectors/git/tasks','POST',{protocolVersion:1,requestId:'git-v1-denied',confirmed:false,input:{recordId:record.id}})).body.error,'git_confirmation_required');
+  assert.equal((await request('/meeting-tasks','POST',{kind:'git-sync',requestId:'unconfirmed-generic',sourceIds:[record.id],payload:{recordId:record.id,automatic:true}})).status,400);
+  const envelope={protocolVersion:1,requestId:'git-v1',confirmed:true,input:{recordId:record.id}},viaConnector=await request('/connectors/git/tasks','POST',envelope);assert.equal(viaConnector.status,202,JSON.stringify(viaConnector));assert.equal(viaConnector.body.task.id,started.body.id);
+  assert.equal((await request('/connectors/git/tasks','POST',envelope)).body.taskId,viaConnector.body.taskId);assert.equal(network.mrs.length,1);
+  const connectorPath='/connectors/git/tasks/'+encodeURIComponent(viaConnector.body.taskId);assert.equal((await request(connectorPath)).body.task.status,'succeeded');assert.equal((await request(connectorPath,'GET',undefined,other)).status,404);
+  assert.equal((await request('/connectors/feishu/tasks/'+encodeURIComponent(viaConnector.body.taskId))).body.error,'connector_task_mismatch');
+  assert.equal((await request('/connectors/git/tasks','POST',{...envelope,sourceIds:['forged']})).body.error,'invalid_connector_request');
   const disabled=await request('/integrations/git-sync','PUT',{...policy,enabled:false,confirmed:false,prompt:'关闭后保存的指令',directory:'docs/updated'});assert.equal(disabled.status,200);const reread=await request('/integrations/git-sync');assert.equal(reread.body.enabled,false);assert.equal(reread.body.prompt,'关闭后保存的指令');assert.equal(reread.body.directory,'docs/updated');
 });
