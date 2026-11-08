@@ -1010,7 +1010,7 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 .settings-field-label>.status { flex:none; font-size:9px; padding:1px 4px; }
 .settings-modal .provider-form>label>input,.settings-modal .provider-form>label>.select { grid-column:2; min-width:0; }
 .settings-modal .client-update-policy { display:flex; flex:1; min-width:min(300px,100%); align-items:center; gap:8px; }
-.client-update-policy>.select { flex:1; min-width:0; }
+.client-update-policy>.select { flex:1 1 180px; min-width:0; }
 .settings-modal .client-update-policy .button { white-space:nowrap; }
 
 /* Opaque surfaces avoid full-window backdrop textures in native WebView2. */
@@ -1030,9 +1030,9 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 .settings-modal .section-title h3 { margin:0; color:var(--ink-1); font-size:15px; font-weight:600; }
 .settings-modal .client-update-status { margin:6px 0 0; }
 .client-update-policy { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; flex-wrap:wrap; }
-.client-update-policy .actions { flex-wrap:nowrap; }
+.client-update-policy .actions { flex-wrap:wrap; }
 .client-update-policy .actions .button { min-width:116px; }
-.client-update-status { min-height:58px; overflow-wrap:anywhere; }
+.client-update-status { min-height:64px; overflow-wrap:anywhere; }
 .client-update-activity { display:grid; grid-template-columns:minmax(0,1fr) minmax(180px,40%); align-items:center; gap:16px; padding:12px 16px; }
 .settings-modal .client-update-activity .client-update-status { margin:0; }
 .client-update-activity .update-download { margin:0; }
