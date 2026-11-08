@@ -115,10 +115,14 @@ test('queued compatibility tools retain authorization but are marked as replay i
  assert.equal(requests,1);assert.deepEqual(admissions.map(item=>item.replay),[false,true]);
 });
 
-test('a lower observed context limit immediately clamps the current model output cap',async t=>{
+test('a lower observed context limit clamps the next actual native and JSON request in both protocols',async t=>{
  const original=globalThis.fetch;t.after(()=>{globalThis.fetch=original;});
- globalThis.fetch=async()=>Response.json({error:{code:'context_length_exceeded',message:'maximum context length is 8192 tokens'}},{status:400});
- const bridge=configuredModels('/unused',{...env,LLM_MODEL_PROFILES:JSON.stringify({fixture:{contextWindow:64000,maxOutputTokens:32768}})});
- const answer=await bridge.models.completeSimple(bridge.model,{messages:[]});assert.equal(isContextOverflow(answer),true);
- const model=bridge.models.getModel(bridge.model.provider,bridge.model.modelId);assert.equal(model.contextWindow,8192);assert.equal(model.maxTokens,4096);assert.equal(bridge.profile.maxOutputTokens,4096);
+ for(const protocol of ['chat-completions','responses'])for(const nativeTools of [false,true]){
+  const bodies=[];globalThis.fetch=async(_url,options)=>{bodies.push(JSON.parse(options.body));return bodies.length===1?Response.json({error:{code:'context_length_exceeded',message:'maximum context length is 8192 tokens'}},{status:400}):Response.json(protocol==='responses'?{output_text:'{"summary":"done","decisions":[],"actions":[]}'}:{choices:[{message:{content:'{"summary":"done","decisions":[],"actions":[]}'}}]});};
+  const facts={},bridge=configuredModels('/unused',{...env,LLM_PROTOCOL:protocol,LLM_MODEL_FACTS:facts,LLM_MODEL_PROFILES:JSON.stringify({fixture:{nativeTools,contextWindow:64000,maxOutputTokens:32768}})});
+  const answer=await bridge.models.completeSimple(bridge.model,{messages:[]});assert.equal(isContextOverflow(answer),true);
+  const model=bridge.models.getModel(bridge.model.provider,bridge.model.modelId);assert.equal(model.contextWindow,8192);assert.equal(model.maxTokens,4096);assert.equal(bridge.profile.maxOutputTokens,4096);
+  await bridge.models.completeSimple(bridge.model,{messages:[]});assert.equal(bodies[1][protocol==='responses'?'max_output_tokens':'max_completion_tokens'],4096);
+  if(nativeTools){facts.contextLimit=4096;await bridge.models.completeSimple(bridge.model,{messages:[]});assert.equal(bodies[2][protocol==='responses'?'max_output_tokens':'max_completion_tokens'],2048);}
+ }
 });
