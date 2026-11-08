@@ -165,6 +165,7 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '26.12.1'
+          package-manager-cache: false
       - name: Build Linux and Windows in the locked current WGS checkout
         id: packages
         run: node scripts/wgs-build-preview.mjs
