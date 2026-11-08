@@ -209,17 +209,30 @@ test('native smoke probe validates both queued source identities, contiguous sam
   }
   const report = await context.verifyNativeUiLanes(record, queued);
   assert.deepEqual(Array.from(report, lane => [lane.kind, lane.packets, lane.samples]), [['display', 2, 640], ['microphone', 2, 640]]);
-  for (const mutate of [
-    (r) => { r.sources[1].lastSequence = 2; },
-    (_r, q) => { q[2].chunk.sampleOffset = 9; },
-    (_r, q) => { q[2].chunk.sequence = 9; },
-    (_r, q) => { q[2].chunk.epoch = 'other-epoch'; },
-    (_r, q) => { q[2].chunk.digest = 'wrong-digest'; },
-    (_r, q) => { q[2].chunk.sampleCount = 1; },
-    (r) => { r.sources.pop(); },
-  ]) {
-    const badRecord = structuredClone(record), badQueue = structuredClone(queued); mutate(badRecord, badQueue);
-    await assert.rejects(context.verifyNativeUiLanes(badRecord, badQueue));
+  const binary = structuredClone(queued);
+  for (const { chunk } of binary) {
+    const bytes = Buffer.from(chunk.pcm, 'base64'), offset = chunk.sequence + 1, backing = new Uint8Array(bytes.length + 4).fill(1);
+    backing.set(bytes, offset); chunk.pcm = backing.subarray(offset, offset + bytes.length);
+  }
+  const binaryReport = await context.verifyNativeUiLanes(record, binary);
+  assert.deepEqual(Array.from(binaryReport, lane => [lane.kind, lane.packets, lane.samples]), Array.from(report, lane => [lane.kind, lane.packets, lane.samples]));
+  const silent = structuredClone(binary);
+  silent[0].chunk.pcm.fill(0);
+  silent[0].chunk.digest = Buffer.from(await webcrypto.subtle.digest('SHA-256', silent[0].chunk.pcm)).toString('hex');
+  await assert.rejects(context.verifyNativeUiLanes(record, silent));
+  for (const packets of [queued, binary]) {
+    for (const mutate of [
+      (r) => { r.sources[1].lastSequence = 2; },
+      (_r, q) => { q[2].chunk.sampleOffset = 9; },
+      (_r, q) => { q[2].chunk.sequence = 9; },
+      (_r, q) => { q[2].chunk.epoch = 'other-epoch'; },
+      (_r, q) => { q[2].chunk.digest = 'wrong-digest'; },
+      (_r, q) => { q[2].chunk.sampleCount = 1; },
+      (r) => { r.sources.pop(); },
+    ]) {
+      const badRecord = structuredClone(record), badQueue = structuredClone(packets); mutate(badRecord, badQueue);
+      await assert.rejects(context.verifyNativeUiLanes(badRecord, badQueue));
+    }
   }
 });
 

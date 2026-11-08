@@ -8,9 +8,9 @@ async function verifyNativeUiLanes(record, queued) {
     let offset = 0;
     for (const [sequence, packet] of packets.entries()) {
       if (packet.sessionId !== source.sessionId || packet.epoch !== source.epoch || packet.sequence !== sequence || packet.sampleOffset !== offset || packet.sampleRate !== 16000 || !Number.isInteger(packet.sampleCount) || packet.sampleCount < 1) throw new Error('native UI queued source identity or sample timeline mismatch');
-      const bytes = Uint8Array.from(atob(packet.pcm), character => character.charCodeAt(0));
+      const bytes = packet.pcm instanceof Uint8Array ? packet.pcm : Uint8Array.from(atob(packet.pcm), character => character.charCodeAt(0));
       const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), byte => byte.toString(16).padStart(2, '0')).join('');
-      if (bytes.byteLength !== packet.sampleCount * 2 || digest !== packet.digest || !new Int16Array(bytes.buffer).some(sample => sample !== 0)) throw new Error('native UI queued source audio differs from its durable identity');
+      if (bytes.byteLength !== packet.sampleCount * 2 || digest !== packet.digest || !bytes.some(byte => byte !== 0)) throw new Error('native UI queued source audio differs from its durable identity');
       offset += packet.sampleCount;
     }
     reports.push({ sourceId: source.id, kind: source.kind, sessionId: source.sessionId, epoch: source.epoch, packets: packets.length, samples: offset });
