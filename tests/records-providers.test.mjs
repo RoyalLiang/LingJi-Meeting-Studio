@@ -36,7 +36,7 @@ test('explicit reasoning strength overrides staged automatic minutes policy in b
       await generateMinutes({template:'meeting',scope,snapshot:[{id:'s1',revision:1,text:'合成内容'}]},
         {LLM_API_URL:'https://unused.invalid',LLM_API_KEY:'synthetic-key',LLM_MODEL:'kimi-k3-1-pro-261024',LLM_PROTOCOL:protocol,LLM_REASONING_EFFORT:effort});
       const actual=protocol==='responses'?body.reasoning?.effort:body.reasoning_effort;
-      assert.equal(actual,effort==='auto'?(scope==='live'?'medium':'high'):effort==='default'?undefined:effort);
+      assert.equal(actual,effort==='auto'?(scope==='live'?'low':'high'):effort==='default'?undefined:effort);
     }
   }finally{globalThis.fetch=original;}
 });
@@ -240,7 +240,7 @@ test('minutes repairs invalid citations once with stronger automatic reasoning a
   };
   try{
     const result=await generateMinutes({scope:'live',snapshot:[{id:'s1',revision:1,text:'先核对来源'}]},{LLM_API_URL:'https://fixture.invalid/chat/completions',LLM_API_KEY:'synthetic-key',LLM_MODEL:'synthetic',LLM_PROTOCOL:'chat-completions',LLM_MODEL_PROFILES:JSON.stringify({synthetic:{reasoningEfforts:['low','medium','high','xhigh']}})});
-    assert.deepEqual(efforts,['medium','xhigh']);assert.equal(result.usageTokens,30);assert.equal(result.runtime.citationRepairs,1);assert.equal(result.sections[0].items[0].evidence[0].segmentId,'s1');
+    assert.deepEqual(efforts,['low','xhigh']);assert.equal(result.usageTokens,30);assert.equal(result.runtime.citationRepairs,1);assert.equal(result.sections[0].items[0].evidence[0].segmentId,'s1');
   }finally{globalThis.fetch=original;}
 });
 test('minutes citation repair shares the six-request window budget across Pi roots',async()=>{

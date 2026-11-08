@@ -1,3 +1,4 @@
+import {pcmBytes,pcmBase64} from '../apps/web/src/audio/pcm.ts';
 import {createSettingsCache} from '../apps/web/src/settings-cache.ts';
 import {encodeStorage,decodeStorage} from '../services/records/src/storage-codec.mjs';
 import {recoverTemporaryAudio,recoverLocalWork} from '../services/records/src/desktop-backend.mjs';
@@ -80,7 +81,7 @@ test('binary audio negotiates explicitly, preserves CSRF and identity, and falls
   const source = transpileTypeScript(await readFile(new URL('../apps/web/src/api.ts', import.meta.url), 'utf8')).replace(/^import .*$/gm, '').replace(/export /g, '');
   const requests = [], exports = {};
   vm.runInNewContext(source + '\nObject.assign(exports,{uploadAudio,setAudioTransport,setCsrf});', {createSettingsCache,
-    exports, crypto: webcrypto, performance, Uint8Array, atob, AbortSignal, trace() {},
+    exports, pcmBase64, pcmBytes, crypto: webcrypto, performance, Uint8Array, atob, AbortSignal, trace() {},
     fetch: async (url, options) => { requests.push({ url, ...options }); return { ok: true, json: async () => ({ watermark: 0 }) }; },
   });
   const bytes = Buffer.alloc(32000, 21), chunk = { sourceId: 'source', epoch: 'epoch', sessionId: 'session', sequence: 0, sampleOffset: 0, sampleCount: 16000, sampleRate: 16000, digest: digest(bytes), pcm: bytes.toString('base64') };
@@ -174,4 +175,21 @@ test('compressed SQLite payloads and PCM preserve atomic rollback, projections a
     await repo.change(record.id,r=>{r.title='Plain-compatible write';emit(r,'record.changed');});assert.equal((await repo.get(record.id)).title,'Plain-compatible write');
     await repo.close();repo=await createRepository({root,compressAggregates:true});assert.equal((await repo.get(record.id)).title,'Plain-compatible write');
   }finally{await repo.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('WAV response reads bounded chunks concurrently and preserves exact PCM ordering',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'audio-prefetch-')),app=await createRecordServer({root,databaseUrl:'',port:0});
+ try{
+  const address=await app.start(),base=`http://127.0.0.1:${address.port}/api`;
+  const session=await fetch(base+'/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'prefetch@example.test',password:'fixture-password'})}),user=await session.json();
+  const headers={Cookie:session.headers.get('set-cookie').split(';')[0],'Content-Type':'application/json','X-CSRF-Token':user.csrf};
+  const post=async(path,body)=>{const res=await fetch(base+path,{method:'POST',headers,body:JSON.stringify(body)});assert.equal(res.status,200,await res.clone().text());return res.json();};
+  const created=await fetch(base+'/records',{method:'POST',headers,body:JSON.stringify({retainAudio:true})}),record=await created.json();
+  const source=await post(`/records/${record.id}/sources`,{kind:'microphone'}),parts=[];
+  for(let sequence=0;sequence<6;sequence++){const bytes=Buffer.alloc(3200,sequence+1);parts.push(bytes);await post(`/records/${record.id}/audio`,{sessionId:source.sessionId,sourceId:source.id,epoch:source.epoch,sequence,sampleOffset:sequence*1600,sampleCount:1600,sampleRate:16000,digest:digest(bytes),pcm:bytes.toString('base64')});}
+  await post(`/records/${record.id}/seal`,{sources:[{sourceId:source.id,epoch:source.epoch,lastSequence:5}]});
+  const read=app.repo.readAudio.bind(app.repo);let active=0,maximum=0;
+  app.repo.readAudio=async object=>{active++;maximum=Math.max(maximum,active);try{await new Promise(resolve=>setTimeout(resolve,10));return await read(object);}finally{active--;}};
+  const res=await fetch(base+`/records/${record.id}/audio/${source.id}`,{headers});assert.equal(res.status,200);const wav=Buffer.from(await res.arrayBuffer());assert.deepEqual(wav.subarray(44),Buffer.concat(parts));assert.ok(maximum>1&&maximum<=4,`read concurrency ${maximum}`);
+ }finally{await app.stop();await rm(root,{recursive:true,force:true});}
 });

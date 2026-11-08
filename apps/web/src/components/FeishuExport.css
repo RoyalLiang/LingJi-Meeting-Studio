@@ -2,12 +2,12 @@
 .meeting-agent-center>.feishu-export{padding-top:28px}
 .feishu-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .feishu-export a{color:var(--accent);text-underline-offset:3px}
-.feishu-config,.feishu-receipt{display:grid;gap:14px;border:1px solid var(--border);border-radius:var(--r-sm);padding:18px;background:var(--panel-2);min-width:0}
+.feishu-config,.feishu-receipt{display:grid;gap:14px;border:0;border-radius:var(--r-sm);padding:18px;background:var(--panel-2);min-width:0}
 .feishu-export label:not(.checkbox-label){display:grid;gap:8px;font-size:13px;font-weight:600;min-width:0}
 .feishu-export input:not([type=checkbox]){width:100%;min-width:0;box-sizing:border-box}
 .feishu-scopes{overflow-wrap:anywhere;line-height:1.6}
 .feishu-scope{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-.feishu-preview{max-height:38vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-family:inherit;font-size:13px;line-height:1.8;background:var(--bg);border:1px solid var(--border);padding:16px;margin:0;border-radius:var(--r-sm)}
+.feishu-preview{max-height:38vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-family:inherit;font-size:13px;line-height:1.8;background:var(--bg);border:0;padding:16px;margin:0;border-radius:var(--r-sm)}
 .feishu-history{border-top:1px solid var(--border);padding-top:12px;font-size:13px}
 .feishu-history summary{cursor:pointer;color:var(--ink-3)}
 .feishu-history-item{display:flex;justify-content:space-between;gap:12px;width:100%;text-align:left;border:0;border-bottom:1px solid var(--border);background:transparent;color:var(--ink-1);padding:12px 0;cursor:pointer}
@@ -70,7 +70,7 @@
 .export-modal>.modal-footer:has(>.export-footer:empty){display:none}
 .export-modal .feishu-preview{max-height:38vh}
 @media(max-width:600px){.export-modal>.modal-footer{padding:14px 16px}.export-modal .feishu-preview{max-height:35vh}}
-.automation-history{display:grid;gap:12px;margin-top:20px;padding:20px;border:1px solid var(--border);border-radius:12px;background:var(--bg)}
+.automation-history{display:grid;gap:12px;margin-top:20px;padding:20px;border:0;border-radius:12px;background:var(--bg)}
 .automation-history>header{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .automation-history h3{margin:0;font-size:14px;font-weight:600}
 .automation-history h3 span{margin-left:6px;font-size:12px;color:var(--ink-3);font-weight:400}

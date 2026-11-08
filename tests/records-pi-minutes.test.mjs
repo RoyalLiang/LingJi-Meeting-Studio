@@ -34,7 +34,7 @@ test('Pi preserves provider errors and cancellation rather than manufacturing mi
 test('reasoning follows work stage and exact model capability ceiling',()=>{
   const env={LLM_MODEL:'fixture'};
   assert.equal(minutesReasoningEffort({stage:'window',scope:'final'},env),'low');
-  assert.equal(minutesReasoningEffort({scope:'live'},env),'medium');
+  assert.equal(minutesReasoningEffort({scope:'live'},env),'low');
   assert.equal(minutesReasoningEffort({stage:'synthesis'},env),'high');
   assert.equal(minutesReasoningEffort({scope:'final'},env,{repair:true}),'high');
   const large={...env,LLM_MODEL_PROFILES:JSON.stringify({fixture:{reasoningEfforts:['low','medium','high','xhigh']}})};

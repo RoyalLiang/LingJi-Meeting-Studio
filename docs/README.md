@@ -15,6 +15,7 @@
 
 - [当前能力与边界](engineering/current-state.md)：区分源码行为、验证层和仍需现场确认的项目。
 - [运行手册](engineering/runbook.md)、[接口](engineering/api.md)、[Record 传输协议](engineering/record-transport.md)。
+- [存储与性能边界](engineering/storage-and-performance.md)。
 - [实现约定](engineering/practices.md)、[桌面运行](engineering/native-client.md)、[更新机制](engineering/client-updates.md)。
 - [构建和发布](engineering/local-release-options.md)、[应用签名](engineering/application-signing.md)。
 

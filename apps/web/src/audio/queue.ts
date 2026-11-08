@@ -1,6 +1,7 @@
 import { uploadAudio, ApiError } from '../api';
 import { trace, traceEnabled } from '../telemetry';
 import type { AudioChunk } from '../model';
+import { pcmBase64 } from './pcm';
 interface Pending { key: string; recordId: string; chunk: AudioChunk; bytes: number; createdAt: number }
 interface Manifest { key: string; recordId: string; sourceId: string; epoch: string; lastSequence: number; sampleEnd?: number }
 let saving = 0;
@@ -92,6 +93,17 @@ export async function enqueue(recordId:string,chunk:AudioChunk){
   trace('audio.local-save',{recordId,sourceId:chunk.sourceId,sequence:chunk.sequence,bytes:chunk.sampleCount*2,durationMs:performance.now()-started});
 
   } finally { saving--; }
+}
+export async function persistNativeChunk(recordId:string,chunk:AudioChunk){
+  if(!localBackend)return enqueue(recordId,chunk);
+  try{await uploadAudio(`/records/${recordId}/audio`,chunk,AbortSignal.timeout(2000));}catch{return enqueue(recordId,chunk);}
+  // Rust retains its durable head until both the API receipt and this stop cursor persist.
+  const connection=await db();
+  await new Promise<void>((resolve,reject)=>{
+    const tx=connection.transaction('manifests','readwrite'),store=tx.objectStore('manifests'),key=`${recordId}:${chunk.sourceId}`,previous=store.get(key);
+    previous.onsuccess=()=>{const old=previous.result;store.put({key,recordId,sourceId:chunk.sourceId,epoch:chunk.epoch,lastSequence:Math.max(chunk.sequence,old?.epoch===chunk.epoch?old.lastSequence:-1),sampleEnd:Math.max(chunk.sampleOffset+chunk.sampleCount,old?.epoch===chunk.epoch?old.sampleEnd||0:0)});};
+    tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);
+  });
 }
 function parallelism(){try{return sessionStorage.getItem('meeting-queue-serial')==='1'?1:2;}catch{return 2;}}
 const lane=(entry:Pending)=>`${entry.recordId}:${entry.chunk.sourceId}:${entry.chunk.epoch}`;
@@ -197,7 +209,7 @@ export async function downloadPendingAudio(recordId:string){
   let blob=new Blob([JSON.stringify({format:'meeting-audio-backup/v1',recordId,manifests:await localManifests(recordId)}).slice(0,-1)+',"chunks":['],{type:'application/json'});
   await new Promise<void>((resolve,reject)=>{
     const tx=connection.transaction('chunks'),request=tx.objectStore('chunks').index('recordId').openCursor(recordId);
-    request.onsuccess=()=>{const cursor=request.result;if(!cursor)return;blob=new Blob([blob,count++?',':'',JSON.stringify(cursor.value.chunk)],{type:'application/json'});cursor.continue();};
+    request.onsuccess=()=>{const cursor=request.result;if(!cursor)return;const chunk=cursor.value.chunk;blob=new Blob([blob,count++?',':'',JSON.stringify({...chunk,pcm:pcmBase64(chunk.pcm)})],{type:'application/json'});cursor.continue();};
     tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);
   });
   if(!count)return false;
@@ -209,10 +221,9 @@ export async function downloadPendingAudio(recordId:string){
 export async function makeChunk(sourceId: string, epoch: string, sequence: number, sampleOffset: number, buffer: ArrayBuffer, sessionId: string): Promise<AudioChunk> {
   const started=performance.now();
   const bytes = new Uint8Array(buffer); const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', buffer));
-  let binary = ''; for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
   trace('audio.encoded',{sourceId,sequence,bytes:bytes.length,durationMs:performance.now()-started});
   return { sessionId, sourceId, epoch, sequence, sampleOffset, sampleCount: bytes.length / 2, sampleRate: 16000,
-    digest: Array.from(hash, b => b.toString(16).padStart(2, '0')).join(''), pcm: btoa(binary) };
+    digest: Array.from(hash, b => b.toString(16).padStart(2, '0')).join(''), pcm: bytes };
 }
 
 export async function updateQueueState() {

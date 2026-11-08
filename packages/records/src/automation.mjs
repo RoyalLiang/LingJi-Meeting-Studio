@@ -33,7 +33,7 @@ export function automaticMinutesAt(record, now = Date.now()) {
     const failedAt = latest.failedAt ?? (latest.automatic ? auto.lastRequestedAt : undefined) ?? Date.parse(latest.createdAt);
     return failedAt + 15000 * 2 ** (attempt - 1);
   }
-  const interval=auto.lastRequestedAt==null ? Math.min(auto.intervalSeconds,30) : auto.intervalSeconds;
+  const interval=auto.lastRequestedAt==null ? Math.min(auto.intervalSeconds,10) : auto.intervalSeconds;
   return Math.max(auto.enabledAt || Date.parse(record.createdAt), auto.lastRequestedAt || 0) + interval * 1000;
 }
 

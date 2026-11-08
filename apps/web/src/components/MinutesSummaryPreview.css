@@ -3,7 +3,7 @@
 .minutes-summary h2{font-size:21px;line-height:1.4;margin:28px 0 16px;font-weight:650;letter-spacing:-.02em}
 .minutes-summary h2:first-child{margin-top:0}
 .minutes-summary p{margin:0}
-.minutes-summary-callout{padding:16px 18px;border:1px solid var(--border);border-radius:7px;background:var(--panel-2)}
+.minutes-summary-callout{padding:16px 18px;border:0;border-radius:7px;background:var(--panel-2)}
 .minutes-summary-callout>p:first-child{margin-bottom:10px;font-size:13px;font-weight:600}
 .minutes-summary-item{position:relative;padding-left:13px;margin-top:10px!important;white-space:normal}
 .minutes-summary-item::before{content:'·';position:absolute;left:0;top:0}

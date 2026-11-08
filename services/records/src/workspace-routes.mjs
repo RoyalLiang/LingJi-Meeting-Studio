@@ -61,7 +61,7 @@ export async function workspaceRoutes({ req, res, path, repo, user, readBody, se
     const fields = workspaceFields(await readBody(req, 4000));
     send(res, 200, await repo.change(scope, w => { requireThat(w.owner === user.id && w.kind === 'workspace', 'workspace_not_found', 404); Object.assign(w, fields, { updatedAt: new Date().toISOString() }); })); return true;
   }
-  const records = retainedRecords(await repo.list(), user.id, scope), jobId = analysisId(user.id, scope), job = await repo.get(jobId);
+  const records = retainedRecords(action==='overview'&&req.method==='GET'?await repo.listOverviewInputs(user.id):await repo.list(), user.id, scope), jobId = analysisId(user.id, scope), job = await repo.get(jobId);
   if (action === 'overview' && req.method === 'GET') {
     send(res, 200, { workspace: { id: workspace.id, name: workspace.name, description: workspace.description }, ...workspaceOverview(records), analysis: publicWorkspaceAnalysis(job, records) }); return true;
   }

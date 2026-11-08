@@ -1,3 +1,4 @@
+import {minutesReasoningEffort} from './minutes-reasoning.mjs';
 import { withMinutesVocabulary } from './minutes-vocabulary.mjs';
 import { groundSpeakerSummaries, orderMinutesTimelines } from '../../../packages/records/src/minutes-quality.mjs';
 import { minutesTimeoutMs } from './minutes-deadline.mjs';
@@ -64,7 +65,7 @@ export async function generateDoubaoAudioMinutes(repo, recordId, job, input, opt
   const result = await completeModelJson([
     { role: 'system', content: minutesInstructions(job,true) },
     { role: 'user', content: [...clips.flatMap(clip => [{ type: 'input_text', text: `音频 ${clip.clipId}，对应时间及来源见下方 audio 映射。` }, clip.audio]), { type: 'input_text', text: JSON.stringify(data) }] },
-  ], config, { ...options, jsonSchema:minutesSchema, timeoutMs: minutesTimeoutMs(job) });
+  ], config, { ...options, jsonSchema:minutesSchema, reasoningEffort:minutesReasoningEffort(job,config), timeoutMs: minutesTimeoutMs(job) });
   const validationSnapshot=job.validationSnapshot || refs;
   normalizeMinutesOutput(result);
   groundSpeakerSummaries(result,validationSnapshot);

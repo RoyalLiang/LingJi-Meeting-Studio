@@ -1,13 +1,14 @@
+import {pcmBase64} from '../apps/web/src/audio/pcm.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFile} from 'node:fs/promises';
 import {stripTypeScriptTypes} from 'node:module';
 import {IDBFactory,IDBKeyRange,IDBObjectStore,IDBIndex} from 'fake-indexeddb';
-const source=stripTypeScriptTypes(await readFile(new URL('../apps/web/src/audio/queue.ts',import.meta.url),'utf8')).replace(/^import .*;$/gm,'').replaceAll('export ','')+'\nObject.assign(exports,{setLocalQueueBackend,ensureAudioCapacity,enqueue,drainQueue,setQueueRecords,pendingCount,localManifests,clearRecordAudio,queueStats,downloadPendingAudio,updateQueueState});';
+const source=stripTypeScriptTypes(await readFile(new URL('../apps/web/src/audio/queue.ts',import.meta.url),'utf8')).replace(/^import .*;$/gm,'').replaceAll('export ','')+'\nObject.assign(exports,{persistNativeChunk,makeChunk,setLocalQueueBackend,ensureAudioCapacity,enqueue,drainQueue,setQueueRecords,pendingCount,localManifests,clearRecordAudio,queueStats,downloadPendingAudio,updateQueueState});';
 class ApiError extends Error{constructor(status){super('api');this.status=status;}}
 function harness(indexedDB=new IDBFactory(),api=async()=>{},sessionStorage){
-  const exports={},downloads=[];const navigator={onLine:true};const document={createElement:()=>({click(){}})};const downloadURL={createObjectURL:blob=>{downloads.push(blob);return "blob:fixture";},revokeObjectURL(){}};vm.runInNewContext(source,{exports,indexedDB,IDBKeyRange,ApiError,api,uploadAudio:(path,chunk)=>api(path,'POST',chunk),navigator,sessionStorage,performance,trace(){},traceEnabled:()=>false,setTimeout,Blob,URL:downloadURL,document,console});return{...exports,indexedDB,navigator,downloads};
+  const exports={},downloads=[];const navigator={onLine:true};const document={createElement:()=>({click(){}})};const downloadURL={createObjectURL:blob=>{downloads.push(blob);return "blob:fixture";},revokeObjectURL(){}};vm.runInNewContext(source,{exports,pcmBase64,crypto,Uint8Array,btoa,AbortSignal,indexedDB,IDBKeyRange,ApiError,api,uploadAudio:(path,chunk)=>api(path,'POST',chunk),navigator,sessionStorage,performance,trace(){},traceEnabled:()=>false,setTimeout,Blob,URL:downloadURL,document,console});return{...exports,indexedDB,navigator,downloads};
 }
 const chunk=(sourceId='mic',sequence=0,extra={})=>({sessionId:'s',sourceId,epoch:'e',sequence,sampleOffset:sequence*1600,sampleCount:1600,sampleRate:16000,digest:'a'.repeat(64),pcm:'AA==',...extra});
 async function legacy(indexedDB){await new Promise((resolve,reject)=>{const open=indexedDB.open('meeting-studio-audio',1);open.onupgradeneeded=()=>{open.result.createObjectStore('chunks',{keyPath:'key'});open.result.createObjectStore('manifests',{keyPath:'key'});};open.onsuccess=()=>{const db=open.result,tx=db.transaction(['chunks','manifests'],'readwrite');tx.objectStore('chunks').put({key:'r:mic:e:0',recordId:'r',chunk:chunk(),bytes:3200,createdAt:1});tx.objectStore('manifests').put({key:'r:mic',recordId:'r',sourceId:'mic',epoch:'e',lastSequence:0});tx.oncomplete=()=>{db.close();resolve();};};open.onerror=()=>reject(open.error);});}
@@ -261,4 +262,19 @@ test('current meeting keeps priority over an older two-lane backlog after metada
  for(let i=0;i<10;i++)for(const source of ['old-mic','old-display'])await h.enqueue('a-backlog',chunk(source,i));
  await h.enqueue('z-live',chunk('current'));
  await h.drainQueue();assert.equal(sent[0],'current');assert.equal(sent.length,21);
+});
+
+test('new queue stores binary PCM while recovery backups keep portable base64',async()=>{
+  const h=harness();h.setQueueRecords(['r']);const bytes=new Uint8Array([1,2,3,4]);
+  const c=await h.makeChunk('mic','e',0,0,bytes.buffer,'s');assert.ok(c.pcm instanceof Uint8Array);assert.deepEqual(c.pcm,bytes);
+  await h.enqueue('r',c);const recovered=harness(h.indexedDB,async(_path,_method,chunk)=>{assert.deepEqual(chunk.pcm,bytes);});recovered.setQueueRecords(['r']);
+  assert.equal(await recovered.downloadPendingAudio('r'),true);const backup=JSON.parse(await recovered.downloads[0].text());assert.equal(backup.chunks[0].pcm,Buffer.from(bytes).toString('base64'));
+  await recovered.drainQueue();assert.equal(await recovered.pendingCount(),0);
+});
+
+test('native local receipt bypasses PCM queue, persists stop cursor and falls back on outage',async()=>{
+  let available=true,calls=0;const h=harness(undefined,async()=>{calls++;if(!available)throw new Error('offline');});h.setQueueRecords(['r']);h.setLocalQueueBackend(true);
+  await h.persistNativeChunk('r',chunk('mic',0));assert.equal(calls,1);assert.equal(await h.pendingCount(),0);assert.equal((await h.localManifests('r'))[0].lastSequence,0);
+  available=false;await h.persistNativeChunk('r',chunk('mic',1));assert.equal(await h.pendingCount(),1);assert.equal((await h.localManifests('r'))[0].lastSequence,1);
+  available=true;await h.drainQueue();assert.equal(await h.pendingCount(),0);
 });

@@ -166,18 +166,18 @@ test('a timeout during model streaming is not misreported as invalid JSON', asyn
  });
 });
 
-for(const protocol of ['chat-completions','responses'])test(`${protocol} live minutes request medium reasoning with the effective output cap`,async()=>{
+for(const protocol of ['chat-completions','responses'])test(`${protocol} live minutes request low reasoning with the effective output cap`,async()=>{
  await endpoint((_req,res)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(protocol==='responses'?{status:'completed',output_text:'{"title":"会议","sections":[{"heading":"讨论","items":[{"text":"讨论发布","evidence":[{"segmentId":"s1","revision":1}]}]}],"actions":[]}'}:{choices:[{message:{content:'{"title":"会议","sections":[{"heading":"讨论","items":[{"text":"讨论发布","evidence":[{"segmentId":"s1","revision":1}]}]}],"actions":[]}'},finish_reason:'stop'}]}));},async(base,requests)=>{
   await generateMinutes({scope:'live',mode:'model',snapshot:[{id:'s1',revision:1,text:'讨论发布',startMs:0,endMs:1000}],notes:''},{...credentials,LLM_MODEL:'kimi-k3-1-pro-261024',LLM_API_URL:base,LLM_PROTOCOL:protocol});
-  const body=requests[0].body;assert.equal(protocol==='responses'?body.reasoning?.effort:body.reasoning_effort,'medium');assert.equal(body.thinking,undefined);assert.equal(protocol==='responses'?body.max_output_tokens:body.max_completion_tokens,4096);
+  const body=requests[0].body;assert.equal(protocol==='responses'?body.reasoning?.effort:body.reasoning_effort,'low');assert.equal(body.thinking,undefined);assert.equal(protocol==='responses'?body.max_output_tokens:body.max_completion_tokens,4096);
  });
 });
 
-for(const protocol of ['chat-completions','responses'])test(`${protocol} uses high final reasoning and medium live reasoning for configured models`,async()=>{
+for(const protocol of ['chat-completions','responses'])test(`${protocol} uses high final reasoning and low live reasoning for configured models`,async()=>{
  const answer=JSON.stringify({title:'会议',sections:[{heading:'讨论',items:[{text:'讨论发布',evidence:[{segmentId:'s1',revision:1}]}]}],actions:[]});
  await endpoint((_req,res)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(protocol==='responses'?{status:'completed',output_text:answer}:{choices:[{message:{content:answer},finish_reason:'stop'}]}));},async(base,requests)=>{
   for(const [scope,model] of [['final','kimi-k3-1-pro-261024'],['live','fixture-model']])await generateMinutes({scope,mode:'model',snapshot:[{id:'s1',revision:1,text:'讨论发布',startMs:0,endMs:1000}],notes:''},{...credentials,LLM_MODEL:model,LLM_API_URL:base,LLM_PROTOCOL:protocol});
-  for(const [index,request]of requests.entries()){assert.equal(protocol==='responses'?request.body.reasoning?.effort:request.body.reasoning_effort,index===0?'high':'medium');assert.equal(request.body.thinking,undefined);}
+  for(const [index,request]of requests.entries()){assert.equal(protocol==='responses'?request.body.reasoning?.effort:request.body.reasoning_effort,index===0?'high':'low');assert.equal(request.body.thinking,undefined);}
   assert.equal(requests[0].body[protocol==='responses'?'max_output_tokens':'max_completion_tokens'],4096);
   assert.equal(requests[1].body[protocol==='responses'?'max_output_tokens':'max_completion_tokens'],4096);
  });

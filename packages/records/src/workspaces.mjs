@@ -15,10 +15,17 @@ export function createWorkspace(owner, input) {
   return { id: randomUUID(), kind: 'workspace', owner, ...workspaceFields(input), createdAt: at, updatedAt: at };
 }
 export function meetingSeconds(record) {
-  return Math.round(recordingDurationMs(record) / 1000);
+  return record.overviewSeconds??Math.round(recordingDurationMs(record) / 1000);
 }
 
 export const analysisInput = record => Object.fromEntries(['id','kind','owner','deleted','deleteAt','workspaceId','title','transcriptRevision','minutesRevision','notesRevision','capture','generation'].map(key => [key, record[key]]));
+export function workspaceOverviewInput(record){
+  const minutes=record.minutes;
+  const text=(minutes?.topics||[]).map(topic=>topic.summary).filter(Boolean).join('；')||(minutes?.sections||[]).flatMap(section=>section.items.map(item=>item.text)).join('；');
+  return {...analysisInput(record),createdAt:record.createdAt,overviewSeconds:meetingSeconds(record),usage:{samples:record.usage.samples},
+    segments:record.segments.map(({id,revision})=>({id,revision})),overviewText:text.slice(0,500),overviewExcerpt:record.segments.map(segment=>segment.text).join(' ').slice(0,500),
+    minutes:minutes?{transcriptRevision:minutes.transcriptRevision,topics:minutes.topics,decisions:minutes.decisions,actions:minutes.actions,evidenceSnapshot:minutes.evidenceSnapshot?.map(({id,revision})=>({id,revision}))}:null};
+}
 export const inputHash = records => digest(JSON.stringify(records.map(r => [r.id, r.workspaceId || null, r.title, r.transcriptRevision, r.minutesRevision, r.notesRevision, r.capture, r.generation]).sort((a, b) => a[0].localeCompare(b[0]))));
 const sourceOf = r => ({ recordId: r.id, title: r.title, transcriptRevision: r.minutes?.transcriptRevision ?? r.transcriptRevision, minutesRevision: r.minutesRevision });
 const normalize = text => text.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -45,8 +52,8 @@ export function workspaceOverview(records, now = Date.now()) {
         seen.add(normalize(item.text)); target.push({ text: item.text, owner: item.owner || '', due: item.due || '', source, evidence: item.evidence });
       }
     }
-    const text = (minutes?.topics || []).map(t => t.summary).filter(Boolean).join('；') || (minutes?.sections || []).flatMap(s => s.items.map(i => i.text)).join('；');
-    const excerpt = r.segments.map(s => s.text).join(' ');
+    const text = r.overviewText??((minutes?.topics || []).map(t => t.summary).filter(Boolean).join('；') || (minutes?.sections || []).flatMap(s => s.items.map(i => i.text)).join('；'));
+    const excerpt = r.overviewExcerpt??r.segments.map(s => s.text).join(' ');
     if (text || excerpt) summaries.push({ text: (text || excerpt).slice(0, 500), method: text ? 'minutes' : 'transcript-excerpt', source, createdAt: r.createdAt, stale: Boolean(minutes && minutes.transcriptRevision !== r.transcriptRevision) });
   }
   return {

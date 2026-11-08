@@ -113,19 +113,19 @@ test('live worker exposes first-window draft while other windows wait and keeps 
  }finally{release();await work;await repo.close();await rm(root,{recursive:true,force:true});}
 });
 
-test('first live minutes starts within thirty seconds while later refreshes keep the configured interval',()=>{
+test('first live minutes starts within ten seconds while later refreshes keep the configured interval',()=>{
  const r=record();setAutomation(r,{enabled:true,intervalSeconds:120},1000);
- assert.equal(automaticMinutesAt(r,1001),31000);assert.equal(queueAutomaticMinutes(r,'fixture',30999),undefined);
- const job=queueAutomaticMinutes(r,'fixture',31000);assert.ok(job);job.status='completed';r.transcriptRevision++;
- assert.equal(automaticMinutesAt(r,31001),151000);assert.equal(r.autoMinutes.intervalSeconds,120);
+ assert.equal(automaticMinutesAt(r,1001),11000);assert.equal(queueAutomaticMinutes(r,'fixture',10999),undefined);
+ const job=queueAutomaticMinutes(r,'fixture',11000);assert.ok(job);job.status='completed';r.transcriptRevision++;
+ assert.equal(automaticMinutesAt(r,31001),131000);assert.equal(r.autoMinutes.intervalSeconds,120);
 });
 test('automatic minutes debounce live updates, deduplicate and finalize after drain', () => {
  const r=record();setAutomation(r,{enabled:true,intervalSeconds:30},1000);
- assert.equal(automaticMinutesAt(r,1001),31000);assert.equal(queueAutomaticMinutes(r,'fixture',30999),undefined);
- const j=queueAutomaticMinutes(r,'fixture',31000);assert.equal(j.scope,'live');assert.equal(queueAutomaticMinutes(r,'fixture',32000),undefined);
+ assert.equal(automaticMinutesAt(r,1001),11000);assert.equal(queueAutomaticMinutes(r,'fixture',10999),undefined);
+ const j=queueAutomaticMinutes(r,'fixture',11000);assert.equal(j.scope,'live');assert.equal(queueAutomaticMinutes(r,'fixture',32000),undefined);
  j.fence='f';r.segments.push({...segment,id:'s2'});r.transcriptRevision++;
  commitMinutes(r,j.id,result,'f');assert.equal(r.liveMinutes.title,'评审');assert.equal(r.minutes,null);
- assert.equal(automaticMinutesAt(r,32000),61000);
+ assert.equal(automaticMinutesAt(r,32000),41000);
  r.capture='sealed';const tail=queueAutomaticMinutes(r,'fixture',32000);assert.equal(tail.scope,'live');
  tail.fence='t';const tailResult=JSON.parse(JSON.stringify(result).replaceAll('s1','s2'));commitMinutes(r,tail.id,tailResult,'t');
  r.capture='completed';const final=queueAutomaticMinutes(r,'fixture',32000);assert.equal(final.scope,'final');

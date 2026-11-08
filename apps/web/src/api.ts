@@ -1,6 +1,7 @@
 import {createSettingsCache} from './settings-cache';
 import { trace } from './telemetry';
 import type { AudioChunk } from './model';
+import { pcmBase64, pcmBytes } from './audio/pcm';
 let binaryAudio = false;
 export function setAudioTransport(value?: string) { binaryAudio = value === 'pcm-v1'; }
 let csrf = '', authGeneration = 0;
@@ -193,11 +194,11 @@ export async function api<T>(path:string,method='GET',body?:unknown,signal?:Abor
 async function requestApi<T>(path: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {
   return request<T>(path, method, body === undefined ? undefined : JSON.stringify(body), { 'Content-Type': 'application/json' }, signal);
 }
-export async function uploadAudio<T>(path: string, chunk: AudioChunk): Promise<T> {
-  if (!binaryAudio) return api<T>(path, 'POST', chunk);
+export async function uploadAudio<T>(path: string, chunk: AudioChunk, signal?:AbortSignal): Promise<T> {
+  if (!binaryAudio) return api<T>(path, 'POST', {...chunk,pcm:pcmBase64(chunk.pcm)},signal);
   const { pcm, ...metadata } = chunk;
-  const bytes = Uint8Array.from(atob(pcm), char => char.charCodeAt(0));
-  return request<T>(path, 'POST', bytes, { 'Content-Type': 'application/octet-stream', 'X-Record-Audio': JSON.stringify(metadata) });
+  const bytes = pcmBytes(pcm);
+  return request<T>(path, 'POST', bytes, { 'Content-Type': 'application/octet-stream', 'X-Record-Audio': JSON.stringify(metadata) },signal);
 }
 async function request<T>(path: string, method: string, body: BodyInit | undefined, headers: Record<string, string>, signal?: AbortSignal): Promise<T> {
   const started = performance.now(), traceId = globalThis.crypto?.randomUUID?.() || `${Date.now().toString(16)}-${Math.random().toString(16).slice(2).padEnd(16,'0')}`;

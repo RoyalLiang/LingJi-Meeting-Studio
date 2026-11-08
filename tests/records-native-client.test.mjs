@@ -108,7 +108,7 @@ async function controllerHarness({ beforeStart, capacityFailure = false } = {}) 
   globalThis.nativeControllerFixture = {
     ensureAudioCapacity: async () => { if(capacityFailure) throw new Error("本机录音缓存空间不足，尚未开始录音"); },
     api: async (_url, _method, body) => ({ id: `source-${sourceId++}`, sessionId: 'session', epoch: `epoch-${sourceId}`, ...body }),
-    enqueue: async (id, chunk) => uploads.push({ id, chunk }),
+    persistNativeChunk: async (id, chunk) => uploads.push({ id, chunk }),
     makeChunk: async (id, epoch, sequence, offset, buffer, sessionId) => ({ sourceId: id, epoch, sequence, sampleOffset: offset, sampleCount: buffer.byteLength / 2, sessionId }),
     startNativeStream: (kind, device, onPacket, onError) => openNativeStream(invoke, kind, device, onPacket, onError),
   };
@@ -117,7 +117,7 @@ async function controllerHarness({ beforeStart, capacityFailure = false } = {}) 
   let code = stripTypeScriptTypes(await readFile(new URL('../apps/web/src/audio/native-controller.ts', import.meta.url), 'utf8'));
   code = code.replace("import { preferredDevice } from './devices';", "const preferredDevice = () => 'default';")
     .replace("import { api } from '../api';", 'const { api } = globalThis.nativeControllerFixture;')
-    .replace("import { enqueue, makeChunk, ensureAudioCapacity } from './queue';", 'const { enqueue, makeChunk, ensureAudioCapacity } = globalThis.nativeControllerFixture;')
+    .replace("import { persistNativeChunk, makeChunk, ensureAudioCapacity } from './queue';", 'const { persistNativeChunk, makeChunk, ensureAudioCapacity } = globalThis.nativeControllerFixture;')
     .replace("from './signal'", `from '${signalUrl}'`)
     .replace("import { startNativeStream } from './native-runtime';", 'const { startNativeStream } = globalThis.nativeControllerFixture;');
   const module = await import(`data:text/javascript;base64,${Buffer.from(code + `\n// fixture ${Math.random()}`).toString('base64')}`);

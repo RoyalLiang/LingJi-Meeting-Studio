@@ -1,6 +1,7 @@
+import {createSqliteRecordStore,sameRecordSnapshot,backupLegacyRecordStore} from './sqlite-record-store.mjs';
 import {audioBackupNeedsWork,audioBackupReady} from './audio-backup.mjs';
 import { canStartSpeechSource } from './asr-recovery.mjs';
-import { analysisInput } from '../../../packages/records/src/workspaces.mjs';
+import { analysisInput, workspaceOverviewInput } from '../../../packages/records/src/workspaces.mjs';
 import {flushAudioObject} from './audio-storage-sync.mjs';
 import {learningWorkAt} from '../../../packages/records/src/learning.mjs';
 import { cursorKey, deriveProjection, visibleSnapshot } from './projections.mjs';
@@ -77,6 +78,7 @@ export async function createRepository(options = {}) {
     // A previous backend/worker may still be releasing its write lock on restart.
     // Install the wait policy before journal_mode, which also needs that lock.
     db.exec('PRAGMA busy_timeout=5000');
+    try{await backupLegacyRecordStore(db,root);}catch(error){db.close();throw error;}
     db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS aggregates (id TEXT PRIMARY KEY, data TEXT NOT NULL)');
     db.exec("CREATE INDEX IF NOT EXISTS aggregate_kind_owner ON aggregates(json_extract(data, '$.kind'),json_extract(data, '$.owner'))");
     db.exec("CREATE INDEX IF NOT EXISTS work_due ON aggregates(json_extract(data, '$.nextWorkAt'))");
@@ -88,6 +90,7 @@ export async function createRepository(options = {}) {
     await pool.query('CREATE TABLE IF NOT EXISTS record_feed_meta(id text PRIMARY KEY, data jsonb NOT NULL)');
     await pool.query('CREATE TABLE IF NOT EXISTS record_feed_events(record_id text NOT NULL, cursor text NOT NULL, data jsonb NOT NULL, PRIMARY KEY(record_id,cursor))');
   } else db.exec('CREATE TABLE IF NOT EXISTS record_list_projection(id TEXT PRIMARY KEY,data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS record_feed_meta(id TEXT PRIMARY KEY,data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS record_feed_events(record_id TEXT NOT NULL,cursor TEXT NOT NULL,data TEXT NOT NULL,PRIMARY KEY(record_id,cursor))');
+  if(db)db.exec("CREATE VIRTUAL TABLE IF NOT EXISTS record_search USING fts5(search, tokenize='trigram'); INSERT INTO record_search(rowid,search) SELECT rowid,json_extract(data,'$.search') FROM record_list_projection WHERE json_extract(data,'$.deleted')=0 AND rowid NOT IN (SELECT rowid FROM record_search)");
   const shareSchema = 'CREATE TABLE IF NOT EXISTS record_share_index(hash TEXT PRIMARY KEY, record_id TEXT NOT NULL, expires BIGINT NOT NULL); CREATE INDEX IF NOT EXISTS record_share_record ON record_share_index(record_id); CREATE TABLE IF NOT EXISTS record_share_schema(version INTEGER PRIMARY KEY)';
   if (pool) for (const statement of shareSchema.split(';').map(s => s.trim()).filter(Boolean)) await pool.query(statement);
   else db.exec(shareSchema);
@@ -111,7 +114,10 @@ export async function createRepository(options = {}) {
       return;
     }
     projection.meta.writeVersion=randomUUID();
+    const previousSearch=db.prepare("SELECT rowid,json_extract(data,'$.search') AS search FROM record_list_projection WHERE id=?").get(value.id);
     db.prepare('INSERT INTO record_list_projection(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(value.id,JSON.stringify(projection.list));
+    if(value.deleted)db.prepare('DELETE FROM record_search WHERE rowid=?').run(previousSearch?.rowid??-1);
+    else if(!previousSearch||previousSearch.search!==projection.list.search)db.prepare('INSERT OR REPLACE INTO record_search(rowid,search) VALUES((SELECT rowid FROM record_list_projection WHERE id=?),?)').run(value.id,projection.list.search);
     db.prepare('INSERT INTO record_feed_meta(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(value.id,JSON.stringify(projection.meta));
     if(value.deleted)db.prepare('DELETE FROM record_feed_events WHERE record_id=?').run(value.id);
     for(const event of projection.events) db.prepare('INSERT INTO record_feed_events(record_id,cursor,data) VALUES(?,?,?) ON CONFLICT(record_id,cursor) DO UPDATE SET data=excluded.data').run(value.id,cursorKey(event.cursor),JSON.stringify(event));
@@ -131,29 +137,16 @@ export async function createRepository(options = {}) {
     for(const event of projection.events) await client.query('INSERT INTO record_feed_events(record_id,cursor,data) VALUES($1,$2,$3) ON CONFLICT(record_id,cursor) DO UPDATE SET data=excluded.data',[value.id,cursorKey(event.cursor),JSON.stringify(event)]);
     await client.query('DELETE FROM record_feed_events WHERE record_id=$1 AND cursor<$2',[value.id,cursorKey(projection.meta.first)]);
   }
+  const sqliteStore=db?createSqliteRecordStore(db,options):null;
   const decode = row => {
-    const value = row ? (typeof row.data === 'string' ? JSON.parse(row.data) : row.data) : null;
-    if (!pool && value?.$payload === 'deflate-v1') {
-      const stored = db.prepare('SELECT payload FROM aggregate_payloads WHERE id=?').get(value.id);
-      requireThat(stored, 'storage_corrupt', 500);
-      return JSON.parse(decodeStorage(stored.payload).toString());
-    }
-    return value;
+    const value=row?(typeof row.data==='string'?JSON.parse(row.data):row.data):null;
+    return sqliteStore?sqliteStore.decode(value):value;
   };
-  function writeSqliteValue(value, insert = false) {
-    const json = JSON.stringify(value);
-    const packed = options.compressAggregates && value.kind === 'record' ? encodeStorage(Buffer.from(json)) : { compressed: false };
-    const metadata = packed.compressed ? JSON.stringify({ id: value.id, kind: value.kind, owner: value.owner, deleted: value.deleted, deleteAt: value.deleteAt, nextWorkAt: value.nextWorkAt, workAt:value.workAt, $payload: 'deflate-v1' }) : json;
-    if (insert) db.prepare('INSERT INTO aggregates(id,data) VALUES(?,?)').run(value.id, metadata);
-    else db.prepare('UPDATE aggregates SET data=? WHERE id=?').run(metadata, value.id);
-    if (packed.compressed) db.prepare('INSERT INTO aggregate_payloads(id,payload) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload').run(value.id, packed.bytes);
-    else db.prepare('DELETE FROM aggregate_payloads WHERE id=?').run(value.id);
-  }
-
+  const writeSqliteValue=(value,insert=false,prepared)=>sqliteStore.write(value,insert,prepared);
   const workCursors = new Map(), legacyAnalysisInputs = new Map();
   const listeners=new Set();
   const repository = {
-    subscribeChanges(listener){listeners.add(listener);return()=>listeners.delete(listener);},
+    subscribeChanges(listener,{all=false}={}){const entry={listener,all};listeners.add(entry);return()=>listeners.delete(entry);},
     async accessRevision() {
       if (pool) return (await pool.query('SELECT pg_current_snapshot()::text AS revision')).rows[0].revision;
       return `${db.prepare('PRAGMA data_version').get().data_version}:${db.prepare('SELECT total_changes() AS changes').get().changes}`;
@@ -204,8 +197,23 @@ export async function createRepository(options = {}) {
       const row = pool ? (await pool.query('SELECT record_id FROM record_share_index WHERE hash=$1 AND expires>$2', [hash, Date.now()])).rows[0] : db.prepare('SELECT record_id FROM record_share_index WHERE hash=? AND expires>?').get(hash, Date.now());
       return row ? repository.get(row.record_id) : null;
     },
+    async listRecordHeaders(owner){
+      const rows=pool?(await pool.query("SELECT data FROM record_feed_meta WHERE data->>'owner'=$1",[owner])).rows:db.prepare("SELECT data FROM record_feed_meta WHERE json_extract(data,'$.owner')=?").all(owner);
+      return rows.map(decode);
+    },
+    async listOverviewInputs(owner){
+      const rows=pool?(await pool.query("SELECT id,data->'overview' AS data FROM record_list_projection WHERE data->>'owner'=$1 AND data->>'deleted'='false' AND data->>'deleteAt'>$2",[owner,new Date().toISOString()])).rows:db.prepare("SELECT id,json_extract(data,'$.overview') AS data FROM record_list_projection WHERE json_extract(data,'$.owner')=? AND json_extract(data,'$.deleted')=0 AND json_extract(data,'$.deleteAt')>?").all(owner,new Date().toISOString());
+      const result=[];
+      for(const row of rows){
+        if(row.data){result.push(typeof row.data==='string'?JSON.parse(row.data):row.data);continue;}
+        const record=await repository.get(row.id);if(record){result.push(workspaceOverviewInput(record));await repository.change(row.id,()=>{},{rebuild:true,returnRecord:false});}
+      }
+      return result;
+    },
     async listSummaries(owner,scope='all',query='') {
-      const rows=pool ? (await pool.query(`SELECT data->'summary' AS data FROM record_list_projection WHERE data->>'owner'=$1 AND data->>'deleted'='false' AND data->>'deleteAt'>$2 AND ($3='all' OR ($3='inbox' AND data->'summary'->>'workspaceId' IS NULL) OR data->'summary'->>'workspaceId'=$3) AND strpos(data->>'search',$4)>0 ORDER BY data->'summary'->>'createdAt' DESC, id DESC LIMIT 200`,[owner,new Date().toISOString(),scope,query])).rows : db.prepare(`SELECT json_extract(data,'$.summary') AS data FROM record_list_projection WHERE json_extract(data,'$.owner')=? AND json_extract(data,'$.deleted')=0 AND json_extract(data,'$.deleteAt')>? AND (?='all' OR (?='inbox' AND json_extract(data,'$.summary.workspaceId') IS NULL) OR json_extract(data,'$.summary.workspaceId')=?) AND instr(json_extract(data,'$.search'),?)>0 ORDER BY json_extract(data,'$.summary.createdAt') DESC, id DESC LIMIT 200`).all(owner,new Date().toISOString(),scope,scope,scope,query);
+      const useFts=!pool&&[...query].length>=3,filter=useFts?' AND rowid IN (SELECT rowid FROM record_search WHERE record_search MATCH ?)':'';
+      const params=[owner,new Date().toISOString(),scope,scope,scope,query,...(useFts?['"'+query.replaceAll('"','""')+'"']:[])];
+      const rows=pool ? (await pool.query(`SELECT data->'summary' AS data FROM record_list_projection WHERE data->>'owner'=$1 AND data->>'deleted'='false' AND data->>'deleteAt'>$2 AND ($3='all' OR ($3='inbox' AND data->'summary'->>'workspaceId' IS NULL) OR data->'summary'->>'workspaceId'=$3) AND strpos(data->>'search',$4)>0 ORDER BY data->'summary'->>'createdAt' DESC, id DESC LIMIT 200`,[owner,new Date().toISOString(),scope,query])).rows : db.prepare(`SELECT json_extract(data,'$.summary') AS data FROM record_list_projection WHERE json_extract(data,'$.owner')=? AND json_extract(data,'$.deleted')=0 AND json_extract(data,'$.deleteAt')>? AND (?='all' OR (?='inbox' AND json_extract(data,'$.summary.workspaceId') IS NULL) OR json_extract(data,'$.summary.workspaceId')=?) AND instr(json_extract(data,'$.search'),?)>0${filter} ORDER BY json_extract(data,'$.summary.createdAt') DESC, id DESC LIMIT 200`).all(...params);
       return rows.map(decode);
     },
     async eventsAfter(id,cursor) {
@@ -325,17 +333,20 @@ export async function createRepository(options = {}) {
         const value = decode(client ? (await client.query('SELECT data FROM record_aggregates WHERE id=$1 FOR UPDATE', [id])).rows[0]
           : db.prepare('SELECT data FROM aggregates WHERE id=?').get(id));
         requireThat(value, 'not_found', 404);
-        const original = JSON.stringify(value);
+        const separated=sqliteStore&&value.kind==='record';
+        const original=separated?sqliteStore.snapshot(value):JSON.stringify(value);
+        const beforeJson=!rebuild&&value.kind==='record'?JSON.stringify(publicRecord(value)):null;
         const previousShares = rebuild ? undefined : shareState(value);
       const result = mutate(value);
         requireThat(!(result instanceof Promise), 'transaction_must_be_synchronous', 500);
-        if (!rebuild && JSON.stringify(value) === original) { if (client) await client.query('COMMIT'); else db.exec('COMMIT'); return !returnRecord && result==null ? undefined : structuredClone(result ?? value); }
-        const beforeValue=rebuild?null:JSON.parse(original);
-        const before=beforeValue?.kind==='record'?publicRecord(beforeValue):null;
+        const prepared=separated?sqliteStore.prepare(value):null;
+        if (!rebuild && (separated?sameRecordSnapshot(original,prepared):JSON.stringify(value)===original)) { if (client) await client.query('COMMIT'); else db.exec('COMMIT'); return !returnRecord && result==null ? undefined : structuredClone(result ?? value); }
+
+        const before=beforeJson?JSON.parse(beforeJson):null;
         schedule(value);
         traceWrite(value);
         if (client) await client.query('UPDATE record_aggregates SET data=$2 WHERE id=$1', [id, JSON.stringify(value)]);
-        else writeSqliteValue(value);
+        else writeSqliteValue(value,false,prepared);
         if(client)await writePgProjection(client,value,before,previousShares);else writeSqliteProjection(value,before,previousShares);
         if (client) await client.query('COMMIT'); else db.exec('COMMIT');
         return !returnRecord && result==null ? undefined : structuredClone(result ?? value);
@@ -404,6 +415,6 @@ export async function createRepository(options = {}) {
     const operation = repository[name];
     repository[name] = (...args) => telemetry.measure(`db.${name}`, { backend: repository.backend, ...(typeof args[0] === 'string' && name !== 'list' ? {recordId:args[0]} : {}) }, () => operation(...args));
   }
-  for(const name of ['insert','change','changeMany']){const action=repository[name];repository[name]=async(...args)=>{const result=await action(...args);const values=[result,...(Array.isArray(result)?result:[])],ids=values.filter(value=>value?.kind==='record'&&value.capture==='completed').map(value=>value.id);if(ids.length)for(const listener of listeners)queueMicrotask(()=>Promise.resolve(listener(ids)).catch(()=>{}));return result;};}
+  for(const name of ['insert','change','changeMany']){const action=repository[name];repository[name]=async(...args)=>{const result=await action(...args);const values=[result,...(Array.isArray(result)?result:[])],completed=values.filter(value=>value?.kind==='record'&&value.capture==='completed').map(value=>value.id),changed=name==='change'?[args[0]]:name==='changeMany'?args[0]:[args[0]?.id];for(const entry of listeners){const ids=entry.all?changed:completed;if(ids.length)queueMicrotask(()=>Promise.resolve(entry.listener(ids)).catch(()=>{}));}return result;};}
     return repository;
 }

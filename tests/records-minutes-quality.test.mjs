@@ -28,7 +28,7 @@ const compiled = await build({entryPoints:['apps/web/src/components/MinutesViews
 const module = {exports:{}};
 vm.runInNewContext(compiled.outputFiles[0].text,{module,exports:module.exports,require:createRequire(resolve('package.json')),console});
 const render = minutes => renderToStaticMarkup(React.createElement(module.exports.MinutesTree,{minutes,cite:()=>{}}));
-test('validated partial minutes remain visible by default while unchecked generation stays hidden',async()=>{
+test('first streamed draft is clearly provisional and validated partial minutes replace it',async()=>{
  const compiledPanel=await build({entryPoints:['apps/web/src/components/Minutes.tsx'],bundle:true,write:false,platform:'node',format:'cjs',jsx:'automatic',loader:{'.css':'empty'},external:['react','react/jsx-runtime','react-dom']});
  const panel={exports:{}};
  vm.runInNewContext(compiledPanel.outputFiles[0].text,{module:panel,exports:panel.exports,require:createRequire(resolve('package.json')),console,matchMedia:()=>({matches:false})});
@@ -36,7 +36,7 @@ test('validated partial minutes remain visible by default while unchecked genera
  record.jobs=[{id:'streaming',scope:'live',status:'running',transcriptRevision:1,preview:[{kind:'item',text:'先排查依赖，再确认上线时间。'}]}];
  const props={record,busy:false,onClose(){},generate:async()=>{},edit:async()=>true,cite(){},automate:async()=>{},inline:true};
  const html=renderToStaticMarkup(React.createElement(panel.exports.MinutesPanel,props));
- assert.doesNotMatch(html,/先排查依赖，再确认上线时间|实时草稿/);
+ assert.match(html,/先排查依赖，再确认上线时间/);assert.match(html,/实时草稿/);assert.doesNotMatch(html,/修订纪要/);
  record.jobs[0].partialMinutes=fixture();
  const partial=renderToStaticMarkup(React.createElement(panel.exports.MinutesPanel,props));assert.match(partial,/方案评审/);assert.doesNotMatch(partial,/class="empty"/,"validated partial replaces the empty placeholder");
  record.minutes={...fixture(),edited:true};

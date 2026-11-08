@@ -2,7 +2,7 @@ import type { Source } from '../model';
 import type { CaptureKind, CaptureIssue, CaptureController as BrowserController } from './capture';
 import { preferredDevice } from './devices';
 import { api } from '../api';
-import { enqueue, makeChunk, ensureAudioCapacity } from './queue';
+import { persistNativeChunk, makeChunk, ensureAudioCapacity } from './queue';
 import { pcmSignal, signalMessage, type CaptureSignal } from './signal';
 import { startNativeStream } from './native-runtime';
 import type { NativeStream } from './native-stream';
@@ -49,7 +49,7 @@ export class NativeCaptureController {
       }
       try {
         const chunk = await makeChunk(source.id, source.epoch, packet.sequence, packet.sampleOffset, packet.buffer, source.sessionId);
-        if (!dropped) { await enqueue(recordId, chunk); this.args[3](); }
+        if (!dropped) { await persistNativeChunk(recordId, chunk); this.args[3](); }
       } catch (error) { persistenceFailed = true; throw error; }
     }, (error, retaining) => {
       failure = error;
@@ -74,7 +74,7 @@ export class NativeCaptureController {
       const source = await api<Source>(`/records/${recordId}/sources`, 'POST', { kind, label: stream.label });
       if (failure) throw failure;
       const signal: CaptureSignal = { sourceId: source.id, kind, label: source.label, rms: 0, seconds: 0, status: 'checking', message: '原生音源已接入，正在检查声音' };
-      // The closure flag also prevents a hash/enqueue finishing after microphone disconnect.
+      // The closure flag also prevents a hash/persistNativeChunk finishing after microphone disconnect.
       const entry = { stream, source, signal, get dropped() { return dropped; }, set dropped(value: boolean) { dropped = value; } };
       this.streams.set(kind, entry); this.sources.push(source); this.active = true; resolveSource(source); this.report(); return source;
     } catch (error) { dropped = true; rejectSource(error); await stream.stop(true).catch(() => {}); throw error; }

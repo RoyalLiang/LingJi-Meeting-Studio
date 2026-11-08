@@ -9,6 +9,7 @@ import type { RecordDetail, Segment, Topic } from '../model';
 import { timecode } from '../model';
 import { useTranscriptFollow } from './useTranscriptFollow';
 import { cleanSpeechDisplay } from '../../../../packages/records/src/learning-display.mjs';
+import {useSegmentPage,SegmentPagination} from './SegmentPage';
 type TranscriptProps = { record: RecordDetail; highlighted: string; save: (s: Segment, text: string, speaker: string) => Promise<boolean> };
 
 type TranscriptSegmentsProps = {
@@ -49,7 +50,8 @@ export const Transcript = memo(function Transcript({ record, highlighted, save }
   useEffect(() => { if(highlighted)follow.pause(); }, [highlighted,follow.pause]);
   useEffect(() => { if(record.capture==='recording')follow.enable(); }, [record.capture,follow.enable]);
   const sorted=useMemo(()=>[...record.segments].sort((a,b)=>a.startMs-b.startMs),[record.segments]);
-  const segments=useMemo(()=>{const needle=query.toLowerCase();return sorted.filter(s=>`${s.text} ${cleanSpeechDisplay(s.text)} ${s.speaker}`.toLowerCase().includes(needle));},[sorted,query]);
+  const segments=useMemo(()=>{if(!query)return sorted;const needle=query.toLowerCase();return sorted.filter(s=>`${s.text} ${cleanSpeechDisplay(s.text)} ${s.speaker}`.toLowerCase().includes(needle));},[sorted,query]);
+  const page=useSegmentPage(segments,record.capture==='recording'&&follow.following&&!query&&!editing,editing?.id||highlighted);
   const topics = (record.liveMinutes?.transcriptRevision === record.transcriptRevision ? record.liveMinutes : record.minutes || record.liveMinutes)?.topics;
   const topicIndex=useMemo(()=>{
     const first=new Map<string,Topic>(),members=new Map<Topic,Set<string>>();
@@ -64,13 +66,13 @@ export const Transcript = memo(function Transcript({ record, highlighted, save }
   const sourceLabelsKey=useMemo(()=>JSON.stringify(record.sources.map(source=>[source.id,source.label])),[record.sources]);
   const sourceLabels=useMemo(()=>{const labels=new Map<string,string>();for(const [id,label] of JSON.parse(sourceLabelsKey) as [string,string][])if(!labels.has(id))labels.set(id,label);return labels;},[sourceLabelsKey]);
   return <section ref={follow.root} className="transcript" aria-label="会议转录">
-    <div className="section-heading"><div><h2>逐字记录 <span>{record.segments.length}</span></h2><p>每一段，都有来处。</p></div>{record.segments.length>0 && <><Button variant="ghost" onClick={()=>setConcise(!concise)}>{concise ? '显示识别原文' : '简洁阅读'}</Button><input className="transcript-search" aria-label="搜索本次转录" placeholder="查找本次会议…" value={query} onChange={e=>setQuery(e.target.value)}/></>}</div>
+    <div className="section-heading"><div><h2>逐字记录 <span>{record.segments.length}</span></h2><p>每一段，都有来处。</p></div>{record.segments.length>0 && <><Button variant="ghost" onClick={()=>setConcise(!concise)}>{concise ? '显示识别原文' : '简洁阅读'}</Button><input className="transcript-search" aria-label="搜索本次转录" placeholder="查找本次会议…" value={query} onChange={e=>{setQuery(e.target.value);page.select(0);}}/></>}</div>
     {record.sources.some(s=>s.asr) && <p className="speaker-help">同一音轨复用说话人编号。重连或新音轨无法确认的身份，可在片段中指定。</p>}
     {!segments.length && <Empty icon={<TextAlignLeft size={32}/>} title={query ? '没有匹配片段' : record.capture==='recording' ? '正在聆听' : '对话，留在这里'}>开始录音或导入文件，文字会在这里出现。</Empty>}
-    <TranscriptSegments segments={segments} topicIndex={topicIndex} sourceLabels={sourceLabels} translationTarget={record.translationTarget} highlighted={highlighted} concise={concise} editing={editing} text={text} speaker={speaker} busy={busy} knownSpeakers={knownSpeakers} setEditing={setEditing} setText={setText} setSpeaker={setSpeaker} setBusy={setBusy} save={save}/>
+    <SegmentPagination view={page} disabled={Boolean(editing)} change={follow.pause}/><TranscriptSegments segments={page.items} topicIndex={topicIndex} sourceLabels={sourceLabels} translationTarget={record.translationTarget} highlighted={highlighted} concise={concise} editing={editing} text={text} speaker={speaker} busy={busy} knownSpeakers={knownSpeakers} setEditing={setEditing} setText={setText} setSpeaker={setSpeaker} setBusy={setBusy} save={save}/>
     {previews.map(source=><section className="live-transcript" key={source.id} aria-label="实时转录草稿"><div className="live-transcript-heading"><span className="live-dot"/><b>实时转录</b><span>说话人确认中</span></div><p role="status" aria-live="polite" aria-atomic="true">{source.asr!.preview!.text}</p><small>草稿随识别修正，确认后归入逐字记录。</small></section>)}
     {(segments.length>0 || previews.length>0) && <div ref={follow.end} className="transcript-end"/>}
-    {!follow.following && !query && !editing && <div className="transcript-follow"><Button onClick={follow.resume}><ArrowDown size={16}/>回到最新转录</Button></div>}
+    {!follow.following && !query && !editing && <div className="transcript-follow"><Button onClick={()=>{page.latest();follow.resume();}}><ArrowDown size={16}/>回到最新转录</Button></div>}
   </section>;
 },(previous,next)=>previous.highlighted===next.highlighted && previous.save===next.save &&
   (['id','segments','sources','speakers','capture','transcriptRevision','liveMinutes','minutes','translationTarget'] as const).every(key=>previous.record[key]===next.record[key]));

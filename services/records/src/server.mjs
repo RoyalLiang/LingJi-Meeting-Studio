@@ -226,7 +226,7 @@ export async function createRecordServer(options = {}) {
       }
       }
       if (path === '/api/deletions' && req.method === 'GET') {
-        send(res, 200, { deletions: (await repo.list()).filter(r => r.owner === user.id && r.deleted).map(r => ({ id: r.id, cleanup: r.cleanup || 'pending' })) }); return;
+        send(res, 200, { deletions: await Promise.all((await repo.listRecordHeaders(user.id)).filter(r=>r.deleted).map(async r=>({id:r.id,cleanup:r.cleanup||(await repo.get(r.id))?.cleanup||'pending'}))) }); return;
       }
       if(path==='/api/meeting-task-rules'){
       if(req.method==='GET')send(res,200,{rules:await taskProducers.list(user.id)});
@@ -259,7 +259,7 @@ export async function createRecordServer(options = {}) {
       }
       if (await workspaceRoutes({ req, res, path, repo, user, readBody, send })) return;
       if (path === '/api/records' && req.method === 'POST') {
-        const all = (await repo.list()).filter(r => r.owner === user.id && !r.deleted);
+        const all = (await repo.listRecordHeaders(user.id)).filter(r => !r.deleted);
         requireThat(all.length < 200, 'record_limit', 429); const input = await readBody(req, 4000);
         if (input.workspaceId) { requireThat(!['all', 'inbox'].includes(input.workspaceId), 'invalid_workspace', 400); await requireWorkspace(repo, user.id, input.workspaceId); }
         const savedConfig=await readConfig(repo.root);
@@ -353,7 +353,17 @@ export async function createRecordServer(options = {}) {
             if (res.destroyed || res.writableEnded) done();
           });
         };
-        let offset = 0;
+        const reads=new Map();
+      const readChunk=async index=>{
+        let nextOffset=offset;
+        for(let next=index;next<Math.min(chunks.length,index+4)&&nextOffset<=end;next++){
+          if(!reads.has(next))reads.set(next,repo.readAudio(chunks[next].object).then(bytes=>({bytes}),error=>({error})));
+          nextOffset+=chunks[next].sampleCount*2;
+        }
+        const pending=reads.get(index);reads.delete(index);const result=await pending;
+        if(result.error)throw result.error;return result.bytes;
+      };
+      let offset = 0;
         for (let i = -2; i < chunks.length; i++) {
           if (res.destroyed || res.writableEnded) break;
           const size=i===-2?44:i===-1?leadingBytes:chunks[i].sampleCount*2;
@@ -367,7 +377,7 @@ export async function createRecordServer(options = {}) {
               const count = Math.min(remaining, silence.length); await write(silence.subarray(0,count)); remaining -= count;
             }
           } else {
-            const bytes = i === -2 ? waveHeader(length) : await repo.readAudio(chunks[i].object);
+            const bytes = i === -2 ? waveHeader(length) : await readChunk(i);
             if (res.destroyed || res.writableEnded) break;
             await write(bytes.subarray(from,until));
           }
@@ -379,9 +389,9 @@ export async function createRecordServer(options = {}) {
         let cursor = String(req.headers['last-event-id'] || url.searchParams.get('after') || record.cursor);
         requireThat(/^\d{1,20}$/.test(cursor), 'invalid_cursor', 400);
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
-        let busy = false, closed = false, draining = false, timer, lastHeartbeat = Date.now();
+        let busy = false, closed = false, draining = false, timer, unsubscribe, lastHeartbeat = Date.now();
         const drained = () => { draining = false; };
-        const cleanup = () => { closed = true; clearInterval(timer); res.off('drain', drained); streams.delete(res); };
+        const cleanup = () => { closed = true; clearInterval(timer); unsubscribe?.(); res.off('drain', drained); streams.delete(res); };
         const ended = () => closed || res.destroyed || res.writableEnded;
         const finish = () => { cleanup(); if (!res.destroyed && !res.writableEnded) res.end(); };
         const write = frame => {
@@ -395,7 +405,7 @@ export async function createRecordServer(options = {}) {
         req.once('close', cleanup);
         streams.add(res);
         if (!write(': connected\n\n')) return;
-        timer = setInterval(async () => {
+        const flush = async () => {
           if (busy || draining || ended()) return; busy = true;
           try {
             await auth.user(req); if (ended()) return;
@@ -415,7 +425,11 @@ export async function createRecordServer(options = {}) {
           } catch {
             if (!ended()) { write('event: revoked\ndata: {}\n\n'); finish(); }
           } finally { busy = false; }
-        }, 100);
+        };
+      unsubscribe=repo.subscribeChanges(ids=>{if(ids.includes(id))void flush();},{all:true});
+      // Separate API/worker processes retain a bounded cross-process fallback.
+      timer=setInterval(flush,1000);
+      void flush();
         return;
       }
       if (action === 'export' && req.method === 'GET') {

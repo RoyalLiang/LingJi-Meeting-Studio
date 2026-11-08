@@ -1,33 +1,23 @@
-# 纪要阅读与音频传输
+# Record 音频传输与增量更新
 
-2026-10-13 本地实现。本轮在原生 Alpha 中核实了后端连接，在隔离数据和合成场景中验证了改动；没有重启正在录音的客户端、API 或 worker。
+## 音频能力由 API 明确协商
 
-## 当前 Alpha 共用开发后台
+Bootstrap 返回 `audioTransport: "pcm-v1"` 时，客户端向 `/api/records/:id/audio` 发送 `application/octet-stream` PCM，并将身份和时序元数据放入 `X-Record-Audio` JSON 头。不支持该能力的服务继续收到 Base64 JSON。两种传输保留同源 Cookie、CSRF 和相同的身份校验。
 
-客户端使用本机代理提供内置 Web 页面，代理转发到 `client.json` 或 `TTS_RECORD_API_URL` 指定的 Record API；未配置时为 `http://127.0.0.1:3030`。本轮运行进程的连接证实使用现有 3030 API，与开发 Web 共用后台，客户端没有内置 ASR、纪要服务或 worker。应用配置与服务配置分别保留。
+`record/session/source/epoch/sequence`、采样偏移、SHA-256、持久化 ACK、冲突检测、重传去重与停止排空语义相同。ACK 表示字节已持久化，不代表 ASR 或纪要已完成。
 
-## 以 AI 纪要作为阅读主体
+单包最多 480,000 字节，元数据头最多 2,048 字节。服务端拒绝错误摘要、身份或采样区间；重复请求不重复记账。
 
-“当前正在聊”只显示整理状态，不再重复具体讨论内容。桌面状态栏从固定 148px 缩到约 53px，生成中的纪要草稿出现在主纪要区，已完成版本继续保留。流式草稿仍标明未完成引用校验；最终结果通过校验后发布，历史版本和人工编辑不显示新一轮预览。原有手动阅读暂停规则保留，不因每个模型 token 强制滚动。
+## 队列保存二进制并兼容旧数据
 
-## 协商 PCM 二进制上传
+新 IndexedDB 分片直接保存 PCM 字节，旧 Base64 分片继续可补传。旧 API 和人工下载的 `meeting-audio-backup/v1` 故障备份仍使用 Base64。队列按来源排序上传，失败来源不阻塞其他来源。
 
-新 API 的 bootstrap 返回 `audioTransport: "pcm-v1"`。客户端收到该能力后，向原 `/api/records/:id/audio` 上传 `application/octet-stream` PCM，音频身份和时序元数据放在 `X-Record-Audio` JSON 头中。未提供能力的旧 API 继续收到原 base64 JSON，请求保留同源 Cookie、CSRF 和 trace 信息。
+桌面本机优先取得 Record API 持久化回执，再保存本机停止游标并 ACK Rust；2 秒内未完成或请求失败时退回 IndexedDB。完整数据与停止游标确认之前，不删除 Rust 的持久化队首。
 
-二进制和 JSON 共用音频哈希、record/session/source/epoch/sequence 校验、不可变对象存储和持久化 ACK。重传同一包不会重复记账，身份冲突不会删除本地待补传数据。IndexedDB 格式、确认后移除、按来源顺序上传、48 MiB 队列限制、暂停和停止排空均保留。二进制正文上限为 480,000 字节，元数据头上限为 2,048 字符。
+## SSE 保留游标、鉴权与跨进程检查
 
-1 秒 16kHz PCM16 从约 43KB 的 JSON 正文变为约 32KB 加少量元数据，传输负载减少约 25%；这不等于识别或纪要生成时间减少 25%。
+服务端从独立事件投影发送增量。客户端只在 `baseCursor` 匹配时应用 delta；游标不连续时重新读取完整快照。
 
-## 缩短事件传播等待
+同一进程的仓库变更唤醒 SSE，独立进程之间保留每秒检查。连接持续重验权限，退出登录或失去记录访问权后关闭。客户端背压、心跳与断线补历史继续生效；当前尚未接入 PG LISTEN/NOTIFY。
 
-SSE 继续使用持久化游标和增量投影，将事件检查间隔从 250ms 改为 100ms。权限撤销、过期、重连补历史、过期游标 reset 和慢连接关闭语义保留。此项会增加空闲轮询频率；本轮只验证本地 SQLite 场景，未声称多用户部署容量已通过。
-
-隔离基准在每次 heartbeat 后提交一条合成事件，测量提交到 SSE 收到的等待：改前 p50 250.33ms / 最大 251.74ms，改后首次复测 p50 101.22ms / 最大 101.60ms。可运行：
-
-```sh
-node scripts/benchmark-record-transport.mjs /tmp/record-transport.json --check
-```
-
-此命令使用临时 SQLite、隔离端口和合成内容，不调用真实模型或录音设备。`--check` 验证五次传播均在 200ms 内。真实网络、供应商首字、自动纪要周期、长会话、PG/S3 和实际音频到纪要总延迟仍需单独验证。
-
-本轮交付源码副本的 160 项 Node 回归、ESLint、TypeScript、Web 生产构建和 68 份文档校验通过。最终复测 p50 为 102.16ms，最大 102.40ms；1 秒音频的 JSON 正文为 42,971 字节，PCM 加元数据为 32,294 字节，减少 24.85%。这些数字来自隔离本机场景，未代表当前正在录音的旧进程已生效。
+SQLite 集合格式、迁移备份与音频导入限制见[存储与性能边界](storage-and-performance.md)。本地合成回归不能替代真实网络、长录音、PG/S3 或供应商首字验收。

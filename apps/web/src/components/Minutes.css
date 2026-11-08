@@ -77,3 +77,8 @@ body>.meeting-highlights { position:fixed; top:76px; left:16px; right:16px; widt
 .minutes-failure-toast .toast-content>span { white-space:normal; }
 .minutes-failure-toast .toast-action { flex:none; white-space:nowrap; }
 @media(max-width:700px) { .minutes-failure-toast .toast-content { flex-wrap:wrap; gap:6px; }.minutes-failure-toast .toast-content>span { flex-basis:100%; } }
+
+.minutes-refresh-state{display:flex;align-items:center;gap:7px;min-height:22px;color:var(--ink-3);font-size:12px;line-height:22px}
+.minutes-refresh-state svg,.minutes-refresh-icon{animation:minutes-refresh 1.1s linear infinite}
+@keyframes minutes-refresh{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.minutes-refresh-state svg,.minutes-refresh-icon{animation:none}}

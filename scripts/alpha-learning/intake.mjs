@@ -1,3 +1,4 @@
+import {hydrateRecordCollections} from "../../services/records/src/sqlite-record-store.mjs";
 import { DatabaseSync } from "node:sqlite";
 import { readFile, writeFile, mkdir, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -39,7 +40,7 @@ export function readSnapshot(root, now = Date.now()) {
     for (const row of rows) {
       const meta = JSON.parse(row.data);
       if (meta.deleted || !(Date.parse(meta.deleteAt) > now)) continue;
-      const record =
+      const storedRecord =
         meta.$payload === "deflate-v1"
           ? JSON.parse(
               decodeStorage(
@@ -49,6 +50,7 @@ export function readSnapshot(root, now = Date.now()) {
               ),
             )
           : meta;
+      const record=hydrateRecordCollections(db,storedRecord);
       records.push({
         ...pick(record, [
           "id",
