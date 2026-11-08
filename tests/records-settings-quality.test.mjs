@@ -102,7 +102,7 @@ test('audio-only settings render the shared model fields and omit independent AS
  assert.doesNotMatch(result,/fine-print|15 秒短批次|当前输入方式由 AI 纪要模型同时提供转录/);
  const nodes=value=>value && typeof value==='object'?[value,...Object.values(value).flatMap(nodes)]:[];
  const effort=nodes(JSON.parse(result)).find(node=>node.attributes?.name==='LLM_REASONING_EFFORT');
- assert.deepEqual(effort.attributes.options.map(option=>option.label),['自动','低','中','高','更高']);
+ assert.deepEqual(effort.attributes.options.map(option=>option.label),['自动（纪要分阶段）','低','中','高','更高']);
  assert.doesNotMatch(source,/DOUBAO_AST_|旧版双密钥/);
 });
 

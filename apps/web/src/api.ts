@@ -7,6 +7,9 @@ let csrf = '', authGeneration = 0;
 export const setCsrf = (token: string) => { if (csrf !== token) authGeneration++; csrf = token; };
 export const getAuthGeneration = () => authGeneration;
 const messages: Record<string, string> = {
+  invalid_history_query:'记录分页信息无效，请刷新后重试。',
+  builtin_skill_validation_failed:'内置 Skill 样例未通过或回执已过期，请使用验证通过的版本。',
+  pi_minutes_round_limit:'本轮整理超过工具处理轮次，已保留转录，请稍后重试。',
   provider_http_504:'模型服务响应超时，已保存内容可稍后继续处理。',
   git_repository_empty:'仓库尚未初始化，请先创建默认分支，再使用合并请求同步。',
   git_default_branch_missing:'仓库默认分支不存在，请在 GitLab 中修正默认分支后重试。',

@@ -76,6 +76,7 @@ jobs:
           echo "version=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
           echo "controller_sha=$WORKFLOW_SHA" >> "$GITHUB_OUTPUT"
   build:
+    name: macOS build and native verification
     needs: verify
     runs-on: macos-15
     timeout-minutes: 90
@@ -151,6 +152,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
   build_wgs:
+    name: WGS build - Linux and Windows
     needs: verify
     runs-on: [self-hosted, Linux, X64, lingji-wgs]
     timeout-minutes: 90
@@ -190,6 +192,7 @@ jobs:
           retention-days: 2
 
   build_windows:
+    name: Windows verification - WGS installer
     needs: [verify, build_wgs]
     runs-on: windows-2025
     timeout-minutes: 90
@@ -306,7 +309,7 @@ jobs:
           name: windows-native-${{ github.sha }}
           path: .agent-runtime/windows-native.json
           if-no-files-found: ignore
-      - name: Build and verify Windows preview installer
+      - name: Verify the WGS-built Windows preview installer
         timeout-minutes: 60
         env:
           TTS_RELEASE_SOURCE_REF: ${{ needs.verify.outputs.sha }}
@@ -366,6 +369,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
   verify_linux_24:
+    name: Ubuntu 24 verification - WGS package
     needs: [verify, build_wgs]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -402,6 +406,7 @@ jobs:
           if-no-files-found: ignore
 
   publish:
+    name: Publish verified previews
     needs: [verify, build, build_windows, build_wgs, verify_linux_24]
     runs-on: ubuntu-24.04
     timeout-minutes: 15

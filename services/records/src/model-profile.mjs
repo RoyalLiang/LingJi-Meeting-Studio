@@ -16,13 +16,15 @@ export function modelProfile(env) {
     return number;
   };
   const prices = value.prices;
+  const reasoningEfforts=facts.reasoningUnsupported?[]:value.reasoningEfforts??['low','medium','high'];
+  requireThat(Array.isArray(reasoningEfforts)&&reasoningEfforts.every(level=>['low','medium','high','xhigh','max'].includes(level)),'invalid_model_profile',400);
   if (prices) for (const [field,price] of Object.entries(prices)) requireThat(['input','output','cacheRead','cacheWrite'].includes(field)&&Number.isFinite(price)&&price>=0,'invalid_model_profile',400);
   const completePrices=prices&&['input','output','cacheRead','cacheWrite'].every(field=>Number.isFinite(prices[field]));
   const declaredContextWindow=integer('contextWindow',16384,2000000),requestedOutput=integer('maxOutputTokens',Math.min(4096,declaredContextWindow),131072);
   requireThat(requestedOutput<=declaredContextWindow,'invalid_model_profile',400);
   const operationalLimit=integer('effectiveContextWindow',262144,2000000);
   const contextWindow=Math.min(declaredContextWindow,operationalLimit,facts.contextLimit||2000000),maxOutputTokens=Math.min(requestedOutput,Math.floor(contextWindow/2));
-  return { model: env.LLM_MODEL, protocol: env.LLM_PROTOCOL, declaredContextWindow, contextWindow, maxOutputTokens, nativeTools: value.nativeTools === true, strictOutput: value.strictOutput === true, parallelTools: value.parallelTools === true, promptCache: value.promptCache === true, prices: completePrices ? prices : null, tokenRatios:facts.tokenRatios||{}, evidence:[...(facts.evidence||[]),...Object.entries(manual).map(([field,value])=>({field,value,source:'configured-catalog',at:env.LLM_CONFIG_READ_AT||new Date().toISOString(),confirmed:true}))], source: Object.keys(manual).length ? 'configured-catalog' : facts.catalog?'gateway-unconfirmed':'conservative-fallback' };
+  return { model: env.LLM_MODEL, protocol: env.LLM_PROTOCOL, declaredContextWindow, contextWindow, maxOutputTokens, reasoningEfforts, nativeTools: value.nativeTools === true, strictOutput: value.strictOutput === true, parallelTools: value.parallelTools === true, promptCache: value.promptCache === true, prices: completePrices ? prices : null, tokenRatios:facts.tokenRatios||{}, evidence:[...(facts.evidence||[]),...Object.entries(manual).map(([field,value])=>({field,value,source:'configured-catalog',at:env.LLM_CONFIG_READ_AT||new Date().toISOString(),confirmed:true}))], source: Object.keys(manual).length ? 'configured-catalog' : facts.catalog?'gateway-unconfirmed':'conservative-fallback' };
 }
 
 export function tokenCharacterCounts(text) {

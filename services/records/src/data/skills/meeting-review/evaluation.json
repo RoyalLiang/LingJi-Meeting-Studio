@@ -1,0 +1,221 @@
+{
+  "version": 1,
+  "skill": "meeting-review",
+  "digests": {
+    "instructions": "1936bf44f22d89c8ae7927ab1e1925c48b45b386df685f8d30e98b46c097f668",
+    "schema": "f30f42fc79e813f68f84f96e6a28aed1909fbefd279ea8afe9d213cc74c2bb8f",
+    "inputs": "4ff8ef1604d722c2afc1964715a8eb6170bd2198fb8f85c12b8eafe9ddd40929",
+    "expected": "eb047782bff54584a11d1bcebf54415e34178dd539075f3de33d37a979b7a33a"
+  },
+  "results": [
+    {
+      "caseId": "risk-draft",
+      "output": {
+        "summary": "重复请求可能造成重复扣款，概率未知。今天先暂停重试已获确认；增加幂等键只是待评审建议，负责人尚未确定。",
+        "decisions": [
+          {
+            "text": "今天先暂停重试，以避免进一步重复扣款。",
+            "evidence": [
+              {
+                "recordId": "fixture-risk",
+                "segmentId": "s3",
+                "revision": 1
+              }
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "text": "候选：评审增加幂等键的方案，并确认负责人。",
+            "owner": null,
+            "evidence": [
+              {
+                "recordId": "fixture-risk",
+                "segmentId": "s2",
+                "revision": 1
+              }
+            ]
+          }
+        ],
+        "artifacts": [
+          {
+            "kind": "risk-register",
+            "title": "重复请求风险登记表",
+            "status": "draft",
+            "risks": [
+              {
+                "id": "R1",
+                "text": "重复请求可能使同一订单被扣款两次。",
+                "impact": "可能发生重复扣款。",
+                "likelihood": "unknown",
+                "mitigation": "已确认今天先暂停重试；增加幂等键仍为建议，方案待评审，未获批准。",
+                "owner": null,
+                "evidence": [
+                  {
+                    "recordId": "fixture-risk",
+                    "segmentId": "s1",
+                    "revision": 1
+                  },
+                  {
+                    "recordId": "fixture-risk",
+                    "segmentId": "s2",
+                    "revision": 1
+                  },
+                  {
+                    "recordId": "fixture-risk",
+                    "segmentId": "s3",
+                    "revision": 1
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "adr-draft",
+      "output": {
+        "summary": "旧数据库峰值延迟120ms，需评估优化方案。继续优化索引与引入缓存均未获批准，暂无优先推荐；缓存一致性及运维负担尚待评估。",
+        "decisions": [],
+        "actions": [
+          {
+            "text": "候选：评估缓存一致性与运维负担。",
+            "owner": null,
+            "evidence": [
+              {
+                "recordId": "fixture-adr",
+                "segmentId": "s3",
+                "revision": 1
+              }
+            ]
+          }
+        ],
+        "artifacts": [
+          {
+            "kind": "adr-draft",
+            "title": "数据库峰值延迟优化 ADR 草稿",
+            "status": "draft",
+            "context": [
+              {
+                "text": "旧数据库峰值延迟120ms，需要评估缓存。",
+                "evidence": [
+                  {
+                    "recordId": "fixture-adr",
+                    "segmentId": "s1",
+                    "revision": 1
+                  }
+                ]
+              }
+            ],
+            "options": [
+              {
+                "title": "继续优化索引",
+                "description": "备选一：继续优化索引，尚未批准。",
+                "evidence": [
+                  {
+                    "recordId": "fixture-adr",
+                    "segmentId": "s2",
+                    "revision": 1
+                  }
+                ]
+              },
+              {
+                "title": "引入缓存",
+                "description": "备选二：引入缓存，尚未批准；缓存一致性与运维负担尚未评估。",
+                "evidence": [
+                  {
+                    "recordId": "fixture-adr",
+                    "segmentId": "s2",
+                    "revision": 1
+                  },
+                  {
+                    "recordId": "fixture-adr",
+                    "segmentId": "s3",
+                    "revision": 1
+                  }
+                ]
+              }
+            ],
+            "proposal": {
+              "text": "暂无优先推荐，待评审。继续优化索引与引入缓存均为未批准的备选方案。",
+              "evidence": [
+                {
+                  "recordId": "fixture-adr",
+                  "segmentId": "s2",
+                  "revision": 1
+                }
+              ]
+            },
+            "consequences": [
+              {
+                "text": "若引入缓存，其一致性与运维负担的影响尚未评估。",
+                "evidence": [
+                  {
+                    "recordId": "fixture-adr",
+                    "segmentId": "s3",
+                    "revision": 1
+                  }
+                ]
+              }
+            ],
+            "openQuestions": [
+              {
+                "text": "最终采用继续优化索引还是引入缓存？两种方案均未批准。",
+                "evidence": [
+                  {
+                    "recordId": "fixture-adr",
+                    "segmentId": "s2",
+                    "revision": 1
+                  }
+                ]
+              },
+              {
+                "text": "缓存一致性与运维负担如何？尚未评估。",
+                "evidence": [
+                  {
+                    "recordId": "fixture-adr",
+                    "segmentId": "s3",
+                    "revision": 1
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "review-withdrawal",
+      "output": {
+        "summary": "最终共识是取消周五上线，待安全评审通过后再定日期。回滚需要评估，负责人待确认。",
+        "decisions": [
+          {
+            "text": "取消周五上线，等安全评审通过后再确定上线日期。",
+            "evidence": [
+              {
+                "recordId": "fixture-review",
+                "segmentId": "s2",
+                "revision": 1
+              }
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "text": "候选：评估回滚，负责人待确认。",
+            "owner": null,
+            "evidence": [
+              {
+                "recordId": "fixture-review",
+                "segmentId": "s3",
+                "revision": 1
+              }
+            ]
+          }
+        ],
+        "artifacts": []
+      }
+    }
+  ]
+}

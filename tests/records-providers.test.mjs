@@ -25,7 +25,7 @@ test('reasoning strength persists publicly and rejects unsupported values',()=>t
   await assert.rejects(saveConfig(root,{LLM_REASONING_EFFORT:'ultra'},{}),/invalid_llm_reasoning_effort/);
 }));
 
-test('explicit reasoning strength overrides automatic Kimi live policy in both protocols',async()=>{
+test('explicit reasoning strength overrides staged automatic minutes policy in both protocols',async()=>{
   const {generateMinutes}=await import('../services/records/src/providers.mjs');
   const original=globalThis.fetch,evidence=[{segmentId:'s1',revision:1}];
   const output={title:'合成纪要',sections:[{heading:'要点',items:[{text:'合成内容',evidence}]}],actions:[]};
@@ -36,7 +36,7 @@ test('explicit reasoning strength overrides automatic Kimi live policy in both p
       await generateMinutes({template:'meeting',scope,snapshot:[{id:'s1',revision:1,text:'合成内容'}]},
         {LLM_API_URL:'https://unused.invalid',LLM_API_KEY:'synthetic-key',LLM_MODEL:'kimi-k3-1-pro-261024',LLM_PROTOCOL:protocol,LLM_REASONING_EFFORT:effort});
       const actual=protocol==='responses'?body.reasoning?.effort:body.reasoning_effort;
-      assert.equal(actual,effort==='auto'?(scope==='live'?'low':undefined):effort==='default'?undefined:effort);
+      assert.equal(actual,effort==='auto'?(scope==='live'?'medium':'high'):effort==='default'?undefined:effort);
     }
   }finally{globalThis.fetch=original;}
 });
@@ -208,7 +208,7 @@ test('Pi minutes repairs invalid topic structure once and accounts both attempts
  globalThis.fetch=async(_url,options)=>{requests.push(JSON.parse(options.body));const output=structuredClone(valid);if(++calls===1)output.topics.push({...output.topics[0]});return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(output)}}],usage:{prompt_tokens:10,completion_tokens:20,total_tokens:30}}),{headers:{'content-type':'application/json'}});};
  try{
   const result=await generateMinutes({scope:'live',snapshot:[{id:'s',revision:1,text:'候选尚未实测，不承诺零丢失。'}]},{LLM_API_URL:'https://fixture.invalid/chat/completions',LLM_API_KEY:'synthetic-key',LLM_MODEL:'synthetic',LLM_PROTOCOL:'chat-completions'},{onUsage:value=>usage.push(value)});
-  assert.equal(calls,2);assert.equal(result.runtime.engine,'pi');assert.equal(result.runtime.structureRepairs,1);assert.equal(result.usageTokens,60);assert.equal(result.tokenUsage.totalTokens,60);assert.equal(usage.at(-1).totalTokens,60);assert.equal(result.sections[0].items[0].text,valid.sections[0].items[0].text);assert.match(requests[1].messages[0].content,/上次主题结构未通过校验/);
+  assert.equal(calls,2);assert.equal(result.runtime.engine,'pi');assert.equal(result.runtime.structureRepairs,1);assert.equal(result.usageTokens,60);assert.equal(result.tokenUsage.totalTokens,60);assert.equal(usage.at(-1).totalTokens,60);assert.equal(result.sections[0].items[0].text,valid.sections[0].items[0].text);assert.match(requests[1].messages[0].content,/上次.*未通过校验/);
  }finally{globalThis.fetch=original;}
 });
 
@@ -229,4 +229,25 @@ test('minutes structure repair shares the original deadline instead of renewing 
  const evidence=[{segmentId:'s',revision:1}],topic={id:'t',title:'候选',summary:'待验证',evidence};
  globalThis.fetch=async()=>{calls++;clock+=120001;return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({title:'候选',topics:[topic,topic],sections:[{heading:'候选',items:[{text:'仍待验证',evidence}]}],actions:[]})}}]}),{headers:{'content-type':'application/json'}});};
  try{await assert.rejects(generateMinutes({scope:'live',snapshot:[{id:'s',revision:1,text:'仍待验证'}]},{LLM_API_URL:'https://fixture.invalid/chat/completions',LLM_API_KEY:'synthetic-key',LLM_MODEL:'synthetic',LLM_PROTOCOL:'chat-completions'}),{code:'llm_timeout'});assert.equal(calls,1);}finally{globalThis.fetch=original;Date.now=originalNow;}
+});
+test('minutes repairs invalid citations once with stronger automatic reasoning and retains both usages',async()=>{
+  const {generateMinutes}=await import('../services/records/src/providers.mjs');
+  const original=globalThis.fetch,efforts=[];let calls=0;
+  globalThis.fetch=async(_url,options)=>{
+    const body=JSON.parse(options.body);efforts.push(body.reasoning_effort);
+    const output={title:'引用核对',sections:[{heading:'结论',items:[{text:'先核对来源',evidence:[{segmentId:++calls===1?'missing':'s1',revision:1}]}]}],actions:[]};
+    return Response.json({choices:[{message:{content:JSON.stringify(output)}}],usage:{prompt_tokens:10,completion_tokens:5,total_tokens:15}});
+  };
+  try{
+    const result=await generateMinutes({scope:'live',snapshot:[{id:'s1',revision:1,text:'先核对来源'}]},{LLM_API_URL:'https://fixture.invalid/chat/completions',LLM_API_KEY:'synthetic-key',LLM_MODEL:'synthetic',LLM_PROTOCOL:'chat-completions',LLM_MODEL_PROFILES:JSON.stringify({synthetic:{reasoningEfforts:['low','medium','high','xhigh']}})});
+    assert.deepEqual(efforts,['medium','xhigh']);assert.equal(result.usageTokens,30);assert.equal(result.runtime.citationRepairs,1);assert.equal(result.sections[0].items[0].evidence[0].segmentId,'s1');
+  }finally{globalThis.fetch=original;}
+});
+test('minutes citation repair shares the six-request window budget across Pi roots',async()=>{
+  const {generateMinutes}=await import('../services/records/src/providers.mjs');const original=globalThis.fetch;let calls=0;
+  globalThis.fetch=async()=>{
+    calls++;const output=calls<6?{toolCalls:[{name:'read_selected_meeting',arguments:{part:'transcript',page:0}}]}:{title:'Invalid citation',sections:[{heading:'Read',items:[{text:'Fixed source',evidence:[{segmentId:calls===6?'missing':'s',revision:1}]}]}],actions:[]};
+    return Response.json({choices:[{message:{content:JSON.stringify(output)}}],usage:{prompt_tokens:10,completion_tokens:5,total_tokens:15}});
+  };
+  try{await assert.rejects(generateMinutes({scope:'live',snapshot:[{id:'s',revision:1,text:'Fixed source'}]},{LLM_API_URL:'https://fixture.invalid/chat/completions',LLM_API_KEY:'synthetic-key',LLM_MODEL:'synthetic',LLM_PROTOCOL:'chat-completions',LLM_MODEL_PROFILES:JSON.stringify({synthetic:{contextWindow:128000}})}),{code:'pi_minutes_round_limit'});assert.equal(calls,6);}finally{globalThis.fetch=original;}
 });

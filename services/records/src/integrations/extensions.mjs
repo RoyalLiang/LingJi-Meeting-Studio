@@ -1,3 +1,4 @@
+import {builtinSkill,builtinSkillStatuses} from '../builtin-skills.mjs';
 import { randomUUID } from 'node:crypto';
 import { DomainError, digest, requireThat } from '../../../../packages/records/src/record.mjs';
 import { remoteRequest, remoteUrl } from './remote-http.mjs';
@@ -190,11 +191,11 @@ export async function createExtensions(repo,{request=remoteRequest,requestGithub
     requireThat(Array.isArray(pluginIds)&&pluginIds.length<=3&&new Set(pluginIds).size===pluginIds.length&&pluginIds.every(id=>typeof id==='string'),'invalid_extension_scope',400);
     const skills=[],guides=[],seen=new Set();let firstContent='';
     for(const id of [...ids].sort()){
-      const skill=id==='meeting-review'?{id,name:'会议复盘',version:'1.0.0',content:''}:await get(owner,id);
+      const skill=id==='meeting-review'?builtinSkill(id):await get(owner,id);
       requireThat(id==='meeting-review'||skill.type==='skill'&&skill.enabled,'extension_disabled',409);
       requireThat(id==='meeting-review'||(input.skillVersions?.[id]||input.skillVersion)===skill.version,'extension_version_changed',409);
       if(!skills.length)firstContent=skill.content||'';
-      skills.push({id,name:skill.name,version:skill.version,bundle:Boolean(skill.bundle)});
+      skills.push({id,name:skill.name,version:skill.version,...(skill.contractDigest?{contractDigest:skill.contractDigest,contractVersion:skill.contractVersion}:{}),bundle:Boolean(skill.bundle)});
       for(const member of skill.bundle?skill.members:[skill]){const key=digest(`${skill.source||'builtin'}:${member.path||''}:${member.version}`);if(seen.has(key))continue;seen.add(key);guides.push({key,name:member.name,description:member.description||'',path:member.path||'',version:member.version,content:member.content||''});}
     }
     requireThat(guides.length<=100&&guides.reduce((size,g)=>size+g.content.length,0)<=4000000,'skill_collection_too_large',400);
@@ -205,7 +206,7 @@ export async function createExtensions(repo,{request=remoteRequest,requestGithub
   }
   async function validate(owner,snapshot){
     if(!snapshot)return;
-    for(const expected of snapshot.skills||[snapshot.skill])if(expected.id!=='meeting-review'){const skill=await get(owner,expected.id);requireThat(skill.enabled&&skill.version===expected.version,'extension_version_changed',409);}
+    for(const expected of snapshot.skills||[snapshot.skill])if(expected.id==='meeting-review'&&expected.contractDigest){requireThat(builtinSkill(expected.id).contractDigest===expected.contractDigest,'extension_version_changed',409);}else if(expected.id!=='meeting-review'){const skill=await get(owner,expected.id);requireThat(skill.enabled&&skill.version===expected.version,'extension_version_changed',409);}
     for(const expected of snapshot.plugins){const plugin=await get(owner,expected.id);requireThat(plugin.enabled&&plugin.version===expected.version&&expected.tools.every(tool=>plugin.approvedTools.includes(tool.name)),'extension_version_changed',409);}
   }
   async function call(owner,snapshot,{pluginId,toolName,arguments:args},signal,beforeCall){
@@ -220,5 +221,5 @@ export async function createExtensions(repo,{request=remoteRequest,requestGithub
       requireThat(content.length>0&&content.length<=40000,'mcp_result_too_large',502);return content;
     },signal);
   }
-  return {list,detail,skillPreview,installSkill,installPlugin,check,change,remove,snapshot,validate,call};
+  return {builtins:builtinSkillStatuses,list,detail,skillPreview,installSkill,installPlugin,check,change,remove,snapshot,validate,call};
 }

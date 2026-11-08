@@ -43,8 +43,8 @@ test('Git future consent can be reselected after editing a scope-affecting optio
 test('a removed selected task cannot prevent the latest Git task list from refreshing',async()=>{
  const old={id:'old',title:'旧任务',status:'failed',phase:'organize',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()},fresh={...old,id:'new',title:'新任务'};
  const render=await component('GitAutomation.tsx','GitAutomation',async path=>{if(path==='/workspaces')return {workspaces:[]};if(path.includes('/tasks/'))throw Object.assign(new Error('任务已不可用'),{status:404});return {configured:true,enabled:true,recent:[old],root:'https://git.example.test/root',prompt:'保持引用',skillIds:['meeting-review'],projects:[],mode:'mr'};},async()=>({enabled:true,recent:[fresh]}));
- const props={extensions:[]};render(props);await new Promise(resolve=>setTimeout(resolve,0));let tree=render(props);nodes(tree).find(node=>node.type==='Button'&&words(node).startsWith('任务记录')).props.onClick();tree=render(props);nodes(tree).find(node=>node.props?.className==='git-history-row').props.onClick();await new Promise(resolve=>setTimeout(resolve,0));tree=render(props);
- assert.ok(nodes(tree).some(node=>node.props?.className==='git-history-row'&&words(node).includes('新任务')));assert.ok(!nodes(tree).some(node=>node.props?.job?.id==='old'));
+ const props={extensions:[]};render(props);await new Promise(resolve=>setTimeout(resolve,0));let tree=render(props);nodes(tree).find(node=>node.type==='Button'&&words(node).startsWith('任务记录')).props.onClick();tree=render(props);nodes(tree).find(node=>node.type==='TaskHistory').props.children([old]).flatMap(nodes).find(node=>node.props?.className==='git-history-row').props.onClick();await new Promise(resolve=>setTimeout(resolve,0));tree=render(props);
+ assert.ok(nodes(tree).find(node=>node.type==='TaskHistory').props.revision.includes('new'),'live feed forces independent history to refresh');assert.ok(!nodes(tree).some(node=>node.props?.job?.id==='old'));
 });
 
 test('stale workspace analysis is an incident-scoped inline notice rather than a navigation toast',async()=>{

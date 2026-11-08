@@ -17,7 +17,7 @@ export async function meteredMinutesCall(repo,recordId,claim,generate,input,conf
   const attempt={onRequest,onUsage};attempts.push(attempt);return attempt;
  };
  const first=createAttempt();
- const result=await generate(input,config,{...options,...first,newAttempt:createAttempt});
+ const result=await generate(input,config,{...options,...first,newAttempt:createAttempt,modelFactsRoot:repo.root});
  // Physical retries each report their own usage. Never mark an unknown retry as zero.
  if(attempts.length===1){
   await first.onRequest();

@@ -10,6 +10,8 @@
 | Linux x64 DEB | WGS 当前代码目录，Ubuntu 22.04 隔离容器 | 容器内安装/卸载与独立后端、Ubuntu 24.04 CI |
 | Windows x64 NSIS | WGS 同一当前代码目录，MSVC 交叉工具链 | Windows Actions 验证 WGS 生成的同一个 EXE |
 
+Actions 继续负责调度和留证，所以运行页面仍会显示各平台作业。`WGS build - Linux and Windows` 在自托管 WGS runner 上执行；Windows 和 Ubuntu 作业接收这次构建的产物做原生验证。Windows 还会编译带 `smoke-test` 的调试程序，用于隐藏录音与重启回放；发布安装器来自 WGS，不在该步骤重新打包。最后由发布作业核对并发布同一份已验证产物。
+
 WGS 使用一次性 `lingji-wgs` runner。`scripts/wgs-build-preview.mjs` 对整个目录加锁，核对无未提交修改后切到固定 SHA，串行生成两平台产物。当前目录为 `/home/westwell/builds/lingji-preview-20261107/source-240245aa`；目录名称不是源码版本凭证，实际 SHA 和完整文件摘要才是依据。
 
 构建工具镜像使用 `tools/release/wgs.Dockerfile`，Rust 1.92.0 与 Windows 标准库存放在 WGS `cache/rust-1.92.0` 独立目录；组件按官方发行清单 SHA-256 校验，不切换主机默认工具链。

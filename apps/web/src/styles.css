@@ -729,6 +729,8 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 /* Navigation search and the agent dock frame the main reading area. */
 .workspace { --topbar-height:76px; }
 .workspace-body { position:relative; display:flex; flex:1; flex-direction:column; min-height:0; }
+.workspace-reading-row { position:relative; display:flex; flex-direction:column; flex:1; min-height:0; min-width:0; }
+.workspace-reading-row>.workspace-scroll { min-width:0; }
 .workspace .topbar { display:grid; grid-template-columns:minmax(0,160px) minmax(200px,1fr) minmax(0,160px); gap:24px; min-height:var(--topbar-height); flex-basis:var(--topbar-height); padding-inline:40px; }
 .topbar .workspace-breadcrumb { min-width:0; white-space:nowrap; }
 .topbar .workspace-breadcrumb .breadcrumb { max-width:140px; }
@@ -1121,3 +1123,7 @@ select,.select-trigger{box-sizing:border-box;min-width:0}
 .client-version-modal .update-notes-list { margin:20px 0 0; padding-left:20px; }
 
 .settings-modal>.modal-header .client-update-version { min-width:92px; justify-content:center; }
+
+.history-pagination{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px;padding:16px 0}.history-pagination>span{font-size:12px;color:var(--ink-3)}
+
+.workspace-scroll,.ma-drawer-content,.modal .modal-body{scrollbar-width:thin;scrollbar-color:var(--border) transparent}.workspace-scroll::-webkit-scrollbar,.ma-drawer-content::-webkit-scrollbar,.modal .modal-body::-webkit-scrollbar{display:block;width:6px;height:6px}.workspace-scroll::-webkit-scrollbar-thumb,.ma-drawer-content::-webkit-scrollbar-thumb,.modal .modal-body::-webkit-scrollbar-thumb{background:var(--border);border-radius:6px}

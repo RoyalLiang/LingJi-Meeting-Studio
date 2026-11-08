@@ -1,0 +1,13 @@
+{
+  "live-withdrawal": {
+    "decisionTermsAny": [
+      "取消",
+      "撤回"
+    ],
+    "nullOwners": true,
+    "requiredEvidence": [
+      "s2"
+    ],
+    "nonemptySections": true
+  }
+}

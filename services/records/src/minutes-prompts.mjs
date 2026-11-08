@@ -1,6 +1,6 @@
 import {transcriptInterpretation} from '../../../packages/records/src/transcript-interpretation.mjs';
 import { minutesCoreInstructions, minutesQualityInstructions } from '../../../packages/records/src/minutes-quality.mjs';
-export const MINUTES_PROMPT_VERSION = 17;
+export const MINUTES_PROMPT_VERSION = 18;
 const string = {type:'string'};
 const object = properties => ({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
 const array = items => ({type:'array',items});

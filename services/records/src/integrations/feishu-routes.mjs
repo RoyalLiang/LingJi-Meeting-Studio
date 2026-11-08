@@ -1,4 +1,5 @@
 import { DomainError } from '../../../../packages/records/src/record.mjs';
+import {historyQuery} from '../task-history.mjs';
 
 export async function feishuRoutes({req,res,path,user,feishu,readBody,send}) {
   const base='/api/integrations/feishu';
@@ -11,6 +12,7 @@ export async function feishuRoutes({req,res,path,user,feishu,readBody,send}) {
     return true;
   }
   if(path===`${base}/automation`){if(req.method==='GET')send(res,200,await feishu.automation(user.id));else if(req.method==='PUT')send(res,200,await feishu.saveAutomation(user.id,await readBody(req,4000)));else throw new DomainError('not_found',404);return true;}
+  if(path===`${base}/automation/history`&&req.method==='GET'){send(res,200,await feishu.exportHistory(user.id,historyQuery(req.url)||{},{automatic:true}));return true;}
   const item=path.match(/^\/api\/integrations\/feishu\/exports\/([a-f0-9-]{36})(\/publish)?$/);
   if(item){
     if(req.method==='GET'&&!item[2])send(res,200,await feishu.get(user.id,item[1]));
@@ -20,7 +22,7 @@ export async function feishuRoutes({req,res,path,user,feishu,readBody,send}) {
   }
   const record=path.match(/^\/api\/records\/([a-f0-9-]{36})\/feishu(?:\/(preview))?$/);
   if(!record)return false;
-  if(req.method==='GET'&&!record[2])send(res,200,{exports:await feishu.list(user.id,record[1])});
+  if(req.method==='GET'&&!record[2]){const query=historyQuery(req.url);if(query){const page=await feishu.exportHistory(user.id,query,{recordId:record[1]});send(res,200,{exports:page.items,nextCursor:page.nextCursor});}else send(res,200,{exports:await feishu.list(user.id,record[1])});}
   else if(req.method==='POST'&&record[2])send(res,201,await feishu.preview(user.id,record[1],await readBody(req,4000)));
   else throw new DomainError('not_found',404);
   return true;

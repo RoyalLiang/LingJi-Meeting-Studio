@@ -1,0 +1,80 @@
+[
+  {
+    "id": "risk-draft",
+    "prompt": "整理风险登记表，方案仍待评审。",
+    "snapshots": [
+      {
+        "recordId": "fixture-risk",
+        "segments": [
+          {
+            "id": "s1",
+            "revision": 1,
+            "text": "重复请求可能导致订单被扣两次，概率还不知道。"
+          },
+          {
+            "id": "s2",
+            "revision": 1,
+            "text": "先考虑增加幂等键，方案待评审，还没决定由谁做。"
+          },
+          {
+            "id": "s3",
+            "revision": 1,
+            "text": "已经确认今天先暂停重试，避免进一步重复扣款。"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "adr-draft",
+    "prompt": "根据讨论形成 ADR 草稿，保留备选和待确认项。",
+    "snapshots": [
+      {
+        "recordId": "fixture-adr",
+        "segments": [
+          {
+            "id": "s1",
+            "revision": 1,
+            "text": "旧数据库峰值延迟120ms，需要评估缓存。"
+          },
+          {
+            "id": "s2",
+            "revision": 1,
+            "text": "备选一继续优化索引，备选二引入缓存，两种方案都没批准。"
+          },
+          {
+            "id": "s3",
+            "revision": 1,
+            "text": "缓存一致性和运维负担尚未评估。"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "review-withdrawal",
+    "prompt": "复盘最终共识和行动候选。",
+    "snapshots": [
+      {
+        "recordId": "fixture-review",
+        "segments": [
+          {
+            "id": "s1",
+            "revision": 1,
+            "text": "原计划周五上线。"
+          },
+          {
+            "id": "s2",
+            "revision": 1,
+            "text": "取消周五上线，等安全评审通过再定日期。"
+          },
+          {
+            "id": "s3",
+            "revision": 1,
+            "text": "需要评估回滚，负责人待确认。"
+          }
+        ]
+      }
+    ]
+  }
+]

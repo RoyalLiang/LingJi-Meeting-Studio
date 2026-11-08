@@ -1,4 +1,5 @@
 import {externalWrite} from '../external-write.mjs';
+import {taskHistoryPage} from '../task-history.mjs';
 import {meetingTasks} from '../meeting-tasks.mjs';
 import { randomUUID } from 'node:crypto';
 import { DomainError, digest, requireThat } from '../../../../packages/records/src/record.mjs';
@@ -84,10 +85,14 @@ export async function createFeishu(repo, {sdkFactory=createFeishuSdk,now=Date.no
   const control=owner=>{const version=(controlVersions.get(owner)||0)+1;controlVersions.set(owner,version);return()=>requireThat(controlVersions.get(owner)===version&&!stopping.signal.aborted,'feishu_connection_changed',409);};
   const abortConnection=owner=>{const current=clients.get(owner);if(current){clients.delete(owner);current.controller.abort();current.sdk?.close();}};
   const connectionSignal=(owner,generation)=>{const current=clients.get(owner);requireThat(current?.generation===generation&&!current.controller.signal.aborted,'feishu_connection_changed',409);return current.controller.signal;};
-  const history=async(owner,recordId,limit=200)=>{
-    const entries=await repo.listMetadata('feishu-export',owner,exportFields,{recordId,limit});
+  const visibleHistory=async(owner,entries)=>{
     const access=new Map((await repo.getRecordAccess(entries.map(item=>item.recordId))).map(item=>[item.id,item]));
     return entries.filter(item=>{const record=access.get(item.recordId);return record?.owner===owner&&!record.deleted&&Date.parse(record.deleteAt)>now();});
+  };
+  const history=async(owner,recordId,limit=200)=>visibleHistory(owner,await repo.listMetadata('feishu-export',owner,exportFields,{recordId,limit}));
+  const exportHistory=async(owner,query,{recordId,automatic}={})=>{
+    if(recordId)await ownedRecord(owner,recordId);
+    return taskHistoryPage({repo,kind:'feishu-export',owner,fields:exportFields,query,recordId,automatic,visible:entries=>visibleHistory(owner,entries),map:publicExport});
   };
   const load = owner => repo.get(connectionId(owner));
   const open = conn => secrets.open(conn.id, conn.credentials);
@@ -294,7 +299,7 @@ export async function createFeishu(repo, {sdkFactory=createFeishuSdk,now=Date.no
   }
   autoTimer=setInterval(()=>{if(!autoBusy)autoWork=automaticTick().catch(()=>{});},Math.max(100,autoPollMs));autoTimer.unref();
   const unregister=kernel.register('feishu-export',{sources:async(owner,input)=>[(await ownedExport(owner,input.id)).recordId],submit:(owner,input)=>publish(owner,input.id,{confirmed:input.confirmed}),inspect:get,cancel:async(owner,id)=>{const value=await ownedExport(owner,id);if(value.status!=='publishing')return get(owner,id);taskControllers.get(id)?.abort();await repo.change(id,row=>{row.status=value.documentId?'partial':value.stage==='create'?'unknown':'cancelled';row.error='feishu_cancelled';Object.assign(row,clearFrozen());row.updatedAt=now();});return get(owner,id);}});
-  return {settings,configure,disconnect,async setEnabled(owner,input){requireThat(typeof input?.enabled==='boolean','invalid_feishu_config',400);return input.enabled?connect(owner):disconnect(owner);},preview,publish,get,automation,saveAutomation,automaticTick,
+  return {settings,configure,disconnect,async setEnabled(owner,input){requireThat(typeof input?.enabled==='boolean','invalid_feishu_config',400);return input.enabled?connect(owner):disconnect(owner);},preview,publish,get,automation,saveAutomation,automaticTick,exportHistory,
     async list(owner,recordId){await ownedRecord(owner,recordId);return (await history(owner,recordId,10)).map(publicExport);},
     async close(){unregister();for(const controller of taskControllers.values())controller.abort();clearInterval(autoTimer);stopping.abort();await autoWork;for(const owner of clients.keys())abortConnection(owner);await Promise.allSettled(jobs);}
   };

@@ -19,10 +19,11 @@ async function save(root,env,change){
   });writes.set(root,next);try{await next;}finally{if(writes.get(root)===next)writes.delete(root);}
 }
 
-export async function observeModelFacts(root,env,{contextLimit,inputTokens,counts}={}){
+export async function observeModelFacts(root,env,{contextLimit,inputTokens,counts,reasoningUnsupported}={}){
   if(!root)return;
   await save(root,env,facts=>{
     const at=new Date().toISOString();
+    if(reasoningUnsupported===true){facts.reasoningUnsupported=true;facts.evidence=[...(facts.evidence||[]).filter(item=>item.field!=='reasoningUnsupported'),{field:'reasoningUnsupported',value:true,source:'provider-error',at,confirmed:true}];}
     if(Number.isSafeInteger(contextLimit)&&contextLimit>=1024&&contextLimit<=2000000){facts.contextLimit=Math.min(facts.contextLimit||2000000,contextLimit);facts.evidence=[...(facts.evidence||[]).filter(item=>item.field!=='contextLimit'),{field:'contextLimit',value:facts.contextLimit,source:'provider-overflow',at,confirmed:true}];}
     if(Number.isSafeInteger(inputTokens)&&inputTokens>0&&counts){
       facts.largestSuccessfulInput=Math.max(facts.largestSuccessfulInput||0,inputTokens);

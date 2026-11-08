@@ -1,6 +1,6 @@
 import { DomainError } from '../../../../packages/records/src/record.mjs';
 export async function extensionRoutes({req,res,path,user,extensions,readBody,send}){
-  if(path==='/api/extensions'&&req.method==='GET'){send(res,200,{extensions:await extensions.list(user.id)});return true;}
+  if(path==='/api/extensions'&&req.method==='GET'){send(res,200,{extensions:await extensions.list(user.id),builtinSkills:extensions.builtins()});return true;}
   if(path==='/api/extensions/skills/preview'&&req.method==='POST'){send(res,200,await extensions.skillPreview(await readBody(req,20000),user.id));return true;}
   if(path==='/api/extensions/skills'&&req.method==='POST'){send(res,201,await extensions.installSkill(user.id,await readBody(req,20000)));return true;}
   if(path==='/api/extensions/plugins'&&req.method==='POST'){send(res,201,await extensions.installPlugin(user.id,await readBody(req,20000)));return true;}

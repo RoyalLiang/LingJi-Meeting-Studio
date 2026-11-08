@@ -51,3 +51,10 @@ test('final synthesis is visible before the provider finishes merging nodes',asy
  });
  assert.ok(synthesis);
 });
+test('window cache policy binds the frozen minutes Skill version',async()=>{
+  const {buildMinutesManifest}=await import('../services/records/src/minutes-pipeline.mjs');
+  const {builtinSkill}=await import('../services/records/src/builtin-skills.mjs');
+  const job={snapshot:[{id:'s',revision:1,text:'Fixed source',startMs:0,endMs:1000}],scope:'live',template:'meeting',generation:1};
+  const current=builtinSkill('minutes-runtime'),first=buildMinutesManifest(job,{},undefined,current.contractDigest),changed=buildMinutesManifest(job,{},undefined,'different-verified-skill');
+  assert.equal(first.skillDigest,current.contractDigest);assert.notEqual(first.policy,changed.policy);assert.notEqual(first.windows[0].key,changed.windows[0].key);
+});

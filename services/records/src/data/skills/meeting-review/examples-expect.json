@@ -1,0 +1,41 @@
+{
+  "risk-draft": {
+    "artifactKinds": [
+      "risk-register"
+    ],
+    "nullOwners": true,
+    "unknownLikelihood": true,
+    "forbiddenDecisionTerms": [
+      "已批准增加幂等键"
+    ],
+    "requiredEvidence": [
+      "s1",
+      "s2"
+    ]
+  },
+  "adr-draft": {
+    "artifactKinds": [
+      "adr-draft"
+    ],
+    "noDecisions": true,
+    "minOptions": 2,
+    "requiredEvidence": [
+      "s1",
+      "s2",
+      "s3"
+    ]
+  },
+  "review-withdrawal": {
+    "decisionTermsAny": [
+      "取消",
+      "撤回"
+    ],
+    "nullOwners": true,
+    "forbiddenDecisionTerms": [
+      "决定周五上线"
+    ],
+    "requiredEvidence": [
+      "s2"
+    ]
+  }
+}

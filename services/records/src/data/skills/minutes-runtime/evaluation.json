@@ -1,0 +1,115 @@
+{
+  "version": 1,
+  "skill": "minutes-runtime",
+  "digests": {
+    "instructions": "6529c633f60afd0af859578cf133346997ca443b8ec879d192f288544e39f653",
+    "schema": "b46f08955a9e37a6d223b3a168bf0e679cfe0aba329d7dd9888384d6e606dae0",
+    "inputs": "6ef91d313e62ccb9a2846a841505854c75227f88ac02d8524400fea6c9bb8213",
+    "expected": "03421d0b655e34284e55d230c65fc44c3eaadf81f9dd6a7f8c192745d4cd707b"
+  },
+  "results": [
+    {
+      "caseId": "live-withdrawal",
+      "output": {
+        "title": "上线安排与安全评审",
+        "currentDiscussion": [
+          {
+            "text": "周五上线原为尚未批准的备选，本轮已确认取消；后续上线安排等待安全评审通过后再定。",
+            "evidence": [
+              {
+                "segmentId": "s1",
+                "revision": 1
+              },
+              {
+                "segmentId": "s2",
+                "revision": 1
+              }
+            ]
+          }
+        ],
+        "topics": [
+          {
+            "id": "release",
+            "title": "上线安排与安全评审",
+            "summary": "取消周五上线，等待安全评审通过后再定后续上线安排。",
+            "evidence": [
+              {
+                "segmentId": "s1",
+                "revision": 1
+              },
+              {
+                "segmentId": "s2",
+                "revision": 1
+              }
+            ]
+          }
+        ],
+        "sections": [
+          {
+            "heading": "上线安排",
+            "items": [
+              {
+                "text": "周五上线只是尚未批准的备选，且本轮已确认取消。",
+                "evidence": [
+                  {
+                    "segmentId": "s1",
+                    "revision": 1
+                  },
+                  {
+                    "segmentId": "s2",
+                    "revision": 1
+                  }
+                ],
+                "topicId": "release",
+                "label": "当前共识",
+                "kind": "decision"
+              },
+              {
+                "text": "后续上线安排待安全评审通过后再定，具体日期尚未确定。",
+                "evidence": [
+                  {
+                    "segmentId": "s2",
+                    "revision": 1
+                  }
+                ],
+                "topicId": "release",
+                "label": "待定事项",
+                "kind": "question"
+              }
+            ]
+          }
+        ],
+        "speakerSummaries": [],
+        "decisions": [
+          {
+            "text": "确认取消周五上线，等待安全评审通过后再定后续上线安排。",
+            "evidence": [
+              {
+                "segmentId": "s2",
+                "revision": 1
+              }
+            ],
+            "topicId": "release",
+            "label": "取消上线",
+            "kind": "decision"
+          }
+        ],
+        "actions": [],
+        "highlights": [
+          {
+            "text": "周五上线已取消，后续上线安排需等待安全评审通过后再定。",
+            "evidence": [
+              {
+                "segmentId": "s2",
+                "revision": 1
+              }
+            ]
+          }
+        ],
+        "visuals": [],
+        "tables": [],
+        "corrections": []
+      }
+    }
+  ]
+}

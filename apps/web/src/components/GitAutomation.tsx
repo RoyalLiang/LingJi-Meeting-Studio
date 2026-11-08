@@ -11,6 +11,7 @@ import type {InstalledExtension} from './RemoteExtensions';
 import {MarkdownPreview} from './MarkdownPreview';
 import {gitSyncStatus,invalidateGitSyncStatus} from '../git-sync-feed';
 import './GitAutomation.css';
+import {TaskHistory} from './TaskHistory';
 
 type Project={id:number;name:string;path:string;default_branch:string};
 type Mapping={workspaceId:string;projectId:number};
@@ -115,7 +116,7 @@ export function GitAutomation({extensions,footerTarget}:{extensions:InstalledExt
  return <section className="git-automation" aria-label="Git 项目同步">
   <header className="git-heading">
     <div><h2>{view==='settings'?'Git 项目同步':'同步任务'}</h2><span className={`git-state ${policy?.enabled?'enabled':''}`}>{policy?.enabled?'自动同步已开启':'自动同步未开启'}</span></div>
-    <Button variant="ghost" onClick={()=>setView(view==='settings'?'tasks':'settings')}>{view==='settings'?<>任务记录 <span className="git-count">{policy?.recent.length||0}</span>{!!policy?.recent.filter(j=>j.status==='waiting').length&&<span className="git-waiting-count">{policy?.recent.filter(j=>j.status==='waiting').length} 待回复</span>}<CaretRight size={14}/></>:'返回同步设置'}</Button>
+    <Button variant="ghost" onClick={()=>setView(view==='settings'?'tasks':'settings')}>{view==='settings'?<>任务记录 {!!policy?.recent.filter(j=>j.status==='waiting').length&&<span className="git-waiting-count">{policy?.recent.filter(j=>j.status==='waiting').length} 待回复</span>}<CaretRight size={14}/></>:'返回同步设置'}</Button>
   </header>
   <div hidden={view!=='settings'} className="git-settings">
     <section className="git-setting-row">
@@ -132,7 +133,7 @@ export function GitAutomation({extensions,footerTarget}:{extensions:InstalledExt
     </section>
     {matches&&<section className="git-setting-row git-matches"><header className="git-group-label"><h3>范围检查</h3><p>核对会议将归档到哪个项目。</p></header><div className="git-match-list">{matches.length?matches.map(item=><article key={item.recordId}><div><strong>{item.title}</strong><span title={item.project?.path}>{item.project?.path||gitSyncError(item.reason)}</span></div><span>{item.status==='eligible'?'可同步':'待确认'}</span>{item.status==='eligible'&&policy?.enabled&&!dirty&&<Button onClick={()=>manual(item.recordId)}>同步此纪要</Button>}</article>):<p className="git-section-hint">当前范围内暂无可检查的会议。</p>}</div></section>}
   </div>
-  {view==='tasks'&&<section className="git-task-list" aria-label="同步任务记录">{!!policy?.recent.length?policy.recent.map(job=><button key={job.id} className="git-history-row" onClick={()=>openTask(job)}><GitBranch size={17}/><div><strong>{job.title}</strong><span>{job.project?.path||gitSyncError(job.error)}</span><time dateTime={job.updatedAt}>{new Date(job.updatedAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</time></div><span className={`git-state ${job.status}`}>{active(job)&&!job.interaction&&<Spinner className="git-spin" size={14}/>} {labels[job.status]||job.status}</span><CaretRight size={14}/></button>):<p className="git-empty">暂无同步任务。保存范围后，符合条件的新纪要会出现在这里。</p>}</section>}
+  {view==='tasks'&&<section className="git-task-list" aria-label="同步任务记录"><TaskHistory<GitJob> revision={policy?.recent.map(item=>`${item.id}:${item.updatedAt}:${item.status}`).join('|')} endpoint={`${base}/tasks/history`} empty="暂无同步任务。保存范围后，符合条件的新纪要会出现在这里。">{items=>items.map(job=><button key={job.id} className="git-history-row" onClick={()=>openTask(job)}><GitBranch size={17}/><div><strong title={job.title}>{job.title}</strong><span>{job.project?.path||gitSyncError(job.error)}</span><time dateTime={job.updatedAt}>{new Date(job.updatedAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</time></div><span className={`git-state ${job.status}`}>{active(job)&&!job.interaction&&<Spinner className="git-spin" size={14}/>} {labels[job.status]||job.status}</span><CaretRight size={14}/></button>)}</TaskHistory></section>}
   {view==='settings'&&(footerTarget?createPortal(footer,footerTarget):footer)}
   {notice&&<FeedbackNotice key={notice} message={notice} warning={false}/>} {error&&<FeedbackNotice key={error} message={error} error/>}
   {task&&<GitTask job={task} close={closeTask} changed={changedTask}/>}

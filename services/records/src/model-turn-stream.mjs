@@ -2,7 +2,7 @@ import {modelResponseError} from './model-errors.mjs';
 import {DomainError,requireThat} from '../../../packages/records/src/record.mjs';
 
 // Native tool arguments must be complete before a tool may execute.
-export async function readModelTurnResponse(response,responses,{onUsage}={}){
+export async function readModelTurnResponse(response,responses,{onUsage,onDelta}={}){
  const streamed=response.ok&&(response.headers.get('content-type')||'').includes('text/event-stream');
  const reader=response.body?.getReader(),decoder=new TextDecoder(),calls=new Map();
  let buffer='',bytes=0,source='',content='',reasoning='',usage,finish,completed=false,done=false,result,usageKey='';
@@ -18,12 +18,14 @@ export async function readModelTurnResponse(response,responses,{onUsage}={}){
   await reportUsage(value.usage||value.response?.usage);
   if(value.error||['error','response.failed','response.incomplete'].includes(value.type))throw modelResponseError(400,value.response||value,'llm_stream_failed');
   if(responses){
+   if(value.type==='response.output_text.delta'&&typeof value.delta==='string')await onDelta?.(value.delta);
    if(value.type==='response.completed'){requireThat(value.response?.status==='completed','llm_stream_incomplete',502);result=value.response;completed=true;}
    return;
   }
   if(value.usage)usage=value.usage;
   const choice=value.choices?.[0];if(!choice)return;
   const delta=choice.delta||{};content+=delta.content||'';reasoning+=delta.reasoning_content||'';
+  if(typeof delta.content==='string')await onDelta?.(delta.content);
   for(const part of delta.tool_calls||[]){
    requireThat(Number.isInteger(part.index)&&part.index>=0&&part.index<8,'invalid_agent_output',502);
    const call=calls.get(part.index)||{id:'',type:'function',function:{name:'',arguments:''}};

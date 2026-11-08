@@ -1,0 +1,24 @@
+[
+  {
+    "id": "live-withdrawal",
+    "prompt": "整理本轮会中纪要与重点速览。",
+    "scope": "live",
+    "snapshots": [
+      {
+        "recordId": "fixture-live",
+        "segments": [
+          {
+            "id": "s1",
+            "revision": 1,
+            "text": "周五上线只是备选，还未批准。"
+          },
+          {
+            "id": "s2",
+            "revision": 1,
+            "text": "本轮确认取消周五上线，等待安全评审通过后再定。"
+          }
+        ]
+      }
+    ]
+  }
+]

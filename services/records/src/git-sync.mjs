@@ -1,4 +1,5 @@
 import {modelConfigFingerprint} from './model-profile.mjs';
+import {taskHistoryPage} from './task-history.mjs';
 import {externalWrite} from './external-write.mjs';
 import {meetingTasks,openMeetingHarness} from './meeting-tasks.mjs';
 import {randomUUID} from 'node:crypto';
@@ -63,7 +64,8 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
     if(detail)job={...job,canRetryWithFeedback:job.status==='failed'&&job.phase==='organize'&&!job.writeStarted&&recoverable(job.error)};
     return Object.fromEntries(['id','recordId','title','status','phase','error','createdAt','updatedAt','project','basis','minutesRevision','transcriptRevision','branch','baseBranch','directory','mode','commit','url','agentId','automatic','paused','interaction','preview','managed',...(detail?['conversation','timeline','ledger','kernelId','progress','activity','canRetryWithFeedback']:[])].filter(k=>job[k]!==undefined).map(k=>[k,['automatic','paused','managed'].includes(k)?Boolean(job[k]):job[k]]));
   }
-  const history=async owner=>(await repo.listMetadata('git-sync-job',owner,['recordId','status','phase','title','createdAt','updatedAt','ruleGeneration','error','project','basis','minutesRevision','transcriptRevision','branch','baseBranch','directory','mode','commit','url','agentId','automatic','paused','interaction','preview','managed'],{limit:1000})).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
+  const historyFields=['recordId','status','phase','title','createdAt','updatedAt','ruleGeneration','error','project','basis','minutesRevision','transcriptRevision','branch','baseBranch','directory','mode','commit','url','agentId','automatic','paused','interaction','preview','managed'];
+  const history=async owner=>(await repo.listMetadata('git-sync-job',owner,historyFields,{limit:1000})).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
   async function guard(job,signal,remote=false,ignorePause=false,full=false){
     signal?.throwIfAborted();const rule=await load(job.owner);
     requireThat(rule?.enabled&&rule.generation===(job.authorizationGeneration||job.ruleGeneration),'git_rule_changed',409);
@@ -259,6 +261,7 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
     const service={
     check,save:(owner,input)=>{const intent={};saveIntents.set(owner,intent);return save(owner,input,intent).finally(()=>{if(saveIntents.get(owner)===intent)saveIntents.delete(owner);});},preview,start:(owner,id)=>enqueue(()=>start(owner,id)),tick:()=>enqueue(tick),
       async status(owner){return {enabled:Boolean((await load(owner))?.enabled),recent:await Promise.all((await history(owner)).slice(0,20).map(job=>publicJob(job)))};},
+      historyPage:(owner,query)=>taskHistoryPage({repo,kind:'git-sync-job',owner,fields:historyFields,query,map:job=>publicJob(job)}),
       async settings(owner){
 return {...publicRule(await load(owner)),recent:await Promise.all((await history(owner)).slice(0,20).map(job=>publicJob(job)))};},
       get:async(owner,id)=>publicJob(await jobFor(owner,id),true),

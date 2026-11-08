@@ -1,3 +1,4 @@
+import {TaskHistory} from './TaskHistory';
 import {createPortal} from 'react-dom';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {CheckCircle,CircleNotch,WarningCircle} from '@phosphor-icons/react';
@@ -21,8 +22,7 @@ const stages:Record<string,string>={preview:'内容已固定',convert:'整理文
 export function FeishuExport({record,footerTarget}:{record:RecordDetail;footerTarget?:HTMLElement|null}) {
   const [connection,setConnection]=useState<FeishuConnectionValue|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);
   const [title,setTitle]=useState(record.title),[folder,setFolder]=useState(''),[email,setEmail]=useState(''),[destination,setDestination]=useState('folder'),[board,setBoard]=useState(true),[notes,setNotes]=useState(false),[evidence,setEvidence]=useState(true);
-  const [receipt,setReceipt]=useState<Receipt|null>(null),[history,setHistory]=useState<Receipt[]>([]),[confirmed,setConfirmed]=useState(false),pending=useRef(false);
-  useEffect(()=>{let active=true;api<{exports:Receipt[]}>(`/records/${record.id}/feishu`).then(value=>{if(active)setHistory(value.exports);}).catch(failure=>{if(active)setError(messageOf(failure));});return()=>{active=false;};},[record.id]);
+  const [receipt,setReceipt]=useState<Receipt|null>(null),[confirmed,setConfirmed]=useState(false),pending=useRef(false);
   useEffect(()=>{
     if(receipt?.status!=='publishing')return;let active=true,loading=false;
     const timer=setInterval(()=>{if(loading)return;loading=true;api<Receipt>(`${endpoint}/exports/${receipt.id}`).then(value=>{if(active){setReceipt(value);setError('');}}).catch(failure=>{if(active)setError(messageOf(failure));}).finally(()=>{loading=false;});},1500);
@@ -44,7 +44,7 @@ export function FeishuExport({record,footerTarget}:{record:RecordDetail;footerTa
     {receipt?.status==='draft'&&<div className="feishu-receipt"><p className="fine-print">{receipt.title} · {receipt.destinationEmail||receipt.folderToken||'应用文档'} · {receipt.includeNotes?'附带笔记':'不含笔记'} · {receipt.includeEvidence?'附带引用':'不含引用'}</p><div className="feishu-preview" tabIndex={0}>{receipt.includeBoard&&(receipt.boardPages?.length?receipt.boardPages.map((page,index)=><BoardPreview key={index} nodes={page.nodes} title={page.title}/>):receipt.boardNodes&&<BoardPreview nodes={receipt.boardNodes} title="图文总览"/>)}{receipt.summaryBlocks&&<MinutesSummaryPreview blocks={receipt.summaryBlocks}/>}<MarkdownPreview text={receipt.markdown||''}/></div><label className="checkbox-label"><input type="checkbox" checked={confirmed} onChange={event=>setConfirmed(event.target.checked)}/><span>确认将文档发送至上述位置</span></label>{actions(<div className="feishu-actions"><Button onClick={reset} disabled={busy}>返回修改</Button><Button variant="primary" disabled={busy||!confirmed} onClick={()=>void perform(async()=>{setReceipt(await api<Receipt>(`${endpoint}/exports/${receipt.id}/publish`,'POST',{confirmed:true}));})}>确认导出到飞书</Button></div>)}</div>}
     {receipt&&receipt.status!=='draft'&&<div className={`feishu-progress ${receipt.status}`} role="status" aria-live="polite">{receipt.status==='publishing'?<CircleNotch className="feishu-progress-spinner" size={22} aria-hidden="true"/>:receipt.status==='succeeded'?<CheckCircle size={22} aria-hidden="true"/>:<WarningCircle size={22} aria-hidden="true"/>}<strong>{receipt.status==='publishing'?stages[receipt.stage]||'正在导出':states[receipt.status]||receipt.status}</strong>{receipt.url&&<ExternalLink href={receipt.url}>打开文档</ExternalLink>}{receipt.status==='failed'&&<Button onClick={reset}>返回设置</Button>}</div>}
     {receipt?.error&&<FeedbackNotice key={`${receipt.id}:${receipt.error}`} message={messageOf(new ApiError(receipt.error,502))} error/>}
-    {!receipt&&history.length>0&&<details className="feishu-history"><summary>最近导出 · {history.length}</summary>{history.map(item=><button type="button" className="feishu-history-item" key={item.id} onClick={()=>void perform(async()=>{setConfirmed(false);setReceipt(await api<Receipt>(`${endpoint}/exports/${item.id}`));})}><span>{item.title}</span><span>{states[item.status]||item.status}</span></button>)}</details>}
+    {!receipt&&<details className="feishu-history"><summary>导出记录</summary><TaskHistory<Receipt> key={record.id} endpoint={`/records/${record.id}/feishu`} itemsKey="exports" empty="暂无导出记录。">{items=>items.map(item=><button type="button" className="feishu-history-item" key={item.id} onClick={()=>void perform(async()=>{setConfirmed(false);setReceipt(await api<Receipt>(`${endpoint}/exports/${item.id}`));})}><span>{item.title}</span><span>{states[item.status]||item.status}</span></button>)}</TaskHistory></details>}
     {error&&<FeedbackNotice key={error} message={error} error/>}
   </section>;
 }

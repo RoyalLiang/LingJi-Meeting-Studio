@@ -1,3 +1,5 @@
+import {minutesReasoningEffort} from './minutes-reasoning.mjs';
+import {readModelFacts} from './model-facts.mjs';
 import { withMinutesVocabulary } from './minutes-vocabulary.mjs';
 import { funasrConfigured, transcribeFunasr } from './funasr.mjs';
 import { localAsrConfigured } from './local-asr.mjs';
@@ -90,14 +92,15 @@ export async function generateMinutes(job, env = process.env, options = {}) {
   wire.payload=await withMinutesVocabulary(wire.payload,job);
   requireThat(JSON.stringify(wire.payload).length < 180000, 'transcript_exceeds_model_budget', 422);
   const modelOptions={...options,timeoutMs:minutesTimeoutMs(job),jsonSchema:compactMinutesSchema(minutesSchema)};
-  if(/^kimi-k3[.-]1-pro(?:-|$)/i.test(env.LLM_MODEL)){modelOptions.maxOutputTokens=16384;if(job.scope==='live'&&(!env.LLM_REASONING_EFFORT||env.LLM_REASONING_EFFORT==='auto'))modelOptions.reasoningEffort='low';}
-  const usage={};let total=0,allReported=true;const deadline=Date.now()+modelOptions.timeoutMs;
+  const requestBudget={used:0,compactions:0,tools:[],startedAt:Date.now()};
+  const usage={};let total=0,allReported=true,repairCode;const deadline=Date.now()+modelOptions.timeoutMs;
   const combined=next=>{const value={...usage};for(const [key,count] of Object.entries(next||{}))if(Number.isSafeInteger(count)&&count>=0)value[key]=(value[key]||0)+count;return value;};
   for(let attempt=0;attempt<2;attempt++){
     requireThat(Date.now()<deadline,'llm_timeout',504);
     const attemptOptions=attempt&&options.newAttempt?options.newAttempt():options;
-    const instructions=minutesInstructions({...job,compactEvidence:true})+(attempt?'\n上次主题结构未通过校验。请重新根据原始材料整理，主题 id 必须唯一、非空、无首尾空格且不超过80字符；title不超过200字符，summary不超过4000字符；每个主题至少引用一条本次提供的有效证据。只修正结构，不添加事实，不省略条件、否定和待确认事项。':'');
-    const result=wire.restore(await completeMinutesWithPi([{role:'system',content:instructions},{role:'user',content:JSON.stringify(wire.payload)}],env,{...modelOptions,timeoutMs:Math.max(1,deadline-Date.now()),onRequest:attemptOptions.onRequest,onUsage:value=>attemptOptions.onUsage?.(options.newAttempt?value:combined(value))}));
+    if(options.modelFactsRoot)env={...env,LLM_MODEL_FACTS:await readModelFacts(options.modelFactsRoot,env)};
+    const instructions=minutesInstructions({...job,compactEvidence:true})+(attempt?'\n上次主题结构或来源引用未通过校验。所有 evidence 只能使用本次提供的索引，不猜测缺失片段；检查条件、否定和撤回。请重新根据原始材料整理，主题 id 必须唯一、非空、无首尾空格且不超过80字符；title不超过200字符，summary不超过4000字符；每个主题至少引用一条本次提供的有效证据。只修正结构，不添加事实，不省略条件、否定和待确认事项。':'');
+    const result=wire.restore(await completeMinutesWithPi([{role:'system',content:instructions},{role:'user',content:JSON.stringify(wire.payload)}],env,{...modelOptions,requestBudget,reasoningEffort:minutesReasoningEffort(job,env,{repair:attempt>0}),reasoningRole:attempt?'repair':job.stage||job.scope||'final',timeoutMs:Math.max(1,deadline-Date.now()),onRequest:attemptOptions.onRequest,onUsage:value=>attemptOptions.onUsage?.(options.newAttempt?value:combined(value))}));
     total+=Number.isSafeInteger(result.usageTokens)?result.usageTokens:0;allReported&&=result.usageReported!==false;
     Object.assign(usage,combined(result.tokenUsage));
     try {
@@ -113,8 +116,8 @@ export async function generateMinutes(job, env = process.env, options = {}) {
     requireThat(result.tables.every(table=>table?.topicId!==undefined),'invalid_minutes_tables',502);
   }
   validateMinutes(result,validationSnapshot,job.liveContext,{newEvidenceOnly:true});
-      return {...result,usageTokens:total,usageReported:allReported,...(Object.keys(usage).length?{tokenUsage:usage}:{}),...(attempt?{runtime:{...result.runtime,structureRepairs:attempt}}:{})};
-    } catch(error){if(error.code!=='invalid_minutes_topics'||attempt)throw error;}
+      return {...result,usageTokens:total,usageReported:allReported,...(Object.keys(usage).length?{tokenUsage:usage}:{}),...(attempt?{runtime:{...result.runtime,outputRepairs:attempt,...(repairCode==='invalid_minutes_topics'?{structureRepairs:attempt}:{citationRepairs:attempt})}}:{})};
+    } catch(error){repairCode=error.code;if(!['invalid_minutes_topics','unknown_evidence','missing_evidence','minutes_without_new_evidence','minutes_correction_without_new_evidence','speaker_evidence_mismatch'].includes(error.code)||attempt)throw error;}
   }
 
 }

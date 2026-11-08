@@ -1,3 +1,4 @@
+import {builtinSkill} from './builtin-skills.mjs';
 import {modelProfile,contextPolicy} from './model-profile.mjs';
 import { minutesDiscussionItems as discussionItems, minutesTextChunks } from '../../../packages/records/src/minutes-quality.mjs';
 import { minutesTimeoutMs } from './minutes-deadline.mjs';
@@ -28,9 +29,9 @@ const refs = result => {
   function visit(value){if(!value||typeof value!=='object')return;if(typeof value.segmentId==='string'&&Number.isInteger(value.revision))found.set(`${value.segmentId}:${value.revision}`,value);for(const child of Object.values(value))visit(child);}
   visit(result);return [...found.values()];
 };
-export function buildMinutesManifest(job,config={},budget=inputBudget(config)){
+export function buildMinutesManifest(job,config={},budget=inputBudget(config),skillDigest=audioMinutesEnabled(config)||job.mode==='extractive'?null:builtinSkill('minutes-runtime').contractDigest){
  const windowMs=audioMinutesEnabled(config)?120000:900000;
-  const policy=hash({version:MINUTES_PROMPT_VERSION,engine:'pi-text-v1',minutesMode:config.MINUTES_MODE,realtimeModel:config.OPENAI_REALTIME_MODEL,realtimeUrl:config.OPENAI_REALTIME_URL,windowMs,budget,structuredOutputs:config.LLM_STRUCTURED_OUTPUTS,reasoningEffort:config.LLM_REASONING_EFFORT||'auto',context:job.liveContext,vocabularyFingerprint:job.vocabularyFingerprint,meetingTitle:job.meetingTitle,model:job.modelVersion==='default'?config.LLM_MODEL:job.modelVersion,base:config.LLM_API_URL,protocol:config.LLM_PROTOCOL,template:job.template,scope:job.scope,mode:job.mode,notes:job.notes,notesRevision:job.notesRevision,generation:job.generation});
+  const policy=hash({version:MINUTES_PROMPT_VERSION,engine:'pi-text-v2',skillDigest,minutesMode:config.MINUTES_MODE,realtimeModel:config.OPENAI_REALTIME_MODEL,realtimeUrl:config.OPENAI_REALTIME_URL,windowMs,budget,structuredOutputs:config.LLM_STRUCTURED_OUTPUTS,reasoningEffort:config.LLM_REASONING_EFFORT||'auto',context:job.liveContext,vocabularyFingerprint:job.vocabularyFingerprint,meetingTitle:job.meetingTitle,model:job.modelVersion==='default'?config.LLM_MODEL:job.modelVersion,base:config.LLM_API_URL,protocol:config.LLM_PROTOCOL,template:job.template,scope:job.scope,mode:job.mode,notes:job.notes,notesRevision:job.notesRevision,generation:job.generation});
   const windows=[];let current=[];
   const flush=()=>{if(current.length){windows.push({key:hash({policy,snapshot:current}),snapshot:current});current=[];}};
   function add(segment){
@@ -81,7 +82,7 @@ export function buildMinutesManifest(job,config={},budget=inputBudget(config)){
     window.key=hash({policy,snapshot:window.snapshot});
   }
   requireThat(windows.length>0 && windows.length<=512,'minutes_window_limit',422);
-  return {version:1,budget,synthesisBudget:synthesisBudget(config),policy,generation:job.generation,transcriptRevision:job.transcriptRevision,notesRevision:job.notesRevision,snapshotOffset,hash:job.manifestHash,windows};
+  return {version:1,budget,skillDigest,synthesisBudget:synthesisBudget(config),policy,generation:job.generation,transcriptRevision:job.transcriptRevision,notesRevision:job.notesRevision,snapshotOffset,hash:job.manifestHash,windows};
 }
 
 function keepWindowDiscussion(result,leaves,snapshot,windows){
@@ -118,7 +119,8 @@ function currentJob(record,claim){
   return job;
 }
 export async function runMinutesPipeline(repo,recordId,claim,config,generate,options={}){
-  const manifest=buildMinutesManifest(claim,config),cache=new Map(),inFlight=new Map(), completedWindows=new Map();let tokens=0,calls=0,reused=0,previewKey;
+  const minutesSkill=audioMinutesEnabled(config)||claim.mode==='extractive'?null:builtinSkill('minutes-runtime');
+  const manifest=buildMinutesManifest(claim,config,inputBudget(config),minutesSkill?.contractDigest||null),cache=new Map(),inFlight=new Map(), completedWindows=new Map();let tokens=0,calls=0,reused=0,previewKey;
   async function mapWindows(items,execute){
     const results=new Array(items.length);let next=0,failure,failed=false;
     // Keep input order, stop scheduling on failure, and drain every in-flight call
@@ -151,7 +153,8 @@ export async function runMinutesPipeline(repo,recordId,claim,config,generate,opt
       let first=false;
       const allowed = new Map(input.snapshot.map(segment=>[`${segment.id}:${segment.revision}`,segment]));
       const validationSnapshot=claim.snapshot.filter(segment=>allowed.has(`${segment.id}:${segment.revision}`)).map(segment=>({...segment,contextOnly:allowed.get(`${segment.id}:${segment.revision}`).contextOnly}));
-      const result=await telemetry.measure('minutes.window',{recordId,jobId:claim.id},()=>meteredMinutesCall(repo,recordId,claim,generate,{...claim,...input,validationSnapshot},config,stage==='single'||preview?options:{onDelta:(delta,runtime)=>{if(!first){first=true;telemetry.event('minutes.first-text',{recordId,jobId:claim.id,durationMs:runtime?.firstTokenMs});}if(claim.scope==='live' && stage==='window' && (previewKey===undefined || previewKey===key)){previewKey=key;return options.onDelta?.(delta,runtime,key);}}}));
+      const callOptions={...options,minutesSkill};
+      const result=await telemetry.measure('minutes.window',{recordId,jobId:claim.id},()=>meteredMinutesCall(repo,recordId,claim,generate,{...claim,...input,stage,validationSnapshot},config,stage==='single'||preview?callOptions:{minutesSkill,onDelta:(delta,runtime)=>{if(!first){first=true;telemetry.event('minutes.first-text',{recordId,jobId:claim.id,durationMs:runtime?.firstTokenMs});}if(claim.scope==='live' && stage==='window' && (previewKey===undefined || previewKey===key)){previewKey=key;return options.onDelta?.(delta,runtime,key);}}}));
       telemetry.event('minutes.window-usage',{recordId,jobId:claim.id,tokens:result.usageTokens,firstTextMs:result.runtime?.firstTokenMs});
       validateMinutes(result,validationSnapshot,claim.liveContext,{newEvidenceOnly:true});validateMinutes(result,claim.snapshot,claim.liveContext,{newEvidenceOnly:true});
       tokens+=Number.isSafeInteger(result.usageTokens)&&result.usageTokens>=0?result.usageTokens:0;calls++;
