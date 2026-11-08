@@ -1,6 +1,6 @@
 # 当前能力与验证边界
 
-当前源码目标版本为 **0.3.5**。发布状态以 [GitHub Release](https://github.com/RoyalLiang/lingji/releases) 和对应 Actions 结果为准；本地检查通过不等于安装包已发布或目标设备已验收。
+当前源码目标版本为 **0.3.6**。发布状态以 [GitHub Release](https://github.com/RoyalLiang/lingji/releases) 和对应 Actions 结果为准；本地检查通过不等于安装包已发布或目标设备已验收。
 
 ## 已实现的工作流程
 

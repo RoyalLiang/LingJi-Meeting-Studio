@@ -105,7 +105,7 @@ export function selectBuiltinVocabulary(pack, input, { limit = 64, budget = 1400
   const ranked = [], fuzzy = [], exactWords = new Set();
   for (const [id, overlap] of matches) {
     const entry = pack.entries[id], word = normalized(entry.text);
-    const exact = ambiguousWords.has(word) && /^[A-Z]{2,3}$/.test(entry.text) ? occurrence(bounded, entry.text) : occurrence(context, word);
+    const exact = overlap < grams(word).size ? -1 : ambiguousWords.has(word) && /^[A-Z]{2,3}$/.test(entry.text) ? occurrence(bounded, entry.text) : occurrence(context, word);
     const score = exact >= 0 ? 100 + Math.min(word.length, 20) : 0;
     const tie = createHash('sha256').update(word).digest('hex');
     if (score) { ranked.push({entry, score, tie}); exactWords.add(entry.text); }

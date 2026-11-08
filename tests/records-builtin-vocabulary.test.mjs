@@ -117,3 +117,10 @@ test('bundled data reaches ASR hints and intent input without rewriting transcri
     assert.equal(JSON.stringify(bounded).length,179990);
   } finally { globalThis.fetch=previous; }
 });
+
+test('fuzzy-only candidates do not each scan the entire repeated context for impossible exact matches',()=>{
+ const entries=Array.from({length:30_000},(_,i)=>({text:'星河'+String.fromCharCode(0x4e00+Math.floor(i/200))+String.fromCharCode(0x4e00+i%200),kind:'term'}));
+ const {pack}=fixture(entries),input='星河风雨'.repeat(3000),original=String.prototype.indexOf;let scans=0;
+ String.prototype.indexOf=function(word,...args){if(this.length===input.length&&typeof word==='string'&&word.length>2)scans++;return original.call(this,word,...args);};
+ try{assert.ok(selectBuiltinVocabulary(pack,input).length<=64);assert.ok(scans<256,`whole-context exact scans: ${scans}`);}finally{String.prototype.indexOf=original;}
+});
