@@ -251,3 +251,11 @@ test('current preview guide contains changes accepted by the real publisher', as
   const notes=previewNotes({...options,tag:`v${version}`,metadata:{...metadata,version,artifact:`Lingji-${version}-macos-arm64.dmg`},runUrl:'https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/1',guide});
   assert.match(notes,/## 版本改动与修复\n[\s\S]+\n## 下载与安装/);
 });
+
+test('verified existing tags publish without a redundant target that requires workflow permission',async t=>{
+ const {options}=await fixture(t),server=remote(options);const api=async(method,path,data,upload)=>{
+  if(!upload&&['POST','PATCH'].includes(method)&&Object.hasOwn(data||{},'target_commitish'))throw new Error('GitHub request failed: HTTP 403 workflow permission');
+  return server.api(method,path,data,upload);
+ };
+ const result=await publishPreview({...options,api});assert.equal(result.published,true);assert.match(server.release.body,new RegExp(options.commit));
+});

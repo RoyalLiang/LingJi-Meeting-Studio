@@ -142,7 +142,8 @@ export async function publishPreview(options) {
     verifyInventory(release.assets,files);
   }
 
-  const payload={tag_name:tag,target_commitish:commit,name:title(tag),body,draft:true,prerelease:true,make_latest:'false'};
+  // The existing tag is verified above; a redundant target can require workflow-write permission.
+  const payload={tag_name:tag,name:title(tag),body,draft:true,prerelease:true,make_latest:'false'};
   if(!release)release=await api('POST',`${base}/releases`,payload);
   else {
     const current=await api('GET',`${base}/releases/${release.id}`);
