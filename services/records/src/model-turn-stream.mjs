@@ -1,3 +1,4 @@
+import {modelResponseError} from './model-errors.mjs';
 import {DomainError,requireThat} from '../../../packages/records/src/record.mjs';
 
 // Native tool arguments must be complete before a tool may execute.
@@ -15,7 +16,7 @@ export async function readModelTurnResponse(response,responses,{onUsage}={}){
   if(data==='[DONE]'){done=true;return;}
   let value;try{value=JSON.parse(data);}catch{throw new DomainError('invalid_llm_response',502);}
   await reportUsage(value.usage||value.response?.usage);
-  if(value.error||['error','response.failed','response.incomplete'].includes(value.type))throw new DomainError('llm_stream_failed',502);
+  if(value.error||['error','response.failed','response.incomplete'].includes(value.type))throw modelResponseError(400,value.response||value,'llm_stream_failed');
   if(responses){
    if(value.type==='response.completed'){requireThat(value.response?.status==='completed','llm_stream_incomplete',502);result=value.response;completed=true;}
    return;

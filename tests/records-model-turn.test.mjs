@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {isContextOverflow} from '@earendil-works/pi-ai/utils/overflow';
+import {completeModelJson} from '../services/records/src/llm.mjs';
 import { completeModelTurn } from '../services/records/src/model-turn.mjs';
-import { modelProfile, piUsage, estimateTask } from '../services/records/src/model-profile.mjs';
+import { modelProfile, piUsage, estimateTask,contextPolicy,estimateTextTokens } from '../services/records/src/model-profile.mjs';
 import {configuredModels} from '../services/records/src/meeting-agent.mjs';
 import {taskLedger} from '../services/records/src/meeting-tasks.mjs';
 
@@ -54,7 +56,69 @@ test('JSON compatibility and compaction enforce the output cap admitted by the b
 });
 test('unsupported native parameters fall back to JSON but provider quota errors do not',async t=>{
  const original=globalThis.fetch;t.after(()=>{globalThis.fetch=original;});let count=0;
- globalThis.fetch=async(_url,options)=>{const body=JSON.parse(options.body);count++;return body.tools?Response.json({error:{type:'invalid_request_error'}},{status:400}):Response.json({choices:[{message:{content:'{"result":{"summary":"done","decisions":[],"actions":[]}}'}}]});};
+ globalThis.fetch=async(_url,options)=>{const body=JSON.parse(options.body);count++;return body.tools?Response.json({error:{type:'invalid_request_error',message:'tools is not supported'}},{status:400}):Response.json({choices:[{message:{content:'{"result":{"summary":"done","decisions":[],"actions":[]}}'}}]});};
  const selected=configuredModels('/unused',env);await selected.models.completeSimple(selected.model,{messages:[{role:'user',content:'synthetic'}],tools:[{name:'read',parameters:{type:'object'}}]});assert.equal(count,2);
  count=0;globalThis.fetch=async()=>{count++;return Response.json({error:{type:'budget_exceeded'}},{status:422});};const quota=configuredModels('/unused',env),answer=await quota.models.completeSimple(quota.model,{messages:[{role:'user',content:'synthetic'}]});assert.equal(answer.errorMessage,'provider_budget_exceeded');assert.equal(count,1);
+});
+
+// Same source and round limit must not be billed as a full model window each turn.
+test('large model windows do not inflate admission for unchanged meeting material',()=>{
+ const base={LLM_MODEL:'fixture',LLM_PROTOCOL:'chat-completions'};
+ const profile=size=>modelProfile({...base,LLM_MODEL_PROFILES:JSON.stringify({fixture:{contextWindow:size,prices:{input:1,output:2,cacheRead:0.1,cacheWrite:1}}})});
+ const small=estimateTask(profile(16384),{characters:360000,pages:30,maxRounds:128});
+ const large=estimateTask(profile(1000000),{characters:360000,pages:30,maxRounds:128});
+ assert.ok(large.inputTokens<small.inputTokens*4,JSON.stringify({small,large}));
+});
+
+test('context overflow stays recognizable to Pi in native and compatibility transports without tool fallback',async t=>{
+ const original=globalThis.fetch;t.after(()=>{globalThis.fetch=original;});let count=0;
+ globalThis.fetch=async()=>{count++;return Response.json({error:{code:'context_length_exceeded',message:'maximum context length is 32000 tokens; private-synthetic-text'}},{status:400});};
+ for(const complete of [completeModelTurn,completeModelJson]){
+   await assert.rejects(complete===completeModelTurn?complete({messages:[]},env):complete([],env),error=>error.code==='context_length_exceeded'&&!error.message.includes('private-synthetic-text'));
+ }
+ count=0;const bridge=configuredModels('/unused',env);
+ const answer=await bridge.models.completeSimple(bridge.model,{messages:[{role:'user',content:[{type:'text',text:'synthetic'}]}]});
+ assert.equal(count,1);assert.equal(isContextOverflow(answer),true);
+});
+
+test('effective window is capped, explicit large context opts in, overflow can only lower it',()=>{
+ const configured={...env,LLM_MODEL_PROFILES:JSON.stringify({fixture:{contextWindow:1000000}})};
+ assert.equal(modelProfile(configured).contextWindow,262144);
+ const large=modelProfile({...configured,LLM_MODEL_PROFILES:JSON.stringify({fixture:{contextWindow:1000000,effectiveContextWindow:1000000}})});
+ assert.equal(large.contextWindow,1000000);assert.ok(contextPolicy(large).pageChars>contextPolicy(modelProfile({})).pageChars);
+ const limited=modelProfile({...configured,LLM_MODEL_FACTS:{contextLimit:32000}});assert.equal(limited.contextWindow,32000);
+ assert.ok(estimateTextTokens('中文原文')>estimateTextTokens('text'));
+ assert.throws(()=>modelProfile({...env,LLM_MODEL_PROFILES:JSON.stringify({fixture:[]})}),/invalid_model_profile/);
+});
+
+test('gateway facts have provenance, exact-model precedence and durable downward-only observations',async t=>{
+ const {mkdtemp,rm}=await import('node:fs/promises'),{tmpdir}=await import('node:os'),{join}=await import('node:path');
+ const {readModelFacts,discoverModelFacts,observeModelFacts}=await import('../services/records/src/model-facts.mjs');
+ const root=await mkdtemp(join(tmpdir(),'lingji-model-facts-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ const original=globalThis.fetch;t.after(()=>{globalThis.fetch=original;});const config={...env,LLM_API_URL:'https://gateway.example/v1',LLM_MODEL_PROFILES:''};
+ globalThis.fetch=async()=>Response.json({data:[{id:'other',context_length:1000000},{id:'fixture',context_length:131072,supported_parameters:['tools'],top_provider:{max_completion_tokens:8192}}]});
+ await discoverModelFacts(root,config);let facts=await readModelFacts(root,config);
+ assert.equal(facts.catalog.contextWindow,131072);assert.ok(facts.evidence.every(item=>item.at&&item.confirmed===false));
+ assert.equal(modelProfile({...config,LLM_MODEL_FACTS:facts}).source,'gateway-unconfirmed');
+ assert.equal(modelProfile({...env,LLM_MODEL_FACTS:facts}).contextWindow,64000);
+ await observeModelFacts(root,config,{contextLimit:32000,inputTokens:1500,counts:{cjk:1000,json:0,latin:0}});
+ await observeModelFacts(root,config,{contextLimit:64000,inputTokens:3000,counts:{cjk:1000,json:1000,latin:1000}});
+ facts=await readModelFacts(root,config);assert.equal(facts.contextLimit,32000);assert.ok(facts.tokenRatios.cjk>1.5);assert.equal(facts.tokenRatios.json,undefined);
+ assert.equal((await readModelFacts(root,{...config,LLM_API_URL:'https://other.example/v1'})).catalog,undefined);
+});
+
+test('queued compatibility tools retain authorization but are marked as replay instead of provider work',async t=>{
+ const original=globalThis.fetch;t.after(()=>{globalThis.fetch=original;});let requests=0;const admissions=[];
+ globalThis.fetch=async()=>{requests++;return Response.json({choices:[{message:{content:JSON.stringify({toolCalls:[0,1].map(page=>({name:'read_selected_meeting',arguments:{recordId:'synthetic',page}}))})}}]});};
+ const bridge=configuredModels('/unused',{...env,LLM_MODEL_PROFILES:'{}'},undefined,undefined,(_signal,meta)=>{admissions.push(meta);});
+ const first=await bridge.models.completeSimple(bridge.model,{messages:[]});await bridge.models.completeSimple(bridge.model,{messages:[first]});
+ assert.equal(requests,1);assert.deepEqual(admissions.map(item=>item.replay),[false,true]);
+});
+
+test('a lower observed context limit immediately clamps the current model output cap',async t=>{
+ const original=globalThis.fetch;t.after(()=>{globalThis.fetch=original;});
+ globalThis.fetch=async()=>Response.json({error:{code:'context_length_exceeded',message:'maximum context length is 8192 tokens'}},{status:400});
+ const bridge=configuredModels('/unused',{...env,LLM_MODEL_PROFILES:JSON.stringify({fixture:{contextWindow:64000,maxOutputTokens:32768}})});
+ const answer=await bridge.models.completeSimple(bridge.model,{messages:[]});assert.equal(isContextOverflow(answer),true);
+ const model=bridge.models.getModel(bridge.model.provider,bridge.model.modelId);assert.equal(model.contextWindow,8192);assert.equal(model.maxTokens,4096);assert.equal(bridge.profile.maxOutputTokens,4096);
 });

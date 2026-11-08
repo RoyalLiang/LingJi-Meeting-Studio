@@ -27,6 +27,9 @@ const messages: Record<string, string> = {
   llm_connection_failed:'无法连接模型服务，请检查 API 地址与网络。',
   llm_response_too_large:'模型响应超过处理上限，请缩小任务范围。',
   external_write_unknown:'外部写入结果不确定，请先核对远端结果后再继续。',
+  context_length_exceeded:'上下文仍超过模型上限，已尝试压缩；请核对模型的实际窗口。',
+  provider_tools_unsupported:'模型服务不支持当前工具参数，请核对连接配置。',
+  agent_runtime_interrupted:'任务连续中断，已停止自动重启；可核对进展后继续。',
   agent_failed:'整理未完成，请稍后重试。',
 
   git_target_unclear:'标题没有明确项目或场地，且未绑定指定 Workspace，已暂停同步。',

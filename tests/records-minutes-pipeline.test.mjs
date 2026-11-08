@@ -832,3 +832,10 @@ test('long live and final meetings tolerate empty factual windows and synthesis 
   }finally{await f.close();}
  }
 });
+
+test('known larger windows expand transcript and synthesis budgets while explicit limits remain effective',async()=>{
+ const f=await fixture(80);try{const claim=await f.claim(),small=buildMinutesManifest(claim,config),large=buildMinutesManifest(claim,{...config,LLM_MODEL_PROFILES:JSON.stringify({'fixture-model':{contextWindow:262144}})});
+ assert.ok(large.budget>small.budget);assert.ok(large.synthesisBudget>small.synthesisBudget);
+ const pinned=buildMinutesManifest(claim,{...config,RECORD_MINUTES_INPUT_BYTES:'12000',LLM_MODEL_PROFILES:JSON.stringify({'fixture-model':{contextWindow:262144}})});assert.equal(pinned.budget,12000);
+ }finally{await f.close();}
+});

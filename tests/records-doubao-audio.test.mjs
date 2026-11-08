@@ -14,7 +14,7 @@ import { createRecord, addSource, acknowledge, digest, requestMinutes, seal, edi
 
 async function fixture(work, respond) {
   const root = await mkdtemp(join(tmpdir(), 'lingji-doubao-audio-')), requests = [];
-  const server = createServer(async (req, res) => {
+  const server = createServer(async (req, res) => {if(req.method==='GET'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({data:[]}));return;}
     assert.equal(req.headers.authorization, 'Bearer fixture-key');
     let bytes = ''; for await (const chunk of req) bytes += chunk;
     const body = JSON.parse(bytes); requests.push(body);

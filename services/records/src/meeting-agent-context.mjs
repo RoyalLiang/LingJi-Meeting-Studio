@@ -5,11 +5,11 @@ export const MEETING_COMPACTION='MEETING_SOURCE_CONTEXT_CHECKPOINT_V1';
 export const meetingCompaction={enabled:true,reserveTokens:6000,keepRecentTokens:4000,backgroundTokens:0};
 
 // Page the transport only. Durable snapshots and citation validation keep the complete source.
-export function meetingSourcePages(snapshot,inlineLimit=60000){
+export function meetingSourcePages(snapshot,inlineLimit=60000,pageChars=MEETING_PAGE_CHARS){
   const wire=JSON.stringify(meetingSourceWire(snapshot));
   if(wire.length<=inlineLimit)return [wire];
   const pieces=[];
-  for(let start=0;start<wire.length;){let end=Math.min(start+MEETING_PAGE_CHARS,wire.length);if(end<wire.length&&/[\uD800-\uDBFF]/.test(wire[end-1]))end--;pieces.push(wire.slice(start,end));start=end;}
+  for(let start=0;start<wire.length;){let end=Math.min(start+pageChars,wire.length);if(end<wire.length&&/[\uD800-\uDBFF]/.test(wire[end-1]))end--;pieces.push(wire.slice(start,end));start=end;}
   return pieces.map((content,page)=>JSON.stringify({recordId:snapshot.recordId,title:snapshot.title,format:'json-fragment',page,totalPages:pieces.length,...(page+1<pieces.length?{nextPage:page+1}:{}),content}));
 }
 

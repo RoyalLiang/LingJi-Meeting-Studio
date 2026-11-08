@@ -270,20 +270,20 @@ test('update panel distinguishes download, indeterminate and verification states
   assert.equal(select.props.label,'更新策略');
 });
 
-test('settings update notes open in a separate dialog with no inline explanatory line',async()=>{
+test('version badge opens updates while settings have no persistent update panel',async()=>{
  const {transform}=await import('esbuild'),source=await readFile(new URL('../apps/web/src/components/ClientUpdates.tsx',import.meta.url),'utf8');
- const code=(await transform(source.replace(/^import .*$/gm,''),{loader:'tsx',format:'cjs'})).code;let notesOpen=false;
- const box={module:{exports:{}},useState:()=>[notesOpen,value=>{notesOpen=value;}],Modal:props=>({tag:'dialog',props,children:props.children}),updatePolicy,preferencesForPolicy,updateReleaseItems,updateDownloadProgress,DownloadSimple:()=>null,ArrowUp:()=>null,ArrowsClockwise:()=>null,Select:()=>null,Button:props=>({tag:'button',props,children:props.children})};
+ const code=(await transform(source.replace(/^import .*$/gm,''),{loader:'tsx',format:'cjs'})).code;let open=false;
+ const box={module:{exports:{}},useState:()=>[open,value=>{open=value;}],Modal:props=>({tag:'dialog',props,children:props.children}),currentReleaseNotes:'## 更新内容\n- 优化版本入口',updatePolicy,preferencesForPolicy,updateReleaseItems,updateDownloadProgress,DownloadSimple:()=>null,ArrowUp:()=>null,ArrowsClockwise:()=>null,Select:()=>null,Button:props=>({tag:'button',props,children:props.children})};
  box.React={createElement:(tag,props,...children)=>typeof tag==='function'?tag({...props,children}):({tag,props,children})};vm.runInNewContext(code,box);
- const updates={native:true,status:{phase:'idle',currentVersion:'0.1.42',downloaded:0},settings:preferencesForPolicy('manual'),installReason:'',saveSettings(){},update(){}};
- const idle=box.module.exports.ClientUpdatesPanel({updates});assert.doesNotMatch(JSON.stringify(idle),/由你手动检查更新|启动后会自动检查更新/);
- const current=box.module.exports.ClientUpdatesPanel({updates:{...updates,status:{...updates.status,phase:'current'}}});assert.match(JSON.stringify(current),/已是最新版本/);assert.match(JSON.stringify(current),/client-update-activity/);
-
- const availableUpdates={...updates,status:{...updates.status,phase:'available',version:'0.1.43',notes:'## 更新内容\n- 优化：保留完整原音'}};
- const render=()=>box.module.exports.ClientUpdatesPanel({updates:availableUpdates}),nodes=tree=>[tree,...(tree?.children||[]).flat(Infinity).filter(x=>x&&typeof x==='object').flatMap(nodes)];
- const available=render();assert.doesNotMatch(JSON.stringify(available),/→ v/);assert.equal(nodes(available).filter(node=>node.props?.className==='client-update-version').length,0);const version=box.module.exports.ClientVersion({status:availableUpdates.status});assert.equal(nodes(version).filter(node=>node.props?.className==='client-update-version').length,1);assert.equal(nodes(version).find(node=>node.props?.className==='client-update-available').props['aria-label'],'可升级至 v0.1.43');assert.ok(!nodes(box.module.exports.ClientVersion({status:updates.status})).some(node=>node.props?.className==='client-update-available'));assert.ok(!nodes(available).some(node=>node.tag==='dialog'||node.tag==='details'));
- const trigger=nodes(available).find(node=>node.props?.className==='update-notes-trigger');assert.equal(trigger.props['aria-haspopup'],'dialog');trigger.props.onClick();
- const dialog=nodes(render()).find(node=>node.tag==='dialog');assert.ok(dialog);assert.match(JSON.stringify(dialog),/保留完整原音/);dialog.props.onClose();assert.ok(!nodes(render()).some(node=>node.tag==='dialog'));
+ const updates={native:true,status:{phase:'current',currentVersion:'0.1.42',downloaded:0},settings:preferencesForPolicy('manual'),installReason:'',saveSettings(){},check(){}};
+ const nodes=tree=>[tree,...(tree?.children||[]).flat(Infinity).filter(x=>x&&typeof x==='object').flatMap(nodes)];
+ const render=value=>box.module.exports.ClientVersion({updates:value});
+ const current=render(updates);assert.match(JSON.stringify(current),/latest/);assert.doesNotMatch(JSON.stringify(current),/client-update-activity|update-notes-trigger/);
+ nodes(current).find(node=>node.props?.className==='client-update-version').props.onClick();
+ assert.ok(nodes(render(updates)).some(node=>node.tag==='dialog'));assert.match(JSON.stringify(render(updates)),/优化版本入口/);
+ const available={...updates,status:{...updates.status,phase:'available',version:'0.1.43',notes:'## 更新内容\n- 优化保留完整原音'}};
+ const tree=render(available);assert.ok(nodes(tree).some(node=>node.props?.className==='client-update-available'));assert.doesNotMatch(JSON.stringify(tree),/client-version-latest/);assert.match(JSON.stringify(tree),/保留完整原音/);
+ const app=await readFile(new URL('../apps/web/src/App.tsx',import.meta.url),'utf8');assert.doesNotMatch(app,/<ClientUpdatesPanel/);
 });
 
 

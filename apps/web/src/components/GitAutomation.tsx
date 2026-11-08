@@ -1,4 +1,4 @@
-import {TaskTimeline,type TaskMetric,type TaskLedger} from './TaskTimeline';
+import {type TaskMetric,type TaskLedger} from './TaskTimeline';
 import {createPortal} from 'react-dom';
 import {useCallback,useEffect,useId,useRef,useState} from 'react';
 import {GitBranch,Check,Spinner,WarningCircle,FolderSimple,CaretDown,CaretRight} from '@phosphor-icons/react';
@@ -60,7 +60,7 @@ export function GitTask({job,close,changed}:{job:GitJob;close:()=>void;changed:(
       {job.interaction&&<div className="git-interaction" aria-label="回复同步 Agent" ref={questionRef}><article className="git-message"><span className="git-message-author">Agent <span>需要你确认</span></span><MarkdownPreview text={job.interaction.question}/>{!!job.interaction.options.length&&<div className="git-reply-options">{job.interaction.options.map(option=><Button key={option} disabled={busy} onClick={()=>reply(option)}>{option}</Button>)}</div>}</article></div>}
   {!activity&&!job.progress&&!recovery&&!exchanges.length&&!job.preview&&!job.interaction&&<p className="git-section-hint">{active(job)?'Agent 的进展与问题会显示在这里。':'此任务没有可恢复的问答或进展记录。'}</p>}
     </section>
-<TaskTimeline timeline={job.timeline} ledger={job.ledger} kernelId={job.kernelId}/><details className="git-task-more"><summary>同步详情<CaretDown size={15}/></summary><dl className="git-task-details"><div><dt>归属依据</dt><dd>{job.basis==='workspace'?'Workspace 映射':job.basis==='title'?'标题匹配':'待确认'}</dd></div><div><dt>写入方式</dt><dd>{job.mode==='direct'?'默认分支':job.mode==='mr'?'归档分支 + Merge Request':'由 Skill 决定'}</dd></div>{job.branch&&<div><dt>分支</dt><dd>{job.branch}</dd></div>}{job.commit&&<div><dt>提交</dt><dd>{job.commit}</dd></div>}</dl></details>
+<details className="git-task-more"><summary>同步详情<CaretDown size={15}/></summary><dl className="git-task-details"><div><dt>归属依据</dt><dd>{job.basis==='workspace'?'Workspace 映射':job.basis==='title'?'标题匹配':'待确认'}</dd></div><div><dt>写入方式</dt><dd>{job.mode==='direct'?'默认分支':job.mode==='mr'?'归档分支 + Merge Request':'由 Skill 决定'}</dd></div>{job.branch&&<div><dt>分支</dt><dd>{job.branch}</dd></div>}{job.commit&&<div><dt>提交</dt><dd>{job.commit}</dd></div>}</dl></details>
     {error&&<FeedbackNotice key={error} message={error} error/>}
   </Modal>;
 }

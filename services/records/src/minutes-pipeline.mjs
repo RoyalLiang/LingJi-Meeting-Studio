@@ -1,3 +1,4 @@
+import {modelProfile,contextPolicy} from './model-profile.mjs';
 import { minutesDiscussionItems as discussionItems, minutesTextChunks } from '../../../packages/records/src/minutes-quality.mjs';
 import { minutesTimeoutMs } from './minutes-deadline.mjs';
 import { MINUTES_PROMPT_VERSION } from './minutes-prompts.mjs';
@@ -11,10 +12,11 @@ import { requireThat, validateMinutes, emit, transcriptSnapshotMatches } from '.
 import { meteredMinutesCall } from './minutes-usage.mjs';
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const size = value => Buffer.byteLength(JSON.stringify(value));
-const inputBudget=config=>Math.max(4096,Math.min(96000,Number(config.RECORD_MINUTES_INPUT_BYTES)||24000));
+const minutesBudget=config=>modelProfile(config).source==='conservative-fallback'?24000:contextPolicy(modelProfile(config)).minutesBytes;
+const inputBudget=config=>Math.max(4096,Math.min(Math.max(96000,minutesBudget(config)),Number(config.RECORD_MINUTES_INPUT_BYTES)||minutesBudget(config)));
 const synthesisBudget=config=>{
   const value=Number(config.RECORD_MINUTES_SYNTHESIS_INPUT_BYTES);
-  return Math.max(4096,Math.min(96000,Number.isFinite(value)&&value>0?Math.floor(value):96000));
+  return Math.max(4096,Math.min(Math.max(96000,minutesBudget(config)),Number.isFinite(value)&&value>0?Math.floor(value):Math.max(96000,minutesBudget(config))));
 };
 const windowConcurrency=config=>{
   const value=Number(config.RECORD_MINUTES_WINDOW_CONCURRENCY);

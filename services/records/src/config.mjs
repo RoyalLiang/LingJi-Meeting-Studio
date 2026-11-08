@@ -1,3 +1,4 @@
+import {readModelFacts,discoverModelFacts} from './model-facts.mjs';
 import {modelProfile} from './model-profile.mjs';
 import { readFile, writeFile, rename } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -55,7 +56,8 @@ async function savedConfig(root, cache) {
   return entry.value;
 }
 export async function readConfig(root, env = process.env, {cache = false} = {}) {
-  return normalizeConfig({ ...env, ...await savedConfig(root, cache) });
+  const config=normalizeConfig({ ...env, ...await savedConfig(root, cache) });
+  return {...config,LLM_MODEL_FACTS:await readModelFacts(root,config),LLM_CONFIG_READ_AT:new Date().toISOString()};
 }
 export function publicConfig(config) {
   return { ...Object.fromEntries(fields.map(key => [key, secretFields.has(key) ? configured(config[key]) : config[key] || ''])), LOCAL_ASR_AVAILABLE: localAsrConfigured(config), LOCAL_ASR_MODEL }; 
@@ -116,6 +118,7 @@ async function persistConfig(root, input, env) {
   await writeFile(temporary, JSON.stringify({ ...previous, ...values }, null, 2), { mode: 0o600, flag: 'wx' });
   await rename(temporary, join(root, 'providers.json'));
   savedConfigs.delete(root);
+  if(['LLM_API_URL','LLM_API_KEY','LLM_MODEL','LLM_PROTOCOL'].some(key=>Object.hasOwn(input,key)&&next[key]!==current[key]))await discoverModelFacts(root,next);
   return publicConfig(next);
 }
 

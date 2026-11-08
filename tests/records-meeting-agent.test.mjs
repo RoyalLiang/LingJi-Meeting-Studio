@@ -342,3 +342,26 @@ test('configured Agent preserves safe transport codes without exposing upstream 
  const runtime=await f.open({env:{LLM_API_KEY:'explicit-test-key',LLM_MODEL:'fixture-http',LLM_API_URL:'https://fixture.invalid/chat/completions',LLM_PROTOCOL:'chat-completions'}}),task=await runtime.request('owner',request(f.records.slice(0,1)));
  const failed=await settled(runtime,task.id);assert.equal(failed.status,'failed');assert.equal(failed.error,'provider_http_422');assert.doesNotMatch(JSON.stringify(failed),/secret-upstream-body|explicit-test-key/);
 });
+
+test('large verified windows inline the full frozen source in one call with exact citation checks',async t=>{
+ const f=await fixture(t),record=f.records[0];record.segments[0].text='完整合成材料。'.repeat(4000);await f.repo.change(record.id,current=>Object.assign(current,record));
+ let calls=0,body;t.mock.method(globalThis,'fetch',async(_url,options)=>{calls++;body=JSON.parse(options.body);return Response.json({output_text:JSON.stringify({result:result([record])})});});
+ const runtime=await f.open({env:{LLM_API_KEY:'synthetic',LLM_MODEL:'large-fixture',LLM_API_URL:'https://fixture.invalid/v1',LLM_PROTOCOL:'responses',LLM_MODEL_PROFILES:JSON.stringify({'large-fixture':{contextWindow:131072}})}});
+ const task=await runtime.request('owner',request([record],'inline-full')),done=await settled(runtime,task.id);
+ assert.equal(done.status,'completed',JSON.stringify(done));assert.equal(calls,1);assert.match(JSON.stringify(body),/inlineMeetings/);assert.ok(JSON.stringify(body).includes(record.segments[0].text));assert.equal(done.progress.pagesRead,done.progress.totalPages);
+});
+
+test('citation validation repairs once in the same durable conversation',async t=>{
+ const f=await fixture(t),records=f.records.slice(0,1),bad=result(records);bad.decisions[0].evidence[0].segmentId='fabricated';
+ const p=provider([reads(records),message(JSON.stringify(bad)),message(JSON.stringify(result(records)))]),runtime=await f.open(p);
+ const task=await runtime.request('owner',request(records,'repair-once')),done=await settled(runtime,task.id);
+ assert.equal(done.status,'completed',JSON.stringify(done));assert.equal(done.result.decisions[0].evidence[0].segmentId,records[0].segments[0].id);
+});
+
+test('per-request budget reservations stop repeated work after a smaller admission estimate',async t=>{
+ const f=await fixture(t),records=f.records.slice(0,1);let calls=0;
+ t.mock.method(globalThis,'fetch',async()=>{calls++;return Response.json({output_text:JSON.stringify({toolCalls:[{name:'read_selected_meeting',arguments:{recordId:records[0].id}}]})});});
+ const runtime=await f.open({env:{LLM_API_KEY:'synthetic',LLM_MODEL:'budget-fixture',LLM_API_URL:'https://fixture.invalid/v1',LLM_PROTOCOL:'responses',MEETING_TASK_BUDGET_USD:'.15',LLM_MODEL_PROFILES:JSON.stringify({'budget-fixture':{contextWindow:131072,prices:{input:1,output:1,cacheRead:1,cacheWrite:1}}})}});
+ const task=await runtime.request('owner',request(records,'runtime-budget')),done=await settled(runtime,task.id);
+ assert.equal(done.status,'failed');assert.equal(done.error,'agent_budget_exceeded');assert.ok(calls>0&&calls<12,`provider calls ${calls}`);
+});

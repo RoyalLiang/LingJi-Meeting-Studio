@@ -1,3 +1,4 @@
+import {modelResponseError} from './model-errors.mjs';
 import { normalizeConfig, configured, reasoningEfforts } from './config.mjs';
 import { DomainError, requireThat } from '../../../packages/records/src/record.mjs';
 import { tokenUsage as readTokenUsage } from '../../../packages/records/src/usage.mjs';
@@ -43,9 +44,8 @@ export async function completeModelJson(messages, input = process.env, { onDelta
   catch { throw new DomainError(requestSignal.reason?.name === 'TimeoutError' ? 'llm_timeout' : 'llm_connection_failed', 502); }
   if (!response.ok) {
     let result; try { result=await response.json(); } catch { /* Upstream bodies may contain sensitive details. */ }
-    const code=result?.error?.code;await reportUsage(result?.usage);
-    const budgetExceeded=result?.error?.type==='budget_exceeded'||code==='budget_exceeded';
-    throw new DomainError(budgetExceeded ? 'provider_budget_exceeded' : code === 'InvalidEndpointOrModel.NotFound' ? 'llm_model_unavailable' : response.status === 401 ? 'provider_unauthorized' : response.status === 429 ? 'provider_rate_limited' : `provider_http_${response.status}`, 502);
+    await reportUsage(result?.usage);
+    throw modelResponseError(response.status,result);
   }
   let text = '', firstTokenMs = null, completed = false, finishReason;
   const streamed = (response.headers.get('content-type') || '').includes('text/event-stream');
@@ -75,7 +75,7 @@ export async function completeModelJson(messages, input = process.env, { onDelta
         if (data === '[DONE]') { if (!responses) completed = true; return; }
         const event = JSON.parse(data);
         await reportUsage(event.usage || event.response?.usage);
-        if (event.error || ['error', 'response.failed', 'response.incomplete'].includes(event.type)) throw new DomainError('llm_stream_failed', 502);
+        if (event.error || ['error', 'response.failed', 'response.incomplete'].includes(event.type)) throw modelResponseError(400,event.response||event,'llm_stream_failed');
         if (responses) {
           if (event.type === 'response.output_text.delta') await append(event.delta);
           if (event.type === 'response.completed') {

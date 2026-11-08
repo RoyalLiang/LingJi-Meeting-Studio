@@ -8,7 +8,7 @@ import { createRecordServer } from '../services/records/src/server.mjs';
 
 test('real Pi uses pinned Skill, selected notes and explicitly approved MCP tool without modifying minutes',async()=>{
   const root=await mkdtemp(join(tmpdir(),'lingji-agent-ext-')),sha='a'.repeat(40);let app,record,pluginId,calls=0,remoteCalls=0,bigTools=false;
-  const model=http.createServer(async(req,res)=>{
+  const model=http.createServer(async(req,res)=>{if(req.method==='GET'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({data:[]}));return;}
     const bytes=[];for await(const part of req)bytes.push(part);const body=JSON.parse(Buffer.concat(bytes).toString()),wire=JSON.stringify(body.messages);calls++;
     assert.match(wire,/meeting-risk/);
     let answer;

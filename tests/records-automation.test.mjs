@@ -208,7 +208,7 @@ test('worker persists a transient final failure, retries after restart and commi
 test('real localhost provider HTTP and incomplete SSE errors follow bounded chains, then a new manual model run can recover', async () => {
  const root=await mkdtemp(join(tmpdir(),'tts-final-http-retry-')),repo=await createRepository({root,databaseUrl:''});
  const originalNow=Date.now;let now=originalNow(),calls=0;Date.now=()=>now;
- const server=http.createServer(async(req,res)=>{
+ const server=http.createServer(async(req,res)=>{if(req.method==='GET'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({data:[]}));return;}
   for await(const chunk of req) void chunk;
   calls++;
   if(calls===1 || calls===2 || calls===4) {now+=2000;res.writeHead(calls===2?429:503,{'content-type':'application/json'});res.end('{"error":{"code":"synthetic_service_error"}}');return;}

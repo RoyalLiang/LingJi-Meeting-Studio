@@ -5,7 +5,7 @@
 ## 开始使用
 
 - [安装测试版](releases/github-client.md)：支持平台、安装条件和验证边界。
-- [本地转录与模型配置](engineering/funasr.md)：本地模型、云端服务和密钥配置。
+- [本地转录与模型配置](engineering/funasr.md)、[模型窗口与预算](engineering/model-context.md)：本地模型、云端服务和密钥配置。
 - [工作目录](engineering/workspaces.md)、[翻译与词表](engineering/multilingual-vocabulary.md)。
 - [整理纪要与核对来源](engineering/intelligent-minutes.md)、[Git 项目同步](engineering/git-project-sync.md)。
 - [飞书与扩展](engineering/feishu-and-remote-extensions.md)、[加密分享](engineering/encrypted-sharing.md)。

@@ -10,7 +10,7 @@ import { createRecordServer } from '../services/records/src/server.mjs';
 test('agent HTTP smoke: real Pi and production model bridge preserve auth, idempotency, sources and existing minutes', async () => {
   const root=await mkdtemp(join(tmpdir(),'lingji-agent-api-'));
   let record, calls=0, app;
-  const model=http.createServer(async(req,res)=>{
+  const model=http.createServer(async(req,res)=>{if(req.method==='GET'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({data:[]}));return;}
     const chunks=[];for await(const chunk of req)chunks.push(chunk);
     const input=JSON.parse(Buffer.concat(chunks).toString());
     assert.equal(req.headers.authorization,'Bearer isolated-test-key');

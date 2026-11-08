@@ -1,3 +1,4 @@
+import {modelResponseError} from './model-errors.mjs';
 import {readModelTurnResponse} from './model-turn-stream.mjs';
 import { normalizeConfig, configured } from './config.mjs';
 import { modelEndpoint } from './llm.mjs';
@@ -46,7 +47,7 @@ export async function completeModelTurn(transcript, input, {jsonSchema, signal, 
   try {
     const response=await fetch(modelEndpoint(env.LLM_API_URL,env.LLM_PROTOCOL),{method:'POST',headers:{Authorization:`Bearer ${env.LLM_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify(body),signal:requestSignal});
     const result=await readModelTurnResponse(response,responses,{onUsage:async raw=>{const next=tokenUsage(raw);if(Object.keys(next).length){reportedUsage={...reportedUsage,...next};await onUsage?.({...reportedUsage,model:env.LLM_MODEL,protocol:env.LLM_PROTOCOL});}}});
-  if(!response.ok) throw new DomainError(result?.error?.type==='budget_exceeded'||result?.error?.code==='budget_exceeded'?'provider_budget_exceeded':response.status===401?'provider_unauthorized':response.status===429?'provider_rate_limited':`provider_http_${response.status}`,502);
+    if(!response.ok) throw modelResponseError(response.status,result);
     const usage={...reportedUsage,...tokenUsage(result.usage)};
     const continuation=responses?(result.output||[]).filter(item=>item.type==='reasoning').map(item=>({type:'thinking',thinking:'',thinkingSignature:JSON.stringify({protocol:'responses',item})})):typeof result.choices?.[0]?.message?.reasoning_content==='string'?[{type:'thinking',thinking:'',thinkingSignature:JSON.stringify({protocol:'chat-completions',reasoning_content:result.choices[0].message.reasoning_content})}]:[];
     requireThat(!responses||!result.status||result.status==='completed','llm_stream_incomplete',502);

@@ -1,3 +1,4 @@
+import {modelProfile,contextPolicy} from '../services/records/src/model-profile.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
@@ -25,19 +26,19 @@ test('long meetings read all pages, compact through Pi and retain a citation fro
  const root=await mkdtemp(join(tmpdir(),'lingji-paged-agent-')),repo=await createRepository({root,databaseUrl:''}),models=createModels();
  const fake=fauxProvider({provider:'paged-meeting',models:[{id:'test',contextWindow:24000}],tokensPerSecond:Infinity});models.setProvider(fake.provider);
  const record=createRecord('owner',{title:'长会议分页验证'});record.transcriptRevision=3334;record.segments=Array.from({length:100},(_,i)=>({id:'seg-'+i,revision:1,text:('第'+i+'段决策依据。').repeat(120),startMs:i*1000,endMs:(i+1)*1000}));record.segments.at(-1).text+='最终决定保留人工修订。';await repo.insert(record);
- const seen=new Set();let compactions=0;
+ const seen=new Set();let compactions=0,compactedText='';
  const respond=context=>{
-  if(context.messages.some(m=>m.role==='system'&&typeof m.content==='string'&&m.content.startsWith(MEETING_COMPACTION))){compactions++;const full=JSON.stringify(context);assert.ok(full.length<120000);assert.match(full,/段决策依据/);return message('继续分页整理；已读页面均属于选中的同一会议。所有决定必须保留原始segmentId与revision。');}
+  if(context.messages.some(m=>m.role==='system'&&typeof m.content==='string'&&m.content.startsWith(MEETING_COMPACTION))){compactions++;const full=JSON.stringify(context);assert.ok(full.length<120000);compactedText+=full;return message('继续分页整理；已读页面均属于选中的同一会议。所有决定必须保留原始segmentId与revision。');}
   const result=context.messages.filter(m=>m.role==='toolResult'&&m.toolName==='read_selected_meeting').at(-1);
   if(!result)return message(call('read_selected_meeting',{recordId:record.id,page:0}),{stopReason:'toolUse'});
   const page=JSON.parse(result.content.filter(c=>c.type==='text').map(c=>c.text).join(''));assert.equal(page.format,'json-fragment');seen.add(page.page);
   if(page.nextPage!==undefined)return message(call('read_selected_meeting',{recordId:record.id,page:page.nextPage}),{stopReason:'toolUse'});
   return message(JSON.stringify({summary:'已读完全部会议内容。',decisions:[{text:'保留人工修订',evidence:[{recordId:record.id,segmentId:'seg-99',revision:1}]}],actions:[]}));
  };
- fake.setResponses(Array.from({length:80},()=>respond));const agent=await createMeetingAgentRuntime({repo,models,model:{provider:'paged-meeting',modelId:'test'}});
+ fake.setResponses(Array.from({length:500},()=>respond));const agent=await createMeetingAgentRuntime({repo,models,model:{provider:'paged-meeting',modelId:'test'}});
  try{const task=await agent.request('owner',{recordIds:[record.id],prompt:'整理全部议题并引用最后的决策',requestId:'paged-full-flow',scopeConfirmed:true,splitSources:false});let state;
  for(let i=0;i<500;i++){state=await agent.get('owner',task.id);if(['completed','failed','blocked'].includes(state.status))break;await new Promise(r=>setTimeout(r,10));}
- assert.equal(state.status,'completed',JSON.stringify(state));assert.ok(seen.size>8);assert.ok(compactions>0,'Pi compaction must run on the long source');assert.equal(state.result.decisions[0].evidence[0].segmentId,'seg-99');assert.equal((await repo.get(record.id)).segments.length,100);
+ assert.equal(state.status,'completed',JSON.stringify(state));assert.ok(seen.size>8);assert.ok(compactions>0,'Pi compaction must run on the long source');assert.match(compactedText,/段决策依据/);assert.equal(state.result.decisions[0].evidence[0].segmentId,'seg-99');assert.equal((await repo.get(record.id)).segments.length,100);
  }finally{await agent.close();await repo.close();await rm(root,{recursive:true,force:true});}
 });
 
@@ -45,11 +46,11 @@ test('configured JSON transport keeps compaction streaming through a gateway and
  const {MEETING_COMPACTION,meetingSourcePages}=await import('../services/records/src/meeting-agent-context.mjs');
  const original=globalThis.fetch,root=await mkdtemp(join(tmpdir(),'lingji-paged-json-')),repo=await createRepository({root,databaseUrl:''});
  const record=createRecord('owner',{title:'长会议 JSON 桥接'});record.transcriptRevision=1;record.segments=Array.from({length:100},(_,i)=>({id:'seg-'+i,revision:1,text:('JSON \"value\" \\\\ synthetic.').repeat(160),startMs:i*1000,endMs:(i+1)*1000}));await repo.insert(record);
- let nextPage=0,compactions=0,largest=0;const total=meetingSourcePages({recordId:record.id,title:record.title,transcriptRevision:1,segments:record.segments},12000).length;
+ let nextPage=0,compactions=0,largest=0,total=meetingSourcePages({recordId:record.id,title:record.title,transcriptRevision:1,segments:record.segments},contextPolicy(modelProfile({})).pageChars,contextPolicy(modelProfile({})).pageChars).length;
  globalThis.fetch=async(_url,options)=>{
   const body=JSON.parse(options.body);let output;
     if(body.messages[0].content.startsWith(MEETING_COMPACTION)){compactions++;if(!body.stream)return Response.json({error:{code:'gateway_timeout'}},{status:504});output={summary:'已读取分页；保留全部引用标识和待确认条件。'};}
-  else {const transcript=JSON.parse(body.messages[1].content);largest=Math.max(largest,JSON.stringify(transcript).length);
+  else {const transcript=JSON.parse(body.messages[1].content);for(const message of transcript.messages.filter(item=>item.role==='toolResult'&&item.toolName==='read_selected_meeting')){const page=JSON.parse(message.content.filter(item=>item.type==='text').map(item=>item.text).join(''));total=page.totalPages||1;}largest=Math.max(largest,JSON.stringify(transcript).length);
    output=nextPage<total?{toolCalls:Array.from({length:Math.min(8,total-nextPage)},()=>({name:'read_selected_meeting',arguments:{recordId:record.id,page:nextPage++}}))}:{result:{summary:'全部分页完成',decisions:[{text:'最后一段仍待确认',evidence:[{recordId:record.id,segmentId:'seg-99',revision:1}]}],actions:[]}};
   }
   return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(output)}}]}),{headers:{'content-type':'application/json'}});
@@ -73,8 +74,8 @@ test('SIGKILL resumes the remaining queued Pi tool plan without skipping source 
  try{
   await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('no queued checkpoint: '+errors)),8000);child.once('error',reject);child.once('exit',()=>{clearTimeout(timer);if(!output.includes('CHECKPOINT_READY'))reject(new Error('child exited '+errors+' '+output));});child.stdout.on('data',bytes=>{output+=bytes;if(output.includes('CHECKPOINT_READY')){clearTimeout(timer);resolve();}});});
   const task=JSON.parse(output.split('\n').find(line=>line.startsWith('TASK:')).slice(5)),exit=once(child,'exit');child.kill('SIGKILL');await exit;
-  const {meetingSourcePages,MEETING_COMPACTION}=await import('../services/records/src/meeting-agent-context.mjs');const total=meetingSourcePages({recordId:record.id,title:record.title,segments:record.segments},12000).length;let next=8;
-  globalThis.fetch=async(_url,options)=>{const body=JSON.parse(options.body);const result=body.messages[0].content.startsWith(MEETING_COMPACTION)?{summary:'保留已读取页和精确来源。'}:next<total?{toolCalls:Array.from({length:Math.min(8,total-next)},()=>({name:'read_selected_meeting',arguments:{recordId:record.id,page:next++}}))}:{result:{summary:'恢复完成',decisions:[{text:'保留来源',evidence:[{recordId:record.id,segmentId:'s69',revision:1}]}],actions:[]}};return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(result)}}]}),{headers:{'content-type':'application/json'}});};
+  const {meetingSourcePages,MEETING_COMPACTION}=await import('../services/records/src/meeting-agent-context.mjs');let total=meetingSourcePages({recordId:record.id,title:record.title,segments:record.segments},contextPolicy(modelProfile({})).pageChars,contextPolicy(modelProfile({})).pageChars).length;let next=8;
+  globalThis.fetch=async(_url,options)=>{const body=JSON.parse(options.body);if(!body.messages[0].content.startsWith(MEETING_COMPACTION)){const transcript=JSON.parse(body.messages[1].content);for(const message of transcript.messages.filter(item=>item.role==='toolResult'&&item.toolName==='read_selected_meeting')){const page=JSON.parse(message.content.filter(item=>item.type==='text').map(item=>item.text).join(''));total=page.totalPages||1;}}const result=body.messages[0].content.startsWith(MEETING_COMPACTION)?{summary:'保留已读取页和精确来源。'}:next<total?{toolCalls:Array.from({length:Math.min(8,total-next)},()=>({name:'read_selected_meeting',arguments:{recordId:record.id,page:next++}}))}:{result:{summary:'恢复完成',decisions:[{text:'保留来源',evidence:[{recordId:record.id,segmentId:'s69',revision:1}]}],actions:[]}};return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(result)}}]}),{headers:{'content-type':'application/json'}});};
   agent=await createMeetingAgentRuntime({repo,env});let state;for(let i=0;i<600;i++){state=await agent.get('owner',task.id);if(['completed','failed','blocked'].includes(state.status))break;await new Promise(resolve=>setTimeout(resolve,10));}
   assert.equal(state.status,'completed',JSON.stringify(state));assert.equal(state.progress.pagesRead,state.progress.totalPages);assert.equal((await agent.request('owner',input)).id,task.id);
  }finally{await agent?.close();globalThis.fetch=original;await repo.close();await rm(root,{recursive:true,force:true});}
