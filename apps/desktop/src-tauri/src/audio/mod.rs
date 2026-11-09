@@ -1031,6 +1031,30 @@ mod tests {
 
     #[cfg(feature = "smoke-test")]
     #[test]
+    fn paused_native_tail_requires_each_file_receipt_before_resume() {
+        let root=tempfile::tempdir().unwrap();let captures=Captures::default();let mut bindings=Vec::new();
+        for (kind,key) in [("display","a"),("microphone","b")] {
+            let started=captures.prepare_synthetic(kind).unwrap();let lease=key.repeat(64);let directory=root.path().join(&lease);std::fs::create_dir(&directory).unwrap();
+            captures.bind_direct(&started.id,root.path(),serde_json::json!({"protocol":"native-file-v1","leaseId":lease,"recordId":"record","source":{"id":kind,"sessionId":kind,"epoch":kind,"label":"synthetic","timelineOffsetMs":0}})).unwrap();
+            bindings.push((started.id,lease,directory));
+        }
+        let deadline=std::time::Instant::now()+Duration::from_secs(5);
+        while !bindings.iter().all(|(id,_,_)|captures.direct_progress(id).unwrap()["sampleEnd"].as_u64().unwrap()>0) {
+            assert!(std::time::Instant::now()<deadline,"both synthetic sources must produce samples before testing their receipt barrier");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let manifests=bindings.iter().map(|(id,_,_)|captures.stop_direct(id,"pause").unwrap()).collect::<Vec<_>>();
+        let status=captures.native_status().unwrap();assert!(status.paused);assert!(!status.can_resume);assert!(status.pending_count>0);
+        for (index,((_,lease,directory),manifest)) in bindings.iter().zip(&manifests).enumerate() {
+            assert!(manifest["sampleEnd"].as_u64().unwrap()>0);
+            std::fs::write(directory.join("receipt.json"),serde_json::json!({"schema":1,"leaseId":lease,"watermark":manifest["lastSequence"],"sampleEnd":manifest["sampleEnd"],"finished":true,"error":null}).to_string()).unwrap();
+            let status=captures.native_status().unwrap();assert!(status.paused);assert_eq!(status.can_resume,index==bindings.len()-1);
+        }
+        assert_eq!(captures.native_status().unwrap().pending_count,0);
+    }
+
+    #[cfg(feature = "smoke-test")]
+    #[test]
     fn only_confirmed_raw_purge_releases_native_pending_after_record_deletion() {
         let root=tempfile::tempdir().unwrap();let captures=Captures::default();let started=captures.prepare_synthetic("display").unwrap();let lease="e".repeat(64);let directory=root.path().join(&lease);std::fs::create_dir(&directory).unwrap();
         captures.bind_direct(&started.id,root.path(),serde_json::json!({"protocol":"native-file-v1","leaseId":lease,"recordId":"record","source":{"id":"source","label":"synthetic","sessionId":"session","epoch":"epoch","timelineOffsetMs":0}})).unwrap();

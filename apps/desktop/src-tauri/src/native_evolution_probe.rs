@@ -32,8 +32,11 @@ async fn run(app: &AppHandle) -> Result<Value, String> {
     let deadline=Instant::now()+Duration::from_secs(15);
     loop {
         let value=record(app,&id).await?;
-        if value["capture"]=="paused" && value["sources"].as_array().is_some_and(|sources|sources.iter().all(|source|source["watermark"]==source["lastSequence"])) { break; }
-        if Instant::now()>deadline { return Err("本机持久化确认超时".into()); }
+        let native=app.state::<Client>().captures.native_status().ok_or("暂停状态丢失")?;
+        let stored=value["capture"]=="paused" && value["sources"].as_array().is_some_and(|sources|sources.iter().all(|source|source["watermark"]==source["lastSequence"]));
+        // The database commits before the native receipt file is flushed.
+        if stored && native.paused && native.can_resume { break; }
+        if Instant::now()>deadline { return Err(format!("本机持久化确认超时: stored={stored}, paused={}, canResume={}, pending={}",native.paused,native.can_resume,native.pending_count)); }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     let paused=app.state::<Client>().captures.native_status().ok_or("暂停状态丢失")?;
