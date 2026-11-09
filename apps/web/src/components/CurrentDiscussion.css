@@ -1,13 +1,12 @@
-.current-discussion.discussion-dock,
-.workspace.with-translation .current-discussion.discussion-dock {
+.current-discussion.discussion-dock {
   height:44px;min-height:44px;max-height:44px;flex-direction:row;align-items:center;
-  justify-content:flex-start;gap:12px;padding:0 16px;margin-bottom:12px;
+  justify-content:flex-start;gap:12px;padding:0 16px;margin-bottom:12px;display:flex;flex:none;margin:0 calc(var(--side-panel-offset) + var(--workspace-gutter)) 12px var(--workspace-gutter);background:var(--panel-2);border:0;border-radius:16px;
 }
 .current-discussion .discussion-capture-state { color:var(--ink-3);font-size:11px;white-space:nowrap; }
 .current-discussion .discussion-status-row { display:flex;align-items:center;gap:10px;min-width:0;flex:1; }
 .current-discussion .discussion-activity { display:inline-flex;align-items:center;justify-content:space-between;flex:0 0 23px;width:23px;height:18px;color:var(--ink-3); }
 .current-discussion .discussion-activity.is-active { color:var(--accent); }
 .current-discussion .discussion-activity>span { display:block;width:4px;height:4px;border-radius:50%;background:currentColor; }
-.current-discussion.discussion-dock .discussion-status { min-width:0;line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.current-discussion.discussion-dock { min-width:0;line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;flex:none;margin:0 calc(var(--side-panel-offset) + var(--workspace-gutter)) 12px var(--workspace-gutter);background:var(--panel-2);border:0;border-radius:16px; }
 @media(max-width:700px) { .current-discussion.discussion-dock,.workspace.with-translation .current-discussion.discussion-dock { gap:8px;padding:0 12px;margin-bottom:calc(68px + env(safe-area-inset-bottom)); } }
 @media(prefers-reduced-motion:reduce) { .current-discussion .discussion-activity>span { transform:none !important; } }

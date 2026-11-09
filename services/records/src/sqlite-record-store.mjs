@@ -1,4 +1,4 @@
-import {collectionFields as fields,recordBody as bodyOf,encodedCollections as encodeRows,encodedDocuments,hydrateCollections as collections,sameStorageSnapshot,storageHeader} from './record-storage-shape.mjs';
+import {collectionFields as fields,recordBody as bodyOf,encodedCollections as encodeRows,encodedDocuments,hydrateCollections as collections,sameStorageSnapshot,storageHeader,collectionOffsets} from './record-storage-shape.mjs';
 import {randomUUID} from 'node:crypto';
 import {backup} from 'node:sqlite';
 import {stat,chmod,open,link,rm} from 'node:fs/promises';
@@ -62,6 +62,18 @@ export function createSqliteRecordStore(db,{compressAggregates=false}={}){
       entry.bytes+=Object.values(entry.documents).reduce((sum,item)=>sum+Buffer.byteLength(item),0);
       remember(value.id,entry);
     }
+    if (entry.patches?.size) {
+      const rows={...entry.rows},copied=new Set();let bytes=entry.bytes;
+      for (const patch of entry.patches.values()) {
+        if (!copied.has(patch.field)) {rows[patch.field]=[...rows[patch.field]];copied.add(patch.field);}
+        const index=patch.position-(entry.offsets[patch.field]||0),old=rows[patch.field][index];
+        const item=JSON.parse(old);Object.assign(item,patch.set);
+        for (const key of patch.remove) delete item[key];
+        rows[patch.field][index]=JSON.stringify(item);
+        bytes+=Buffer.byteLength(rows[patch.field][index])-Buffer.byteLength(old)-patch.bytes;
+      }
+      entry={...entry,rows,bytes,patches:new Map()};remember(value.id,entry);
+    }
     const result=collections(value,entry.rows,entry.documents);
     baselines.set(result,entry);
     return result;
@@ -70,20 +82,57 @@ export function createSqliteRecordStore(db,{compressAggregates=false}={}){
   function prepare(value){return {body:JSON.stringify(bodyOf(value)),rows:encodeRows(value),documents:encodedDocuments(value)};}
   function write(value,insert=false,prepared){
     const separated=value.kind==='record',rows=separated?(prepared?.rows||encodeRows(value)):null,previous=insert?null:baselines.get(value)||cache.get(value.id);
-    const version=randomUUID(),documents=separated?(prepared?.documents||encodedDocuments(value)):{};
+    const version=randomUUID(),documents=separated?(prepared?.documents||encodedDocuments(value)):{},offsets=separated?collectionOffsets(rows,previous):{};
     if(separated)for(const field of fields){
-      if(previous?.offsets?.[field])db.prepare('DELETE FROM record_collections WHERE record_id=? AND field=?').run(value.id,field);
-      rows[field].forEach((item,index)=>{if(previous?.offsets?.[field]||previous?.rows[field][index]!==item)put.run(value.id,field,index,item);});
-      if(!previous||previous.rows[field].length>rows[field].length)trim.run(value.id,field,rows[field].length);
+      const start=offsets[field]||0,oldStart=previous?.offsets?.[field]||0,end=start+rows[field].length;
+      if(start>oldStart)db.prepare('DELETE FROM record_collections WHERE record_id=? AND field=? AND position<?').run(value.id,field,start);
+      rows[field].forEach((item,index)=>{const position=start+index;if(previous?.rows[field][position-oldStart]!==item)put.run(value.id,field,position,item);});
+      if(!previous||oldStart+previous.rows[field].length>end)trim.run(value.id,field,end);
     }
     if(separated){
       for(const [field,data] of Object.entries(documents))if(previous?.documents?.[field]!==data)db.prepare('INSERT INTO record_documents(record_id,field,data) VALUES(?,?,?) ON CONFLICT(record_id,field) DO UPDATE SET data=excluded.data').run(value.id,field,data);
       for(const field of previous?Object.keys(previous.documents):db.prepare('SELECT field FROM record_documents WHERE record_id=?').all(value.id).map(row=>row.field))if(!Object.hasOwn(documents,field))db.prepare('DELETE FROM record_documents WHERE record_id=? AND field=?').run(value.id,field);
     }
-    writeHeader(separated?storageHeader(value,rows,documents,version):value,insert);
-    if(separated)remember(value.id,{version,rows,documents,bytes:Object.values(documents).reduce((sum,item)=>sum+Buffer.byteLength(item),0)+fields.reduce((sum,field)=>sum+rows[field].reduce((n,item)=>n+Buffer.byteLength(item),0),0)});
+    writeHeader(separated?storageHeader(value,rows,documents,version,offsets):value,insert);
+    if(separated)remember(value.id,{version,rows,documents,offsets,bytes:Object.values(documents).reduce((sum,item)=>sum+Buffer.byteLength(item),0)+fields.reduce((sum,field)=>sum+rows[field].reduce((n,item)=>n+Buffer.byteLength(item),0),0)});
   }
-  function writeHeader(value,insert=false){
+  function updateCache(value,patch){
+    const previous=cache.get(value.id);
+    if(!previous||previous.version!==patch?.baseVersion||value.$collections!==2)return cache.delete(value.id);
+    const rows={...previous.rows},documents={...previous.documents},offsets={...value.$offsets},patches=new Map(previous.patches);let bytes=previous.bytes;
+    const changes=patch.rows||[],touched=new Set(changes.map(change=>change.field));
+    for(const field of fields)if((offsets[field]||0)!==(previous.offsets?.[field]||0)||value.$counts[field]!==rows[field].length)touched.add(field);
+    for(const field of touched){
+      if(!fields.includes(field))return cache.delete(value.id);
+      const drop=(offsets[field]||0)-(previous.offsets?.[field]||0);
+      if(drop<0||drop>rows[field].length)return cache.delete(value.id);
+      const kept=rows[field].slice(drop,drop+value.$counts[field]);
+      for(const item of rows[field].slice(0,drop))bytes-=Buffer.byteLength(item);
+      for(const item of rows[field].slice(drop+kept.length))bytes-=Buffer.byteLength(item);
+      rows[field]=kept;
+    }
+    for(const change of changes){
+      const index=change.position-(offsets[change.field]||0),items=rows[change.field];
+      if(index<0)continue;
+      if(index>items.length)return cache.delete(value.id);
+      const old=items[index],key=`${change.field}:${change.position}`,pending=patches.get(key),data=change.data;
+      if(pending){bytes-=pending.bytes;patches.delete(key);}
+      if(data===undefined){
+        if(old===undefined)return cache.delete(value.id);
+        // Defer decoding frozen job inputs until a reader actually requests them.
+        const set={...pending?.set,...JSON.parse(JSON.stringify(change.set||{}))},remove=new Set(pending?.remove);
+        for(const name of change.remove||[]){delete set[name];remove.add(name);}
+        for(const name of Object.keys(change.set||{}))remove.delete(name);
+        const patch={field:change.field,position:change.position,set,remove:[...remove]};
+        patch.bytes=Buffer.byteLength(JSON.stringify(patch));bytes+=patch.bytes;patches.set(key,patch);continue;
+      }
+      bytes+=Buffer.byteLength(data)-(old===undefined?0:Buffer.byteLength(old));items[index]=data;
+    }
+    for(const [key,patch] of patches)if(patch.position<(offsets[patch.field]||0)||patch.position>=(offsets[patch.field]||0)+value.$counts[patch.field]){bytes-=patch.bytes;patches.delete(key);}
+    if(fields.some(field=>rows[field].length!==value.$counts[field])||value.$documents.some(field=>!Object.hasOwn(documents,field)))return cache.delete(value.id);
+    remember(value.id,{version:value.$version,rows,documents,offsets,bytes,patches});
+  }
+  function writeHeader(value,insert=false,patch){
     const json=JSON.stringify(value);
     const packed=compressAggregates&&value.kind==='record'?encodeStorage(Buffer.from(json)):{compressed:false};
     const metadata=packed.compressed?JSON.stringify({id:value.id,kind:value.kind,owner:value.owner,deleted:value.deleted,deleteAt:value.deleteAt,nextWorkAt:value.nextWorkAt,workAt:value.workAt,$collections:2,$audioVersion:2,$payload:'deflate-v1'}):json;
@@ -91,7 +140,7 @@ export function createSqliteRecordStore(db,{compressAggregates=false}={}){
     else db.prepare('UPDATE aggregates SET data=? WHERE id=?').run(metadata,value.id);
     if(packed.compressed)db.prepare('INSERT INTO aggregate_payloads(id,payload) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload').run(value.id,packed.bytes);
     else db.prepare('DELETE FROM aggregate_payloads WHERE id=?').run(value.id);
-    cache.delete(value.id);
+    updateCache(value,patch);
   }
   function decode(value){
     if(value?.kind!=='record'||db.isTransaction)return hydrate(value);

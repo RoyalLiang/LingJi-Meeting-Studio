@@ -362,6 +362,9 @@ export function audioSummary(record) {
   return {durationMs:recordingDurationMs(record),pendingChunks:record.chunks.filter(chunk=>chunk.state!=='done').length,audio:record.sources.map(source=>receipt(record,source,index))};
 }
 
+export const privateJobFields = ['snapshot','notes','fence','windowCache','manifest','usageCalls','liveBaseHash','liveContext','liveIncremental'];
+export const publicJobs = jobs => jobs.map(job => Object.fromEntries(Object.entries(job).filter(([key]) => !privateJobFields.includes(key))));
+
 export function publicRecord(record) {
   const { owner, events, chunks, shares, jobs, minutesHistory, learning, waveforms, workAt, audioBackup, ...rest } = record;
   const errorCodes = [...new Set([...record.sources.filter(source => source.asr?.state === 'failed').map(source => source.asr.error), ...chunks.filter(chunk => chunk.state !== 'done').map(chunk => chunk.error)].filter(Boolean))].sort();
@@ -370,7 +373,7 @@ export function publicRecord(record) {
     transcription: publicTranscription(record), ...(learning ? {learning:publicLearning(record)} : {}), segments: record.segments.map(({translationFence,translationLease,...segment})=>segment), sources: publicSources(record.sources), audio: record.sources.map(s => receipt(record, s)),
     pendingChunks: chunks.filter(c => c.state !== 'done').length,
     minuteVersions: [...(minutesHistory || []), ...(record.minutes ? [record.minutes] : [])].map(m => ({ revision: m.revision, transcriptRevision: m.transcriptRevision, edited: m.edited })),
-    jobs: jobs.map(({ snapshot, notes, fence, windowCache, manifest, usageCalls,liveBaseHash,liveContext,liveIncremental, ...job }) => job) };
+    jobs: publicJobs(jobs) };
 }
 
 // Temporary audio is still needed after ASR when direct-audio minutes are pending.

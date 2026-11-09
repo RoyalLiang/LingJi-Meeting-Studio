@@ -21,6 +21,18 @@ export function sameStorageSnapshot(before,after) {
   return before.body === after.body && Object.keys(before.documents).length === Object.keys(after.documents).length && Object.entries(before.documents).every(([field,value]) => after.documents[field] === value) && collectionFields.every(field => before.rows[field].length === after.rows[field].length && before.rows[field].every((item,index) => item === after.rows[field][index]));
 }
 
-export function storageHeader(value,rows,documents,version){
-  return {...recordBody(value),$collections:2,$audioVersion:2,$version:version,$documents:Object.keys(documents),$counts:Object.fromEntries(collectionFields.map(field=>[field,rows[field].length])),$audio:audioSummary(value)};
+export function collectionOffsets(rows, before) {
+  const offsets={...before?.offsets};
+  if(before?.rows.events.length && rows.events.length) {
+    const previous=BigInt(JSON.parse(before.rows.events[0]).cursor),next=BigInt(JSON.parse(rows.events[0]).cursor);
+    if(next>previous) {
+      const offset=BigInt(offsets.events||0)+next-previous;
+      requireThat(offset<=BigInt(Number.MAX_SAFE_INTEGER),'storage_position_overflow',500);
+      offsets.events=Number(offset);
+    }
+  }
+  return offsets;
+}
+export function storageHeader(value,rows,documents,version,offsets={}){
+  return {...recordBody(value),$collections:2,$audioVersion:2,$version:version,$documents:Object.keys(documents),$counts:Object.fromEntries(collectionFields.map(field=>[field,rows[field].length])),$offsets:offsets,$audio:audioSummary(value)};
 }

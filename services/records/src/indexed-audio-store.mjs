@@ -1,4 +1,5 @@
 import { createLocalAsrStore } from './local-asr-store.mjs';
+import { createLiveFieldStore } from './live-field-store.mjs';
 import {randomUUID} from 'node:crypto';
 import {acknowledge,digest,requireThat,publicSources,publicTranscription} from '../../../packages/records/src/record.mjs';
 import {audioChunkIndex} from '../../../packages/records/src/audio-index.mjs';
@@ -86,8 +87,10 @@ export async function createIndexedAudioStore({db,pool,sqliteStore,putAudio,comm
     return {result,accepted,left,right,ranges,source};
   }
   const localAsr = await createLocalAsrStore({db,pool,sqliteStore,transaction,select,write,getHeader,stats,committed});
+  const liveFields = await createLiveFieldStore({pool,sqliteStore,transaction,select,write,getHeader,committed});
   return {
     ...localAsr,
+    ...liveFields,
     syncSqlite(record,summary){
       // Synchronous SQLite writes belong to the caller's existing transaction.
       if(record.kind!=='record')return;
@@ -114,15 +117,17 @@ export async function createIndexedAudioStore({db,pool,sqliteStore,putAudio,comm
       const outcome=await transaction((function*(){
         const header=owned(yield* getHeader(id,true),owner);
         let result;
-        const baseCursor=header.cursor,counts={...header.$counts},offsets={...header.$offsets};
+      const baseCursor=header.cursor,baseVersion=header.$version,counts={...header.$counts},offsets={...header.$offsets},cacheRows=[];
         const checked=yield* inspect(header,{...chunk,...object});result=checked.result;
         if(checked.accepted){
           const accepted={...checked.accepted,waveform:chunkWaveform(bytes)},source=checked.source,sequence=accepted.sequence;
           yield write('INSERT INTO record_collections(record_id,field,position,data) VALUES($1,$2,$3,$4)',[id,'chunks',counts.chunks,JSON.stringify(accepted)]);
+        cacheRows.push({field:'chunks',position:counts.chunks,data:JSON.stringify(accepted)});
           for(const range of [checked.left,checked.right].filter(Boolean))yield write('DELETE FROM record_audio_ranges WHERE record_id=$1 AND source_id=$2 AND epoch=$3 AND start_seq=$4',[id,source.id,source.epoch,range[0]]);
           yield write('INSERT INTO record_audio_ranges(record_id,source_id,epoch,start_seq,end_seq) VALUES($1,$2,$3,$4,$5)',[id,source.id,source.epoch,checked.left?.[0]??sequence,checked.right?.[1]??sequence]);
           const event=header.events[0],eventOffset=offsets.events||0;
           yield write('INSERT INTO record_collections(record_id,field,position,data) VALUES($1,$2,$3,$4)',[id,'events',eventOffset+counts.events,JSON.stringify(event)]);
+        cacheRows.push({field:'events',position:eventOffset+counts.events,data:JSON.stringify(event)});
           if(counts.events===1000){yield write("DELETE FROM record_collections WHERE record_id=$1 AND field='events' AND position=$2",[id,eventOffset]);offsets.events=eventOffset+1;}else counts.events++;
           counts.chunks++;
           const summary=header.$audio;
@@ -138,7 +143,7 @@ export async function createIndexedAudioStore({db,pool,sqliteStore,putAudio,comm
           yield write('INSERT INTO record_feed_events(record_id,cursor,data) VALUES($1,$2,$3)',[id,cursorKey(event.cursor),JSON.stringify(feed)]);
           yield write('DELETE FROM record_feed_events WHERE record_id=$1 AND cursor<$2',[id,cursorKey(first)]);
           delete header.chunks;delete header.events;header.$counts=counts;header.$offsets=offsets;header.$version=randomUUID();
-          if(pool)yield write('UPDATE record_aggregates SET data=$2 WHERE id=$1',[id,JSON.stringify(header)]);else sqliteStore.writeHeader(header);
+        if(pool)yield write('UPDATE record_aggregates SET data=$2 WHERE id=$1',[id,JSON.stringify(header)]);else sqliteStore.writeHeader(header,false,{baseVersion,rows:cacheRows});
           yield* stats(header,summary);
         }
         return {header,result,changed:Boolean(checked.accepted)};

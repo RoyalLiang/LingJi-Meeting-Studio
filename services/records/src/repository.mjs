@@ -10,7 +10,7 @@ import { analysisInput, workspaceOverviewInput } from '../../../packages/records
 import {flushAudioObject} from './audio-storage-sync.mjs';
 import {learningWorkAt} from '../../../packages/records/src/learning.mjs';
 import { cursorKey, deriveProjection, visibleSnapshot } from './projections.mjs';
-import { automaticMinutesAt } from '../../../packages/records/src/automation.mjs';
+import { automaticMinutesAt, updateMinutesPreview } from '../../../packages/records/src/automation.mjs';
 import { mkdir, open, readFile, readdir, rm, stat, link } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
@@ -64,7 +64,7 @@ function schedule(value, now=Date.now()) {
       for(const segment of value.segments){
         if(segment.translationLanguage===value.translationTarget||(segment.translationAttempts||0)>=3)continue;
         const time=Math.max(segment.translationLease||0,segment.translationRetryAt||0,now);due('translation',time);
-        if(value.capture==='recording'&&segment.endMs>=liveFrom-60000)due('translation-live',time);
+        if(value.capture==='recording'&&segment.endMs>=liveFrom)due('translation-live',time);
       }
     }
     for(const job of value.jobs){if(job.status==='queued')due('minutes',now);else if(job.status==='running')due('minutes',job.lease||now);}
@@ -172,6 +172,14 @@ export async function createRepository(options = {}) {
   const notifications=await createRepositoryNotifications({root,db,pool}).catch(async error=>{if(pool)await pool.end();else db.close();throw error;});
   const repository = {
     ingestAudio: audioStore.ingest,
+    async changeMinutesPreview(id, jobId, fence, text, runtime) {
+      const outcome = await audioStore.changeMinutesPreview(id, jobId, fence, text, runtime);
+      if (outcome.unsupported) return repository.change(id, record => updateMinutesPreview(record, jobId, fence, text, runtime), { returnRecord:false });
+    },
+    async changeTranslation(id, selector, operation) {
+      const outcome = await audioStore.changeTranslation(id, selector, operation);
+      if (outcome.unsupported) return repository.change(id, operation, { returnRecord:false });
+    },
     changeLocalAsr: audioStore.changeLocalAsr,
     inspectLocalAsr: audioStore.inspectLocalAsr,
     localAsrNeedsCleanup: audioStore.localAsrNeedsCleanup,
@@ -285,19 +293,25 @@ export async function createRepository(options = {}) {
     async listWork({ lane = 'all', metadataOnly = false } = {}) {
       const after = workCursors.get(lane) || '', now = Date.now();
       const selectedLane=workerLanes.includes(lane)?lane:null;
-      const lanePg=selectedLane?` AND (data->'workAt' IS NULL OR (data->'workAt'->>'${selectedLane}')::bigint<=$1)` : '';
-      const laneSql=selectedLane?` AND (json_type(data,'$.workAt') IS NULL OR json_extract(data,'$.workAt."${selectedLane}"')<=?)` : '';
+      const lanePg=selectedLane?`(${workExpression(selectedLane,true)})<=$1` : "(data->>'nextWorkAt' IS NULL OR (data->>'nextWorkAt')::bigint <= $1)";
+      const laneSql=selectedLane?`(${workExpression(selectedLane,false)})<=?` : "(json_extract(data,'$.nextWorkAt') IS NULL OR json_extract(data,'$.nextWorkAt')<=?)";
+      // Isolate selective due IDs so ID-order pagination cannot hide the due index.
+      const filterPg=selectedLane?"id IN (SELECT id FROM record_aggregates WHERE data->>'kind'='record' AND "+lanePg+")":"data->>'kind'='record' AND "+lanePg;
+      const filterSql=selectedLane?"id IN (SELECT id FROM aggregates WHERE json_extract(data,'$.kind')='record' AND "+laneSql+")":"json_extract(data,'$.kind')='record' AND "+laneSql;
       const page = async (start, end, limit) => pool
-        ? (await pool.query("SELECT data FROM record_aggregates WHERE data->>'kind'='record' AND (data->>'nextWorkAt' IS NULL OR (data->>'nextWorkAt')::bigint <= $1)"+lanePg+" AND id>$2 AND ($3::text IS NULL OR id<=$3) ORDER BY id LIMIT $4", [now,start,end,limit])).rows
-        : db.prepare("SELECT data FROM aggregates WHERE json_extract(data,'$.kind')='record' AND (json_extract(data,'$.nextWorkAt') IS NULL OR json_extract(data,'$.nextWorkAt')<=?)"+laneSql+" AND id>? AND (? IS NULL OR id<=?) ORDER BY id LIMIT ?").all(...[now,...(selectedLane?[now]:[]),start,end,end,limit]);
+        ? (await pool.query("SELECT data FROM record_aggregates WHERE "+filterPg+" AND id>$2 AND ($3::text IS NULL OR id<=$3) ORDER BY id LIMIT $4", [now,start,end,limit])).rows
+        : db.prepare("SELECT data FROM aggregates WHERE "+filterSql+" AND id>? AND (? IS NULL OR id<=?) ORDER BY id LIMIT ?").all(now,start,end,end,limit);
       const rows = await page(after, null, 100);
       if (after && rows.length < 100) rows.push(...await page('', after, 100 - rows.length));
       if (rows.length) workCursors.set(lane, typeof rows.at(-1).data === 'string' ? JSON.parse(rows.at(-1).data).id : rows.at(-1).data.id);
       else workCursors.delete(lane);
-      if(metadataOnly)return rows.map(row=>({...((pool ? row.data : sqliteStore.header(JSON.parse(row.data)))),$metadataOnly:true}));
     const values=[];
       for(const row of rows){
         const metadata=typeof row.data==='string'?JSON.parse(row.data):row.data;
+        if (metadataOnly && metadata.workAt) {
+          values.push({ ...(pool ? metadata : sqliteStore.header(metadata)), $metadataOnly:true });
+          continue;
+        }
         const originalMetadata=pool?JSON.stringify(metadata):row.data;
         const value=postgresStore?await repository.get(row.id || row.data.id):decode(row);if(!value)continue;schedule(value,now);
         const dueAt=selectedLane?value.workAt[selectedLane]:value.nextWorkAt;
@@ -309,7 +323,7 @@ export async function createRepository(options = {}) {
           else db.prepare("UPDATE aggregates SET data=json_set(data,'$.workAt',json(?),'$.nextWorkAt',json(?)) WHERE id=? AND data=?").run(work,next,value.id,row.data);
         }
         if(stale)continue;
-        values.push(value);
+        values.push(metadataOnly ? { ...(pool ? value : sqliteStore.header(metadata)), workAt:value.workAt, nextWorkAt:value.nextWorkAt, $metadataOnly:true } : value);
       }
       return values;
     },

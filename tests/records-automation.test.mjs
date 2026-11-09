@@ -424,14 +424,9 @@ test('slow draft persistence never blocks reading the minutes stream and final c
  const writeGate=new Promise(r=>{releaseWrite=r;}),modelGate=new Promise(r=>{releaseModel=r;});
  const blocked=new Promise(r=>{writing=r;}),readAhead=new Promise(r=>{advanced=r;});
  const slow=Object.create(repo);
- slow.change=async(id,mutate,options)=>{
-   let previewChanged=false;
-   const response=await repo.change(id,value=>{
-     const before=JSON.stringify(value.jobs.at(-1)?.preview),result=mutate(value);
-     previewChanged=JSON.stringify(value.jobs.at(-1)?.preview)!==before;
-     return result;
-   },options);
-   if(!held&&previewChanged){held=true;writing();await writeGate;}
+ slow.changeMinutesPreview=async(...args)=>{
+   const response=await repo.changeMinutesPreview(...args);
+   if(!held){held=true;writing();await writeGate;}
    return response;
  };
  try{

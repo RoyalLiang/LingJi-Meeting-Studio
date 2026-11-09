@@ -522,13 +522,14 @@ export async function processLearningTraining(repo, owner, providers = {}) {
 export async function runLearningCycle(repo, providers = {}) {
   if(repo.backend!=='sqlite' && !providers.learningPreparation)return;
   if (!providers.learningPreparation && !(await learningServiceFor(repo).check()).available) {
-    for(const candidate of await repo.listWork({lane:'learning'})){
+    for(const metadata of await repo.listWork({lane:'learning',metadataOnly:true})){
+      const candidate=await repo.get(metadata.id);if(!candidate)continue;
       if(!candidate.deleted && ['queued','failed'].includes(candidate.learning?.status) && (candidate.learning.retryAt||0)<=Date.now())
         await repo.change(candidate.id,record=>{if(!record.deleted && ['queued','failed'].includes(record.learning?.status) && (record.learning.retryAt||0)<=Date.now())record.learning.retryAt=Date.now()+30000;});
     }
     return;
   }
-  for (const record of await repo.listWork({ lane: 'learning' }))
+  for (const record of await repo.listWork({ lane: 'learning', metadataOnly:true }))
     if (!record.deleted && record.capture === "completed")
       await processLearningRecord(repo, record.id, providers);
   for (const state of await repo.list("learning-training"))

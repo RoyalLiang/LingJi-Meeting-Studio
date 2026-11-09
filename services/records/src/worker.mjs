@@ -38,12 +38,17 @@ export async function runCycle(repo, providers = {}, { lane = 'all', cacheConfig
   if(['translation','translation-live','translation-preview'].includes(lane)&&!providers.translate&&!providerStatus(config).translation)return;
   if(lane==='all'||lane==='audio')void cleanupAudioBackups(repo).catch(()=>{});
   const localAudio = lane === 'audio' && baseConfig.ASR_PROVIDER === 'sensevoice-local' && baseConfig.MINUTES_MODE !== 'doubao-audio-only' && !providers.transcribe && !providerStatus(baseConfig).fixture;
-  const records = await repo.listWork({ lane, metadataOnly: localAudio });
+  const records = await repo.listWork({ lane, metadataOnly: true });
   if (lane === 'minutes') records.sort((a,b)=>Number(['sealed','completed'].includes(b.capture))-Number(['sealed','completed'].includes(a.capture)));
   async function processCandidate(candidate) {
     if (candidate.$metadataOnly) {
       const currentConfig=recordMinutesConfig(candidate,baseConfig);
-      const hot=candidate.$collections===2 && candidate.$audioVersion===2 && candidate.capture==='recording' && !candidate.deleted && Date.parse(candidate.deleteAt)>Date.now() && Date.now()-(candidate.gcAt || 0)<=3600000 && !audioBackupPending(candidate) && currentConfig.MINUTES_MODE!=='doubao-audio-only';
+      if (repo.changeTranslation && ['translation','translation-live','translation-preview'].includes(lane)) {
+        await processTranslation(repo,candidate.id,(text,target,options)=>(providers.translate || translateText)(text,target,currentConfig,options),
+          lane === 'translation-preview' ? 'preview' : lane === 'translation-live' ? 'live' : 'history');
+        return;
+      }
+      const hot=localAudio && candidate.$collections===2 && candidate.$audioVersion===2 && candidate.capture==='recording' && !candidate.deleted && Date.parse(candidate.deleteAt)>Date.now() && Date.now()-(candidate.gcAt || 0)<=3600000 && !audioBackupPending(candidate) && currentConfig.MINUTES_MODE!=='doubao-audio-only';
       if (hot && !await repo.localAsrNeedsCleanup(candidate)) {
         closeSpeakerStreams(repo,candidate.id);
         candidate.segments=await repo.localAsrTail(candidate.id);
@@ -171,7 +176,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all', cacheConfig
         if(previewClosed || publishing || !previewDirty)return publishing;
         previewDirty=false;
         const text=json,runtime=previewRuntime;
-        publishing=repo.change(candidate.id,r=>updateMinutesPreview(r,jobClaim.id,jobClaim.fence,text,runtime), {returnRecord:false})
+        publishing=(repo.changeMinutesPreview ? repo.changeMinutesPreview(candidate.id,jobClaim.id,jobClaim.fence,text,runtime) : repo.change(candidate.id,r=>updateMinutesPreview(r,jobClaim.id,jobClaim.fence,text,runtime), {returnRecord:false}))
           .catch(error=>telemetry.event('minutes.preview-failed',{recordId:candidate.id,jobId:jobClaim.id,error:error.code || 'preview_write_failed'}))
           .finally(()=>{publishing=undefined;lastPublished=Date.now();schedulePreview();});
         return publishing;

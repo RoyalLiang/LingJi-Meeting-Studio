@@ -72,10 +72,14 @@ export async function createLocalAsrStore({ db, pool, sqliteStore, transaction, 
     record.nextWorkAt=Math.min(...Object.values(record.workAt).filter(value=>typeof value==='number' && Number.isFinite(value)));
   }
   function* persist(record, original, before, events) {
+    const cacheRows=[];
     for (const chunk of record.chunks) {
       const previous=original.get(chunk.key),json=JSON.stringify(chunk);
       requireThat(previous, 'invalid_local_asr_mutation', 500);
-      if (json!==previous.json) yield write("UPDATE record_collections SET data=$3 WHERE record_id=$1 AND field='chunks' AND position=$2",[record.id,previous.position,json]);
+      if (json!==previous.json) {
+        yield write("UPDATE record_collections SET data=$3 WHERE record_id=$1 AND field='chunks' AND position=$2",[record.id,previous.position,json]);
+        cacheRows.push({field:'chunks',position:previous.position,data:json});
+      }
     }
     const counts={...record.$counts},offsets={...record.$offsets},summary=record.$audio;
     if (events.length) {
@@ -83,6 +87,7 @@ export async function createLocalAsrStore({ db, pool, sqliteStore, transaction, 
       const meta={...decode(metaRow),cursor:record.cursor,writeVersion:randomUUID()};
       let previousCursor=before.cursor;
       for (const event of events) {
+        cacheRows.push({field:'events',position:(offsets.events || 0)+counts.events,data:JSON.stringify(event)});
         yield write('INSERT INTO record_collections(record_id,field,position,data) VALUES($1,$2,$3,$4)',[record.id,'events',(offsets.events || 0)+counts.events,JSON.stringify(event)]);
         if (counts.events===1000) {yield write("DELETE FROM record_collections WHERE record_id=$1 AND field='events' AND position=$2",[record.id,offsets.events || 0]);offsets.events=(offsets.events || 0)+1;} else counts.events++;
     summary.audio=summary.audio.map(receipt=>({...receipt,cursor:event.cursor}));
@@ -97,7 +102,7 @@ export async function createLocalAsrStore({ db, pool, sqliteStore, transaction, 
     }
     record.$counts=counts;record.$offsets=offsets;record.$version=randomUUID();
     delete record.chunks;delete record.events;
-    if (pool) yield write('UPDATE record_aggregates SET data=$2 WHERE id=$1',[record.id,JSON.stringify(record)]); else sqliteStore.writeHeader(record);
+    if (pool) yield write('UPDATE record_aggregates SET data=$2 WHERE id=$1',[record.id,JSON.stringify(record)]); else sqliteStore.writeHeader(record,false,{baseVersion:before.baseVersion,rows:cacheRows});
     yield* stats(record,summary);
   }
   return {
@@ -112,7 +117,7 @@ export async function createLocalAsrStore({ db, pool, sqliteStore, transaction, 
         const selected=yield* view(id,claim,true);if (!selected) return {changed:false};
         const {record,original}=selected;
         if (record.deleted || Date.parse(record.deleteAt)<=Date.now()) return {changed:false};
-        const before={cursor:record.cursor,immutable:immutableHeader(record),header:JSON.stringify({...record,chunks:undefined,events:undefined})};
+        const before={baseVersion:record.$version,cursor:record.cursor,immutable:immutableHeader(record),header:JSON.stringify({...record,chunks:undefined,events:undefined})};
         const result=operation(record);requireThat(!result?.then,'invalid_local_asr_mutation',500);
         requireThat(immutableHeader(record)===before.immutable,'invalid_local_asr_mutation',500);
         schedule(record,streaming);

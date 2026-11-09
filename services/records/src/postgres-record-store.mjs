@@ -1,5 +1,5 @@
 import {randomUUID} from 'node:crypto';
-import {collectionFields,encodedCollections,encodedDocuments,hydrateCollections,storageHeader} from './record-storage-shape.mjs';
+import {collectionFields,encodedCollections,encodedDocuments,hydrateCollections,storageHeader,collectionOffsets} from './record-storage-shape.mjs';
 import {requireThat} from '../../../packages/records/src/record.mjs';
 
 export async function createPostgresRecordStore(pool) {
@@ -29,20 +29,21 @@ export async function createPostgresRecordStore(pool) {
       if(value.kind!=='record'){
         await client.query(insert?'INSERT INTO record_aggregates(id,data) VALUES($1,$2)':'UPDATE record_aggregates SET data=$2 WHERE id=$1',[value.id,JSON.stringify(value)]);return;
       }
-      const before=baselines.get(value),rows=encodedCollections(value),documents=encodedDocuments(value);
+      const before=baselines.get(value),rows=encodedCollections(value),documents=encodedDocuments(value),offsets=collectionOffsets(rows,before);
       if(value.deleted||Date.parse(value.deleteAt)<=Date.now())await client.query('DELETE FROM record_collection_backups WHERE record_id=$1',[value.id]);
       if(!insert&&!before&&!value.deleted&&Date.parse(value.deleteAt)>Date.now())await client.query('INSERT INTO record_collection_backups(record_id,data) SELECT id,data FROM record_aggregates WHERE id=$1 AND data->>\'$collections\' IS DISTINCT FROM \'2\' ON CONFLICT DO NOTHING',[value.id]);
       for(const field of collectionFields){
-        if(before?.offsets[field])await client.query('DELETE FROM record_collections WHERE record_id=$1 AND field=$2',[value.id,field]);
+        const start=offsets[field]||0,oldStart=before?.offsets[field]||0,end=start+rows[field].length;
+        if(start>oldStart)await client.query('DELETE FROM record_collections WHERE record_id=$1 AND field=$2 AND position<$3',[value.id,field,start]);
         let pending=[];
         const flush=async()=>{if(!pending.length)return;await client.query('INSERT INTO record_collections(record_id,field,position,data) SELECT $1,$2,item.position,item.data FROM jsonb_to_recordset($3::jsonb) AS item(position INTEGER,data JSONB) ON CONFLICT(record_id,field,position) DO UPDATE SET data=excluded.data',[value.id,field,JSON.stringify(pending)]);pending=[];};
-        for(let position=0;position<rows[field].length;position++)if(before?.offsets[field]||before?.rows[field][position]!==rows[field][position]){pending.push({position,data:JSON.parse(rows[field][position])});if(pending.length===100)await flush();}
+        for(let index=0;index<rows[field].length;index++){const position=start+index;if(before?.rows[field][position-oldStart]!==rows[field][index]){pending.push({position,data:JSON.parse(rows[field][index])});if(pending.length===100)await flush();}}
         await flush();
-        if(!before||before.rows[field].length>rows[field].length)await client.query('DELETE FROM record_collections WHERE record_id=$1 AND field=$2 AND position>=$3',[value.id,field,rows[field].length]);
+        if(!before||oldStart+before.rows[field].length>end)await client.query('DELETE FROM record_collections WHERE record_id=$1 AND field=$2 AND position>=$3',[value.id,field,end]);
       }
       for(const [field,data] of Object.entries(documents))if(before?.documents[field]!==data)await client.query('INSERT INTO record_documents(record_id,field,data) VALUES($1,$2,$3) ON CONFLICT(record_id,field) DO UPDATE SET data=excluded.data',[value.id,field,data]);
       for(const field of before?Object.keys(before.documents):(await client.query('SELECT field FROM record_documents WHERE record_id=$1',[value.id])).rows.map(row=>row.field))if(!Object.hasOwn(documents,field))await client.query('DELETE FROM record_documents WHERE record_id=$1 AND field=$2',[value.id,field]);
-      const header=storageHeader(value,rows,documents,randomUUID());
+      const header=storageHeader(value,rows,documents,randomUUID(),offsets);
       await client.query(insert?'INSERT INTO record_aggregates(id,data) VALUES($1,$2)':'UPDATE record_aggregates SET data=$2 WHERE id=$1',[value.id,JSON.stringify(header)]);
     },
   };

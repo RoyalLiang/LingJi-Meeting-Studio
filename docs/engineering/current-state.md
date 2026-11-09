@@ -1,6 +1,6 @@
 # 当前能力与验证边界
 
-当前源码目标版本为 **0.3.12**。发布状态以 [GitHub Release](https://github.com/RoyalLiang/lingji/releases) 和对应 Actions 结果为准；本地检查通过不等于安装包已发布或目标设备已验收。
+当前源码目标版本为 **0.3.13**。发布状态以 [GitHub Release](https://github.com/RoyalLiang/lingji/releases) 和对应 Actions 结果为准；本地检查通过不等于安装包已发布或目标设备已验收。
 
 本版恢复既有字级与关闭动效，修复活跃录音计时和会议应用声音列表权限，调整纪要说话人标签、扩展中心吸顶导航与全局提示布局。页面和弹窗移除绿色外框，录音卡片保留细边线。
 
