@@ -31,7 +31,7 @@
 .meeting-highlights h3 { flex:none; font-size:17px; font-weight:600; margin:0; color:var(--ink-1); }
 .meeting-highlights-draft { color:var(--ink-2); font-size:13px; white-space:nowrap; }
 .meeting-highlights-tools { display:flex; align-items:center; gap:4px; flex:none; }
-.meeting-highlights-tools .button { min-width:32px; min-height:32px; padding:6px; border-radius:8px; }
+.meeting-highlights-tools .button { min-width:44px; min-height:44px; padding:6px; border-radius:8px; }
 .meeting-highlights-heading>svg { flex:none; }
 .meeting-highlights-inline-lead { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin:0 0 0 8px; color:var(--ink-2); font-size:14px; font-weight:550; }
 .meeting-highlights.is-collapsed>header { padding-top:15px; padding-bottom:15px; }
@@ -67,7 +67,7 @@ body>.meeting-highlights { position:fixed; top:76px; left:16px; right:16px; widt
  .meeting-highlights li { font-size:13px; }
  .meeting-highlights.is-collapsed h3 { display:none; }
  .meeting-highlights-inline-lead { font-size:13px; margin-left:0; }
- .meeting-highlights-tools .button { min-width:36px; min-height:36px; }
+ .meeting-highlights-tools .button { min-width:44px; min-height:44px; }
  .meeting-focus-trigger { right:16px; }
 }
 

@@ -65,7 +65,7 @@
 .feishu-board-preview>ul{padding-left:0;border-left:0}
 .feishu-board-preview li{margin:10px 0;overflow-wrap:anywhere}
 .feishu-board-preview span{display:inline-block;padding:6px 10px;border-radius:6px;background:var(--panel-2)}
-@media(max-width:600px){.automation-config{padding:18px}.feishu-fields{grid-template-columns:1fr}.feishu-preview{padding:20px;max-height:45vh}.feishu-options{gap:10px 18px}.feishu-section-heading{gap:16px}.feishu-actions .button{min-height:42px}.markdown-preview h2{font-size:20px}}
+@media(max-width:600px){.automation-config{padding:18px}.feishu-fields{grid-template-columns:1fr}.feishu-preview{padding:20px;max-height:45vh}.feishu-options{gap:10px 18px}.feishu-section-heading{gap:16px}.feishu-actions .button{min-height:44px}.markdown-preview h2{font-size:20px}}
 .export-modal>.modal-footer{flex:none;padding:14px 24px;border-top:1px solid var(--border);background:var(--bg)}
 .export-modal>.modal-footer:has(>.export-footer:empty){display:none}
 .export-modal .feishu-preview{max-height:38vh}

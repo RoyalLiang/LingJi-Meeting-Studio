@@ -2,7 +2,7 @@
 .meeting-agent-center,.ma-layer{--ma-bg:var(--bg);--ma-panel:var(--panel-2);--ma-ink:var(--ink-1);--ma-muted:var(--ink-3);--ma-border:var(--border);--ma-control:var(--border);--ma-accent:var(--accent);--ma-soft:var(--accent-soft);--ma-warn:var(--warn);--ma-error:var(--down);color:var(--ma-ink);font:14px/1.65 var(--sans)}
 .meeting-agent-center{width:100%;min-width:0;padding:32px 0 28px}
 .meeting-agent-center h1,.meeting-agent-center h2,.meeting-agent-center h3,.meeting-agent-center p,.ma-layer h3,.ma-layer p{margin:0}
-.meeting-agent-center .button,.ma-layer .button{min-height:36px;height:36px;padding:0 12px;border-radius:6px;border:1px solid var(--ma-control);box-shadow:none;background:var(--ma-bg);color:var(--ma-ink);font-size:13px;font-weight:500;line-height:1.5;transform:none}
+.meeting-agent-center .button,.ma-layer .button{min-height:44px;height:36px;padding:0 12px;border-radius:6px;border:1px solid var(--ma-control);box-shadow:none;background:var(--ma-bg);color:var(--ma-ink);font-size:13px;font-weight:500;line-height:1.5;transform:none}
 .meeting-agent-center .button.primary,.ma-layer .button.primary{background:var(--ma-accent);border-color:var(--ma-accent);color:var(--on-accent)}
 .meeting-agent-center .button:hover,.ma-layer .button:hover{background:var(--ma-panel);transform:none;box-shadow:none}
 .meeting-agent-center .button.primary:hover,.ma-layer .button.primary:hover{background:var(--accent-hover);border-color:var(--accent-hover)}

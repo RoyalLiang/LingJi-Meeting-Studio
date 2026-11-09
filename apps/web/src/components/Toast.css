@@ -23,7 +23,7 @@
 .toast-action:disabled { opacity: .5; }
 .toast.feedback-toast.is-warning { background: var(--glass-strong); border-color: color-mix(in srgb, var(--warn) 22%, var(--border)); }
 .toast.feedback-toast.is-warning > svg { color: var(--warn); }
-.toast.feedback-toast .toast-dismiss { flex: none; min-width: 30px; min-height: 30px; padding: 6px; border-radius: 8px; }
+.toast.feedback-toast .toast-dismiss { flex: none; min-width: 44px; min-height: 44px; padding: 6px; border-radius: 8px; }
 .toast.feedback-toast .toast-dismiss:focus-visible { outline: 1px solid var(--focus-ring); outline-offset: 2px; }
 @keyframes toast-arrive { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .toast.feedback-toast { animation: none; } }
