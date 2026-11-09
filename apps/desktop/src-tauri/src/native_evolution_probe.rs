@@ -14,11 +14,20 @@ async fn run(app: &AppHandle) -> Result<Value, String> {
         crate::capture_direct_start(window.clone(),app.state::<Client>(),id.clone(),kind.into(),None).await?;
     }
     if !app.state::<Client>().captures.native_status().is_some_and(|status| status.recording && status.microphone_on) { return Err("双音源未启动".into()); }
+    let baseline=app.state::<Client>().captures.native_status().ok_or("原生状态丢失")?.duration_ms;
     window.destroy().map_err(|error|error.to_string())?;
-    tokio::time::sleep(Duration::from_millis(2600)).await;
-    if app.get_webview_window("main").is_some() { return Err("主窗口未销毁".into()); }
-    let before=app.state::<Client>().captures.native_status().ok_or("原生状态丢失")?;
-    if !before.recording || before.duration_ms < 900 { return Err("无主窗口时采集未继续".into()); }
+    let deadline=Instant::now()+Duration::from_secs(15);
+    loop {
+        let status=app.state::<Client>().captures.native_status().ok_or("关窗后原生状态丢失")?;
+        if !status.recording || !status.microphone_on {
+            return Err(format!("无主窗口采集停止: recording={}, microphone={}, durationMs={}, baselineMs={baseline}",status.recording,status.microphone_on,status.duration_ms));
+        }
+        if app.get_webview_window("main").is_none() && status.duration_ms>=baseline+1000 { break; }
+        if Instant::now()>deadline {
+            return Err(format!("无主窗口采样未推进: window={}, recording={}, durationMs={}, baselineMs={baseline}",app.get_webview_window("main").is_some(),status.recording,status.duration_ms));
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
     if !crate::recording_widget::native_action(app,"toggle").await? { return Err("无主窗口暂停未接管".into()); }
     let deadline=Instant::now()+Duration::from_secs(15);
     loop {

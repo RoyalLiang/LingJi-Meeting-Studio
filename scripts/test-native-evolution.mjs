@@ -8,7 +8,7 @@ import { createRepository } from '../services/records/src/repository.mjs';
 
 const root = await mkdtemp(join(tmpdir(), 'lingji-native-evolution-'));
 const output = join(root, 'probe.json'), clientRoot = join(root, 'client');
-let child, log = '', repo;
+let child, log = '', repo, failure;
 try {
   child = spawn(resolve(process.env.NATIVE_CLIENT_EXECUTABLE || 'apps/desktop/src-tauri/target/debug/tts-client'), [], {
     env: { PATH:process.env.PATH,HOME:process.env.HOME,TMPDIR:process.env.TMPDIR,
@@ -49,7 +49,13 @@ try {
   const receipt={...result,scope:'isolated compiled Tauri + bundled Node + real file/SQLite transport; synthetic OS source; no physical device',platform:process.platform,totalSamples,exactStoredChunkDigests:true,contiguousFences:true,resumeTimelinePreserved:true};
   if (process.argv[2]) { const target=resolve(process.argv[2]);await mkdir(dirname(target),{recursive:true});await writeFile(target,JSON.stringify(receipt,null,2)+'\n'); }
   console.log(JSON.stringify(receipt));
+} catch (error) {
+  failure = error;
+  console.error('[native evolution failure]',error);
+  console.error('[native evolution client]',log);
+  throw error;
 } finally {
   if (child?.exitCode===null) child.kill('SIGTERM');
-  await repo?.close();await rm(root,{recursive:true,force:true});
+  try { await repo?.close(); await rm(root,{recursive:true,force:true,maxRetries:20,retryDelay:100}); }
+  catch(error) { if(!failure) throw error; console.error('[native evolution cleanup]',error.code || error.message); }
 }
