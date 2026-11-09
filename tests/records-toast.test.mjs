@@ -12,6 +12,9 @@ test('actionable warnings stay visible until dismissed and expose the requested 
   const tree=h.render({message:'转录暂时中断。',warning:true,persistent:true,action:{label:'重新处理',run:()=>{actions++;}},dismiss:()=>{dismissals++;}});
   assert.match(tree.props.className,/is-warning/);assert.equal(tree.props.role,'status');
   const content=tree.props.children.find(node=>node?.props?.className==='toast-content');
+  const message=content.props.children.find(node=>node?.type==='span');
+  assert.equal(message.props.tabIndex,0,'long fixed-height messages remain keyboard-scrollable');
+  assert.equal(message.props.children,'转录暂时中断。');
   const action=content.props.children.find(node=>node?.props?.className==='toast-action');
   assert.equal(action.props.children,'重新处理');action.props.onClick();assert.equal(actions,1);
   h.tick(60000);assert.equal(dismissals,0,'actionable warning must not disappear during a pending recovery');

@@ -34,11 +34,10 @@ export function capturedDurationMs(savedMs:number,sources:(Pick<Source,'id'|'tim
 
 /** Uploads and native PCM arrive in batches; an active display uses monotonic time. */
 export class RecordingClock {
-  private id=''; private active=false; private base=0; private started=0; private confirmed=0;
+  private id=''; private active=false; private base=0; private started=0;
   read(id:string,savedMs:number,active:boolean,now:number) {
-    if(id!==this.id || active!==this.active || !active) { this.id=id;this.active=active;this.base=savedMs;this.confirmed=savedMs;this.started=now; }
-    else if(savedMs>this.confirmed) { this.base=Math.max(this.base,savedMs);this.confirmed=savedMs;this.started=now; }
-    // Interpolate only one audio packet; a stalled source must not become fictitious recording time.
-    return active ? Math.max(savedMs,this.base+Math.min(1000,Math.max(0,now-this.started))) : savedMs;
+    if(id!==this.id || active!==this.active || !active) { this.id=id;this.active=active;this.base=savedMs;this.started=now; }
+    else if(savedMs>this.base+Math.max(0,now-this.started)) { this.base=savedMs;this.started=now; }
+    return active ? this.base+Math.max(0,now-this.started) : savedMs;
   }
 }

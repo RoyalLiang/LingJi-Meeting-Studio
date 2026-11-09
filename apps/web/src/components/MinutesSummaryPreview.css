@@ -14,7 +14,7 @@
 .minutes-summary-callout.tone-4{background:#f0f6f0;border-color:#d1e1d4}
 .minutes-summary-callout.tone-3{background:#fbf5e9;border-color:#eadebf}
 .tone-6>p:first-child{color:#555c9f}.tone-4>p:first-child{color:#426e4b}.tone-3>p:first-child{color:#896127}
-.minutes-summary-table{overflow:auto;max-width:100%;border:1px solid var(--border);border-radius:7px}
+.minutes-summary-table{overflow:auto;max-width:100%;border:0;border-radius:7px}
 .minutes-summary table{width:100%;min-width:520px;border-collapse:collapse;font-size:13px;line-height:1.65}
 .minutes-summary th,.minutes-summary td{padding:12px 14px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border);border-right:1px solid var(--border)}
 .minutes-summary th{background:var(--panel-2);font-weight:600}.minutes-summary th:first-child{width:50%}

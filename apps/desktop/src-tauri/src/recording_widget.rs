@@ -273,6 +273,21 @@ pub fn main_shown(app: &AppHandle) {
     }
 }
 
+// Some window managers omit focus/resize events when a hidden window is restored.
+pub fn sync_visibility(app: &AppHandle) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let Some(main) = handle.get_webview_window("main") else { return; };
+        let floating_visible = handle.get_webview_window("recording-widget")
+            .is_some_and(|window| window.is_visible().unwrap_or(false));
+        if main.is_minimized().unwrap_or(false) {
+            if !floating_visible { main_hidden(&handle); }
+        } else if main.is_visible().unwrap_or(false) && floating_visible {
+            main_shown(&handle);
+        }
+    });
+}
+
 #[cfg(feature = "smoke-test")]
 pub async fn release_held_ready(app: &AppHandle) -> Result<(), String> {
     {

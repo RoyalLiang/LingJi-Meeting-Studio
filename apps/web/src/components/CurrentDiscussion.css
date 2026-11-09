@@ -3,7 +3,7 @@
   height:44px;min-height:44px;max-height:44px;flex-direction:row;align-items:center;
   justify-content:flex-start;gap:12px;padding:0 16px;margin-bottom:12px;
 }
-.current-discussion .discussion-capture-state { color:var(--ink-3);font-size:13px;white-space:nowrap; }
+.current-discussion .discussion-capture-state { color:var(--ink-3);font-size:11px;white-space:nowrap; }
 .current-discussion .discussion-status-row { display:flex;align-items:center;gap:10px;min-width:0;flex:1; }
 .current-discussion .discussion-activity { display:inline-flex;align-items:center;justify-content:space-between;flex:0 0 23px;width:23px;height:18px;color:var(--ink-3); }
 .current-discussion .discussion-activity.is-active { color:var(--accent); }

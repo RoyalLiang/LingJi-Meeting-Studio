@@ -26,12 +26,8 @@ pub struct StatusBar {
     last_update: Mutex<Option<UpdatePresentation>>,
 }
 
-fn show(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
-    }
+pub(crate) fn show(app: &AppHandle) {
+    crate::resident::show(app);
 }
 
 impl StatusBar {

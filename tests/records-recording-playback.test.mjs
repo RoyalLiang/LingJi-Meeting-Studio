@@ -213,16 +213,18 @@ test('tail byte ranges read only intersecting original audio chunks',async()=>{
 });
 
 
-test('recording time interpolates at most one packet and freezes when PCM stalls',async()=>{
+test('active recording time follows the clock across delayed and out-of-order PCM batches',async()=>{
  const source=stripTypeScriptTypes(await readFile(new URL('../apps/web/src/audio/signal.ts',import.meta.url),'utf8'));
  const {RecordingClock}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
  const clock=new RecordingClock();
  assert.equal(clock.read('first',120000,true,100),120000);
- for(const [now,receipt,expected] of [[600,120000,120500],[1100,121900,121900],[1600,120800,122400],[2100,124500,124500],[4100,122000,125500]])assert.equal(clock.read('first',receipt,true,now),expected);
- assert.equal(clock.read('first',124000,false,4200),124000);assert.equal(clock.read('first',124000,false,14200),124000);
- assert.equal(clock.read('first',124000,true,15000),124000);assert.equal(clock.read('first',124000,true,16000),125000);
- assert.equal(clock.read('second',0,true,17000),0);assert.equal(clock.read('second',0,true,18000),1000);
- assert.equal(clock.read('second',1200,false,19000),1200,'completed time follows real saved PCM');
+  for(const [now,receipt,expected] of [[600,120000,120500],[1100,121900,121900],[1600,120800,122400],[2100,124500,124500],[4100,122000,126500],[14100,124500,136500]])assert.equal(clock.read('first',receipt,true,now),expected);
+  assert.equal(clock.read('first',136000,false,14200),136000);assert.equal(clock.read('first',136000,false,24200),136000);
+  assert.equal(clock.read('first',136000,true,25000),136000);assert.equal(clock.read('first',136000,true,28000),139000);
+  assert.equal(clock.read('second',0,true,29000),0);assert.equal(clock.read('second',0,true,32000),3000);
+  assert.equal(clock.read('second',3100,false,33000),3100,'completed time follows real saved PCM');
+  const widget=new RecordingClock();
+  for(let now=0;now<=5000;now+=100)assert.equal(widget.read('widget',now,true,now),now,'widget heartbeat must not double-count elapsed time');
 });
 
 test('late microphone starts at the received meeting timeline without changing stream identities',()=>{

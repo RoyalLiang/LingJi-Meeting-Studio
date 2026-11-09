@@ -39,7 +39,7 @@ async fn run(app: &AppHandle) -> Result<Value, String> {
     let paused=app.state::<Client>().captures.native_status().ok_or("暂停状态丢失")?;
     if !paused.paused || !paused.can_resume { return Err("暂停尾部未排空".into()); }
     app.state::<Client>().resident.queue_action("status-resume");
-    crate::resident::show(app);
+    crate::status_bar::show(app);
     let deadline=Instant::now()+Duration::from_secs(30);
     loop {
         let resumed=app.state::<Client>().captures.native_status().is_some_and(|status|status.recording && status.microphone_on);

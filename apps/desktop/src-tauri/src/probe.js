@@ -39,6 +39,8 @@ async function verifyNativeUiLanes(record, queued) {
     }
     if (!initial.ok) throw new Error(`bootstrap:${initial.status}`);
     const boot = await initial.json(); const csrf = boot.csrf;
+    const applicationSources = await invoke('capture_applications');
+    if (typeof applicationSources.supported !== 'boolean' || !Array.isArray(applicationSources.applications)) throw new Error('application audio sources IPC failed');
     const openSettings=async()=>{
       (await until(()=>document.querySelector('button[aria-label="设置与诊断"]'),16000,'settings opener')).click();
       const dialog=await until(()=>document.querySelector('dialog.modal[open]'),16000,'settings opened');

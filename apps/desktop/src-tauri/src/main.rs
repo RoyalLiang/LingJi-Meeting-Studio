@@ -276,7 +276,7 @@ async fn client_probe(
             "release-ready" => recording_widget::release_held_ready(window.app_handle()).await?,
             "native-close" => window.close().map_err(|e|e.to_string())?,
             "native-minimize" => window.minimize().map_err(|e|e.to_string())?,
-            "native-restore" => {window.unminimize().map_err(|e|e.to_string())?;window.show().map_err(|e|e.to_string())?;window.set_focus().map_err(|e|e.to_string())?;},
+            "native-restore" => status_bar::show(window.app_handle()),
             _ => {},
         }
         let widget = window.app_handle().get_webview_window("recording-widget");
@@ -490,7 +490,7 @@ fn main() {
                 origin: origin.clone(), captures: Arc::new(audio::Captures::default()), resident: resident::Resident::default(), _lock: binding._lock, _backend: backend, updates, api });
             app.add_capability(CapabilityBuilder::new("local-capture").window("main").local(false).remote(format!("{origin}/*"))
                 .permission("allow-integration-open").permission("allow-audio-backup-directory").permission("allow-client-attention").permission("allow-meeting-watch-configure").permission("allow-capture-direct-kind").permission("allow-capture-direct-control").permission("allow-capture-direct-sessions").permission("allow-capture-direct-start").permission("allow-capture-direct-progress").permission("allow-capture-direct-stop").permission("allow-capture-start").permission("allow-capture-read").permission("allow-capture-ack").permission("allow-capture-progress").permission("allow-capture-stop").permission("allow-capture-inputs")
-                .permission("allow-recording-widget-update").permission("allow-client-close").permission("allow-client-ready").permission("allow-client-status").permission("allow-update-status").permission("allow-update-activity").permission("allow-update-check").permission("allow-update-download").permission("allow-update-install")
+                .permission("allow-capture-applications").permission("allow-recording-widget-update").permission("allow-client-close").permission("allow-client-ready").permission("allow-client-status").permission("allow-update-status").permission("allow-update-activity").permission("allow-update-check").permission("allow-update-download").permission("allow-update-install")
                 .permission("core:event:allow-listen").permission("core:event:allow-unlisten"))?;
             app.add_capability(CapabilityBuilder::new("recording-widget").window("recording-widget").local(false).remote(format!("{origin}/*"))
                 .permission("allow-recording-widget-state").permission("allow-recording-widget-ready").permission("allow-recording-widget-action")
@@ -506,6 +506,7 @@ fn main() {
                         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                         let state = handle.state::<Client>();
                         let captures=state.captures.clone(); let _=tauri::async_runtime::spawn_blocking(move || captures.refresh_native_pending()).await;
+                recording_widget::sync_visibility(&handle);
                 if !state.resident.renderer_ready() { recording_widget::native_heartbeat(&handle); }
                 let active = state.captures.active();
                         state.menu_bar.refresh(active, state.updates.menu(active));
@@ -520,10 +521,10 @@ fn main() {
             if window.label()=="main" && window.is_minimized().unwrap_or(false) && matches!(event, tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Focused(false)) {
                 recording_widget::main_hidden(window.app_handle());
             }
-            if window.label()=="main" && window.is_visible().unwrap_or(false) {
+            if window.label()=="main" && window.is_visible().unwrap_or(false) && !window.is_minimized().unwrap_or(false) {
                 let focused=matches!(event,tauri::WindowEvent::Focused(true));
                 let resized=matches!(event,tauri::WindowEvent::Resized(_));
-                if focused || (resized && !window.is_minimized().unwrap_or(false)) {
+                if focused || resized {
                     recording_widget::main_shown(window.app_handle());
                 }
             }
