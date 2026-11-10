@@ -1,6 +1,6 @@
 # 安装桌面测试版
 
-从 [GitHub Releases](https://github.com/RoyalLiang/lingji/releases) 选择 0.3.19 测试版；阅读该版附件说明和已验证平台。版本从 0.3.0 重新开始，旧 Release 与标签按维护要求清理。
+从 [GitHub Releases](https://github.com/RoyalLiang/lingji/releases) 选择 0.3.20 测试版；阅读该版附件说明和已验证平台。版本从 0.3.0 重新开始，旧 Release 与标签按维护要求清理。
 
 | 平台 | 附件 | 条件 |
 | --- | --- | --- |

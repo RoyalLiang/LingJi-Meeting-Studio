@@ -1,6 +1,6 @@
 # 当前能力与验证边界
 
-当前源码目标版本为 **0.3.19**。发布状态以 [GitHub Release](https://github.com/RoyalLiang/lingji/releases) 和对应 Actions 结果为准；本地检查通过不等于安装包已发布或目标设备已验收。
+当前源码目标版本为 **0.3.20**。发布状态以 [GitHub Release](https://github.com/RoyalLiang/lingji/releases) 和对应 Actions 结果为准；本地检查通过不等于安装包已发布或目标设备已验收。
 
 工作台采用项目导航、悬浮主画布与上下文三栏；窄屏使用导航和上下文抽屉。会议保留纪要树、原文引用、并读与录音状态，手记提供 Markdown 实时预览。设置保存集中在页头，转录、纪要、学习、飞书、Git、MCP 与记录存储的检查结果分别归属对应模块；MCP 连接探测不会更改已有工具批准。共享 Toast 固定为 64px 悬浮提示，长文可展开，不参与主内容布局。
 
