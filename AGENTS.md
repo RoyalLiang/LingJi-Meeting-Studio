@@ -68,3 +68,7 @@ For every user task, at the first point when you would otherwise send the final 
 4. Present both questions with the agent's answers, then wait for the user's response before final delivery.
 5. Treat the user's response as part of the current task. Investigate, revise, or validate any material uncertainty or omission that remains within scope, then deliver the final result.
 6. Trigger this gate once per user task. Do not trigger it for intermediate progress, approval requests, blockers, or clarification-only turns, and do not repeat it after incorporating the user's response. If the user explicitly skips the gate, proceed to final delivery.
+
+## 前端设计
+
+- 前端设计：避免不必要的次要标签说明文字辅助文案以及描述性文字冗余的微文案。

@@ -1,3 +1,4 @@
+import './MinutesUsage.css';
 import type { Job, RecordDetail } from '../model';
 import { minutesUsageView } from '../minutes-usage';
 

@@ -12,7 +12,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 const compiled = await build({
-  entryPoints: ['apps/web/src/components/Minutes.tsx'], bundle: true, write: false,
+  stdin: {contents:"export {MinutesPanel} from './apps/web/src/components/Minutes.tsx';export {MinutesUsage} from './apps/web/src/components/MinutesUsage.tsx';",resolveDir:process.cwd(),loader:"tsx"}, bundle: true, write: false,
   platform: 'node', format: 'cjs', jsx: 'automatic', loader: { '.css': 'empty' },
   external: ['react', 'react/jsx-runtime', 'react-dom'],
 });
@@ -21,7 +21,7 @@ vm.runInNewContext(compiled.outputFiles[0].text, {
   module, exports: module.exports, require: createRequire(resolve('package.json')),
   matchMedia: () => ({ matches: false }), console, structuredClone,
 });
-const { MinutesPanel } = module.exports;
+const { MinutesPanel, MinutesUsage } = module.exports;
 const discussionCompiled = await build({ entryPoints: ['apps/web/src/components/CurrentDiscussion.tsx'], bundle: true, write: false, platform: 'node', format: 'cjs', jsx: 'automatic', loader: { '.css': 'empty' }, external: ['react', 'react/jsx-runtime', 'react-dom'] });
 const discussionModule = { exports: {} };
 vm.runInNewContext(discussionCompiled.outputFiles[0].text, { module: discussionModule, exports: discussionModule.exports, require: createRequire(resolve('package.json')), console });
@@ -72,7 +72,8 @@ function render(overrides = {}) {
   }));
 }
 test('an old record without usage keeps the full minutes page readable with unknown counters',()=>{
- const html=render({usage:undefined});assert.match(html,/按主题整理的纪要/);assert.match(html,/本场用量/);assert.match(html,/<strong>—<\/strong>/);assert.match(html,/<strong>未提供<\/strong>/);assert.doesNotMatch(html,/0 token/);
+ const html=render({usage:undefined});assert.match(html,/按主题整理的纪要/);assert.doesNotMatch(html,/class="minutes-usage"/);
+ const footer=renderToStaticMarkup(React.createElement(MinutesUsage,{record:{capture:"completed"}}));assert.match(footer,/本场用量/);assert.match(footer,/<strong>—<\/strong>/);assert.match(footer,/<strong>未提供<\/strong>/);assert.doesNotMatch(footer,/0 token/);
 });
 
 test('AI tree places each table row inside its uniquely cited topic and preserves ambiguous rows', () => {
