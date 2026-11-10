@@ -41,13 +41,15 @@ async function verifyNativeUiLanes(record, queued) {
     const boot = await initial.json(); const csrf = boot.csrf;
     const applicationSources = await invoke('capture_applications');
     if (typeof applicationSources.supported !== 'boolean' || !Array.isArray(applicationSources.applications)) throw new Error('application audio sources IPC failed');
-    const openSettings=async()=>{
+    const openSettings=async(cancel=false)=>{
       (await until(()=>document.querySelector('button[aria-label="设置与诊断"]'),16000,'settings opener')).click();
-      const dialog=await until(()=>document.querySelector('dialog.modal[open]'),16000,'settings opened');
-      if(['浏览器能力检测','删除清理','使用与诊断'].some(text=>dialog.textContent.includes(text)))throw new Error('unused settings modules remain');
-      if(!dialog.querySelector('input,select,button'))throw new Error('settings controls missing');
-      await until(()=>dialog.querySelector('input[name=LLM_REASONING_EFFORT]'),16000,'reasoning setting');
-      dialog.querySelector('.modal-close').click();await until(()=>!document.querySelector('dialog.modal[open]'),16000,'settings closed');
+      const page=await until(()=>document.querySelector('.settings-page'),16000,'settings opened');
+      if(['浏览器能力检测','删除清理','使用与诊断'].some(text=>page.textContent.includes(text)))throw new Error('unused settings modules remain');
+      if(!page.querySelector('input,select,button'))throw new Error('settings controls missing');
+      await until(()=>page.querySelector('input[name=LLM_REASONING_EFFORT]'),16000,'reasoning setting');
+      if(cancel)page.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
+      else page.querySelector('button[aria-label="返回工作台"]').click();
+      await until(()=>!document.querySelector('.settings-page'),16000,'settings closed');
     };
     await openSettings();await openSettings();
     const priorUiId = localStorage.getItem('native-probe-ui-record');
@@ -150,10 +152,7 @@ async function verifyNativeUiLanes(record, queued) {
     window.fetch = (resource, options) => /\/api\/records\/[^/]+\/audio$/.test(String(resource)) && options?.method === 'POST'
       ? Promise.reject(new TypeError('synthetic upload outage')) : actualFetch(resource, options);
     for(let attempt=0;attempt<2;attempt++) {
-      const settings=await until(()=>document.querySelector('button[aria-label="设置与诊断"]:not(:disabled)'));settings.click();
-      const dialog=await until(()=>document.querySelector('dialog.modal[open]'),16000,'settings opened');
-      dialog.dispatchEvent(new Event('cancel',{cancelable:true}));
-      await until(()=>!document.querySelector('dialog.modal[open]'));
+      await openSettings(true);
     }
     const quick = await until(() => document.querySelector('button.new-record:not(:disabled)')); quick.click();
     const uiRecordId = await until(() => {const id=new URLSearchParams(location.search).get('record');return id&&id!==healthyId?id:null;},16000,'new offline record selection');
