@@ -60,7 +60,7 @@ import {parse} from '@babel/parser';
 test('meeting sibling panes have distinct keys so repeated refresh cannot duplicate minutes',async()=>{
  const text=await readFile(new URL('../apps/web/src/App.tsx',import.meta.url),'utf8');
  const ast=parse(text,{sourceType:'module',plugins:['jsx','typescript']});
- let owners=0;
+
  function visit(node){
   if(node.type==='JSXFragment'||node.type==='JSXElement'){
    const keys=node.children.flatMap(child=>{
@@ -68,11 +68,11 @@ test('meeting sibling panes have distinct keys so repeated refresh cannot duplic
     const attr=opening?.attributes.find(a=>a.type==='JSXAttribute'&&a.name.name==='key');
     return attr?.value?[text.slice(attr.value.start,attr.value.end)]:[];
    });
-   if(keys.length>1){owners++;assert.equal(new Set(keys).size,keys.length,`duplicate sibling keys: ${keys.join(', ')}`);}
+   if(keys.length>1){assert.equal(new Set(keys).size,keys.length,`duplicate sibling keys: ${keys.join(', ')}`);}
   }
   for(const value of Object.values(node))if(Array.isArray(value))value.forEach(item=>{if(item&&typeof item==='object')visit(item);});else if(value&&typeof value==='object')visit(value);
  }
- visit(ast);assert.ok(owners>0);
+ visit(ast);assert.match(text,/key=\{`minutes:\$\{record.id\}`\}/);assert.match(text,/key=\{`notes:\$\{record.id\}`\}/);
 });
 
 import {prepareClientBackend} from '../scripts/prepare-client-backend.mjs';

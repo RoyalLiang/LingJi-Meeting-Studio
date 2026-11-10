@@ -113,3 +113,14 @@ test('a recoverable failed Git task submits clarification to the existing retry 
   nodes(tree.props.footer).find(node=>node.type==='Button'&&words(node)==='继续同步').props.onClick();await new Promise(resolve=>setTimeout(resolve,0));
   assert.equal(requests[0].path,'/integrations/git-sync/tasks/synthetic/retry');assert.equal(requests[0].body.answer,'只同步确认内容');
 });
+
+test('an old failed catalog request cannot replace a newer success after token invalidation',async()=>{
+ const {readFile}=await import('node:fs/promises'),{transform}=await import('esbuild'),vm=await import('node:vm');
+ const source=await readFile(new URL('../apps/web/src/components/GitAutomation.tsx',import.meta.url),'utf8');
+ const start=source.indexOf('  const refreshCatalog=async'),end=source.indexOf('\n  const inspect=',start);assert.ok(start>0&&end>start);
+ const code=(await transform(source.slice(start,end)+'\nexports.run=refreshCatalog;',{loader:'ts',format:'cjs'})).code;
+ const requests=[],state={at:0,error:''};const box={exports:{},base:'/synthetic-check',root:'synthetic-root',token:'A',busy:false,mounted:{current:true},connectionKey:{current:JSON.stringify(['synthetic-root','A'])},catalogVersion:{current:0},catalogCache:{current:{key:'',at:0}},Date,JSON,api:()=>new Promise((resolve,reject)=>requests.push({resolve,reject})),setCatalogBusy(){},setProjects(){},setCatalogAt:value=>{state.at=value;},setCatalogError:value=>{state.error=value;},messageOf:error=>error.message};
+ vm.runInNewContext(code,box);const old=box.exports.run(true);box.catalogVersion.current+=2;box.catalogCache.current={key:'',at:0};const current=box.exports.run(true);
+ requests[1].resolve({projects:[],group:{full_path:'synthetic'}});await current;requests[0].reject(new Error('old request failure'));await old;
+ assert.equal(state.error,'');assert.ok(state.at>0);assert.ok(box.catalogCache.current.at>0);
+});

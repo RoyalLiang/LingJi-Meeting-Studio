@@ -97,7 +97,7 @@ test('audio-only settings render the shared model fields and omit independent AS
  const code=(await transform(source.replace(/^import .*$/gm,'').replace('export function','function')+'\nexports.render=ProviderSettings;',{loader:'tsx'})).code;
  const config={MINUTES_MODE:'doubao-audio-only',LLM_PROTOCOL:'responses',ASR_PROVIDER:'doubao'};
  const states=[config,'doubao','','',false,config];let cursor=0;
- const sandbox={exports:{},React:{Fragment:'fragment',createElement:(tag,attributes,...children)=>({tag:typeof tag==='string'?tag:'component',attributes,children})},useState:()=>[states[cursor++],()=>{}],useRef:value=>({current:value}),useEffect(){},useCallback:fn=>fn,modelRoleValues,modelRoleLabels,updateModelRole,CaretDown(){},ModelCapabilities(){},Button(){},Status(){},Select(){},Toast(){},CloudCheck(){},GearSix(){},Plug(){}};
+ const sandbox={exports:{},React:{Fragment:'fragment',createElement:(tag,attributes,...children)=>({tag:typeof tag==='string'?tag:'component',attributes,children})},useState:()=>[states[cursor++],()=>{}],useRef:value=>({current:value}),useEffect(){},useCallback:fn=>fn,modelRoleValues,modelRoleLabels,updateModelRole,CaretDown(){},ModelCapabilities(){},ModuleConnectionCheck(){},Button(){},Status(){},Select(){},Toast(){},CloudCheck(){},GearSix(){},Plug(){}};
  vm.runInNewContext(code,sandbox);const result=JSON.stringify(sandbox.exports.render({saved:async()=>{}}));
  assert.match(result,/doubao-audio-only/);assert.match(result,/LLM_API_KEY/);assert.doesNotMatch(result,/DOUBAO_API_KEY/);assert.match(result,/name":"ASR_PROVIDER/);
  assert.doesNotMatch(result,/fine-print|15 秒短批次|当前输入方式由 AI 纪要模型同时提供转录/);
@@ -113,7 +113,7 @@ test('provider settings stay visible while loading and keep the transcription se
   const code = (await transform(source.replace(/^import .*$/gm, '').replace('export function', 'function') + '\nexports.render=ProviderSettings;', { loader: 'tsx' })).code;
   for (const config of [null, { MINUTES_MODE: 'doubao-audio-only', ASR_PROVIDER: 'doubao', LLM_PROTOCOL: 'responses' }]) {
     const states = [config, 'doubao', '', '', false, config || {}]; let cursor = 0;
-    const sandbox = { exports: {}, React: { Fragment: 'fragment', createElement: (tag, attributes, ...children) => ({tag: typeof tag === 'string' ? tag : 'component', attributes, children}) }, useState: () => [states[cursor++], () => {}], useRef: value => ({current: value}), useEffect() {}, useCallback: fn => fn, createPortal: children => children, modelRoleValues,modelRoleLabels,updateModelRole,CaretDown(){}, ModelCapabilities() {}, Button() {}, Status() {}, Select() {}, Toast() {}, CloudCheck() {}, GearSix() {}, Plug() {} };
+    const sandbox = { exports: {}, React: { Fragment: 'fragment', createElement: (tag, attributes, ...children) => ({tag: typeof tag === 'string' ? tag : 'component', attributes, children}) }, useState: () => [states[cursor++], () => {}], useRef: value => ({current: value}), useEffect() {}, useCallback: fn => fn, createPortal: children => children, modelRoleValues,modelRoleLabels,updateModelRole,CaretDown(){}, ModelCapabilities() {}, ModuleConnectionCheck() {}, Button() {}, Status() {}, Select() {}, Toast() {}, CloudCheck() {}, GearSix() {}, Plug() {} };
     vm.runInNewContext(code, sandbox);
     const result = JSON.stringify(sandbox.exports.render({saved: async () => {}, actionsTarget: {}}));
     assert.match(result, /模型与转录服务/);
@@ -122,4 +122,31 @@ test('provider settings stay visible while loading and keep the transcription se
     assert.match(result, /provider-settings/);
     if (!config) assert.match(result, /"aria-busy":true/);
   }
+});
+
+test('module connection checks isolate results and discard responses after a config change',async()=>{
+  const source=await readFile(new URL('../apps/web/src/components/ModuleConnectionCheck.tsx',import.meta.url),'utf8');
+  const code=(await transform(source.replace(/^import .*$/gm,'').replace('export function','function')+'\nexports.render=ModuleConnectionCheck;',{loader:'tsx'})).code;
+  function harness(){
+    const slots=[],effects=[];let cursor=0;
+    const box={exports:{},AbortController,messageOf:error=>error.message,React:{createElement:(type,props,...children)=>({type,props,children})},Button(){},ArrowsClockwise(){},Check(){},Clock(){},WarningCircle(){},
+      useState:initial=>{const i=cursor++;if(!(i in slots))slots[i]=initial;return[slots[i],value=>{slots[i]=typeof value==='function'?value(slots[i]):value;}];},
+      useRef:initial=>{const i=cursor++;return slots[i]||={current:initial};},
+      useEffect:(run,deps)=>{const i=cursor++;if(!slots[i]||deps.some((value,index)=>value!==slots[i][index]))effects.push(run);slots[i]=deps;}};
+    vm.runInNewContext(code,box);
+    return props=>{cursor=0;const tree=box.exports.render(props);effects.splice(0).forEach(effect=>effect());return tree;};
+  }
+  const nodes=value=>value&&typeof value==='object'?[value,...(value.children||[]).flat(Infinity).flatMap(nodes)]:[];
+  const state=tree=>nodes(tree).find(node=>node.props?.['data-state'])?.props['data-state'];
+  const click=tree=>nodes(tree).find(node=>node.props?.onClick).props.onClick();
+  const render=harness(),other=harness();let resolve,calls=0,signal;
+  let props={label:'纪要模型',revision:'saved-1',check:async input=>{calls++;signal=input;return await new Promise(yes=>{resolve=yes;});}};
+  render(props);click(render(props));assert.equal(state(render(props)),'pending');
+  assert.equal(state(other({...props,label:'语音转录'})),'idle');
+  props={...props,revision:'edited-2',blockedReason:'请先保存'};render(props);assert.equal(signal.aborted,true);assert.equal(state(render(props)),'stale');
+  resolve('old success');await new Promise(yes=>setImmediate(yes));assert.equal(state(render(props)),'stale');
+  click(render(props));assert.equal(calls,1,'unsaved draft cannot probe the saved config');
+  props={...props,revision:'saved-2',blockedReason:undefined,check:async()=>{throw Error('module offline');}};
+  render(props);click(render(props));await new Promise(yes=>setImmediate(yes));assert.equal(state(render(props)),'error');
+  assert.equal(state(other({...props,label:'语音转录'})),'idle');
 });

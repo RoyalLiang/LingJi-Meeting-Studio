@@ -11,7 +11,7 @@ import { timecode } from '../model';
 import { useTranscriptFollow } from './useTranscriptFollow';
 import { cleanSpeechDisplay } from '../../../../packages/records/src/learning-display.mjs';
 import {VirtualSegments} from './VirtualSegments';
-type TranscriptProps = { record: RecordDetail; highlighted: string; save: (s: Segment, text: string, speaker: string) => Promise<boolean> };
+type TranscriptProps = { visible?:boolean; record: RecordDetail; highlighted: string; save: (s: Segment, text: string, speaker: string) => Promise<boolean> };
 
 type TranscriptSegmentsProps = {
   segments:Segment[];topicIndex:{first:Map<string,Topic>;members:Map<Topic,Set<string>>};
@@ -31,25 +31,26 @@ const TranscriptSegments=memo(function TranscriptSegments({segments,topicIndex,s
       </article>;}}</VirtualSegments>;
 });
 
-export const TranscriptHistory = memo(function TranscriptHistory({record, save, changed, actionsTarget}: Pick<TranscriptProps,'record'|'save'> & {changed:()=>void;actionsTarget?:HTMLElement|null}) {
+export const TranscriptHistory = memo(function TranscriptHistory({record, save, changed, actionsTarget, expanded=false, visible=true}: Pick<TranscriptProps,'record'|'save'> & {changed:()=>void;actionsTarget?:HTMLElement|null;expanded?:boolean;visible?:boolean}) {
   const [loaded,setLoaded]=useState(false),[open,setOpen]=useState(false);
   const details=useRef<HTMLDetailsElement>(null),visibleRecord=useRef(record),id=useId(),external=actionsTarget!==undefined;
+  useEffect(()=>{if(expanded&&details.current){details.current.open=true;setLoaded(true);setOpen(true);}},[expanded]);
   if(!loaded || open)visibleRecord.current=record;
   // Keep mounted after the first opening so collapsing never discards an edit draft.
   return <details id={id} ref={details} className={`transcript-disclosure${external ? ' is-toolbar' : ''}`} onToggle={event=>{setOpen(event.currentTarget.open);if(event.currentTarget.open)setLoaded(true);}}>
     <summary role="button" tabIndex={0} aria-label={`逐字记录与纠错 · ${record.segments.length} 段`} title={`逐字记录与纠错 · ${record.segments.length} 段`}><TextAlignLeft size={18}/></summary>
-    {loaded && <><CorrectionSuggestions record={visibleRecord.current} changed={changed} active={open}/><Transcript record={visibleRecord.current} highlighted="" save={save}/></>}
-    {actionsTarget && createPortal(<Button variant="ghost" aria-label={`逐字记录与纠错 · ${record.segments.length} 段`} title="逐字记录与纠错" aria-controls={id} aria-expanded={open} onClick={()=>{if(details.current)details.current.open=!details.current.open;}}><TextAlignLeft size={18}/></Button>,actionsTarget)}
+    {loaded && <><CorrectionSuggestions record={visibleRecord.current} changed={changed} active={open}/><Transcript visible={visible} record={visibleRecord.current} highlighted="" save={save}/></>}
+    {actionsTarget && !expanded && createPortal(<Button variant="ghost" aria-label={`逐字记录与纠错 · ${record.segments.length} 段`} title="逐字记录与纠错" aria-controls={id} aria-expanded={open} onClick={()=>{if(details.current)details.current.open=!details.current.open;}}><TextAlignLeft size={18}/></Button>,actionsTarget)}
   </details>;
 });
-export const Transcript = memo(function Transcript({ record, highlighted, save }: TranscriptProps) {
+export const Transcript = memo(function Transcript({ record, highlighted, save, visible=true }: TranscriptProps) {
   const [query, setQuery] = useState(''), [editing, setEditing] = useState<Segment | null>(null);
   const [concise, setConcise] = useState(true);
   const [text, setText] = useState(''), [speaker, setSpeaker] = useState(''), [busy, setBusy] = useState(false);
   const [voiceSegment,setVoiceSegment]=useState<Segment|null>(null);
   useEffect(()=>setVoiceSegment(null),[record.id]);
   const previews = record.sources.filter(source=>source.asr?.preview?.text);
-  const follow = useTranscriptFollow(`${record.transcriptRevision}:${previews.map(source=>source.asr!.preview!.text).join('|')}`, Boolean(query || editing));
+  const follow = useTranscriptFollow(`${record.transcriptRevision}:${previews.map(source=>source.asr!.preview!.text).join('|')}`, Boolean(!visible || query || editing));
   useEffect(() => { if(highlighted)follow.pause(); }, [highlighted,follow.pause]);
   useEffect(() => { if(record.capture==='recording')follow.enable(); }, [record.capture,follow.enable]);
   const sorted=useMemo(()=>[...record.segments].sort((a,b)=>a.startMs-b.startMs),[record.segments]);
@@ -80,5 +81,5 @@ export const Transcript = memo(function Transcript({ record, highlighted, save }
     {(segments.length>0 || previews.length>0) && <div ref={follow.end} className="transcript-end"/>}
     {!follow.following && !query && !editing && <div className="transcript-follow"><Button onClick={()=>{follow.resume();}}><ArrowDown size={16}/>回到最新转录</Button></div>}
   </section>;
-},(previous,next)=>previous.highlighted===next.highlighted && previous.save===next.save &&
+},(previous,next)=>previous.visible===next.visible && previous.highlighted===next.highlighted && previous.save===next.save &&
   (['id','segments','sources','speakers','capture','transcriptRevision','liveMinutes','minutes','translationTarget'] as const).every(key=>previous.record[key]===next.record[key]));

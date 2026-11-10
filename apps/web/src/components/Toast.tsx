@@ -45,12 +45,12 @@ function promoteToast(element: HTMLDivElement, priority: number) {
 
 type ToastProps = { message: string; error?: boolean; warning?: boolean; persistent?: boolean; inline?: boolean; className?: string; messageKey?: string | number; dismiss: () => void;
   action?: { label: string; run: () => void; disabled?: boolean; busy?: boolean } };
-export function Toast({ message, error = false, warning = false, persistent = false, inline = false, className = '', messageKey, dismiss, action }: ToastProps) {
+export function Toast({ message, error = false, warning = false, persistent = false, className = '', messageKey, dismiss, action }: ToastProps) {
   const ref = useRef<HTMLDivElement>(null), timer = useRef<ReturnType<typeof createToastTimer> | null>(null), dismissRef = useRef(dismiss);
   useLayoutEffect(() => { dismissRef.current = dismiss; }, [dismiss]);
   useLayoutEffect(() => {
     const element=ref.current;
-    if(inline || !message || !element?.showPopover) return;
+    if(!message || !element?.showPopover) return;
     promoteToast(element,error?3:warning?2:1);
     return () => {
       const wasVisible=toastStack.at(-1)===element;
@@ -58,7 +58,7 @@ export function Toast({ message, error = false, warning = false, persistent = fa
       if(element.isConnected && element.matches(':popover-open')) element.hidePopover();
       if(wasVisible) toastStack.at(-1)?.showPopover();
     };
-  },[message,messageKey,inline,error,warning]);
+  },[message,messageKey,error,warning]);
   useEffect(() => {
     if (!message || persistent) return;
     const countdown = createToastTimer(getToastDuration(error || warning), () => dismissRef.current());
@@ -67,17 +67,17 @@ export function Toast({ message, error = false, warning = false, persistent = fa
     countdown.setPaused('focus', Boolean(ref.current?.contains(document.activeElement)));
     const visibility = () => countdown.setPaused('hidden', document.hidden);
     const element = ref.current;
-    const toggle = (event: Event) => countdown.setPaused('covered', !inline && Boolean(element?.showPopover) && (event as ToggleEvent).newState !== 'open');
-    countdown.setPaused('covered', !inline && Boolean(element?.showPopover && !element.matches(':popover-open')));
+    const toggle = (event: Event) => countdown.setPaused('covered', Boolean(element?.showPopover) && (event as ToggleEvent).newState !== 'open');
+    countdown.setPaused('covered', Boolean(element?.showPopover && !element.matches(':popover-open')));
     element?.addEventListener('beforetoggle', toggle);
     visibility(); document.addEventListener('visibilitychange', visibility);
     return () => { countdown.dispose(); timer.current = null; element?.removeEventListener('beforetoggle', toggle); document.removeEventListener('visibilitychange', visibility); };
-  }, [message, messageKey, error, warning, persistent, inline]);
+  }, [message, messageKey, error, warning, persistent]);
   if (!message) return null;
-  const popover = !inline && typeof HTMLElement !== 'undefined' && 'showPopover' in HTMLElement.prototype ? 'manual' : undefined;
-  return <div ref={ref} popover={popover} className={`toast feedback-toast glass ${inline ? 'is-inline' : ''} ${error ? 'is-error' : warning ? 'is-warning' : ''} ${className}`} role={error ? 'alert' : 'status'} aria-live={error ? 'assertive' : 'polite'} aria-atomic="true"
+  const popover = typeof HTMLElement !== 'undefined' && 'showPopover' in HTMLElement.prototype ? 'manual' : undefined;
+  return <div ref={ref} popover={popover} className={`toast feedback-toast glass ${error ? 'is-error' : warning ? 'is-warning' : ''} ${className}`} role={error ? 'alert' : 'status'} aria-live={error ? 'assertive' : 'polite'} aria-atomic="true"
     onMouseEnter={() => timer.current?.setPaused('hover', true)} onMouseLeave={() => timer.current?.setPaused('hover', false)}
     onFocus={() => timer.current?.setPaused('focus', true)} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) timer.current?.setPaused('focus', false); }}>
-    {error || warning ? <WarningCircle size={21} aria-hidden="true"/> : <CheckCircle size={21} aria-hidden="true"/>}<div className="toast-content"><span tabIndex={0} title={message}>{message}</span>{action && <button className="toast-action" type="button" disabled={action.disabled} aria-busy={action.busy} onClick={action.run}>{action.label}</button>}</div><button className="button ghost toast-dismiss" type="button" aria-label="关闭提示" onClick={dismiss}><X size={16} aria-hidden="true"/></button>
+    {error || warning ? <WarningCircle size={21} aria-hidden="true"/> : <CheckCircle size={21} aria-hidden="true"/>}<div className="toast-content"><span tabIndex={0} title={message}>{message}</span>{message.length>60&&<details className="toast-message-details"><summary aria-label="展开提示内容">展开</summary><div aria-label="完整提示">{message}</div></details>}{action && <button className="toast-action" type="button" disabled={action.disabled} aria-busy={action.busy} onClick={action.run}>{action.label}</button>}</div><button className="button ghost toast-dismiss" type="button" aria-label="关闭提示" onClick={dismiss}><X size={16} aria-hidden="true"/></button>
   </div>;
 }

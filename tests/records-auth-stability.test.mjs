@@ -108,18 +108,18 @@ test('Pi center keeps the main workspace mounted and returns to its directory th
   h.render('Workspace');
   h.effects.find(effect=>effect.toString().includes('loadBoot'))();await tick();
   let page=h.render('Workspace');
-  const entry=find(page,item=>item.props?.className?.includes('extension-entry'));
+  const entry=find(page,item=>typeof item.props?.extensions==='function');
   assert.ok(entry,'the real Pi center has an independent workspace entry');
-  entry.props.onClick();page=h.render('Workspace');
+  entry.props.extensions();page=h.render('Workspace');
   assert.equal(page.props.className,'app-shell');
   const center=find(page,item=>Array.isArray(item.props?.records)&&typeof item.props?.openRecord==='function');
   assert.ok(center,'the center receives the same real record list and selection callback');
-  assert.equal(find(page,item=>item.props?.className?.includes('directory-home-link')).props.className.includes('selected'),false);
-  find(page,item=>item.props?.className?.includes('directory-home-link')).props.onClick();
+  assert.equal(find(page,item=>typeof item.props?.navigate==='function').props.extensionOpen,true);
+  find(page,item=>typeof item.props?.navigate==='function').props.navigate('overview');
   page=h.render('Workspace');
   assert.equal(page.props.className,'app-shell');
   assert.equal(find(page,item=>Array.isArray(item.props?.records)&&typeof item.props?.openRecord==='function'),undefined);
-  assert.equal(find(page,item=>item.props?.className?.includes('directory-home-link')).props.className.includes('selected'),true);
+  assert.equal(find(page,item=>typeof item.props?.navigate==='function').props.extensionOpen,false);
 });
 
 test('native resume returns from Pi center to the same paused meeting without bypassing capture guards', async () => {
@@ -148,7 +148,7 @@ test('native resume returns from Pi center to the same paused meeting without by
   h.effects.findLast(effect=>effect.toString().includes('subscribeToRecord'))();
   subscription.onRecord(paused);
   let page=h.render('Workspace');
-  find(page,item=>item.props?.className?.includes('extension-entry')).props.onClick();
+  find(page,item=>typeof item.props?.extensions==='function').props.extensions();
   page=h.render('Workspace');assert.equal(page.props.className,'app-shell');assert.ok(find(page,item=>Array.isArray(item.props?.records)&&typeof item.props?.openRecord==='function'));
   nativeMenu.actions.resume();await tick();page=h.render('Workspace');
   assert.equal(controllers.length,0,'unavailable audio capability must still prevent capture');
@@ -158,6 +158,6 @@ test('native resume returns from Pi center to the same paused meeting without by
   started.resolve();await tick();page=h.render('Workspace');
   assert.equal(nativeMenu.state.recording,true,'the real Workspace resume path has started capture');
   assert.equal(page.props.className,'app-shell','resuming must reveal the meeting controls');
-  assert.ok(find(page,item=>item.props?.className==='meeting-header glass'));
+  assert.ok(find(page,item=>item.props?.className?.includes('showing-record')));
   assert.equal(find(page,item=>Array.isArray(item.props?.records)&&typeof item.props?.openRecord==='function'),undefined);
 });

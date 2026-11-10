@@ -98,13 +98,14 @@ function TaskContent({task,open}:{task:Task;open:(id:string,reference?:Knowledge
     <TaskTimeline timeline={task.timeline} ledger={task.ledger} kernelId={task.kernelId}/>
   </>;
 }
-export default function MeetingAgentCenter({records,openRecord,footerTarget}:{records:RecordListItem[];openRecord:(id:string)=>void;footerTarget?:HTMLElement|null}) {
+export default function MeetingAgentCenter({titleChanged,records,openRecord,footerTarget}:{titleChanged?:(title:string)=>void;records:RecordListItem[];openRecord:(id:string)=>void;footerTarget?:HTMLElement|null}) {
   const [extensions,setExtensions]=useState<InstalledExtension[]>([]),[extensionRefresh,setExtensionRefresh]=useState(0),[extensionError,setExtensionError]=useState('');
   const [builtins,setBuiltins]=useState<BuiltinSkill[]>([]);
   const builtin=builtins.find(item=>item.id==='meeting-review');
   const [skillId,setSkillId]=useState('meeting-review'),[pluginIds,setPluginIds]=useState<string[]>([]),[includeNotes,setIncludeNotes]=useState(false);
   useEffect(()=>{let active=true;api<{extensions:InstalledExtension[];builtinSkills?:BuiltinSkill[]}>('/extensions').then(value=>{if(active){setExtensions(value.extensions);setBuiltins(value.builtinSkills||[]);setExtensionError('');}}).catch(()=>{if(active)setExtensionError('暂时无法读取扩展，请重试。');});return()=>{active=false;};},[extensionRefresh]);
   const [view,setView]=useState<View>(()=>{try{return sessionStorage.getItem('lingji:git-open-config')==='1'?'schedule':'skills';}catch{return 'skills';}}),[drawer,setDrawer]=useState<Drawer|null>(null);
+  useEffect(()=>{titleChanged?.(navigation.find(item=>item.id===view)?.label||'扩展与助手');},[view,titleChanged]);
   const [tasks,setTasks]=useState<Task[]>([]),[loading,setLoading]=useState(true),[loadError,setLoadError]=useState(''),[detailError,setDetailError]=useState('');
   const [taskPage,setTaskPage]=useState(0);
   const [filter,setFilter]=useState('all'),[activeId,setActiveId]=useState(''),[refresh,setRefresh]=useState(0);

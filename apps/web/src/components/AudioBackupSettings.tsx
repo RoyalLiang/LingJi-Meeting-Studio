@@ -1,3 +1,4 @@
+import {createPortal} from 'react-dom';
 import {useCallback,useEffect,useId,useRef,useState} from 'react';
 import {isTauri,invoke} from '@tauri-apps/api/core';
 import {FolderOpen} from '@phosphor-icons/react';
@@ -8,7 +9,7 @@ import {FeedbackNotice} from './FeedbackNotice';
 import {Toast} from './Toast';
 
 type Settings={enabled:boolean;directory:string;retentionDays:number;error?:string};
-export function AudioBackupSettings({registerSave}:{registerSave?:(save:(()=>Promise<void>)|null)=>void}){
+export function AudioBackupSettings({registerSave,actionsTarget}:{registerSave?:(save:(()=>Promise<void>)|null)=>void;actionsTarget?:HTMLElement|null}){
   const directoryId=useId();
   const [value,setValue]=useState<Settings|null>(null),[dirty,setDirty]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[saved,setSaved]=useState(false);
   const pending=useRef<Promise<void>|null>(null);
@@ -27,7 +28,7 @@ export function AudioBackupSettings({registerSave}:{registerSave?:(save:(()=>Pro
     pending.current=request;return request;
   },[value,dirty]);
   useEffect(()=>{registerSave?.(save);return()=>registerSave?.(null);},[registerSave,save]);
-  const actions=<Button type="button" disabled={!dirty||busy||!value||value.enabled&&!value.directory.trim()} onClick={()=>void save().catch(()=>{})}>{busy?'正在保存…':'保存音频备份'}</Button>;
+  const actions=<Button type="button" disabled={!dirty||busy||!value||value.enabled&&!value.directory.trim()} onClick={()=>void save().catch(()=>{})}>{busy?'正在保存…':actionsTarget?'保存设置':'保存音频备份'}</Button>;
   return <section className="settings-section audio-backup-settings">
     <div className="audio-backup-heading"><div className="section-title"><FolderOpen size={19}/><h3>原始音频备份</h3></div>{value&&<label className="checkbox-label"><input type="checkbox" checked={value.enabled} disabled={busy} onChange={event=>edit({enabled:event.target.checked})}/><span>启用备份</span></label>}</div>
     {value&&<>
@@ -36,7 +37,7 @@ export function AudioBackupSettings({registerSave}:{registerSave?:(save:(()=>Pro
       </div>
       <Toast message={saved?'音频备份设置已保存':''} dismiss={()=>setSaved(false)}/>
       {value.error&&<FeedbackNotice message={value.error==='audio_backup_rename_failed'?'备份名称未同步，请检查备份目录是否可用。已保存的音频仍保留在原目录。':'部分音频备份未完成，请检查目录或磁盘。应用内原音会保留至备份成功或会议到期。'} warning/>}
-      {dirty&&<div className="audio-backup-actions">{actions}</div>}</>}
+      {(dirty||actionsTarget)&&(actionsTarget?createPortal(<><span className="settings-save-state" role="status" data-dirty={dirty}>{busy?'正在保存…':error?'保存失败':dirty?'有未保存的更改':saved?'已保存':''}</span>{actions}</>,actionsTarget):<div className="audio-backup-actions">{actions}</div>)}</>}
     {error&&<FeedbackNotice key={error} message={error} error/>}
   </section>;
 }

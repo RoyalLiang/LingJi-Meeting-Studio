@@ -43,6 +43,8 @@ export function Modal({ title, children, onClose, wide = false, explicitCloseOnl
   const heading = useRef<HTMLHeadingElement>(null);
   const titleId = useId();
   const backdropDown = useRef(false);
+  const closing=useRef<ReturnType<typeof setTimeout>|null>(null);
+  const requestClose=()=>{if(closing.current)return;if(matchMedia('(prefers-reduced-motion: reduce)').matches){onClose();return;}ref.current?.classList.add('is-closing');closing.current=setTimeout(onClose,140);};
   useEffect(() => {
     const dialog = ref.current;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -51,16 +53,16 @@ export function Modal({ title, children, onClose, wide = false, explicitCloseOnl
     const field = initialFocus === 'field' ? dialog?.querySelector<HTMLElement>('input:not([type="hidden"]):not(:disabled), textarea:not(:disabled), select:not(:disabled)') : null;
     (field || heading.current)?.focus({ preventScroll: true });
     return () => {
-      dialog?.close();
+      if(closing.current)clearTimeout(closing.current);closing.current=null;dialog?.close();
       const target = opener?.isConnected && opener !== document.body && !opener.closest('[inert]') ? opener : fallback;
       if (target?.isConnected && !target.closest('[inert]')) target.focus({ preventScroll: true });
     };
   }, [initialFocus]);
-  return <dialog className={`modal glass ${wide ? 'wide' : ''} ${className}`} ref={ref} onCancel={event => { event.preventDefault(); event.stopPropagation(); if (!explicitCloseOnly) onClose(); }} onPointerDown={event => { backdropDown.current = event.target === event.currentTarget; }} onClick={event => {
+  return <dialog className={`modal glass ${wide ? 'wide' : ''} ${className}`} ref={ref} onCancel={event => { event.preventDefault(); event.stopPropagation(); if (!explicitCloseOnly) requestClose(); }} onPointerDown={event => { backdropDown.current = event.target === event.currentTarget; }} onClick={event => {
       const startedOnBackdrop = backdropDown.current; backdropDown.current = false;
-      if (!explicitCloseOnly && startedOnBackdrop && event.target === event.currentTarget) onClose();
+      if (!explicitCloseOnly && startedOnBackdrop && event.target === event.currentTarget) requestClose();
     }} aria-labelledby={titleId}>
-    <header className="modal-header"><h2 id={titleId} ref={heading} tabIndex={-1}>{title}</h2>{headerActions}<CloseButton className="modal-close" onClick={onClose}/></header><div className="modal-body">{children}</div>{footer && <footer className="modal-footer">{footer}</footer>}
+    <header className="modal-header"><h2 id={titleId} ref={heading} tabIndex={-1}>{title}</h2>{headerActions}<CloseButton className="modal-close" onClick={requestClose}/></header><div className="modal-body">{children}</div>{footer && <footer className="modal-footer">{footer}</footer>}
   </dialog>;
 }
 export function Empty({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {

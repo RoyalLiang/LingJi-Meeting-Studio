@@ -109,3 +109,30 @@ test('regeneration guards double clicks locally and always releases its own load
  const request=sandbox.exports.regenerate();await sandbox.exports.regenerate();assert.equal(calls,1);assert.deepEqual(states,[true]);resolve();await request;assert.deepEqual(states,[true,false]);
  sandbox.generate=async()=>{throw Error('fixture failure');};await assert.rejects(sandbox.exports.regenerate(),/fixture failure/);assert.equal(sandbox.submitting.current,false);assert.deepEqual(states,[true,false,true,false]);
 });
+
+test('meeting context uses the displayed formal or live minutes and the same citation snapshot',async()=>{
+ const {transform}=await import('esbuild');
+ const source=await readFile(new URL('../apps/web/src/components/WorkbenchContext.tsx',import.meta.url),'utf8');
+ const code=(await transform(source.replace(/^import .*$/gm,'').replace('export function','function')+'\nexports.render=WorkbenchContext;',{loader:'tsx'})).code;
+ const box={exports:{},React:{createElement:(type,props,...children)=>({type,props,children})},useState:value=>[value,()=>{}],useEffect(){},useRef:value=>({current:value}),Button(){},CitationSources(){},ArrowUpRight(){},LinkSimple(){},ShieldCheck(){},X(){}};
+ vm.runInNewContext(code,box);
+ const nodes=node=>node&&typeof node==='object'?[node,...(node.children||[]).flat(Infinity).flatMap(nodes)]:[];
+ const formal={title:'正式',edited:false,sections:[],highlights:[{text:'正式共识',evidence:[{segmentId:'formal',revision:2}]}],actions:[],evidenceSnapshot:[{id:'formal',revision:2,text:'正式原文'}],transcriptRevision:2};
+ const live={...formal,title:'草稿',highlights:[{text:'会中草稿',evidence:[{segmentId:'live',revision:1}]}],evidenceSnapshot:[{id:'live',revision:1,text:'会中原文'}],transcriptRevision:1};
+ for(const [capture,edited,expected] of [['completed',false,formal],['recording',false,live],['recording',true,formal]]){
+  let selected;const record={id:'fixture',title:'会议',capture,minutes:{...formal,edited},liveMinutes:live,transcriptRevision:2,minutesRevision:2};
+  const tree=box.exports.render({record,records:[],overview:null,name:'项目',mode:'meeting',open:false,close(){},cite:(...args)=>{selected=args;},selectRecord(){}});
+  const citation=nodes(tree).find(node=>node.props?.evidence&&node.props?.cite);assert.ok(citation);
+  citation.props.cite(citation.props.evidence[0]);
+  assert.deepEqual(selected,[expected.highlights[0].evidence[0],expected.evidenceSnapshot,expected.transcriptRevision]);
+ }
+});
+
+test('closing a modal cancels its delayed callback when the modal is replaced',async()=>{
+ const {transform}=await import('esbuild');const source=await readFile(new URL('../apps/web/src/components/ui.tsx',import.meta.url),'utf8');
+ const code=(await transform(source.replace(/^import .*$/gm,''),{loader:'tsx',format:'cjs'})).code;
+ const effects=[],timers=new Map();let next=0,closed=0;
+ const box={module:{exports:{}},React:{createElement:(type,props,...children)=>({type,props,children})},useRef:initial=>({current:initial}),useId:()=> 'modal',useEffect:effect=>effects.push(effect),useState:value=>[value,()=>{}],useCallback:value=>value,HTMLElement:class{},document:{activeElement:null,querySelector:()=>null},matchMedia:()=>({matches:false}),setTimeout:run=>{timers.set(++next,run);return next;},clearTimeout:id=>timers.delete(id)};
+ vm.runInNewContext(code,box);const tree=box.module.exports.Modal({title:'会议',onClose:()=>{closed++;}});tree.props.ref.current={classList:{add(){}},showModal(){},close(){}};const cleanup=effects[0]();
+ tree.children[0].children.find(child=>child?.props?.className==='modal-close').props.onClick();assert.equal(timers.size,1);cleanup();assert.equal(timers.size,0);assert.equal(closed,0);
+});

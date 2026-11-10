@@ -12,7 +12,7 @@ const source=await readFile(new URL('../apps/web/src/components/Transcript.tsx',
 const record={id:'large',segments:Array.from({length:3000},(_,i)=>({id:String(i),revision:1,startMs:i*1000,speaker:'说话人 1',text:`会议内容 ${i}`})),sources:[]};
 test('closed history defers thousands of transcript nodes without losing edit state on collapse',async()=>{
   const slots=[];let cursor=0;
-  const box={memo:component=>component,module:{exports:{}},useState:initial=>{const index=cursor++;if(!(index in slots))slots[index]=initial;return [slots[index],value=>{slots[index]=value;}];},useRef:initial=>{const index=cursor++;if(!(index in slots))slots[index]={current:initial};return slots[index];},useId:()=>"history",CorrectionSuggestions:()=>null,TextAlignLeft:()=>null};
+  const box={useEffect(){},memo:component=>component,module:{exports:{}},useState:initial=>{const index=cursor++;if(!(index in slots))slots[index]=initial;return [slots[index],value=>{slots[index]=value;}];},useRef:initial=>{const index=cursor++;if(!(index in slots))slots[index]={current:initial};return slots[index];},useId:()=>"history",CorrectionSuggestions:()=>null,TextAlignLeft:()=>null};
   box.React={createElement:(tag,props,...children)=>({tag,props,children})};
   const code=(await transform(source.replace(/^import .*$/gm,''),{loader:'tsx',format:'cjs'})).code;
   vm.runInNewContext(code,box);

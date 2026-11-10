@@ -174,6 +174,7 @@ export async function createExtensions(repo,{request=remoteRequest,requestGithub
     if(input.token)plugin.credentials=secrets.seal(id,{token:input.token});
     plugin.tools=await discover(plugin);await repo.insert(plugin);return publicItem(plugin);
   }
+  async function probe(owner,id){const plugin=await get(owner,id);requireThat(plugin.type==='mcp','invalid_extension',400);const tools=await discover(plugin);return {available:true,tools:tools.length};}
   async function check(owner,id){const plugin=await get(owner,id);requireThat(plugin.type==='mcp','invalid_extension',400);const tools=await discover(plugin);return repo.change(id,item=>{item.tools=tools;item.enabled=false;item.approvedTools=[];item.version=randomUUID();item.updatedAt=Date.now();return publicItem(item);});}
   async function change(owner,id,input){
     await get(owner,id);requireThat(typeof input.enabled==='boolean','invalid_extension',400);
@@ -221,5 +222,5 @@ export async function createExtensions(repo,{request=remoteRequest,requestGithub
       requireThat(content.length>0&&content.length<=40000,'mcp_result_too_large',502);return content;
     },signal);
   }
-  return {builtins:builtinSkillStatuses,list,detail,skillPreview,installSkill,installPlugin,check,change,remove,snapshot,validate,call};
+  return {builtins:builtinSkillStatuses,list,detail,skillPreview,installSkill,installPlugin,probe,check,change,remove,snapshot,validate,call};
 }

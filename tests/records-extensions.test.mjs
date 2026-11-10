@@ -127,6 +127,12 @@ test('HTTP MCP initializes sessions, limits tools to explicit read grants and re
     assert.equal(installed.enabled,false);assert.doesNotMatch(JSON.stringify(installed),/private-fixture-token/);assert.doesNotMatch(JSON.stringify(await repo.list('extension')),/private-fixture-token/);
     await assert.rejects(extensions.change('owner',installed.id,{enabled:true,expectedVersion:installed.version,approvedTools:['write']}),{code:'mcp_readonly_tools_required'});
     await extensions.change('owner',installed.id,{enabled:true,expectedVersion:installed.version,approvedTools:['search']});
+    const beforeProbe=JSON.stringify(await repo.list('extension'));
+    const callsBeforeProbe=fixture.calls.filter(call=>call.options.body&&JSON.parse(call.options.body).method==='tools/call').length;
+    assert.equal((await extensions.probe('owner',installed.id)).available,true);
+    assert.equal(JSON.stringify(await repo.list('extension')),beforeProbe,'connection probe preserves enabled state, approved tools, version and credentials');
+    assert.equal(fixture.calls.filter(call=>call.options.body&&JSON.parse(call.options.body).method==='tools/call').length,callsBeforeProbe);
+    await assert.rejects(extensions.probe('other-owner',installed.id),{code:'extension_not_found'});
     await assert.rejects(extensions.snapshot('owner',{pluginIds:[installed.id]}),{code:'mcp_scope_required'});
     const scope=await extensions.snapshot('owner',{pluginIds:[installed.id],pluginVersions:{[installed.id]:installed.version},remoteToolsConfirmed:true});
     const result=await extensions.call('owner',scope,{pluginId:installed.id,toolName:'search',arguments:{query:'selected terms'}});assert.match(result,/Remote reference result/);

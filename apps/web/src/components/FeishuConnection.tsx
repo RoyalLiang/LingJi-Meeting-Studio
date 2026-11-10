@@ -1,3 +1,4 @@
+import { ModuleConnectionCheck } from './ModuleConnectionCheck';
 import {FeedbackNotice} from './FeedbackNotice';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { api, messageOf } from '../api';
@@ -23,6 +24,7 @@ export function FeishuConnection({onChange,disabled=false}:{onChange:(value:Feis
       <label>App ID<input name="appId" required defaultValue={value.appId} pattern="cli_[a-fA-F0-9]{16}" placeholder="cli_…" disabled={busy||disabled}/></label><label>App Secret<input name="appSecret" type="password" required={!value.hasSecret} autoComplete="new-password" placeholder={value.hasSecret?'已保存；留空保留':'应用凭据中的 Secret'} disabled={busy||disabled}/></label>
       <div className="feishu-actions"><Button variant="primary" disabled={busy||disabled}>保存配置</Button></div>
     </form>}
+    <ModuleConnectionCheck label="飞书连接" revision={JSON.stringify([value?.appId,value?.hasSecret,value?.enabled])} disabled={busy||disabled||!value} blockedReason={editing?'请先保存配置，再刷新连接状态。':undefined} check={async signal=>{const next=await api<FeishuConnectionValue>(endpoint,'GET',undefined,signal);store(next);if(!next.hasSecret)throw Error('尚未配置飞书凭据。');if(!next.enabled)throw Error('飞书协同已停用。');if(!next.connected)throw Error(['connecting','reconnecting'].includes(next.connection.state)?'飞书正在连接，请稍后重试。':'飞书当前未连接，请检查该模块配置。');return '飞书当前连接正常。';}}/>
     {value?.enabled&&phase==='failed'&&<FeedbackNotice key={`connection:${value.appId}`} message="飞书配置已保存，连接失败；请检查凭据后重新连接。" error/>}
   {error&&<FeedbackNotice key={error} message={error} error/>}
   </div>;

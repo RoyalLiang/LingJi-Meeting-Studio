@@ -28,3 +28,15 @@ test('workspace selection scrolls only its popup when the selected option is out
   tree.props.onKeyDown({key:'Home',preventDefault(){}});tree=render();effects.forEach(fn=>fn());
   assert.equal(menu.scrollTop,0);
 });
+
+test('Escape on a closed select reaches the surrounding drawer, while an open select consumes it',async()=>{
+ const source=await readFile(new URL('../apps/web/src/components/Select.tsx',import.meta.url),'utf8');
+ const code=(await transform(source.replace(/^import .*$/gm,''),{loader:'tsx',format:'cjs'})).code;
+ for(const open of [false,true]){
+  let index=0,stopped=0,prevented=0;
+  const box={document:{body:{}},module:{exports:{}},React:{createElement:(type,props,...children)=>({type,props,children})},useEffect(){},useLayoutEffect(){},useId:()=> 'test-select',useRef:initial=>({current:initial}),useState:initial=>[index++===1?open:initial,()=>{}],createPortal:element=>element,CaretDown(){},Check(){}};
+  vm.runInNewContext(code,box);const tree=box.module.exports.Select({label:'Workspace',value:'one',options:[{value:'one',label:'One'}]});
+  tree.props.onKeyDown({key:'Escape',nativeEvent:{},preventDefault(){prevented++;},stopPropagation(){stopped++;}});
+  assert.equal(stopped,Number(open));assert.equal(prevented,Number(open));
+ }
+});

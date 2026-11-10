@@ -33,7 +33,7 @@ export function Select({ value, defaultValue, onChange, options, name, label, di
  useEffect(()=>{if(open){const menu=popup.current,option=menu?.querySelector<HTMLElement>(`[data-option-index="${index}"]`);if(menu&&option){const top=option.offsetTop,bottom=top+option.offsetHeight;if(top<menu.scrollTop)menu.scrollTop=top;else if(bottom>menu.scrollTop+menu.clientHeight)menu.scrollTop=bottom-menu.clientHeight;}}},[index,open]);
  return <div ref={root} className={`select select-enhanced ${open?'is-open':''}`} onKeyDown={e=>{
   if(disabled || readOnly || !options.length || e.nativeEvent?.isComposing)return;
-  if(e.key==='Escape'){e.preventDefault();e.stopPropagation();setOpen(false);button.current?.focus();}
+  if(e.key==='Escape'&&open){e.preventDefault();e.stopPropagation();setOpen(false);button.current?.focus();}
   if(e.key==='Tab')setOpen(false);
   if(['ArrowDown','ArrowUp',...(!searchable?['Home','End']:[])].includes(e.key)){
    e.preventDefault();setOpen(true);setIndex(i=>e.key==='Home'?0:e.key==='End'?matches.length-1:Math.max(0,Math.min(matches.length-1,(open?i:Math.max(0,options.findIndex(o=>o.value===selected)))+(e.key==='ArrowDown'?1:-1))));
