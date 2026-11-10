@@ -105,3 +105,26 @@ test('real Responses SSE deltas accumulate into a readable preview and cancellat
     await running; await closed; assert.equal((await repo.get(job.id)).status, 'cancelled'); assert.equal((await repo.get(job.id)).result, null);
   } finally { model.closeAllConnections(); await new Promise(resolve => model.close(resolve)); }
 }));
+
+
+test('period statistics use Beijing creation dates, Monday weeks and only reported minutes totals', () => {
+  const now = Date.parse('2026-11-09T16:30:00Z'); // Tuesday, 00:30 in Beijing.
+  const make = (createdAt, tokens) => {
+    const r = example(); r.createdAt = createdAt;
+    r.usage.minutesMeter = {requests:1, reportedRequests:1, totalTokens:tokens, totalTokensRequests:1, inputTokens:999999};
+    return r;
+  };
+  const records = [make('2026-11-09T16:00:00Z',1200),make('2026-11-09T15:59:59Z',2300),make('2026-11-08T15:59:59Z',4000),make('2026-10-31T15:59:59Z',8000),make('2025-12-31T15:59:59Z',16000),make('2026-11-09T16:31:00Z',32000)];
+  const {periods} = workspaceOverview(records,now);
+  assert.deepEqual(periods.map(p=>[p.id,p.meetings,p.minutesTokens,p.usageIncomplete]),[['day',1,1200,false],['week',2,3500,false],['month',3,7500,false],['year',4,15500,false]]);
+  const partial=make('2026-11-09T16:01:00Z',600); partial.usage.minutesMeter.requests=2;
+  const unknown=make('2026-11-09T16:02:00Z',0);delete unknown.usage.minutesMeter;
+  assert.deepEqual(workspaceOverview([unknown],now).periods[0],{id:'day',label:'今日',meetings:1,minutesTokens:null,usageIncomplete:true});
+  assert.equal(workspaceOverview([partial,unknown],now).periods[0].minutesTokens,600);
+  assert.equal(workspaceOverview([partial,unknown],now).periods[0].usageIncomplete,true);
+  unknown.minutes=null;
+  assert.equal(workspaceOverview([unknown],now).periods[0].minutesTokens,0);
+  assert.equal(workspaceOverview([],now).periods[0].usageIncomplete,false);
+  const jan=Date.parse('2027-01-01T00:00:00+08:00');
+  assert.equal(workspaceOverview([make('2026-12-31T15:59:59Z',42)],jan).periods.find(p=>p.id==='year').meetings,0);
+});

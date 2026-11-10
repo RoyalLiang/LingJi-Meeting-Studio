@@ -16,7 +16,7 @@
 
 .collaboration-tools{display:grid;gap:14px;min-width:0}
 .collaboration-tools>h2{font-size:16px;margin:0}
-.collaboration-tool{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0;border-bottom:1px solid var(--border);min-width:0}
+.collaboration-tool{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0;min-width:0}
 .collaboration-tool-config{display:flex;align-items:center;gap:12px;min-width:0;text-align:left;border:0;padding:0;background:transparent;color:var(--ink-1);cursor:pointer;border-radius:var(--r-sm)}
 .collaboration-tool-config strong{font-size:15px}
 .collaboration-tool-config:focus-visible{outline:2px solid var(--accent);outline-offset:5px}

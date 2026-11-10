@@ -22,7 +22,7 @@ export const analysisInput = record => Object.fromEntries(['id','kind','owner','
 export function workspaceOverviewInput(record){
   const minutes=record.minutes;
   const text=(minutes?.topics||[]).map(topic=>topic.summary).filter(Boolean).join('；')||(minutes?.sections||[]).flatMap(section=>section.items.map(item=>item.text)).join('；');
-  return {...analysisInput(record),createdAt:record.createdAt,overviewSeconds:meetingSeconds(record),usage:{samples:record.usage.samples},
+  return {...analysisInput(record),createdAt:record.createdAt,overviewSeconds:meetingSeconds(record),usage:{samples:record.usage.samples,minutesMeter:record.usage.minutesMeter??null},
     segments:record.segments.map(({id,revision})=>({id,revision})),overviewText:text.slice(0,500),overviewExcerpt:record.segments.map(segment=>segment.text).join(' ').slice(0,500),
     minutes:minutes?{transcriptRevision:minutes.transcriptRevision,topics:minutes.topics,decisions:minutes.decisions,actions:minutes.actions,evidenceSnapshot:minutes.evidenceSnapshot?.map(({id,revision})=>({id,revision}))}:null};
 }
@@ -34,10 +34,26 @@ const evidenceValid = (r, item) => Array.isArray(item.evidence) && item.evidence
 
 export function workspaceOverview(records, now = Date.now()) {
   const sorted = [...records].sort((a, b) => b.createdAt.localeCompare(a.createdAt)), topicMap = new Map(), decisions = [], actions = [], summaries = [];
+  const today = new Date(`${day(now)}T00:00:00+08:00`), weekday = (new Date(now + 8 * 3600000).getUTCDay() + 6) % 7;
+  const periods = [
+    ['day', '今日', +today], ['week', '本周', +today - weekday * 86400000],
+    ['month', '本月', Date.parse(`${day(now).slice(0, 7)}-01T00:00:00+08:00`)],
+    ['year', '今年', Date.parse(`${day(now).slice(0, 4)}-01-01T00:00:00+08:00`)]
+  ].map(([id, label, start]) => ({id, label, start, meetings: 0, minutesTokens: 0, usageIncomplete: false, reported: false}));
   const activity = Array.from({ length: 30 }, (_, i) => ({ day: day(now - (29 - i) * 86400000), meetings: 0, seconds: 0 }));
   for (const r of sorted) {
     const source = sourceOf(r), bucket = activity.find(a => a.day === day(Date.parse(r.createdAt)));
     if (bucket) { bucket.meetings++; bucket.seconds += meetingSeconds(r); }
+    const meter = r.usage.minutesMeter, requests = meter?.requests, reports = meter?.totalTokensRequests;
+    const known = Number.isSafeInteger(meter?.totalTokens) && meter.totalTokens >= 0 && Number.isSafeInteger(reports) && reports > 0 && reports <= meter.reportedRequests && meter.reportedRequests <= requests;
+    const incomplete = meter ? !Number.isSafeInteger(requests) || requests < 0 || requests > 0 && (!known || reports < requests) : Boolean(r.minutes);
+    for (const period of periods) {
+      const created = Date.parse(r.createdAt);
+      if (created < period.start || created > now || !Number.isFinite(created)) continue;
+      period.meetings++;
+      if (known) { period.minutesTokens += meter.totalTokens; period.reported = true; }
+      period.usageIncomplete ||= incomplete;
+    }
     const minutes = r.minutes;
     for (const topic of minutes?.topics || []) {
       if (!topic.title?.trim() || !evidenceValid(r, topic)) continue;
@@ -58,6 +74,7 @@ export function workspaceOverview(records, now = Date.now()) {
   }
   return {
     totals: { meetings: records.length, completed: records.filter(r => r.capture === 'completed').length, seconds: records.reduce((n, r) => n + meetingSeconds(r), 0), audioSeconds: Math.round(records.reduce((n, r) => n + r.usage.samples / 16000, 0)), withTranscript: records.filter(r => r.segments.length).length, withMinutes: records.filter(r => r.minutes).length, staleMinutes: records.filter(r => r.minutes && r.minutes.transcriptRevision !== r.transcriptRevision).length, decisions: decisions.length, actions: actions.length },
+    periods: periods.map(({start: _start, reported, ...period}) => ({...period, minutesTokens: period.usageIncomplete && !reported ? null : period.minutesTokens})),
     activity, timezone: 'Asia/Shanghai', topics: [...topicMap.values()].sort((a, b) => b.meetings - a.meetings).slice(0, 20), topicCount: topicMap.size,
     summaries: summaries.slice(0, 20), decisions: decisions.slice(0, 50), actions: actions.slice(0, 50), generatedAt: new Date(now).toISOString()
   };

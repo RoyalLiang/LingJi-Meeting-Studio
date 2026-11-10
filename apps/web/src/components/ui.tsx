@@ -22,7 +22,7 @@ export function Button({ children, variant = 'secondary', className = '', title,
       popup.style.top=`${Math.max(8,Math.min(innerHeight-p.height-8,top>=8?top:a.bottom+8))}px`;
       addEventListener('scroll',hide,true);addEventListener('resize',hide);document.addEventListener('keydown',key,true);
       };
-    const enter=()=>{timer=window.setTimeout(show,300);},key=(e:KeyboardEvent)=>{if(e.key==='Escape'&&popup.matches(':popover-open')){hide();e.preventDefault();e.stopPropagation();}};
+    const enter=()=>{timer=window.setTimeout(show,300);},key=(e:KeyboardEvent)=>{if(e.key==='Escape'&&popup.matches(':popover-open')){hide();if(anchor.closest('[role=menu]'))return;e.preventDefault();e.stopPropagation();}};
     const focus=()=>{if(anchor.matches(':focus-visible'))show();};
     const toggled=()=>{if(!popup.matches(':popover-open'))hide();};
     popup.addEventListener('toggle',toggled);

@@ -98,7 +98,7 @@ function TaskContent({task,open}:{task:Task;open:(id:string,reference?:Knowledge
     <TaskTimeline timeline={task.timeline} ledger={task.ledger} kernelId={task.kernelId}/>
   </>;
 }
-export default function MeetingAgentCenter({titleChanged,records,openRecord,footerTarget}:{titleChanged?:(title:string)=>void;records:RecordListItem[];openRecord:(id:string)=>void;footerTarget?:HTMLElement|null}) {
+export default function MeetingAgentCenter({titleChanged,automationChanged,records,openRecord,footerTarget,tasksTarget,openContext}:{titleChanged?:(title:string)=>void;automationChanged?:(active:boolean)=>void;records:RecordListItem[];openRecord:(id:string)=>void;footerTarget?:HTMLElement|null;tasksTarget?:HTMLElement|null;openContext?:()=>void}) {
   const [extensions,setExtensions]=useState<InstalledExtension[]>([]),[extensionRefresh,setExtensionRefresh]=useState(0),[extensionError,setExtensionError]=useState('');
   const [builtins,setBuiltins]=useState<BuiltinSkill[]>([]);
   const builtin=builtins.find(item=>item.id==='meeting-review');
@@ -106,6 +106,7 @@ export default function MeetingAgentCenter({titleChanged,records,openRecord,foot
   useEffect(()=>{let active=true;api<{extensions:InstalledExtension[];builtinSkills?:BuiltinSkill[]}>('/extensions').then(value=>{if(active){setExtensions(value.extensions);setBuiltins(value.builtinSkills||[]);setExtensionError('');}}).catch(()=>{if(active)setExtensionError('暂时无法读取扩展，请重试。');});return()=>{active=false;};},[extensionRefresh]);
   const [view,setView]=useState<View>(()=>{try{return sessionStorage.getItem('lingji:git-open-config')==='1'?'schedule':'skills';}catch{return 'skills';}}),[drawer,setDrawer]=useState<Drawer|null>(null);
   useEffect(()=>{titleChanged?.(navigation.find(item=>item.id===view)?.label||'扩展与助手');},[view,titleChanged]);
+  useEffect(()=>automationChanged?.(view==='schedule'),[view,automationChanged]);
   const [tasks,setTasks]=useState<Task[]>([]),[loading,setLoading]=useState(true),[loadError,setLoadError]=useState(''),[detailError,setDetailError]=useState('');
   const [taskPage,setTaskPage]=useState(0);
   const [filter,setFilter]=useState('all'),[activeId,setActiveId]=useState(''),[refresh,setRefresh]=useState(0);
@@ -204,7 +205,8 @@ export default function MeetingAgentCenter({titleChanged,records,openRecord,foot
     {extensionError&&<FeedbackNotice key={extensionError} message={extensionError} error action={{label:'重试',run:()=>setExtensionRefresh(value=>value+1)}}/>}
     {view==='skills'&&<><div className="ma-toolbar"><h2>内置 Skill <span>1</span></h2></div><article className="ma-capability ma-skill-row"><div className="ma-icon"><Stack size={22}/></div><button type="button" className="ma-item-name" onClick={()=>setDrawer({kind:'skill'})}><strong>会议复盘</strong></button><span className="ma-muted">v1.0.0</span><span className="ma-state">{builtin?.ready===true?'已验证':builtin?.ready===false?'待验证':'加载中'}</span><Button variant="ghost" aria-label="查看会议复盘" onClick={()=>setDrawer({kind:'skill'})}><CaretRight size={17}/></Button></article><RemoteExtensions type="skill" items={extensions.filter(item=>item.type==='skill')} changed={()=>setExtensionRefresh(value=>value+1)}/></>}
     {view==='plugins'&&<><div className="ma-toolbar"><h2>内置工具 <span>1</span></h2></div><article className="ma-capability"><div className="ma-icon"><FileText size={22}/></div><button type="button" className="ma-item-name" onClick={()=>setDrawer({kind:'plugin'})}><strong>会议资料</strong><span>只读本次选择的会议文字与来源引用。</span></button><span className="ma-muted">聆记</span><span className="ma-state">按任务授权</span><Button variant="ghost" aria-label="查看会议资料工具" onClick={()=>setDrawer({kind:'plugin'})}><CaretRight size={17}/></Button></article><div className="ma-permission"><ShieldCheck size={20}/><div><strong>运行前确认会议范围</strong><p>不读取其他会议，不修改纪要，不对外写入。</p></div></div><RemoteExtensions type="mcp" items={extensions.filter(item=>item.type==='mcp')} changed={()=>setExtensionRefresh(value=>value+1)}/></>}
-    {view==='schedule'&&<MeetingAutomation extensions={extensions} footerTarget={footerTarget}/>}
+    {view==='schedule'&&<Button className="context-toggle automation-tasks-toggle" onClick={openContext}>自动化任务</Button>}
+    {view==='schedule'&&<MeetingAutomation extensions={extensions} footerTarget={footerTarget} tasksTarget={tasksTarget}/>}
     {view==='runs'&&<>
       <div className="ma-run-summary">{[{name:'进行中',count:tasks.filter(working).length},{name:'等待处理',count:tasks.filter(task=>['blocked','failed'].includes(task.status)).length},{name:'已完成',count:tasks.filter(task=>task.status==='completed').length}].map(item=><div key={item.name}><span>{item.name}</span><strong>{loading?'—':item.count}</strong></div>)}</div>
       <div className="ma-toolbar"><h2>全部任务 <span>{loading?'':tasks.length}</span></h2><div className="ma-tools"><Select menuMinWidth={168} label="筛选任务状态" value={filter} onChange={value=>{setFilter(value);setTaskPage(0);}} options={[{value:'all',label:'全部状态'},{value:'active',label:'进行中'},{value:'attention',label:'等待处理'},{value:'completed',label:'已完成'}]}/><Button variant="ghost" aria-label="刷新任务" onClick={()=>setRefresh(value=>value+1)}><ArrowClockwise size={16}/></Button></div></div>

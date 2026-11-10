@@ -252,7 +252,7 @@ export async function createRepository(options = {}) {
       const rows=pool?(await pool.query("SELECT id,data->'overview' AS data,(SELECT duration_ms FROM record_audio_stats WHERE record_id=record_list_projection.id) AS duration_ms,(SELECT samples FROM record_audio_stats WHERE record_id=record_list_projection.id) AS samples FROM record_list_projection WHERE data->>'owner'=$1 AND data->>'deleted'='false' AND data->>'deleteAt'>$2",[owner,new Date().toISOString()])).rows:db.prepare("SELECT id,json_extract(data,'$.overview') AS data,(SELECT duration_ms FROM record_audio_stats WHERE record_id=record_list_projection.id) AS duration_ms,(SELECT samples FROM record_audio_stats WHERE record_id=record_list_projection.id) AS samples FROM record_list_projection WHERE json_extract(data,'$.owner')=? AND json_extract(data,'$.deleted')=0 AND json_extract(data,'$.deleteAt')>?").all(owner,new Date().toISOString());
       const result=[];
       for(const row of rows){
-        if(row.data){const input=typeof row.data==='string'?JSON.parse(row.data):row.data;if(row.duration_ms!=null){input.overviewSeconds=Math.round(Number(row.duration_ms)/1000);input.usage={samples:Number(row.samples)};}result.push(input);continue;}
+        if(row.data){const input=typeof row.data==='string'?JSON.parse(row.data):row.data;if(Object.hasOwn(input.usage||{},'minutesMeter')){if(row.duration_ms!=null){input.overviewSeconds=Math.round(Number(row.duration_ms)/1000);input.usage={...input.usage,samples:Number(row.samples)};}result.push(input);continue;}}
         const record=await repository.get(row.id);if(record){result.push(workspaceOverviewInput(record));await repository.change(row.id,()=>{},{rebuild:true,returnRecord:false});}
       }
       return result;

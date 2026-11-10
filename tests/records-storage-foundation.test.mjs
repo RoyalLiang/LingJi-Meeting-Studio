@@ -76,3 +76,15 @@ test('legacy schema gets one immutable backup before normalized writes begin',as
   assert.equal((await repo.get(r.id)).title,'迁移后');
  }finally{await repo?.close();await rm(root,{recursive:true,force:true});}
 });
+
+
+test('legacy overview projections backfill minutes usage once and preserve it with the live audio clock',()=>fixture(async(repo,root)=>{
+ const r=record();r.usage.minutesMeter={requests:1,reportedRequests:1,totalTokens:12345,totalTokensRequests:1};await repo.insert(r);
+ const db=new DatabaseSync(join(root,'records.sqlite'));
+ try{
+  db.prepare("UPDATE record_list_projection SET data=json_remove(data,'$.overview.usage.minutesMeter') WHERE id=?").run(r.id);
+  assert.equal((await repo.listOverviewInputs('owner'))[0].usage.minutesMeter.totalTokens,12345);
+  const get=repo.get;repo.get=()=>assert.fail('warm overview must use the upgraded projection');
+  try{const input=(await repo.listOverviewInputs('owner'))[0];assert.equal(input.usage.minutesMeter.totalTokens,12345);assert.equal(workspaceOverview([input]).periods[0].minutesTokens,12345);}finally{repo.get=get;}
+ }finally{db.close();}
+}));

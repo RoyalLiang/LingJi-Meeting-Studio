@@ -7,7 +7,7 @@ export function TaskHistory<T>({endpoint,empty,children,itemsKey='items',revisio
   const [cursors,setCursors]=useState(['']),[page,setPage]=useState(0),[next,setNext]=useState<string|null>(null),[items,setItems]=useState<T[]>([]),[busy,setBusy]=useState(true),[error,setError]=useState(''),[refresh,setRefresh]=useState(0);
   const cursor=cursors[page];
   const list=useRef<HTMLDivElement>(null),identity=useRef('');
-  const navigate=(nextPage:number)=>{setPage(nextPage);const node=list.current,root=node?.closest<HTMLElement>('.workspace-scroll,.modal-body,.ma-drawer-content');if(node&&root)root.scrollTop+=node.getBoundingClientRect().top-root.getBoundingClientRect().top;node?.focus({preventScroll:true});};
+  const navigate=(nextPage:number)=>{setPage(nextPage);const node=list.current,root=node?.closest<HTMLElement>('.context-scroll,.workspace-scroll,.modal-body,.ma-drawer-content');if(node&&root)root.scrollTop+=node.getBoundingClientRect().top-root.getBoundingClientRect().top;node?.focus({preventScroll:true});};
   useEffect(()=>{
     let stopped=false,timer:ReturnType<typeof setTimeout>,controller:AbortController|undefined;
     setBusy(true);setError('');const key=endpoint+':'+itemsKey+':'+cursor;if(identity.current!==key){identity.current=key;setItems([]);setNext(null);}

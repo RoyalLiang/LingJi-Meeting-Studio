@@ -95,3 +95,27 @@ test('quick capture stays active when an auxiliary list or detail refresh fails'
   assert.equal(active,true);assert.equal(stops,0);assert.equal(context.activeId.current,'new-record');assert.ok(errors.some(value=>value.includes('unavailable')));
  }
 });
+
+test('browser duplex activity may arrive on alternating capture and playback samples',()=>{
+ const engine=createMeetingAutomation();let decision;
+ for(let at=0;at<=6000;at+=2000){const input=at%4000===0,output=!input;decision=engine.sample({sampledAt:at,active:true,startActive:false,input,output},idle);}
+ assert.equal(decision?.kind,'start');
+ const oneWay=createMeetingAutomation();for(let at=0;at<=16000;at+=2000)assert.equal(oneWay.sample({sampledAt:at,active:true,input:true,output:false},idle),null);
+ const stale=createMeetingAutomation();stale.sample({sampledAt:0,active:true,input:true,output:false},idle);
+ for(let at=8000;at<=20000;at+=2000)assert.equal(stale.sample({sampledAt:at,active:true,input:false,output:true},idle),null);
+});
+
+
+test('native listener passes alternating directions and rejects stale listener tokens',async()=>{
+ const {transform}=await import('esbuild'),vm=await import('node:vm');
+ const source=await readFile(new URL('../apps/web/src/useMeetingAutomation.ts',import.meta.url),'utf8');
+ const code=(await transform(source.replace(/^import .*$/gm,'').replace('export function','function').replace(/^export type .*$/gm,'')+'\nexports.render=useMeetingAutomation;',{loader:'ts',format:'cjs'})).code;
+ let handler,effect,time=0,starts=0;const errors=[];
+ const box={exports:{},crypto:{randomUUID:()=> 'fixture-token'},Date:class extends Date{static now(){return time;}},isTauri:()=>true,createMeetingAutomation,useRef:value=>({current:value}),useState:()=>[undefined,()=>{}],useEffect:run=>{effect=run;},listen:async(_name,callback)=>{handler=callback;return()=>{};},invoke:async()=>true};
+ vm.runInNewContext(code,box);box.exports.render({enabled:true,browser:true,feishu:false},idle,{start:async()=>{starts++;return 'auto-record';},stop:async()=>true,error:message=>errors.push(message)});
+ const cleanup=effect();await Promise.resolve();await Promise.resolve();
+ await handler({payload:{token:'old-token',sampledAt:time,input:true,output:true}});assert.equal(starts,0);
+ for(time=0;time<=6000;time+=2000)await handler({payload:{token:'fixture-token',sampledAt:time,input:time%4000===0,output:time%4000!==0}});
+ assert.equal(starts,1);assert.deepEqual(errors,[]);cleanup();
+ box.invoke=async()=>false;box.exports.render({enabled:true,browser:true,feishu:false},idle,{start:async()=>undefined,stop:async()=>false,error:message=>errors.push(message)});const stop=effect();await new Promise(resolve=>setImmediate(resolve));assert.match(errors[0],/无法启用音频调用监听/);stop();
+});

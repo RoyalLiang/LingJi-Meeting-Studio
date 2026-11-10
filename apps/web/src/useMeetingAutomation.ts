@@ -18,12 +18,12 @@ export function useMeetingAutomation(config:MeetingAutomationConfig|undefined,re
       unlisten=await listen<Signal>('meeting-activity',async({payload})=>{
         if(!active || payload.token!==token)return;
         const current=latest.current;
-        const decision=engine.sample({sampledAt:payload.sampledAt,receivedAt:Date.now(),active:payload.input || payload.output,startActive:payload.input && payload.output,error:payload.error},current.report);
+        const decision=engine.sample({sampledAt:payload.sampledAt,receivedAt:Date.now(),active:payload.input || payload.output,input:payload.input,output:payload.output,error:payload.error},current.report);
         errorSamples=payload.error?errorSamples+1:0;
         if(errorSamples>=3 && !warned){warned=true;current.commands.error('音频调用监听暂不可用，自动联动已暂停。');}
         if(!payload.error)warned=false;
         const pending=engine.pending;
-        setNotice(pending ? {key:`${token}:${pending.kind}:${pending.since}`,message:pending.kind==='start' ? `检测到双向音频调用，${Math.max(0,Math.ceil((pending.due-payload.sampledAt)/1000))} 秒后开始记录。` : `目标音频调用已结束，${Math.max(0,Math.ceil((pending.due-payload.sampledAt)/1000))} 秒后结束本场记录。`,cancel:()=>{engine.cancel();setNotice(undefined);}} : undefined);
+        setNotice(pending ? {key:`${token}:${pending.kind}:${pending.since}`,message:pending.kind==='start' ? `检测到会议双向音频调用，${Math.max(0,Math.ceil((pending.due-payload.sampledAt)/1000))} 秒后开始记录。` : `目标音频调用已结束，${Math.max(0,Math.ceil((pending.due-payload.sampledAt)/1000))} 秒后结束本场记录。`,cancel:()=>{engine.cancel();setNotice(undefined);}} : undefined);
         if(!decision)return;
         setNotice(undefined);
         try{
@@ -32,7 +32,8 @@ export function useMeetingAutomation(config:MeetingAutomationConfig|undefined,re
         }catch{engine.stopped();current.commands.error('自动联动未完成，请在主窗口检查录音状态。');}
       });
       if(!active){unlisten();return;}
-      await invoke('meeting_watch_configure',{enabled:Boolean(config?.enabled),browser:config?.browser!==false,feishu:config?.feishu!==false,token});
+      const supported=await invoke('meeting_watch_configure',{enabled:Boolean(config?.enabled),browser:config?.browser!==false,feishu:config?.feishu!==false,token});
+      if(supported===false)throw new Error('audio_activity_unsupported');
     };
     void configure().catch(()=>{if(active)latest.current.commands.error('当前环境无法启用音频调用监听。');});
     return()=>{active=false;unlisten?.();void invoke('meeting_watch_configure',{enabled:false,browser:false,feishu:false,token}).catch(()=>{});};
