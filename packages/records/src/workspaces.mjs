@@ -41,12 +41,19 @@ export function workspaceOverview(records, now = Date.now()) {
     ['year', '今年', Date.parse(`${day(now).slice(0, 4)}-01-01T00:00:00+08:00`)]
   ].map(([id, label, start]) => ({id, label, start, meetings: 0, minutesTokens: 0, usageIncomplete: false, reported: false}));
   const activity = Array.from({ length: 30 }, (_, i) => ({ day: day(now - (29 - i) * 86400000), meetings: 0, seconds: 0 }));
+  const tokenActivity = Array.from({length:365}, (_, i) => ({day:day(now - (364-i)*86400000), minutesTokens:0, usageIncomplete:false, reported:false}));
+  const tokenDays = new Map(tokenActivity.map(bucket => [bucket.day, bucket]));
   for (const r of sorted) {
     const source = sourceOf(r), bucket = activity.find(a => a.day === day(Date.parse(r.createdAt)));
     if (bucket) { bucket.meetings++; bucket.seconds += meetingSeconds(r); }
     const meter = r.usage.minutesMeter, requests = meter?.requests, reports = meter?.totalTokensRequests;
     const known = Number.isSafeInteger(meter?.totalTokens) && meter.totalTokens >= 0 && Number.isSafeInteger(reports) && reports > 0 && reports <= meter.reportedRequests && meter.reportedRequests <= requests;
     const incomplete = meter ? !Number.isSafeInteger(requests) || requests < 0 || requests > 0 && (!known || reports < requests) : Boolean(r.minutes);
+    const tokenDay = tokenDays.get(day(Date.parse(r.createdAt)));
+    if (tokenDay && Date.parse(r.createdAt) <= now) {
+      if (known) { tokenDay.minutesTokens += meter.totalTokens; tokenDay.reported = true; }
+      tokenDay.usageIncomplete ||= incomplete;
+    }
     for (const period of periods) {
       const created = Date.parse(r.createdAt);
       if (created < period.start || created > now || !Number.isFinite(created)) continue;
@@ -75,6 +82,7 @@ export function workspaceOverview(records, now = Date.now()) {
   return {
     totals: { meetings: records.length, completed: records.filter(r => r.capture === 'completed').length, seconds: records.reduce((n, r) => n + meetingSeconds(r), 0), audioSeconds: Math.round(records.reduce((n, r) => n + r.usage.samples / 16000, 0)), withTranscript: records.filter(r => r.segments.length).length, withMinutes: records.filter(r => r.minutes).length, staleMinutes: records.filter(r => r.minutes && r.minutes.transcriptRevision !== r.transcriptRevision).length, decisions: decisions.length, actions: actions.length },
     periods: periods.map(({start: _start, reported, ...period}) => ({...period, minutesTokens: period.usageIncomplete && !reported ? null : period.minutesTokens})),
+    tokenActivity: tokenActivity.map(({reported, ...bucket}) => ({...bucket, minutesTokens:bucket.usageIncomplete && !reported ? null : bucket.minutesTokens})),
     activity, timezone: 'Asia/Shanghai', topics: [...topicMap.values()].sort((a, b) => b.meetings - a.meetings).slice(0, 20), topicCount: topicMap.size,
     summaries: summaries.slice(0, 20), decisions: decisions.slice(0, 50), actions: actions.slice(0, 50), generatedAt: new Date(now).toISOString()
   };

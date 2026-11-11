@@ -44,7 +44,7 @@ export function ShareDialog({ record, close, notify }: { record: RecordDetail; l
       if (!active || event.payload.url !== downloadUrl.current) return;
       downloadUrl.current = ''; clearTimeout(downloadTimer.current); setDownloading(false);
       if (event.payload.success) latestNotify.current('分享文件已保存至下载文件夹。');
-      else setError('下载未完成，请点击重新下载。');
+      else setError('下载未完成，请再次点击导出。');
     }).then(unlisten => { if (active) { stop = unlisten; setDownloadReady(true); } else unlisten(); }).catch(() => { if (active) setError('暂无法接收下载结果，请重开分享窗口。'); });
     return () => { active = false; stop?.(); clearTimeout(downloadTimer.current); };
   }, [native]);
@@ -92,7 +92,7 @@ export function ShareDialog({ record, close, notify }: { record: RecordDetail; l
   function beginDownload(url: string) {
     if (!native) return;
     downloadUrl.current = url; setDownloading(true); clearTimeout(downloadTimer.current);
-    downloadTimer.current = window.setTimeout(() => { downloadUrl.current = ''; setDownloading(false); setError('未收到下载完成结果，可点击重新下载。'); }, 30_000);
+    downloadTimer.current = window.setTimeout(() => { downloadUrl.current = ''; setDownloading(false); setError('未收到下载完成结果，可再次点击导出。'); }, 30_000);
   }
   return <Modal title="分享会议" onClose={close}>
     <div className="meeting-share">
@@ -102,7 +102,7 @@ export function ShareDialog({ record, close, notify }: { record: RecordDetail; l
       {preview && <details className="meeting-share-full-preview"><summary>核对完整分享内容</summary><iframe title="完整分享预览" sandbox="" srcDoc={preview.html}/></details>}
       {error && <FeedbackNotice key={error} message={error} error/>}
       <section className="meeting-share-existing"><h3>加密链接分享</h3><label>分享范围<Select label="在线分享范围" value={scope} disabled={busy || downloading} onChange={value => { setScope(value as ShareScope); setConfirmed(false); attempt.current = null; setPrepared(null); }} options={[{value:'minutes',label:'仅纪要及引用原文'},{value:'full',label:'纪要与全部转录'}]}/></label><p className="meeting-share-empty">无需登录，在客户端加密后上传至官网。接收者用浏览器解密阅读，链接 24 小时有效。原音不会上传。</p><label className="meeting-share-consent"><input type="checkbox" checked={confirmed} disabled={busy} onChange={event => setConfirmed(event.currentTarget.checked)}/>我确认分享所选内容；持有完整链接的人可以阅读。</label><div className="actions meeting-share-actions"><Button variant="primary" disabled={busy || !hasContent || !confirmed || !fingerprint} onClick={() => void generateLink()}><LinkSimple size={18}/>{busy ? '正在生成…' : '生成加密分享链接'}</Button></div><p className="meeting-share-empty">删除本机会议不会自动撤销链接，请先在这里撤销。已被接收者保存的副本无法收回。</p></section>
-      <div className="actions meeting-share-actions"><Button disabled={!hasContent || !downloadReady || downloading} onClick={() => exportFile()}><DownloadSimple size={18}/>{downloading ? '正在保存…' : '导出 HTML 分享文件'}</Button><Button disabled={!hasContent || !downloadReady || downloading} onClick={() => exportFile(true)}>导出明文备份</Button>{prepared && !downloading && <a className="meeting-share-retry" href={prepared.url} download={prepared.name} onClick={() => { setError(''); beginDownload(prepared.url); }}>重新下载</a>}</div>
+      <div className="actions meeting-share-actions"><Button disabled={!hasContent || !downloadReady || downloading} onClick={() => exportFile()}><DownloadSimple size={18}/>{downloading ? '正在保存…' : '导出 HTML 分享文件'}</Button><Button disabled={!hasContent || !downloadReady || downloading} onClick={() => exportFile(true)}>导出明文备份</Button></div>
       {url && <div className="meeting-share-link"><label>只读链接<input readOnly value={url} onFocus={event => event.currentTarget.select()}/></label><Button aria-label="复制分享链接" onClick={async () => { setError(''); try { await navigator.clipboard.writeText(url); notify('分享链接已复制。'); } catch { setError('复制未成功，请选中链接手动复制。'); } }}><Copy size={18}/>复制</Button></div>}
       {activeLinks.length > 0 && <section className="meeting-share-existing"><h3><Check size={16}/>分享链接</h3>{activeLinks.map(link => <div className="meeting-share-row" key={link.id}><span>{link.scope === 'full' ? '纪要与全部转录' : '会议纪要'}<small>{link.pending ? '创建未完成，可重试原快照' : new Date(link.expires).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' 到期'}</small></span>{link.pending ? <Button variant="ghost" disabled={busy || !confirmed} onClick={() => void generateLink(link)}>重试</Button> : <Button variant="ghost" disabled={busy} onClick={() => setUrl(link.url || '')}>查看链接</Button>}<Button variant="ghost" disabled={busy} onClick={async () => {
         if (request.current) return; request.current = true; setBusy(true); setError('');
