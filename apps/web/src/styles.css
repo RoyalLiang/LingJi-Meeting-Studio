@@ -267,8 +267,9 @@ label { display:grid; gap:7px; font-size:12px; color:var(--ink-2); }
 /* Viewport owns the frame; only named content regions scroll. */
 html,body,#root { width:100%; height:100%; min-height:0; overflow-y:hidden; overscroll-behavior:none; }
 html,body { overflow-x:clip; }
-* { scrollbar-width:none; }
-*::-webkit-scrollbar { display:none; width:0; height:0; }
+/* Keep scrollbars hidden when panels load their own scroll styles. */
+* { scrollbar-width:none!important; }
+*::-webkit-scrollbar { display:none!important; width:0!important; height:0!important; }
 .app-shell { width:calc(100% - 32px); height:calc(100dvh - 32px); min-height:0; margin:16px auto; padding:0; gap:18px; align-items:stretch; }
 .sidebar { position:relative; top:auto; height:100%; min-height:0; flex-shrink:0; }
 .record-list { min-height:0; overscroll-behavior:contain; }

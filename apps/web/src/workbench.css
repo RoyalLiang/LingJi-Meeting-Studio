@@ -328,19 +328,20 @@ html:not(.recording-capsule-mode) body{background:var(--page)}
 .week-activity>header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 4px;margin-bottom:14px}
 .week-activity h2{margin:0;color:var(--ink-2);font-size:12px;font-weight:500}
 .week-total{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent);font-size:10px}.week-total b{font-size:11px;font-weight:550;font-variant-numeric:tabular-nums}
-.week-bars{position:relative;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:12px;padding-top:16px}
-.week-bars::before{content:"";position:absolute;left:4px;right:4px;bottom:32px;border-top:1px solid var(--border)}
+.week-bars{--week-axis-offset:48px;position:relative;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:12px;padding-top:16px}
+.week-bars::before{content:"";position:absolute;left:4px;right:4px;bottom:var(--week-axis-offset);border-top:1px solid var(--border)}
 .week-day{position:relative;display:flex;flex-direction:column;align-items:center;gap:10px;padding:8px 0;border-radius:12px;outline-offset:3px}
-.week-day[data-today=true]{background:transparent}.week-day[data-today=true]::before{content:"";position:absolute;inset:8px 0 32px;border-radius:10px 10px 0 0;background:color-mix(in srgb,var(--chart-bottom) 10%,var(--bg));pointer-events:none}.week-day .week-bar-track,.week-day time{position:relative}
+.week-day::before{content:"";position:absolute;inset:8px 0 var(--week-axis-offset);border-radius:10px 10px 0 0;background:color-mix(in srgb,var(--chart-bottom) 7%,var(--bg));pointer-events:none;opacity:0;transition:opacity 160ms}.week-day:hover::before,.week-day:focus-visible::before{opacity:1}.week-day .week-bar-track,.week-label{position:relative}
 .week-bar-track{height:112px;width:100%;display:flex;align-items:flex-end;justify-content:center}
 .week-bar-track>span{position:relative;display:block;width:22px;max-width:45%;min-height:2px;border-radius:6px 6px 3px 3px;background:linear-gradient(180deg,var(--chart-top),var(--chart-bottom));transition:height 180ms,filter 160ms}
 .week-bar-track>span>b{position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);font-size:10px;line-height:1;font-weight:500;color:var(--ink-3);font-variant-numeric:tabular-nums}
 .week-bar-track>span[data-empty=true]{background:var(--border)}
 .week-day[data-today=true] .week-bar-track>span{background:linear-gradient(180deg,var(--chart-highlight-top),var(--chart-highlight-bottom))}.week-day:hover .week-bar-track>span,.week-day:focus-visible .week-bar-track>span{filter:brightness(1.06)}
 .week-day[data-today=true] .week-bar-track>span>b,.week-day[data-today=true] time{color:var(--chart-ink);font-weight:550}
+.week-label{display:flex;flex-direction:column;align-items:center;gap:2px;height:30px}.week-duration{font-size:9px;line-height:14px;color:var(--ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
 .week-day time{font-size:10px;line-height:14px;font-variant-numeric:tabular-nums;color:var(--ink-3)}
 @media(max-width:560px){.project-welcome{align-items:flex-start;gap:10px;padding-top:12px}.project-welcome h1{font-size:16px}.project-welcome p{font-size:10px}.project-welcome>small{font-size:9px;white-space:nowrap;text-align:right;line-height:1.7}.week-bars{gap:6px}.week-bar-track>span{width:17px}.week-activity{margin-bottom:16px}}
-@media(prefers-reduced-motion:reduce){.week-bar-track>span{transition:none}}
+@media(prefers-reduced-motion:reduce){.week-bar-track>span,.week-day::before{transition:none}}
 
 .app-shell .v10-sidebar .rail-top-actions{justify-content:flex-start;gap:5px}.rail-top-actions .sidebar-close{margin-left:auto}
 .v10-sidebar .rail-section-label>.workspace-directory-entry{width:auto;min-width:0;display:inline-flex;gap:5px;padding:0;border:0;background:transparent;color:var(--ink-3);font-size:11px}.workspace-directory-entry>span:first-of-type{white-space:nowrap}.workspace-directory-entry:hover,.workspace-directory-entry[aria-current=page]{color:var(--accent)}
