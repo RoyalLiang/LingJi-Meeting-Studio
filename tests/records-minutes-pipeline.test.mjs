@@ -839,3 +839,49 @@ test('known larger windows expand transcript and synthesis budgets while explici
  const pinned=buildMinutesManifest(claim,{...config,RECORD_MINUTES_INPUT_BYTES:'12000',LLM_MODEL_PROFILES:JSON.stringify({'fixture-model':{contextWindow:262144}})});assert.equal(pinned.budget,12000);
  }finally{await f.close();}
 });
+
+test('large-context models still split a dense long transcript before a provider-sized timeout',async()=>{
+  const f=await fixture(60);try{
+    await f.repo.change(f.record.id,record=>{record.segments.forEach((segment,index)=>{segment.startMs=index*90000;segment.endMs=segment.startMs+60000;});});
+    const claim=await f.claim(),large={...config,LLM_MODEL_PROFILES:JSON.stringify({'fixture-model':{contextWindow:262144}})};
+    const manifest=buildMinutesManifest(claim,large);assert.ok(manifest.windows.length>1);assert.ok(manifest.budget<=48000);
+    const result=await runMinutesPipeline(f.repo,f.record.id,claim,large,async job=>{
+      if(!job.summaries)assert.ok(Buffer.byteLength(JSON.stringify({transcript:job.snapshot,notes:job.notes,context:job.liveContext}))<=48000,'bounded transcript work per request');
+      return summarize(job);
+    });
+    assert.equal(result.coverage.segments,60);assert.equal(result.coverage.completed,manifest.windows.length);assert.ok(result.coverage.calls>1);
+    await f.repo.change(f.record.id,r=>commitMinutes(r,claim.id,result,claim.fence));assert.equal((await f.repo.get(f.record.id)).jobs.at(-1).status,'completed');
+  }finally{await f.close();}
+});
+
+test('long synthesis has a bounded deadline and a lease covering the same active request',async()=>{
+  const {minutesTimeoutMs}=await import('../services/records/src/minutes-deadline.mjs');
+  assert.equal(minutesTimeoutMs({scope:'final',stage:'synthesis',summaries:[{},{}]}),360000);
+  assert.equal(minutesTimeoutMs({scope:'final',stage:'single'}),240000);
+  assert.equal(minutesTimeoutMs({scope:'live',stage:'single'}),120000);
+  assert.equal(minutesTimeoutMs({scope:'live',stage:'synthesis',summaries:[{},{}]}),120000);
+  const f=await fixture(14);try{const claim=await f.claim();await runMinutesPipeline(f.repo,f.record.id,claim,config,async job=>{
+    if(job.stage==='synthesis'){const saved=(await f.repo.get(f.record.id)).jobs.at(-1);assert.ok(saved.lease-Date.now()>=minutesTimeoutMs(job)+59000);}
+    return summarize(job);
+  });}finally{await f.close();}
+});
+
+test('a completed parallel synthesis cannot shorten the remaining synthesis lease',async()=>{
+  const f=await fixture(100);let release,started,run,synthesisStarted=0;
+  const held=new Promise(resolve=>{release=resolve;}),ready=new Promise(resolve=>{started=resolve;});
+  try{
+    const claim=await f.claim();
+    run=runMinutesPipeline(f.repo,f.record.id,claim,{...config,RECORD_MINUTES_INPUT_BYTES:20000},async job=>{
+      if(job.stage==='synthesis'&&job.summaries.length>2){
+        synthesisStarted++;if(synthesisStarted===1)return {...summarize(job),title:'first synthesis completed'};
+        started();await held;
+      }
+      return summarize(job);
+    });
+    await ready;let saved;
+    for(let i=0;i<100;i++){saved=(await f.repo.get(f.record.id)).jobs.at(-1);if(saved.windowCache?.some(entry=>entry.result.title==='first synthesis completed'))break;await new Promise(resolve=>setImmediate(resolve));}
+    assert.ok(saved.windowCache.some(entry=>entry.result.title==='first synthesis completed'));
+    assert.ok(saved.lease-Date.now()>=419000,'lease still covers the unfinished 360s synthesis plus drain margin');
+    release();const result=await run;validateMinutes(result,claim.snapshot);
+  }finally{release();await run?.catch(()=>{});await f.close();}
+});

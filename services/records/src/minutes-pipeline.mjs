@@ -23,7 +23,8 @@ const synthesisBudget=config=>{
 };
 const roleInputBudget=(job,config,role)=>{const selected=minutesRoleConfig(job,config,role);return job.modelRouting?Math.min(inputBudget(selected),minutesBudget(selected)):inputBudget(selected);};
 // A source window can finalize directly, so it must fit both selected models.
-const windowInputBudget=(job,config)=>Math.min(roleInputBudget(job,config,'minutesMap'),roleInputBudget(job,config,job.scope==='live'?'minutesMap':'minutesFinal'));
+// A large model context is not a safe amount of transcript to organize in one timed request.
+const windowInputBudget=(job,config)=>Math.min(48000,roleInputBudget(job,config,'minutesMap'),roleInputBudget(job,config,job.scope==='live'?'minutesMap':'minutesFinal'));
 const finalInputBudget=(job,config)=>{const selected=minutesRoleConfig(job,config,'minutesFinal');return job.modelRouting?Math.min(synthesisBudget(selected),minutesBudget(selected)):synthesisBudget(selected);};
 const windowConcurrency=config=>{
   const value=Number(config.RECORD_MINUTES_WINDOW_CONCURRENCY);
@@ -149,7 +150,7 @@ export async function runMinutesPipeline(repo,recordId,claim,config,generate,opt
   });
   async function execute(key,input,stage,preview=false){
     await repo.change(recordId,record=>{
-      const job=currentJob(record,claim);job.lease=Date.now()+(minutesTimeoutMs(claim)+60000);
+      const job=currentJob(record,claim);job.lease=Date.now()+(minutesTimeoutMs({...claim,...input,stage})+60000);
       if(job.progress.stage!==stage){job.progress.stage=stage;emit(record,'minutes.progress',{jobId:job.id,completed:job.progress.completed,total:job.progress.total,stage});}
     });
     let result=cache.get(key);
@@ -184,7 +185,7 @@ export async function runMinutesPipeline(repo,recordId,claim,config,generate,opt
           job.partialMinutes = {...partial, transcriptRevision:claim.transcriptRevision, generatedAt:new Date().toISOString()};
         }
       }
-      job.progress.stage=stage;job.lease=Date.now()+(minutesTimeoutMs(claim)+60000);emit(record,'minutes.progress',{jobId:job.id,completed:job.progress.completed,total:job.progress.total,stage});
+      job.progress.stage=stage;job.lease=Date.now()+(minutesTimeoutMs({...claim,...input,stage})+60000);emit(record,'minutes.progress',{jobId:job.id,completed:job.progress.completed,total:job.progress.total,stage});
     });
     cache.set(key,result);return {key,result};
   }

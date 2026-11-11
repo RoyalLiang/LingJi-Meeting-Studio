@@ -100,7 +100,23 @@ test('historic records are excluded, ambiguous titles give feedback, deletion re
 test('permission failures persist actionable feedback and disabled rules fence queued writes',async t=>{
   const h=await fixture(t);await h.sync.save('owner',h.policy);const r=await h.record();h.respond(r);h.network.denyWrites();
   const first=await h.sync.start('owner',r.id),failed=await settled(h.sync,first.id);assert.equal(failed.error,'git_write_forbidden');assert.equal(failed.status,'failed');
-  h.network.denyWrites(false);await h.sync.save('owner',{enabled:false});await assert.rejects(h.sync.control('owner',first.id,'retry'),{code:'git_rule_changed'});assert.equal(h.network.mrs.length,0);
+  assert.equal((await h.sync.get('owner',first.id)).requiresScopeReview,false);
+  const writes=h.network.writes.length;
+  h.network.denyWrites(false);await h.sync.save('owner',{enabled:false});
+  assert.equal((await h.sync.get('owner',first.id)).requiresScopeReview,true);
+  await assert.rejects(h.sync.control('owner',first.id,'retry'),{code:'git_rule_changed'});
+  assert.equal((await h.sync.get('owner',first.id)).requiresScopeReview,true);
+  assert.equal(h.network.writes.length,writes);assert.equal(h.network.mrs.length,0);
+});
+
+test('changed runtime credentials route an unfinished write to scope review',async t=>{
+  const h=await fixture(t);await h.sync.save('owner',h.policy);const r=await h.record();h.respond(r);h.network.denyWrites();
+  const first=await h.sync.start('owner',r.id);assert.equal((await settled(h.sync,first.id)).error,'git_write_forbidden');
+  const writes=h.network.writes.length;
+  await writeFile(join(h.root,'providers.json'),JSON.stringify({LLM_API_KEY:'synthetic-replacement-key'}));
+  assert.equal((await h.sync.get('owner',first.id)).requiresScopeReview,true);
+  await assert.rejects(h.sync.control('owner',first.id,'retry'),{code:'git_model_changed'});
+  assert.equal(h.network.writes.length,writes);
 });
 test('a title changed during the last preflight GET prevents every subsequent write',async t=>{
   const h=await fixture(t);await h.sync.save('owner',h.policy);const r=await h.record();h.respond(r);let changed=false;
@@ -575,4 +591,40 @@ for(const cause of ['source','model'])test(`connector ${cause==='source'?'retry'
  else {await h.sync.control('owner',first.id,'pause');await writeFile(join(h.root,'providers.json'),JSON.stringify({LLM_REASONING_EFFORT:'high'}));}
  const next=await connectors.control('owner','git',first.kernelId,cause==='source'?'retry':'resume',{confirmed:true});
  assert.notEqual(next.id,first.id);assert.notEqual(next.kernelId,first.kernelId);assert.equal((await connectors.inspect('owner','git',next.kernelId)).id,next.id);assert.equal((await h.sync.get('owner',first.id)).status,'superseded');assert.equal(h.network.writes.length,0);
+});
+
+async function archivedThenChanged(t){
+ const h=await fixture(t),id='extension:confirmed-recovery',version='5'.repeat(40);
+ await h.repo.insert({id,kind:'extension',owner:'owner',type:'skill',source:'https://git.example.test/root/skills',path:'skills/archive',name:'Archive',version,enabled:true,content:'Archive the selected meeting and keep its evidence.'});
+ const policy={...h.policy,skillIds:[id],skillVersions:{[id]:version},mode:'',directory:''};await h.sync.save('owner',policy);const r=await h.record();
+ h.fake.setResponses([message(call('read_selected_meeting',{recordId:r.id}),{stopReason:'toolUse'}),message(call('manage_git_sync',{action:'archive',mode:'mr',directory:'docs/confirmed',content:'# Confirmed archive'}),{stopReason:'toolUse'}),async()=>{await h.sync.save('owner',{...policy,prompt:'Updated instructions for future meetings.'});return message(JSON.stringify({summary:'Archived',decisions:[{text:'保留来源',evidence:[{recordId:r.id,segmentId:'cited',revision:1}]}],actions:[]}));}]);
+ const started=await h.sync.start('owner',r.id),blocked=await settled(h.sync,started.id);assert.equal(blocked.error,'git_rule_changed');assert.ok(blocked.url);assert.equal((await h.sync.get('owner',started.id)).canRestoreArchive,true);return {h,r,started,blocked};
+}
+
+test('retry restores a confirmed managed archive after its policy changed without new remote or model calls',async t=>{
+ const {h,started}=await archivedThenChanged(t);const before=await h.repo.get(started.id),writes=h.network.writes.length;assert.equal(before.writes.commit.status,'confirmed');assert.equal(before.writes.merge.status,'confirmed');let reads=0,modelCalls=0;h.network.onRead(()=>{reads++;});h.fake.setResponses([()=>{modelCalls++;throw new Error('Completed archive must not restart model');}]);
+ const recovered=await h.sync.control('owner',started.id,'retry');assert.equal(recovered.id,started.id);assert.equal(recovered.status,'succeeded');assert.equal(recovered.phase,'done');assert.equal(recovered.error,null);assert.equal(recovered.url,before.writes.merge.receipt.url);assert.equal(h.network.writes.length,writes);assert.equal(reads,0);assert.equal(modelCalls,0);
+ const after=await h.repo.get(started.id);assert.equal(after.ruleGeneration,before.ruleGeneration);assert.equal(after.authorizationGeneration,before.authorizationGeneration);assert.equal(after.writeStarted,true);assert.deepEqual(after.writes,before.writes);assert.equal((await h.sync.control('owner',started.id,'retry')).status,'succeeded');assert.equal(h.network.writes.length,writes);assert.equal(reads,0);
+});
+
+test('archive recovery rejects incomplete or inconsistent journals without new writes',async t=>{
+ const cases=[
+  ['unconfirmed commit',row=>{row.writes.commit.status='attempting';}],
+  ['missing MR',row=>{delete row.writes.merge;}],
+  ['changed write intent',row=>{row.writes.commit.fingerprint='altered';}],
+  ['another origin',row=>{row.writes.merge.receipt.url=row.writes.merge.receipt.url.replace('git.example.test','another.example.test');}],
+  ['another project',row=>{row.writes.merge.receipt.url=row.writes.merge.receipt.url.replace('/root/airport/pudong/','/root/another/');}],
+  ['invalid MR number',row=>{row.writes.merge.receipt.iid=0;}],
+ ];
+ for(const [name,change] of cases)await t.test(name,async t=>{const {h,started}=await archivedThenChanged(t);await h.repo.change(started.id,change);const writes=h.network.writes.length;let reads=0;h.network.onRead(()=>{reads++;});await assert.rejects(h.sync.control('owner',started.id,'retry'),{code:'git_rule_changed'});assert.equal(h.network.writes.length,writes);assert.equal(reads,0);assert.notEqual((await h.repo.get(started.id)).status,'succeeded');assert.equal((await h.sync.get('owner',started.id)).requiresScopeReview,true);});
+ await t.test('supplemental answer is not historical recovery',async t=>{const {h,started}=await archivedThenChanged(t),writes=h.network.writes.length;await assert.rejects(h.sync.control('owner',started.id,'retry',{answer:'Use new instructions'}),{code:'agent_input_changed'});assert.equal(h.network.writes.length,writes);});
+ await t.test('expired source stays inaccessible',async t=>{const {h,r,started}=await archivedThenChanged(t),writes=h.network.writes.length;await h.repo.change(r.id,row=>{row.deleteAt='2000-01-01T00:00:00Z';});await assert.rejects(h.sync.control('owner',started.id,'retry'),{code:'git_source_unavailable'});assert.equal(h.network.writes.length,writes);});
+});
+
+test('historical recovery retains original URL when a new disabled host reuses a project ID',async t=>{
+ const {h,started}=await archivedThenChanged(t),before=await h.repo.get(started.id),rule=(await h.repo.list('git-sync-rule'))[0];await h.repo.change(rule.id,row=>{row.root='https://another.example.test/root';row.enabled=false;row.generation='new-host-disabled';});let reads=0;const writes=h.network.writes.length;h.network.onRead(()=>{reads++;});const done=await h.sync.control('owner',started.id,'retry');assert.equal(done.status,'succeeded');assert.equal(new URL(done.url).origin,'https://git.example.test');assert.equal(done.url,before.writes.merge.receipt.url);assert.equal(h.network.writes.length,writes);assert.equal(reads,0);assert.equal((await h.sync.settings('owner')).enabled,false);assert.equal((await h.repo.get(started.id)).ruleGeneration,before.ruleGeneration);
+});
+
+test('direct archive receipt recovery retains its original commit URL',async t=>{
+ const h=await fixture(t);await h.sync.save('owner',{...h.policy,mode:'direct',directConfirmed:true});const r=await h.record();h.respond(r);const started=await h.sync.start('owner',r.id),first=await settled(h.sync,started.id);assert.equal(first.status,'succeeded',JSON.stringify(first));await h.repo.change(started.id,row=>{row.status='blocked';row.phase='merge';row.error='git_rule_changed';});await h.sync.save('owner',{...h.policy,mode:'direct',directConfirmed:true,prompt:'Changed for future archives.'});const writes=h.network.writes.length;let reads=0;h.network.onRead(()=>{reads++;});const restored=await h.sync.control('owner',started.id,'retry');assert.equal(restored.status,'succeeded');assert.equal(restored.url,first.url);assert.equal(h.network.writes.length,writes);assert.equal(reads,0);
 });

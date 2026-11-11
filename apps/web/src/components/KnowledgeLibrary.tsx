@@ -1,6 +1,6 @@
 import {KnowledgeQuestion} from './KnowledgeQuestion';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowUpRight, CaretLeft, CaretRight, Check, MagnifyingGlass } from '@phosphor-icons/react';
+import { ArrowUpRight, CaretLeft, CaretRight, Check, MagnifyingGlass, Sparkle } from '@phosphor-icons/react';
 import type {KnowledgeReference} from '../model';
 import { api, messageOf } from '../api';
 import { Button } from './ui';
@@ -17,8 +17,8 @@ type Entry = {
 type KnowledgePage = { entries: Entry[]; total: number; offset: number; hasMore: boolean; conflicts: { topic: string; entries: string[] }[] };
 const labels: Record<string, string> = { decision: '决策', action: '行动', risk: '风险', term: '术语', candidate: '待确认', confirmed: '已确认', dismissed: '已忽略', retracted: '来源已修订' };
 
-export function KnowledgeLibrary({ scope, disabled, open, refreshKey = '', modelReady=true }: { scope: string; modelReady?:boolean; refreshKey?: string; disabled: boolean; open: (id: string,reference?:KnowledgeReference) => void }) {
-  const [expanded,setExpanded]=useState(false);
+export function KnowledgeLibrary({ scope, disabled, open, refreshKey = '', modelReady=true, compact=false }: { scope: string; compact?:boolean; modelReady?:boolean; refreshKey?: string; disabled: boolean; open: (id: string,reference?:KnowledgeReference) => void }) {
+  const [expanded,setExpanded]=useState(false),[askOpen,setAskOpen]=useState(false);
   const [query, setQuery] = useState(''), [kind, setKind] = useState(''), [status, setStatus] = useState(''), [offset, setOffset] = useState(0);
   const [page, setPage] = useState<KnowledgePage | null>(null), [error, setError] = useState(''), [loading, setLoading] = useState(true), [saving, setSaving] = useState('');
   const generation = useRef(0);
@@ -42,9 +42,9 @@ export function KnowledgeLibrary({ scope, disabled, open, refreshKey = '', model
     catch (cause) { setError(messageOf(cause)); }
     finally { setSaving(''); }
   }
-  return <section className="knowledge-library" aria-label="目录知识" aria-busy={loading}>
-    <header className="section-heading"><div><h2>目录知识</h2><p>从已结束会议的纪要中积累，每条保留原文出处。</p></div><div className="actions"><Button variant="ghost" disabled={loading || Boolean(saving)} onClick={() => void refresh()}>刷新</Button><Button variant="ghost" aria-expanded={expanded} onClick={()=>{setExpanded(value=>!value);if(expanded){setQuery('');setKind('');setStatus('');setOffset(0);}}}>{expanded?'收起':'查看全部'}</Button></div></header>
-    <KnowledgeQuestion scope={scope} open={open} modelReady={modelReady} refreshKey={refreshKey}/>
+  return <section className={`knowledge-library ${compact?'is-compact':''}`} aria-label="目录知识" aria-busy={loading}>
+    <header className="section-heading"><div><h2>{compact?'项目资料':'目录知识'}</h2></div><div className="actions">{compact&&<Button aria-expanded={askOpen} onClick={()=>setAskOpen(value=>!value)}><Sparkle size={14}/>{askOpen?'收起提问':'问项目'}</Button>}<Button variant="ghost" disabled={loading || Boolean(saving)} onClick={() => void refresh()}>刷新</Button><Button variant="ghost" aria-expanded={expanded} onClick={()=>{setExpanded(value=>!value);if(expanded){setQuery('');setKind('');setStatus('');setOffset(0);}}}>{expanded?'收起':'查看全部'}</Button></div></header>
+    <div hidden={compact&&!askOpen} className="project-question"><KnowledgeQuestion scope={scope} open={open} modelReady={modelReady} refreshKey={refreshKey}/></div>
     {expanded && <div className="knowledge-filters">
       <label className="knowledge-search"><span className="sr-only">搜索知识条目</span><MagnifyingGlass size={17} aria-hidden="true"/><input type="search" maxLength={200} value={query} placeholder="搜索决策、行动与术语" onChange={event => { setQuery(event.target.value); setOffset(0); }}/></label>
       <Select label="知识类型" value={kind} onChange={value => { setKind(value); setOffset(0); }} options={[{ value: '', label: '全部类型' }, ...['decision', 'action', 'risk', 'term'].map(value => ({ value, label: labels[value] }))]}/>
@@ -54,7 +54,7 @@ export function KnowledgeLibrary({ scope, disabled, open, refreshKey = '', model
     {page?.conflicts.length ? <p className="knowledge-review-hint">待核对：{page.conflicts.slice(0, 3).map(group => group.topic).join('、')}在不同会议中出现了不同决定。请结合出处确认。</p> : null}
     {!page && loading ? <p className="directory-quiet" role="status">正在读取目录知识…</p> : <>
       <p className="fine-print" role="status">{loading ? '正在更新…' : `${!expanded && (page?.total||0)>4 ? '最近 4 条 · 共 ' : ''}${page?.total || 0} 条${status ? labels[status] : '当前'}知识`}</p>
-      <div className="knowledge-entries">{page?.entries.slice(0,expanded?40:4).map(entry => <article key={entry.id}>
+      <div className="knowledge-entries">{page?.entries.slice(0,expanded?40:4).map(entry => <article key={entry.id} data-kind={entry.kind}>
         <div className="knowledge-entry-meta"><span>{labels[entry.kind]}</span><span>{labels[entry.status]}</span>{entry.topic && <span>{entry.topic}</span>}</div>
         <p>{entry.highlights.length ? <>{entry.text.slice(0, entry.highlights[0].start)}<mark>{entry.text.slice(entry.highlights[0].start, entry.highlights[0].end)}</mark>{entry.text.slice(entry.highlights[0].end)}</> : entry.text}</p>
         {entry.kind === 'action' && (entry.owner || entry.due) && <p className="fine-print">{entry.owner || '负责人待确认'}{entry.due ? ` · ${entry.due}` : ''}</p>}

@@ -24,6 +24,21 @@ const safeCode=error=>/^(?:git_[a-z_]+|external_write_(?:unknown|conflict)|remot
 const recoverable=code=>/^(?:provider_http_50[234]|llm_(?:timeout|connection_failed|stream_(?:failed|incomplete|interrupted))|invalid_agent_output)$/.test(code||'');
 const inline=value=>String(value).replace(/[<>]/g,c=>c==='<'?'&lt;':'&gt;').replace(/([\\`*_{}[\]#|])/g,'\\$1');
 const modelHash=config=>digest(JSON.stringify([config.LLM_MODEL||'',config.LLM_API_URL||'',config.LLM_PROTOCOL||'',config.LLM_REASONING_EFFORT||'']));
+const writeFingerprint=job=>digest(JSON.stringify([job.archiveKey,job.project.id,job.branch,job.files,job.mode]));
+function confirmedArchive(job){
+  if(!['mr','direct'].includes(job.mode)||!job.files||!Object.keys(job.files).length||!Object.values(job.files).every(value=>typeof value==='string')||!job.project?.path||!Number.isSafeInteger(job.project.id)||!job.branch)return null;
+  const commit=job.writes?.commit,receipt=commit?.receipt,fingerprint=writeFingerprint(job);
+  if(commit?.status!=='confirmed'||commit.fingerprint!==fingerprint||!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(receipt?.commit||'')||job.commit&&job.commit!==receipt.commit)return null;
+  const commitPath=`/${job.project.path}/-/commit/${receipt.commit}`;
+  const parse=value=>{try{const url=new URL(value);return url.protocol==='https:'&&!url.username&&!url.password&&!url.search&&!url.hash?url:null;}catch{return null;}};
+  if(job.mode==='direct'||receipt.integrated===true){
+    const url=parse(job.url);return url?.pathname===commitPath?{commit:receipt.commit,url:url.href,integrated:receipt.integrated===true}:null;
+  }
+  const merge=job.writes?.merge,result=merge?.receipt,url=parse(result?.url);
+  if(merge?.status!=='confirmed'||merge.fingerprint!==fingerprint||!Number.isSafeInteger(result?.iid)||result.iid<=0||url?.pathname!==`/${job.project.path}/-/merge_requests/${result.iid}`)return null;
+  if(job.url){const previous=parse(job.url);if(!previous||previous.origin!==url.origin||![commitPath,url.pathname].includes(previous.pathname))return null;}
+  return {commit:receipt.commit,url:url.href,iid:result.iid,integrated:false};
+}
 const publicRule=rule=>rule?{configured:true,enabled:rule.enabled,root:rule.root,group:rule.group,projects:rule.projects,prompt:rule.prompt,skillId:rule.scope.skill.id,skillVersion:rule.scope.skill.version,skillIds:(rule.scope.skills||[rule.scope.skill]).map(s=>s.id),skillVersions:Object.fromEntries((rule.scope.skills||[rule.scope.skill]).map(s=>[s.id,s.version])),pluginIds:rule.scope.plugins.map(p=>p.id),pluginVersions:Object.fromEntries(rule.scope.plugins.map(p=>[p.id,p.version])),mappings:rule.mappings,aliases:rule.aliases,directory:rule.directory,mode:rule.mode,timezone:rule.timezone,includeNotes:rule.includeNotes,includeEvidence:rule.includeEvidence,hasToken:Boolean(rule.credentials),generation:rule.generation}:{configured:false,enabled:false};
 
 export async function createGitSync({repo,agent,extensions,localAccount=false,request,pollMs=30000,agentPollMs=1000,retryDelayMs=30000}={}){
@@ -50,7 +65,7 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
     return [...entries.values()];
   }
   async function writeRemote(operation,rule,job,signal,beforeWrite){
-  return externalWrite({key:operation,fingerprint:digest(JSON.stringify([job.archiveKey,job.project.id,job.branch,job.files,job.mode])),load:()=>repo.get(job.id),save:(key,state)=>repo.change(job.id,row=>{row.writes||={};row.writes[key]=state;}),guard:()=>guard(job,signal,true),reconcile:()=>operation==='commit'?git.reconcileCommit(connection(rule),job,signal):git.reconcileMerge(connection(rule),job,signal),execute:()=>operation==='commit'?git.commit(connection(rule),job,signal,beforeWrite):git.mergeRequest(connection(rule),job,signal,beforeWrite)});
+    return externalWrite({key:operation,fingerprint:writeFingerprint(job),load:()=>repo.get(job.id),save:(key,state)=>repo.change(job.id,row=>{row.writes||={};row.writes[key]=state;}),guard:()=>guard(job,signal,true),reconcile:()=>operation==='commit'?git.reconcileCommit(connection(rule),job,signal):git.reconcileMerge(connection(rule),job,signal),execute:()=>operation==='commit'?git.commit(connection(rule),job,signal,beforeWrite):git.mergeRequest(connection(rule),job,signal,beforeWrite)});
  }
  async function publicJob(job,detail=false){
   if(detail)job={...job,kernelId:await kernel.adopt('git-sync',job.owner,job.id,[job.recordId])};
@@ -61,8 +76,18 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
       job={...job,...(job.status==='failed'&&job.error==='agent_failed'&&visible&&child.status==='failed'&&child.error?{error:child.error}:{}),...(detail&&visible?{timeline:child.timeline,ledger:child.ledger,progress:child.progress,activity:child.activity}:{}),...(visible&&running&&job.phase==='organize'&&child.status==='queued'?{status:'queued'}:{}),...(interaction?{status:'waiting',interaction}:{interaction:undefined}),preview:visible?child.preview:undefined,...(detail?{conversation:visible?conversation(job.feedback||[],child.conversation||[]):[]}:{} )};
     }else if(detail)job={...job,conversation:job.feedback||[]};
     if(!['queued','running','waiting'].includes(job.status))job={...job,interaction:undefined};
-    if(detail)job={...job,canRetryWithFeedback:job.status==='failed'&&job.phase==='organize'&&!job.writeStarted&&recoverable(job.error)};
-    return Object.fromEntries(['id','recordId','title','status','phase','error','createdAt','updatedAt','project','basis','minutesRevision','transcriptRevision','branch','baseBranch','directory','mode','commit','url','agentId','automatic','paused','interaction','preview','managed',...(detail?['conversation','timeline','ledger','kernelId','progress','activity','canRetryWithFeedback']:[])].filter(k=>job[k]!==undefined).map(k=>[k,['automatic','paused','managed'].includes(k)?Boolean(job[k]):job[k]]));
+    if(detail){
+      const archived=confirmedArchive(job);let requiresScopeReview=Boolean(job.error&&job.writeStarted&&!archived);
+      if(requiresScopeReview){
+        const rule=await load(job.owner);
+        if(rule?.enabled&&rule.fingerprint===job.policyFingerprint){
+          const source=await sourceFor(job.owner,job.recordId,rule.includeNotes),config=await readConfig(repo.root);
+          requiresScopeReview=source.hash!==job.sourceHash||modelHash(config)!==job.modelConfigHash||Boolean(job.runtimeConfigHash&&modelConfigFingerprint(config)!==job.runtimeConfigHash);
+        }
+      }
+      job={...job,canRetryWithFeedback:job.status==='failed'&&job.phase==='organize'&&!job.writeStarted&&recoverable(job.error),canRestoreArchive:Boolean(archived),requiresScopeReview};
+    }
+    return Object.fromEntries(['id','recordId','title','status','phase','error','createdAt','updatedAt','project','basis','minutesRevision','transcriptRevision','branch','baseBranch','directory','mode','commit','url','agentId','automatic','paused','interaction','preview','managed',...(detail?['conversation','timeline','ledger','kernelId','progress','activity','canRetryWithFeedback','canRestoreArchive','requiresScopeReview']:[])].filter(k=>job[k]!==undefined).map(k=>[k,['automatic','paused','managed'].includes(k)?Boolean(job[k]):job[k]]));
   }
   const historyFields=['recordId','status','phase','title','createdAt','updatedAt','ruleGeneration','error','project','basis','minutesRevision','transcriptRevision','branch','baseBranch','directory','mode','commit','url','agentId','automatic','paused','interaction','preview','managed'];
   const history=async owner=>(await repo.listMetadata('git-sync-job',owner,historyFields,{limit:1000})).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
@@ -303,6 +328,14 @@ return {...publicRule(await load(owner)),recent:await Promise.all((await history
         job=await update(id,{paused:true,status:'paused'});
         }else{
           if(job.taskId){await harness.abortTask(job.taskId,context);await harness.waitForTask(job.taskId,context);}
+          job=await jobFor(owner,id);
+          const completed=action==='retry'&&!clarification&&confirmedArchive(job);
+          if(completed){
+            await recordFor(owner,job.recordId);
+            if(job.agentId){const child=await agent.get(owner,job.agentId);if(['queued','running','cancelling'].includes(child.status))await agent.cancel(owner,job.agentId);}
+            // Restore the journal's historical success; never authorize another write with new settings.
+            return publicJob(await update(id,{...completed,status:'succeeded',phase:'done',error:null,paused:false}),true);
+          }
           const config=await readConfig(repo.root);
           const rule=await load(owner),record=await recordFor(owner,job.recordId),sameSource=rule&&gitSourceHash(record,rule.includeNotes)===job.sourceHash,sameModel=modelHash(config)===job.modelConfigHash;
           if(clarification){requireThat(action==='retry'&&job.status==='failed'&&job.phase==='organize'&&!job.writeStarted,'agent_input_changed',409);requireThat(sameSource,'git_source_changed',409);requireThat(sameModel,'git_model_changed',409);requireThat(rule?.fingerprint===job.policyFingerprint,'git_rule_changed',409);}

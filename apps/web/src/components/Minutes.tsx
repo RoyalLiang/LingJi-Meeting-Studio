@@ -59,7 +59,7 @@ export function MinutesPanel({ contextVisible = false, viewTarget, record, busy,
   const [historical, setHistorical] = useState<MinutesModel | null>(null), [historyError, setHistoryError] = useState('');
   const [view,setView] = useState('ai');
   const [expanded,setExpanded] = useState(false);
-  const [previewOpen,setPreviewOpen] = useState(true);
+  const [previewOpen,setPreviewOpen] = useState(false);
   const ended = record.capture === 'sealed' || record.capture === 'completed';
   const [focusCollapsed,setFocusCollapsed] = useState(record.capture==='completed');
   const [focusOpen,setFocusOpen] = useState(contextVisible?false:ended), focusTrigger = useRef<HTMLButtonElement>(null);

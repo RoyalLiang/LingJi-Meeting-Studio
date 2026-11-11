@@ -9,6 +9,14 @@ import { listen } from '@tauri-apps/api/event';
 export function Button({ children, variant = 'secondary', className = '', title, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'ghost' | 'danger' }) {
   const button=useRef<HTMLButtonElement>(null),tip=useRef<HTMLSpanElement>(null),id=useId();
   const label=title || props['aria-label'];
+  const [tooltipLabel,setTooltipLabel]=useState<string>();
+  useEffect(()=>{
+    const anchor=button.current;if(!anchor)return;
+    const content=anchor.cloneNode(true) as HTMLElement;
+    content.querySelectorAll('svg,.sr-only,[role=tooltip],[hidden]').forEach(node=>node.remove());
+    const generated=getComputedStyle(anchor,'::after').content;
+    setTooltipLabel(!content.textContent?.trim()&&['none','normal','""',''].includes(generated)?label:undefined);
+  },[label,children,className]);
   useEffect(()=>{
     const anchor=button.current,popup=tip.current;if(!anchor||!popup)return;
     let timer:number|undefined;
@@ -29,8 +37,8 @@ export function Button({ children, variant = 'secondary', className = '', title,
     anchor.addEventListener('pointerenter',enter);anchor.addEventListener('pointerleave',hide);
     anchor.addEventListener('focus',focus);anchor.addEventListener('blur',hide);anchor.addEventListener('click',hide);
     return()=>{hide();popup.removeEventListener('toggle',toggled);anchor.removeEventListener('pointerenter',enter);anchor.removeEventListener('pointerleave',hide);anchor.removeEventListener('focus',focus);anchor.removeEventListener('blur',hide);anchor.removeEventListener('click',hide);};
-  },[label]);
-  return <button className={`button ${variant} ${className}`} data-tooltip={label} {...props} ref={button} aria-describedby={[props['aria-describedby'],label?id:undefined].filter(Boolean).join(' ')||undefined}>{children}{label&&<span ref={tip} id={id} role="tooltip" popover="manual" className="button-tooltip">{label}</span>}</button>;
+  },[tooltipLabel]);
+  return <button className={`button ${variant} ${className}`} data-tooltip={tooltipLabel} {...props} ref={button} aria-describedby={[props['aria-describedby'],tooltipLabel?id:undefined].filter(Boolean).join(' ')||undefined}>{children}{tooltipLabel&&<span ref={tip} id={id} role="tooltip" popover="manual" className="button-tooltip">{tooltipLabel}</span>}</button>;
 }
 export function CloseButton({ label = '关闭', className = '', ...props }: Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> & { label?: string }) {
   return <Button type="button" variant="ghost" className={`close-button ${className}`} aria-label={label} title={label} {...props}>

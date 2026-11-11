@@ -119,3 +119,38 @@ test('native listener passes alternating directions and rejects stale listener t
  assert.equal(starts,1);assert.deepEqual(errors,[]);cleanup();
  box.invoke=async()=>false;box.exports.render({enabled:true,browser:true,feishu:false},idle,{start:async()=>undefined,stop:async()=>false,error:message=>errors.push(message)});const stop=effect();await new Promise(resolve=>setImmediate(resolve));assert.match(errors[0],/无法启用音频调用监听/);stop();
 });
+
+test('an open setup dialog blocks automatic start but not an owned meeting ending',()=>{
+  const engine=createMeetingAutomation();
+  for(let at=0;at<=8000;at+=2000)assert.equal(sample(engine,at,true,{...idle,startBlocked:true}),null);
+  assert.equal(tick(engine,10000,14000,true,idle)?.kind,'start');engine.started(recording.id);
+  assert.equal(tick(engine,16000,26000,false,{...recording,startBlocked:true})?.kind,'stop');
+});
+
+test('automation retries a failed stop without giving up ownership or stopping manual meetings',async()=>{
+  const {transform}=await import('esbuild'),vm=await import('node:vm');
+  const source=await readFile(new URL('../apps/web/src/useMeetingAutomation.ts',import.meta.url),'utf8');
+  const code=(await transform(source.replace(/^import .*$/gm,'').replace(/export /g,'').replace(/^type .*$/gm,'')+'\nexports.render=useMeetingAutomation;',{loader:'ts',format:'cjs'})).code;
+  let handler,cleanup,time=0,stops=0,slot=0;const refs=[],errors=[];
+  const box={exports:{},crypto:{randomUUID:()=> 'fixture-token'},Date:class extends Date{static now(){return time;}},useRef:value=>{const index=slot++;return refs[index]||(refs[index]={current:value});},useState:()=>[undefined,()=>{}],useEffect:effect=>{if(!cleanup)cleanup=effect();},isTauri:()=>true,createMeetingAutomation,listen:async(_name,callback)=>{handler=callback;return()=>{};},invoke:async()=>true};
+  vm.runInNewContext(code,box);
+  const commands={start:async()=>recording.id,stop:async()=>{stops++;if(stops===1)return false;if(stops===2)throw new Error('seal unavailable');return true;},error:message=>errors.push(message)};
+  const render=report=>{slot=0;box.exports.render({enabled:true,browser:true,feishu:false},report,commands);};
+  render(idle);await Promise.resolve();await Promise.resolve();
+  const feed=async(from,to,active)=>{for(time=from;time<=to;time+=2000)await handler({payload:{token:'fixture-token',sampledAt:time,input:active,output:active}});};
+  await feed(0,4000,true);render(recording);
+  await feed(6000,16000,false);assert.equal(stops,1);
+  await feed(18000,28000,false);assert.equal(stops,2);
+  await feed(30000,40000,false);assert.equal(stops,3);
+  assert.equal(errors.length,2);render({...idle,id:recording.id});await feed(42000,60000,false);assert.equal(stops,3);cleanup();
+});
+
+test('automatic close seals the owned record even if its audio stream is already inactive',async()=>{
+  const {transform}=await import('esbuild'),vm=await import('node:vm');const app=await readFile(new URL('../apps/web/src/App.tsx',import.meta.url),'utf8');
+  const line=app.split('\n').find(line=>line.includes('const meetingAutomation=useMeetingAutomation('));
+  const code=(await transform(line+'\nexports.commands=meetingAutomation;',{loader:'tsx',format:'cjs'})).code;
+  let seals=0;const context={exports:{},useMeetingAutomation:(_config,report,commands)=>({...commands,report}),pendingStop:{current:null},authReady:true,boot:{meetingAutomation:{enabled:true}},record:{id:'auto-record'},recording:true,busy:false,stopping:{current:false},modal:null,quickRecord:async()=>undefined,activeId:{current:'auto-record'},capture:{current:{active:false}},stopCapture:async mode=>{assert.equal(mode,'seal');seals++;return true;},setError:()=>{}};
+  vm.runInNewContext(code,context);assert.equal(await context.exports.commands.stop('auto-record'),true);assert.equal(seals,1);
+  assert.equal(await context.exports.commands.stop('different-record'),false);assert.equal(seals,1);
+  const retryContext={...context,exports:{},recording:false,pendingStop:{current:{recordId:'auto-record',mode:'seal',title:''}}};vm.runInNewContext(code,retryContext);assert.equal(retryContext.exports.commands.report.recording,true);
+});

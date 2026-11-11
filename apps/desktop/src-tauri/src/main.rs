@@ -218,6 +218,7 @@ fn client_status(
     window: WebviewWindow,
     state: State<'_, Client>,
     report: menu_status::Report,
+    theme: Option<String>,
 ) -> Result<(), String> {
     authorize(&window, &state)?;
     #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
@@ -227,6 +228,20 @@ fn client_status(
     if authenticated && controls_ready { state.resident.deliver_action(&window); }
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     let _ = report;
+    let appearance = match theme.as_deref() {
+        Some("dark") => Some(tauri::Theme::Dark),
+        Some("light") => Some(tauri::Theme::Light),
+        None => None,
+        _ => return Err("invalid window theme".into()),
+    };
+    #[cfg(target_os = "macos")]
+    if let Some(appearance) = appearance {
+        let color = if appearance == tauri::Theme::Dark { tauri::webview::Color(36, 40, 43, 255) } else { tauri::webview::Color(246, 249, 247, 255) };
+        window.set_theme(Some(appearance)).map_err(|error| error.to_string())?;
+        window.set_background_color(Some(color)).map_err(|error| error.to_string())?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = appearance;
     Ok(())
 }
 
@@ -613,7 +628,9 @@ fn create_main_window(app: &tauri::AppHandle) -> Result<WebviewWindow, String> {
                 }
             });
             #[cfg(target_os = "macos")]
-            let builder = builder.data_store_identifier(store_id);
+            let builder = builder.data_store_identifier(store_id)
+        .title_bar_style(tauri::TitleBarStyle::Transparent)
+        .background_color(tauri::webview::Color(246, 249, 247, 255));
             #[cfg(not(target_os = "macos"))]
             let builder = builder.data_directory(profile.clone());
             #[cfg(target_os = "windows")]

@@ -209,10 +209,10 @@ test('all topic details stay visible and each paragraph shows only its frozen sp
 });
 
 
-test('first live minutes preview appears before completion and keeps validated content stable',()=>{
+test('live generation process is closed by default while validated content stays visible',()=>{
  const job={status:'running',scope:'live',preview:[{kind:'text',text:'默认隐藏的生成过程'}],progress:{completed:1,total:2},partialMinutes:minutes()};
  const empty=render({liveMinutes:null,jobs:[{...job,partialMinutes:null}]});
- assert.match(empty,/默认隐藏的生成过程/);assert.match(empty,/实时草稿/);
+ assert.doesNotMatch(empty,/默认隐藏的生成过程/);assert.doesNotMatch(empty,/实时草稿/);
  const partial=render({jobs:[job]});
  assert.doesNotMatch(partial,/正在更新 ·|AI 会中速记随讨论更新|minutes-stage-note/);
  assert.match(partial,/按主题整理的纪要/);

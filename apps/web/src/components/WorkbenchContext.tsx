@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ArrowUpRight, LinkSimple, ShieldCheck, X } from '@phosphor-icons/react';
+import { ArrowUpRight, LinkSimple, X } from '@phosphor-icons/react';
 import type { Evidence, MinutesItem, RecordDetail, RecordListItem, Segment } from '../model';
 import type { WorkspaceOverview } from '../workspace-model';
 import { Button } from './ui';
 import { CitationSources } from './CitationSources';
 
-export function WorkbenchContext({record,records,overview,name,mode,open,close,cite,selectRecord,children,tasksRef,translation=false}:{record:RecordDetail|null;records:RecordListItem[];overview:WorkspaceOverview|null;name:string;mode:'meeting'|'workspace'|'settings'|'extensions'|'automation';open:boolean;close:()=>void;cite:(ref:Evidence,snapshot?:Segment[],revision?:number)=>void;selectRecord:(id:string)=>void;children?:ReactNode;tasksRef?:(node:HTMLDivElement|null)=>void;translation?:boolean}) {
+export function WorkbenchContext({record,records,overview,mode,open,close,cite,selectRecord,children,tasksRef,translation=false}:{record:RecordDetail|null;records:RecordListItem[];overview:WorkspaceOverview|null;name:string;mode:'meeting'|'workspace'|'settings'|'extensions'|'automation';open:boolean;close:()=>void;cite:(ref:Evidence,snapshot?:Segment[],revision?:number)=>void;selectRecord:(id:string)=>void;children?:ReactNode;tasksRef?:(node:HTMLDivElement|null)=>void;translation?:boolean}) {
   const [tab,setTab]=useState('重点');
   const ref=useRef<HTMLElement>(null);
   useEffect(()=>setTab('重点'),[record?.id,mode]);
@@ -43,6 +43,6 @@ export function WorkbenchContext({record,records,overview,name,mode,open,close,c
         <div className="context-section-title">要跟进的</div>{overview?.actions.length?overview.actions.slice(0,4).map((action,index)=><article className="context-item context-action" key={index}><p>{action.text}</p><small>{action.owner||'负责人待确认'} · {action.due||'日期待确认'}</small><button className="context-link" onClick={()=>selectRecord(action.source.recordId)}>查看会议<ArrowUpRight size={12}/></button></article>):<p className="context-empty">暂无行动候选</p>}
         <div className="context-section-title">统计</div><dl className="context-stats"><div><dt>会议记录</dt><dd>{overview?.totals.meetings??records.length} 场</dd></div><div><dt>累计时长</dt><dd>{Math.ceil((overview?.totals.seconds??records.reduce((sum,item)=>sum+item.seconds,0))/60)} 分钟</dd></div><div><dt>已保存纪要</dt><dd>{overview?.totals.withMinutes??records.filter(item=>item.hasMinutes).length} 场</dd></div></dl>
       </>:mode==='automation'?null:<><div className="context-section-title">{mode==='settings'?'当前配置':'本次范围'}</div><article className="context-item"><p>{mode==='settings'?'账户与本机配置':'会议资料按 Workspace 选择'}</p>{mode!=='settings'&&<small>运行前核对会议范围</small>}</article><article className="context-item"><p>{mode==='settings'?'项目资料保持原有范围':'外部写入需要确认'}</p><small>{mode==='settings'?'保存设置不会改变会议归属与分享权限。':'飞书目标与 Git 仓库分别核对。'}</small></article></>}
-    <div className="automation-context-tasks" ref={tasksRef} hidden={mode!=='automation'}/></div><footer><ShieldCheck size={14}/><span>{mode==='automation'?'当前账户任务':<>资料范围 · {name}</>}</span>{mode==='meeting'&&record&&<small>转录 v{record.transcriptRevision} · 纪要 v{record.minutesRevision}</small>}</footer>
+    <div className="automation-context-tasks" ref={tasksRef} hidden={mode!=='automation'}/></div>
   </aside></>;
 }

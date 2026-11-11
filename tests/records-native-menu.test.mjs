@@ -98,3 +98,20 @@ test('widget microphone action uses the current recording guard and shared micro
  }
  assert.deepEqual(h.actions,['microphone']);h.cleanup();
 });
+
+test('native window appearance follows theme changes without resetting each heartbeat', async () => {
+  const h = await harness();
+  h.refs[0].current = { state: { ...h.state, theme: 'light' }, actions: h.callbacks };
+  h.timers[0]();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.calls.at(-1).input.theme, 'light');
+  assert.equal('theme' in h.calls.at(-1).input.report, false);
+  h.timers[0]();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal('theme' in h.calls.at(-1).input, false);
+  h.refs[0].current.state.theme = 'dark';
+  h.timers[0]();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.calls.at(-1).input.theme, 'dark');
+  h.cleanup();
+});

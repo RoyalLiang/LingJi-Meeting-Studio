@@ -28,8 +28,11 @@ export function useMeetingAutomation(config:MeetingAutomationConfig|undefined,re
         setNotice(undefined);
         try{
           if(decision.kind==='start')engine.started(await current.commands.start());
-          else {if(latest.current.report.id===decision.recordId && latest.current.report.recording)await current.commands.stop(decision.recordId);engine.stopped();}
-        }catch{engine.stopped();current.commands.error('自动联动未完成，请在主窗口检查录音状态。');}
+          else {
+            if(latest.current.report.id===decision.recordId && latest.current.report.recording && !await current.commands.stop(decision.recordId))throw new Error('automatic_stop_incomplete');
+            engine.stopped();
+          }
+        }catch{if(decision.kind==='stop')engine.stopFailed();else engine.stopped();current.commands.error('自动联动未完成，请在主窗口检查录音状态。');}
       });
       if(!active){unlisten();return;}
       const supported=await invoke('meeting_watch_configure',{enabled:Boolean(config?.enabled),browser:config?.browser!==false,feishu:config?.feishu!==false,token});

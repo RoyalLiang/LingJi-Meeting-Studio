@@ -3,7 +3,7 @@ import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { pendingCount } from './audio/queue';
 
-type MenuState = { authenticated: boolean; recordTitle: string; capture: string; recording: boolean; busy: boolean; connection: string };
+type MenuState = { authenticated: boolean; recordTitle: string; capture: string; recording: boolean; busy: boolean; connection: string; theme?:string };
 type Actions = { pause: () => void; resume: () => void; finish: () => void; settings: () => void; microphone: () => void };
 
 export function useNativeMenuBar(state: MenuState, actions: Actions) {
@@ -11,12 +11,17 @@ export function useNativeMenuBar(state: MenuState, actions: Actions) {
   useEffect(() => {
     if (!isTauri()) return;
     let live = true, publishing = false, unlisten: (() => void) | undefined;
+    let publishedTheme:string|undefined;
     const publish = async () => {
       if (!live || publishing) return;
       publishing = true;
       try {
         const pending = await pendingCount();
-        if (live) await invoke('client_status', { report: { ...latest.current.state, pendingCount: pending } });
+        if (live) {
+          const {theme,...report}=latest.current.state;
+          await invoke('client_status', { report: { ...report, pendingCount: pending },...(theme!==publishedTheme?{theme}:{}) });
+          publishedTheme=theme;
+        }
       } catch { /* The native menu marks missing or stale reports as unknown. */ }
       finally { publishing = false; }
     };
