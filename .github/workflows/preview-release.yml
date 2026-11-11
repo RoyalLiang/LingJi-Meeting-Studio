@@ -413,10 +413,11 @@ jobs:
           key: lingji-public-runtimes-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/prepare-client-backend.mjs', 'services/records/src/local-asr-resources.json', 'scripts/asr-test-fixtures.mjs') }}
       - name: Prepare pinned public ASR samples before package verification
         run: node scripts/asr-test-fixtures.mjs
-      - name: Prepare Ubuntu dependencies
+      - name: Prepare Ubuntu verification dependencies
         run: |
+          printf '%s\n' 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
           sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources
-          printf '%s\n' 'Acquire::Retries "2";' 'Acquire::http::Timeout "30";' 'Acquire::https::Timeout "30";' | sudo tee /etc/apt/apt.conf.d/80-lingji-preview-network
+          printf '%s\n' 'Acquire::Retries "3";' 'Acquire::http::Timeout "20";' 'Acquire::https::Timeout "20";' | sudo tee /etc/apt/apt.conf.d/80-lingji-preview-network >/dev/null
           sudo apt-get update
           sudo apt-get install -y xvfb xauth
       - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
