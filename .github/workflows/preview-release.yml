@@ -396,7 +396,7 @@ jobs:
     name: Ubuntu 24 verification - WGS package
     needs: [verify, build_wgs]
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -413,7 +413,12 @@ jobs:
           key: lingji-public-runtimes-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/prepare-client-backend.mjs', 'services/records/src/local-asr-resources.json', 'scripts/asr-test-fixtures.mjs') }}
       - name: Prepare pinned public ASR samples before package verification
         run: node scripts/asr-test-fixtures.mjs
-      - run: sudo apt-get update && sudo apt-get install -y xvfb xauth
+      - name: Prepare Ubuntu dependencies
+        run: |
+          sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources
+          printf '%s\n' 'Acquire::Retries "2";' 'Acquire::http::Timeout "30";' 'Acquire::https::Timeout "30";' | sudo tee /etc/apt/apt.conf.d/80-lingji-preview-network
+          sudo apt-get update
+          sudo apt-get install -y xvfb xauth
       - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
         with:
           name: preview-linux-x64-${{ needs.verify.outputs.sha }}
