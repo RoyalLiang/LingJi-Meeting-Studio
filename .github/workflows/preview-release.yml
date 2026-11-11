@@ -417,7 +417,38 @@ jobs:
         run: |
           printf '%s\n' 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
           sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources
-          printf '%s\n' 'Acquire::Retries "3";' 'Acquire::http::Timeout "20";' 'Acquire::https::Timeout "20";' | sudo tee /etc/apt/apt.conf.d/80-lingji-preview-network >/dev/null
+          sudo python3 - <<'PY'
+          import ipaddress, json, subprocess
+          from pathlib import Path
+
+          def public_addresses(payload):
+              if payload.get('Status') != 0:
+                  raise ValueError('Ubuntu DNS lookup failed')
+              addresses = {entry['data'] for entry in payload.get('Answer', []) if entry.get('type') == 1}
+              if not addresses:
+                  raise ValueError('Ubuntu DNS returned no IPv4 records')
+              for value in addresses:
+                  address = ipaddress.IPv4Address(value)
+                  if not address.is_global or address.is_multicast:
+                      raise ValueError('Ubuntu DNS returned a non-public address')
+              return sorted(addresses)
+
+          mappings = []
+          hosts = ('archive.ubuntu.com', 'security.ubuntu.com')
+          for host in hosts:
+              response = subprocess.check_output(['curl', '--fail', '--silent', '--show-error', '--proto', '=https', '--connect-timeout', '5', '--max-time', '15', '--max-filesize', '65536', '-H', 'Accept: application/dns-json', 'https://1.1.1.1/dns-query?name=' + host + '&type=A'], timeout=20)
+              if len(response) > 65536:
+                  raise ValueError('Ubuntu DNS response too large')
+              addresses = public_addresses(json.loads(response))
+              mappings.extend(address + ' ' + host for address in addresses)
+          path = Path('/etc/hosts')
+          existing = [line.split('#', 1)[0].split()[1:] for line in path.read_text().splitlines()]
+          if any(host in names for names in existing for host in hosts):
+              raise ValueError('Preserve existing Ubuntu host overrides')
+          with path.open('a') as output:
+              output.write('\n' + '\n'.join(mappings) + '\n')
+          PY
+          printf '%s\n' 'Acquire::ForceIPv4 "true";' 'Acquire::Retries "3";' 'Acquire::http::Timeout "20";' 'Acquire::https::Timeout "20";' | sudo tee /etc/apt/apt.conf.d/80-lingji-preview-network >/dev/null
           sudo apt-get update
           sudo apt-get install -y xvfb xauth
       - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
