@@ -10,10 +10,17 @@
     "legacy": "node ./src/server.mjs"
   },
   "dependencies": {
+    "@milkdown/core": "7.23.0",
+    "@milkdown/plugin-clipboard": "7.23.0",
+    "@milkdown/plugin-history": "7.23.0",
+    "@milkdown/preset-commonmark": "7.23.0",
+    "@milkdown/preset-gfm": "7.23.0",
+    "@milkdown/prose": "7.23.0",
+    "@milkdown/utils": "7.23.0",
     "@phosphor-icons/react": "^2.1.10",
     "@tanstack/react-virtual": "3.14.26",
     "@tauri-apps/api": "2.12.3",
-    "dompurify": "^3.4.12",
+    "dompurify": "3.4.17",
     "marked": "^18.0.6",
     "mediabunny": "1.65.2",
     "react": "^19.3.0",

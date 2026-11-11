@@ -149,12 +149,12 @@ test('revoke before first vault insertion invalidates delayed enrollment without
   const pending = registry.enroll('owner', 'inbox', input), rejected = assert.rejects(pending, { code: 'voiceprint_library_changed' });
   await ready; const first = await registry.revoke('owner', 'inbox', input.requestId, 0); release(); await rejected;
   assert.equal(first.revision, 1); assert.deepEqual(await registry.revoke('owner', 'inbox', input.requestId, 0), first);
-  const stored = (await repo.list('voiceprints'))[0]; assert.equal(stored.entries.length, 0); assert.equal(stored.revoked, undefined);
+  const stored = (await repo.list('voiceprints')).find(bank=>bank.scope==='inbox'); assert.equal(stored.entries.length, 0); assert.equal(stored.revoked, undefined);
 }));
 
 test('revocation remains available after many prior library changes', async () => fixture(async ({ repo, input }) => {
   const registry = voiceprints(repo, { infer: async () => ({ embedding: vector(0) }) });
-  await registry.enroll('owner', 'inbox', input); const stored = (await repo.list('voiceprints'))[0];
+  await registry.enroll('owner', 'inbox', input); const stored = (await repo.list('voiceprints')).find(bank=>bank.scope==='inbox');
   await repo.change(stored.id, value => { value.revision = 10000; });
   await registry.revoke('owner', 'inbox', input.requestId, 0);
   assert.equal((await registry.list('owner', 'inbox')).entries.length, 0);
@@ -169,4 +169,65 @@ test('same-speaker pauses retain ASR context without crossing another or unknown
  const same=inference.diarize(new Float32Array(48000));assert.equal(same.length,1);assert.equal(same[0].start,1600);assert.equal(same[0].end,48000);assert.deepEqual(embedded,[28800]);
  spans=[{start:0.1,end:0.8,speaker:0},{start:1,end:1.8,speaker:1},{start:2,end:2.8,speaker:0}];assert.deepEqual(inference.diarize(new Float32Array(48000)).map(turn=>turn.cluster),[0,1,0]);
  spans=[{start:0.1,end:0.9,speaker:0},{start:0.8,end:1.4,speaker:1},{start:2,end:2.8,speaker:0}];const unknown=inference.diarize(new Float32Array(48000));assert.equal(unknown.length,2);assert.equal(unknown[0].overlap,true);assert.equal(unknown[0].embedding,undefined);assert.equal(unknown[1].cluster,0);
+}));
+
+test('global voice library retains legacy consent until explicit account-wide confirmation',async()=>fixture(async({repo,record,input})=>{
+  const registry=voiceprints(repo,{infer:async()=>({embedding:vector(0)})});await registry.enroll('owner','inbox',input);
+  const legacy=(await registry.list('owner','all')),entry=legacy.entries[0],stored=(await repo.list('voiceprints')).find(bank=>bank.scope==='inbox');
+  assert.equal(entry.global,false);const sealed=stored.entries[0].sealed;
+  await repo.change(record.id,r=>{r.workspaceId=randomUUID();});
+  assert.deepEqual(await registry.match('owner','all',input),{matches:[]});
+  await assert.rejects(registry.confirmGlobal('owner',entry.id,{consent:false,libraryRevision:legacy.revision}),{code:'voiceprint_consent_required'});
+  const confirmed=await registry.confirmGlobal('owner',entry.id,{consent:true,libraryRevision:legacy.revision});assert.equal(confirmed.entries[0].global,true);
+  assert.equal((await repo.get(stored.id)).entries[0].sealed,sealed,'no copy or change to original AAD');
+  assert.equal((await registry.match('owner','all',input)).matches[0].name,input.name);
+  assert.deepEqual((await registry.list('other','all')).entries,[]);await assert.rejects(registry.match('other','all',input),{code:'record_not_found'});
+  await registry.revoke('owner','all',entry.id,confirmed.revision);assert.deepEqual((await registry.list('owner','all')).entries,[]);assert.deepEqual(await registry.match('owner','all',input),{matches:[]});
+}));
+
+test('global identities distinguish duplicate legacy request IDs and revoke only the selected entry',async()=>fixture(async({repo,record,input})=>{
+  const registry=voiceprints(repo,{infer:async()=>({embedding:vector(0)})});await registry.enroll('owner','inbox',input);
+  const scope=randomUUID();await repo.change(record.id,r=>{r.workspaceId=scope;});await registry.enroll('owner',scope,{...input,name:'另一个条目'});
+  const value=await registry.list('owner','all');assert.equal(value.entries.length,2);assert.equal(new Set(value.entries.map(e=>e.id)).size,2);
+  await registry.revoke('owner','all',value.entries.find(e=>e.name===input.name).id,value.revision);assert.deepEqual((await registry.list('owner','all')).entries.map(e=>e.name),['另一个条目']);
+}));
+
+test('account-global enrollment matches across workspaces and cannot revive after an in-flight revoke',async()=>fixture(async({repo,record,input})=>{
+  let release,entered;const gate=new Promise(resolve=>{release=resolve;}),ready=new Promise(resolve=>{entered=resolve;});
+  const registry=voiceprints(repo,{infer:async()=>{entered();await gate;return {embedding:vector(0)};}});
+  const pending=registry.enroll('owner','all',input),rejected=assert.rejects(pending,{code:'voiceprint_library_changed'});await ready;await registry.revoke('owner','all',input.requestId,0);release();await rejected;assert.deepEqual((await registry.list('owner','all')).entries,[]);
+  const value=await registry.list('owner','all'),created=await registry.enroll('owner','all',{...input,libraryRevision:value.revision,requestId:randomUUID()});
+  await repo.change(record.id,r=>{r.workspaceId=randomUUID();});assert.equal((await registry.match('owner','all',input)).matches[0].id,created.id);
+}));
+
+test('voice clips return bounded WAV through the owner route and reject stale retention or revisions',async()=>fixture(async({repo,record,input})=>{
+  const registry=voiceprints(repo,{infer:async()=>({embedding:vector(0)})});await repo.change(record.id,r=>{r.retainAudio=true;});
+  assert.equal((await registry.clip('owner',input)).length,96000);await assert.rejects(registry.clip('other',input),{code:'record_not_found'});await assert.rejects(registry.clip('owner',{...input,revision:999}),{code:'voiceprint_source_changed'});
+  let headers,status,bytes;const path='/api/workspaces/all/voiceprints/clip';await workspaceRoutes({req:{method:'GET',url:path+'?'+new URLSearchParams({recordId:input.recordId,segmentId:input.segmentId,revision:String(input.revision)})},res:{writeHead:(code,value)=>{status=code;headers=value;},end:value=>{bytes=value;}},path,repo,user:{id:'owner'}});
+  assert.equal(status,200);assert.equal(headers['Content-Type'],'audio/wav');assert.match(headers['Cache-Control'],/no-store/);assert.equal(headers['X-Content-Type-Options'],'nosniff');assert.equal(bytes.length,96044);assert.equal(bytes.toString('ascii',0,4),'RIFF');
+  const read=repo.readAudio.bind(repo);let changed=false;repo.readAudio=async key=>{const data=await read(key);if(!changed){changed=true;await repo.change(record.id,r=>{r.audioCleanup={};});}return data;};await assert.rejects(registry.clip('owner',input),{code:'voiceprint_audio_unavailable'});
+}));
+
+test('revoking a library entry during playback prevents its buffered clip from being returned',async()=>fixture(async({repo,record,input})=>{
+  const registry=voiceprints(repo,{infer:async()=>({embedding:vector(0)})});const entry=await registry.enroll('owner','all',input);await repo.change(record.id,r=>{r.retainAudio=true;});const state=await registry.list('owner','all'),read=repo.readAudio.bind(repo);let changed=false;
+  repo.readAudio=async key=>{const data=await read(key);if(!changed){changed=true;await registry.revoke('owner','all',entry.id,state.revision);}return data;};
+  await assert.rejects(registry.clip('owner',{id:entry.id}),{code:'voiceprint_not_found'});assert.deepEqual((await registry.list('owner','all')).entries,[]);
+}));
+
+test('global matching rechecks legacy consent against a workspace changed during inference',async()=>fixture(async({repo,record,input})=>{
+  let moving=false;const registry=voiceprints(repo,{infer:async()=>{if(moving)await repo.change(record.id,r=>{r.workspaceId=randomUUID();});return {embedding:vector(0)};}});
+  await registry.enroll('owner','inbox',input);moving=true;assert.deepEqual(await registry.match('owner','all',input),{matches:[]});
+  const state=await registry.list('owner','all');await registry.confirmGlobal('owner',state.entries[0].id,{consent:true,libraryRevision:state.revision});assert.equal((await registry.match('owner','all',input)).matches.length,1);
+}));
+
+test('global unknown revocation fences an older scoped enrollment still inferring',async()=>fixture(async({input,repo})=>{
+  let release,entered;const ready=new Promise(resolve=>{entered=resolve;}),held=new Promise(resolve=>{release=resolve;});
+  const registry=voiceprints(repo,{infer:async()=>{entered();await held;return {embedding:vector(0)};}}),pending=registry.enroll('owner','inbox',input),rejected=assert.rejects(pending,{code:'voiceprint_library_changed'});
+  await ready;const state=await registry.list('owner','all');await registry.revoke('owner','all',input.requestId,state.revision);release();await rejected;assert.deepEqual((await registry.list('owner','all')).entries,[]);
+}));
+
+test('a global revoke during the first bank creation also fences a legacy enrollment',async()=>fixture(async({repo,input})=>{
+  const registry=voiceprints(repo,{infer:async()=>({embedding:vector(0)})}),insert=repo.insert.bind(repo);let entered,release,intercepted=false;const ready=new Promise(resolve=>{entered=resolve;}),held=new Promise(resolve=>{release=resolve;});
+  repo.insert=async value=>{if(value.kind==='voiceprints'&&!intercepted){intercepted=true;entered();await held;}return insert(value);};
+  const pending=registry.enroll('owner','inbox',input),rejected=assert.rejects(pending,{code:'voiceprint_library_changed'});await ready;await registry.revoke('owner','all',input.requestId,0);release();await rejected;assert.deepEqual((await registry.list('owner','all')).entries,[]);
 }));

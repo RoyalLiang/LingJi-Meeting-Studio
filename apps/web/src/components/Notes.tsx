@@ -1,14 +1,17 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
+import { Check, FloppyDisk } from '@phosphor-icons/react';
 import { Button } from './ui';
-import { MarkdownPreview } from './MarkdownPreview';
 import type { RecordDetail } from '../model';
-export function Notes({ record, save }: { record: RecordDetail; save: (text: string, revision: number) => Promise<boolean> }) {
-  const [value, setValue] = useState(record.notes), [revision, setRevision] = useState(record.notesRevision), [busy, setBusy] = useState(false);
-  useEffect(() => { setValue(record.notes); setRevision(record.notesRevision); }, [record.id]);
-  const changed = value !== record.notes;
-  const [pane,setPane]=useState<'edit'|'preview'>('edit');
-  return <section className="notes-block notes-workbench"><div className="notes-toolbar"><strong>Markdown <small>实时预览</small></strong><div className="notes-pane-switch" aria-label="手记展示"><Button aria-pressed={pane==='edit'} onClick={()=>setPane('edit')}>编辑</Button><Button aria-pressed={pane==='preview'} onClick={()=>setPane('preview')}>预览</Button></div><span className="muted">{changed ? '尚未保存' : '已保存'}</span>
-    <Button disabled={busy||!changed} onClick={async () => { setBusy(true); try { if (await save(value, revision)) setRevision(revision + 1); } finally { setBusy(false); } }}>保存笔记</Button></div>
-    <div className="notes-layout" data-pane={pane}><div className="notes-source"><label htmlFor={`notes-${record.id}`}>编辑</label><textarea id={`notes-${record.id}`} aria-label="会议随手笔记" placeholder="记下你的观察、疑问，或补充背景…" value={value} maxLength={19999} onChange={e => setValue(e.target.value)}/></div><section className="notes-preview" aria-label="手记实时预览"><h3>实时预览</h3>{value.trim()?<MarkdownPreview text={value}/>:<p className="muted">输入 Markdown，这里会即时呈现。</p>}</section></div>
+const MarkdownEditor=lazy(()=>import('./MarkdownEditor').then(module=>({default:module.MarkdownEditor})));
+
+export function Notes({record,save,active=true}:{record:RecordDetail;save:(text:string,revision:number)=>Promise<boolean>;active?:boolean}){
+  const [value,setValue]=useState(record.notes),[revision,setRevision]=useState(record.notesRevision),[busy,setBusy]=useState(false),[opened,setOpened]=useState(active);
+  useEffect(()=>{setValue(record.notes);setRevision(record.notesRevision);},[record.id]);
+  useEffect(()=>{if(active)setOpened(true);},[active]);
+  const changed=value!==record.notes;
+  const persist=async()=>{if(busy||!changed)return;setBusy(true);try{if(await save(value,revision))setRevision(revision+1);}finally{setBusy(false);}};
+  return <section className="notes-block notes-workbench" onKeyDown={event=>{if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='s'){event.preventDefault();void persist();}}}>
+    <div className="notes-toolbar"><strong>手记</strong><Button className="notes-save" variant={changed?'primary':'ghost'} disabled={busy||!changed} onClick={()=>void persist()}>{changed?<FloppyDisk size={15}/>:<Check size={15}/>}<span>{busy?'保存中…':changed?'保存笔记':'已保存'}</span></Button></div>
+    {opened&&<Suspense fallback={<p role="status">正在打开手记…</p>}><MarkdownEditor key={record.id} value={value} onChange={setValue}/></Suspense>}
   </section>;
 }

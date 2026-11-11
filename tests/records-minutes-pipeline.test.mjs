@@ -840,11 +840,11 @@ test('known larger windows expand transcript and synthesis budgets while explici
  }finally{await f.close();}
 });
 
-test('large-context models still split a dense long transcript before a provider-sized timeout',async()=>{
+test('large-context models size dense long transcript windows by meeting volume',async()=>{
   const f=await fixture(60);try{
     await f.repo.change(f.record.id,record=>{record.segments.forEach((segment,index)=>{segment.startMs=index*90000;segment.endMs=segment.startMs+60000;});});
     const claim=await f.claim(),large={...config,LLM_MODEL_PROFILES:JSON.stringify({'fixture-model':{contextWindow:262144}})};
-    const manifest=buildMinutesManifest(claim,large);assert.ok(manifest.windows.length>1);assert.ok(manifest.budget<=48000);
+    const manifest=buildMinutesManifest(claim,large);assert.ok(manifest.windows.length>1);assert.ok(manifest.budget<48000);
     const result=await runMinutesPipeline(f.repo,f.record.id,claim,large,async job=>{
       if(!job.summaries)assert.ok(Buffer.byteLength(JSON.stringify({transcript:job.snapshot,notes:job.notes,context:job.liveContext}))<=48000,'bounded transcript work per request');
       return summarize(job);
@@ -884,4 +884,39 @@ test('a completed parallel synthesis cannot shorten the remaining synthesis leas
     assert.ok(saved.lease-Date.now()>=419000,'lease still covers the unfinished 360s synthesis plus drain margin');
     release();const result=await run;validateMinutes(result,claim.snapshot);
   }finally{release();await run?.catch(()=>{});await f.close();}
+});
+
+test('timeout shrinks only its failed window and reuses completed siblings without losing evidence',async()=>{
+  const f=await fixture(18),calls=new Map();let failed=false;try{
+    const claim=await f.claim();const result=await runMinutesPipeline(f.repo,f.record.id,claim,{...config,RECORD_MINUTES_INPUT_BYTES:12000},async job=>{
+      if(!job.summaries){const key=JSON.stringify(job.snapshot);calls.set(key,(calls.get(key)||0)+1);
+        if(!failed&&job.snapshot.some(s=>s.id==='s-0')){failed=true;await new Promise(resolve=>setTimeout(resolve,20));throw Object.assign(new Error('fixture timeout'),{code:'llm_timeout'});}
+      }
+      return summarize(job);
+    });
+    assert.ok(failed);assert.ok(result.coverage.reused>=1);assert.equal(result.coverage.segments,18);assert.ok([...calls.values()].every(count=>count===1));
+    const job=(await f.repo.get(f.record.id)).jobs.at(-1);assert.ok(Object.keys(job.windowSplits).length>0);validateMinutes(result,claim.snapshot);
+  }finally{await f.close();}
+});
+
+test('persistently timing out windows stop at a bounded minimum without fabricating minutes',async()=>{
+  const f=await fixture(6);let calls=0;try{const claim=await f.claim();await assert.rejects(runMinutesPipeline(f.repo,f.record.id,claim,config,async()=>{calls++;throw Object.assign(new Error('fixture timeout'),{code:'llm_timeout'});}),{code:'llm_timeout'});assert.ok(calls>=2&&calls<=8);assert.equal((await f.repo.get(f.record.id)).minutes,null);}finally{await f.close();}
+});
+
+test('synthesis timeout reduces its input budget while completed transcript windows remain reusable',async()=>{
+  const f=await fixture(18),leaves=new Map();let timeouts=0;try{
+    const claim=await f.claim(),result=await runMinutesPipeline(f.repo,f.record.id,claim,{...config,RECORD_MINUTES_INPUT_BYTES:12000},async job=>{
+      if(job.stage==='synthesis'&&Buffer.byteLength(JSON.stringify({snapshot:job.snapshot,summaries:job.summaries}))>7000){timeouts++;throw Object.assign(new Error('large synthesis'),{code:'llm_timeout'});}
+      if(!job.summaries){const key=JSON.stringify(job.snapshot);leaves.set(key,(leaves.get(key)||0)+1);}return summarize(job);
+    });
+    assert.ok(timeouts>0);assert.ok([...leaves.values()].every(count=>count===1));assert.equal(result.coverage.segments,18);assert.ok(result.coverage.reused>0);assert.ok((await f.repo.get(f.record.id)).jobs.at(-1).synthesisInputBytes<96000);validateMinutes(result,claim.snapshot);
+  }finally{await f.close();}
+});
+
+test('dynamic long-meeting windows reserve fixed notes instead of dividing them across windows',async()=>{
+  const f=await fixture(20);try{
+    await f.repo.change(f.record.id,r=>{r.notes='保留背景。'.repeat(1800);r.notesRevision=1;r.segments.forEach((segment,index)=>{segment.startMs=index*360000;segment.endMs=segment.startMs+1000;});});
+    const claim=await f.claim(),large={...config,LLM_MODEL_PROFILES:JSON.stringify({'fixture-model':{contextWindow:262144}})},manifest=buildMinutesManifest(claim,large);
+    assert.ok(manifest.windows.length>1);assert.ok(manifest.budget>Buffer.byteLength(claim.notes));assert.ok(manifest.windows.every(window=>Buffer.byteLength(JSON.stringify({transcript:window.snapshot,notes:claim.notes,context:claim.liveContext}))<=manifest.budget));
+  }finally{await f.close();}
 });

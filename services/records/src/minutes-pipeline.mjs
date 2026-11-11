@@ -23,8 +23,13 @@ const synthesisBudget=config=>{
 };
 const roleInputBudget=(job,config,role)=>{const selected=minutesRoleConfig(job,config,role);return job.modelRouting?Math.min(inputBudget(selected),minutesBudget(selected)):inputBudget(selected);};
 // A source window can finalize directly, so it must fit both selected models.
-// A large model context is not a safe amount of transcript to organize in one timed request.
-const windowInputBudget=(job,config)=>Math.min(48000,roleInputBudget(job,config,'minutesMap'),roleInputBudget(job,config,job.scope==='live'?'minutesMap':'minutesFinal'));
+const windowInputBudget=(job,config)=>{
+  const limit=Math.min(96000,roleInputBudget(job,config,'minutesMap'),roleInputBudget(job,config,job.scope==='live'?'minutesMap':'minutesFinal'));
+  const transcriptBytes=size({transcript:job.snapshot}),overhead=size({notes:job.notes,context:job.liveContext})+1024;
+  let start=Infinity,end=0;for(const segment of job.snapshot)if(Number.isFinite(segment.startMs)&&Number.isFinite(segment.endMs)){start=Math.min(start,segment.startMs);end=Math.max(end,segment.endMs);}
+  const duration=Number.isFinite(start)?end-start:0;
+  return transcriptBytes+overhead<=24000||duration<=900000?limit:Math.min(limit,Math.max(4096,overhead+Math.ceil(transcriptBytes*1.5/Math.ceil(duration/900000))));
+};
 const finalInputBudget=(job,config)=>{const selected=minutesRoleConfig(job,config,'minutesFinal');return job.modelRouting?Math.min(synthesisBudget(selected),minutesBudget(selected)):synthesisBudget(selected);};
 const windowConcurrency=config=>{
   const value=Number(config.RECORD_MINUTES_WINDOW_CONCURRENCY);
@@ -88,8 +93,14 @@ export function buildMinutesManifest(job,config={},budget=windowInputBudget(job,
     }
     window.key=hash({policy,snapshot:window.snapshot});
   }
-  requireThat(windows.length>0 && windows.length<=512,'minutes_window_limit',422);
-  return {version:1,budget,skillDigest,synthesisBudget:finalInputBudget(job,config),policy,generation:job.generation,transcriptRevision:job.transcriptRevision,notesRevision:job.notesRevision,snapshotOffset,hash:job.manifestHash,windows};
+  const expanded=windows.flatMap(window=>{
+    const split=job.windowSplits?.[window.key];
+    if(!Number.isSafeInteger(split)||split<4096||split>=budget)return [window];
+    const child=buildMinutesManifest({...job,snapshot:window.snapshot},config,split,skillDigest);
+    return child.windows.map(part=>({...part,budget:part.budget||child.budget}));
+  });
+  requireThat(expanded.length>0 && expanded.length<=512,'minutes_window_limit',422);
+  return {version:1,budget,skillDigest,synthesisBudget:Math.min(finalInputBudget(job,config),Number.isSafeInteger(job.synthesisInputBytes)&&job.synthesisInputBytes>=4096?job.synthesisInputBytes:Infinity),policy,generation:job.generation,transcriptRevision:job.transcriptRevision,notesRevision:job.notesRevision,snapshotOffset,hash:job.manifestHash,windows:expanded};
 }
 
 function keepWindowDiscussion(result,leaves,snapshot,windows){
@@ -125,7 +136,7 @@ function currentJob(record,claim){
   requireThat(!liveAdvanced && !baselineChanged && !(claim.liveIncremental && !liveBaseline(record)) && !changed && record.notesRevision===claim.notesRevision && record.minutesRevision===claim.baseMinutesRevision,'minutes_snapshot_changed',409);
   return job;
 }
-export async function runMinutesPipeline(repo,recordId,claim,config,generate,options={}){
+async function runMinutesAttempt(repo,recordId,claim,config,generate,options={}){
   if(repo.root&&claim.mode!=='extractive'){const models=[...new Set(['minutesMap','minutesFinal'].map(role=>minutesRoleConfig(claim,config,role).LLM_MODEL))];config={...config,LLM_ROLE_FACTS:{...config.LLM_ROLE_FACTS,...Object.fromEntries(await Promise.all(models.map(async model=>[model,await readModelFacts(repo.root,{...config,LLM_MODEL:model})])))}};}
   const minutesSkill=audioMinutesEnabled(config)||claim.mode==='extractive'?null:builtinSkill('minutes-runtime');
   const manifest=buildMinutesManifest(claim,config,windowInputBudget(claim,config),minutesSkill?.contractDigest||null),cache=new Map(),inFlight=new Map(), completedWindows=new Map();let tokens=0,calls=0,reused=0,previewKey;
@@ -168,7 +179,11 @@ export async function runMinutesPipeline(repo,recordId,claim,config,generate,opt
       tokens+=Number.isSafeInteger(result.usageTokens)&&result.usageTokens>=0?result.usageTokens:0;calls++;
       return result;
       })();
-      inFlight.set(key,pending);result=await pending;
+      inFlight.set(key,pending);
+      try{result=await pending;}catch(error){
+        if(error.code==='llm_timeout')Object.assign(error,{minutesInputFloor:Math.max(4096,size({transcript:input.snapshot.slice(0,1).map(({text:_text,...metadata})=>metadata),notes:claim.notes,context:claim.liveContext})+1024),minutesInputBytes:size({transcript:input.snapshot,summaries:input.summaries,notes:claim.notes,context:claim.liveContext}),...(stage==='synthesis'?{minutesSynthesisBudget:manifest.synthesisBudget}:{minutesWindowKey:key,minutesWindowBudget:manifest.windows.find(window=>window.key===key)?.budget||manifest.budget})});
+        throw error;
+      }
     }
     await repo.change(recordId,record=>{
       const job=currentJob(record,claim);job.windowCache ||= [];
@@ -224,4 +239,21 @@ export async function runMinutesPipeline(repo,recordId,claim,config,generate,opt
   const result=manifest.windows.length>1&&claim.mode!=='extractive'?keepWindowDiscussion(nodes[0].result,leaves,claim.snapshot,manifest.windows):nodes[0].result;
   validateMinutes(result,claim.snapshot,claim.liveContext,{newEvidenceOnly:true,maxSections:manifest.windows.length>1?50*(manifest.windows.length+1):undefined});
   return {...result,usageTokens:tokens,usageRecorded:true,coverage:{manifestHash:manifest.hash,windows:manifest.windows.length,completed:manifest.windows.length,segments:new Set(claim.snapshot.map(s=>s.id)).size,calls,reused,levels:level},runtime:{...result.runtime,pipelineCalls:calls}};
+}
+
+// Retry only the failed window at a smaller budget; frozen sibling keys keep their validated cache.
+export async function runMinutesPipeline(repo,recordId,claim,config,generate,options={}){
+  let current=claim;
+  for(let retry=0;;retry++){
+    try{return await runMinutesAttempt(repo,recordId,current,config,generate,options);}
+    catch(error){
+      const synthesis=Boolean(error.minutesSynthesisBudget),previous=synthesis?error.minutesSynthesisBudget:error.minutesWindowBudget,budget=Math.max(error.minutesInputFloor||4096,Math.floor(Math.min(previous,error.minutesInputBytes||previous)/2));
+      if(error.code!=='llm_timeout'||(!synthesis&&!error.minutesWindowKey)||!Number.isFinite(budget)||budget>=Math.min(previous,error.minutesInputBytes||previous)||retry>=7||options.signal?.aborted)throw error;
+      const update=synthesis?{synthesisInputBytes:budget}:{windowSplits:{...current.windowSplits,[error.minutesWindowKey]:budget}};
+      try{
+        await repo.change(recordId,record=>{const job=currentJob(record,current);requireThat(current.scope==='live'?(current.pausedCheckpoint||record.capture==='recording'):['sealed','completed'].includes(record.capture),'minutes_snapshot_changed',409);Object.assign(job,update);delete job.preview;});
+      }catch(guardError){if(['stale_job','minutes_snapshot_changed'].includes(guardError.code))throw error;throw guardError;}
+      current={...current,...update};
+    }
+  }
 }

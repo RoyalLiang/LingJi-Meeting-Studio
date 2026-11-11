@@ -193,7 +193,7 @@ test('already merged content reconciles from the base branch after the archive b
   await h.sync.control('owner',job.id,'retry');const result=await settled(h.sync,job.id);assert.equal(result.status,'succeeded');assert.match(result.url,/\/commit\//);assert.equal(h.network.writes.filter(w=>w.path.endsWith('/repository/commits')).length,1);assert.equal(h.network.mrs.length,0);
 });
 test('archive dates follow the configured timezone across a UTC day boundary',async t=>{
-  const h=await fixture(t);await h.sync.save('owner',{...h.policy,timezone:'Asia/Shanghai'});const r=await h.record();await h.repo.change(r.id,record=>{record.createdAt='2026-11-02T17:00:00.000Z';});h.respond(r);const job=await h.sync.start('owner',r.id);assert.equal((await settled(h.sync,job.id)).status,'succeeded');const row=await h.repo.get(job.id);assert.match(row.filePath,/docs\/meetings\/2026-11-03-/);assert.equal(JSON.parse(row.files[row.manifestPath]).timezone,'Asia/Shanghai');
+  const h=await fixture(t);await h.sync.save('owner',{...h.policy,timezone:'Asia/Shanghai'});const r=await h.record();await h.repo.change(r.id,record=>{record.createdAt='2026-11-02T17:00:00.000Z';});h.respond(r);const job=await h.sync.start('owner',r.id);assert.equal((await settled(h.sync,job.id)).status,'succeeded');const row=await h.repo.get(job.id);assert.match(row.filePath,/docs\/meetings\/[a-f0-9]{12}\/浦东机场-周会-2026-11-03\.md$/);assert.equal(JSON.parse(row.files[row.manifestPath]).timezone,'Asia/Shanghai');
 });
 
 // Different records remain separate even when all archival content and timestamps match.
@@ -352,7 +352,7 @@ test('Skill chooses multiple archive paths and messages inside a fixed target di
   await h.sync.save('owner',{...h.policy,skillIds:[id],skillVersions:{[id]:version},mode:'',directory:'docs/project'});const r=await h.record();
   h.network.onRead(path=>path.endsWith('/repository/tree')?{status:200,headers:{},text:JSON.stringify([{name:'README.md',path:'README.md',type:'blob'}])}:undefined);
   h.fake.setResponses([message(call('read_selected_meeting',{recordId:r.id}),{stopReason:'toolUse'}),message(call('manage_git_sync',{action:'list_files'}),{stopReason:'toolUse'}),message(call('manage_git_sync',{action:'archive',mode:'mr',directory:'docs/project',files:[{path:'CONTEXT.md',content:'# Project context'},{path:'meetings/review.md',content:'# Meeting decisions'}],commitMessage:'docs: initialize project knowledge',title:'项目资料归档'}),{stopReason:'toolUse'}),message(JSON.stringify({summary:'已按项目规则归档',decisions:[{text:'保留人工内容',evidence:[{recordId:r.id,segmentId:'cited',revision:1}]}],actions:[]}))]);
-  const job=await h.sync.start('owner',r.id),done=await settled(h.sync,job.id);assert.equal(done.status,'succeeded',JSON.stringify(done));const stored=await h.repo.get(job.id);assert.ok(stored.files['docs/project/CONTEXT.md']);assert.ok(stored.files['docs/project/meetings/review.md']);assert.equal(Object.keys(stored.files).length,3);
+  const job=await h.sync.start('owner',r.id),done=await settled(h.sync,job.id);assert.equal(done.status,'succeeded',JSON.stringify(done));const stored=await h.repo.get(job.id);assert.ok(stored.files['docs/project/CONTEXT.md']);assert.ok(stored.files['docs/project/meetings/review.md']);assert.equal(Object.keys(stored.files).length,4);
   assert.match(h.network.writes.find(write=>write.path.endsWith('/repository/commits')).body.commit_message,/^docs: initialize project knowledge/);assert.equal(h.network.writes.find(write=>write.path.endsWith('/merge_requests')).body.title,'项目资料归档');
 });
 
@@ -627,4 +627,12 @@ test('historical recovery retains original URL when a new disabled host reuses a
 
 test('direct archive receipt recovery retains its original commit URL',async t=>{
  const h=await fixture(t);await h.sync.save('owner',{...h.policy,mode:'direct',directConfirmed:true});const r=await h.record();h.respond(r);const started=await h.sync.start('owner',r.id),first=await settled(h.sync,started.id);assert.equal(first.status,'succeeded',JSON.stringify(first));await h.repo.change(started.id,row=>{row.status='blocked';row.phase='merge';row.error='git_rule_changed';});await h.sync.save('owner',{...h.policy,mode:'direct',directConfirmed:true,prompt:'Changed for future archives.'});const writes=h.network.writes.length;let reads=0;h.network.onRead(()=>{reads++;});const restored=await h.sync.control('owner',started.id,'retry');assert.equal(restored.status,'succeeded');assert.equal(restored.url,first.url);assert.equal(h.network.writes.length,writes);assert.equal(reads,0);
+});
+
+test('meeting archive filenames retain title and configured date with separate immutable versions',async t=>{
+  const {gitMeetingFilename}=await import('../packages/records/src/git-sync.mjs');
+  assert.equal(gitMeetingFilename({title:'PSA / 同步：评审',createdAt:'2026-11-02T17:00:00Z'}),'PSA - 同步-评审-2026-11-03.md');
+  assert.ok(Buffer.byteLength(gitMeetingFilename({title:'会'.repeat(200),createdAt:'2026-11-03'}))<255);
+  const h=await fixture(t);await h.sync.save('owner',h.policy);const r=await h.record('PSA 方案评审');h.respond(r);const job=await h.sync.start('owner',r.id);assert.equal((await settled(h.sync,job.id)).status,'succeeded');const stored=await h.repo.get(job.id);
+  assert.match(stored.filePath,/\/[a-f0-9]{12}\/PSA 方案评审-\d{4}-\d{2}-\d{2}\.md$/);assert.ok(stored.files[stored.filePath]);
 });

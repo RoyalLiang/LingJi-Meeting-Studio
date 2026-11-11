@@ -24,7 +24,15 @@ export function gitTarget(record,projects,mappings=[],aliases=[]){
 export const gitSourceHash=(record,includeNotes=false)=>digest(JSON.stringify({title:record.title,createdAt:record.createdAt,workspaceId:record.workspaceId||null,minutes:record.minutes,minutesRevision:record.minutesRevision,transcriptRevision:record.transcriptRevision,...(includeNotes?{notes:record.notes,notesRevision:record.notesRevision}:{})}));
 export function gitCitations(minutes){const refs=new Map();const visit=value=>{if(!value||typeof value!=='object')return;for(const [key,child] of Object.entries(value)){if(key==='evidence'&&Array.isArray(child)){for(const ref of child)if(typeof ref.segmentId==='string'&&Number.isSafeInteger(ref.revision))refs.set(`${ref.segmentId}:${ref.revision}`,{segmentId:ref.segmentId,revision:ref.revision});}else if(key!=='evidenceSnapshot')visit(child);}};visit(minutes);return [...refs.values()];}
 export function gitArchivePath(value){
-  requireThat(typeof value==='string'&&value.length<=160&&value.split('/').every(p=>/^[A-Za-z0-9_.-]+$/.test(p)&&!['.','..'].includes(p))&&!value.startsWith('.git'),'invalid_git_sync',400);
+  requireThat(typeof value==='string'&&value.length<=160&&value.split('/').every(p=>/^[\p{L}\p{N}\p{M}._() -]+$/u.test(p)&&p.trim()===p&&!['.','..'].includes(p))&&!value.startsWith('.git'),'invalid_git_sync',400);
   return value;
 }
 export function gitFinal(record){return record.capture==='completed'&&record.transcription==='ready'&&record.minutes&&record.minutes.transcriptRevision===record.transcriptRevision&&!record.jobs.some(j=>['queued','running'].includes(j.status))&&record.jobs.filter(j=>j.scope!=='live').at(-1)?.status!=='failed';}
+
+export function gitMeetingFilename(record,timezone='Asia/Shanghai'){
+  let title=String(record.title||'会议').normalize('NFKC').replace(/[^\p{L}\p{N}\p{M} ._()-]+/gu,'-').replace(/\s+/g,' ').replace(/^[. -]+|[. -]+$/g,'')||'会议';
+  title=[...title].slice(0,100).join('');
+  while(Buffer.byteLength(title)>180)title=[...title].slice(0,-1).join('');
+  const date=new Intl.DateTimeFormat('en-CA',{timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(record.createdAt));
+  return `${title}-${date}.md`;
+}

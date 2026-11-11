@@ -68,6 +68,7 @@ test('a post-stop timeout retains validated windows and refuses stale or manuall
    requestMinutes(r,{scope:'live',mode:'model'});await repo.insert(r);
    work=runCycle(repo,{minutes:async job=>{
     if(++calls===2){ready();await gate;throw Object.assign(new Error('timeout'),{code:'llm_timeout'});}
+    if(calls>2)throw Object.assign(new Error('timeout'),{code:'llm_timeout'});
     const source=job.snapshot.find(s=>!s.contextOnly),evidence=[{segmentId:source.id,revision:source.revision}];
     return {title:'保留已校验部分',sections:[{heading:'已校验',items:[{text:'第一窗内容',evidence}]}],highlights:[{text:'第一窗重点',evidence}],actions:[]};
    }},{lane:'minutes'});

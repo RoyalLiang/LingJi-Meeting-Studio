@@ -1,3 +1,4 @@
+import {waveHeader} from './audio-wav.mjs';
 import { voiceprints } from './voiceprints.mjs';
 import { createWorkspace, workspaceFields, retainedRecords, virtualScopes, workspaceOverview, analysisId, requestWorkspaceAnalysis, publicWorkspaceAnalysis } from '../../../packages/records/src/workspaces.mjs';
 import { requireThat, emit } from '../../../packages/records/src/record.mjs';
@@ -39,10 +40,17 @@ export async function workspaceRoutes({ req, res, path, repo, user, readBody, se
     });
     send(res, 200, { archived: [...new Set(ids)].length, workspaceId: destination === 'inbox' ? null : destination }); return true;
   }
-  const route = path.match(/^\/api\/workspaces\/(all|inbox|[a-f0-9-]{36})(?:\/(overview|analysis|analysis\/cancel|vocabulary|knowledge(?:\/(?:question|[a-f0-9]{64}))?|voiceprints(?:\/(?:match|[a-f0-9-]{36}))?))?$/);
+  const route = path.match(/^\/api\/workspaces\/(all|inbox|[a-f0-9-]{36})(?:\/(overview|analysis|analysis\/cancel|vocabulary|knowledge(?:\/(?:question|[a-f0-9]{64}))?|voiceprints(?:\/(?:match|clip|[a-f0-9-]{36}))?))?$/);
   requireThat(route, 'not_found', 404);
   const scope = route[1], action = route[2] || '', workspace = await requireWorkspace(repo, user.id, scope);
-  if (action === 'voiceprints' && req.method === 'GET') { send(res, 200, await voiceprints(repo).list(user.id, scope)); return true; }
+if(action==='voiceprints/clip'&&req.method==='GET'){
+    const params=new URL(req.url,'http://records.local').searchParams;
+    const input=params.has('id')?{id:params.get('id')}:{recordId:params.get('recordId'),segmentId:params.get('segmentId'),revision:Number(params.get('revision'))};
+    const pcm=await voiceprints(repo).clip(user.id,input),bytes=Buffer.concat([waveHeader(pcm.length),pcm]);
+    res.writeHead(200,{'Content-Type':'audio/wav','Content-Length':bytes.length,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'});res.end(bytes);return true;
+  }
+  if(action?.startsWith('voiceprints/')&&req.method==='PATCH'){send(res,200,await voiceprints(repo).confirmGlobal(user.id,action.split('/')[1],await readBody(req,1000)));return true;}
+    if (action === 'voiceprints' && req.method === 'GET') { send(res, 200, await voiceprints(repo).list(user.id, scope)); return true; }
   if (action === 'voiceprints' && req.method === 'POST') { send(res, 200, await voiceprints(repo).enroll(user.id, scope, await readBody(req, 3000))); return true; }
   if (action === 'voiceprints/match' && req.method === 'POST') { send(res, 200, await voiceprints(repo).match(user.id, scope, await readBody(req, 2000))); return true; }
   if (action.startsWith('voiceprints/') && req.method === 'DELETE') { const body = await readBody(req, 1000); send(res, 200, await voiceprints(repo).revoke(user.id, scope, action.split('/')[1], body.libraryRevision)); return true; }

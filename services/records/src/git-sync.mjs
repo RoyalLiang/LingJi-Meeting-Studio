@@ -10,7 +10,7 @@ import {createModels} from '@earendil-works/pi-ai/models';
 import {defineDoc,defineTask,defineExtension,createRegistry} from '@earendil-works/pi-durable';
 import {openNodeSqliteStorage} from '@earendil-works/pi-durable/storage/sqlite/node';
 import {DomainError,digest,requireThat} from '../../../packages/records/src/record.mjs';
-import {gitRoot,gitTarget,gitSourceHash,gitArchivePath,gitFinal,gitCitations} from '../../../packages/records/src/git-sync.mjs';
+import {gitRoot,gitTarget,gitSourceHash,gitArchivePath,gitMeetingFilename,gitFinal,gitCitations} from '../../../packages/records/src/git-sync.mjs';
 import {createSecretStore} from './integrations/secret-store.mjs';
 import {createGitlab} from './integrations/gitlab.mjs';
 import {exportMinutesMarkdown} from './markdown-export.mjs';
@@ -116,7 +116,7 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
         job=await update(job.id,{project:target.project,basis:target.basis,baseBranch:target.project.default_branch,branch:rule.mode==='mr'?`lingji/archive-${record.id}-${job.archiveKey.slice(0,12)}`:target.project.default_branch,mode:rule.mode,directory:rule.directory});
       }else if(phase==='prepare'){
         const {rule,record}=await guard(job,runtime.signal,false,false,true);
-        const date=new Intl.DateTimeFormat('en-CA',{timeZone:rule.timezone||'UTC',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(record.createdAt)),path=`${rule.directory}/${date}-${record.id}-v${job.minutesRevision}-${job.archiveKey.slice(0,8)}`;
+      const path=`${rule.directory?rule.directory+'/':''}${job.archiveKey.slice(0,12)}/${gitMeetingFilename(record,rule.timezone||'Asia/Shanghai').replace(/\.md$/,'')}`;
         job=await update(job.id,{original:exportMinutesMarkdown(record,{includeNotes:rule.includeNotes,includeEvidence:rule.includeEvidence}),filePath:`${path}.md`,manifestPath:`${path}.source.json`});
       }else if(phase==='organize'){
         const {rule}=await guard(job,runtime.signal);
@@ -262,8 +262,9 @@ export async function createGitSync({repo,agent,extensions,localAccount=false,re
       requireThat(args.files===undefined||Array.isArray(args.files)&&args.files.length>0&&args.files.length<=20,'invalid_git_sync',400);
       const mode=rule.mode||args.mode,directory=rule.directory||(args.directory==='.'?'':gitArchivePath(args.directory||'docs/meetings'));
       requireThat(['mr','direct'].includes(mode)&&(!rule.mode||!args.mode||rule.mode===args.mode)&&(!rule.directory||!args.directory||rule.directory===args.directory),'git_scope_changed',409);
-      const stem=job.filePath.slice(job.filePath.lastIndexOf('/')+1),prefix=directory?`${directory}/`:'';
-      const proposed=args.files||[{path:args.path||stem,content:args.content}];
+      const meeting=await recordFor(owner,job.recordId),stem=`${job.archiveKey.slice(0,12)}/${gitMeetingFilename(meeting,rule.timezone||'Asia/Shanghai')}`,prefix=directory?`${directory}/`:'';
+      const proposed=args.files?[...args.files]:[{path:stem,content:args.content}];
+      if(args.files&&!proposed.some(file=>file.path===stem))proposed.unshift({path:stem,content:job.original});
       requireThat(proposed.every(file=>typeof file.content==='string'&&file.content.trim()&&file.content.length<=100000),'invalid_git_sync',400);
       const paths=proposed.map(file=>prefix+gitArchivePath(file.path));requireThat(new Set(paths).size===paths.length,'invalid_git_sync',400);
       const filePath=paths[0],manifestPath=`${prefix}${stem.replace(/\.md$/,'.source.json')}`;requireThat(!paths.includes(manifestPath),'invalid_git_sync',400);
