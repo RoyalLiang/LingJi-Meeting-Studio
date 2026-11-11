@@ -90,7 +90,7 @@ export function Download({ href, children, iconLabel, disabled = false }: { href
       if (!active || event.payload.url !== downloadUrl.current) return;
       downloadUrl.current = ''; clearTimeout(timer.current); setBusy(false);
       if (event.payload.success) setNotice('文件已保存至下载文件夹。');
-      else setError('下载未完成，请点击重新下载。');
+      else setError('下载未完成，请再次点击下载。');
     }).then(unlisten => { if (active) { stop = unlisten; setDownloadReady(true); } else unlisten(); })
       .catch(() => { if (active) setError('无法接收下载结果，请重新打开导出窗口。'); });
     return () => { active = false; stop?.(); clearTimeout(timer.current); };
@@ -100,7 +100,7 @@ export function Download({ href, children, iconLabel, disabled = false }: { href
   function beginSave(url: string) {
     if (!native) return;
     downloadUrl.current = url; setBusy(true); setError(''); setNotice(''); clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => { downloadUrl.current = ''; setBusy(false); setError('未收到保存结果，请点击重新下载。'); }, 30000);
+    timer.current = window.setTimeout(() => { downloadUrl.current = ''; setBusy(false); setError('未收到保存结果，请再次点击下载。'); }, 30000);
   }
   async function download() {
     if (request.current || downloadUrl.current) return;
@@ -110,12 +110,12 @@ export function Download({ href, children, iconLabel, disabled = false }: { href
       const url = URL.createObjectURL(file.blob); setPrepared({url,filename:file.filename});
       beginSave(url);
       const link = document.createElement('a'); link.href=url; link.download=file.filename; document.body.append(link); link.click(); link.remove();
-      if (!native) setNotice('文件已准备。若浏览器拦截下载，请点击“重新下载”。');
+      if (!native) setNotice('文件已准备。若未保存，请再次点击下载。');
     } catch (error) { if (!controller.signal.aborted) setError(messageOf(error)); }
     finally { if (request.current === controller) request.current=null; if (!controller.signal.aborted && !downloadUrl.current) setBusy(false); }
   }
   return <span className="download-control"><Button variant={iconLabel ? 'ghost' : 'secondary'} aria-label={iconLabel} aria-busy={busy} disabled={disabled || busy || !downloadReady} onClick={() => void download()}>{iconLabel ? children : busy ? '正在准备…' : children}</Button>
-    {prepared && !busy && <a className="download-retry" href={prepared.url} download={prepared.filename} onClick={()=>beginSave(prepared.url)}>重新下载</a>}
+
     <Toast message={error || notice} error={Boolean(error)} dismiss={dismiss}/>
   </span>;
 }

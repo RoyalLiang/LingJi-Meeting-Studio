@@ -128,3 +128,16 @@ test('period statistics use Beijing creation dates, Monday weeks and only report
   const jan=Date.parse('2027-01-01T00:00:00+08:00');
   assert.equal(workspaceOverview([make('2026-12-31T15:59:59Z',42)],jan).periods.find(p=>p.id==='year').meetings,0);
 });
+
+test('annual Token days retain Beijing boundaries, partial reports and zero-usage days',()=>{
+ const now=Date.parse('2026-11-10T00:30:00+08:00');
+ const record=(createdAt,tokens)=>{const r=example();r.createdAt=createdAt;if(tokens!==undefined)r.usage.minutesMeter={requests:1,reportedRequests:1,totalTokensRequests:1,totalTokens:tokens};return r;};
+ const partial=record('2026-11-09T16:02:00Z',600);partial.usage.minutesMeter.requests=2;
+ const {tokenActivity}=workspaceOverview([record('2026-11-09T16:00:00Z',1200),partial,record('2026-11-09T15:59:59Z'),record('2026-11-09T16:31:00Z',999),record('2025-11-09T00:00:00Z',999)],now);
+ assert.equal(tokenActivity.length,365);
+ assert.deepEqual(tokenActivity.at(-1),{day:'2026-11-10',minutesTokens:1800,usageIncomplete:true});
+ assert.deepEqual(tokenActivity.at(-2),{day:'2026-11-09',minutesTokens:null,usageIncomplete:true});
+ assert.deepEqual(tokenActivity.at(-3),{day:'2026-11-08',minutesTokens:0,usageIncomplete:false});
+ assert.equal(tokenActivity[0].day,'2025-11-11');
+ assert.equal(workspaceOverview([],Date.parse('2024-03-01T00:00:00+08:00')).tokenActivity.at(-2).day,'2024-02-29');
+});
