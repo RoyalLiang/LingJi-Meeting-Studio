@@ -14,16 +14,19 @@ function packet(sequence, offset, count = 320) {
   return raw;
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));
-test('native settings probe opens the page and closes with return or Escape',async()=>{
+test('native settings probe opens and closes both unmounted and retained pages',async()=>{
   const probe=await readFile(new URL('../apps/desktop/src-tauri/src/probe.js',import.meta.url),'utf8');
   const start=probe.indexOf('    const openSettings='),end=probe.indexOf('    await openSettings();',start);
   assert.ok(start>=0&&end>start);
+  for(const retained of [false,true]){
   let opened=false,opens=0;const closed=[];
-  const panel={textContent:'模型与转录',querySelector:selector=>selector==='button[aria-label="返回工作台"]'?{click(){opened=false;closed.push('return');}}:{},dispatchEvent(event){assert.equal(event.type,'keydown');assert.equal(event.key,'Escape');assert.equal(event.bubbles,true);opened=false;closed.push('Escape');}};
-  const document={querySelector:selector=>selector==='button[aria-label="设置与诊断"]'?{click(){opened=true;opens++;}}:selector==='.settings-page'&&opened?panel:null};
+  const panel={textContent:'模型与转录',getClientRects:()=>opened?[{}]:[],querySelector:selector=>selector==='button[aria-label="返回工作台"]'?{click(){opened=false;closed.push('return');}}:{},dispatchEvent(event){assert.equal(event.type,'keydown');assert.equal(event.key,'Escape');assert.equal(event.bubbles,true);opened=false;closed.push('Escape');}};
+  const document={querySelector:selector=>selector==='button[aria-label="设置与诊断"]'?{click(){opened=true;opens++;}}:selector==='.settings-page'&&(opened||retained)?panel:null};
   const open=vm.runInNewContext(probe.slice(start,end)+'\nopenSettings',{document,until:async(fn,_timeout,label)=>{const value=await fn();assert.ok(value,label);return value;},KeyboardEvent:class{constructor(type,options){this.type=type;Object.assign(this,options);}}});
   await open();await open();await open(true);await open(true);
   assert.equal(opens,4);assert.deepEqual(closed,['return','return','Escape','Escape']);assert.equal(opened,false);
+  assert.equal(document.querySelector('.settings-page'),retained?panel:null);
+  }
 });
 test('widget initial snapshot cannot overwrite a newer recording event',async()=>{
  const {transform}=await import('esbuild');

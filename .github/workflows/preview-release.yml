@@ -217,6 +217,14 @@ jobs:
         with:
           ref: ${{ needs.verify.outputs.sha }}
           persist-credentials: false
+      - name: Read the CI-only native probe
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ needs.verify.outputs.controller_sha }}
+          path: .agent-runtime/ci-controller
+          sparse-checkout: apps/desktop/src-tauri/src/probe.js
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
       - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
           name: wgs-windows-input-${{ needs.verify.outputs.sha }}
@@ -294,7 +302,18 @@ jobs:
           }
           exit $nativeStatus
       - name: Build native probe
-        run: cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --features smoke-test
+        run: |
+          $probePath = (Resolve-Path apps/desktop/src-tauri/src/probe.js).Path
+          $sourceProbe = [IO.File]::ReadAllBytes($probePath)
+          $probeStatus = 1
+          try {
+            Copy-Item .agent-runtime/ci-controller/apps/desktop/src-tauri/src/probe.js $probePath -Force
+            cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --features smoke-test
+            $probeStatus = $LASTEXITCODE
+          } finally {
+            [IO.File]::WriteAllBytes($probePath, $sourceProbe)
+          }
+          if ($probeStatus -ne 0) { exit $probeStatus }
       - name: Hidden recording and restart replay
         env:
           NATIVE_CLIENT_EXECUTABLE: ${{ github.workspace }}\apps\desktop\src-tauri\target\debug\tts-client.exe

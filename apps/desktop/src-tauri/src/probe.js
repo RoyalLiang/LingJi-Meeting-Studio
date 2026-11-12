@@ -43,13 +43,13 @@ async function verifyNativeUiLanes(record, queued) {
     if (typeof applicationSources.supported !== 'boolean' || !Array.isArray(applicationSources.applications)) throw new Error('application audio sources IPC failed');
     const openSettings=async(cancel=false)=>{
       (await until(()=>document.querySelector('button[aria-label="设置与诊断"]'),16000,'settings opener')).click();
-      const page=await until(()=>document.querySelector('.settings-page'),16000,'settings opened');
+      const page=await until(()=>{const page=document.querySelector('.settings-page');return page?.getClientRects().length?page:null;},16000,'settings opened');
       if(['浏览器能力检测','删除清理','使用与诊断'].some(text=>page.textContent.includes(text)))throw new Error('unused settings modules remain');
       if(!page.querySelector('input,select,button'))throw new Error('settings controls missing');
       await until(()=>page.querySelector('input[name=LLM_REASONING_EFFORT]'),16000,'reasoning setting');
       if(cancel)page.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
       else page.querySelector('button[aria-label="返回工作台"]').click();
-      await until(()=>!document.querySelector('.settings-page'),16000,'settings closed');
+      await until(()=>!page.getClientRects().length,16000,'settings closed');
     };
     await openSettings();await openSettings();
     const priorUiId = localStorage.getItem('native-probe-ui-record');
