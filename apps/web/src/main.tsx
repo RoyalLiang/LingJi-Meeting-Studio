@@ -4,6 +4,7 @@ import { isTauri } from '@tauri-apps/api/core';
 import { RecordingWidget } from './components/RecordingWidget';
 import './styles.css';
 import './workbench.css';
+try{document.documentElement.dataset.theme=localStorage.getItem('meeting-theme')==='dark'?'dark':'light';}catch{/* Use the default palette when storage is unavailable. */}
 const widgetMode=isTauri() && location.hash==='#recording-widget';
 document.documentElement.classList.toggle('webview2',isTauri() && /Windows/.test(navigator.userAgent));
 document.documentElement.classList.toggle('recording-capsule-mode',widgetMode);

@@ -1,8 +1,9 @@
 import { useEffect, useRef, type ReactNode } from 'react';
-import { CaretRight, FileText, Folder, FolderPlus, GearSix, House, MagnifyingGlass, Microphone, Moon, Plus, Sparkle, Sun, X } from '@phosphor-icons/react';
+import { CaretRight, FileText, Folder, FolderPlus, GearSix, House, MagnifyingGlass, Microphone, Plus, Sparkle, X } from '@phosphor-icons/react';
 import type { RecordListItem } from '../model';
 import type { WorkspaceDirectory } from '../workspace-model';
 import { Brand } from './Brand';
+import {ThemeToggle} from './ThemeToggle';
 import { Select } from './Select';
 import { SearchHighlights } from './SearchHighlights';
 import { Button } from './ui';
@@ -11,10 +12,10 @@ export type WorkspacePage = 'overview' | 'meetings' | 'knowledge' | 'workspaces'
 type Props = {
   directories: WorkspaceDirectory[]; scope: string; records: RecordListItem[]; recordId: string;
   page: WorkspacePage; extensionOpen: boolean; settingsOpen: boolean; open: boolean; disabled: boolean; canRecord: boolean;
-  name: string; account: string; theme: string; version: ReactNode; tools?: ReactNode; notice?: ReactNode;
+  name: string; account: string; version: ReactNode; tools?: ReactNode; notice?: ReactNode;
   chooseScope: (id: string) => void; navigate: (page: WorkspacePage) => void; selectRecord: (id: string) => void;
   create: () => void; prepare: () => void; quick: () => void; extensions: () => void; settings: () => void;
-  voices: () => void; search: () => void; toggleTheme: () => void; close: () => void;
+  voices: () => void; search: () => void; close: () => void;
 };
 export function AppSidebar(props: Props) {
   const ref=useRef<HTMLElement>(null);
@@ -38,7 +39,7 @@ export function AppSidebar(props: Props) {
   },[props.open,props.close]);
   const active=!props.recordId&&!props.extensionOpen&&!props.settingsOpen;
   return <><aside ref={ref} id="project-sidebar" className={`sidebar v10-sidebar ${props.open?'is-open':''}`} aria-label="项目与会议导航">
-    <div className="sidebar-head"><div className="rail-brand"><div className="rail-identity"><Brand/><div className="rail-version">{props.version}</div></div><div className="rail-top-actions"><Button variant="ghost" aria-label="搜索会议" disabled={props.disabled} onClick={props.search}><MagnifyingGlass size={17}/></Button><Button variant="ghost" aria-label="提前准备会议" disabled={props.disabled} onClick={props.prepare}><Plus size={19}/></Button><Button variant="ghost" aria-label="设置与诊断" aria-current={props.settingsOpen?'page':undefined} onClick={props.settings}><GearSix size={17}/></Button><Button variant="ghost" aria-label={props.theme==='light'?'切换深色':'切换浅色'} onClick={props.toggleTheme}>{props.theme==='light'?<Moon size={17}/>:<Sun size={17}/>}</Button>{props.tools}<Button variant="ghost" className="sidebar-close" aria-label="关闭项目导航" onClick={props.close}><X size={18}/></Button></div></div>
+    <div className="sidebar-head"><div className="rail-brand"><div className="rail-identity"><Brand/><div className="rail-version">{props.version}</div></div><div className="rail-top-actions"><Button variant="ghost" aria-label="搜索会议" disabled={props.disabled} onClick={props.search}><MagnifyingGlass size={17}/></Button><Button variant="ghost" aria-label="提前准备会议" disabled={props.disabled} onClick={props.prepare}><Plus size={19}/></Button><Button variant="ghost" aria-label="设置与诊断" aria-current={props.settingsOpen?'page':undefined} onClick={props.settings}><GearSix size={17}/></Button><ThemeToggle/><Button variant="ghost" className="sidebar-close" aria-label="关闭项目导航" onClick={props.close}><X size={18}/></Button></div></div>
       <div className="rail-section-label"><Button variant="ghost" className="workspace-directory-entry" aria-label="管理工作空间" aria-current={active&&props.page==='workspaces'?'page':undefined} disabled={props.disabled} onClick={()=>props.navigate('workspaces')}><Folder size={13}/><span>工作空间</span><span className="workspace-directory-count">{props.directories.length}</span><CaretRight size={12}/></Button><Button variant="ghost" aria-label="新建工作目录" disabled={props.disabled} onClick={props.create}><FolderPlus size={15}/></Button></div>
       <div className="workspace-picker-card"><Select label="选择工作目录" value={props.scope} onChange={props.chooseScope} disabled={props.disabled} options={[{value:'all',label:'所有会议'},...props.directories.map(w=>({value:w.id,label:w.name}))]} compact singleLine triggerContent={<><Brand markOnly/><span className="workspace-picker-name">{props.scope==='all'?'所有会议':props.directories.find(w=>w.id===props.scope)?.name||'工作空间'}</span></>}/></div>
       <Button className="new-record" onClick={props.quick} disabled={props.disabled||!props.canRecord}><Microphone size={16}/>快速记录</Button>
@@ -49,6 +50,6 @@ export function AppSidebar(props: Props) {
       <Button variant="ghost" aria-current={props.extensionOpen&&!props.settingsOpen?'page':undefined} disabled={props.disabled} onClick={props.extensions}><Sparkle size={17}/>扩展与助手</Button>
     </nav><div className="rail-section-label recent-heading"><span>最近讨论</span><Button variant="ghost" disabled={props.disabled} onClick={()=>props.navigate('meetings')}>全部</Button></div>
     <div className="sidebar-scroll"><nav className="record-list" aria-label="会议记录">{props.records.slice(0,8).map(r=><button key={r.id} className={`record-row ${r.id===props.recordId&&!props.extensionOpen&&!props.settingsOpen?'selected':''}`} aria-current={r.id===props.recordId&&!props.extensionOpen&&!props.settingsOpen?'page':undefined} title={r.title} disabled={props.disabled&&r.id!==props.recordId} onClick={()=>props.selectRecord(r.id)}><span className="record-icon">{r.hasMinutes?<FileText size={16}/>:<Microphone size={16}/>}</span><span><b><SearchHighlights text={r.title} ranges={r.search?.titleHighlights}/></b><small>{new Date(r.createdAt).toLocaleDateString('zh-CN',{month:'short',day:'numeric'})}<span className="record-duration-pill">{r.capture==='recording'?'录音中':`${Math.ceil(r.seconds/60)} 分钟`}</span></small></span></button>)}{!props.records.length&&<p className="rail-empty">这个范围还没有会议。</p>}</nav>
-    </div><footer className="rail-footer"><div className="account"><span className="avatar">{props.name.slice(0,1)}</span><span><b>{props.name}</b><small title={props.account}>{props.account}</small></span></div><div className="rail-system-tools">{props.notice}</div></footer>
+    </div><footer className="rail-footer"><div className="account"><span className="avatar">{props.name.slice(0,1)}</span><span><b>{props.name}</b><small title={props.account}>{props.account}</small></span></div><div className="rail-system-tools">{props.notice}{props.tools}</div></footer>
   </aside>{props.open&&<button className="sidebar-backdrop" aria-label="关闭项目导航" tabIndex={-1} onClick={props.close}/>}</>;
 }

@@ -27,7 +27,8 @@ export function ModuleConnectionCheck({ label, revision, blockedReason, disabled
   }
   const texts={idle:'未检测',pending:'检测中',success:'检测通过',error:'检测未通过',stale:'待重新检测'};
   return <div className="module-connection-check" data-module={label}>
-    <Button type="button" disabled={disabled||Boolean(blockedReason)||result.status==='pending'} aria-busy={result.status==='pending'} aria-label={`检测${label}`} onClick={()=>void run()}><ArrowsClockwise size={15}/>{result.status==='pending'?'检测中…':result.status==='idle'?'检测连接':'重新检测'}</Button>
+
     <div className="module-check-result" data-state={result.status} role="status" aria-live="polite" aria-atomic="true"><span className="module-check-state">{result.status==='success'?<Check size={12}/>:result.status==='error'?<WarningCircle size={12}/>:<Clock size={12}/>} {texts[result.status]}</span>{(blockedReason||result.message)&&<small>{blockedReason||result.message}</small>}</div>
+    <Button type="button" disabled={disabled||Boolean(blockedReason)||result.status==='pending'} aria-busy={result.status==='pending'} aria-label={`检测${label}`} onClick={()=>void run()}><ArrowsClockwise size={15}/>{result.status==='pending'?'检测中…':result.status==='idle'?'检测连接':'重新检测'}</Button>
   </div>;
 }

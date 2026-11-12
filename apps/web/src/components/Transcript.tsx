@@ -1,8 +1,9 @@
 import {SpeakerPanel} from './SpeakerPanel';
+import {ContentFollowAction} from './ContentFollowAction';
 import { createPortal } from 'react-dom';
 import { memo, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { CorrectionSuggestions } from './CorrectionSuggestions';
-import { ArrowDown, Check, PencilSimple, TextAlignLeft, X } from '@phosphor-icons/react';
+import { Check, PencilSimple, TextAlignLeft, X } from '@phosphor-icons/react';
 import { Button, Empty } from './ui';
 import { Select } from './Select';
 import { topicTone } from './TopicMap';
@@ -14,18 +15,18 @@ import {VirtualSegments} from './VirtualSegments';
 type TranscriptProps = { changed?:()=>void; visible?:boolean; record: RecordDetail; highlighted: string; save: (s: Segment, text: string, speaker: string) => Promise<boolean> };
 
 type TranscriptSegmentsProps = {
-  segments:Segment[];topicIndex:{first:Map<string,Topic>;members:Map<Topic,Set<string>>};
+  segments:Segment[];topicIndex:{first:Map<string,Topic>;members:Map<Topic,Set<string>>;starts:Set<string>};
   sourceLabels:Map<string,string>;translationTarget?:string;highlighted:string;concise:boolean;
   editing:Segment|null;text:string;speaker:string;busy:boolean;knownSpeakers:string[];resetKey:string;
   setEditing:(value:Segment|null)=>void;setText:(value:string)=>void;setSpeaker:(value:string)=>void;setBusy:(value:boolean)=>void;
   save:TranscriptProps['save'];onVoice:(segment:Segment)=>void;
 };
 const TranscriptSegments=memo(function TranscriptSegments({segments,topicIndex,sourceLabels,translationTarget,highlighted,concise,editing,text,speaker,busy,knownSpeakers,resetKey,setEditing,setText,setSpeaker,setBusy,save,onVoice}:TranscriptSegmentsProps){
-  return <VirtualSegments className="segments" segments={segments} pinned={editing?.id} highlighted={highlighted} resetKey={resetKey}>{(segment,index)=>{
+  return <VirtualSegments className="segments" segments={segments} pinned={editing?.id} highlighted={highlighted} resetKey={resetKey}>{(segment)=>{
       const topic=topicIndex.first.get(`${segment.id}:${segment.revision}`);
-      const previous=segments[index-1], startsTopic=topic && (!previous || !topicIndex.members.get(topic)?.has(`${previous.id}:${previous.revision}`));
+      const startsTopic=topicIndex.starts.has(`${segment.id}:${segment.revision}`);
       return <article data-tone={topic ? topicTone(topic) : undefined} id={`segment-${segment.id}`} key={segment.id} className={`segment ${highlighted===segment.id ? 'highlighted' : ''}`}>
-        {startsTopic && <header className="transcript-topic"><h3>{topic.title}</h3><p>{topic.summary}</p></header>}
+        {topic && startsTopic && <header className="transcript-topic"><h3>{topic.title}</h3><p>{topic.summary}</p></header>}
         <div className="segment-meta"><button type="button" className="speaker-annotation-trigger" aria-label={`标注 ${segment.speaker||'说话人'}`} onClick={()=>onVoice(segment)}><span className="avatar">{segment.speaker.match(/\d+$/)?.[0] || (segment.speaker ? segment.speaker[0] : '?')}</span><b>{segment.speaker || '说话人待确认'}</b></button>{!segment.speaker && <span className="source-badge">{sourceLabels.get(segment.sourceId) || '导入转录'} · 尚无身份信息</span>}<time>{segment.sourceId==='text-import' ? '文本' : timecode(segment.startMs)}</time>{segment.languageDetection && <span className="muted" title="原音批次的模型识别语种；混语句仍完整翻译">{({zh:'中文',en:'English',ja:'日本語',ko:'한국어',yue:'粤语'} as Record<string,string>)[segment.languageDetection.language] || segment.languageDetection.language}</span>}{segment.overlappingSpeech&&<span className="muted">重叠发言 · 身份待确认</span>}{segment.edited && <span className="muted">{segment.correction?.revision===segment.revision ? '已校对' : '已编辑'}</span>}<Button variant="ghost" className="edit-segment" aria-label="编辑转录与说话人" onClick={()=>{setEditing(segment);setText(segment.text);setSpeaker(segment.speaker);}}><PencilSimple size={16}/></Button></div>
         {editing?.id===segment.id ? <div className="segment-editor"><label>归属说话人<Select label="归属说话人" value={speaker} onChange={setSpeaker} options={[{value:'',label:'待确认'},...knownSpeakers.map(value=>({value,label:value}))]}/></label><label>说话人名称<input aria-label="说话人名称" value={speaker} onChange={e=>setSpeaker(e.target.value)} placeholder="例如：说话人 1" maxLength={80}/></label><label>转录内容<textarea value={text} onChange={e=>setText(e.target.value)} maxLength={8000}/></label><div className="actions"><Button disabled={busy || !text.trim()} variant="primary" onClick={async()=>{setBusy(true);try{if(await save(editing,text,speaker))setEditing(null);}finally{setBusy(false);}}}><Check size={16}/>保存</Button><Button onClick={()=>setEditing(null)}><X size={16}/>取消</Button><Button disabled={busy||editing.sourceId==='text-import'} onClick={()=>onVoice(editing)}>声纹库</Button></div></div> : <><p>{concise && !segment.edited ? cleanSpeechDisplay(segment.text) : segment.text}</p>{concise && !segment.edited && cleanSpeechDisplay(segment.text)!==segment.text && <details className="transcript-original"><summary>识别原文</summary><p>{segment.text}</p></details>}{segment.recognitionText && segment.recognitionText!==segment.text && <details className="transcript-original"><summary>识别原文</summary><p>{segment.recognitionText}</p></details>}{segment.translation && segment.translationLanguage===translationTarget && <p className="translation" lang={translationTarget}>{segment.translation}</p>}</>}
       </article>;}}</VirtualSegments>;
@@ -64,8 +65,13 @@ export const Transcript = memo(function Transcript({ record, highlighted, save, 
       for(const ref of topic.evidence){const key=`${ref.segmentId}:${ref.revision}`;keys.add(key);if(!first.has(key))first.set(key,topic);}
       members.set(topic,keys);
     }
-    return {first,members};
-  },[topics]);
+    const starts=new Set<string>(),seen=new Set<Topic>();
+    for(let index=0;index<segments.length;index++){
+      const segment=segments[index],key=`${segment.id}:${segment.revision}`,topic=first.get(key),previous=segments[index-1];
+      if(topic&&!seen.has(topic)&&(!previous||!members.get(topic)?.has(`${previous.id}:${previous.revision}`))){starts.add(key);seen.add(topic);}
+    }
+    return {first,members,starts};
+  },[topics,segments]);
   const knownSpeakers=useMemo(()=>[...new Set([...(record.speakers||[]).map(s=>s.label),...record.segments.map(s=>s.speaker)].filter(Boolean))],[record.speakers,record.segments]);
   const sourceLabelsKey=useMemo(()=>JSON.stringify(record.sources.map(source=>[source.id,source.label])),[record.sources]);
   const sourceLabels=useMemo(()=>{const labels=new Map<string,string>();for(const [id,label] of JSON.parse(sourceLabelsKey) as [string,string][])if(!labels.has(id))labels.set(id,label);return labels;},[sourceLabelsKey]);
@@ -79,7 +85,7 @@ export const Transcript = memo(function Transcript({ record, highlighted, save, 
 
     {previews.map(source=><section className="live-transcript" key={source.id} aria-label="实时转录草稿"><div className="live-transcript-heading"><span className="live-dot"/><b>实时转录</b><span>说话人确认中</span></div><p role="status" aria-live="polite" aria-atomic="true">{source.asr!.preview!.text}</p><small>草稿随识别修正，确认后归入逐字记录。</small></section>)}
     {(segments.length>0 || previews.length>0) && <div ref={follow.end} className="transcript-end"/>}
-    {!follow.following && !query && !editing && <div className="transcript-follow"><Button onClick={()=>{follow.resume();}}><ArrowDown size={16}/>回到最新转录</Button></div>}
+    <ContentFollowAction anchor={follow.root} visible={visible&&!follow.following&&!query&&!editing} resume={follow.resume} label="回到最新转录"/>
   </section>{voiceSegment&&<SpeakerPanel key={`${record.id}:${voiceSegment.id}`} record={record} segment={record.segments.find(segment=>segment.id===voiceSegment.id)||voiceSegment} changed={changed} close={()=>setVoiceSegment(null)}/>}</div>;
 },(previous,next)=>previous.visible===next.visible && previous.highlighted===next.highlighted && previous.save===next.save && previous.changed===next.changed &&
   (['id','segments','sources','speakers','capture','transcriptRevision','liveMinutes','minutes','translationTarget'] as const).every(key=>previous.record[key]===next.record[key]));

@@ -13,7 +13,7 @@ export function SpeakerPanel({record,segment,changed,close}:{record:RecordDetail
   const panel=useRef<HTMLElement>(null),input=useRef<HTMLInputElement>(null),alive=useRef(true),newPerson=useRef(crypto.randomUUID()),sample=useRef(segment),learnId=useRef(crypto.randomUUID());
   useLayoutEffect(()=>{const measure=()=>{if(panel.current)panel.current.style.setProperty('--speaker-panel-top',`${Math.max(12,panel.current.getBoundingClientRect().top)}px`);};measure();window.addEventListener('resize',measure);document.addEventListener('scroll',measure,true);return()=>{window.removeEventListener('resize',measure);document.removeEventListener('scroll',measure,true);};},[]);
   useEffect(()=>{
-    const previous=document.activeElement as HTMLElement|null;alive.current=true;input.current?.focus();const controller=new AbortController();
+    const previous=document.activeElement as HTMLElement|null;alive.current=true;input.current?.focus({preventScroll:true});const controller=new AbortController();
     const load=()=>api<Bank>('/voiceprints/people','GET',undefined,controller.signal).then(value=>{if(alive.current){setBank(value);if(value.jobs.find(job=>job.id===learnId.current)?.status==='ready')setNotice('声音已更新，将用于后续会议识别。');}}).catch(error=>{if(!controller.signal.aborted)setError(messageOf(error));});
     void load();const timer=setInterval(()=>{void load();},4000);
     return()=>{alive.current=false;controller.abort();clearInterval(timer);if(panel.current?.contains(document.activeElement))previous?.focus();};

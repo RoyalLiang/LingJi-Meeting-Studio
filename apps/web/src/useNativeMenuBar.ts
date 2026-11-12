@@ -11,7 +11,12 @@ export function useNativeMenuBar(state: MenuState, actions: Actions) {
   const latest = useRef({ state, actions }); latest.current = { state, actions };
   const appearance=useRef<ReturnType<typeof nativeThemeSync>|null>(null);
   if(!appearance.current)appearance.current=nativeThemeSync(theme=>invoke('client_theme',{theme}));
-  useEffect(()=>{if(isTauri())void appearance.current?.set(state.theme).catch(()=>{});},[state.theme]);
+  useEffect(()=>{
+    if(!isTauri())return;
+    const apply=()=>{void appearance.current?.set(document.documentElement.dataset.theme).catch(()=>{});};
+    apply();document.addEventListener('meeting:theme',apply);
+    return()=>document.removeEventListener('meeting:theme',apply);
+  },[]);
   useEffect(()=>()=>appearance.current?.stop(),[]);
   useEffect(() => {
     if (!isTauri()) return;
@@ -19,7 +24,7 @@ export function useNativeMenuBar(state: MenuState, actions: Actions) {
     const publish = async () => {
       if (!live || publishing) return;
       publishing = true;
-      void appearance.current?.set(latest.current.state.theme).catch(()=>{});
+      void appearance.current?.set(document.documentElement.dataset.theme).catch(()=>{});
       try {
         const pending = await pendingCount();
         if (live) {

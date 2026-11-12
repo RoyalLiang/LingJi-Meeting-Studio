@@ -28,6 +28,53 @@ async function ensureDay(repo,owner,workspaceId,day){
 function total(usage){return usage.totalTokens??(Number.isSafeInteger(usage.inputTokens)&&Number.isSafeInteger(usage.outputTokens)?usage.inputTokens+usage.outputTokens:null);}
 function account(day,request,sign){day.requests+=sign;day.incomplete+=sign*(total(request.usage)===null?1:0);day.tokens+=sign*(total(request.usage)??0);}
 
+// Legacy jobs have receipts but no per-call timestamps. Preserve totals without inventing dates.
+async function historicalUsage(repo,owner,epoch){
+  if(epoch.historicalReceipts)return epoch.historicalReceipts;
+  let receipts=[];
+  for(let attempt=0;attempt<3;attempt++){
+    const revision=await repo.accessRevision(),records=[];
+    for(const input of await repo.listOverviewInputs(owner)){
+      if(Date.parse(input.createdAt)>=Date.parse(epoch.createdAt))continue;
+      const record=await repo.get(input.id);
+      if(record?.owner===owner)records.push({id:record.id,workspaceId:record.workspaceId,createdAt:record.createdAt,usage:record.usage,jobs:record.jobs.map(({id,createdAt,usageCalls})=>({id,createdAt,usageCalls})),events:record.events.filter(event=>event.type==='minutes.usage')});
+    }
+    const current=new Map();let before,active=false;
+    for(;;){
+      const page=await repo.listMetadata('model-usage',owner,['recordId','requestKind','createdAt','usage','finishedAt'],{limit:1000,before});
+      for(const row of page){
+        if(row.requestKind!=='minutes'||!row.recordId)continue;
+        current.set(row.recordId,(current.get(row.recordId)||0)+(total(tokenUsage(row.usage))??0));
+        if(!row.finishedAt)active=true;
+      }
+      if(page.length<1000)break;
+      const last=page.at(-1);before=[last.createdAt,last.id];
+    }
+    receipts=[];
+    for(const record of records){
+      const workspaceId=record.workspaceId||'inbox';let known=0,dated=0;
+      for(const job of record.jobs||[]){
+        const tokens=Object.values(job.usageCalls||{}).reduce((sum,call)=>sum+(call?.reported?total(tokenUsage(call))??0:0),0);
+        if(!Number.isSafeInteger(tokens)||tokens<=0)continue;
+        known+=tokens;
+        const at=(record.events||[]).filter(event=>event.type==='minutes.usage'&&event.payload?.jobId===job.id).at(-1)?.at;
+        if(!at||!Number.isFinite(Date.parse(at))||!Number.isFinite(Date.parse(job.createdAt))||Date.parse(at)>=Date.parse(epoch.createdAt))continue;
+        receipts.push({workspaceId,from:dayOf(job.createdAt),to:dayOf(at),tokens});dated+=tokens;
+      }
+      const meter=record.usage?.minutesMeter;
+      if(Number.isSafeInteger(meter?.totalTokens)&&meter.totalTokensRequests>0)known=Math.max(known,meter.totalTokens);
+      // New physical calls can also be present in old job meters. Subtract their known receipts once.
+      const remaining=Math.max(0,known-dated-(current.get(record.id)||0));
+      if(remaining)receipts.push({workspaceId,from:dayOf(record.createdAt),to:dayOf(epoch.createdAt),tokens:remaining});
+    }
+    if(revision!==await repo.accessRevision())continue;
+    if(active)return receipts;
+    const saved=await repo.change(epoch.id,row=>{row.historicalReceipts||=receipts;});
+    return saved.historicalReceipts;
+  }
+  return receipts;
+}
+
 // Persist at the transport boundary: retries are distinct, streamed cumulative reports are not.
 export async function meterModelCall(config,options,call){
   const scope=options.usageContext||context.getStore();
@@ -64,7 +111,8 @@ export async function meterModelCall(config,options,call){
 
 export async function modelUsageOverview(repo,owner,scope='all',now=Date.now()){
   const epoch=await usageEpoch(repo,owner),cutover=dayOf(epoch.createdAt);
-  const buckets=[];let before;
+  const historical=(await historicalUsage(repo,owner,epoch)).filter(row=>scope==='all'||row.workspaceId===scope);
+  const buckets=historical.filter(row=>row.from===row.to).map(row=>({day:row.from,tokens:row.tokens,incomplete:0}));let before;
   for(;;){
     const page=await repo.listMetadata('model-usage-day',owner,['workspaceId','day','createdAt','tokens','requests','incomplete'],{limit:1000,before});
     buckets.push(...page.filter(row=>scope==='all'||row.workspaceId===scope));
@@ -78,7 +126,7 @@ export async function modelUsageOverview(repo,owner,scope='all',now=Date.now()){
   const weekday=(new Date(end).getUTCDay()+6)%7;
   const periods=Object.fromEntries([['day',today],['week',new Date(end-weekday*86400000).toISOString().slice(0,10)],['month',today.slice(0,7)+'-01'],['year',today.slice(0,4)+'-01-01']].map(([id,from])=>{
     const values=[...days].filter(([day])=>day<=today&&day>=from).map(([,value])=>value);
-    return [id,{minutesTokens:values.reduce((sum,value)=>sum+value.tokens,0),usageIncomplete:values.some(value=>value.incomplete>0)||epoch.historicalUnknown&&from<=cutover}];
+    return [id,{minutesTokens:values.reduce((sum,value)=>sum+value.tokens,0)+historical.filter(row=>row.from!==row.to&&row.from>=from&&row.to<=today).reduce((sum,row)=>sum+row.tokens,0),usageIncomplete:values.some(value=>value.incomplete>0)||epoch.historicalUnknown&&from<=cutover}];
   }));
   return {activity,periods};
 }

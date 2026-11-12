@@ -9,7 +9,9 @@ async function harness(pending=async()=>7) {
   const code = stripTypeScriptTypes(await readFile(new URL('../apps/web/src/useNativeMenuBar.ts', import.meta.url), 'utf8')).replace(/^import .*$/gm, '').replace(/export /g, '');
   const refs = [], calls = [], actions = [], timers = [];
   let handler, removed=false, refCursor=0, effectCursor=0;const effects=[];
-  const sandbox = { exports: {},
+  const document=new EventTarget();document.documentElement={dataset:{theme:undefined}};
+  const sandbox = {
+    document, exports: {},
     useRef: current => { const index=refCursor++;return refs[index] ||= {current}; },
     useEffect:(effect,deps)=>{const index=effectCursor++,prior=effects[index];if(prior&&deps&&deps.length===prior.deps?.length&&deps.every((v,i)=>Object.is(v,prior.deps[i])))return;prior?.cleanup?.();effects[index]={deps,cleanup:effect()};},
     nativeThemeSync,
@@ -22,7 +24,7 @@ async function harness(pending=async()=>7) {
   vm.runInNewContext(code + '\nexports.useNativeMenuBar=useNativeMenuBar;', sandbox);
   const state = { authenticated: true, recordTitle: '会议', capture: 'recording', recording: true, busy: false, connection: 'connected' };
   const callbacks = Object.fromEntries(['pause', 'resume', 'finish', 'settings', 'microphone'].map(name => [name, () => actions.push(name)]));
-  const render=next=>{refCursor=effectCursor=0;sandbox.exports.useNativeMenuBar(next,callbacks);};render(state);
+  const render=next=>{document.documentElement.dataset.theme=next.theme;refCursor=effectCursor=0;sandbox.exports.useNativeMenuBar(next,callbacks);document.dispatchEvent(new Event('meeting:theme'));};render(state);
   await new Promise(resolve => setImmediate(resolve));
   return { calls, actions, refs, state, callbacks, timers, render, event: payload => handler({ payload }), cleanup: () => effects.forEach(e=>e.cleanup?.()), removed: () => removed };
 }
@@ -60,7 +62,9 @@ test('native updater menu listener shares dropdown preferences and rechecks the 
   const refs = [], cleanups = [], calls = [], listeners = new Map(), removed = [], saved = [], timers = [];
   const activity = { authenticated: true, recording: false, paused: false, busy: false };
   let status = { phase: 'idle', currentVersion: '1.0.0', downloaded: 0 };
-  const sandbox = { ...engineModule, exports: {}, isTauri: () => true,
+  const document=new EventTarget();document.documentElement={dataset:{theme:undefined}};
+  const sandbox = {
+    document, ...engineModule, exports: {}, isTauri: () => true,
     useRef: current => { const ref={current};refs.push(ref);return ref; },
     useState: value => [typeof value === 'function' ? value() : value, () => {}],
     useEffect: effect => { cleanups.push(effect()); },

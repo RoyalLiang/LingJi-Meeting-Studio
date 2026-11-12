@@ -41,3 +41,21 @@ test('assistant Markdown handles ordered lists, incomplete fences and safe links
  const html=renderToStaticMarkup(React.createElement(MarkdownPreview,{text:'## 草稿\n1. **决定**\n2. *待确认*\n\n[来源](https://example.com)\n[拒绝](javascript:alert(1))\n\n```js\nconst value = "<script>";'}));
  assert.match(html,/<ol>/);assert.match(html,/<em>待确认<\/em>/);assert.match(html,/href="https:\/\/example.com"/);assert.doesNotMatch(html,/href="javascript:/);assert.match(html,/<pre><code>/);assert.doesNotMatch(html,/<script>/);
 });
+
+test('transcript introduces a topic once when its evidence is interleaved with other topics',()=>{
+  const segments=Array.from({length:6},(_,i)=>({...segment(`alternating-${i}`),startMs:i*1000}));
+  const topics=[0,1].map(parity=>({title:`Unique-topic-${parity}`,summary:'summary',evidence:segments.filter((_,i)=>i%2===parity).map(s=>({segmentId:s.id,revision:s.revision}))}));
+  const html=render(segments,topics);
+  assert.equal((html.match(/Unique-topic-0/g)||[]).length,1);
+  assert.equal((html.match(/Unique-topic-1/g)||[]).length,1);
+});
+
+test('Token activity retains unknown and partial receipts and distributes reported usage across shades',async()=>{
+  const {TokenActivity}=await load('apps/web/src/components/TokenActivity.tsx');
+  const days=[null,0,100,101,102,103].map((minutesTokens,i)=>({day:`2026-11-0${i+1}`,minutesTokens,usageIncomplete:i===0||i===3}));
+  const html=renderToStaticMarkup(React.createElement(TokenActivity,{days}));
+  assert.match(html,/data-level="unknown"/);assert.match(html,/data-level="0"/);
+  for(const level of [1,2,3,4])assert.match(html,new RegExp(`data-level="${level}"`));
+  assert.match(html,/101\+ Tokens/);assert.match(html,/— Tokens/);
+  assert.doesNotMatch(html,/token-activity-tooltip/);
+});
