@@ -60,10 +60,12 @@ export function createKnowledgeQuestions({db,pool}) {
 
 export function knowledgeSnapshot(record,frozen) {
  const entries=frozen.entries.filter(entry=>entry.recordId===record.id),refs=new Set(entries.flatMap(entry=>entry.evidence.map(ref=>`${ref.segmentId}:${ref.revision}`)));
- requireThat(entries.length&&entries.every(entry=>entry.generation===record.generation&&entry.minutesRevision===record.minutesRevision&&entry.transcriptRevision===record.minutes?.transcriptRevision),'agent_knowledge_changed',409);
- const segments=[...new Map([...record.segments,...(record.minutes?.evidenceSnapshot||[])].filter(segment=>refs.has(`${segment.id}:${segment.revision}`)).map(segment=>[`${segment.id}:${segment.revision}`,{id:segment.id,revision:segment.revision,text:segment.text,speaker:segment.speaker||'',startMs:segment.startMs,endMs:segment.endMs}])).values()];
+ const revision=entries[0]?.minutesRevision;
+ const minutes=record.minutes?.revision===revision?record.minutes:record.minutes?.attributionBaseRevision===revision?record.minutesHistory?.find(value=>value.revision===revision):undefined;
+ requireThat(minutes&&entries.length&&entries.every(entry=>entry.generation===record.generation&&entry.minutesRevision===minutes.revision&&entry.transcriptRevision===minutes.transcriptRevision),'agent_knowledge_changed',409);
+ const segments=[...new Map([...record.segments,...(minutes.evidenceSnapshot||[])].filter(segment=>refs.has(`${segment.id}:${segment.revision}`)).map(segment=>[`${segment.id}:${segment.revision}`,{id:segment.id,revision:segment.revision,text:segment.text,speaker:segment.speaker||'',startMs:segment.startMs,endMs:segment.endMs}])).values()];
  requireThat(segments.length===refs.size&&segments.every(segment=>typeof segment.text==='string'),'agent_knowledge_changed',409);
- return {recordId:record.id,title:record.title,transcriptRevision:record.minutes.transcriptRevision,minutesRevision:record.minutesRevision,knowledgeEntries:entries,segments};
+ return {recordId:record.id,title:record.title,transcriptRevision:minutes.transcriptRevision,minutesRevision:minutes.revision,knowledgeEntries:entries,segments};
 }
 const evidence={type:'array',items:{type:'object',properties:{recordId:{type:'string'},segmentId:{type:'string'},revision:{type:'integer'}},required:['recordId','segmentId','revision'],additionalProperties:false}};
 export const knowledgeResultSchema={type:'object',properties:{summary:{type:'string'},answers:{type:'array',items:{type:'object',properties:{text:{type:'string'},evidence},required:['text','evidence'],additionalProperties:false}},insufficientEvidence:{type:'boolean'},decisions:{type:'array',items:{type:'object',properties:{text:{type:'string'},evidence},required:['text','evidence'],additionalProperties:false}},actions:{type:'array',items:{type:'object',properties:{text:{type:'string'},owner:{type:['string','null']},evidence},required:['text','owner','evidence'],additionalProperties:false}}},required:['summary','answers','insufficientEvidence','decisions','actions'],additionalProperties:false};

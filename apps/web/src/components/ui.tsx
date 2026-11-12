@@ -1,3 +1,4 @@
+import {createPortal} from 'react-dom';
 import { useCallback, useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { X } from '@phosphor-icons/react';
 import { fetchDownload } from '../downloads';
@@ -38,7 +39,7 @@ export function Button({ children, variant = 'secondary', className = '', title,
     anchor.addEventListener('focus',focus);anchor.addEventListener('blur',hide);anchor.addEventListener('click',hide);
     return()=>{hide();popup.removeEventListener('toggle',toggled);anchor.removeEventListener('pointerenter',enter);anchor.removeEventListener('pointerleave',hide);anchor.removeEventListener('focus',focus);anchor.removeEventListener('blur',hide);anchor.removeEventListener('click',hide);};
   },[tooltipLabel]);
-  return <button className={`button ${variant} ${className}`} data-tooltip={tooltipLabel} {...props} ref={button} aria-describedby={[props['aria-describedby'],tooltipLabel?id:undefined].filter(Boolean).join(' ')||undefined}>{children}{tooltipLabel&&<span ref={tip} id={id} role="tooltip" popover="manual" className="button-tooltip">{tooltipLabel}</span>}</button>;
+  return <><button className={`button ${variant} ${className}`} data-tooltip={tooltipLabel} {...props} ref={button} aria-describedby={[props['aria-describedby'],tooltipLabel?id:undefined].filter(Boolean).join(' ')||undefined}>{children}</button>{tooltipLabel&&createPortal(<span ref={tip} id={id} role="tooltip" popover="manual" className="button-tooltip">{tooltipLabel}</span>,document.body)}</>;
 }
 export function CloseButton({ label = '关闭', className = '', ...props }: Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> & { label?: string }) {
   return <Button type="button" variant="ghost" className={`close-button ${className}`} aria-label={label} title={label} {...props}>

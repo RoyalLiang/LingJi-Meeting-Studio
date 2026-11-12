@@ -204,6 +204,48 @@ export function commitTranscriptBatch(record, keys, text, generation, model, met
   emit(record,'transcript.committed',{transcriptRevision:record.transcriptRevision});finalize(record);
 }
 export function editSegment(record, id, input) {
+  editSegments(record, [{...input, id}]);
+}
+export function editSegments(record, updates) {
+  const before = record.transcriptRevision;
+  const labelsOnly = updates.every(input => record.segments.find(segment => segment.id === input.id)?.text === input.text?.trim());
+  const revisions = new Map();
+  for (const input of updates) {
+    applySegmentEdit(record, input.id, input);
+    const segment = record.segments.find(segment => segment.id === input.id);
+    revisions.set(input.id, {before: input.revision, segment});
+  }
+  if (!labelsOnly) return;
+  // Spoken words did not change: advance current citations without regenerating human or model text.
+  const advance = value => {
+    if (!value || typeof value !== 'object') return;
+    const change = revisions.get(value.segmentId || (typeof value.text === 'string' && typeof value.sourceId === 'string' ? value.id : undefined));
+    if (change && value.revision === change.before) {
+      value.revision = change.segment.revision;
+      if ('speaker' in value) value.speaker = change.segment.speaker;
+    }
+    for (const child of Object.values(value)) advance(child);
+  };
+  if (record.minutes?.transcriptRevision === before) {
+    const previous = record.minutes;
+    const notesRevision = previous.notesRevision ?? record.jobs.findLast(job => job.status === 'completed' && job.scope !== 'live' && job.transcriptRevision === before && job.baseMinutesRevision + 1 === previous.revision)?.notesRevision ?? 0;
+    const attributionBaseRevision = previous.attributionBaseRevision ?? previous.revision;
+    const versions = [...(record.minutesHistory || []), previous];
+    const original = versions.find(minutes => minutes.revision === attributionBaseRevision);
+    // Keep reviewed knowledge's content version while bounding label-only snapshots.
+    record.minutesHistory = original ? [original, ...versions.filter(minutes => minutes !== original).slice(-9)] : versions.slice(-10);
+    record.minutesRevision++;
+    record.minutes = {...structuredClone(previous), revision: record.minutesRevision, notesRevision, attributionBaseRevision};
+    advance(record.minutes);
+    record.minutes.transcriptRevision = record.transcriptRevision;
+    emit(record, 'minutes.committed', {revision: record.minutesRevision});
+  }
+  if (record.liveMinutes?.transcriptRevision === before) {
+    advance(record.liveMinutes);
+    record.liveMinutes.transcriptRevision = record.transcriptRevision;
+  }
+}
+function applySegmentEdit(record, id, input) {
   const segment = record.segments.find(s => s.id === id);
   requireThat(segment, 'segment_not_found', 404);
   requireThat(segment.revision === input.revision, 'segment_revision_conflict');
@@ -219,7 +261,8 @@ export function editSegment(record, id, input) {
     if (known) { segment.speakerId = known.id; segment.speakerHash = known.hash || digest(`meeting-speaker:v1:${record.id}:${known.id}`); }
     else if (!segment.speaker) { segment.speakerId = null; segment.speakerHash = null; }
   }
-  for (const field of ['translation', 'translationLanguage', 'translationLease', 'translationFence', 'translationAttempts', 'translationRetryAt', 'translationError']) delete segment[field];
+  if (previous.text !== segment.text) for (const field of ['translation', 'translationLanguage']) delete segment[field];
+  for (const field of ['translationLease', 'translationFence', 'translationAttempts', 'translationRetryAt', 'translationError']) delete segment[field];
   segment.revision++; segment.edited = true; record.transcriptRevision++;
   emit(record, 'transcript.edited', { segmentId: id, transcriptRevision: record.transcriptRevision });
 }
@@ -338,8 +381,9 @@ export function commitMinutes(record, jobId, result, fence) {
   }
   if (record.minutes) record.minutesHistory = [...(record.minutesHistory || []), record.minutes].slice(-10);
   record.minutesRevision++;
-  record.minutes = { ...result, actions: result.actions || [], revision: record.minutesRevision, transcriptRevision: job.transcriptRevision, manifestHash: job.manifestHash,
+  record.minutes = { ...result, actions: result.actions || [], revision: record.minutesRevision, transcriptRevision: job.transcriptRevision, notesRevision: job.notesRevision, manifestHash: job.manifestHash,
     evidenceSnapshot: job.snapshot, edited: false, generatedAt: new Date().toISOString() };
+  delete record.minutes.attributionBaseRevision;
   if(job.mode==='model')autoNameRecord(record,result.title);
   job.status = 'completed'; job.snapshot = []; delete job.preview; delete job.partialMinutes; if(!usageRecorded)record.usage.llmTokens += Number.isSafeInteger(result.usageTokens) && result.usageTokens >= 0 ? result.usageTokens : 0;
   emit(record, 'minutes.committed', { revision: record.minutesRevision });

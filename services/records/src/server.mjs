@@ -512,7 +512,8 @@ export async function createRecordServer(options = {}) {
         r.minutesRevision++;
           const previous = { ...r.minutes },unchanged=JSON.stringify(manual)===JSON.stringify(baseline);
           if(!unchanged)for (const key of ['highlights','visuals','topics','tables','decisions','speakerSummaries','currentDiscussion']) delete previous[key];
-          r.minutes = { ...previous, ...(unchanged?{}:manual), revision: r.minutesRevision, edited: true }; autoNameRecord(r,r.minutes.title); emit(r, 'minutes.edited'); return publicRecord(r);
+          r.minutes = { ...previous, ...(unchanged?{}:manual), revision: r.minutesRevision, edited: true };
+        delete r.minutes.attributionBaseRevision; autoNameRecord(r,r.minutes.title); emit(r, 'minutes.edited'); return publicRecord(r);
       });
       else if (action === 'translation/retry' && req.method === 'POST') result = await changeOwned(id,user,r=>{
         requireThat(body.target === r.translationTarget && r.translationTarget, 'translation_target_changed');

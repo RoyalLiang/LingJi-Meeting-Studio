@@ -87,7 +87,7 @@ function EvidenceLinks({items,task,open}:{items:Evidence[];task:Task;open:(id:st
 }
 function TaskContent({task,open}:{task:Task;open:(id:string,reference?:KnowledgeReference)=>void}) {
   return <>
-    <div className="ma-task-state"><span className={`ma-state ${task.status}`}>{labels[task.status]}</span><span>{task.skill.name||'会议复盘'} · {task.skill.version.slice(0,12)} · {task.sources.length} 场会议</span></div>
+    <div className="ma-task-state"><span className={`ma-state ${task.status}`}>{labels[task.status]}</span><span>{task.skill.name||'会议复盘'} · {task.sources.length} 场会议</span></div>
     {task.stale&&<FeedbackNotice key={`${task.id}:stale`} message="会议内容已有更新，此处保留运行时引用的版本。"/>}
     {task.error&&<FeedbackNotice key={task.id+':'+task.error} message={safeError(task.error)} error/>}
     {working(task)&&task.progress&&<p className="ma-read-progress">已读取 {task.progress.read}/{task.progress.total} 场会议{(task.progress.totalPages||0)>task.progress.total?` · ${task.progress.pagesRead||0}/${task.progress.totalPages} 页`:""}，正在整理。</p>}<section><h3>整理目标</h3><p className="ma-preserve">{task.prompt}</p></section>
@@ -98,20 +98,21 @@ function TaskContent({task,open}:{task:Task;open:(id:string,reference?:Knowledge
     <TaskTimeline timeline={task.timeline} ledger={task.ledger} kernelId={task.kernelId}/>
   </>;
 }
-export default function MeetingAgentCenter({titleChanged,automationChanged,records,openRecord,footerTarget,tasksTarget,openContext}:{titleChanged?:(title:string)=>void;automationChanged?:(active:boolean)=>void;records:RecordListItem[];openRecord:(id:string)=>void;footerTarget?:HTMLElement|null;tasksTarget?:HTMLElement|null;openContext?:()=>void}) {
+export default function MeetingAgentCenter({isVisible=true,titleChanged,automationChanged,records,openRecord,footerTarget,tasksTarget,openContext}:{isVisible?:boolean;titleChanged?:(title:string)=>void;automationChanged?:(active:boolean)=>void;records:RecordListItem[];openRecord:(id:string)=>void;footerTarget?:HTMLElement|null;tasksTarget?:HTMLElement|null;openContext?:()=>void}) {
   const [extensions,setExtensions]=useState<InstalledExtension[]>([]),[extensionRefresh,setExtensionRefresh]=useState(0),[extensionError,setExtensionError]=useState('');
   const [builtins,setBuiltins]=useState<BuiltinSkill[]>([]);
   const builtin=builtins.find(item=>item.id==='meeting-review');
   const [skillId,setSkillId]=useState('meeting-review'),[pluginIds,setPluginIds]=useState<string[]>([]),[includeNotes,setIncludeNotes]=useState(false);
   useEffect(()=>{let active=true;api<{extensions:InstalledExtension[];builtinSkills?:BuiltinSkill[]}>('/extensions').then(value=>{if(active){setExtensions(value.extensions);setBuiltins(value.builtinSkills||[]);setExtensionError('');}}).catch(()=>{if(active)setExtensionError('暂时无法读取扩展，请重试。');});return()=>{active=false;};},[extensionRefresh]);
   const [view,setView]=useState<View>(()=>{try{return sessionStorage.getItem('lingji:git-open-config')==='1'?'schedule':'skills';}catch{return 'skills';}}),[drawer,setDrawer]=useState<Drawer|null>(null);
-  useEffect(()=>{titleChanged?.(navigation.find(item=>item.id===view)?.label||'扩展与助手');},[view,titleChanged]);
-  useEffect(()=>automationChanged?.(view==='schedule'),[view,automationChanged]);
+  useEffect(()=>{if(isVisible)titleChanged?.(navigation.find(item=>item.id===view)?.label||'扩展与助手');},[view,titleChanged,isVisible]);
+  useEffect(()=>automationChanged?.(isVisible&&view==='schedule'),[view,automationChanged,isVisible]);
   const [tasks,setTasks]=useState<Task[]>([]),[loading,setLoading]=useState(true),[loadError,setLoadError]=useState(''),[detailError,setDetailError]=useState('');
   const [taskPage,setTaskPage]=useState(0);
   const [filter,setFilter]=useState('all'),[activeId,setActiveId]=useState(''),[refresh,setRefresh]=useState(0);
   const [selected,setSelected]=useState<string[]>([]),[draftSelected,setDraftSelected]=useState<string[]>([]),[prompt,setPrompt]=useState('');
   const [pending,setPendingState]=useState<Submission|null>(null),[confirmed,setConfirmed]=useState(false),[posting,setPosting]=useState(false),[submitError,setSubmitError]=useState(''),[cancelling,setCancelling]=useState('');
+  useEffect(()=>{if(!isVisible)setDrawer(null);},[isVisible]);
   const runTable=useRef<HTMLDivElement>(null);
   const pendingRef=useRef<Submission|null>(null),tasksRef=useRef<Task[]>([]),mounted=useRef(true),mutation=useRef<AbortController|null>(null),detailRequest=useRef<AbortController|null>(null);
   const chosen=records.filter(record=>selected.includes(record.id)),active=tasks.find(task=>task.id===(drawer?.kind==='task'?drawer.id:activeId));
@@ -130,6 +131,7 @@ export default function MeetingAgentCenter({titleChanged,automationChanged,recor
     setSelected(ids=>ids.filter(id=>records.some(record=>record.id===id&&record.capture!=='recording'&&record.segments>0)));
   },[records]);
   useEffect(()=>{
+    if(!isVisible)return;
     let stopped=false,timer:ReturnType<typeof setTimeout>,controller:AbortController|null=null,failures=0;
     async function poll() {
       if (document.visibilityState==='hidden') {timer=setTimeout(()=>void poll(),30000);return;}
@@ -152,7 +154,7 @@ export default function MeetingAgentCenter({titleChanged,automationChanged,recor
     }
     void poll();
     return()=>{stopped=true;clearTimeout(timer);controller?.abort();};
-  },[refresh,activeId]);
+  },[refresh,activeId,isVisible]);
   useEffect(()=>{const open=()=>setView('schedule');window.addEventListener('lingji:git-configure',open);return()=>window.removeEventListener('lingji:git-configure',open);},[]);
   function changeTaskPage(page:number){setTaskPage(page);const node=runTable.current,root=node?.closest<HTMLElement>('.workspace-scroll');if(node&&root)root.scrollTop+=node.getBoundingClientRect().top-root.getBoundingClientRect().top;node?.focus({preventScroll:true});}
   function navigate(next:View) { setView(next);setDrawer(null);setDetailError('');setFilter('all');setTaskPage(0); }
@@ -211,7 +213,7 @@ export default function MeetingAgentCenter({titleChanged,automationChanged,recor
       <div className="ma-run-summary">{[{name:'进行中',count:tasks.filter(working).length},{name:'等待处理',count:tasks.filter(task=>['blocked','failed'].includes(task.status)).length},{name:'已完成',count:tasks.filter(task=>task.status==='completed').length}].map(item=><div key={item.name}><span>{item.name}</span><strong>{loading?'—':item.count}</strong></div>)}</div>
       <div className="ma-toolbar"><h2>全部任务 <span>{loading?'':tasks.length}</span></h2><div className="ma-tools"><Select menuMinWidth={168} label="筛选任务状态" value={filter} onChange={value=>{setFilter(value);setTaskPage(0);}} options={[{value:'all',label:'全部状态'},{value:'active',label:'进行中'},{value:'attention',label:'等待处理'},{value:'completed',label:'已完成'}]}/><Button variant="ghost" aria-label="刷新任务" onClick={()=>setRefresh(value=>value+1)}><ArrowClockwise size={16}/></Button></div></div>
       {loadError&&<FeedbackNotice key={loadError} message={loadError} error action={{label:'重试',run:()=>setRefresh(value=>value+1)}}/>}
-      {loading?<div className="ma-empty" role="status">正在加载任务…</div>:!visible.length?<div className="ma-empty"><Stack size={30}/><h2>{tasks.length?'没有匹配的任务':loadError?'暂时无法读取任务':'还没有运行任务'}</h2><p>{loadError?'恢复连接后刷新列表。':'选择会议和整理目标，开始第一次复盘。'}</p>{!loadError&&<Button onClick={()=>navigate('assistant')}>新建任务<ArrowRight size={15}/></Button>}</div>:<div className="ma-run-table" ref={runTable} tabIndex={-1}><div className="ma-table-head"><span>任务</span><span>状态</span><span>会议范围</span><span>更新时间</span><span/></div>{visible.slice(currentPage*20,(currentPage+1)*20).map(task=><button type="button" className="ma-run-row" key={task.id} onClick={()=>void showTask(task.id)}><div><strong title={task.prompt}>{task.prompt}</strong><span>{task.skill.name||'会议复盘'} · {task.skill.version.slice(0,12)}{task.stale?' · 来源已更新':''}</span></div><span className={`ma-state ${task.status}`}>{labels[task.status]}</span><span>{task.sources.length} 场会议</span><time dateTime={task.updatedAt}>{when(task.updatedAt)}</time><CaretRight size={16}/></button>)}</div>}
+      {loading?<div className="ma-empty" role="status">正在加载任务…</div>:!visible.length?<div className="ma-empty"><Stack size={30}/><h2>{tasks.length?'没有匹配的任务':loadError?'暂时无法读取任务':'还没有运行任务'}</h2><p>{loadError?'恢复连接后刷新列表。':'选择会议和整理目标，开始第一次复盘。'}</p>{!loadError&&<Button onClick={()=>navigate('assistant')}>新建任务<ArrowRight size={15}/></Button>}</div>:<div className="ma-run-table" ref={runTable} tabIndex={-1}><div className="ma-table-head"><span>任务</span><span>状态</span><span>会议范围</span><span>更新时间</span><span/></div>{visible.slice(currentPage*20,(currentPage+1)*20).map(task=><button type="button" className="ma-run-row" key={task.id} onClick={()=>void showTask(task.id)}><div><strong title={task.prompt}>{task.prompt}</strong><span>{task.skill.name||'会议复盘'}{task.stale?' · 来源已更新':''}</span></div><span className={`ma-state ${task.status}`}>{labels[task.status]}</span><span>{task.sources.length} 场会议</span><time dateTime={task.updatedAt}>{when(task.updatedAt)}</time><CaretRight size={16}/></button>)}</div>}
     </>}
     {view==='runs'&&visible.length>20&&<nav className="history-pagination" aria-label="运行任务分页"><Button variant="ghost" disabled={currentPage===0} onClick={()=>changeTaskPage(currentPage-1)}>上一页</Button><span aria-live="polite">第 {currentPage+1} / {lastPage+1} 页</span><Button variant="ghost" disabled={currentPage===lastPage} onClick={()=>changeTaskPage(currentPage+1)}>下一页</Button></nav>}
     {view==='assistant'&&<div className="ma-assistant">
@@ -226,7 +228,7 @@ export default function MeetingAgentCenter({titleChanged,automationChanged,recor
       {submitError&&!drawer&&<FeedbackNotice key={submitError} message={submitError} error/>}
       {active&&<div className="ma-active-task"><div className="ma-result-heading"><h2>当前任务</h2><Button onClick={()=>{setSelected(active.sources.map(source=>source.recordId));setSkillId(active.skill.id);setIncludeNotes(Boolean(active.includeNotes));setPluginIds([]);setPrompt('');}}>沿用范围再提问</Button><Button variant="ghost" onClick={()=>void showTask(active.id)}>查看详情<CaretRight size={15}/></Button></div>{detailError&&<FeedbackNotice key={detailError} message={detailError} error/>}<TaskContent task={active} open={openRecord}/>{['queued','running','blocked'].includes(active.status)&&<div className="ma-task-actions"><Button disabled={Boolean(cancelling)} onClick={()=>void cancel(active)}><Stop size={14}/>{cancelling===active.id?'正在请求取消…':'取消任务'}</Button></div>}</div>}
     </div>}
-    {drawer&&<div className="ma-layer"><Modal title={drawerTitle} explicitCloseOnly={posting} onClose={()=>{if(!posting)setDrawer(null);}}>
+    {isVisible&&drawer&&<div className="ma-layer"><Modal title={drawerTitle} explicitCloseOnly={posting} onClose={()=>{if(!posting)setDrawer(null);}}>
       <div className="ma-drawer-content" tabIndex={0} aria-label="任务详情滚动区">
         {drawer.kind==='skill'&&<MarkdownPreview text={builtin?.instructions||'## 能力\n\n整理会议共识、决策与行动候选，保留来源引用。\n\n## 权限\n\n- 只读本次选择的会议文字\n- 使用已配置的纪要模型\n- 保存独立结果，不改写原纪要'}/>}
         {drawer.kind==='plugin'&&<><div className="ma-identity"><div className="ma-icon"><FileText size={24}/></div><div><strong>会议资料</strong><span>聆记内置 · 只读工具</span></div></div><section><h3>读取范围</h3><p>仅限当前账户在任务中选择的会议转录、纪要文字及来源引用。</p></section><section><h3>能力边界</h3><p>不读取原始音频，不访问其他会议，不修改纪要，不对外写入。</p></section></>}

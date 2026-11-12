@@ -18,17 +18,17 @@ type TranscriptSegmentsProps = {
   segments:Segment[];topicIndex:{first:Map<string,Topic>;members:Map<Topic,Set<string>>;starts:Set<string>};
   sourceLabels:Map<string,string>;translationTarget?:string;highlighted:string;concise:boolean;
   editing:Segment|null;text:string;speaker:string;busy:boolean;knownSpeakers:string[];resetKey:string;
-  setEditing:(value:Segment|null)=>void;setText:(value:string)=>void;setSpeaker:(value:string)=>void;setBusy:(value:boolean)=>void;
-  save:TranscriptProps['save'];onVoice:(segment:Segment)=>void;
+ setEditing:(value:Segment|null)=>void;setText:(value:string)=>void;setSpeaker:(value:string)=>void;cancel:()=>void;submit:()=>Promise<void>;
+  onVoice:(segment:Segment)=>void;
 };
-const TranscriptSegments=memo(function TranscriptSegments({segments,topicIndex,sourceLabels,translationTarget,highlighted,concise,editing,text,speaker,busy,knownSpeakers,resetKey,setEditing,setText,setSpeaker,setBusy,save,onVoice}:TranscriptSegmentsProps){
+const TranscriptSegments=memo(function TranscriptSegments({segments,topicIndex,sourceLabels,translationTarget,highlighted,concise,editing,text,speaker,busy,knownSpeakers,resetKey,setEditing,setText,setSpeaker,cancel,submit,onVoice}:TranscriptSegmentsProps){
   return <VirtualSegments className="segments" segments={segments} pinned={editing?.id} highlighted={highlighted} resetKey={resetKey}>{(segment)=>{
       const topic=topicIndex.first.get(`${segment.id}:${segment.revision}`);
       const startsTopic=topicIndex.starts.has(`${segment.id}:${segment.revision}`);
       return <article data-tone={topic ? topicTone(topic) : undefined} id={`segment-${segment.id}`} key={segment.id} className={`segment ${highlighted===segment.id ? 'highlighted' : ''}`}>
         {topic && startsTopic && <header className="transcript-topic"><h3>{topic.title}</h3><p>{topic.summary}</p></header>}
-        <div className="segment-meta"><button type="button" className="speaker-annotation-trigger" aria-label={`标注 ${segment.speaker||'说话人'}`} onClick={()=>onVoice(segment)}><span className="avatar">{segment.speaker.match(/\d+$/)?.[0] || (segment.speaker ? segment.speaker[0] : '?')}</span><b>{segment.speaker || '说话人待确认'}</b></button>{!segment.speaker && <span className="source-badge">{sourceLabels.get(segment.sourceId) || '导入转录'} · 尚无身份信息</span>}<time>{segment.sourceId==='text-import' ? '文本' : timecode(segment.startMs)}</time>{segment.languageDetection && <span className="muted" title="原音批次的模型识别语种；混语句仍完整翻译">{({zh:'中文',en:'English',ja:'日本語',ko:'한국어',yue:'粤语'} as Record<string,string>)[segment.languageDetection.language] || segment.languageDetection.language}</span>}{segment.overlappingSpeech&&<span className="muted">重叠发言 · 身份待确认</span>}{segment.edited && <span className="muted">{segment.correction?.revision===segment.revision ? '已校对' : '已编辑'}</span>}<Button variant="ghost" className="edit-segment" aria-label="编辑转录与说话人" onClick={()=>{setEditing(segment);setText(segment.text);setSpeaker(segment.speaker);}}><PencilSimple size={16}/></Button></div>
-        {editing?.id===segment.id ? <div className="segment-editor"><label>归属说话人<Select label="归属说话人" value={speaker} onChange={setSpeaker} options={[{value:'',label:'待确认'},...knownSpeakers.map(value=>({value,label:value}))]}/></label><label>说话人名称<input aria-label="说话人名称" value={speaker} onChange={e=>setSpeaker(e.target.value)} placeholder="例如：说话人 1" maxLength={80}/></label><label>转录内容<textarea value={text} onChange={e=>setText(e.target.value)} maxLength={8000}/></label><div className="actions"><Button disabled={busy || !text.trim()} variant="primary" onClick={async()=>{setBusy(true);try{if(await save(editing,text,speaker))setEditing(null);}finally{setBusy(false);}}}><Check size={16}/>保存</Button><Button onClick={()=>setEditing(null)}><X size={16}/>取消</Button><Button disabled={busy||editing.sourceId==='text-import'} onClick={()=>onVoice(editing)}>声纹库</Button></div></div> : <><p>{concise && !segment.edited ? cleanSpeechDisplay(segment.text) : segment.text}</p>{concise && !segment.edited && cleanSpeechDisplay(segment.text)!==segment.text && <details className="transcript-original"><summary>识别原文</summary><p>{segment.text}</p></details>}{segment.recognitionText && segment.recognitionText!==segment.text && <details className="transcript-original"><summary>识别原文</summary><p>{segment.recognitionText}</p></details>}{segment.translation && segment.translationLanguage===translationTarget && <p className="translation" lang={translationTarget}>{segment.translation}</p>}</>}
+        <div className="segment-meta"><button type="button" className="speaker-annotation-trigger" aria-label={`标注 ${segment.speaker||'说话人'}`} onClick={()=>onVoice(segment)}><span className="avatar">{segment.speaker.match(/\d+$/)?.[0] || (segment.speaker ? segment.speaker[0] : '?')}</span><b>{segment.speaker || '说话人待确认'}</b></button>{!segment.speaker && <span className="source-badge">{sourceLabels.get(segment.sourceId) || '导入转录'} · 尚无身份信息</span>}<time>{segment.sourceId==='text-import' ? '文本' : timecode(segment.startMs)}</time>{segment.languageDetection && <span className="muted" title="原音批次的模型识别语种；混语句仍完整翻译">{({zh:'中文',en:'English',ja:'日本語',ko:'한국어',yue:'粤语'} as Record<string,string>)[segment.languageDetection.language] || segment.languageDetection.language}</span>}{segment.overlappingSpeech&&<span className="muted">重叠发言 · 身份待确认</span>}{segment.edited && <span className="muted">{segment.correction?.revision===segment.revision ? '已校对' : '已编辑'}</span>}<Button variant="ghost" className="edit-segment" aria-label="编辑转录与说话人" onClick={()=>setEditing(segment)}><PencilSimple size={16}/></Button></div>
+        {editing?.id===segment.id ? <div className="segment-editor"><label>归属说话人<Select label="归属说话人" value={speaker} onChange={setSpeaker} options={[{value:'',label:'待确认'},...knownSpeakers.map(value=>({value,label:value}))]}/></label><label>说话人名称<input aria-label="说话人名称" value={speaker} onChange={e=>setSpeaker(e.target.value)} placeholder="例如：说话人 1" maxLength={80}/></label><label>转录内容<textarea value={text} onChange={e=>setText(e.target.value)} maxLength={8000}/></label><div className="actions"><Button disabled={busy || !text.trim()} variant="primary" onClick={submit}><Check size={16}/>保存</Button><Button onClick={cancel}><X size={16}/>取消</Button><Button disabled={busy||editing.sourceId==='text-import'} onClick={()=>onVoice(editing)}>声纹库</Button></div></div> : <><p>{concise && !segment.edited ? cleanSpeechDisplay(segment.text) : segment.text}</p>{concise && !segment.edited && cleanSpeechDisplay(segment.text)!==segment.text && <details className="transcript-original"><summary>识别原文</summary><p>{segment.text}</p></details>}{segment.recognitionText && segment.recognitionText!==segment.text && <details className="transcript-original"><summary>识别原文</summary><p>{segment.recognitionText}</p></details>}{segment.translation && segment.translationLanguage===translationTarget && <p className="translation" lang={translationTarget}>{segment.translation}</p>}</>}
       </article>;}}</VirtualSegments>;
 });
 
@@ -49,6 +49,37 @@ export const Transcript = memo(function Transcript({ record, highlighted, save, 
   const [concise, setConcise] = useState(true);
   const [text, setText] = useState(''), [speaker, setSpeaker] = useState(''), [busy, setBusy] = useState(false);
   const [voiceSegment,setVoiceSegment]=useState<Segment|null>(null);
+ const panelPosition=useRef<{x:number;y:number}|null>(null);
+ const drafts=useRef(new Map<string,{segment:Segment;text:string;speaker:string}>());
+ const currentDraft=useRef({editing,text,speaker});currentDraft.current={editing,text,speaker};
+ const beginEditing=(segment:Segment|null)=>{
+  const current=currentDraft.current;
+  if(current.editing)drafts.current.set(current.editing.id,{segment:current.editing,text:current.text,speaker:current.speaker});
+  const draft=segment&&drafts.current.get(segment.id);
+  setEditing(draft?.segment||segment);setText(draft?.text??segment?.text??'');setSpeaker(draft?.speaker??segment?.speaker??'');
+ };
+ const cancel=()=>{if(editing)drafts.current.delete(editing.id);setEditing(null);};
+ const submit=async()=>{
+  if(!editing||busy)return;
+  const submitted={editing,text,speaker};setBusy(true);
+  try{
+   if(await save(editing,text,speaker)){
+    const current=currentDraft.current;
+    const saved=drafts.current.get(editing.id);
+    const updated={...editing,revision:editing.revision+1,text:text.trim(),speaker};
+    if(saved){
+     if(saved.text===text&&saved.speaker===speaker)drafts.current.delete(editing.id);
+     else drafts.current.set(editing.id,{...saved,segment:updated});
+    }
+    if(current.editing?.id===editing.id){
+     if(current.text===submitted.text&&current.speaker===submitted.speaker){drafts.current.delete(editing.id);setEditing(null);}
+     else setEditing(updated);
+    }
+   }
+  }finally{setBusy(false);}
+ };
+ useEffect(()=>{drafts.current.clear();setEditing(null);},[record.id]);
+
   useEffect(()=>setVoiceSegment(null),[record.id]);
   const previews = record.sources.filter(source=>source.asr?.preview?.text);
   const follow = useTranscriptFollow(`${record.transcriptRevision}:${previews.map(source=>source.asr!.preview!.text).join('|')}`, Boolean(!visible || query || editing));
@@ -81,11 +112,11 @@ export const Transcript = memo(function Transcript({ record, highlighted, save, 
     {record.sources.some(source=>source.asr?.identityWarning==='local_diarization_unavailable')&&<p className="speaker-help" role="status">说话人识别暂时不可用，正文会继续更新，可手动指定发言人。</p>}
       {record.sources.some(source=>source.asr?.previewError)&&<p className="speaker-help" role="status">实时草稿暂时不可用，音频已保留。正文会按识别结果更新。</p>}
     {!segments.length && <Empty icon={<TextAlignLeft size={32}/>} title={query ? '没有匹配片段' : record.capture==='recording' ? '正在聆听' : '对话，留在这里'}>开始录音或导入文件，文字会在这里出现。</Empty>}
-    <TranscriptSegments segments={segments} resetKey={query} topicIndex={topicIndex} sourceLabels={sourceLabels} translationTarget={record.translationTarget} highlighted={highlighted} concise={concise} editing={editing} text={text} speaker={speaker} busy={busy} knownSpeakers={knownSpeakers} setEditing={setEditing} setText={setText} setSpeaker={setSpeaker} setBusy={setBusy} save={save} onVoice={setVoiceSegment}/>
+    <TranscriptSegments segments={segments} resetKey={query} topicIndex={topicIndex} sourceLabels={sourceLabels} translationTarget={record.translationTarget} highlighted={highlighted} concise={concise} editing={editing} text={text} speaker={speaker} busy={busy} knownSpeakers={knownSpeakers} setEditing={beginEditing} setText={setText} setSpeaker={setSpeaker} cancel={cancel} submit={submit} onVoice={setVoiceSegment}/>
 
     {previews.map(source=><section className="live-transcript" key={source.id} aria-label="实时转录草稿"><div className="live-transcript-heading"><span className="live-dot"/><b>实时转录</b><span>说话人确认中</span></div><p role="status" aria-live="polite" aria-atomic="true">{source.asr!.preview!.text}</p><small>草稿随识别修正，确认后归入逐字记录。</small></section>)}
     {(segments.length>0 || previews.length>0) && <div ref={follow.end} className="transcript-end"/>}
     <ContentFollowAction anchor={follow.root} visible={visible&&!follow.following&&!query&&!editing} resume={follow.resume} label="回到最新转录"/>
-  </section>{voiceSegment&&<SpeakerPanel key={`${record.id}:${voiceSegment.id}`} record={record} segment={record.segments.find(segment=>segment.id===voiceSegment.id)||voiceSegment} changed={changed} close={()=>setVoiceSegment(null)}/>}</div>;
+  </section>{visible&&voiceSegment&&<SpeakerPanel position={panelPosition} key={`${record.id}:${voiceSegment.id}`} record={record} segment={record.segments.find(segment=>segment.id===voiceSegment.id)||voiceSegment} changed={changed} close={()=>setVoiceSegment(null)}/>}</div>;
 },(previous,next)=>previous.visible===next.visible && previous.highlighted===next.highlighted && previous.save===next.save && previous.changed===next.changed &&
   (['id','segments','sources','speakers','capture','transcriptRevision','liveMinutes','minutes','translationTarget'] as const).every(key=>previous.record[key]===next.record[key]));

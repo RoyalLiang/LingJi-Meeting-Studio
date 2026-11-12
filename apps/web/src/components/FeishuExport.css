@@ -88,3 +88,12 @@
 .automation-history time{font-size:12px;color:var(--ink-3)}
 .automation-history-error{margin:0;color:var(--down);font-size:12px;line-height:1.6;overflow-wrap:anywhere}
 @media(max-width:600px){.automation-history{padding:16px}.automation-history-main{gap:8px;flex-wrap:wrap}.automation-history-main strong{flex-basis:calc(100% - 100px)}}
+
+.automation-context-tasks .automation-history{padding:0;margin:0;background:transparent}
+.automation-context-tasks .automation-history-list>article{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 8px;padding:10px 12px;margin:0 0 6px;border:0;border-radius:10px;background:var(--bg);min-height:56px}
+.automation-context-tasks .automation-history-main{display:contents}
+.automation-context-tasks .automation-history-main strong{min-width:0;font-size:12px;line-height:1.5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.automation-context-tasks .automation-history .automation-history-state{margin:0;justify-self:end;font-size:10px}
+.automation-context-tasks .automation-history time{grid-column:1;grid-row:2;margin:0;font-size:10px}
+.automation-context-tasks .automation-history-main a{grid-column:2;grid-row:2;font-size:11px}
+.automation-context-tasks .automation-history-error{grid-column:1 / -1;max-height:3em;overflow:hidden;margin:3px 0 0;font-size:11px}

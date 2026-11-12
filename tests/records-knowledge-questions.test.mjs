@@ -7,7 +7,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {createModels} from '@earendil-works/pi-ai/models';
 import {fauxProvider,fauxAssistantMessage,fauxToolCall} from '@earendil-works/pi-ai/providers/faux';
 import {createRepository} from '../services/records/src/repository.mjs';
-import {createRecord} from '../packages/records/src/record.mjs';
+import {createRecord,editSegment} from '../packages/records/src/record.mjs';
 import {createMeetingAgentRuntime} from '../services/records/src/meeting-agent.mjs';
 import {questionKeywords,knowledgeSnapshot} from '../services/records/src/knowledge-questions.mjs';
 function sealed(index,owner='owner'){
@@ -84,4 +84,18 @@ test('an older exact project match outranks hundreds of newer generic matches be
  assert.ok(questionKeywords('Zipformer由谁负责？').includes('zipformer'));
  const found=await repo.retrieveKnowledge('owner','all','Zipformer由谁负责？');
  assert.equal(found.coverage.indexedMeetings,100);assert.ok(found.entries.some(entry=>entry.recordId===target.id&&entry.text.includes('Zipformer')));assert.equal(found.entries[0].recordId,target.id);
+});
+
+
+test('knowledge questions execute against original reviewed content after speaker-only renaming',async t=>{
+ const f=await fixture(t),record=sealed(99);record.minutes.evidenceSnapshot=structuredClone(record.segments);await f.repo.insert(record);
+ const knowledge=await f.repo.retrieveKnowledge('owner','all','Zipformer 上线由谁负责？');
+ await f.repo.change(record.id,current=>editSegment(current,'s-99',{revision:1,text:current.segments[0].text,speaker:'主持人'}));
+ const updated=await f.repo.get(record.id),snapshot=knowledgeSnapshot(updated,knowledge);
+ assert.equal(snapshot.minutesRevision,1);assert.equal(snapshot.transcriptRevision,1);assert.equal(snapshot.segments[0].revision,1);
+ const evidence=[{recordId:record.id,segmentId:'s-99',revision:1}];
+ const runtime=await f.open(models({summary:'依据如下。',answers:[{text:'由小陈负责。',evidence}],insufficientEvidence:false,decisions:[],actions:[]},record));
+ const task=await runtime.requestKnowledge('owner',{question:knowledge.question,requestId:'renamed-knowledge'},knowledge),done=await settled(runtime,task.id);
+ assert.equal(done.status,'completed',JSON.stringify(done));assert.deepEqual(done.result.answers[0].evidence,evidence);
+ assert.throws(()=>knowledgeSnapshot({...updated,minutes:{...updated.minutes,revision:3,attributionBaseRevision:undefined},minutesRevision:3},knowledge),/agent_knowledge_changed/);
 });

@@ -1,5 +1,5 @@
 import {randomUUID} from 'node:crypto';
-import {emit,editSegment,publicRecord,requireThat} from '../../../packages/records/src/record.mjs';
+import {emit,editSegments,publicRecord,requireThat} from '../../../packages/records/src/record.mjs';
 import {voiceprints,voiceprintEntryId} from './voiceprints.mjs';
 
 const uuid=/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
@@ -37,7 +37,8 @@ export function voiceLearning(repo,{library=voiceprints(repo)}={}){
       requireThat(record.owner===owner&&!record.deleted&&Date.parse(record.deleteAt)>Date.now(),'record_not_found',404);
       const selected=record.segments.find(segment=>segment.id===input.segmentId);requireThat(selected?.revision===input.revision,'segment_revision_conflict',409);
       const key=cluster(selected),targets=record.segments.filter(segment=>segment.id===selected.id||key&&cluster(segment)===key&&!segment.speakerConfirmed&&!segment.edited);
-      for(const segment of targets){editSegment(record,segment.id,{revision:segment.revision,text:segment.text,speaker:label});segment.personId=id;segment.speakerConfirmed=true;delete segment.speakerMatch;}
+      editSegments(record,targets.map(segment=>({id:segment.id,revision:segment.revision,text:segment.text,speaker:label})));
+      for(const segment of targets){segment.personId=id;segment.speakerConfirmed=true;delete segment.speakerMatch;}
       let removed=false;
       for(const bank of rows.filter(row=>row.kind==='voiceprints')){const count=bank.entries.length;bank.entries=bank.entries.filter(entry=>!targets.some(segment=>entry.source?.recordId===recordId&&entry.source.segmentId===segment.id||entry.origin?.recordId===recordId&&entry.origin.segmentId===segment.id)||(entry.personId||voiceprintEntryId(bank,entry))===id);if(count!==bank.entries.length){bank.revision=(bank.revision||0)+1;removed=true;}}
       const global=rows.find(row=>row.kind==='voiceprints'&&row.scope==='all');if(removed&&global)global.revision=(global.revision||0)+1;

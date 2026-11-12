@@ -21,7 +21,7 @@ export function knowledgeCandidates(record) {
     if (seen.has(key)) return false;
     seen.add(key); return true;
   }).map(item => ({
-    id: digest(JSON.stringify([record.id, record.generation, record.minutesRevision, item.kind, normalizedKnowledgeText(item.text)])),
+    id: digest(JSON.stringify([record.id, record.generation, minutes.attributionBaseRevision ?? record.minutesRevision, item.kind, normalizedKnowledgeText(item.text)])),
     kind: item.kind, text: item.text.trim(), owner: item.owner || '', due: item.due || '',
     topic: minutes.topics?.find(topic => topic.id === item.topicId)?.title || '',
     evidence: item.evidence.map(({ segmentId, revision }) => ({ segmentId, revision })),

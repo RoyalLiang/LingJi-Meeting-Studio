@@ -1,3 +1,4 @@
+import {createPortal} from 'react-dom';
 import {useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {Check,PencilSimple,Plus,Trash,Waveform,X} from '@phosphor-icons/react';
 import {api,messageOf} from '../api';
@@ -8,11 +9,22 @@ import './SpeakerPanel.css';
 
 type Person={id:string;name:string;samples:number;entries:{id:string}[]};
 type Bank={available:boolean;people:Person[];jobs:{id:string;personId:string;status:string}[]};
-export function SpeakerPanel({record,segment,changed,close}:{record:RecordDetail;segment:Segment;changed?:()=>void;close:()=>void}){
+export function SpeakerPanel({record,segment,changed,close,position}:{record:RecordDetail;segment:Segment;changed?:()=>void;close:()=>void;position:{current:{x:number;y:number}|null}}){
   const [bank,setBank]=useState<Bank|null>(null),[name,setName]=useState(segment.speaker||''),[personId,setPersonId]=useState(segment.personId||''),[query,setQuery]=useState(''),[consent,setConsent]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[deleting,setDeleting]=useState(''),[renaming,setRenaming]=useState(''),[profileName,setProfileName]=useState('');
   const panel=useRef<HTMLElement>(null),input=useRef<HTMLInputElement>(null),alive=useRef(true),newPerson=useRef(crypto.randomUUID()),sample=useRef(segment),learnId=useRef(crypto.randomUUID());
-  useLayoutEffect(()=>{const measure=()=>{if(panel.current)panel.current.style.setProperty('--speaker-panel-top',`${Math.max(12,panel.current.getBoundingClientRect().top)}px`);};measure();window.addEventListener('resize',measure);document.addEventListener('scroll',measure,true);return()=>{window.removeEventListener('resize',measure);document.removeEventListener('scroll',measure,true);};},[]);
-  useEffect(()=>{
+  const [location,setLocation]=useState(position.current);
+ const drag=useRef<{x:number;y:number;left:number;top:number}|null>(null);
+ const move=(x:number,y:number)=>{
+  const bounds=panel.current?.getBoundingClientRect();if(!bounds)return;
+  const next={x:Math.max(12,Math.min(x,window.innerWidth-bounds.width-12)),y:Math.max(12,Math.min(y,window.innerHeight-bounds.height-12))};
+  position.current=next;setLocation(current=>current?.x===next.x&&current.y===next.y?current:next);
+ };
+ useLayoutEffect(()=>{
+  const clamp=()=>move(position.current?.x??window.innerWidth-384,position.current?.y??96);
+  clamp();const observer=new ResizeObserver(clamp);if(panel.current)observer.observe(panel.current);
+  window.addEventListener('resize',clamp);return()=>{observer.disconnect();window.removeEventListener('resize',clamp);};
+ },[]);
+ useEffect(()=>{
     const previous=document.activeElement as HTMLElement|null;alive.current=true;input.current?.focus({preventScroll:true});const controller=new AbortController();
     const load=()=>api<Bank>('/voiceprints/people','GET',undefined,controller.signal).then(value=>{if(alive.current){setBank(value);if(value.jobs.find(job=>job.id===learnId.current)?.status==='ready')setNotice('声音已更新，将用于后续会议识别。');}}).catch(error=>{if(!controller.signal.aborted)setError(messageOf(error));});
     void load();const timer=setInterval(()=>{void load();},4000);
@@ -38,8 +50,14 @@ export function SpeakerPanel({record,segment,changed,close}:{record:RecordDetail
   const validClip=segment.sourceId!=='text-import'&&!segment.overlappingSpeech&&segment.endMs-segment.startMs>=2000&&segment.endMs-segment.startMs<=30000;
   const clip=`/api/workspaces/all/voiceprints/clip?${new URLSearchParams({recordId:record.id,segmentId:sample.current.id,revision:String(sample.current.revision)})}`;
   const people=(bank?.people||[]).filter(person=>person.name.toLowerCase().includes(query.toLowerCase()));
-  return <aside ref={panel} className="speaker-panel" aria-label="说话人标注" onKeyDown={event=>{if(event.key==='Escape'){event.stopPropagation();close();}}}>
-    <header><h3><Waveform size={20}/>说话人</h3><Button variant="ghost" aria-label="关闭说话人标注" onClick={close}><X size={18}/></Button></header>
+  return createPortal(<aside ref={panel} style={location?{left:location.x,top:location.y}:undefined} className="speaker-panel" aria-label="说话人标注" onKeyDown={event=>{if(event.key==='Escape'){event.stopPropagation();close();}}}>
+    <header tabIndex={0} aria-label="移动说话人标注窗口" onPointerDown={event=>{
+  if(event.target instanceof Element&&event.target.closest('button'))return;
+  const bounds=panel.current!.getBoundingClientRect();drag.current={x:event.clientX,y:event.clientY,left:bounds.left,top:bounds.top};event.currentTarget.setPointerCapture(event.pointerId);event.preventDefault();event.currentTarget.focus({preventScroll:true});
+ }} onPointerMove={event=>{if(drag.current)move(drag.current.left+event.clientX-drag.current.x,drag.current.top+event.clientY-drag.current.y);}} onPointerUp={()=>{drag.current=null;}} onPointerCancel={()=>{drag.current=null;}} onKeyDown={event=>{
+  const delta=event.shiftKey?40:10;const offsets:Record<string,[number,number]>={ArrowLeft:[-delta,0],ArrowRight:[delta,0],ArrowUp:[0,-delta],ArrowDown:[0,delta]};const offset=offsets[event.key];
+  if(event.target===event.currentTarget&&offset&&position.current){event.preventDefault();move(position.current.x+offset[0],position.current.y+offset[1]);}
+ }}><h3><Waveform size={20}/>说话人</h3><Button variant="ghost" aria-label="关闭说话人标注" onClick={close}><X size={18}/></Button></header>
     <div className="speaker-panel-body"><fieldset className="speaker-panel-form" disabled={busy}>
       <blockquote>{segment.text}</blockquote>
       {validClip&&<audio controls preload="none" src={clip} aria-label="试听当前发言"/>}
@@ -57,5 +75,5 @@ export function SpeakerPanel({record,segment,changed,close}:{record:RecordDetail
       {!bank?.available&&bank&&<p className="speaker-learning-state">本地声音模型未就绪，称谓仍可保存。</p>}
     </fieldset></div>
     <footer><label className="speaker-consent"><input type="checkbox" checked={consent} disabled={busy||!bank?.available||segment.sourceId==='text-import'} onChange={event=>{setConsent(event.target.checked);learnId.current=crypto.randomUUID();}}/>已获同意，保存声音用于后续会议识别</label>{error&&<FeedbackNotice key={error} message={error} error persistent inline/>}{notice&&<p role="status" className="speaker-learning-state">{notice}</p>}<Button variant="primary" disabled={busy||!name.trim()} onClick={()=>{void save();}}><Check size={16}/>{busy?'保存中…':'保存称谓'}</Button></footer>
-  </aside>;
+  </aside>,document.body);
 }

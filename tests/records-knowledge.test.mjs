@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRepository } from '../services/records/src/repository.mjs';
-import { createRecord } from '../packages/records/src/record.mjs';
+import { createRecord, editSegment } from '../packages/records/src/record.mjs';
 import { knowledgeCandidates } from '../packages/records/src/knowledge.mjs';
 
 function sealed(owner = 'owner', title = '发布会议') {
@@ -101,4 +101,22 @@ test('manual prose keeps knowledge categories and never revives withdrawn facts'
  const manual=manualMinutesContent(record.minutes);validateMinutes(manual,record.segments);assert.deepEqual(manualMinutesContent(manual),manual);
  record.minutes={...manual,revision:2,transcriptRevision:1,evidenceSnapshot:record.segments};record.minutesRevision=2;
  assert.deepEqual(knowledgeCandidates(record).map(entry=>entry.kind).sort(),['action','decision','risk','term']);
+});
+
+
+test('speaker-only minute versions preserve confirmed and dismissed knowledge decisions',async t=>{
+ const repo=await repository(t),record=sealed();record.minutes.evidenceSnapshot=structuredClone(record.segments);await repo.insert(record);
+ const original=(await repo.listKnowledge('owner','all')).entries;
+ const decision=original.find(entry=>entry.kind==='decision'),risk=original.find(entry=>entry.kind==='risk');
+ await repo.reviewKnowledge('owner','all',decision.id,{status:'confirmed',revision:0});
+ await repo.reviewKnowledge('owner','all',risk.id,{status:'dismissed',revision:0});
+ await repo.change(record.id,current=>editSegment(current,'segment',{revision:1,text:current.segments[0].text,speaker:'主持人'}));
+ assert.equal((await repo.listKnowledge('owner','all',{status:'confirmed'})).entries[0]?.id,decision.id);
+ assert.equal((await repo.listKnowledge('owner','all',{status:'dismissed'})).entries[0]?.id,risk.id);
+ const updated=await repo.get(record.id);assert.equal(updated.minutes.revision,2);assert.equal(updated.minutesHistory[0].revision,1);
+ for(let i=0;i<12;i++)await repo.change(record.id,current=>editSegment(current,'segment',{revision:current.segments[0].revision,text:current.segments[0].text,speaker:'主持人'+i}));
+ const renamed=await repo.get(record.id);assert.equal(renamed.minutesHistory.length,10);assert.equal(renamed.minutesHistory[0].revision,1);
+ assert.equal((await repo.listKnowledge('owner','all',{status:'confirmed'})).entries[0]?.id,decision.id);
+ await repo.change(record.id,current=>{current.minutesRevision++;current.minutes={...current.minutes,revision:current.minutesRevision};delete current.minutes.attributionBaseRevision;});
+ assert.equal((await repo.listKnowledge('owner','all',{status:'confirmed'})).total,0,'a new content version still requires review');
 });

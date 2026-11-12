@@ -1,3 +1,5 @@
+/* WebKit must not paint a native bezel over custom control geometry. */
+button,input[type=button],input[type=submit],input[type=reset]{appearance:none;-webkit-appearance:none}
 /* finesse · register=product · A=sage-jade · B=humanist-system · C=floating-workbench · D=feedback-only · E=frosted-glass · SOUL=6 SPECTACLE=2 DENSITY=5 */
 :root {
   color-scheme: light;

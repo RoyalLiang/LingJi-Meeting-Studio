@@ -510,3 +510,63 @@ test('claim uses the newly authorized audio mode even when listWork returned an 
  let calls=0;await runCycle(repo,{minutes:async(job,config)=>{calls++;assert.equal(job.modelVersion,'openai-realtime:audio-fixture');assert.equal(config.MINUTES_MODE,'openai-realtime');return result;}},{lane:'minutes'});assert.equal(calls,1);
  }finally{await repo.close();await rm(root,{recursive:true,force:true});}
 });
+
+
+test('speaker attribution advances current citations without changing minute text, historical snapshots or translations',()=>{
+ const r=record();r.capture='completed';setAutomation(r,{enabled:true});
+ const ref={segmentId:'s1',revision:1};
+ r.segments[0].translation='Confirmed on Friday';r.segments[0].translationLanguage='en';
+ r.minutesRevision=1;r.minutes={revision:1,transcriptRevision:1,notesRevision:r.notesRevision,sections:[{heading:'确认',items:[{text:'人工保留的结论',evidence:[{...ref}]}]}],evidenceSnapshot:[{...r.segments[0]}]};
+ const fixed=structuredClone(r.minutes);
+ editSegment(r,'s1',{revision:1,text:r.segments[0].text,speaker:'主持人'});
+ assert.equal(r.transcriptRevision,2);assert.equal(r.segments[0].revision,2);
+ assert.equal(r.minutes.sections[0].items[0].text,'人工保留的结论');
+ assert.equal(r.minutes.sections[0].items[0].evidence[0].revision,2);
+ assert.equal(r.minutes.evidenceSnapshot[0].speaker,'主持人');
+ assert.deepEqual(r.minutesHistory.find(minutes=>minutes.revision===1),fixed);
+ assert.equal(r.minutes.revision,2);assert.equal(r.minutesRevision,2);
+ assert.equal(r.segments[0].translation,'Confirmed on Friday');
+ assert.equal(automaticMinutesAt(r),Infinity);
+ editSegment(r,'s1',{revision:2,text:'改为周六评审',speaker:'主持人'});
+ assert.equal(r.minutes.transcriptRevision,2);assert.equal(r.segments[0].translation,undefined);
+ assert.ok(Number.isFinite(automaticMinutesAt(r)));
+});
+
+test('renaming does not promote already stale minutes or hide new note work',()=>{
+ const r=record();r.capture='completed';setAutomation(r,{enabled:true});
+ r.minutes={transcriptRevision:0,notesRevision:r.notesRevision};
+ editSegment(r,'s1',{revision:1,text:r.segments[0].text,speaker:'主持人'});
+ assert.equal(r.minutes.transcriptRevision,0);assert.ok(Number.isFinite(automaticMinutesAt(r)));
+ r.minutes.transcriptRevision=r.transcriptRevision;r.notesRevision++;
+ assert.ok(Number.isFinite(automaticMinutesAt(r)));
+});
+
+
+test('segment edit keeps the route identity when body supplies a different segment ID',()=>{
+ const r=record();r.segments.push({...segment,id:'s2'});
+ editSegment(r,'s1',{id:'s2',revision:1,text:'由路径指定的片段'});
+ assert.equal(r.segments[0].text,'由路径指定的片段');
+ assert.equal(r.segments[1].text,segment.text);assert.equal(r.segments[1].revision,1);
+});
+
+test('renaming clears an in-flight translation lease while preserving any completed translation',()=>{
+ const r=record();Object.assign(r.segments[0],{translationLease:Date.now()+150000,translationFence:'old',translationAttempts:1,translationRetryAt:Date.now()+150000});
+ editSegment(r,'s1',{revision:1,text:r.segments[0].text,speaker:'主持人'});
+ assert.equal(r.segments[0].translationLease,undefined);assert.equal(r.segments[0].translationFence,undefined);assert.equal(r.segments[0].translationRetryAt,undefined);
+});
+
+test('renaming completed generated minutes keeps old citation versions and note provenance',()=>{
+ const r=record();r.capture='completed';r.notes='评审手记';r.notesRevision=1;setAutomation(r,{enabled:true});
+ const job=requestMinutes(r,{modelVersion:'fixture'});job.status='running';job.fence='fixture';
+ commitMinutes(r,job.id,structuredClone(result),'fixture');
+ assert.equal(r.minutes.notesRevision,1);
+ const fixed=structuredClone(r.minutes);delete r.minutes.notesRevision; // Existing releases omitted this field on final minutes.
+ editSegment(r,'s1',{revision:1,text:r.segments[0].text,speaker:'主持人'});
+ const old=r.minutesHistory.find(minutes=>minutes.revision===fixed.revision);
+ assert.equal(old.transcriptRevision,fixed.transcriptRevision);assert.deepEqual(old.evidenceSnapshot,fixed.evidenceSnapshot);
+ assert.equal(r.minutes.notesRevision,1);assert.equal(automaticMinutesAt(r),Infinity);
+ assert.equal(r.jobs.length,1);assert.equal(r.minutes.revision,fixed.revision+1);
+ const regenerated=requestMinutes(r,{modelVersion:'fixture',retry:true});regenerated.status='running';regenerated.fence='new';
+ commitMinutes(r,regenerated.id,{title:'新结论',attributionBaseRevision:1,sections:[{heading:'结论',items:[{text:'重新整理',evidence:[{segmentId:'s1',revision:2}]}]}],actions:[]},'new');
+ assert.equal(r.minutes.attributionBaseRevision,undefined,'generated content cannot inherit speaker-only knowledge identity');
+});

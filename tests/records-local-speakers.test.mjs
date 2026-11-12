@@ -334,3 +334,21 @@ test('correcting a short authorizing turn also revokes its learned substitute cl
  await service.annotate('owner',record.id,{segmentId:segment.id,revision:short.revision,requestId:randomUUID(),name:'陈老师'});
  assert.equal((await library.list('owner','all')).entries.length,0);assert.equal((await repo.get(record.id)).segments.find(s=>s.id===longId).speaker,'林工');
 }));
+
+test('saving a speaker name keeps completed minutes current and does not restart meeting wrap-up',()=>fixture(async({repo,record,segment})=>{
+  const {automaticMinutesAt}=await import('../packages/records/src/automation.mjs');
+  await repo.change(record.id,r=>{
+    r.capture='completed';r.transcription='ready';r.autoMinutes={enabled:true,intervalSeconds:90,enabledAt:Date.now()-100000,lastRequestedAt:Date.now()-100000};
+    const evidence=[{segmentId:segment.id,revision:segment.revision}];
+    r.minutesRevision=1;r.minutes={revision:1,transcriptRevision:r.transcriptRevision,notesRevision:r.notesRevision,sections:[{heading:'已确认纪要',items:[{text:'保留已整理的内容',evidence}]}],evidenceSnapshot:[{...r.segments[0]}]};
+    r.jobs=[{id:randomUUID(),status:'completed',scope:'final',mode:'model',transcriptRevision:r.transcriptRevision,notesRevision:r.notesRevision,createdAt:new Date().toISOString()}];
+  });
+  assert.equal(automaticMinutesAt(await repo.get(record.id)),Infinity);
+  const service=voiceLearning(repo,{library:voiceprints(repo,{infer:async()=>assert.fail('renaming must not infer voices')})});
+  await service.annotate('owner',record.id,{segmentId:segment.id,revision:segment.revision,requestId:randomUUID(),name:'林工'});
+  const current=await repo.get(record.id);
+  assert.equal(automaticMinutesAt(current),Infinity,'a name change must not schedule the same meeting again');
+  assert.equal(current.minutes.transcriptRevision,current.transcriptRevision);
+  assert.equal(current.minutes.sections[0].items[0].text,'保留已整理的内容');
+  assert.equal(current.minutes.evidenceSnapshot[0].speaker,'林工');
+}));
