@@ -1,18 +1,20 @@
+import {nativeThemeSync} from '../apps/web/src/native-theme.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { stripTypeScriptTypes } from 'node:module';
 import vm from 'node:vm';
 
-async function harness() {
+async function harness(pending=async()=>7) {
   const code = stripTypeScriptTypes(await readFile(new URL('../apps/web/src/useNativeMenuBar.ts', import.meta.url), 'utf8')).replace(/^import .*$/gm, '').replace(/export /g, '');
   const refs = [], calls = [], actions = [], timers = [];
-  let handler, cleanup, removed = false;
+  let handler, removed=false, refCursor=0, effectCursor=0;const effects=[];
   const sandbox = { exports: {},
-    useRef: current => { const ref = { current }; refs.push(ref); return ref; },
-    useEffect: effect => { cleanup = effect(); },
+    useRef: current => { const index=refCursor++;return refs[index] ||= {current}; },
+    useEffect:(effect,deps)=>{const index=effectCursor++,prior=effects[index];if(prior&&deps&&deps.length===prior.deps?.length&&deps.every((v,i)=>Object.is(v,prior.deps[i])))return;prior?.cleanup?.();effects[index]={deps,cleanup:effect()};},
+    nativeThemeSync,
     isTauri: () => true,
-    pendingCount: async () => 7,
+    pendingCount: pending,
     invoke: async (command, input) => calls.push({ command, input: structuredClone(input) }),
     listen: async (_name, listener) => { handler = listener; return () => { removed = true; }; },
     window: { setInterval: callback => { timers.push(callback); return 1; } }, clearInterval() {}
@@ -20,9 +22,9 @@ async function harness() {
   vm.runInNewContext(code + '\nexports.useNativeMenuBar=useNativeMenuBar;', sandbox);
   const state = { authenticated: true, recordTitle: '会议', capture: 'recording', recording: true, busy: false, connection: 'connected' };
   const callbacks = Object.fromEntries(['pause', 'resume', 'finish', 'settings', 'microphone'].map(name => [name, () => actions.push(name)]));
-  sandbox.exports.useNativeMenuBar(state, callbacks);
+  const render=next=>{refCursor=effectCursor=0;sandbox.exports.useNativeMenuBar(next,callbacks);};render(state);
   await new Promise(resolve => setImmediate(resolve));
-  return { calls, actions, refs, state, callbacks, timers, event: payload => handler({ payload }), cleanup: () => cleanup(), removed: () => removed };
+  return { calls, actions, refs, state, callbacks, timers, render, event: payload => handler({ payload }), cleanup: () => effects.forEach(e=>e.cleanup?.()), removed: () => removed };
 }
 
 test('native menu reports account-wide queue count and uses current callbacks', async () => {
@@ -59,7 +61,7 @@ test('native updater menu listener shares dropdown preferences and rechecks the 
   const activity = { authenticated: true, recording: false, paused: false, busy: false };
   let status = { phase: 'idle', currentVersion: '1.0.0', downloaded: 0 };
   const sandbox = { ...engineModule, exports: {}, isTauri: () => true,
-    useRef: current => { const ref = { current }; refs.push(ref); return ref; },
+    useRef: current => { const ref={current};refs.push(ref);return ref; },
     useState: value => [typeof value === 'function' ? value() : value, () => {}],
     useEffect: effect => { cleanups.push(effect()); },
     invoke: async (command, input) => { calls.push({ command, input: structuredClone(input) }); if (command === 'update_check' && status.phase !== 'ready') status = { ...status, phase: 'available' }; if (command === 'update_download') status = { ...status, phase: 'ready' }; return status; },
@@ -99,19 +101,13 @@ test('widget microphone action uses the current recording guard and shared micro
  assert.deepEqual(h.actions,['microphone']);h.cleanup();
 });
 
-test('native window appearance follows theme changes without resetting each heartbeat', async () => {
-  const h = await harness();
-  h.refs[0].current = { state: { ...h.state, theme: 'light' }, actions: h.callbacks };
-  h.timers[0]();
-  await new Promise(resolve => setImmediate(resolve));
-  assert.equal(h.calls.at(-1).input.theme, 'light');
-  assert.equal('theme' in h.calls.at(-1).input.report, false);
-  h.timers[0]();
-  await new Promise(resolve => setImmediate(resolve));
-  assert.equal('theme' in h.calls.at(-1).input, false);
-  h.refs[0].current.state.theme = 'dark';
-  h.timers[0]();
-  await new Promise(resolve => setImmediate(resolve));
-  assert.equal(h.calls.at(-1).input.theme, 'dark');
-  h.cleanup();
+test('native appearance updates immediately and heartbeats do not reset it', async () => {
+  const h=await harness();h.render({...h.state,theme:'light'});await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(h.calls.at(-1).command,'client_theme');assert.equal(h.calls.at(-1).input.theme,'light');
+  h.timers[0]();await new Promise(resolve=>setImmediate(resolve));assert.equal(h.calls.at(-1).command,'client_status');assert.equal('theme' in h.calls.at(-1).input,false);
+  h.render({...h.state,theme:'dark'});await new Promise(resolve=>setImmediate(resolve));assert.equal(h.calls.at(-1).input.theme,'dark');h.cleanup();
+});
+test('pending audio storage cannot delay a theme change',async()=>{
+ const h=await harness(()=>new Promise(()=>{}));h.render({...h.state,theme:'dark'});await new Promise(resolve=>setImmediate(resolve));
+ assert.ok(h.calls.some(c=>c.command==='client_theme'&&c.input.theme==='dark'));h.cleanup();
 });

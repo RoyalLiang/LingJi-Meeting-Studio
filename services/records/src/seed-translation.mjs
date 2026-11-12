@@ -1,3 +1,4 @@
+import {meterModelCall} from './model-usage.mjs';
 import { roleModelConfig } from './model-roles.mjs';
 import {modelEndpoint} from './llm.mjs';
 import { DomainError, requireThat } from '../../../packages/records/src/record.mjs';
@@ -36,18 +37,23 @@ export async function translateSeedText(text, target, config, {timeoutMs=120000}
   requireThat(typeof text === 'string' && text.trim() && text.length <= 8000, 'invalid_translation_text', 422);
   const translated = [], deadline = AbortSignal.timeout(timeoutMs);
   for (const chunk of translationChunks(text)) {
+    translated.push(await meterModelCall({...config,LLM_MODEL:model},{},async callbacks=>{
+    await callbacks.onRequest?.();
     let response;
     try {
       response = await fetch(modelEndpoint(url,'responses'), { method: 'POST', signal: AbortSignal.any([deadline, AbortSignal.timeout(60000)]), headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ model, input: [{ role: 'user', content: [{ type: 'input_text', text: chunk, translation_options: { target_language: target } }] }], store: false, stream: false }) });
     } catch { throw new DomainError('translation_connection_failed', 502); }
-    if (!response.ok) throw new DomainError(response.status === 401 ? 'translation_credentials_rejected' : response.status === 429 ? 'provider_rate_limited' : `translation_http_${response.status}`, 502);
+    const rejected=()=>new DomainError(response.status === 401 ? 'translation_credentials_rejected' : response.status === 429 ? 'provider_rate_limited' : `translation_http_${response.status}`, 502);
     const raw = await response.text(); requireThat(raw.length <= 200000, 'invalid_translation', 502);
-    let result; try { result = JSON.parse(raw); } catch { throw new DomainError('invalid_translation', 502); }
+    let result; try { result = JSON.parse(raw); } catch { throw !response.ok?rejected():new DomainError('invalid_translation', 502); }
+    await callbacks.onUsage?.(result.usage||{});
+    if(!response.ok)throw rejected();
     requireThat(!result.status || result.status === 'completed', 'translation_incomplete', 502);
     const output = result.output_text || (result.output || []).flatMap(item => item.content || []).filter(part => part.type === 'output_text').map(part => part.text || '').join('');
     requireThat(typeof output === 'string' && output.trim() && output.length <= 20000, 'invalid_translation', 502);
-    translated.push(output.trim());
+    return output.trim();
+    }));
   }
   return translated.join(' ');
 }

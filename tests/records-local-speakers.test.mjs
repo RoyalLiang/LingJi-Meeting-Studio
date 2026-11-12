@@ -1,3 +1,4 @@
+import {voiceLearning} from '../services/records/src/voiceprint-learning.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm, stat } from 'node:fs/promises';
@@ -9,7 +10,7 @@ import { voiceprints } from '../services/records/src/voiceprints.mjs';
 import { normalizedVoice, voiceSimilarity, validDiarization, labelLocalTurns } from '../services/records/src/local-speakers.mjs';
 import { LOCAL_SPEAKER_MODEL } from '../services/records/src/local-asr.mjs';
 import { workspaceRoutes } from '../services/records/src/workspace-routes.mjs';
-import { createRecord, addSource, acknowledge, commitTranscriptBatch, digest, pause, editSegment } from '../packages/records/src/record.mjs';
+import { createRecord, addSource, acknowledge, commitTranscriptBatch, digest, pause, editSegment, audioPurgeReady } from '../packages/records/src/record.mjs';
 
 const vector = index => Array.from({ length: 512 }, (_, at) => at === index ? 1 : 0);
 async function fixture(work) {
@@ -230,4 +231,106 @@ test('a global revoke during the first bank creation also fences a legacy enroll
   const registry=voiceprints(repo,{infer:async()=>({embedding:vector(0)})}),insert=repo.insert.bind(repo);let entered,release,intercepted=false;const ready=new Promise(resolve=>{entered=resolve;}),held=new Promise(resolve=>{release=resolve;});
   repo.insert=async value=>{if(value.kind==='voiceprints'&&!intercepted){intercepted=true;entered();await held;}return insert(value);};
   const pending=registry.enroll('owner','inbox',input),rejected=assert.rejects(pending,{code:'voiceprint_library_changed'});await ready;await registry.revoke('owner','all',input.requestId,0);release();await rejected;assert.deepEqual((await registry.list('owner','all')).entries,[]);
+}));
+
+
+test('short speech can save a name without waiting for a usable voice clip',()=>fixture(async({repo,record,segment})=>{
+  let calls=0;const library=voiceprints(repo,{infer:async()=>{calls++;return {embedding:vector(0)};}}),service=voiceLearning(repo,{library}),personId=randomUUID();
+  await repo.change(record.id,r=>{r.segments[0].endMs=1000;r.segments[0].speakerId='local-a';});
+  const updated=await service.annotate('owner',record.id,{segmentId:segment.id,revision:segment.revision,requestId:personId,name:'林工'});
+  assert.equal(updated.segments[0].speaker,'林工');assert.equal(updated.segments[0].speakerConfirmed,true);
+  const input={recordId:record.id,segmentId:segment.id,revision:updated.segments[0].revision,personId,requestId:randomUUID(),consent:true};
+  assert.equal((await service.learn('owner',input)).status,'waiting');assert.equal(calls,0);
+  await repo.change(record.id,r=>{r.segments.push({...r.segments[0],id:randomUUID(),endMs:3000});});
+  await service.run();assert.equal((await repo.get(input.requestId)).status,'ready');assert.equal(calls,1);
+  await assert.rejects(service.learn('other',input),{code:'voiceprint_not_found'});
+}));
+
+test('voice learning is queued independently, supports multiple people and survives a worker restart',()=>fixture(async({repo,record,segment})=>{
+  let release,started;const gate=new Promise(resolve=>{release=resolve;}),entered=new Promise(resolve=>{started=resolve;});
+  const library=voiceprints(repo,{infer:async()=>{started();await gate;return {embedding:vector(0)};}}),service=voiceLearning(repo,{library}),personId=randomUUID();
+  const updated=await service.annotate('owner',record.id,{segmentId:segment.id,revision:segment.revision,requestId:personId,name:'林工'});
+  await service.savePerson('owner',{id:randomUUID(),name:'陈老师'});
+  const input={recordId:record.id,segmentId:segment.id,revision:updated.segments[0].revision,personId,requestId:randomUUID(),consent:true};
+  assert.equal((await service.learn('owner',input)).status,'queued');
+  assert.equal((await service.learn('owner',input)).status,'queued');
+  const running=voiceLearning(repo,{library}).run();await entered;
+  assert.equal((await repo.get(record.id)).segments[0].speaker,'林工');
+  assert.equal((await service.people('owner')).people.length,2);
+  release();await running;
+  assert.equal((await repo.get(input.requestId)).status,'ready');
+  assert.equal((await service.people('owner')).people.find(person=>person.id===personId).samples,1);
+  await service.run();assert.equal((await library.list('owner','all')).entries.length,1);
+}));
+
+test('deleting a person while embedding runs cannot resurrect a voice',()=>fixture(async({repo,record,segment})=>{
+  let release,started;const gate=new Promise(resolve=>{release=resolve;}),entered=new Promise(resolve=>{started=resolve;});
+  const library=voiceprints(repo,{infer:async()=>{started();await gate;return {embedding:vector(0)};}}),service=voiceLearning(repo,{library}),personId=randomUUID();
+  const updated=await service.annotate('owner',record.id,{segmentId:segment.id,revision:segment.revision,requestId:personId,name:'林工'});
+  const input={recordId:record.id,segmentId:segment.id,revision:updated.segments[0].revision,personId,requestId:randomUUID(),consent:true};
+  await service.learn('owner',input);const running=service.run();await entered;await service.remove('owner',personId);release();await running;
+  assert.equal((await repo.get(input.requestId)).status,'failed');assert.equal((await library.list('owner','all')).entries.length,0);
+}));
+
+test('future meeting matching preserves human names and rejects ambiguous candidates',()=>fixture(async({repo,segment,input})=>{
+  const library=voiceprints(repo,{infer:async()=>({embedding:vector(0)})}),service=voiceLearning(repo,{library}),personId=randomUUID();
+  await service.savePerson('owner',{id:personId,name:'林工'});
+  const entry=await library.enroll('owner','all',{...input,personId});
+  const future=createRecord('owner');future.capture='completed';future.transcriptRevision=1;future.voiceMatch={status:'queued'};
+  future.segments=[{...segment,id:randomUUID(),speakerId:'a',speaker:'说话人 1',edited:false},{...segment,id:randomUUID(),speakerId:'a',speaker:'手工称谓',speakerConfirmed:true,edited:true}];await repo.insert(future);
+  assert.ok((await repo.listWork({lane:'voiceprints'})).some(row=>row.id===future.id));
+  const matcher=voiceLearning(repo,{library:{...library,match:async()=>({matches:[{...entry,personId,similarity:0.95}]})}});
+  await matcher.matchRecord(future);const matched=await repo.get(future.id);
+  assert.equal(matched.segments[0].speaker,'林工');assert.equal(matched.segments[0].speakerMatch,'automatic');assert.equal(matched.segments[1].speaker,'手工称谓');
+  const other=createRecord('owner');other.capture='completed';other.transcriptRevision=1;other.voiceMatch={status:'queued'};other.segments=[{...segment,id:randomUUID(),speakerId:'b',speaker:'说话人 2',edited:false}];await repo.insert(other);
+  await voiceLearning(repo,{library:{...library,match:async()=>({matches:[{...entry,personId,similarity:0.89},{id:randomUUID(),similarity:0.85}]})}}).matchRecord(other);
+  assert.equal((await repo.get(other.id)).segments[0].speaker,'说话人 2');
+}));
+
+
+test('correcting a learned speaker invalidates only that source in the old person',()=>fixture(async({repo,record,segment})=>{
+ const library=voiceprints(repo,{infer:async()=>({embedding:vector(0)})}),service=voiceLearning(repo,{library}),first=randomUUID(),second=randomUUID();
+ let updated=await service.annotate('owner',record.id,{segmentId:segment.id,revision:segment.revision,requestId:first,name:'林工'});
+ const job={recordId:record.id,segmentId:segment.id,revision:updated.segments[0].revision,personId:first,requestId:randomUUID(),consent:true};
+ await service.learn('owner',job);await service.run();assert.equal((await library.list('owner','all')).entries.length,1);
+ updated=await service.annotate('owner',record.id,{segmentId:segment.id,revision:updated.segments[0].revision,requestId:second,name:'陈老师'});
+ assert.equal(updated.segments[0].speaker,'陈老师');assert.equal((await library.list('owner','all')).entries.length,0);
+ assert.equal((await service.people('owner')).people.find(person=>person.id===first).samples,0);
+}));
+
+test('relabeling while a voice learns cancels its frozen original authorization',()=>fixture(async({repo,record,segment})=>{
+ let entered,release;const started=new Promise(resolve=>{entered=resolve;}),gate=new Promise(resolve=>{release=resolve;});
+ const library=voiceprints(repo,{infer:async()=>{entered();await gate;return {embedding:vector(0)};}}),service=voiceLearning(repo,{library}),first=randomUUID();
+ const updated=await service.annotate('owner',record.id,{segmentId:segment.id,revision:segment.revision,requestId:first,name:'林工'});
+ const job={recordId:record.id,segmentId:segment.id,revision:updated.segments[0].revision,personId:first,requestId:randomUUID(),consent:true};
+ await service.learn('owner',job);const running=service.run();await started;
+ await service.annotate('owner',record.id,{segmentId:segment.id,revision:updated.segments[0].revision,requestId:randomUUID(),name:'陈老师'});
+ release();await running;assert.equal((await repo.get(job.requestId)).status,'cancelled');assert.equal((await library.list('owner','all')).entries.length,0);
+}));
+
+test('waiting cannot borrow another clip after its original name was corrected',()=>fixture(async({repo,record,segment})=>{
+ const library=voiceprints(repo,{infer:async()=>assert.fail('revoked waiting consent must not infer')}),service=voiceLearning(repo,{library}),first=randomUUID();
+ await repo.change(record.id,r=>{r.segments[0].endMs=1000;r.segments[0].speakerId='a';});
+ const updated=await service.annotate('owner',record.id,{segmentId:segment.id,revision:segment.revision,requestId:first,name:'林工'});
+ const job={recordId:record.id,segmentId:segment.id,revision:updated.segments[0].revision,personId:first,requestId:randomUUID(),consent:true};await service.learn('owner',job);
+ await repo.change(record.id,r=>{r.segments.push({...r.segments[0],id:randomUUID(),endMs:3000});});
+ await service.annotate('owner',record.id,{segmentId:segment.id,revision:updated.segments[0].revision,requestId:randomUUID(),name:'陈老师'});
+ await service.run();assert.equal((await repo.get(job.requestId)).status,'cancelled');
+}));
+
+
+test('audio cleanup gives pending speaker matching a bounded processing window',()=>{
+ const record=createRecord('owner',{retainAudio:false});record.capture='completed';record.voiceMatch={status:'queued',expiresAt:Date.now()+180000};
+ assert.equal(audioPurgeReady(record),false);record.voiceMatch.expiresAt=Date.now()-1;assert.equal(audioPurgeReady(record),true);
+});
+
+
+test('correcting a short authorizing turn also revokes its learned substitute clip',()=>fixture(async({repo,record,segment})=>{
+ const library=voiceprints(repo,{infer:async()=>({embedding:vector(0)})}),service=voiceLearning(repo,{library}),first=randomUUID(),longId=randomUUID();
+ await repo.change(record.id,r=>{r.segments[0].speakerId='a';r.segments[0].endMs=1000;r.segments.push({...r.segments[0],id:longId,endMs:3000});});
+ const updated=await service.annotate('owner',record.id,{segmentId:segment.id,revision:segment.revision,requestId:first,name:'林工'}),short=updated.segments.find(s=>s.id===segment.id);
+ const job={recordId:record.id,segmentId:segment.id,revision:short.revision,personId:first,requestId:randomUUID(),consent:true};await service.learn('owner',job);await service.run();
+ const saved=(await library.list('owner','all')).entries;assert.equal(saved.length,1);assert.equal(saved[0].source.segmentId,longId);
+ await service.annotate('owner',record.id,{segmentId:segment.id,revision:short.revision,requestId:randomUUID(),name:'陈老师'});
+ assert.equal((await library.list('owner','all')).entries.length,0);assert.equal((await repo.get(record.id)).segments.find(s=>s.id===longId).speaker,'林工');
 }));

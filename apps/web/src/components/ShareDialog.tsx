@@ -1,6 +1,6 @@
 import {FeedbackNotice} from './FeedbackNotice';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Copy, DownloadSimple, LinkSimple, ShareNetwork } from '@phosphor-icons/react';
+import { CaretDown, Check, Copy, DownloadSimple, LinkSimple, ShareNetwork } from '@phosphor-icons/react';
 import { isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { RecordDetail } from '../model';
@@ -24,7 +24,8 @@ export function ShareDialog({ record, close, notify }: { record: RecordDetail; l
   const attempt = useRef<string | null>(null);
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [url, setUrl] = useState('');
   const [links, setLinks] = useState<ShareLink[]>([]), [prepared, setPrepared] = useState<{ url: string; name: string } | null>(null);
-  const request = useRef(false), mounted = useRef(true);
+  const request = useRef(false), mounted = useRef(true),resultInput=useRef<HTMLInputElement>(null);
+  useEffect(()=>{if(url)resultInput.current?.focus();},[url]);
   const native = isTauri(), [downloadReady, setDownloadReady] = useState(!native), [downloading, setDownloading] = useState(false);
   const downloadUrl = useRef(''), downloadTimer = useRef<number | undefined>(undefined), latestNotify = useRef(notify); latestNotify.current = notify;
   const preview = useMemo(() => {
@@ -94,17 +95,17 @@ export function ShareDialog({ record, close, notify }: { record: RecordDetail; l
     downloadUrl.current = url; setDownloading(true); clearTimeout(downloadTimer.current);
     downloadTimer.current = window.setTimeout(() => { downloadUrl.current = ''; setDownloading(false); setError('未收到下载完成结果，可再次点击导出。'); }, 30_000);
   }
-  return <Modal title="分享会议" onClose={close}>
+  return <Modal title="分享会议" onClose={close} className="meeting-share-modal" footer={<div className="meeting-share-footer"><label className="meeting-share-consent"><input type="checkbox" checked={confirmed} disabled={busy} onChange={event=>setConfirmed(event.currentTarget.checked)}/>确认分享所选内容，持有完整链接的人可以阅读。</label><div className="meeting-share-submit"><span>可撤销链接，已保存的副本无法收回。</span><Button variant="primary" disabled={busy||!hasContent||!confirmed||!fingerprint} onClick={()=>void generateLink()}><LinkSimple size={17}/>{busy?'正在生成…':'生成分享链接'}</Button></div></div>}>
     <div className="meeting-share">
       <div className="meeting-share-intro"><span className="meeting-share-icon"><ShareNetwork size={24}/></span><h3>{record.title}</h3></div>
-      {minutes && <section className="meeting-share-preview" aria-label="分享预览"><h4>{minutes.title}</h4>{(minutes.highlights?.length ? minutes.highlights : minutes.sections.flatMap(section=>section.items)).slice(0,3).map((item,index)=><p key={index}>{item.text}</p>)}</section>}
+      {minutes && <section className="meeting-share-preview" aria-label="分享预览">{(minutes.highlights?.length?minutes.highlights:minutes.sections.flatMap(section=>section.items)).slice(0,1).map((item,index)=><p key={index}>{item.text}</p>)}</section>}
       {!hasContent && <p className="meeting-share-empty" role="status">有会议内容后即可分享。</p>}
-      {preview && <details className="meeting-share-full-preview"><summary>核对完整分享内容</summary><iframe title="完整分享预览" sandbox="" srcDoc={preview.html}/></details>}
+      {preview && <details className="meeting-share-full-preview"><summary>预览分享内容</summary><iframe title="完整分享预览" sandbox="" srcDoc={preview.html}/></details>}
       {error && <FeedbackNotice key={error} message={error} error/>}
-      <section className="meeting-share-existing"><h3>加密链接分享</h3><label>分享范围<Select label="在线分享范围" value={scope} disabled={busy || downloading} onChange={value => { setScope(value as ShareScope); setConfirmed(false); attempt.current = null; setPrepared(null); }} options={[{value:'minutes',label:'仅纪要及引用原文'},{value:'full',label:'纪要与全部转录'}]}/></label><p className="meeting-share-empty">无需登录，在客户端加密后上传至官网。接收者用浏览器解密阅读，链接 24 小时有效。原音不会上传。</p><label className="meeting-share-consent"><input type="checkbox" checked={confirmed} disabled={busy} onChange={event => setConfirmed(event.currentTarget.checked)}/>我确认分享所选内容；持有完整链接的人可以阅读。</label><div className="actions meeting-share-actions"><Button variant="primary" disabled={busy || !hasContent || !confirmed || !fingerprint} onClick={() => void generateLink()}><LinkSimple size={18}/>{busy ? '正在生成…' : '生成加密分享链接'}</Button></div><p className="meeting-share-empty">删除本机会议不会自动撤销链接，请先在这里撤销。已被接收者保存的副本无法收回。</p></section>
-      <div className="actions meeting-share-actions"><Button disabled={!hasContent || !downloadReady || downloading} onClick={() => exportFile()}><DownloadSimple size={18}/>{downloading ? '正在保存…' : '导出 HTML 分享文件'}</Button><Button disabled={!hasContent || !downloadReady || downloading} onClick={() => exportFile(true)}>导出明文备份</Button></div>
-      {url && <div className="meeting-share-link"><label>只读链接<input readOnly value={url} onFocus={event => event.currentTarget.select()}/></label><Button aria-label="复制分享链接" onClick={async () => { setError(''); try { await navigator.clipboard.writeText(url); notify('分享链接已复制。'); } catch { setError('复制未成功，请选中链接手动复制。'); } }}><Copy size={18}/>复制</Button></div>}
-      {activeLinks.length > 0 && <section className="meeting-share-existing"><h3><Check size={16}/>分享链接</h3>{activeLinks.map(link => <div className="meeting-share-row" key={link.id}><span>{link.scope === 'full' ? '纪要与全部转录' : '会议纪要'}<small>{link.pending ? '创建未完成，可重试原快照' : new Date(link.expires).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' 到期'}</small></span>{link.pending ? <Button variant="ghost" disabled={busy || !confirmed} onClick={() => void generateLink(link)}>重试</Button> : <Button variant="ghost" disabled={busy} onClick={() => setUrl(link.url || '')}>查看链接</Button>}<Button variant="ghost" disabled={busy} onClick={async () => {
+      <section className="meeting-share-options"><label>分享范围<Select label="在线分享范围" value={scope} disabled={busy||downloading} onChange={value=>{setScope(value as ShareScope);setConfirmed(false);attempt.current=null;setPrepared(null);}} options={[{value:'minutes',label:'仅纪要及引用原文'},{value:'full',label:'纪要与全部转录'}]}/></label><p className="meeting-share-meta">客户端加密 · 24 小时有效 · 不含原音</p></section>
+
+      {url && <div className="meeting-share-link"><span className="sr-only" role="status">分享链接已就绪，可复制或撤销。</span><label>只读链接<input ref={resultInput} readOnly value={url} onFocus={event => event.currentTarget.select()}/></label><Button aria-label="复制分享链接" onClick={async () => { setError(''); try { await navigator.clipboard.writeText(url); notify('分享链接已复制。'); } catch { setError('复制未成功，请选中链接手动复制。'); } }}><Copy size={18}/>复制</Button></div>}
+      {activeLinks.length > 0 && <section className="meeting-share-existing"><h3><Check size={16}/>有效链接</h3><p className="meeting-share-empty">删除本机会议不会撤销链接。</p>{activeLinks.map(link => <div className="meeting-share-row" key={link.id}><span>{link.scope === 'full' ? '纪要与全部转录' : '会议纪要'}<small>{link.pending ? '创建未完成，可重试原快照' : new Date(link.expires).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' 到期'}</small></span>{link.pending ? <Button variant="ghost" disabled={busy || !confirmed} onClick={() => void generateLink(link)}>重试</Button> : <Button variant="ghost" disabled={busy} onClick={() => setUrl(link.url || '')}>查看链接</Button>}<Button variant="ghost" disabled={busy} onClick={async () => {
         if (request.current) return; request.current = true; setBusy(true); setError('');
         try { await api(`/records/${record.id}/encrypted-shares/${encodeURIComponent(link.id)}`, 'DELETE'); if (mounted.current) { setLinks(current => current.map(value => value.id === link.id ? { ...value, revoked: true } : value)); setUrl(''); notify('分享链接已撤销。'); } }
         catch (error) { if (mounted.current) setError(messageOf(error)); }
@@ -116,6 +117,7 @@ export function ShareDialog({ record, close, notify }: { record: RecordDetail; l
         catch (error) { if (mounted.current) setError(messageOf(error)); }
         finally { request.current = false; if (mounted.current) setBusy(false); }
       }}>撤销旧链接</Button></div>)}</section>}
+      <details className="meeting-share-files"><summary><DownloadSimple size={16}/>导出文件<CaretDown size={14} className="share-files-chevron"/></summary><div className="actions meeting-share-actions"><Button disabled={!hasContent||!downloadReady||downloading} onClick={()=>exportFile()}><DownloadSimple size={16}/>{downloading?'正在保存…':'HTML 文件'}</Button><Button disabled={!hasContent||!downloadReady||downloading} onClick={()=>exportFile(true)}>明文备份</Button></div></details>
     </div>
   </Modal>;
 }

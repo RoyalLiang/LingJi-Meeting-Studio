@@ -1,3 +1,5 @@
+import {voiceprintRoutes} from './voiceprint-routes.mjs';
+import {enterModelUsage} from './model-usage.mjs';
 import {createConnectors,connectorRoutes} from './connectors.mjs';
 import { createNativeAudio } from './native-audio.mjs';
 import { minutesModelRouting } from './model-roles.mjs';
@@ -186,12 +188,14 @@ export async function createRecordServer(options = {}) {
         send(res, 200, { email: process.env.RECORD_DEV_EMAIL || 'dev@local.test', password: process.env.RECORD_DEV_PASSWORD ? null : 'LocalMeeting2026!' }); return;
       }
       const user = await auth.user(req);
+      enterModelUsage({repo,owner:user.id,kind:path.includes('automation')?'automation':'assistant'});
       if (path === '/api/client/update-barrier' && req.method === 'GET') { send(res, 200, await clientUpdateBarrier(repo, user.id)); return; }
       if (!['GET', 'HEAD'].includes(req.method)) auth.checkCsrf(req, user);
       if (path === '/api/client/native-captures' && req.method === 'POST') {
       requireThat(nativeAudio && req.headers['x-native-instance'] === options.nativeInstance, 'not_found', 404);
       const body = await readBody(req, 2048); send(res, 200, await (body.action === 'cancel' ? nativeAudio.cancel(user, body) : nativeAudio.bind(user, body))); return;
     }
+    if(await voiceprintRoutes({req,res,path,user,repo,readBody,send}))return;
     if(await connectorRoutes({req,res,path,user,connectors,readBody,send}))return;
   if (await feishuRoutes({req,res,path,user,feishu,connectors,readBody,send})) return;
       if (await extensionRoutes({req,res,path,user,extensions,readBody,send})) return;
@@ -302,6 +306,7 @@ export async function createRecordServer(options = {}) {
         send(res,200,ack);return;
       }
       const record = await owned(id, user);
+      enterModelUsage({repo,owner:user.id,recordId:record.id,workspaceId:record.workspaceId||'inbox',kind:'record'});
       if(await learningRoutes({req,res,url,action,repo,user,record,readBody,send,csrf:auth.csrf(user),requireLearning,learningService}))return;
       if (action === 'automation' && req.method === 'PATCH') {
         const body = await readBody(req, 4000);

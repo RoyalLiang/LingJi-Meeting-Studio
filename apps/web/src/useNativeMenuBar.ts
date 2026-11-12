@@ -1,3 +1,4 @@
+import {nativeThemeSync} from './native-theme';
 import { useEffect, useRef } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -8,19 +9,22 @@ type Actions = { pause: () => void; resume: () => void; finish: () => void; sett
 
 export function useNativeMenuBar(state: MenuState, actions: Actions) {
   const latest = useRef({ state, actions }); latest.current = { state, actions };
+  const appearance=useRef<ReturnType<typeof nativeThemeSync>|null>(null);
+  if(!appearance.current)appearance.current=nativeThemeSync(theme=>invoke('client_theme',{theme}));
+  useEffect(()=>{if(isTauri())void appearance.current?.set(state.theme).catch(()=>{});},[state.theme]);
+  useEffect(()=>()=>appearance.current?.stop(),[]);
   useEffect(() => {
     if (!isTauri()) return;
     let live = true, publishing = false, unlisten: (() => void) | undefined;
-    let publishedTheme:string|undefined;
     const publish = async () => {
       if (!live || publishing) return;
       publishing = true;
+      void appearance.current?.set(latest.current.state.theme).catch(()=>{});
       try {
         const pending = await pendingCount();
         if (live) {
           const {theme,...report}=latest.current.state;
-          await invoke('client_status', { report: { ...report, pendingCount: pending },...(theme!==publishedTheme?{theme}:{}) });
-          publishedTheme=theme;
+          await invoke('client_status', { report: { ...report, pendingCount: pending } });
         }
       } catch { /* The native menu marks missing or stale reports as unknown. */ }
       finally { publishing = false; }

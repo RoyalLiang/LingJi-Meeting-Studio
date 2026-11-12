@@ -1,3 +1,4 @@
+import {withModelUsage} from './model-usage.mjs';
 import { roleModelConfig } from './model-roles.mjs';
 import { randomUUID } from 'node:crypto';
 import { analysisMessages, inputHash, retainedRecords, validateWorkspaceAnalysis } from '../../../packages/records/src/workspaces.mjs';
@@ -33,7 +34,7 @@ export async function processWorkspaceAnalysis(repo, config, providers = {}) {
         if (checking) return; checking = true;
         try { if (!(await valid())) controller.abort(); } catch { controller.abort(); } finally { checking = false; }
       }, 750); timer.unref?.();
-      const output = await (providers.completeJson || completeJson)(analysisMessages(candidate.snapshot), roleModelConfig(config, 'analysis'), {
+      const output = await withModelUsage({repo,owner:candidate.owner,workspaceId:candidate.scope,kind:'workspace-analysis'},()=>(providers.completeJson || completeJson)(analysisMessages(candidate.snapshot), roleModelConfig(config, 'analysis'), {
         signal: controller.signal,
         onDelta: async (delta, runtime) => {
           draft += delta;
@@ -44,7 +45,7 @@ export async function processWorkspaceAnalysis(repo, config, providers = {}) {
             if (job.fence === fence && job.status === 'running') Object.assign(job, { preview: draft.slice(0, 60000), runtime, updatedAt: new Date().toISOString() });
           });
         }
-      });
+      }));
       if (!(await valid())) continue;
       const result = validateWorkspaceAnalysis(output, candidate.snapshot);
       await repo.change(candidate.id, job => {

@@ -160,7 +160,7 @@ export function finalize(record) {
   if (record.capture !== 'sealed') return;
   const complete = record.sources.every(s => s.watermark === s.lastSequence)
     && record.chunks.every(c => c.state === 'done');
-  if (complete) { for (const session of record.sessions || []) { session.status = 'completed'; session.endedAt ||= new Date().toISOString(); } record.capture = 'completed'; record.transcription = 'ready'; autoNameRecord(record); emit(record, 'record.finalized', { transcriptRevision: record.transcriptRevision }); if(queueLearningReview(record))emit(record,'learning.queued'); }
+  if (complete) { for (const session of record.sessions || []) { session.status = 'completed'; session.endedAt ||= new Date().toISOString(); } record.capture = 'completed'; record.transcription = 'ready'; record.voiceMatch={status:'queued',revision:record.transcriptRevision,expiresAt:Date.now()+180000}; autoNameRecord(record); emit(record, 'record.finalized', { transcriptRevision: record.transcriptRevision }); if(queueLearningReview(record))emit(record,'learning.queued'); }
 }
 export function autoNameRecord(record,preferredTitle) {
   const title=automaticRecordTitle(record,preferredTitle);
@@ -385,5 +385,6 @@ export function needsMinutesAudio(record) {
 // A failed or still-processing chunk must remain available for retry until retention expires.
 export function audioPurgeReady(record) {
   return !record.audioPurged && (!record.audioBackup||['saved','skipped'].includes(record.audioBackup.status)) && !record.retainAudio && record.capture === 'completed'
+    && !(record.voiceMatch?.expiresAt>Date.now()&&['queued','running'].includes(record.voiceMatch.status))
     && record.chunks.every(chunk => chunk.state === 'done') && !needsMinutesAudio(record);
 }

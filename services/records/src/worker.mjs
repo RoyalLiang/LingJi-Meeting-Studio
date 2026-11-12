@@ -1,3 +1,6 @@
+import {voiceprints} from './voiceprints.mjs';
+import {voiceLearning} from './voiceprint-learning.mjs';
+import {withModelUsage} from './model-usage.mjs';
 import { createWorkerWakeup } from './worker-wakeup.mjs';
 import { minutesModelRouting } from './model-roles.mjs';
 import {audioBackupPending,audioBackupNeedsWork,backupAudioRecord,cleanupAudioBackups} from './audio-backup.mjs';
@@ -32,6 +35,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all', cacheConfig
   const baseConfig = await readConfig(repo.root, process.env, {cache:cacheConfig}), config=baseConfig;
   const learningEnabled=config.RECORD_LEARNING_ENABLED==='true' || (config.RECORD_LEARNING_ENABLED!=='false' && process.env.NODE_ENV==='desktop');
   if(lane==='learning'){if(learningEnabled && (!providerStatus(config).fixture || providers.learningPreparation))await runLearningCycle(repo,providers);return;}
+  if(lane==='voiceprints'){const voices=voiceLearning(repo);await voices.run();for(const record of await repo.listWork({lane:'voiceprints',metadataOnly:true}))await voices.matchRecord(record);return;}
   if (lane === 'workspace') { await processWorkspaceAnalysis(repo, config, providers); return; }
   if (lane === 'realtime' || lane === 'all') await reconcileRealtime(repo, config);
   if(lane==='realtime'&&!realtimeEnabled(config))return;
@@ -40,7 +44,8 @@ export async function runCycle(repo, providers = {}, { lane = 'all', cacheConfig
   const localAudio = lane === 'audio' && baseConfig.ASR_PROVIDER === 'sensevoice-local' && baseConfig.MINUTES_MODE !== 'doubao-audio-only' && !providers.transcribe && !providerStatus(baseConfig).fixture;
   const records = await repo.listWork({ lane, metadataOnly: true });
   if (lane === 'minutes') records.sort((a,b)=>Number(['sealed','completed'].includes(b.capture))-Number(['sealed','completed'].includes(a.capture)));
-  async function processCandidate(candidate) {
+  function processCandidate(candidate){return withModelUsage({repo,owner:candidate.owner,workspaceId:candidate.workspaceId||'inbox',recordId:candidate.id,kind:lane},()=>processCandidateRaw(candidate));}
+  async function processCandidateRaw(candidate) {
     if (candidate.$metadataOnly) {
       const currentConfig=recordMinutesConfig(candidate,baseConfig);
       if (repo.changeTranslation && ['translation','translation-live','translation-preview'].includes(lane)) {
@@ -210,6 +215,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all', cacheConfig
     }
     if (lane !== 'all' && lane !== 'audio') return;
     let latest = await repo.get(candidate.id);
+    if(!latest.retainAudio&&latest.voiceMatch?.status==='queued'&&!(await voiceprints(repo).list(latest.owner,'all')).entries.some(entry=>entry.global)){await repo.change(latest.id,r=>{if(r.voiceMatch?.status==='queued')r.voiceMatch.status='ready';},{returnRecord:false});latest=await repo.get(candidate.id);}
     if(audioBackupNeedsWork(latest)&&await backupAudioRecord(repo,latest))latest=await repo.get(candidate.id);
     if (audioPurgeReady(latest)) {
       let purge = false;
@@ -237,7 +243,7 @@ export async function startWorker() {
   process.on('SIGTERM', shutdown); process.on('SIGINT', shutdown);
   console.log(`[record-worker] ${repo.backend}; durable audio and minutes queue`);
   try {
-    await Promise.all(['audio', 'realtime', 'minutes', 'intents', 'translation', 'translation-live', 'translation-preview', 'workspace', 'learning'].map(async lane => {
+    await Promise.all(['audio', 'realtime', 'minutes', 'intents', 'translation', 'translation-live', 'translation-preview', 'workspace', 'learning', 'voiceprints'].map(async lane => {
       let earliest = 0, first = true;
       const floor = lane === 'audio' ? 250 : 500;
       while (!stop) {
@@ -247,13 +253,13 @@ export async function startWorker() {
         let due = Infinity;
         try {
           due = await repo.nextWorkAt(lane);
-          if (first || lane === 'audio' || lane === 'realtime' || lane === 'workspace' || lane === 'learning' || due <= Date.now()) {
+          if (first || lane === 'audio' || lane === 'realtime' || lane === 'workspace' || lane === 'learning' || lane === 'voiceprints' || due <= Date.now()) {
             await runCycle(repo, {}, { lane }); due = await repo.nextWorkAt(lane);
           }
           first = false;
         } catch (error) { console.error('[record-worker]', lane, error.code || error.name); due = Date.now() + 1000; }
         if (stop) break;
-        await wakeup.wait(cursor, Math.min(lane === 'workspace' || lane === 'learning' ? 5000 : 30000, Math.max(floor, due - Date.now())));
+        await wakeup.wait(cursor, Math.min(lane === 'workspace' || lane === 'learning' || lane === 'voiceprints' ? 5000 : 30000, Math.max(floor, due - Date.now())));
       }
     }));
   } finally {

@@ -20,7 +20,7 @@ import { telemetry } from './telemetry.mjs';
 import { encodeStorage, decodeStorage } from './storage-codec.mjs';
 
 function traceWrite(value){if(telemetry.enabled)telemetry.event('db.write',{recordId:value.id,bytes:Buffer.byteLength(JSON.stringify(value))});}
-const workerLanes=['audio','realtime','minutes','intents','translation','translation-live','translation-preview','learning'];
+const workerLanes=['audio','realtime','minutes','intents','translation','translation-live','translation-preview','learning','voiceprints'];
 const workExpression=(lane,postgres)=>lane==='workspace'
   ? postgres ? "CASE WHEN data->>'status'='queued' THEN 0 WHEN data->>'status'='running' THEN COALESCE((data->>'lease')::bigint,0) END" : "CASE WHEN json_extract(data,'$.status')='queued' THEN 0 WHEN json_extract(data,'$.status')='running' THEN COALESCE(json_extract(data,'$.lease'),0) END"
   : postgres ? `CASE WHEN jsonb_typeof(data->'workAt') IS DISTINCT FROM 'object' THEN 0 ELSE (data->'workAt'->>'${lane}')::bigint END` : `CASE WHEN COALESCE(json_type(data,'$.workAt'),'')<>'object' THEN 0 ELSE json_extract(data,'$.workAt.${lane}') END`;
@@ -34,6 +34,7 @@ function schedule(value, now=Date.now()) {
     due('audio',Math.min(Date.parse(value.deleteAt),(value.gcAt||0)+3600000));
     if(audioBackupNeedsWork(value)&&audioBackupReady(value))due('audio',Math.max(value.audioBackup.retryAt||0,value.audioBackup.leaseUntil||0));
     due('learning',learningWorkAt(value,now));
+    if(value.voiceMatch?.status==='queued'||value.voiceMatch?.status==='running')due('voiceprints',value.voiceMatch.lease||now);
     if(value.learning?.enabled&&value.capture==='completed'&&value.learning.revision!==value.transcriptRevision)due('learning',Math.max(now,value.learning.retryAt||0));
     due('minutes',automaticMinutesAt(value,now));
     if(audioPurgeReady(value))due('audio',now);

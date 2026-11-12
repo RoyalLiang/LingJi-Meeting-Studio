@@ -1,3 +1,4 @@
+export const voiceprintEntryId=(bank,entry)=>{const value=createHash('sha256').update(`${bank.id}:${entry.id}`).digest('hex');return `${value.slice(0,8)}-${value.slice(8,12)}-${value.slice(12,16)}-${value.slice(16,20)}-${value.slice(20,32)}`;};
 import { createHash } from 'node:crypto';
 import { requireThat, digest } from '../../../packages/records/src/record.mjs';
 import { createSecretStore } from './integrations/secret-store.mjs';
@@ -6,7 +7,8 @@ import { LOCAL_SPEAKER_MODEL, localSpeakersConfigured, transcribeLocalAsr } from
 import { normalizedVoice, voiceSimilarity } from './local-speakers.mjs';
 
 const registries = new WeakMap(), uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
-const publicEntry = ({ id, name, createdAt, source }) => ({ id, name, createdAt, source });
+const validOrigin=(record,input)=>!input.origin||(record&&input.origin.recordId===record.id&&record.segments.some(segment=>segment.id===input.origin.segmentId&&segment.revision===input.origin.revision&&segment.personId===input.personId&&segment.speakerConfirmed));
+const publicEntry = ({ id, name, createdAt, source,personId }) => ({ id, name, createdAt, source,personId });
 const vaultId = (owner, scope) => 'voiceprints:' + createHash('sha256').update(JSON.stringify([owner, scope])).digest('hex');
 async function ownedSegment(repo, owner, scope, input) {
   requireThat(input && typeof input === 'object' && !Array.isArray(input) && uuid.test(input.recordId) && uuid.test(input.segmentId) && Number.isSafeInteger(input.revision), 'invalid_voiceprint_source', 400);
@@ -56,7 +58,7 @@ export function voiceprints(repo, { infer = transcribeLocalAsr } = {}) {
     await ownedSegment(repo, owner, scope, input); return vector;
   }
     const banks=async owner=>(await repo.list('voiceprints')).filter(bank=>bank.owner===owner);
-  const globalId=(bank,entry)=>{const value=createHash('sha256').update(`${bank.id}:${entry.id}`).digest('hex');return `${value.slice(0,8)}-${value.slice(8,12)}-${value.slice(12,16)}-${value.slice(16,20)}-${value.slice(20,32)}`;};
+  const globalId=voiceprintEntryId;
   const globalEntry=(bank,entry)=>({...publicEntry(entry),id:globalId(bank,entry),global:bank.scope==='all'||entry.consentVersion===2});
   const findGlobal=async(owner,id)=>{for(const bank of await banks(owner)){const entry=bank.entries.find(entry=>globalId(bank,entry)===id);if(entry)return {bank,entry};}return null;};
   async function listGlobal(owner){const global=await vault(owner,'all',true),values=await banks(owner),config=await readConfig(repo.root);return {available:localSpeakersConfigured(config),revision:global.revision||0,entries:values.flatMap(bank=>bank.entries.map(entry=>globalEntry(bank,entry)))};}
@@ -70,8 +72,8 @@ export function voiceprints(repo, { infer = transcribeLocalAsr } = {}) {
     const {record}=await ownedSegment(repo,owner,'all',input);let scope=record.workspaceId||'inbox';
     const allowed=(bank,entry)=>bank.scope==='all'||entry.consentVersion===2||bank.scope===scope;
     const values=(await banks(owner)).flatMap(bank=>bank.entries.filter(entry=>allowed(bank,entry)).map(entry=>({bank,entry})));if(!values.length)return {matches:[]};
-    const vector=await embedding(owner,'all',input),store=await secretStore(),matches=values.map(({bank,entry})=>{let value;try{value=store.open(`${bank.id}:${entry.id}`,entry.sealed);}catch{requireThat(false,'voiceprint_storage_invalid',503);}const saved=normalizedVoice(value.vector);requireThat(saved&&value.model===LOCAL_SPEAKER_MODEL,'voiceprint_storage_invalid',503);return {id:globalId(bank,entry),name:entry.name,identity:JSON.stringify([entry.sealed,entry.fingerprint,entry.name]),similarity:Math.round(voiceSimilarity(vector,saved)*1000)/1000};}).filter(entry=>entry.similarity>=0.6).sort((a,b)=>b.similarity-a.similarity);
-    const {record:latest}=await ownedSegment(repo,owner,'all',input);scope=latest.workspaceId||'inbox';const active=new Map((await banks(owner)).flatMap(bank=>bank.entries.filter(entry=>allowed(bank,entry)).map(entry=>[globalId(bank,entry),JSON.stringify([entry.sealed,entry.fingerprint,entry.name])])));return {matches:matches.filter(entry=>active.get(entry.id)===entry.identity).slice(0,3).map(({identity:_identity,...entry})=>entry)};
+    const vector=await embedding(owner,'all',input),store=await secretStore(),matches=values.map(({bank,entry})=>{let value;try{value=store.open(`${bank.id}:${entry.id}`,entry.sealed);}catch{requireThat(false,'voiceprint_storage_invalid',503);}const saved=normalizedVoice(value.vector);requireThat(saved&&value.model===LOCAL_SPEAKER_MODEL,'voiceprint_storage_invalid',503);return {id:globalId(bank,entry),personId:entry.personId,name:entry.name,identity:JSON.stringify([entry.sealed,entry.fingerprint,entry.name]),similarity:Math.round(voiceSimilarity(vector,saved)*1000)/1000};}).filter(entry=>entry.similarity>=0.6).sort((a,b)=>b.similarity-a.similarity);
+    const {record:latest}=await ownedSegment(repo,owner,'all',input);scope=latest.workspaceId||'inbox';const active=new Map((await banks(owner)).flatMap(bank=>bank.entries.filter(entry=>allowed(bank,entry)).map(entry=>[globalId(bank,entry),JSON.stringify([entry.sealed,entry.fingerprint,entry.name])])));return {matches:matches.filter(entry=>active.get(entry.id)===entry.identity).filter((entry,index,values)=>values.findIndex(other=>(other.personId||other.id)===(entry.personId||entry.id))===index).slice(0,3).map(({identity:_identity,...entry})=>entry)};
   }
   async function clip(owner,input){
     requireThat(input&&typeof input==='object'&&!Array.isArray(input)&&(!input.id||uuid.test(input.id)),'invalid_voiceprint',400);
@@ -94,22 +96,27 @@ export function voiceprints(repo, { infer = transcribeLocalAsr } = {}) {
       requireThat(input && typeof input === 'object' && !Array.isArray(input) && input.consent === true, 'voiceprint_consent_required', 400);
       requireThat(uuid.test(input.requestId) && typeof input.name === 'string' && input.name.trim().length > 0 && input.name.trim().length <= 80 && !/[\u0000-\u001f\u007f]/u.test(input.name), 'invalid_voiceprint_name', 400);
       requireThat(Number.isSafeInteger(input.libraryRevision) && input.libraryRevision >= 0, 'voiceprint_library_changed', 409);
-      const name = input.name.trim(), fingerprint = digest(JSON.stringify([input.recordId, input.segmentId, input.revision, name]));
+      const name = input.name.trim(), fingerprint = digest(JSON.stringify([input.recordId, input.segmentId, input.revision, name,...(input.personId?[input.personId,input.origin||null]:[])]));
       const priorGlobal=await vault(owner,'all'),globalRevision=scope==='all'?input.libraryRevision:(priorGlobal?.revision||0);
       const global=await vault(owner,'all',true),value=scope==='all'?global:await vault(owner,scope,true);
       const existing = value.entries.find(entry => entry.id === input.requestId);
       if (existing) { requireThat(existing.fingerprint === fingerprint, 'voiceprint_request_conflict', 409); return scope==='all'?globalEntry(value,existing):publicEntry(existing); }
       requireThat((value.revision || 0) === input.libraryRevision, 'voiceprint_library_changed', 409);
       requireThat(value.entries.length < 100, 'voiceprint_limit', 429);
+      const originRecord=await repo.get(input.recordId);requireThat(validOrigin(originRecord,input),'voiceprint_source_changed',409);
+      const person=input.personId?await repo.get(input.personId):null;
+      requireThat(!input.personId||(person?.kind==='voice-person'&&person.owner===owner&&!person.deleted),'voiceprint_not_found',404);
       const vector = await embedding(owner, scope, input), store = await secretStore();
-      const entry = { id: input.requestId, name, fingerprint, model: LOCAL_SPEAKER_MODEL, createdAt: new Date().toISOString(), consentVersion: scope==='all'?2:1, source: { recordId: input.recordId, segmentId: input.segmentId, revision: input.revision }, sealed: store.seal(`${value.id}:${input.requestId}`, { model: LOCAL_SPEAKER_MODEL, vector }) };
-      await repo.changeMany([...new Set([value.id, input.recordId,global.id])], records => {
+      const entry = { id: input.requestId, name, personId:input.personId, origin:input.origin, fingerprint, model: LOCAL_SPEAKER_MODEL, createdAt: new Date().toISOString(), consentVersion: scope==='all'?2:1, source: { recordId: input.recordId, segmentId: input.segmentId, revision: input.revision }, sealed: store.seal(`${value.id}:${input.requestId}`, { model: LOCAL_SPEAKER_MODEL, vector }) };
+      await repo.changeMany([...new Set([value.id, input.recordId,global.id,...(input.personId?[input.personId]:[])])], records => {
         const current = records.find(record => record.id === value.id), source = records.find(record => record.id === input.recordId);
         requireThat(source?.owner === owner && source.kind === 'record' && !source.deleted && Date.parse(source.deleteAt) > Date.now() && (scope === 'all' || (source.workspaceId || 'inbox') === scope) && source.segments.some(segment => segment.id === input.segmentId && segment.revision === input.revision), 'voiceprint_source_changed', 409);
-        const duplicate = current.entries.find(entry => entry.id === input.requestId);
+        requireThat(validOrigin(source,input),'voiceprint_source_changed',409);
+      const duplicate = current.entries.find(entry => entry.id === input.requestId);
         if (duplicate) { requireThat(duplicate.fingerprint === fingerprint, 'voiceprint_request_conflict', 409); return; }
         requireThat((current.revision || 0) === input.libraryRevision, 'voiceprint_library_changed', 409);
-        requireThat(current.entries.length < 100, 'voiceprint_limit', 429); const globalBank=records.find(bank=>bank.id===global.id);requireThat(globalBank.revision===globalRevision,'voiceprint_library_changed',409);current.entries.push(entry);globalBank.revision=(globalBank.revision||0)+1;
+        requireThat(current.entries.length < 100, 'voiceprint_limit', 429); if(input.personId){const person=records.find(row=>row.id===input.personId);requireThat(person?.owner===owner&&!person.deleted,'voiceprint_not_found',404);requireThat(current.entries.filter(entry=>entry.personId===input.personId).length<8,'voiceprint_limit',429);}
+      const globalBank=records.find(bank=>bank.id===global.id);requireThat(globalBank.revision===globalRevision,'voiceprint_library_changed',409);current.entries.push(entry);globalBank.revision=(globalBank.revision||0)+1;
       }); return scope==='all'?globalEntry(value,entry):publicEntry(entry);
     },
     async match(owner, scope, input) {

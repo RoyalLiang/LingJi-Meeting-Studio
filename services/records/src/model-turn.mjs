@@ -1,3 +1,4 @@
+import {meterModelCall} from './model-usage.mjs';
 import {builtinOutputSchema} from './builtin-skills.mjs';
 import {modelResponseError} from './model-errors.mjs';
 import {readModelTurnResponse} from './model-turn-stream.mjs';
@@ -34,7 +35,7 @@ function messagesFor(transcript, responses) {
 
 // Native protocol at the provider seam. Domain tools and final citations still
 // pass the same host authorization and validation as the compatibility path.
-export async function completeModelTurn(transcript, input, {jsonSchema, signal, timeoutMs=120000, onUsage, onRequest,onDelta} = {}) {
+async function completeModelTurnRaw(transcript, input, {jsonSchema, signal, timeoutMs=120000, onUsage, onRequest,onDelta} = {}) {
   const env=normalizeConfig(input), profile=modelProfile(env), responses=env.LLM_PROTOCOL==='responses';
   requireThat(configured(env.LLM_API_KEY)&&env.LLM_MODEL,'minutes_not_configured',503);
   const tools=(transcript.tools || getCurrentTools(transcript.messages||[])).map(tool=>responses ? {type:'function',name:tool.name,description:tool.description,parameters:tool.parameters,strict:false} : {type:'function',function:{name:tool.name,description:tool.description,parameters:tool.parameters,strict:false}});
@@ -48,7 +49,7 @@ export async function completeModelTurn(transcript, input, {jsonSchema, signal, 
   try {
     const response=await fetch(modelEndpoint(env.LLM_API_URL,env.LLM_PROTOCOL),{method:'POST',headers:{Authorization:`Bearer ${env.LLM_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify(body),signal:requestSignal});
     const result=await readModelTurnResponse(response,responses,{onDelta:async delta=>{firstTokenMs??=Date.now()-started;await onDelta?.(delta,{firstTokenMs,elapsedMs:Date.now()-started});},onUsage:async raw=>{const next=tokenUsage(raw);if(Object.keys(next).length){reportedUsage={...reportedUsage,...next};await onUsage?.({...reportedUsage,model:env.LLM_MODEL,protocol:env.LLM_PROTOCOL});}}});
-    if(!response.ok) throw modelResponseError(response.status,result);
+    if(!response.ok){await onUsage?.(tokenUsage(result.usage));throw modelResponseError(response.status,result);}
     const usage={...reportedUsage,...tokenUsage(result.usage)};
     const continuation=responses?(result.output||[]).filter(item=>item.type==='reasoning').map(item=>({type:'thinking',thinking:'',thinkingSignature:JSON.stringify({protocol:'responses',item})})):typeof result.choices?.[0]?.message?.reasoning_content==='string'?[{type:'thinking',thinking:'',thinkingSignature:JSON.stringify({protocol:'chat-completions',reasoning_content:result.choices[0].message.reasoning_content})}]:[];
     requireThat(!responses||!result.status||result.status==='completed','llm_stream_incomplete',502);
@@ -68,3 +69,5 @@ export async function completeModelTurn(transcript, input, {jsonSchema, signal, 
 const evidence={type:'array',items:{type:'object',properties:{recordId:{type:'string'},segmentId:{type:'string'},revision:{type:'integer'}},required:['recordId','segmentId','revision'],additionalProperties:false}};
 const statement={type:'object',properties:{text:{type:'string'},evidence},required:['text','evidence'],additionalProperties:false};
 export const meetingResultSchema=builtinOutputSchema('meeting-review')||{type:'object',properties:{summary:{type:'string'},decisions:{type:'array',items:statement},actions:{type:'array',items:{...statement,properties:{...statement.properties,owner:{type:['string','null']}},required:['text','evidence','owner']}}},required:['summary','decisions','actions'],additionalProperties:false};
+
+export function completeModelTurn(transcript, input, options = {}){return meterModelCall(input,options,callbacks=>completeModelTurnRaw(transcript,input,callbacks));}

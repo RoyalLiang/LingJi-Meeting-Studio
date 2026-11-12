@@ -187,7 +187,7 @@ function Workspace() {
   const pendingStop = useRef<{recordId:string;mode:'pause'|'seal';title:string}|null>(null);
   // Keep ownership while a failed seal needs retry after capture has stopped.
   const meetingAutomation=useMeetingAutomation(authReady ? boot?.meetingAutomation : undefined,{id:record?.id || '',recording:recording || Boolean(pendingStop.current?.recordId===activeId.current && pendingStop.current?.mode==='seal'),paused:record?.capture==='paused',busy:busy || stopping.current,startBlocked:Boolean(modal)},{start:quickRecord,stop:async ownedId=>activeId.current===ownedId ? stopCapture('seal') : false,error:setError});
-  useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem('meeting-theme', theme); }, [theme]);
+  useLayoutEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem('meeting-theme', theme); }, [theme]);
   useNativeMenuBar({ theme, authenticated: authReady, recordTitle: record?.title || '', capture: record?.capture || 'idle', recording, busy: busy || stopping.current,
     connection: !online && !localBackend ? 'offline' : !id ? 'idle' : connectionState }, {
     pause: () => { if (!stopping.current) void stopCapture('pause'); },

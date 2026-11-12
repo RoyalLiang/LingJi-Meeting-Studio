@@ -1,3 +1,4 @@
+import {modelUsageOverview} from './model-usage.mjs';
 import {waveHeader} from './audio-wav.mjs';
 import { voiceprints } from './voiceprints.mjs';
 import { createWorkspace, workspaceFields, retainedRecords, virtualScopes, workspaceOverview, analysisId, requestWorkspaceAnalysis, publicWorkspaceAnalysis } from '../../../packages/records/src/workspaces.mjs';
@@ -91,7 +92,9 @@ if(action==='voiceprints/clip'&&req.method==='GET'){
   }
   const records = retainedRecords(action==='overview'&&req.method==='GET'?await repo.listOverviewInputs(user.id):await repo.list(), user.id, scope), jobId = analysisId(user.id, scope), job = await repo.get(jobId);
   if (action === 'overview' && req.method === 'GET') {
-    send(res, 200, { workspace: { id: workspace.id, name: workspace.name, description: workspace.description }, ...workspaceOverview(records), analysis: publicWorkspaceAnalysis(job, records) }); return true;
+    const overview=workspaceOverview(records),usage=await modelUsageOverview(repo,user.id,scope);
+      overview.tokenActivity=usage.activity;overview.periods=overview.periods.map(period=>({...period,...usage.periods[period.id]}));
+      send(res, 200, { workspace: { id: workspace.id, name: workspace.name, description: workspace.description }, ...overview, analysis: publicWorkspaceAnalysis(job, records) }); return true;
   }
   if (action === 'analysis' && req.method === 'POST') {
     requireThat(providerStatus(await readConfig(repo.root)).textMinutes, 'minutes_not_configured', 503);

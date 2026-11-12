@@ -113,3 +113,5 @@
 }
 .select-editable{position:relative;min-width:0;width:100%}.select-editable>.select-trigger{display:block;width:100%;padding-right:36px;box-sizing:border-box;cursor:text;text-overflow:ellipsis}.select-editable>svg{position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--ink-3)}.select-empty{padding:16px 12px;color:var(--ink-3);font-size:13px}
 .select-options.select-portal.select-menu.select-single-line [role=option]>span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal}
+
+.select-options.select-single-line [role=option]>span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal}

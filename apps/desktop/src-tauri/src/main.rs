@@ -214,6 +214,22 @@ async fn capture_inputs(
 }
 
 #[tauri::command]
+fn client_theme(window: WebviewWindow, state: State<'_, Client>, theme: String) -> Result<(), String> {
+    authorize(&window, &state)?;
+    apply_window_theme(&window, &theme)
+}
+fn apply_window_theme(window: &WebviewWindow, theme: &str) -> Result<(), String> {
+    let appearance = match theme {
+        "dark" => tauri::Theme::Dark,
+        "light" => tauri::Theme::Light,
+        _ => return Err("invalid window theme".into()),
+    };
+    window.set_theme(Some(appearance)).map_err(|error| error.to_string())?;
+    #[cfg(target_os = "macos")]
+    window.set_background_color(Some(if appearance == tauri::Theme::Dark { tauri::webview::Color(36, 40, 43, 255) } else { tauri::webview::Color(246, 249, 247, 255) })).map_err(|error| error.to_string())?;
+    Ok(())
+}
+#[tauri::command]
 fn client_status(
     window: WebviewWindow,
     state: State<'_, Client>,
@@ -228,20 +244,7 @@ fn client_status(
     if authenticated && controls_ready { state.resident.deliver_action(&window); }
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     let _ = report;
-    let appearance = match theme.as_deref() {
-        Some("dark") => Some(tauri::Theme::Dark),
-        Some("light") => Some(tauri::Theme::Light),
-        None => None,
-        _ => return Err("invalid window theme".into()),
-    };
-    #[cfg(target_os = "macos")]
-    if let Some(appearance) = appearance {
-        let color = if appearance == tauri::Theme::Dark { tauri::webview::Color(36, 40, 43, 255) } else { tauri::webview::Color(246, 249, 247, 255) };
-        window.set_theme(Some(appearance)).map_err(|error| error.to_string())?;
-        window.set_background_color(Some(color)).map_err(|error| error.to_string())?;
-    }
-    #[cfg(not(target_os = "macos"))]
-    let _ = appearance;
+    if let Some(theme) = theme { apply_window_theme(&window, &theme)?; }
     Ok(())
 }
 
@@ -434,6 +437,7 @@ fn main() {
         capture_applications,
         client_ready,
         client_status,
+        client_theme,
         update_status,
         update_activity,
         update_check,
@@ -459,6 +463,7 @@ fn main() {
         capture_applications,
         client_ready,
         client_status,
+        client_theme,
         update_status,
         update_activity,
         update_check,
@@ -505,7 +510,7 @@ fn main() {
                 origin: origin.clone(), captures: Arc::new(audio::Captures::default()), resident: resident::Resident::default(), _lock: binding._lock, _backend: backend, updates, api });
             app.add_capability(CapabilityBuilder::new("local-capture").window("main").local(false).remote(format!("{origin}/*"))
                 .permission("allow-integration-open").permission("allow-audio-backup-directory").permission("allow-client-attention").permission("allow-meeting-watch-configure").permission("allow-capture-direct-kind").permission("allow-capture-direct-control").permission("allow-capture-direct-sessions").permission("allow-capture-direct-start").permission("allow-capture-direct-progress").permission("allow-capture-direct-stop").permission("allow-capture-start").permission("allow-capture-read").permission("allow-capture-ack").permission("allow-capture-progress").permission("allow-capture-stop").permission("allow-capture-inputs")
-                .permission("allow-capture-applications").permission("allow-recording-widget-update").permission("allow-client-close").permission("allow-client-ready").permission("allow-client-status").permission("allow-update-status").permission("allow-update-activity").permission("allow-update-check").permission("allow-update-download").permission("allow-update-install")
+                .permission("allow-capture-applications").permission("allow-recording-widget-update").permission("allow-client-close").permission("allow-client-ready").permission("allow-client-status").permission("allow-client-theme").permission("allow-update-status").permission("allow-update-activity").permission("allow-update-check").permission("allow-update-download").permission("allow-update-install")
                 .permission("core:event:allow-listen").permission("core:event:allow-unlisten"))?;
             app.add_capability(CapabilityBuilder::new("recording-widget").window("recording-widget").local(false).remote(format!("{origin}/*"))
                 .permission("allow-recording-widget-state").permission("allow-recording-widget-ready").permission("allow-recording-widget-action")

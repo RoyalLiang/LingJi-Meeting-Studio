@@ -1,3 +1,4 @@
+import {meterModelCall} from './model-usage.mjs';
 import WebSocket from 'ws';
 import { randomUUID } from 'node:crypto';
 import { DomainError, requireThat } from '../../../packages/records/src/record.mjs';
@@ -79,8 +80,10 @@ export function openRealtime(config) {
       return committed.item_id;
     },
     async respond(input, instructions, options = {}) {
+      return meterModelCall({...config,LLM_MODEL:config.OPENAI_REALTIME_MODEL},options,async options=>{
       await ready;
       const started = Date.now(); let text = '', firstTokenMs = null, preview = Promise.resolve();
+      await options.onRequest?.();
       const done = await exchange({ type: 'response.create', response: { conversation: 'none', metadata: { requestId: randomUUID() }, output_modalities: ['text'], instructions, input } }, event => event.type === 'response.done', {
         ...options,
         onEvent(event) {
@@ -102,6 +105,7 @@ export function openRealtime(config) {
       let result; try { result = JSON.parse(text.trim().replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch { throw new DomainError('invalid_realtime_response', 502); }
       requireThat(result && typeof result === 'object' && !Array.isArray(result), 'invalid_realtime_response', 502);
       return { ...result, tokenUsage, usageReported: Object.keys(tokenUsage).length > 0, usageTokens: tokenUsage.totalTokens || 0, runtime: { protocol: 'openai-realtime', model: config.OPENAI_REALTIME_MODEL, streamed: true, firstTokenMs, elapsedMs: Date.now() - started } };
+      });
     },
     close() { closed = true; socket.terminate(); },
   };

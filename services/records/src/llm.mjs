@@ -1,3 +1,4 @@
+import {meterModelCall} from './model-usage.mjs';
 import {modelResponseError} from './model-errors.mjs';
 import { normalizeConfig, configured, reasoningEfforts } from './config.mjs';
 import { DomainError, requireThat } from '../../../packages/records/src/record.mjs';
@@ -16,7 +17,7 @@ export function modelEndpoint(address, protocol) {
  } catch { return address; }
 }
 
-export async function completeModelJson(messages, input = process.env, { onDelta, onUsage, onRequest, signal, jsonSchema, reasoningEffort, maxOutputTokens, timeoutMs = 120000 } = {}) {
+async function completeModelJsonRaw(messages, input = process.env, { onDelta, onUsage, onRequest, signal, jsonSchema, reasoningEffort, maxOutputTokens, timeoutMs = 120000 } = {}) {
   const env = normalizeConfig(input), responses = env.LLM_PROTOCOL === 'responses';
   requireThat(configured(env.LLM_API_KEY) && env.LLM_MODEL, 'minutes_not_configured', 503);
   const streaming = typeof onDelta === 'function', started = Date.now();
@@ -105,3 +106,5 @@ export async function completeModelJson(messages, input = process.env, { onDelta
     return { ...result, usageTokens: usage.totalTokens ?? 0, tokenUsage:usage, usageReported:Object.keys(usage).length>0, runtime: { protocol: env.LLM_PROTOCOL, streamed, firstTokenMs, durationMs: Date.now() - started } };
   } catch (error) { if (error instanceof DomainError) throw error; throw new DomainError(requestSignal.reason?.name === 'TimeoutError' ? 'llm_timeout' : 'invalid_llm_response', 502); }
 }
+
+export function completeModelJson(messages, input = process.env, options = {}){return meterModelCall(input,options,callbacks=>completeModelJsonRaw(messages,input,callbacks));}
