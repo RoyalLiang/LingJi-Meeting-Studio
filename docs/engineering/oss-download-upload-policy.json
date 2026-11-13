@@ -1,0 +1,15 @@
+{
+  "Version": "1",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["oss:PutObject", "oss:GetObject", "oss:GetObjectAcl", "oss:PutObjectAcl"],
+      "Resource": ["acs:oss:*:*:lingji-studio/releases/*"]
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["oss:GetBucketVersioning"],
+      "Resource": ["acs:oss:*:*:lingji-studio"]
+    }
+  ]
+}

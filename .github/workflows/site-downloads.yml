@@ -1,0 +1,118 @@
+name: Publish OSS website downloads
+on:
+  workflow_run:
+    workflows: ['Desktop preview release']
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published vX.Y.Z to copy to OSS (cannot downgrade current)
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: oss-download-publication
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '26.12.1'
+          cache: npm
+      - run: npm ci
+      - name: Verify upload code
+        run: |
+          test "$GITHUB_REF" = refs/heads/main
+          git merge-base --is-ancestor HEAD origin/main
+          node --test tests/records-site-downloads.test.mjs tests/records-site-download-upload.test.mjs
+          npx eslint scripts/mirror-site-downloads.mjs tests/records-site-download-upload.test.mjs
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        if: github.event_name == 'workflow_run'
+        with:
+          name: preview-publication-receipt
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: verified-release
+      - name: Select published release
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          UPSTREAM_RUN_ID: ${{ github.event.workflow_run.id }}
+          UPSTREAM_WORKFLOW_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import {readFile,appendFile} from 'node:fs/promises';
+          const env=process.env;
+          let tag=env.INPUT_TAG, source='';
+          if(env.GITHUB_EVENT_NAME==='workflow_run') {
+            const receipt=JSON.parse(await readFile('verified-release/preview-publication-receipt.json','utf8'));
+            assert.equal(receipt.published,true);
+            assert.equal(receipt.workflowSha,env.UPSTREAM_WORKFLOW_SHA);
+            assert.equal(receipt.runUrl,`https://github.com/${env.GITHUB_REPOSITORY}/actions/runs/${env.UPSTREAM_RUN_ID}`);
+            assert.match(receipt.sourceRevision,/^[a-f0-9]{40}$/);
+            tag=receipt.tag;source=receipt.sourceRevision;
+          }
+          assert.match(tag||'',/^v\d{1,6}\.\d{1,6}\.\d{1,6}$/);
+          await appendFile(env.GITHUB_ENV,`RELEASE_TAG=${tag}\nEXPECTED_RELEASE_SHA=${source}\n`);
+          JS
+      - name: Verify public OIDC claims
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import {writeFile} from 'node:fs/promises';
+          const url=new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
+          url.searchParams.set('audience','sts.aliyuncs.com');
+          const response=await fetch(url,{headers:{Authorization:`Bearer ${process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}`},signal:AbortSignal.timeout(30000)});
+          assert.equal(response.ok,true);
+          const {value}=await response.json();
+          const claims=JSON.parse(Buffer.from(value.split('.')[1],'base64url'));
+          assert.equal(claims.iss,'https://token.actions.githubusercontent.com');
+          assert.equal(claims.aud,'sts.aliyuncs.com');
+          assert.equal(claims.repository,process.env.GITHUB_REPOSITORY);
+          assert.equal(claims.ref,'refs/heads/main');
+          const identity={issuer:claims.iss,audience:claims.aud,subject:claims.sub,repository:claims.repository,ref:claims.ref};
+          await writeFile('site-download-identity.json',JSON.stringify(identity,null,2)+'\n');
+          console.log(JSON.stringify(identity));
+          JS
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: website-download-identity
+          path: site-download-identity.json
+          if-no-files-found: error
+      - name: Assume upload role
+        if: vars.OSS_UPLOAD_ROLE_ARN != '' && vars.OSS_OIDC_PROVIDER_ARN != ''
+        uses: aliyun/configure-aliyun-credentials-action@1e5248c8d5d93a8781ac344a68e19a43341e79e6 # v1
+        with:
+          role-to-assume: ${{ vars.OSS_UPLOAD_ROLE_ARN }}
+          oidc-provider-arn: ${{ vars.OSS_OIDC_PROVIDER_ARN }}
+          audience: sts.aliyuncs.com
+          role-session-name: lingji-downloads-${{ github.run_id }}
+          role-session-expiration: 3600
+      - name: Publish OSS downloads
+        if: vars.OSS_UPLOAD_ROLE_ARN != '' && vars.OSS_OIDC_PROVIDER_ARN != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/mirror-site-downloads.mjs
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: vars.OSS_UPLOAD_ROLE_ARN != '' && vars.OSS_OIDC_PROVIDER_ARN != ''
+        with:
+          name: website-download-receipt
+          path: site-download-receipt.json
+          if-no-files-found: error
+      - name: Report missing upload authorization
+        if: vars.OSS_UPLOAD_ROLE_ARN == '' || vars.OSS_OIDC_PROVIDER_ARN == ''
+        run: echo 'OIDC identity verified. OSS upload is pending RAM role configuration; no files were uploaded.' >> "$GITHUB_STEP_SUMMARY"
