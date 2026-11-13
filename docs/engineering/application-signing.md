@@ -14,13 +14,25 @@ iOS 复用同一开发者团队，但其应用标识、授权配置及分发流�
 
 微软 Artifact Signing 的公开信任个人通道目前只接受美国或加拿大个人，不能仅通过选择海外云区域改变身份资格。[微软申请条件](https://learn.microsoft.com/en-gb/azure/artifact-signing/quickstart)
 
-按中国大陆个人准备时，可考察 SSL.com IV Code Signing 加 eSigner 云 HSM；最终受理取决于 CA 实名核验。官方当前列出 IV 证书每年 129 美元起、eSigner 最低年付 180 美元起，最低总计约 309 美元/年，含 240 次签名/年，税、汇率和超额用量另算。高频测试版需按 EXE、安装器等实际签名文件数估算用量，购买前再次确认最终报价。[证书类型](https://www.ssl.com/products/software-integrity/code-signing/)、[云签名价格](https://www.ssl.com/products/software-integrity/signing-service/)
+按中国大陆个人准备时，可考察 SSL.com IV Code Signing 加 eSigner 云 HSM；最终受理取决于 CA 实名核验。IV 无需注册公司，安装程序中的发布者显示经核验的个人姓名。官网通用材料说明不能证明某一大陆个人申请必然通过。[IV 产品与申请入口](https://www.ssl.com/products/software-integrity/code-signing/iv/)
+
+截至 2026-11-13，1 年期 IV 证书为 129 美元；eSigner Tier 1 年付 180 美元，含 240 次签名/年，基础年度合计约 309 美元。另有月付 20 美元、20 次/月方案；Tier 1 超额签名 1 美元/次。税、汇率及额外凭据另算，最终以下单报价为准。高频测试版需按 EXE、卸载器、安装器及重试的实际签名次数估算，240 次不是每月额度。[eSigner 详细计费](https://www.ssl.com/guide/esigner-pricing-for-code-signing/)
 
 证件、地址证明与付款由本人直接提交 CA。证书到账后再接入构建产物签名和 RFC 3161 时间戳，使用 Windows 验证签名状态与发布者。SmartScreen 信誉会随发布者与文件积累，签名成功不保证首次分发没有提示。[微软代码签名选项](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/code-signing-options)
 
 ### 证书申请前先确认受理资格
 
-向 CA 确认“中国大陆居民、个人身份、Windows 桌面 EXE/NSIS 公开分发”是否可受理，再购买证书和云签名配额。不要以网站能选择国家或付款成功代替审核。使用云 HSM 保管私钥；不把可导出的长期 PFX 放入仓库、安装包、WGS 共享目录或普通 CI 变量。支持短期 CI 身份时，限定具体仓库、发布引用和签名 profile；其他服务使用受保护、最小权限且可轮换的凭据。
+1. 先通过 [SSL.com 官方支持](https://www.ssl.com/contact/) 确认中国大陆居民以个人身份、无注册企业，是否可申请 IV Code Signing 并使用 eSigner。同步确认居民身份证或中国护照的受理方式、地址证明种类与有效期、中文或拼音姓名的证书 Subject，以及未通过核验的退款规则；确认后再付款。
+2. 在 IV 产品页选择个人代码签名和 eSigner 云 HSM。该方案无需购买 USB Token，也不要求将私钥导出为 PFX。真实姓名和地址由本人在 CA 账户填写，不用软件品牌替代个人身份。
+3. 登录账户 Dashboard，进入 **perform identity verification**，使用手机拍摄有效政府照片证件并按要求完成实时活体核验。自动流程不可用时，在 **Validations** 按订单要求人工提交证件或护照资料页及手持证件合照。仅在 CA 官方入口提交材料。[身份核验步骤](https://www.ssl.com/guide/identity-validation-for-ssl-com-certificates-a-complete-guide/)
+4. 审核通过后核对姓名和国家并确认，按账户指引注册 eSigner、启用多因素验证。证件缺少地址时可能需要补件；官方通用指引没有给出适用于所有大陆 IV 申请的统一账单时限，需按 CA 对该订单的要求准备。
+5. 提供公开的证书 Subject、签名服务名称与 Credential ID，随后接入构建流程。密码、TOTP 种子和 API 凭据通过受保护配置管理，不发送到聊天或写入源码。
+
+付款前可向 CA 发送以下说明；这是询问模板，尚未代为发送：
+
+> 我是居住在中国大陆的个人开发者，没有注册企业，计划购买 IV Code Signing 和 eSigner，用于 Windows EXE/NSIS 签名及 Linux CI 自动构建。请确认目前能否受理，接受哪些中国身份证件和地址证明、是否需要翻译、证书公开姓名的写法，以及验证未通过时的退款政策。
+
+使用云 HSM 保管私钥；不把可导出的长期 PFX 放入仓库、安装包、WGS 共享目录或普通 CI 变量。支持短期 CI 身份时，限定具体仓库、发布引用和签名 profile；其他服务使用受保护、最小权限且可轮换的凭据。
 
 Microsoft Artifact Signing 的 Public Trust 个人申请目前仅支持美国和加拿大，当前身份不适用。SignPath Foundation 需要满足其完整开源许可及审核要求，不能直接当作本项目已可用的免费通道。[微软申请条件](https://learn.microsoft.com/en-us/azure/artifact-signing/quickstart) · [SignPath 条件](https://signpath.org/terms)
 

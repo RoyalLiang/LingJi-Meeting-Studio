@@ -2,7 +2,7 @@
 
 官网的“立即下载”进入系统选择区，识别 macOS、Windows 或 Linux；用户也可手动选择。macOS 包仅支持 Apple Silicon，Windows 与 Linux 包为 x64。手机不会被识别成可安装的桌面系统。
 
-当前代码已实现系统 tab、下载目录和流式下载响应；实际存储/CDN 的地址与访问方式尚待提供，公网下载尚未完成接入。未配置下载源或目录不完整时，页面显示暂不可下载。
+当前代码已实现系统 tab、下载目录和流式下载响应。用户已确认沿用阿里云 OSS；Bucket、地域、目录和访问方式尚待提供，公网下载尚未完成接入。未配置下载源或目录不完整时，页面显示暂不可下载。
 
 ## 使用既有存储或 CDN
 
@@ -19,7 +19,24 @@ v0.3.30/Lingji-0.3.30-linux-amd64.deb
 
 `current.json` 必须包含同一已发布版本的三个成品安装包。每项字段为 `name`、实际字节数 `size`、64 位十六进制 `sha256`；顶层字段为 `version` 和 `assets`。摘要取最终发布的文件，不能用源码或签名前产物的摘要替代。
 
-完整文件先上传并核对大小及 SHA-256，再原子更新目录。版本路径不覆盖，失败保留上一个完整目录。具体上传命令和 CI 凭据待存储/CDN 提供方确定后配置，不预设新存储服务。
+完整文件先上传并核对大小及 SHA-256，再原子更新目录。版本路径不覆盖，失败保留上一个完整目录。OSS 上传权限与实际目录确认后再接入发布工作流。
+
+## 沿用阿里云 OSS
+
+只使用 OSS 时，可将安装包放在独立发布目录，例如 `lingji/releases/`，并以该目录的公开 HTTPS 地址配置 `DOWNLOADS_BASE_URL`。必须使用公网 Bucket 域名或已绑定的 HTTPS 自定义域名；Cloudflare 无法使用阿里云内网 Endpoint。Bucket 域名包含 Bucket 名称，不能仅填写地域 Endpoint。[OSS 访问域名](https://help.aliyun.com/zh/oss/user-guide/access-oss-via-bucket-domain-name)
+
+若已有阿里云 CDN，可沿用下载域名，让 CDN 鉴权回源私有 OSS。相同账号优先使用 STS 回源方式，无需在官网保存 OSS 长期密钥。CDN 对外下载地址仍需可公开读取；如果另有 URL 鉴权，应单独接入，当前下载源配置不接受临时签名 URL。[私有 Bucket 回源](https://help.aliyun.com/zh/cdn/user-guide/grant-alibaba-cloud-cdn-access-permissions-on-private-oss-buckets)
+
+发布目录只存公开安装包和 `current.json`。共享 Bucket 不应整体改成公共读；按发布对象或前缀授予读取权限，上传身份仅获得发布目录所需的写入权限。CDN 私有回源可能获得整个源 Bucket 的读取能力，也应避免与私人录音、分享文件混放。[OSS 权限控制](https://help.aliyun.com/zh/oss/user-guide/permissions-and-access-control-overview)
+
+按以下顺序接入：
+
+1. 确认 Bucket 名称、地域、目录前缀、下载域名及公共读或私有模式。使用自定义域名时，先完成 HTTPS 和域名绑定要求。
+2. 从发布工作流上传同版三个最终安装包，核对文件大小和 SHA-256 后，最后更新 `current.json`。不要给安装包设置 gzip/br 等内容编码；目录短缓存，版本文件长缓存。
+3. 将公开下载根目录写入 GitHub 仓库变量 `DOWNLOADS_BASE_URL`，通过现有官网工作流部署。若已有防盗链规则，需实际核验官网服务端回源；当前路由不会传递浏览器 Referer、Cookie 或 Authorization。
+4. 在公网核对目录、HEAD、小范围下载、断点续传及下载文件名。OSS 支持 Range，但实际 CDN 与权限规则仍需一起核验。[GetObject](https://help.aliyun.com/zh/oss/developer-reference/getobject)
+
+配置时只交换公开地址和权限模式。AccessKey、私钥或临时凭据通过受保护的部署配置注入，不放在 README、前端或聊天中。当前没有创建 Bucket、修改 ACL、上传安装包或配置云端凭据。
 
 ## 让浏览器下载文件
 
