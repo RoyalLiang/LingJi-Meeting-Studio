@@ -203,3 +203,23 @@ details p { font-size: 16px; line-height: 1.9; margin-bottom: 20px; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
   .reveal-ready [data-reveal] { opacity: 1; transform: none; }
 }
+
+.downloads { scroll-margin-top: 24px; }
+.download-tabs { display: flex; gap: 4px; border-bottom: 1px solid #d8ddd9; margin-bottom: 24px; }
+.download-tabs button { border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); min-height: 48px; padding: 12px 24px; cursor: pointer; }
+.download-tabs [aria-selected="true"] { color: var(--green); border-color: var(--green); }
+.download-panel { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px 32px; align-items: center; padding: 28px; border-radius: 20px; background: var(--ground); }
+.download-panel h3 { font-size: 24px; margin-bottom: 8px; }
+.download-panel p { margin-bottom: 8px; line-height: 1.7; }
+.download-note, .download-action span { color: var(--muted); font-size: 14px; line-height: 1.7; }
+.download-note:empty { display: none; }
+.download-action { display: grid; gap: 8px; text-align: center; }
+.download-action [aria-disabled="true"] { opacity: .45; cursor: wait; pointer-events: none; }
+.download-hash { grid-column: 1 / -1; font-size: 13px; color: var(--muted); }
+.download-hash summary { cursor: pointer; padding-block: 8px; }
+.download-hash code { display: block; overflow-wrap: anywhere; padding-top: 8px; }
+@media (max-width: 540px) {
+  .download-tabs button { flex: 1; padding-inline: 12px; }
+  .download-panel { grid-template-columns: minmax(0, 1fr); padding: 20px; }
+  .download-action { justify-items: start; text-align: left; }
+}

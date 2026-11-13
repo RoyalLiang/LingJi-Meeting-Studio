@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://rookiecode.com">产品官网</a> ·
-  <a href="https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases">下载测试版</a> ·
+  <a href="https://rookiecode.com/#download">立即下载</a> ·
   <a href="https://rookiecode.com/example">阅读示例纪要</a> ·
   <a href="docs/README.md">使用与开发文档</a> ·
   <a href="https://github.com/RoyalLiang/LingJi-Meeting-Studio/issues">反馈问题</a>
@@ -19,6 +19,10 @@
 聆记是一款会议记录工作台。它把录音、逐字稿、主题纪要、原文引用和行动候选放在同一份记录中：会中跟上讨论，会后回顾结论，需要时还能回到那句原话。
 
 支持 macOS、Windows、Linux 桌面测试版，也可从源码运行 Web 工作台。共享纪要可直接用浏览器阅读。当前仍在测试阶段，功能与验证范围见[当前状态](docs/engineering/current-state.md)，安装包与版本说明以 [Releases](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases) 为准。
+
+当前已发布测试版为 **v0.3.29**；本轮源码目标为 **v0.3.30**，安装包以实际发布回执为准。当前工作台包含实际请求 Token 计量、可拖动的说话人标注、经同意的声音学习与跨会议匹配，以及项目任务、知识与 Git 归档。模型未返回的用量不估算，声音匹配结果仍需复核。
+
+以下截图来自当前工作台，会议内容为演示数据。
 
 ## 为什么做聆记
 
@@ -123,7 +127,9 @@
 
 ### 下载桌面测试版
 
-在 [Releases](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases) 选择同一版本的成品安装包，按发布正文核对 SHA-256。Source code 是源码归档，不是安装包。
+打开[官网立即下载](https://rookiecode.com/#download)，页面会按当前系统选中对应 tab；核对架构后，再点**立即下载**，由浏览器从官网下载安装包。可手动切换系统，展开 SHA-256 核对摘要。安装包目录尚未就绪时会明确提示暂不可用。
+
+[GitHub Releases](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases) 保留独立的发布记录与附件。下载的是成品安装包；Source code 是源码归档。
 
 | 平台 | 系统要求 | 安装文件 |
 | --- | --- | --- |
@@ -139,6 +145,10 @@
 Windows 默认勾选安装本地 SenseVoice 模型，可取消；macOS 与 Linux 包含模型。Windows 取消后若无已有模型，需要配置云端转录；这不会减小完整安装包的下载大小。原位置升级可保留已有模型。
 
 当前 Windows 包未签名，macOS 包为临时签名且未公证。安装提示见 [macOS 安装与信任说明](docs/releases/macos-trust.md)。Linux 实体 PipeWire/声卡仍需目标设备验收；关闭窗口进入退出确认流程，不提供托盘常驻。Windows 与 macOS 收起主窗口后可继续工作，停止采集请使用会议内的暂停或结束。
+
+### 手机先录音，电脑继续整理
+
+目前可以使用手机自带录音工具，结束后把音频传到电脑，在聆记中导入。官网尚未提供手机录音或云账号同步；桌面本机账户也不是跨设备云账号。需要锁屏长录音时，使用系统录音能力。
 
 ### 选择纪要链路
 

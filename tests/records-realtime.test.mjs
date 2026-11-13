@@ -8,6 +8,38 @@ const source=await readFile(new URL('../apps/web/src/record-subscription.ts',imp
 const javascript=stripTypeScriptTypes(source).replaceAll('export function','function')+'\nexports.subscribeToRecord=subscribeToRecord;exports.applyRecordDelta=applyRecordDelta;';
 const settle=async()=>{for(let i=0;i<12;i++)await Promise.resolve();};
 
+test('a committed event wakes SSE immediately after an empty read, including concurrent readers', async () => {
+  const {mkdtemp, rm} = await import('node:fs/promises'), {tmpdir} = await import('node:os'), {join} = await import('node:path');
+  const {createRepository} = await import('../services/records/src/repository.mjs');
+  const {createRecordServer} = await import('../services/records/src/server.mjs');
+  const {emit} = await import('../packages/records/src/record.mjs');
+  const root = await mkdtemp(join(tmpdir(), 'sse-empty-wake-')), repo = await createRepository({root, databaseUrl: ''});
+  const app = await createRecordServer({repo, port: 0}), controllers = [];
+  try {
+    const address = await app.start(), base = `http://127.0.0.1:${address.port}/api`;
+    const registration = await fetch(base + '/auth/register', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({email: 'wake@example.test', password: 'synthetic-wake-test-password'})});
+    const account = await registration.json(), headers = {Cookie: registration.headers.get('set-cookie').split(';')[0], 'X-CSRF-Token': account.csrf, 'Content-Type': 'application/json'};
+    const record = await (await fetch(base + '/records', {method: 'POST', headers, body: '{}'})).json();
+    let readDone; const initialRead = new Promise(resolve => {readDone = resolve;});
+    const eventsAfter = repo.eventsAfter.bind(repo);
+    repo.eventsAfter = async (...args) => {const result = await eventsAfter(...args); readDone(); return result;};
+    const readers = await Promise.all([0, 1].map(async () => {
+      const controller = new AbortController(); controllers.push(controller);
+      return (await fetch(`${base}/records/${record.id}/events?after=${record.cursor}`, {headers, signal: controller.signal})).body.getReader();
+    }));
+    await initialRead; await new Promise(resolve => setImmediate(resolve));
+    const started = performance.now();
+    await repo.change(record.id, value => {value.notes = 'Synthetic'; emit(value, 'transcript.updated');});
+    await Promise.all(readers.map(async reader => {
+      let data = '', timer;
+      try {
+        await Promise.race([(async () => {while (!data.includes('"type":"transcript.updated"')) {const next = await reader.read(); assert.equal(next.done, false); data += new TextDecoder().decode(next.value);}})(), new Promise((_, reject) => {timer = setTimeout(() => reject(new Error('SSE wake waited for the one-second recovery poll')), 600);})]);
+      } finally {clearTimeout(timer);}
+    }));
+    assert.ok(performance.now() - started < 600);
+  } finally {for (const controller of controllers) controller.abort(); await app.stop(); await rm(root, {recursive: true, force: true});}
+});
+
 test('API unavailable is distinguished from a broken SSE stream and retries without discarding the last snapshot', async () => {
   let unavailable = false;
   const h = harness(async () => { if (unavailable) throw Object.assign(new Error('service down'), {status: 502}); return {cursor: '7'}; });

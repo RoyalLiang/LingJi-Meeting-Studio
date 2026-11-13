@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { normalizePublishedContent } from '../packages/records/src/published-content.mjs';
 import { exampleContent } from '../apps/site/src/example.mjs';
+import { downloadBase } from '../apps/site/src/downloads.mjs';
 
 export const projectName='lingji-meeting-studio-beta';
 const resourceName=projectName+'-shares', marker='lingji-public-site-v1';
@@ -60,6 +61,8 @@ export async function deployPublicSite({env=process.env,fetcher=fetch,run=comman
     if(!/^[A-Za-z0-9_.-]{12,128}$/.test(client) || secret.length<32 || !/^\d+$/.test(owner))throw new Error('Configure GitHub OAuth client ID, secret and immutable publisher ID.');
     Object.assign(vars,{GITHUB_CLIENT_ID:client,PUBLISHER_GITHUB_ID:owner,PUBLIC_SITE_ORIGIN:'https://rookiecode.com'});
   }else if(project?.deployment_configs?.production?.env_vars?.GITHUB_CLIENT_SECRET)throw new Error('OAuth configuration is missing; refusing to remove an existing publisher configuration.');
+  if(env.DOWNLOADS_BASE_URL)vars.DOWNLOADS_BASE_URL=downloadBase(env.DOWNLOADS_BASE_URL);
+  else if(project?.deployment_configs?.production?.env_vars?.DOWNLOADS_BASE_URL)throw new Error('Refusing to remove the existing download source.');
   const envVars=Object.fromEntries(Object.entries(vars).map(([key,value])=>[key,{type:'plain_text',value}]));
   if(publishing)envVars.GITHUB_CLIENT_SECRET={type:'secret_text',value:secret};
   if(!project){

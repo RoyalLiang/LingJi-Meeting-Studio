@@ -3,6 +3,7 @@ import { createShareDocument } from '../../web/src/share-content.ts';
 import { publisher, authentication, publishingConfigured } from './identity.mjs';
 import { exampleContent } from './example.mjs';
 import { encryptedShareRoute } from './encrypted-shares.mjs';
+import { downloadRoute } from './downloads.mjs';
 
 const encoder=new TextEncoder(), invalidReads=new Map();
 const tokenPattern=/^[A-Za-z0-9_-]{43}$/;
@@ -44,10 +45,11 @@ function replay(row,tokenHash,payloadHash,token){
   if(row.revoked_at || row.expires_at<=Date.now())throw new ShareContentError('share_expired_or_revoked',410);
   return json({id:row.id,path:`/share/${token}`,expires:row.expires_at});
 }
-export function createSiteWorker({identify=publisher}={}){
+export function createSiteWorker({identify=publisher,downloadFetch=fetch}={}){
   return {async fetch(request,env){
     try{
       const url=new URL(request.url),path=url.pathname;
+      const download = await downloadRoute(request, env, downloadFetch); if (download) return download;
       const encrypted = await encryptedShareRoute(request, env); if (encrypted) return encrypted;
       if(path.startsWith('/auth/'))return await authentication(request,env);
       if(path==='/example' && request.method==='GET')return document(exampleContent);

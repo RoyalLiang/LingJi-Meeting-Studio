@@ -124,7 +124,7 @@ export async function createRecordServer(options = {}) {
     if (feeds.has(key)) return feeds.get(key);
     const request = Promise.resolve().then(() => repo.eventsAfter(id, cursor));
     feeds.set(key, request);
-    const release = () => { const timer = setTimeout(() => { if (feeds.get(key) === request) feeds.delete(key); }, 100); timer.unref?.(); };
+    const release = () => { if (feeds.get(key) === request) feeds.delete(key); };
     void request.then(release, release);
     return request;
   };

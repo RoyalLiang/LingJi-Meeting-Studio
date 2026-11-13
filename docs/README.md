@@ -17,6 +17,6 @@
 - [运行手册](engineering/runbook.md)、[接口](engineering/api.md)、[Record 传输协议](engineering/record-transport.md)。
 - [存储与性能边界](engineering/storage-and-performance.md)、[飞书与 Git 连接器协议](engineering/connectors.md)。
 - [实现约定](engineering/practices.md)、[桌面运行](engineering/native-client.md)、[更新机制](engineering/client-updates.md)。
-- [构建和发布](engineering/local-release-options.md)、[应用签名](engineering/application-signing.md)。
+- [构建和发布](engineering/local-release-options.md)、[应用签名](engineering/application-signing.md)、[官网下载运维](engineering/website-downloads.md)。
 
 产品说明只记录当前行为。设计探索、一次性实施过程、评审原始输出和构建回执留在本地 `.agent-runtime/`，不作为产品版本说明或已上线事实。

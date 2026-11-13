@@ -32,7 +32,7 @@ jobs:
       - name: Verify sharing and website
         if: github.event_name != 'schedule'
         run: |
-          node --test tests/records-published-site.test.mjs tests/records-encrypted-sharing.test.mjs
+          node --test tests/records-published-site.test.mjs tests/records-encrypted-sharing.test.mjs tests/records-site-downloads.test.mjs
           npm run lint
           npm run build:site
       - name: Publish or clean expired metadata
@@ -42,6 +42,7 @@ jobs:
           SITE_GITHUB_CLIENT_ID: ${{ secrets.SITE_GITHUB_CLIENT_ID }}
           SITE_GITHUB_CLIENT_SECRET: ${{ secrets.SITE_GITHUB_CLIENT_SECRET }}
           PUBLISHER_GITHUB_ID: ${{ vars.PUBLISHER_GITHUB_ID }}
+          DOWNLOADS_BASE_URL: ${{ vars.DOWNLOADS_BASE_URL }}
         run: node scripts/deploy-public-site.mjs ${{ github.event_name == 'schedule' && '--cleanup' || '' }}
       - name: Verify anonymous encrypted sharing on official domain
         if: github.event_name != 'schedule'

@@ -9,21 +9,22 @@
   <link rel="icon" href="/brand.png" type="image/png">
   <link rel="stylesheet" href="/landing.css">
   <script type="module" src="/landing.js"></script>
+  <script type="module" src="/downloads.js"></script>
 </head>
 <body id="top">
   <a class="skip" href="#main">跳到正文</a>
   <header class="navigation"><div class="frame nav-inner">
     <a class="brand" href="/" aria-label="聆记首页"><img src="/brand.png" width="30" height="30" alt=""><span>聆记</span><span class="brand-english">LingJi</span></a>
     <nav aria-label="主导航"><a href="#experience">产品体验</a><a href="#agent">Agent 与扩展</a><a href="#privacy">本地与云端</a><a href="#questions">了解更多</a></nav>
-    <a class="button nav-download" href="https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases">下载测试版</a>
+    <a class="button nav-download" href="#download" data-open-downloads>立即下载</a>
   </div></header>
   <main id="main">
     <section class="hero frame" aria-labelledby="hero-title">
       <h1 id="hero-title" data-reveal>专心讨论。<br>聆记，帮你记。</h1>
       <p class="hero-description" data-reveal>录音、转录、AI 纪要与会议 Agent，在一个工作台连起来。<br class="desktop-break">跟上讨论，也找得回每一个重要决定。</p>
-      <div class="hero-actions" data-reveal><a class="button" href="https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases">下载测试版</a><a class="link" href="#experience">看看聆记能做什么 ↗</a></div>
+      <div class="hero-actions" data-reveal><a class="button" href="#download" data-open-downloads>立即下载</a><a class="link" href="#experience">看看聆记能做什么 ↗</a></div>
       <p class="platforms">macOS · Windows · Linux<span>加密共享纪要，用浏览器就能读。</span></p>
-      <figure class="native-hero" data-reveal><a href="/screens/meeting-native.png" target="_blank" rel="noopener"><img src="/screens/meeting-native.png" width="2560" height="1800" fetchpriority="high" alt="macOS 原生聆记客户端中按主题阅读会议纪要的真实截图"></a></figure>
+      <figure class="native-hero" data-reveal><a href="/screens/meeting-native.png" target="_blank" rel="noopener"><img src="/screens/meeting-native.png" width="1440" height="900" fetchpriority="high" alt="当前聆记工作台的主题纪要与原文引用，使用演示数据"></a><figcaption>当前工作台界面，使用演示数据。</figcaption></figure>
     </section>
 
     <section class="purpose frame section-space" aria-labelledby="purpose-title">
@@ -35,29 +36,56 @@
       <div class="section-heading" data-reveal><h2 id="experience-title">一场讨论。<br>从不同角度看清。</h2><p>同一份记录，可以按主题读，回到原话核对，<br>也可以把后续行动单独拿出来看。</p></div>
       <div class="demo-switch" role="group" aria-label="选择产品截图" hidden><button type="button" aria-pressed="true" data-view="minutes">会议纪要</button><button type="button" aria-pressed="false" data-view="transcript">逐字记录</button><button type="button" aria-pressed="false" data-view="actions">导出成果</button></div>
       <div class="native-gallery">
-        <figure id="demo-minutes" data-panel="minutes"><a href="/screens/meeting-native.png" target="_blank" rel="noopener"><img src="/screens/meeting-native.png" width="2560" height="1800" loading="lazy" alt="真实客户端中的主题纪要和行动候选"></a></figure>
-        <figure id="demo-transcript" data-panel="transcript" hidden><a href="/screens/transcript-native.png" target="_blank" rel="noopener"><img src="/screens/transcript-native.png" width="2560" height="1800" loading="lazy" alt="真实客户端的逐字记录、搜索和词表纠错入口"></a></figure>
-        <figure id="demo-actions" data-panel="actions" hidden><a href="/screens/export-native.png" target="_blank" rel="noopener"><img src="/screens/export-native.png" width="2560" height="1800" loading="lazy" alt="真实客户端的 Markdown、飞书云文档和 WAV 导出选项"></a></figure>
+        <figure id="demo-minutes" data-panel="minutes"><a href="/screens/meeting-native.png" target="_blank" rel="noopener"><img src="/screens/meeting-native.png" width="1440" height="900" loading="lazy" alt="当前聆记工作台的主题纪要与原文引用，使用演示数据"></a></figure>
+        <figure id="demo-transcript" data-panel="transcript" hidden><a href="/screens/transcript-native.png" target="_blank" rel="noopener"><img src="/screens/transcript-native.png" width="1440" height="900" loading="lazy" alt="当前工作台的逐字转录与说话人标注入口，使用演示数据"></a></figure>
+        <figure id="demo-actions" data-panel="actions" hidden><a href="/screens/export-native.png" target="_blank" rel="noopener"><img src="/screens/export-native.png" width="1440" height="900" loading="lazy" alt="当前工作台的会议导出窗口，使用演示数据"></a></figure>
       </div>
     </div></section>
 
     <section id="features" class="frame section-space" aria-labelledby="features-title">
       <div class="section-heading" data-reveal><h2 id="features-title">从开始记录，<br>到理解更多。</h2><p>把会前、会中、会后连起来。<br>每一项功能，都为少一点遗漏、多一点理解。</p></div>
-      <div class="scene-pair"><div data-reveal><h3>已有的记录，<br>也能接着整理。</h3><p>访谈录音已经录好了？上次讨论只留下逐字稿？把音频或文字导入同一个工作台，接着整理主题、核对原话、补充自己的笔记。</p><p>现场讨论也可以直接使用麦克风与受支持的系统音频。暂停、继续，把后续内容接着记。</p><p class="scene-note">浏览器与系统音频的采集范围取决于平台和授权。</p></div><figure data-reveal><a href="/screens/import-native.png" target="_blank" rel="noopener"><img src="/screens/import-native.png" width="2560" height="1800" loading="lazy" alt="macOS 客户端中导入已有转录文字的真实操作界面"></a></figure></div>
-      <div class="capabilities"><article data-reveal><h3>多种语言，一起理解。</h3><p>保留原文，按目标语言翻译。跨语言沟通时，对照阅读，不必在两个工具之间来回切换。</p><a href="https://github.com/RoyalLiang/LingJi-Meeting-Studio/blob/main/docs/engineering/multilingual-vocabulary.md">了解翻译与语种支持 ↗</a></article><article data-reveal><h3>专有名词，认真对待。</h3><p>配置账户与工作目录词表，为人名、产品名和业务术语提供背景。校对候选经你确认，保留修订关系。</p><a href="https://github.com/RoyalLiang/LingJi-Meeting-Studio/blob/main/docs/engineering/asr-quality.md">了解词表与校对 ↗</a></article><article data-reveal><h3>一次记录，长期有用。</h3><p>按项目组织工作目录，搜索会议与内容，通过目录概览回顾讨论主题、已记录的决策和行动。</p><a href="https://github.com/RoyalLiang/LingJi-Meeting-Studio/blob/main/docs/engineering/workspaces.md">了解工作目录 ↗</a></article><article data-reveal><h3>重要内容，由你把关。</h3><p>修正逐字稿、补充笔记、人工编辑纪要。保留修订关系，人工编辑不会被后台重生成覆盖。</p><a href="#agent">看看 Agent 如何接着工作 ↗</a></article></div>
+      <div class="scene-pair"><div data-reveal><h3>已有的记录，<br>也能接着整理。</h3><p>访谈录音已经录好了？上次讨论只留下逐字稿？把音频或文字导入同一个工作台，接着整理主题、核对原话、补充自己的笔记。</p><p>现场讨论也可以直接使用麦克风与受支持的系统音频。暂停、继续，把后续内容接着记。</p><p class="scene-note">浏览器与系统音频的采集范围取决于平台和授权。</p></div><figure data-reveal><a href="/screens/import-native.png" target="_blank" rel="noopener"><img src="/screens/import-native.png" width="1440" height="900" loading="lazy" alt="当前工作台的已有转录导入窗口，使用演示数据"></a></figure></div>
+      <div class="capabilities"><article data-reveal><h3>多种语言，一起理解。</h3><p>保留原文，按目标语言翻译。跨语言沟通时，对照阅读，不必在两个工具之间来回切换。</p><a href="https://github.com/RoyalLiang/LingJi-Meeting-Studio/blob/main/docs/engineering/multilingual-vocabulary.md">了解翻译与语种支持 ↗</a></article><article data-reveal><h3>专有名词，认真对待。</h3><p>配置账户与工作目录词表，为人名、产品名和业务术语提供背景。校对候选经你确认，保留修订关系。</p><a href="https://github.com/RoyalLiang/LingJi-Meeting-Studio/blob/main/docs/engineering/asr-quality.md">了解词表与校对 ↗</a></article><article data-reveal><h3>一次记录，长期有用。</h3><p>按项目组织工作目录，搜索会议与内容，通过目录概览回顾讨论主题、已记录的决策和行动。</p><a href="https://github.com/RoyalLiang/LingJi-Meeting-Studio/blob/main/docs/engineering/workspaces.md">了解工作目录 ↗</a></article><article data-reveal><h3>重要内容，由你把关。</h3><p>修正逐字稿、补充笔记、人工编辑纪要。保留修订关系，人工编辑不会被后台重生成覆盖。</p><a href="#agent">看看 Agent 如何接着工作 ↗</a></article><article data-reveal><h3>称谓先记住，声音慢慢熟悉。</h3><p>标注说话人后，经同意保存声音，用于后续会议匹配。称谓先保存，学习在后台继续，匹配结果可随时复核。</p></article><article data-reveal><h3>模型用量，有真实回执。</h3><p>按日、周、月查看模型 Token，回顾请求与活动。缺失的回执保留未知，不把估算写成实际消耗。</p></article></div>
     </section>
 
-    <section id="agent" class="agent-scene section-space" aria-labelledby="agent-title"><div class="frame"><div class="section-heading" data-reveal><h2 id="agent-title">让 Agent，<br>接着把事理清。</h2><p>记录留下来了，会议助手接着帮你梳理。<br>先选会议，再说目标，按来源检查独立结果。</p></div><figure class="wide-shot" data-reveal><a href="/screens/assistant-native.png" target="_blank" rel="noopener"><img src="/screens/assistant-native.png" width="2560" height="1800" loading="lazy" alt="macOS 会议助手选择两场会议并输入跨会议整理目标的真实截图"></a></figure><div class="agent-scenarios"><article data-reveal><h3>把变化，串成一条线。</h3><p>选中两次需求评审，询问“哪些决定延续了，哪些条件发生了变化？”从多场会议中整理脉络，保留各自的来源版本。</p></article><article data-reveal><h3>把风险，带进下一次讨论。</h3><p>让助手梳理分歧、风险与待确认事项，为下一次讨论准备问题。结果独立保存，行动候选由参与者确认。</p></article></div></div></section>
+    <section id="agent" class="agent-scene section-space" aria-labelledby="agent-title"><div class="frame"><div class="section-heading" data-reveal><h2 id="agent-title">让 Agent，<br>接着把事理清。</h2><p>记录留下来了，会议助手接着帮你梳理。<br>先选会议，再说目标，按来源检查独立结果。</p></div><figure class="wide-shot" data-reveal><a href="/screens/assistant-native.png" target="_blank" rel="noopener"><img src="/screens/assistant-native.png" width="1440" height="900" loading="lazy" alt="当前会议助手选择会议与整理目标的界面，使用演示数据"></a></figure><div class="agent-scenarios"><article data-reveal><h3>把变化，串成一条线。</h3><p>选中两次需求评审，询问“哪些决定延续了，哪些条件发生了变化？”从多场会议中整理脉络，保留各自的来源版本。</p></article><article data-reveal><h3>把风险，带进下一次讨论。</h3><p>让助手梳理分歧、风险与待确认事项，为下一次讨论准备问题。结果独立保存，行动候选由参与者确认。</p></article></div></div></section>
 
-    <section class="extensions-scene frame section-space" aria-labelledby="extensions-title"><div class="section-heading" data-reveal><h2 id="extensions-title">你的方法。<br>你的工具。</h2><p>Skill 定义怎样整理。MCP 接入可用工具。<br>为不同会议选择合适的方法和上下文。</p></div><div class="extension-scenes"><article data-reveal><h3>让整理方法，成为 Skill。</h3><p>用内置“会议复盘”提取共识、决策与行动候选，也可以安装远程 Skill，把团队常用的整理方法带进会议任务。</p><figure><a href="/screens/skills-native.png" target="_blank" rel="noopener"><img src="/screens/skills-native.png" width="2560" height="1800" loading="lazy" alt="真实客户端的内置会议复盘 Skill 与远程 Skill 安装入口"></a></figure></article><article data-reveal><h3>让外部资料，成为上下文。</h3><p>连接你信任的 HTTP MCP 服务，查看工具清单并逐项批准只读工具。运行会议任务时，明确选择本次允许读取的资料。</p><figure><a href="/screens/mcp-native.png" target="_blank" rel="noopener"><img src="/screens/mcp-native.png" width="2560" height="1800" loading="lazy" alt="真实客户端中添加 HTTPS MCP 服务并确认只读工具的界面"></a></figure></article></div><p class="caption">Agent 与扩展需完成模型和服务配置。所选会议、笔记与外部工具的使用范围，在运行前分别确认。</p></section>
+    <section class="extensions-scene frame section-space" aria-labelledby="extensions-title"><div class="section-heading" data-reveal><h2 id="extensions-title">你的方法。<br>你的工具。</h2><p>Skill 定义怎样整理。MCP 接入可用工具。<br>为不同会议选择合适的方法和上下文。</p></div><div class="extension-scenes"><article data-reveal><h3>让整理方法，成为 Skill。</h3><p>用内置“会议复盘”提取共识、决策与行动候选，也可以安装远程 Skill，把团队常用的整理方法带进会议任务。</p><figure><a href="/screens/skills-native.png" target="_blank" rel="noopener"><img src="/screens/skills-native.png" width="1440" height="900" loading="lazy" alt="当前扩展中心的内置会议复盘与远程 Skill 安装入口"></a></figure></article><article data-reveal><h3>让外部资料，成为上下文。</h3><p>连接你信任的 HTTP MCP 服务，查看工具清单并逐项批准只读工具。运行会议任务时，明确选择本次允许读取的资料。</p><figure><a href="/screens/mcp-native.png" target="_blank" rel="noopener"><img src="/screens/mcp-native.png" width="1440" height="900" loading="lazy" alt="当前扩展中心的 HTTPS MCP 服务配置入口"></a></figure></article></div><p class="caption">Agent 与扩展需完成模型和服务配置。所选会议、笔记与外部工具的使用范围，在运行前分别确认。</p></section>
 
     <section class="sharing section-space" aria-labelledby="sharing-title"><div class="frame sharing-layout"><div data-reveal><h2 id="sharing-title">散会了。<br>共识，继续往前。</h2><p>把纪要带到下一步工作的地方。<br>客户端加密，浏览器解密。</p><a class="link" href="/example">用浏览器读一份示例 ↗</a></div><div class="share-options"><article data-reveal><h3>带走一份文档。</h3><p>导出 Markdown 或可在浏览器阅读的 HTML，保留纪要与必要引用，方便归档与复盘。</p></article><article data-reveal><h3>接上飞书协作。</h3><p>配置飞书企业自建应用后，先预览，再确认导出到云文档；也可配置会后自动导出规则。</p></article><article data-reveal><h3>分享，范围由你选。</h3><p>在客户端选择范围，一键生成加密链接，无需登录。官网保存密文，接收者在浏览器中解密阅读；链接 24 小时有效，可提前撤销，原音不上传。</p><a href="/publish">了解加密分享 ↗</a></article></div></div><p class="frame sharing-note">完整链接包含解密密钥，请只分享给需要阅读的人。删除本机记录不会自动撤销链接；撤销无法收回接收者已保存的副本。</p></section>
 
     <section id="privacy" class="privacy frame section-space" aria-labelledby="privacy-title"><div class="section-heading" data-reveal><h2 id="privacy-title">在哪里处理，<br>你有选择。</h2><p>本地转录与云端理解，可以分别配置。<br>采集、原音保留、云端发送和分享，也分别确认。</p></div><div class="privacy-columns"><article data-reveal><h3>想在本机转录。</h3><p>桌面测试版可使用内置 SenseVoice，在本机把声音转成文字。Windows 安装时可选择是否安装模型。</p><p>本地转录不等于 AI 纪要全部离线。AI 整理使用你配置的纪要模型，数据去向取决于对应服务。</p></article><article data-reveal><h3>想选自己的模型。</h3><p>使用 ASR＋文字模型整理，或配置 OpenAI Realtime、豆包音频方式理解音频，同时保留独立转录留证。</p><p>云端转录、翻译或纪要会向对应服务发送音频或文字，需要服务账户、密钥及相应额度。</p></article></div></section>
 
+    <section id="download" class="downloads frame section-space" aria-labelledby="download-title">
+      <div class="section-heading"><h2 id="download-title">下一场会议，<br>从这里开始。</h2><p id="download-version">聆记桌面测试版</p></div>
+      <div class="download-tabs" role="tablist" aria-label="选择操作系统">
+        <button id="download-tab-macos" role="tab" aria-selected="false" aria-controls="download-macos" data-download-platform="macos" tabindex="-1">macOS</button>
+        <button id="download-tab-windows" role="tab" aria-selected="true" aria-controls="download-windows" data-download-platform="windows">Windows</button>
+        <button id="download-tab-linux" role="tab" aria-selected="false" aria-controls="download-linux" data-download-platform="linux" tabindex="-1">Linux</button>
+      </div>
+      <p id="download-device" class="download-note"></p>
+      <div id="download-macos" role="tabpanel" aria-labelledby="download-tab-macos" data-download-panel="macos" class="download-panel" tabindex="0" hidden>
+        <div><h3>macOS · Apple Silicon</h3><p>macOS 14.6 及以上 · M 系列芯片</p><p class="download-note">测试版尚未完成 Apple 公证。</p></div>
+        <div class="download-action"><a class="button" data-installer aria-disabled="true" tabindex="-1">立即下载</a><span data-file-size></span></div>
+        <details class="download-hash"><summary>核对 SHA-256</summary><code data-checksum>等待安装包信息</code></details>
+      </div>
+      <div id="download-windows" role="tabpanel" aria-labelledby="download-tab-windows" data-download-panel="windows" class="download-panel" tabindex="0">
+        <div><h3>Windows · x64</h3><p>Windows 10 / 11 · 64 位</p><p class="download-note">安装时可选择是否安装本地转录模型。</p></div>
+        <div class="download-action"><a class="button" data-installer aria-disabled="true" tabindex="-1">立即下载</a><span data-file-size></span></div>
+        <details class="download-hash"><summary>核对 SHA-256</summary><code data-checksum>等待安装包信息</code></details>
+      </div>
+      <div id="download-linux" role="tabpanel" aria-labelledby="download-tab-linux" data-download-panel="linux" class="download-panel" tabindex="0" hidden>
+        <div><h3>Linux · x64</h3><p>Ubuntu 22.04 / 24.04 · DEB</p><p class="download-note">使用系统的软件包安装器打开。</p></div>
+        <div class="download-action"><a class="button" data-installer aria-disabled="true" tabindex="-1">立即下载</a><span data-file-size></span></div>
+        <details class="download-hash"><summary>核对 SHA-256</summary><code data-checksum>等待安装包信息</code></details>
+      </div>
+      <p id="download-status" class="download-note" role="status">正在获取安装包…</p>
+      <noscript><p>请启用 JavaScript 以选择系统并获取安装包。</p></noscript>
+    </section>
+
     <section id="questions" class="questions frame section-space" aria-labelledby="questions-title"><h2 id="questions-title" data-reveal>再多了解一点。</h2><div class="answers"><details><summary>聆记适合什么场景？</summary><p>团队周会、需求讨论、客户访谈、课程与个人复盘：需要把长对话整理成可阅读、可核对记录的场景，都可以先用非敏感内容试一试。转录、说话人区分和纪要质量受环境与模型影响。</p></details><details><summary>需要安装吗？官网能直接录音吗？</summary><p>官网用于了解产品、下载和阅读共享纪要。记录会议可安装 macOS、Windows 或 Linux 桌面测试版；开发者也可以从源码启动或自建 Web 版。浏览器采集需运行服务并完成相应授权。</p></details><details><summary>AI 纪要能代替人工确认吗？</summary><p>纪要、翻译和行动候选都应复核。聆记保留引用和转录版本，帮助核对原话，但不能保证模型永远理解正确。负责人、时间或结论不明确时，仍需要会议参与者确认。</p></details><details><summary>模型服务和桌面版怎么配置？</summary><p>下载安装包后，在“设置 → 模型与转录服务”中配置并测试服务。桌面包包含运行后台；源码启动不自动附带本地模型。系统要求、系统信任提示与安装步骤见 <a href="https://github.com/RoyalLiang/LingJi-Meeting-Studio#安装与开始使用">README 安装说明</a>。</p></details><details><summary>测试版目前验证到了哪里？</summary><p>各版本的本地测试、CI、真实模型、设备与长会议验证范围分别记录，不能互相替代。完整能力与未验范围见 <a href="https://github.com/RoyalLiang/LingJi-Meeting-Studio/blob/main/docs/engineering/current-state.md">当前状态与版本证据</a>；遇到问题可通过 GitHub 反馈。</p></details></div></section>
 
-    <section class="closing frame section-space" aria-labelledby="closing-title"><div data-reveal><h2 id="closing-title">下一场讨论，<br>让聆记陪你记。</h2><p>先从一场短会议开始，感受记录、理解与回顾连起来的样子。</p><div class="closing-actions"><a class="button" href="https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases">下载测试版</a><a class="link" href="https://github.com/RoyalLiang/LingJi-Meeting-Studio#readme">阅读 README ↗</a></div></div><div class="closing-brand" aria-hidden="true">聆记<span>LingJi</span></div></section>
+    <section class="closing frame section-space" aria-labelledby="closing-title"><div data-reveal><h2 id="closing-title">下一场讨论，<br>让聆记陪你记。</h2><p>先从一场短会议开始，感受记录、理解与回顾连起来的样子。</p><div class="closing-actions"><a class="button" href="#download" data-open-downloads>立即下载</a><a class="link" href="https://github.com/RoyalLiang/LingJi-Meeting-Studio#readme">阅读 README ↗</a></div></div><div class="closing-brand" aria-hidden="true">聆记<span>LingJi</span></div></section>
   </main>
   <footer class="footer"><div class="frame footer-inner"><span>聆记 LingJi Meeting Studio · 测试版</span><div><a href="https://github.com/RoyalLiang/LingJi-Meeting-Studio">GitHub</a><a href="https://github.com/RoyalLiang/LingJi-Meeting-Studio/issues">反馈问题</a><a href="#top">回到顶部 ↑</a></div></div></footer>
 </body>
