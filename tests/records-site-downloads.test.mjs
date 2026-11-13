@@ -2,12 +2,48 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {runInNewContext} from 'node:vm';
+import {fileURLToPath} from 'node:url';
+import {build} from 'esbuild';
+import {Miniflare, convertV4MiniflareOptions} from 'miniflare';
 import {downloadBase, downloadManifest, downloadRoute} from '../apps/site/src/downloads.mjs';
 
 const assets = ['macos-arm64.dmg', 'windows-x64-setup.exe', 'linux-amd64.deb'].map(suffix => ({name: `Lingji-0.3.29-${suffix}`, size: 10, sha256: 'a'.repeat(64)}));
 const manifest = {version: '0.3.29', assets}, env = {DOWNLOADS_BASE_URL: 'https://downloads.example.test/lingji/'};
 const url = 'https://rookiecode.com/downloads/v0.3.29/Lingji-0.3.29-windows-x64-setup.exe';
 const request = (headers = {}, method = 'GET') => new Request(url, {headers, method});
+
+test('native Workers fetch accepts download options and never follows upstream redirects', async t => {
+  const result = await build({stdin: {contents: `import {downloadRoute} from './apps/site/src/downloads.mjs'; export default {fetch(request){return downloadRoute(request,${JSON.stringify(env)});}};`, resolveDir: fileURLToPath(new URL('../', import.meta.url)), sourcefile: 'native-download-test.mjs'}, bundle: true, write: false, format: 'esm', platform: 'browser'});
+  let redirects = false;
+  const calls = [];
+  const runtime = new Miniflare(convertV4MiniflareOptions({modules: true, script: result.outputFiles[0].text, compatibilityDate: '2026-10-29', outboundService: async upstream => {
+    calls.push(upstream.url);
+    assert.equal(new URL(upstream.url).hostname, 'downloads.example.test');
+    assert.equal(upstream.headers.get('cookie'), null);
+    assert.equal(upstream.headers.get('authorization'), null);
+    if (redirects) return new Response(null, {status: 302, headers: {Location: 'https://github.com/must-not-be-requested'}});
+    if (new URL(upstream.url).pathname.endsWith('/current.json')) return Response.json(manifest);
+    const headers = {'Content-Type': 'application/octet-stream', 'Content-Length': '10'};
+    if (upstream.headers.get('range') === 'bytes=2-5') return new Response('2345', {status: 206, headers: {...headers, 'Content-Length': '4', 'Content-Range': 'bytes 2-5/10'}});
+    return new Response(upstream.method === 'HEAD' ? null : '0123456789', {headers});
+  }}));
+  t.after(() => runtime.dispose());
+  const catalog = await runtime.dispatchFetch('https://rookiecode.com/api/downloads');
+  assert.equal(catalog.status, 200);
+  assert.deepEqual(await catalog.json(), downloadManifest(manifest));
+  const file = await runtime.dispatchFetch(url, {headers: {Range: 'bytes=2-5', Cookie: 'private', Authorization: 'Bearer private'}});
+  assert.equal(file.status, 206);
+  assert.equal(file.headers.get('content-range'), 'bytes 2-5/10');
+  assert.equal(await file.text(), '2345');
+  const head = await runtime.dispatchFetch(url, {method: 'HEAD'});
+  assert.equal(head.status, 200);
+  assert.equal(head.headers.get('content-length'), '10');
+  redirects = true;
+  const before = calls.length;
+  assert.equal((await runtime.dispatchFetch('https://rookiecode.com/api/downloads')).status, 503);
+  assert.equal((await runtime.dispatchFetch(url)).status, 502);
+  assert.equal(calls.length, before + 2);
+});
 
 test('download catalog allows only complete, exact versioned desktop installers', () => {
   const catalog = downloadManifest(manifest);
@@ -22,7 +58,7 @@ test('CDN downloads stream as browser attachments and preserve range and cache r
   const fetcher = async (href, options) => {
     calls.push({href, options});
     assert.equal(href, env.DOWNLOADS_BASE_URL + 'v0.3.29/Lingji-0.3.29-windows-x64-setup.exe');
-    assert.equal(options.redirect, 'error');
+    assert.equal(options.redirect, 'manual');
     assert.equal(options.headers.get('accept-encoding'), 'identity');
     const headers = {'Content-Type': 'application/octet-stream', ETag: '"versioned"', 'Accept-Ranges': 'bytes'};
     if (options.headers.has('if-none-match')) return new Response(null, {status: 304, headers});

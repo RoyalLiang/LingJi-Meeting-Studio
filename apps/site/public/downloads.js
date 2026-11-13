@@ -21,7 +21,7 @@ function select(platform, focus = false) {
 }
 if (tabs.length) {
   select(system || 'windows');
-  document.querySelector('#download-device').textContent = system ? '' : '请选择桌面系统；手机暂未提供安装包。';
+  document.querySelector('#download-device').textContent = system ? '' : '仅提供桌面安装包';
   for (const tab of tabs) {
     tab.addEventListener('click', () => select(tab.dataset.downloadPlatform));
     tab.addEventListener('keydown', event => {
@@ -47,7 +47,6 @@ if (tabs.length) {
       const link = panel.querySelector('a[data-installer]');
       link.href = asset.href; link.download = asset.name; link.removeAttribute('aria-disabled'); link.removeAttribute('tabindex');
       panel.querySelector('[data-file-size]').textContent = `${(asset.size / 1024 ** 2).toFixed(0)} MB`;
-      panel.querySelector('[data-checksum]').textContent = asset.sha256;
     }
     status.textContent = '';
   }).catch(() => { status.textContent = '安装包暂不可用，请稍后刷新重试。'; });

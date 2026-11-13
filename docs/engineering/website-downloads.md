@@ -2,7 +2,7 @@
 
 官网的“立即下载”进入系统选择区，识别 macOS、Windows 或 Linux；用户也可手动选择。macOS 包仅支持 Apple Silicon，Windows 与 Linux 包为 x64。手机不会被识别成可安装的桌面系统。
 
-当前代码已实现系统 tab、下载目录和流式下载响应。下载源为阿里云 OSS `lingji-studio`，地域 `cn-shanghai`，发布目录 `releases/`。上传授权和公网验收尚未完成；目录不完整时，页面显示暂不可下载。
+下载源为阿里云 OSS `lingji-studio`，地域 `cn-shanghai`，发布目录 `releases/`。已通过 GitHub OIDC 上传 v0.3.29 的三个桌面安装包，OSS 公网目录、HEAD 与单字节 Range 已核验。页面显示清单中的已发布版本；目录不完整时显示暂不可下载。
 
 ## 使用既有存储或 CDN
 
@@ -42,7 +42,7 @@ https://lingji-studio.oss-cn-shanghai.aliyuncs.com/releases/
 3. 将公开下载根目录写入 GitHub 仓库变量 `DOWNLOADS_BASE_URL`，通过现有官网工作流部署。若已有防盗链规则，需实际核验官网服务端回源；当前路由不会传递浏览器 Referer、Cookie 或 Authorization。
 4. 在公网核对目录、HEAD、小范围下载、断点续传及下载文件名。OSS 支持 Range，但实际 CDN 与权限规则仍需一起核验。[GetObject](https://help.aliyun.com/zh/oss/developer-reference/getobject)
 
-配置时只交换公开地址和权限模式。AccessKey、私钥或临时凭据通过受保护的部署配置注入，不放在 README、前端或聊天中。当前没有新建 Bucket 或修改 Bucket ACL。
+配置时只交换公开地址和权限模式。AccessKey、私钥或临时凭据通过受保护的部署配置注入，不放在 README、前端或聊天中。Bucket ACL 保持私有，仅发布对象公共读；已关闭该 Bucket 的“阻止公共访问”，未改账户级开关或其他 Bucket。上传角色仅拥有 `releases/*` 的对象读写、ACL 和该 Bucket 版本状态只读权限。
 
 ## 为发布工作流配置短期授权
 
@@ -70,6 +70,8 @@ OSS 不支持 PutObject 的 If-Match 条件写。`releases/` 必须由该工作�
 下载源需直接返回文件，支持 GET、HEAD，并正确处理 Range、If-Range、ETag 和 Content-Length。下载路由传递这些请求/响应头；不跟随下载源的重定向，不转发用户 Cookie 或 Authorization。HTML 错误页不能作为安装包返回。
 
 下载源是否支持断点续传、最终文件是否与清单一致，需要上线单独核验。SHA-256 不等于 Windows 发布者签名，签名状态另见[应用签名](application-signing.md)。
+
+Workers 回源使用 `redirect: manual`，并拒绝 3xx 响应；原生 Workers fetch 不接受 `redirect: error`。回归测试使用真实 workerd fetch 检查目录、HEAD、Range 和不跟随上游重定向。页面不展示校验和控件，上传和清单的 SHA-256 校验仍保留。
 
 ## 分开核对本地与公网
 

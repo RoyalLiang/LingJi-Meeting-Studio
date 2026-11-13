@@ -47,16 +47,13 @@ p { text-wrap: pretty; }
 .hero-description { font-size: 21px; line-height: 1.7; margin: 0 auto 24px; max-width: 790px; }
 .hero-actions { display: flex; align-items: center; justify-content: center; gap: 30px; }
 .platforms { font-size: 14px; line-height: 1.8; margin: 22px 0 47px; color: var(--muted); }
-.platforms span { display: inline-block; margin-left: 18px; }
 .native-hero { margin: 0; text-align: left; }
 .native-hero img, .native-gallery img, .scene-pair img, .wide-shot img, .extension-scenes img { display: block; width: 100%; height: auto; border-radius: 20px; }
-.native-hero figcaption, .native-gallery figcaption, .scene-pair figcaption, .wide-shot figcaption, .extension-scenes figcaption { font-size: 13px; line-height: 1.8; color: var(--muted); margin-top: 15px; }
 .native-gallery { background: var(--white); border-radius: 24px; padding: 20px; }
 .native-gallery figure, .scene-pair figure, .wide-shot, .extension-scenes figure { margin: 0; }
 .scene-pair { display: grid; grid-template-columns: .75fr 1.25fr; gap: 50px; align-items: center; }
 .scene-pair h3 { font-size: clamp(28px, 3vw, 42px); line-height: 1.3; letter-spacing: -.035em; }
 .scene-pair p, .extension-scenes p, .agent-scenarios p { font-size: 17px; line-height: 1.9; }
-.scene-pair .scene-note { font-size: 13px; color: var(--muted); }
 .agent-scene { margin-top: 100px; padding-block: 95px 70px; background: var(--sage); }
 .agent-scenarios { display: grid; grid-template-columns: 1fr 1fr; gap: 80px; margin-top: 45px; }
 .agent-scenarios h3, .extension-scenes h3 { font-size: 27px; letter-spacing: -.03em; margin-bottom: 17px; }
@@ -79,7 +76,6 @@ p { text-wrap: pretty; }
 .demo-switch button[aria-pressed="true"] { background: var(--white); }
 .demo-switch button:hover { transform: translateY(-1px); }
 .demo-switch button:active { transform: scale(.97); }
-.caption { font-size: 13px; color: var(--muted); text-align: center; line-height: 1.8; margin: 22px 0 0; }
 .capabilities { display: grid; grid-template-columns: 1fr 1fr; gap: 52px 100px; padding: 65px 10px 0; }
 .capabilities h3 { font-size: 24px; letter-spacing: -.03em; margin-bottom: 17px; }
 .capabilities p { font-size: 17px; line-height: 1.85; max-width: 490px; margin-bottom: 10px; }
@@ -107,7 +103,6 @@ details[open] summary::after { content: '−'; }
 summary:hover { color: var(--green); }
 details p { font-size: 16px; line-height: 1.9; margin-bottom: 20px; }
 .closing { display: flex; align-items: center; justify-content: space-between; gap: 80px; padding-bottom: 120px; }
-.closing p { font-size: 18px; line-height: 1.8; margin-block: 30px; max-width: 480px; }
 .closing-actions { display: flex; align-items: center; gap: 28px; }
 .closing-brand { font-size: clamp(80px, 11vw, 154px); color: var(--green); font-weight: 650; line-height: 1; letter-spacing: -.07em; padding-right: 18px; white-space: nowrap; flex-shrink: 0; }
 .closing-brand>span { display: block; font-size: 32px; letter-spacing: -.025em; margin-top: 20px; text-align: right; font-weight: 500; }
@@ -134,7 +129,6 @@ details p { font-size: 16px; line-height: 1.9; margin-bottom: 20px; }
   .closing h2 { font-size: 44px; }
 }
 @media (max-width: 700px) {
-  .native-hero figcaption, .native-gallery figcaption, .scene-pair figcaption, .wide-shot figcaption, .extension-scenes figcaption { font-size: 12px; }
   .native-hero img, .native-gallery img, .scene-pair img, .wide-shot img, .extension-scenes img { border-radius: 10px; }
   .native-gallery { padding: 9px; border-radius: 15px; }
   .scene-pair h3 { font-size: 31px; }
@@ -158,7 +152,6 @@ details p { font-size: 16px; line-height: 1.9; margin-bottom: 20px; }
   .hero-actions { flex-direction: column; gap: 9px; }
   .hero-actions .link { font-size: 16px; }
   .platforms { font-size: 12px; margin: 18px 0 30px; }
-  .platforms span { display: block; margin-left: 0; margin-top: 2px; }
   .section-space { padding-top: 83px; padding-bottom: 10px; }
   .section-heading { display: block; margin-bottom: 35px; }
   .section-heading h2, .sharing h2, .closing h2 { font-size: clamp(30px, 9.3vw, 37px); line-height: 1.24; }
@@ -170,7 +163,6 @@ details p { font-size: 16px; line-height: 1.9; margin-bottom: 20px; }
   .experience { margin-top: 75px; padding-block: 68px 48px; }
   .demo-switch { width: 100%; gap: 0; margin-bottom: 25px; padding: 4px; }
   .demo-switch button { font-size: 14px; flex: 1; padding: 11px 7px; min-height: 45px; }
-  .caption { text-align: left; font-size: 12px; }
   .capabilities { grid-template-columns: 1fr; padding: 40px 3px 0; gap: 33px; }
   .capabilities h3 { font-size: 24px; }
   .capabilities p { font-size: 16px; }
@@ -191,7 +183,6 @@ details p { font-size: 16px; line-height: 1.9; margin-bottom: 20px; }
   summary { font-size: 16px; }
   details p { font-size: 15px; }
   .closing { padding-bottom: 75px; display: block; }
-  .closing p { font-size: 17px; margin-block: 25px; }
   .closing-actions { gap: 20px; flex-wrap: wrap; }
   .closing-brand { margin-top: 65px; padding-right: 5px; font-size: 100px; width: fit-content; }
   .closing-brand>span { font-size: 26px; margin-top: 15px; }
@@ -215,9 +206,6 @@ details p { font-size: 16px; line-height: 1.9; margin-bottom: 20px; }
 .download-note:empty { display: none; }
 .download-action { display: grid; gap: 8px; text-align: center; }
 .download-action [aria-disabled="true"] { opacity: .45; cursor: wait; pointer-events: none; }
-.download-hash { grid-column: 1 / -1; font-size: 13px; color: var(--muted); }
-.download-hash summary { cursor: pointer; padding-block: 8px; }
-.download-hash code { display: block; overflow-wrap: anywhere; padding-top: 8px; }
 @media (max-width: 540px) {
   .download-tabs button { flex: 1; padding-inline: 12px; }
   .download-panel { grid-template-columns: minmax(0, 1fr); padding: 20px; }

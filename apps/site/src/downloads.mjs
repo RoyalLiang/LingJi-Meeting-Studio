@@ -25,8 +25,11 @@ export async function downloadRoute(request, env, fetcher = fetch) {
   try {
     const base = downloadBase(env.DOWNLOADS_BASE_URL);
     if (path === '/api/downloads') {
-      const response = await fetcher(base + 'current.json', {redirect: 'error', signal: AbortSignal.timeout(15000)});
-      if (!response.ok || !response.body) return failure(503, 'downloads_not_ready');
+      const response = await fetcher(base + 'current.json', {redirect: 'manual', signal: AbortSignal.timeout(15000)});
+      if (!response.ok || !response.body) {
+        await response.body?.cancel();
+        return failure(503, 'downloads_not_ready');
+      }
       const reader = response.body.getReader(), chunks = []; let length = 0;
       try {
         for (;;) {
@@ -43,7 +46,7 @@ export async function downloadRoute(request, env, fetcher = fetch) {
     if (!match || match[1] !== match[3]) return failure(404, 'download_not_found');
     const forwarded = new Headers({'Accept-Encoding': 'identity'});
     for (const header of ['range', 'if-range', 'if-none-match', 'if-modified-since']) if (request.headers.has(header)) forwarded.set(header, request.headers.get(header));
-    const response = await fetcher(`${base}v${match[1]}/${match[2]}`, {method: request.method, headers: forwarded, redirect: 'error', signal: request.signal});
+    const response = await fetcher(`${base}v${match[1]}/${match[2]}`, {method: request.method, headers: forwarded, redirect: 'manual', signal: request.signal});
     if (![200, 206, 304, 416].includes(response.status)) {await response.body?.cancel(); return failure(response.status === 404 ? 404 : 502, 'download_unavailable');}
     if (response.headers.has('content-encoding') && response.headers.get('content-encoding') !== 'identity') {await response.body?.cancel(); return failure(502, 'download_encoded_response');}
     if (/text\/html|application\/json/i.test(response.headers.get('content-type') || '')) {await response.body?.cancel(); return failure(502, 'download_invalid_response');}
