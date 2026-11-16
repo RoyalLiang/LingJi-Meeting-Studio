@@ -73,6 +73,28 @@ test('a revoked reader clears its body and stops background status requests',asy
   await new Promise(resolve=>setImmediate(resolve));await periodic();await visibility();assert.equal(reads,1);assert.equal(cleared,true);assert.equal(stopped,true);
 });
 let fixtureNumber=0;
+
+test('content report forwarding accepts only a hash reference and never forwards private URL fields', async () => {
+  const script = await readFile(new URL('../apps/site/src/content.mjs', import.meta.url), 'utf8');
+  for (const reference of ['a'.repeat(64), 'raw-token', '<script>']) {
+    const anchor = {href: 'https://github.com/RoyalLiang/LingJi-Meeting-Studio/issues/new?template=content-report.yml'};
+    runInNewContext(script, {URL, location: {href: 'https://rookiecode.com/content?reference='+encodeURIComponent(reference)+'&key=private#secret'}, document: {getElementById: () => anchor}});
+    const target = new URL(anchor.href);
+    assert.equal(target.searchParams.get('reference'), reference === 'a'.repeat(64) ? reference : null);
+    assert.doesNotMatch(anchor.href, /private|secret|raw-token|script%3E/);
+  }
+});
+
+test('operator report-reference takedown disables both legacy share routes and their status endpoints', async t => {
+  const f = await fixture(t), input = f.input();
+  await f.call('/api/publish', 'POST', input);
+  const reference = Buffer.from(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input.token))).toString('hex');
+  const html = await (await f.call('/share/'+input.token)).text();
+  assert.ok(html.includes(`/content?reference=${reference}#report`));
+  assert.ok(!html.includes(input.token));
+  f.sqlite.prepare('UPDATE shares SET revoked_at=COALESCE(revoked_at,unixepoch()*1000),payload=NULL WHERE token_hash=?').run(reference);
+  for (const route of ['/share/', '/api/shared/']) for (const suffix of ['', '/status']) assert.equal((await f.call(route+input.token+suffix)).status, 404);
+});
 async function fixture(t){
   const clientIp=`192.0.2.${++fixtureNumber}`;
   const sqlite=new DatabaseSync(':memory:');sqlite.exec(await readFile(new URL('../apps/site/migrations/0001_shares.sql',import.meta.url),'utf8'));t.after(()=>sqlite.close());
