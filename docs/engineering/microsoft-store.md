@@ -40,7 +40,11 @@ WGS 把同次构建的 `windows-app.exe`、资源归档、`windows-store-unsigne
 
 商店包附带 Fixed Version WebView2。版本、微软下载地址和 CAB 摘要固定在 `tools/release/webview2-fixed.json`；应用在创建首个 WebView 前选择包内运行时。完整运行时、供应商 notices 和独立许可随包保留，不修改包目录 ACL，不关闭浏览器沙箱。Fixed Version 的安全修复需要随应用升级，维护时应更新固定版本和摘要。隐私页保留 SmartScreen 告知及微软隐私链接；提交商店时还须把微软 WebView2 再分发条款加入附加许可条款。[官方运行时分发说明](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution)
 
-`test-windows-msix.ps1` 在一次性 Windows runner 内创建测试签名副本，验证安装、AUMID 激活、真实进程包身份、桌面窗口、随包后台和实际使用的包内 WebView2 路径/版本，并从安装后的只读目录验证后台生命周期与本地模型推理。测试证书及安装在测试后清理；原始 WGS 提交包保持未签名。该验证不替代真实音频设备、真实模型服务和 Microsoft Store 审核。
+`test-windows-msix.ps1` 在一次性 Windows runner 内创建测试签名副本，先通过普通 AUMID 激活验证真实应用、Node 子进程包身份、窗口和包内 WebView2。随后以 `Invoke-CommandInDesktopPackage -PreventBreakaway` 的诊断上下文运行安装目录内的 Node，验证只读后台与本地模型推理，并再次核对 Node 的真实包身份。诊断上下文不能代替普通激活；测试不更改 WindowsApps ACL。测试证书及安装在结束后清理，原始提交包保持未签名。[微软调试命令说明](https://learn.microsoft.com/en-us/powershell/module/appx/invoke-commandindesktoppackage?view=windowsserver2025-ps)
+
+`windows-msix-check.yml` 可在不重新构建的情况下针对原 WGS 附件快速重跑这项验证。发布控制器与产品源码分别固定；重新验证既有版本时，先核对两个平台的完整回执、源码和所有文件摘要。任何缺失或不一致均停止并保留原件，不覆盖重建。原构建 CI 回执保存在 `buildCi` 和复用证据附件中，新运行记录验证控制器来源。
+
+这些检查不替代真实音频设备、真实模型服务、现有独立安装包的数据迁移和 Microsoft Store 审核。
 
 作业产物 `microsoft-store-submission-源码SHA` 包含：
 

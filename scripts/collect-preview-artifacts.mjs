@@ -8,6 +8,7 @@ const directory=join('dist/releases',process.env.RELEASE_VERSION,...(windows?['w
 const metadataName=windows?'release-windows-x64.json':linux?'release-linux-x64.json':'release.json';
 const meta=JSON.parse(await readFile(join(directory,metadataName),'utf8'));
 assert.equal(meta.sourceRevision,process.env.SOURCE_SHA);assert.equal(meta.sourceDirty,false);assertPackageSourceBuild(meta);
+if(process.env.WGS_REUSED_BUILD==='true'){assert.ok(meta.buildCi||meta.ci,'Reused build must retain its original CI receipt');meta.buildCi ||= meta.ci;}
 meta.ci={repository:process.env.GITHUB_REPOSITORY,runId:process.env.GITHUB_RUN_ID,runUrl:`https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,workflowSha:process.env.WORKFLOW_SHA,sourceRevision:process.env.SOURCE_SHA};
 await writeFile(join(directory,metadataName),JSON.stringify(meta,null,2)+'\n');
 await rm('preview-artifacts',{recursive:true,force:true});

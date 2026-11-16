@@ -1,6 +1,7 @@
 param(
   [Parameter(Mandatory=$true)][string]$Metadata,
-  [Parameter(Mandatory=$true)][string]$Output
+  [Parameter(Mandatory=$true)][string]$Output,
+  [Parameter(Mandatory=$true)][string]$SourceRoot
 )
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw 'MSIX install tests require disposable Windows CI' }
@@ -13,13 +14,14 @@ if (Get-AppxPackage -Name $receipt.identity.name) { throw 'Refusing to replace a
 $sdk = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
 $signTool = Get-ChildItem "$sdk\*\x64\signtool.exe" | Sort-Object { [version]$_.Directory.Parent.Name } -Descending | Select-Object -First 1
 if (-not $signTool) { throw 'Windows SDK SignTool was not found' }
-$scratch = Join-Path ([IO.Path]::GetTempPath()) ('lingji-msix-test-' + [guid]::NewGuid().ToString('N'))
+$scratch = Join-Path (Join-Path $SourceRoot '.agent-runtime') ('lingji-msix-test-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $scratch | Out-Null
 $certificate = $null
 $installed = $null
 $primaryError = $null
 $applicationProcessId = 0
 $backendProcessId = 0
+$contextProcessId = 0
 Add-Type @'
 using System;
 using System.ComponentModel;
@@ -65,21 +67,8 @@ try {
   Add-AppxPackage -Path $signed
   $installed = Get-AppxPackage -Name $receipt.identity.name
   if (-not $installed -or $installed.Version -ne $receipt.packageVersion) { throw 'Expected MSIX version was not installed' }
-  $sourceRoot = Split-Path -Parent $PSScriptRoot
   $installedNode = Join-Path $installed.InstallLocation 'runtime/node.exe'
   $installedBackend = Join-Path $installed.InstallLocation 'client-backend'
-  $previousNode = $env:CLIENT_NODE_EXECUTABLE
-  $previousEntry = $env:CLIENT_BACKEND_ENTRY
-  try {
-    $env:CLIENT_NODE_EXECUTABLE = $installedNode
-    $env:CLIENT_BACKEND_ENTRY = Join-Path $installedBackend 'services/records/src/desktop-backend.mjs'
-    & $installedNode (Join-Path $sourceRoot 'scripts/test-standalone-package.mjs') (Join-Path $scratch 'backend.json')
-    if ($LASTEXITCODE -ne 0) { throw "Read-only MSIX backend test failed: $LASTEXITCODE" }
-    & $installedNode (Join-Path $sourceRoot 'scripts/test-bundled-asr.mjs') $installedBackend (Join-Path $scratch 'asr.json')
-    if ($LASTEXITCODE -ne 0) { throw "Read-only MSIX model test failed: $LASTEXITCODE" }
-    $asr = Get-Content -LiteralPath (Join-Path $scratch 'asr.json') -Raw | ConvertFrom-Json
-    if (-not $asr.nativeInference) { throw 'MSIX local model did not run native inference' }
-  } finally { $env:CLIENT_NODE_EXECUTABLE=$previousNode; $env:CLIENT_BACKEND_ENTRY=$previousEntry }
   $applicationProcessId = [LingjiMsixTest]::Activate($installed.PackageFamilyName+'!App')
   if (-not $applicationProcessId) { throw 'Package activation returned no application process' }
   $deadline = [DateTime]::UtcNow.AddSeconds(60)
@@ -97,17 +86,47 @@ try {
   if (-not $webview) { throw 'Packaged application did not use its bundled Fixed WebView2 runtime' }
   $webviewVersion = (Get-Item -LiteralPath $webview.ExecutablePath).VersionInfo.ProductVersion
   if ($webviewVersion -ne $receipt.webview.version) { throw 'Unexpected active WebView2 version' }
-  @{installed=$true;activated=$true;windowCreated=$true;bundledBackendStarted=$true;readOnlyBackendVerified=$true;readOnlyModelInference=$true;packageIdentityVerified=$true;fixedWebviewUsed=$true;webviewVersion=$webviewVersion;webviewExecutable=$webview.ExecutablePath;packageFullName=$actualPackageName;testSignature='temporary-self-signed-copy';submissionRemainsUnsigned=$true;realAudioDevicesVerified=$false;realProvidersVerified=$false} | ConvertTo-Json | Set-Content -LiteralPath $Output -Encoding utf8
+  if ([LingjiMsixTest]::PackageName($backendProcessId) -ne $installed.PackageFullName) { throw 'Normal application backend did not inherit its package identity' }
+  $configPath = Join-Path $scratch 'backend-context.json'
+  $started = Join-Path $scratch 'started.json'
+  $proceed = Join-Path $scratch 'proceed'
+  $result = Join-Path $scratch 'result.json'
+  @{sourceRoot=$SourceRoot;backend=$installedBackend;started=$started;proceed=$proceed;result=$result;backendReport=(Join-Path $scratch 'backend.json');asrReport=(Join-Path $scratch 'asr.json')} | ConvertTo-Json | Set-Content -LiteralPath $configPath -Encoding utf8
+  # This supplemental context test does not replace the ordinary AUMID activation above.
+  $wrapper = Join-Path $PSScriptRoot 'test-msix-backend.mjs'
+  Invoke-CommandInDesktopPackage -PackageFamilyName $installed.PackageFamilyName -AppId 'App' -Command $installedNode -Args ('"'+$wrapper+'" "'+$configPath+'"') -PreventBreakaway -ErrorAction Stop | Out-Null
+  $deadline = [DateTime]::UtcNow.AddSeconds(30)
+  while (-not (Test-Path -LiteralPath $started)) {
+    if ([DateTime]::UtcNow -ge $deadline) { throw 'Packaged Node context did not start' }
+    Start-Sleep -Milliseconds 200
+  }
+  $contextProcessId = [int](Get-Content -LiteralPath $started -Raw | ConvertFrom-Json).pid
+  if ([LingjiMsixTest]::PackageName($contextProcessId) -ne $installed.PackageFullName) { throw 'Supplemental Node test lacks the actual package identity' }
+  [IO.File]::WriteAllText($proceed,'verified')
+  $deadline = [DateTime]::UtcNow.AddSeconds(420)
+  while (-not (Test-Path -LiteralPath $result)) {
+    if ([DateTime]::UtcNow -ge $deadline -or -not (Get-Process -Id $contextProcessId -ErrorAction SilentlyContinue)) {
+      if (Test-Path -LiteralPath $result) { break }
+      throw 'Packaged backend/model context test did not finish'
+    }
+    Start-Sleep -Milliseconds 250
+  }
+  $contextResult = Get-Content -LiteralPath $result -Raw | ConvertFrom-Json
+  if (-not $contextResult.ok) { throw ('Packaged backend/model test failed: '+$contextResult.error) }
+  @{installed=$true;activated=$true;windowCreated=$true;bundledBackendStarted=$true;readOnlyBackendVerified=$true;readOnlyModelInference=$true;packageIdentityVerified=$true;normalBackendPackageIdentityVerified=$true;supplementalNodeContextVerified=$true;sourceRevision=$receipt.sourceRevision;controllerSha=$env:GITHUB_SHA;fixedWebviewUsed=$true;webviewVersion=$webviewVersion;webviewExecutable=$webview.ExecutablePath;packageFullName=$actualPackageName;testSignature='temporary-self-signed-copy';submissionRemainsUnsigned=$true;realAudioDevicesVerified=$false;realProvidersVerified=$false} | ConvertTo-Json | Set-Content -LiteralPath $Output -Encoding utf8
 } catch {
   $primaryError = $_
   throw
 } finally {
   $cleanupErrors = [Collections.Generic.List[string]]::new()
   try {
-    if ($installed -and $applicationProcessId) {
-      $application = Get-Process -Id $applicationProcessId -ErrorAction SilentlyContinue
-      if ($application -and $application.Path.StartsWith($installed.InstallLocation,[StringComparison]::OrdinalIgnoreCase)) {
-        & taskkill.exe /PID $applicationProcessId /T /F | Out-Null
+    if ($installed) {
+      foreach ($processId in @($applicationProcessId,$contextProcessId)) {
+        if (-not $processId) { continue }
+        $application = Get-Process -Id $processId -ErrorAction SilentlyContinue
+        if ($application -and $application.Path.StartsWith($installed.InstallLocation,[StringComparison]::OrdinalIgnoreCase)) {
+          & taskkill.exe /PID $processId /T /F | Out-Null
+        }
       }
     }
   } catch { $cleanupErrors.Add($_.Exception.Message) }

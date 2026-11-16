@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-import {mkdtemp, mkdir, readFile, readdir, rm, unlink, writeFile} from 'node:fs/promises';
+import {mkdtemp, mkdir, readFile, readdir, rm, unlink, writeFile, cp, rename, symlink} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {assertCurrentSource, finishCurrentBuild, verifyWgsInput} from '../scripts/wgs-build-contract.mjs';
+import {assertCurrentSource, finishCurrentBuild, verifyWgsInput, reusableWgsBuild} from '../scripts/wgs-build-contract.mjs';
 import {releaseHash, snapshotReleaseSource} from '../scripts/release-source.mjs';
 import {copyWindowsMsix, msixVersion, storeIdentity} from '../scripts/windows-msix.mjs';
 
@@ -214,4 +214,100 @@ test('Windows copies only the exact WGS Store package and rejects altered identi
   Object.assign(files.find(file => file.name === 'store-package.json'), {bytes: altered.length, sha256: releaseHash(altered)});
   await updateReceipt();
   await assert.rejects(copyWindowsMsix({root, prebuilt: directory, destination: join(root, 'rejected'), sourceRevision}));
+});
+
+
+async function reusableFixture(t) {
+  const input = await inputFixture(t);
+  const root = await mkdtemp(join(tmpdir(), 'lingji-wgs-reuse-'));
+  t.after(() => rm(root, {recursive: true, force: true}));
+  const expected = {...input.expected, repository: 'synthetic/fixture'};
+  const windows = join(root, 'dist/wgs-input', expected.version);
+  const linux = join(root, 'dist/releases', expected.version, 'linux-x64');
+  await cp(input.directory, windows, {recursive: true});
+  for (const name of ['windows-app.exe', 'windows-store-unsigned.msix', 'store-package.json']) {
+    const bytes = Buffer.from(`synthetic ${name}`);
+    await writeFile(join(windows, name), bytes);
+    input.receipt.files.push({name, bytes: bytes.length, sha256: releaseHash(bytes)});
+  }
+  await writeFile(join(windows, 'wgs-windows-input.json'), JSON.stringify(input.receipt));
+  await mkdir(linux, {recursive: true});
+  const artifact = `Lingji-${expected.version}-linux-amd64.deb`;
+  await writeFile(join(linux, artifact), 'original deb');
+  const metadata = {...expected, artifact, platform: 'linux', architecture: 'x64', sourceDirty: false, frozenSourceBuild: false, sourceBuildMode: 'guarded-current-directory', sourceVerifiedAfterBuild: true, builder: 'wgs', sha256: releaseHash('original deb'), ci: {repository: expected.repository, sourceRevision: expected.sourceRevision, runId: '123', workflowSha: 'c'.repeat(40), runUrl: `https://github.com/${expected.repository}/actions/runs/123`}, bundledAsr: {nativeInference: true}, validation: {debVerified: true, installedAppProbe: true, resourcesVerified: true, uninstallVerified: true, productionSmoke: true, bundledAsrTested: true}};
+  await writeFile(join(linux, 'release-linux-x64.json'), JSON.stringify(metadata));
+  await writeFile(join(linux, 'SHA256SUMS-linux-x64.txt'), `${metadata.sha256}  ${artifact}\n`);
+  await writeFile(join(linux, 'package-smoke-linux-x64.json'), JSON.stringify({packagedApp: true, independentBackend: true, agentRuntimeReady: true, bundledAsrConfigured: true, restartPersistence: true, stableWebviewProfile: true, parentOwnsBackend: true, localAccount: true, devAccountDisabled: true, developerBackendRequests: 0}));
+  return {root, expected, windows, linux, metadata, artifact};
+}
+
+test('WGS retries reuse only complete source-bound outputs without changing original receipts', async t => {
+  const {root, expected, windows, linux, metadata, artifact} = await reusableFixture(t);
+  const actual = await reusableWgsBuild(root, expected);
+  assert.equal(actual.windows, windows);
+  assert.equal(actual.linux, linux);
+  assert.equal(actual.buildCi.runId, '123');
+  assert.equal(await readFile(join(linux, artifact), 'utf8'), 'original deb');
+  assert.deepEqual(JSON.parse(await readFile(join(linux, 'release-linux-x64.json'))), metadata);
+  await assert.rejects(reusableWgsBuild(root, {...expected, sourceRevision: 'b'.repeat(40)}));
+  await writeFile(join(linux, artifact), 'tampered');
+  await assert.rejects(reusableWgsBuild(root, expected));
+  await writeFile(join(linux, artifact), 'original deb');
+  await writeFile(join(windows, 'windows-setup.exe'), 'tampered');
+  await assert.rejects(reusableWgsBuild(root, expected));
+});
+
+test('WGS retries distinguish no build from partial or unverified output and preserve it', async t => {
+  const {root, expected, windows, linux, metadata, artifact} = await reusableFixture(t);
+  await writeFile(join(linux, 'release-linux-x64.json'), JSON.stringify({...metadata, validation: {...metadata.validation, bundledAsrTested: false}}));
+  await assert.rejects(reusableWgsBuild(root, expected));
+  await rm(windows, {recursive: true});
+  await assert.rejects(reusableWgsBuild(root, expected));
+  assert.equal(await readFile(join(linux, artifact), 'utf8'), 'original deb');
+  await rm(linux, {recursive: true});
+  assert.equal(await reusableWgsBuild(root, expected), null);
+});
+
+test('WGS reuse rejects legacy inputs, missing validation evidence and unlocatable build provenance', async t => {
+  const {root, expected, windows, linux, metadata} = await reusableFixture(t);
+  const inputPath = join(windows, 'wgs-windows-input.json');
+  const receipt = await readFile(inputPath, 'utf8');
+  await writeFile(inputPath, JSON.stringify({...JSON.parse(receipt), files: JSON.parse(receipt).files.slice(0, 3)}));
+  await assert.rejects(reusableWgsBuild(root, expected));
+  await writeFile(inputPath, receipt);
+  const smokePath = join(linux, 'package-smoke-linux-x64.json');
+  const smoke = await readFile(smokePath, 'utf8');
+  await writeFile(smokePath, '{}');
+  await assert.rejects(reusableWgsBuild(root, expected));
+  await writeFile(smokePath, smoke);
+  for (const change of [{ci: {...metadata.ci, workflowSha: ''}}, {ci: {...metadata.ci, runUrl: 'https://example.com/123'}}, {bundledAsr: {nativeInference: false}}]) {
+    await writeFile(join(linux, 'release-linux-x64.json'), JSON.stringify({...metadata, ...change}));
+    await assert.rejects(reusableWgsBuild(root, expected));
+  }
+  await writeFile(join(linux, 'release-linux-x64.json'), JSON.stringify(metadata));
+  await unlink(join(linux, 'SHA256SUMS-linux-x64.txt'));
+  await assert.rejects(reusableWgsBuild(root, expected));
+});
+
+test('WGS collector keeps original build provenance when a later controller revalidates the same installer', async t => {
+  const {root, expected, linux, metadata, artifact} = await reusableFixture(t);
+  await writeFile(join(linux, 'SHA256SUMS-linux-x64.txt'), metadata.sha256+'  '+artifact+'\n');
+  const collector = fileURLToPath(new URL('../scripts/collect-preview-artifacts.mjs', import.meta.url));
+  execFileSync(process.execPath, [collector, 'linux'], {cwd: root, env: {...process.env, RELEASE_VERSION: expected.version, SOURCE_SHA: expected.sourceRevision, GITHUB_REPOSITORY: expected.repository, GITHUB_RUN_ID: '456', WORKFLOW_SHA: 'b'.repeat(40), WGS_REUSED_BUILD: 'true'}, stdio: ['ignore', 'pipe', 'pipe']});
+  const result = JSON.parse(await readFile(join(root, 'preview-artifacts/release-linux-x64.json')));
+  assert.equal(result.buildCi.runId, '123');
+  assert.equal(result.ci.runId, '456');
+  assert.equal(result.ci.workflowSha, 'b'.repeat(40));
+  assert.equal(await readFile(join(root, 'preview-artifacts', artifact), 'utf8'), 'original deb');
+});
+
+
+test('WGS file receipts reject symlinks even when their target has the expected bytes', async t => {
+  const {directory, expected} = await inputFixture(t);
+  const original = join(directory, 'windows-setup.exe'), target = join(directory, 'outside-receipt.exe');
+  await rename(original, target);
+  try { await symlink(target, original); }
+  catch (error) { if (process.platform === 'win32' && error.code === 'EPERM') { t.skip('Host does not permit symbolic links'); return; } throw error; }
+  await assert.rejects(verifyWgsInput(directory, expected));
+  assert.equal(await readFile(target, 'utf8'), 'synthetic windows-setup.exe');
 });

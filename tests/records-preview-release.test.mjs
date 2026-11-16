@@ -8,16 +8,18 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { loadPreview, publishPreview, verifyInventory, assertReleaseEvent, previewNotes } from '../scripts/publish-preview-release.mjs';
 
-test('Windows probe fixes use CI control while installer verification retains the tagged product source', async () => {
+test('Windows validation tools use CI control while installer verification retains the tagged product source', async () => {
   const workflow = await readFile(new URL('../.github/workflows/preview-release.yml', import.meta.url), 'utf8');
   const start = workflow.indexOf('name: Windows verification - WGS installer');
   const windows = workflow.slice(start, workflow.indexOf('name: Ubuntu 24 verification', start));
   assert.match(windows, /ref: \$\{\{ needs\.verify\.outputs\.controller_sha \}\}/);
   assert.match(windows, /ref: \$\{\{ needs\.verify\.outputs\.sha \}\}/);
-  assert.match(windows, /sparse-checkout: apps\/desktop\/src-tauri\/src\/probe\.js/);
+  assert.match(windows, /sparse-checkout:\s*(?:\|\s*)?apps\/desktop\/src-tauri\/src\/probe\.js/);
   assert.match(windows, /finally \{\s*\[IO\.File\]::WriteAllBytes\(\$probePath, \$sourceProbe\)/);
   assert.match(windows, /TTS_RELEASE_SOURCE_REF: \$\{\{ needs\.verify\.outputs\.sha \}\}/);
   assert.match(windows, /wgs-windows-input-\$\{\{ needs\.verify\.outputs\.sha \}\}/);
+  assert.match(windows, /ci-controller\/scripts\/test-windows-msix\.ps1 -SourceRoot \$env:GITHUB_WORKSPACE/);
+  assert.match(windows, /scripts\/test-msix-backend\.mjs/);
 });
 
 test('a follow-up preview publishes its version and the changes from its own installer guide', async t => {
