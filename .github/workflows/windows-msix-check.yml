@@ -105,7 +105,9 @@ jobs:
             .agent-runtime/msix-installation.json.diagnostics.json
             .agent-runtime/msix-installation.json.window.json
             .agent-runtime/msix-installation.json.window.jpg
-            .agent-runtime/msix-installation.json.capture-stderr.txt
+            .agent-runtime/msix-installation.json.*.capture-stderr.txt
+            .agent-runtime/msix-installation.json.cold-window.json
+            .agent-runtime/msix-installation.json.cold-window.jpg
             .agent-runtime/msix-installation.json.webview-probe.json
             .agent-runtime/msix-installation.json.webview-unpackaged-probe.json
             .agent-runtime/msix-installation.json.webview-unpackaged-copy-probe.json
@@ -113,3 +115,4 @@ jobs:
             .agent-runtime/msix-installation.json.policy-events.json
           if-no-files-found: warn
           retention-days: 14
+          include-hidden-files: true

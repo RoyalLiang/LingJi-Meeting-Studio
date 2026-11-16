@@ -440,6 +440,7 @@ jobs:
             .agent-runtime/msix-installation.json.cold-window.jpg
           if-no-files-found: error
           retention-days: 14
+          include-hidden-files: true
       - name: Collect Windows release files
         env:
           RELEASE_VERSION: ${{ needs.verify.outputs.version }}
