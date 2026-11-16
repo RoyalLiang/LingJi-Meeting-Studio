@@ -92,5 +92,6 @@ jobs:
             .agent-runtime/msix-installation.json.diagnostics.json
             .agent-runtime/msix-installation.json.window.json
             .agent-runtime/msix-installation.json.window.jpg
+            .agent-runtime/msix-installation.json.capture-stderr.txt
           if-no-files-found: warn
           retention-days: 14
