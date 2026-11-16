@@ -16,6 +16,11 @@ on:
         required: false
         type: boolean
         default: false
+      probe_webview_context:
+        description: Compare SDK HRESULTs with two fresh data directories in package context
+        required: false
+        type: boolean
+        default: false
 permissions:
   contents: read
   actions: read
@@ -45,6 +50,8 @@ jobs:
             scripts/test-msix-backend.mjs
             scripts/msix-test-native.cs
             scripts/capture-msix-window.ps1
+            scripts/prepare-windows-msix-probe.mjs
+            scripts/test-msix-webview.cpp
           sparse-checkout-cone-mode: false
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
@@ -77,9 +84,15 @@ jobs:
           TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART2: ${{ (steps.source.outputs.vocabulary_version == '20261105.2' && secrets.TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART2) || (steps.source.outputs.vocabulary_version == '20261105.3' && secrets.TTS_BUILTIN_VOCABULARY_20261105_3_PART2) || (steps.source.outputs.vocabulary_version == '20261106.4' && secrets.TTS_BUILTIN_VOCABULARY_20261106_4_PART2) }}
         run: node scripts/materialize-builtin-vocabulary.mjs
       - run: node scripts/asr-test-fixtures.mjs
+      - name: Prepare optional package-context WebView diagnostic
+        if: inputs.probe_webview_context
+        id: webview_probe
+        run: node .agent-runtime/ci-controller/scripts/prepare-windows-msix-probe.mjs
       - name: Verify the same original WGS MSIX
         run: node scripts/windows-msix.mjs
       - name: Activate normally, then test the read-only backend in package context
+        env:
+          TTS_MSIX_CONTEXT_PROBE: ${{ steps.webview_probe.outputs.executable }}
         shell: pwsh
         run: '& ./.agent-runtime/ci-controller/scripts/test-windows-msix.ps1 -SourceRoot $env:GITHUB_WORKSPACE -Metadata .agent-runtime/msix-submission/store-package.json -Output .agent-runtime/msix-installation.json'
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
@@ -93,5 +106,6 @@ jobs:
             .agent-runtime/msix-installation.json.window.json
             .agent-runtime/msix-installation.json.window.jpg
             .agent-runtime/msix-installation.json.capture-stderr.txt
+            .agent-runtime/msix-installation.json.webview-probe.json
           if-no-files-found: warn
           retention-days: 14
