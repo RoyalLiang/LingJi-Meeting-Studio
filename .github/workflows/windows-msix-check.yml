@@ -11,6 +11,11 @@ on:
         description: Successful WGS artifact run, without rebuilding or replacing files
         required: true
         type: string
+      capture_app_window:
+        description: Explicitly authorized capture of only the fresh LingJi process window
+        required: false
+        type: boolean
+        default: false
 permissions:
   contents: read
   actions: read
@@ -24,6 +29,7 @@ jobs:
     env:
       SOURCE_SHA: ${{ inputs.source_sha }}
       TTS_RELEASE_SOURCE_REF: ${{ inputs.source_sha }}
+      TTS_MSIX_WINDOW_DIAGNOSTICS: ${{ inputs.capture_app_window && 'authorized-scoped-app-window' || '' }}
       TTS_PREBUILT_DIRECTORY: ${{ github.workspace }}\.agent-runtime\wgs-windows-input
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
@@ -37,6 +43,8 @@ jobs:
           sparse-checkout: |
             scripts/test-windows-msix.ps1
             scripts/test-msix-backend.mjs
+            scripts/msix-test-native.cs
+            scripts/capture-msix-window.ps1
           sparse-checkout-cone-mode: false
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
@@ -82,5 +90,7 @@ jobs:
             .agent-runtime/msix-submission/schema-verification.json
             .agent-runtime/msix-installation.json
             .agent-runtime/msix-installation.json.diagnostics.json
+            .agent-runtime/msix-installation.json.window.json
+            .agent-runtime/msix-installation.json.window.jpg
           if-no-files-found: warn
           retention-days: 14
