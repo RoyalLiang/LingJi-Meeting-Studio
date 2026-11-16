@@ -11,6 +11,13 @@ import { ProxyAgent } from 'proxy-agent';
 import { Agent, Dispatcher, buildConnector, getGlobalDispatcher, setGlobalDispatcher } from 'undici';
 import { DomainError, requireThat } from '../../../packages/records/src/record.mjs';
 
+class ApplicationProxyAgent extends ProxyAgent {
+  // Node clones globalAgent.constructor for agent:false; that clone must stay direct.
+  constructor(options = {}) { super({ getProxyForUrl: () => '', ...options }); }
+  // ProxyAgent delegates direct sockets to separate pools that its destroy() leaves open.
+  destroy() { super.destroy(); this.httpAgent.destroy(); this.httpsAgent.destroy(); }
+}
+
 const execute = promisify(execFile);
 const defaults = { mode: 'system', url: '', username: '', password: '' };
 const file = root => join(root, 'network-proxy.json');
@@ -143,7 +150,7 @@ async function tunnel(agent, target, secureEndpoint) {
       const [kind, address] = entry.trim().split(/\s+/);
       const route = kind === 'DIRECT' ? '' : ({ PROXY: 'http', HTTP: 'http', HTTPS: 'https', SOCKS: 'socks5h', SOCKS5: 'socks5h', SOCKS4: 'socks4a' })[kind];
       if (route === undefined) continue;
-      const next = new ProxyAgent({ agent: false, getProxyForUrl: () => route ? `${route}://${address}` : '' });
+      const next = new ApplicationProxyAgent({ agent: false, getProxyForUrl: () => route ? `${route}://${address}` : '' });
       try { const socket = await tunnel(next, target, secureEndpoint); socket.once('close', () => next.destroy()); return socket; } catch { next.destroy(); /* PAC explicitly defines failover order. */ }
     }
     throw new Error('proxy_connection_failed');
@@ -165,6 +172,8 @@ async function tunnel(agent, target, secureEndpoint) {
 }
 
 export function createProxyDispatcher(resolveProxy) {
+  // An owned DIRECT agent also closes unfinished PAC downloads during shutdown.
+  const directAgent = new ApplicationProxyAgent({ getProxyForUrl: () => '' });
   const agents = new Map();
   let closed = false;
   return new class extends Dispatcher {
@@ -175,7 +184,7 @@ export function createProxyDispatcher(resolveProxy) {
         const key = proxy.startsWith('pac+') ? proxy + '\n' + target : proxy;
         let entry = agents.get(key);
         if (!entry) {
-          const routing = new ProxyAgent({ agent: false, getProxyForUrl: () => proxy });
+          const routing = new ApplicationProxyAgent({ agent: directAgent, getProxyForUrl: () => proxy });
           const agent = new Agent({ connect: (options, callback) => {
             const origin = `${options.protocol}//${options.hostname.includes(':') ? `[${options.hostname}]` : options.hostname}:${options.port}`;
             tunnel(routing, proxy.startsWith('pac+') ? target : origin, options.protocol === 'https:').then(socket => callback(null, socket), () => callback(new Error('proxy_connection_failed'), null));
@@ -188,13 +197,14 @@ export function createProxyDispatcher(resolveProxy) {
       }).catch(() => handler.onError(new Error('proxy_connection_failed')));
       return true;
     }
-    async close() { closed = true; await Promise.all([...agents.values()].map(async ({agent,routing}) => { try { await agent.close(); } finally { routing.destroy(); } })); }
-    async destroy(error) { closed = true; await Promise.all([...agents.values()].map(async ({agent,routing}) => { try { await agent.destroy(error); } finally { routing.destroy(); } })); }
+    async close() { closed = true; try { await Promise.all([...agents.values()].map(async ({agent,routing}) => { try { await agent.close(); } finally { routing.destroy(); } })); } finally { directAgent.destroy(); } }
+    async destroy(error) { closed = true; directAgent.destroy(); await Promise.all([...agents.values()].map(async ({agent,routing}) => { try { await agent.destroy(error); } finally { routing.destroy(); } })); }
   }();
 }
 
 export function installNetworkProxy(root) {
-  const resolveProxy = createProxyResolver(root), agent = new ProxyAgent({ agent: false, getProxyForUrl: resolveProxy, keepAlive: true });
+  const directAgent = new ApplicationProxyAgent({ getProxyForUrl: () => '' });
+  const resolveProxy = createProxyResolver(root), agent = new ApplicationProxyAgent({ agent: directAgent, getProxyForUrl: resolveProxy, keepAlive: true });
   const previous = { http: http.globalAgent, https: https.globalAgent, dispatcher: getGlobalDispatcher() };
   const dispatcher = createProxyDispatcher(resolveProxy);
   const previousAgent = activeAgent;
@@ -202,7 +212,7 @@ export function installNetworkProxy(root) {
   http.globalAgent = https.globalAgent = agent;
   setGlobalDispatcher(dispatcher);
   return {
-    async close() { activeAgent = previousAgent; http.globalAgent = previous.http; https.globalAgent = previous.https; setGlobalDispatcher(previous.dispatcher); agent.destroy(); await dispatcher.destroy(); },
+    async close() { activeAgent = previousAgent; http.globalAgent = previous.http; https.globalAgent = previous.https; setGlobalDispatcher(previous.dispatcher); directAgent.destroy(); agent.destroy(); await dispatcher.destroy(); },
     attachNativeTunnel(server, secret) {
       const expected = Buffer.from('Basic ' + Buffer.from('lingji:' + secret).toString('base64'));
       const sockets = new Set();

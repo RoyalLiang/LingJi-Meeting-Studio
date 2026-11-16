@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import net from 'node:net';
 import { once } from 'node:events';
+import { execFileSync } from 'node:child_process';
 import { mkdtemp, rm, stat, readFile, writeFile } from 'node:fs/promises';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { WebSocket, WebSocketServer } from 'ws';
@@ -124,4 +125,11 @@ test('parallel requests share the same bounded system-proxy lookup', async t => 
   const resolve=createProxyResolver(directory,{readSystem:async()=>{reads++;await new Promise(done=>setTimeout(done,20));return {https:'http://proxy.example:7890'};}});
   const results=await Promise.all(Array.from({length:30},()=>resolve('https://provider.example/')));
   assert.ok(results.every(value=>value==='http://proxy.example:7890'));assert.equal(reads,1);
+});
+
+
+test('environment PAC keeps explicit direct requests direct and closes pending downloads', async t => {
+  const directory = await root(t);
+  const output = execFileSync(process.execPath, [fileURLToPath(new URL('./fixtures/network-pac-env.mjs', import.meta.url)), directory], { encoding: 'utf8', timeout: 10000 });
+  assert.deepEqual(JSON.parse(output), { core: true, fetch: true, pacHits: 2, explicitDirect: true, pendingPacClosed: true });
 });
