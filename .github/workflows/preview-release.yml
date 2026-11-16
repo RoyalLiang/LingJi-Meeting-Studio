@@ -420,9 +420,6 @@ jobs:
         run: node scripts/windows-msix.mjs
       - name: Verify MSIX identity, desktop activation and bundled backend
         shell: pwsh
-        env:
-          # Temporary scoped capture for the currently authorized MSIX white-window repair.
-          TTS_MSIX_WINDOW_DIAGNOSTICS: ${{ needs.verify.outputs.version == '0.3.33' && 'authorized-scoped-app-window' || '' }}
         run: '& ./.agent-runtime/ci-controller/scripts/test-windows-msix.ps1 -SourceRoot $env:GITHUB_WORKSPACE -Metadata .agent-runtime/msix-submission/store-package.json -Output .agent-runtime/msix-installation.json'
       - name: Upload unsigned Microsoft Store submission and validation
         if: ${{ always() && !cancelled() }}

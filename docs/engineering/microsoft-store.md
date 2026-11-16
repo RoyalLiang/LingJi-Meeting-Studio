@@ -24,7 +24,7 @@ Windows 商店通道使用 MSIX，由 Microsoft Store 审核并签名。现有 N
 
 ```text
 产品 A.B.C → 商店包 (A+1).B.C.0
-0.3.30     → 1.3.30.0
+0.3.33     → 1.3.33.0
 1.0.0      → 2.0.0.0
 ```
 
@@ -44,6 +44,8 @@ WGS 把同次构建的 `windows-app.exe`、资源归档、`windows-store-unsigne
 
 `test-windows-msix.ps1` 在一次性 Windows runner 内创建测试签名副本，先通过普通 AUMID 激活验证真实应用、Node 子进程包身份、窗口和包内 WebView2。随后以 `Invoke-CommandInDesktopPackage -PreventBreakaway` 的诊断上下文运行安装目录内的 Node，验证只读后台与本地模型推理，并再次核对 Node 的真实包身份。诊断上下文不能代替普通激活；测试不更改 WindowsApps ACL。测试证书及安装在结束后清理，原始提交包保持未签名。[微软调试命令说明](https://learn.microsoft.com/en-us/powershell/module/appx/invoke-commandindesktoppackage?view=windowsserver2025-ps)
 
+`v0.3.33` 的[完整发布流水](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/43878591731)与[独立 MSIX 验证](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/43879682491)均已通过。受限于临时测试证书，这些结果证明包结构、安装及应用冷/再次启动可用；不代表已获得微软商店签名、真实设备验收或 NSIS 用户数据迁移验证。
+
 `windows-msix-check.yml` 可在不重新构建的情况下针对原 WGS 附件快速重跑这项验证。发布控制器与产品源码分别固定；重新验证既有版本时，先核对两个平台的完整回执、源码和所有文件摘要。任何缺失或不一致均停止并保留原件，不覆盖重建。原构建 CI 回执保存在 `buildCi` 和复用证据附件中，新运行记录验证控制器来源。
 
 这些检查不替代真实音频设备、真实模型服务、现有独立安装包的数据迁移和 Microsoft Store 审核。
@@ -60,7 +62,7 @@ WGS 把同次构建的 `windows-app.exe`、资源归档、`windows-store-unsigne
 2. 填写实际功能、支持联系方式、年龄分级、隐私说明和审核说明。隐私页面为 `https://rookiecode.com/privacy`。说明 `runFullTrust` 用于桌面窗口、本地后台、音频采集和工作目录访问；本地转录与用户配置的云端模型分别说明。
 3. 等待包验证、认证与实际公开发布。产品 ID、提交成功或审核中都不能作为可下载的证明。
 4. 核对已上架包与本轮产品版本的映射，以及干净 Windows 机器上的安装、录音、数据保存和更新。
-5. 在 GitHub 仓库变量设置 `MICROSOFT_STORE_PUBLISHED_VERSION` 为**产品版本**，例如 `0.3.30`，运行官网部署工作流。 同时保留“独立安装包”OSS 备用入口，供商店不可用的设备选择。
+5. 在 GitHub 仓库变量设置 `MICROSOFT_STORE_PUBLISHED_VERSION` 为**产品版本**，例如 `0.3.33`，运行官网部署工作流。 同时保留“独立安装包”OSS 备用入口，供商店不可用的设备选择。
 
 官网使用固定 Store ID，仅在已确认上架版本与 OSS 当前目录版本一致时，将 Windows 按钮指向官方 Store Web Installer；其他平台仍用 OSS。商店审核落后于独立发布时，官网保留当前版本的独立下载，不把旧商店包标为新版。
 

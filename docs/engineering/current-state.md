@@ -1,6 +1,6 @@
 # 当前能力与验证边界
 
-当前源码目标版本为 **0.3.33**，尚待完成本轮发布验证。发布状态以 [GitHub Release](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases) 和对应 Actions 结果为准；本地检查通过不等于安装包已发布或目标设备已验收。
+当前已发布测试版为 **[v0.3.33](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.3.33)**。对应[发布流水](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/43878591731)的源码校验、WGS 构建、Windows、Ubuntu 22.04/24.04、macOS 检查与发布均已通过；三平台安装包已同步 OSS 与官网下载。CI 验证不等于真实设备、声卡或供应商服务已验收。
 
 实时事件仅合并进行中的读取，不再复用已完成的空查询结果，避免刚提交的转录或纪要等待下一次恢复轮询。420px 及以下的会议操作按四列排列，560px 及以下的操作按钮保持 44px 触摸宽度。
 
@@ -51,8 +51,8 @@
 
 ## Windows 商店通道（2026-11-16）
 
-当前工作树增加完整摘要校验的 WebView2 专用缓存，处理包内运行时在 WindowsApps 路径下的启动失败；本地缓存单元测试已通过，Windows 原生构建、MSIX 冷启动及再次启动仍待本轮 CI 核验。
+Windows 商店版使用完整摘要校验的 WebView2 专用缓存，处理包内运行时在 WindowsApps 路径下的启动失败。本地缓存单元测试和 [Windows MSIX 验证](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/43879682491)已通过；应用冷启动与再次启动均显示完整工作台。
 
 源码已增加使用同份 WGS 程序封装 MSIX、原生安装渠道隔离和官网按真实上架版本选择微软安装入口。产品“聆记 LingJi”已预留，Store ID 为 `9NCW0WT5W9D1`；未完成审核上架，不代表当前已可从商店下载。
 
-本地渠道契约、网站选择和原生更新门禁已验证。Windows SDK 结构验证和临时签名副本安装已通过；MSIX 的 Fixed WebView2 启动门禁尚未通过，只读模型在包上下文的验收仍待完成，候选未提交商店。真实音频、既有 NSIS 数据迁移和商店认证需单独核对。操作步骤见[微软商店分发](microsoft-store.md)。
+SDK 结构验证、临时签名副本安装、普通包内后台进程及只读本地模型推理已通过 CI。原始提交包保持未签名，等待商店审核签名；真实音频设备、供应商服务、既有 NSIS 数据迁移及商店认证仍需分别核对。操作步骤见[微软商店分发](microsoft-store.md)。
