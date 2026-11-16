@@ -5,7 +5,7 @@ import {runInNewContext} from 'node:vm';
 import {fileURLToPath} from 'node:url';
 import {build} from 'esbuild';
 import {Miniflare, convertV4MiniflareOptions} from 'miniflare';
-import {downloadBase, downloadManifest, downloadRoute} from '../apps/site/src/downloads.mjs';
+import {downloadBase, downloadManifest, downloadRoute, microsoftStoreListing} from '../apps/site/src/downloads.mjs';
 
 const assets = ['macos-arm64.dmg', 'windows-x64-setup.exe', 'linux-amd64.deb'].map(suffix => ({name: `Lingji-0.3.29-${suffix}`, size: 10, sha256: 'a'.repeat(64)}));
 const manifest = {version: '0.3.29', assets}, env = {DOWNLOADS_BASE_URL: 'https://downloads.example.test/lingji/'};
@@ -97,4 +97,58 @@ test('system selection distinguishes desktops, iOS desktop mode and mobile devic
   const detect = runInNewContext(source.replace('export function platformFor', 'function platformFor') + '\nplatformFor', {document: {querySelectorAll: () => [], querySelector: () => null}, navigator: {}});
   assert.equal(detect({platform: 'Win32'}), 'windows'); assert.equal(detect({userAgentData: {platform: 'macOS'}}), 'macos'); assert.equal(detect({platform: 'Linux x86_64'}), 'linux');
   assert.equal(detect({userAgent: 'Android Linux'}), null); assert.equal(detect({platform: 'MacIntel', maxTouchPoints: 5}), null); assert.equal(detect({userAgent: 'iPhone'}), null); assert.equal(detect({}), null);
+});
+
+
+test('Store downloads stay hidden until the published product version matches the direct-download catalog', async () => {
+  const config = {MICROSOFT_STORE_ID: '9TESTMSIX001', MICROSOFT_STORE_PUBLISHED_VERSION: '0.3.29'};
+  assert.equal(microsoftStoreListing({}), null);
+  assert.equal(microsoftStoreListing({MICROSOFT_STORE_ID: config.MICROSOFT_STORE_ID}), null);
+  assert.equal(microsoftStoreListing(config, '0.3.30'), null);
+  assert.throws(() => microsoftStoreListing({...config, MICROSOFT_STORE_ID: 'https://example.test'}));
+  const listing = microsoftStoreListing(config, manifest.version);
+  assert.equal(listing.href, 'https://apps.microsoft.com/detail/9TESTMSIX001?mode=direct');
+  for (const extra of [{MICROSOFT_STORE_ID: config.MICROSOFT_STORE_ID}, config, {...config, MICROSOFT_STORE_PUBLISHED_VERSION: '0.3.28'}]) {
+    const response = await downloadRoute(new Request('https://rookiecode.com/api/downloads'), {...env, ...extra}, async () => Response.json(manifest));
+    const catalog = await response.json();
+    assert.deepEqual(catalog.assets, downloadManifest(manifest).assets);
+    assert.deepEqual(catalog.windowsStore, extra === config ? listing : undefined);
+  }
+});
+
+async function downloadPage(catalog) {
+  let finish;
+  const done = new Promise(resolve => {finish = resolve;});
+  const status = {set textContent(value) {finish(value);}};
+  const tabs = ['macos','windows','linux'].map(platform => ({dataset:{downloadPlatform:platform},setAttribute(){},addEventListener(){}}));
+  const panels = tabs.map(tab => {
+    const attrs = {'aria-disabled':'true',tabindex:'-1'};
+    const link = {download:'',setAttribute(name,value){attrs[name]=value;},removeAttribute(name){delete attrs[name];if(name==='download')this.download='';}};
+    const size = {}, requirements = {}, standalone = {hidden:true};
+    return {dataset:{downloadPanel:tab.dataset.downloadPlatform},link,size,requirements,standalone,attrs,querySelector(selector){return selector==='a[data-installer]'?link:selector==='[data-file-size]'?size:selector==='[data-system-requirements]'?requirements:selector==='[data-standalone-installer]'?standalone:null;}};
+  });
+  const elements = {'#download-status':status,'#download-device':{},'#download-version':{}};
+  const source = await readFile(new URL('../apps/site/public/downloads.js', import.meta.url), 'utf8');
+  runInNewContext(source.replace('export function', 'function'), {document:{querySelectorAll:selector=>selector==='[data-download-platform]'?tabs:selector==='[data-download-panel]'?panels:[],querySelector:selector=>elements[selector]},navigator:{platform:'Win32'},AbortSignal,fetch:async()=>({ok:true,json:async()=>catalog})});
+  return {status:await done,panels};
+}
+
+test('download page enables all three installers and changes only Windows to a verified Store entry', async () => {
+  const catalog = downloadManifest(manifest);
+  const direct = await downloadPage(catalog);
+  assert.equal(direct.status, '');
+  assert.ok(direct.panels.every(panel => panel.link.href.startsWith('/downloads/') && !panel.attrs['aria-disabled']));
+  const windowsStore = microsoftStoreListing({MICROSOFT_STORE_ID:'9TESTMSIX001',MICROSOFT_STORE_PUBLISHED_VERSION:manifest.version});
+  const store = await downloadPage({...catalog,windowsStore});
+  assert.equal(store.status, '');
+  assert.equal(store.panels[1].link.href, windowsStore.href);
+  assert.equal(store.panels[1].link.download, '');
+  assert.equal(store.panels[1].size.textContent, '');
+  assert.equal(direct.panels[1].standalone.hidden, true);
+  assert.equal(store.panels[1].standalone.hidden, false);
+  assert.equal(store.panels[1].standalone.href, direct.panels[1].link.href);
+  assert.ok(store.panels[0].link.href.endsWith('.dmg') && store.panels[2].link.href.endsWith('.deb'));
+  const invalid = await downloadPage({...catalog,windowsStore:{...windowsStore,href:'https://example.test/installer.exe'}});
+  assert.match(invalid.status, /暂不可用/);
+  assert.ok(invalid.panels.every(panel => !panel.link.href));
 });

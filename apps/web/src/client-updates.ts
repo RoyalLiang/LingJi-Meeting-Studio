@@ -1,4 +1,4 @@
-export type UpdateStatus = { phase: string; currentVersion: string; version?: string | null; notes?: string | null; downloaded: number; total?: number | null; error?: string | null; installer?: boolean };
+export type UpdateStatus = { phase: string; channel?: 'standalone' | 'msix' | 'unknown'; currentVersion: string; version?: string | null; notes?: string | null; downloaded: number; total?: number | null; error?: string | null; installer?: boolean };
 export type UpdatePreferences = { autoCheck: boolean; autoDownload: boolean; autoInstall: false };
 export type UpdatePolicy = 'manual' | 'check' | 'background';
 export type UpdateActivity = { authenticated: boolean; recording: boolean; paused: boolean; busy: boolean; queueBusy: boolean; pendingBytes: number; pendingCount: number };

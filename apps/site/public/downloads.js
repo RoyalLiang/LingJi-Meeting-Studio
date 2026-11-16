@@ -35,18 +35,31 @@ if (tabs.length) {
   fetch('/api/downloads', {signal: AbortSignal.timeout(15000)}).then(async response => {
     if (!response.ok) throw new Error('unavailable');
     const manifest = await response.json();
+    const store = manifest.windowsStore;
+    if (store && (!/^[A-Z0-9]{12}$/.test(store.id) || store.version !== manifest.version || store.href !== `https://apps.microsoft.com/detail/${store.id}?mode=direct`)) throw new Error('invalid_store_listing');
     if (!/^\d+\.\d+\.\d+$/.test(manifest.version) || !Array.isArray(manifest.assets)) throw new Error('invalid');
     const files = panels.map(panel => {
       const platform = panel.dataset.downloadPanel, suffix = {macos: 'macos-arm64.dmg', windows: 'windows-x64-setup.exe', linux: 'linux-amd64.deb'}[platform];
       const name = `Lingji-${manifest.version}-${suffix}`, asset = manifest.assets.find(item => item.platform === platform && item.name === name);
       if (!asset || asset.href !== `/downloads/v${manifest.version}/${name}` || !Number.isSafeInteger(asset.size) || asset.size <= 0 || !/^[a-f0-9]{64}$/.test(asset.sha256)) throw new Error('invalid');
-      return {panel, asset};
+      return {panel, asset, store: platform === 'windows' ? store : null};
     });
     document.querySelector('#download-version').textContent = `v${manifest.version} 测试版`;
-    for (const {panel, asset} of files) {
+    for (const {panel, asset, store} of files) {
       const link = panel.querySelector('a[data-installer]');
-      link.href = asset.href; link.download = asset.name; link.removeAttribute('aria-disabled'); link.removeAttribute('tabindex');
-      panel.querySelector('[data-file-size]').textContent = `${(asset.size / 1024 ** 2).toFixed(0)} MB`;
+      const standalone = panel.querySelector('[data-standalone-installer]');
+      if (standalone) {
+        standalone.hidden = !store;
+        if (store) { standalone.href = asset.href; standalone.download = asset.name; }
+      }
+      link.href = store?.href || asset.href;
+      if (store) {
+        link.removeAttribute('download');
+        link.setAttribute('aria-label', '从 Microsoft Store 下载聆记');
+        panel.querySelector('[data-system-requirements]').textContent = 'Windows 10 2004 及以上 / Windows 11 · 64 位';
+      } else link.download = asset.name;
+      link.removeAttribute('aria-disabled'); link.removeAttribute('tabindex');
+      panel.querySelector('[data-file-size]').textContent = store ? '' : `${(asset.size / 1024 ** 2).toFixed(0)} MB`;
     }
     status.textContent = '';
   }).catch(() => { status.textContent = '安装包暂不可用，请稍后刷新重试。'; });

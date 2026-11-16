@@ -11,10 +11,43 @@ use tauri_plugin_updater::{Update, UpdaterExt};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
 const MAX_DOWNLOAD: u64 = 256 * 1024 * 1024;
+
+fn packaged_app() -> Result<bool, i32> {
+    #[cfg(windows)]
+    {
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn GetCurrentPackageFullName(length: *mut u32, name: *mut u16) -> i32;
+        }
+        let mut length = 0;
+        // Only APPMODEL_ERROR_NO_PACKAGE permits an external installer to replace this app.
+        match unsafe { GetCurrentPackageFullName(&mut length, std::ptr::null_mut()) } {
+            122 => Ok(true),
+            15700 => Ok(false),
+            code => Err(code),
+        }
+    }
+    #[cfg(not(windows))]
+    { Ok(false) }
+}
+
+#[cfg(windows)]
+pub fn configure_packaged_webview() -> Result<(), String> {
+    if packaged_app() != Ok(true) { return Ok(()); }
+    let executable = std::env::current_exe().map_err(|e| e.to_string())?;
+    let runtime = executable.parent().ok_or("Missing application directory")?.join("webview2");
+    if !runtime.join("msedgewebview2.exe").is_file() {
+        return Err("Packaged WebView2 runtime is missing".into());
+    }
+    // Run before Tauri creates threads; Store installations use their bundled runtime.
+    std::env::set_var("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER", runtime);
+    Ok(())
+}
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Status {
     pub phase: String,
+    pub channel: &'static str,
     pub current_version: String,
     pub version: Option<String>,
     pub notes: Option<String>,
@@ -74,6 +107,10 @@ impl Drop for Operation {
 
 impl Updates {
     pub fn new(current_version: String, cache: PathBuf, preview_channel: bool) -> Self {
+        Self::for_package(current_version, cache, preview_channel, packaged_app())
+    }
+    fn for_package(current_version: String, cache: PathBuf, preview_channel: bool, package: Result<bool, i32>) -> Self {
+        let packaged = package != Ok(false);
         let endpoint = option_env!("TTS_UPDATER_ENDPOINT")
             .filter(|value| !value.is_empty())
             .map(str::to_string);
@@ -85,18 +122,20 @@ impl Updates {
             std::env::var("TTS_UPDATE_TEST_URL").ok().or(endpoint),
             std::env::var("TTS_UPDATE_TEST_PUBLIC_KEY").ok().or(pubkey),
         );
-        let preview_channel = preview_channel && endpoint.is_none() && pubkey.is_none();
+        let (endpoint, pubkey) = if packaged { (None, None) } else { (endpoint, pubkey) };
+        let preview_channel = !packaged && preview_channel && endpoint.is_none() && pubkey.is_none();
         let configured = preview_channel || (endpoint.is_some() && pubkey.is_some());
         Self {
             state: Arc::new(Mutex::new(State {
                 status: Status {
+                    channel: match package { Ok(true) => "msix", Ok(false) => "standalone", Err(_) => "unknown" },
                     phase: if configured { "idle" } else { "disabled" }.into(),
                     current_version,
                     version: None,
                     notes: None,
                     downloaded: 0,
                     total: None,
-                    error: None,
+                    error: package.err().map(|code| format!("无法确认安装渠道，已暂停更新（系统错误 {code}）")),
                     installer: preview_channel,
                 },
                 update: None,
@@ -149,6 +188,11 @@ impl Updates {
         if self.preview_channel {
             view.install_label = "打开安装包".into();
         }
+        if state.status.channel == "msix" {
+            view.check_label = "通过安装渠道更新".into();
+        } else if state.status.channel == "unknown" {
+            view.check_label = "暂时无法检查更新".into();
+        }
         view
     }
     fn emit(&self, app: &AppHandle) {
@@ -156,6 +200,9 @@ impl Updates {
     }
     fn operation(&self) -> Result<Operation, String> {
         let mut state = self.state.lock().unwrap();
+        if state.status.channel != "standalone" {
+            return Err(state.status.error.clone().unwrap_or_else(|| "此版本由安装渠道管理更新".into()));
+        }
         if state.operating {
             return Err("更新操作正在进行，请稍后再试".into());
         }
@@ -483,6 +530,26 @@ impl Updates {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn unknown_package_identity_cannot_enable_an_external_installer() {
+        let updates = super::Updates::for_package("0.3.30".into(), std::env::temp_dir(), true, Err(5));
+        assert_eq!(updates.status().phase, "disabled");
+        assert_eq!(updates.status().channel, "unknown");
+        assert!(updates.status().error.unwrap().contains("5"));
+        assert!(updates.operation().is_err());
+        assert!(!updates.menu(false).check);
+    }
+    #[test]
+    fn packaged_apps_reject_installer_updates_even_for_preview_builds() {
+        let updates = super::Updates::for_package("0.3.30".into(), std::env::temp_dir(), true, Ok(true));
+        assert_eq!(updates.status().phase, "disabled");
+        assert_eq!(updates.status().channel, "msix");
+        assert!(updates.operation().is_err());
+        let menu = updates.menu(false);
+        assert!(!menu.check && !menu.background && !menu.install);
+        assert_eq!(menu.check_label, "通过安装渠道更新");
+    }
+
     use super::*;
     #[test]
     fn restart_requires_the_announced_new_version_and_a_complete_download_on_disk() {
@@ -491,6 +558,7 @@ mod tests {
         std::fs::create_dir(&directory).unwrap();
         let path = directory.join("synthetic-verified-update.bin");
         let mut status = Status {
+            channel: "standalone",
             phase: "ready".into(),
             current_version: "1.0.0".into(),
             version: Some("1.1.0".into()),

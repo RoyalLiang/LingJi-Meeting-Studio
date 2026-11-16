@@ -7,6 +7,7 @@ import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {assertCurrentSource, finishCurrentBuild, verifyWgsInput} from '../scripts/wgs-build-contract.mjs';
 import {releaseHash, snapshotReleaseSource} from '../scripts/release-source.mjs';
+import {copyWindowsMsix, msixVersion, storeIdentity} from '../scripts/windows-msix.mjs';
 
 const cargoPath = 'apps/desktop/src-tauri/Cargo.toml';
 const cargo = '[package]\nname = "fixture"\nversion = "1.0.0"\n\n[dependencies]\ntauri = { version = "2", features = ["tray-icon"] }\n';
@@ -91,6 +92,19 @@ test('WGS input accepts exactly the three expected files with matching source an
   assert.deepEqual(actual, receipt);
 });
 
+test('WGS raw application input is optional for legacy installers and hash-verified for MSIX', async t => {
+  const {directory, expected, receipt, save} = await inputFixture(t);
+  const bytes = Buffer.from('fixed WGS executable');
+  await writeFile(join(directory, 'windows-app.exe'), bytes);
+  const next = {...receipt, files: [...receipt.files, {name: 'windows-app.exe', bytes: bytes.length, sha256: releaseHash(bytes)}]};
+  await save(next);
+  assert.deepEqual(await verifyWgsInput(directory, expected), next);
+  await writeFile(join(directory, 'windows-app.exe'), 'changed');
+  await assert.rejects(verifyWgsInput(directory, expected));
+  await save({...next, files: next.files.filter(file => file.name !== 'resources.tar.gz')});
+  await assert.rejects(verifyWgsInput(directory, expected));
+});
+
 test('WGS input rejects wrong identity, source provenance, target, size, digest, and unexpected paths', async t => {
   const {directory, expected, receipt, save} = await inputFixture(t);
   const invalid = [
@@ -148,4 +162,56 @@ test('WGS collecting two releases in one directory removes the previous installe
   assert.equal(current.version, '0.3.1');
   assert.equal(current.sourceRevision, 'a'.repeat(40));
   assert.equal(current.ci.runId, '123');
+});
+
+
+test('WGS Store candidates require all paired artifacts and verify every transferred byte', async t => {
+  const {directory, expected, receipt: value, save} = await inputFixture(t);
+  const extra = [];
+  for (const name of ['windows-app.exe', 'windows-store-unsigned.msix', 'store-package.json']) {
+    const bytes = Buffer.from(`fixture ${name}`);
+    await writeFile(join(directory, name), bytes);
+    extra.push({name, bytes: bytes.length, sha256: releaseHash(bytes)});
+  }
+  const complete = {...value, files: [...value.files, ...extra]};
+  await save(complete);
+  assert.deepEqual(await verifyWgsInput(directory, expected), complete);
+  await save({...complete, files: complete.files.filter(file => file.name !== 'store-package.json')});
+  await assert.rejects(verifyWgsInput(directory, expected));
+  await save(complete);
+  await writeFile(join(directory, 'windows-store-unsigned.msix'), 'changed');
+  await assert.rejects(verifyWgsInput(directory, expected));
+});
+
+
+test('Windows copies only the exact WGS Store package and rejects altered identity', async t => {
+  const {root} = await sourceFixture(t);
+  const identity = storeIdentity({storeId: '9TESTMSIX001', name: 'Fixture.Lingji', publisher: 'CN=Fixture Publisher', displayName: 'Fixture', appDisplayName: 'Fixture Lingji'});
+  const configDirectory = join(root, 'apps/desktop/src-tauri');
+  await writeFile(join(configDirectory, 'microsoft-store.json'), JSON.stringify(identity));
+  await writeFile(join(configDirectory, 'tauri.preview.conf.json'), JSON.stringify({version: '0.3.30'}));
+  const git = (...args) => execFileSync('git', args, {cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe']}).trim();
+  git('add', '.');
+  git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@local.test', 'commit', '-m', 'fixture identity');
+  const sourceRevision = git('rev-parse', 'HEAD');
+  const source = await snapshotReleaseSource({root, ref: sourceRevision});
+  const {directory, receipt, save} = await inputFixture(t);
+  const packageBytes = Buffer.from('synthetic unsigned MSIX');
+  const metadata = {version: '0.3.30', packageVersion: msixVersion('0.3.30'), sourceRevision, sourceDigest: source.sha256, builder: 'wgs', identity, signed: false, published: false, artifact: {name: 'windows-store-unsigned.msix', size: packageBytes.length, sha256: releaseHash(packageBytes)}};
+  const files = [...receipt.files];
+  for (const [name, bytes] of [['windows-app.exe', Buffer.from('synthetic exe')], ['windows-store-unsigned.msix', packageBytes], ['store-package.json', Buffer.from(JSON.stringify(metadata))]]) {
+    await writeFile(join(directory, name), bytes);
+    files.push({name, bytes: bytes.length, sha256: releaseHash(bytes)});
+  }
+  const updateReceipt = () => save({...receipt, version: metadata.version, sourceRevision, source, files});
+  await updateReceipt();
+  const destination = join(root, 'submission');
+  await copyWindowsMsix({root, prebuilt: directory, destination, sourceRevision});
+  assert.deepEqual(await readFile(join(destination, metadata.artifact.name)), packageBytes);
+  metadata.identity = {...identity, name: 'Another.Product'};
+  const altered = Buffer.from(JSON.stringify(metadata));
+  await writeFile(join(directory, 'store-package.json'), altered);
+  Object.assign(files.find(file => file.name === 'store-package.json'), {bytes: altered.length, sha256: releaseHash(altered)});
+  await updateReceipt();
+  await assert.rejects(copyWindowsMsix({root, prebuilt: directory, destination: join(root, 'rejected'), sourceRevision}));
 });

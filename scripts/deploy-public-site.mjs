@@ -1,3 +1,4 @@
+import microsoftStoreIdentity from '../apps/desktop/src-tauri/microsoft-store.json' with {type: 'json'};
 import { writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
@@ -5,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { normalizePublishedContent } from '../packages/records/src/published-content.mjs';
 import { exampleContent } from '../apps/site/src/example.mjs';
-import { downloadBase } from '../apps/site/src/downloads.mjs';
+import { downloadBase, microsoftStoreListing } from '../apps/site/src/downloads.mjs';
 
 export const projectName='lingji-meeting-studio-beta';
 const resourceName=projectName+'-shares', marker='lingji-public-site-v1';
@@ -63,6 +64,9 @@ export async function deployPublicSite({env=process.env,fetcher=fetch,run=comman
   }else if(project?.deployment_configs?.production?.env_vars?.GITHUB_CLIENT_SECRET)throw new Error('OAuth configuration is missing; refusing to remove an existing publisher configuration.');
   if(env.DOWNLOADS_BASE_URL)vars.DOWNLOADS_BASE_URL=downloadBase(env.DOWNLOADS_BASE_URL);
   else if(project?.deployment_configs?.production?.env_vars?.DOWNLOADS_BASE_URL)throw new Error('Refusing to remove the existing download source.');
+  microsoftStoreListing({...env,MICROSOFT_STORE_ID:microsoftStoreIdentity.storeId});
+  vars.MICROSOFT_STORE_ID=microsoftStoreIdentity.storeId;
+  if(env.MICROSOFT_STORE_PUBLISHED_VERSION)vars.MICROSOFT_STORE_PUBLISHED_VERSION=env.MICROSOFT_STORE_PUBLISHED_VERSION;
   const envVars=Object.fromEntries(Object.entries(vars).map(([key,value])=>[key,{type:'plain_text',value}]));
   if(publishing)envVars.GITHUB_CLIENT_SECRET={type:'secret_text',value:secret};
   if(!project){

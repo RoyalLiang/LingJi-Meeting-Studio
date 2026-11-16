@@ -25,3 +25,7 @@ WGS 使用一次性 `lingji-wgs` runner。`scripts/wgs-build-preview.mjs` 对整
 Actions 收集三平台完整源码清单、来源 SHA、安装验证和产物摘要；不同平台源码不一致或校验失败会阻止发布。macOS 测试包使用 ad-hoc 签名且未公证，Windows/Linux 未做发行签名，不能视为正式信任更新通道。
 
 发布后只查询 Actions 与 GitHub API 的标签、源码 SHA、Release 状态、附件名称、大小和 digest。未经用户另行要求，不下载、解包或安装附件；元数据缺失时直接报告。发布回执留在 `.agent-runtime/`，不为补记回执循环发新版本。
+
+## Microsoft Store 提交包
+
+WGS 容器使用同份程序和资源额外封装 MSIX，Windows 作业验证原包，并保留未签名提交包与隔离安装验证回执。它在商店审核前不会加入 GitHub Release 或 OSS 下载目录，具体身份、版本映射和官网启用流程见[微软商店分发](microsoft-store.md)。

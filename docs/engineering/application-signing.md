@@ -12,6 +12,8 @@ iOS 复用同一开发者团队，但其应用标识、授权配置及分发流�
 
 ## Windows
 
+当前优先推进 MSIX 商店通道，由 Microsoft Store 审核后签名，暂不要求购买个人 CA。MSIX 产品已预留但尚未上架；包身份、版本映射和验证步骤见[商店分发](microsoft-store.md)。以下 CA 申请路径用于需要独立分发可信 EXE 的情况，不能将商店签名套用到现有 NSIS 安装包。
+
 微软 Artifact Signing 的公开信任个人通道目前只接受美国或加拿大个人，不能仅通过选择海外云区域改变身份资格。[微软申请条件](https://learn.microsoft.com/en-gb/azure/artifact-signing/quickstart)
 
 按中国大陆个人准备时，可考察 SSL.com IV Code Signing 加 eSigner 云 HSM；最终受理取决于 CA 实名核验。IV 无需注册公司，安装程序中的发布者显示经核验的个人姓名。官网通用材料说明不能证明某一大陆个人申请必然通过。[IV 产品与申请入口](https://www.ssl.com/products/software-integrity/code-signing/iv/)

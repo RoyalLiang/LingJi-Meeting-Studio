@@ -19,8 +19,10 @@ export async function verifyWgsInput(directory,{version,sourceRevision,source}){
  assert.equal(receipt.version,version);assert.equal(receipt.sourceRevision,sourceRevision);assert.deepEqual(receipt.source,source);
  assert.equal(receipt.builder,'wgs');assert.equal(receipt.sourceBuildMode,'guarded-current-directory');assert.equal(receipt.sourceVerifiedAfterBuild,true);
  assert.equal(receipt.target,'x86_64-pc-windows-msvc');
- assert.equal(receipt.files.length,3);assert.equal(new Set(receipt.files.map(file=>file.name)).size,3);
- for(const file of receipt.files){assert.ok(['windows-setup.exe','resources.tar.gz','lingji-ui-tests.exe'].includes(file.name));const bytes=await readFile(join(directory,file.name));assert.equal(bytes.length,file.bytes);assert.equal(releaseHash(bytes),file.sha256);}
+ assert.ok([3,4,6].includes(receipt.files.length));assert.equal(new Set(receipt.files.map(file=>file.name)).size,receipt.files.length);
+  for(const name of ['windows-setup.exe','resources.tar.gz','lingji-ui-tests.exe'])assert.ok(receipt.files.some(file=>file.name===name));
+ if(receipt.files.some(file=>file.name==='store-package.json'||file.name==='windows-store-unsigned.msix')) for(const name of ['store-package.json','windows-store-unsigned.msix','windows-app.exe']) assert.ok(receipt.files.some(file=>file.name===name));
+  for(const file of receipt.files){assert.ok(['windows-setup.exe','windows-app.exe','resources.tar.gz','lingji-ui-tests.exe','windows-store-unsigned.msix','store-package.json'].includes(file.name));const bytes=await readFile(join(directory,file.name));assert.equal(bytes.length,file.bytes);assert.equal(releaseHash(bytes),file.sha256);}
  return receipt;
 }
 

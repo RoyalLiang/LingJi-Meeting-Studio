@@ -411,6 +411,11 @@ async fn update_install(window: WebviewWindow, state: State<'_, Client>) -> Resu
 }
 
 fn main() {
+    #[cfg(windows)]
+    if let Err(error) = updates::configure_packaged_webview() {
+        eprintln!("[packaged-runtime] {error}");
+        std::process::exit(1);
+    }
     let builder = tauri::Builder::default();
     // Explicit profile overrides are separate development/test instances.
     #[cfg(any(target_os = "macos", target_os = "windows"))]

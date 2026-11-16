@@ -204,6 +204,7 @@ details p { font-size: 16px; line-height: 1.9; margin-bottom: 20px; }
 .download-panel p { margin-bottom: 8px; line-height: 1.7; }
 .download-note, .download-action span { color: var(--muted); font-size: 14px; line-height: 1.7; }
 .download-note:empty { display: none; }
+.download-action span:empty { display: none; }
 .download-action { display: grid; gap: 8px; text-align: center; }
 .download-action [aria-disabled="true"] { opacity: .45; cursor: wait; pointer-events: none; }
 @media (max-width: 540px) {
@@ -211,3 +212,9 @@ details p { font-size: 16px; line-height: 1.9; margin-bottom: 20px; }
   .download-panel { grid-template-columns: minmax(0, 1fr); padding: 20px; }
   .download-action { justify-items: start; text-align: left; }
 }
+
+.privacy-policy { max-width: 960px; }
+.privacy-policy section + section { margin-top: 48px; }
+.privacy-policy h2 { font-size: clamp(24px, 4vw, 32px); line-height: 1.4; margin-bottom: 20px; }
+.privacy-policy section p { font-size: 16px; line-height: 1.85; color: var(--muted); }
+.privacy-policy section p + p { margin-top: 16px; }

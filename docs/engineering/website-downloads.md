@@ -78,3 +78,7 @@ Workers 回源使用 `redirect: manual`，并拒绝 3xx 响应；原生 Workers 
 ## 分开核对本地与公网
 
 本地检查覆盖系统识别、键盘 tab、合成文件下载、范围/缓存响应和错误分支。接入实际 CDN 后，再核对完整目录、三个文件的 HEAD/小范围请求和浏览器下载。未经单独要求，不在开发机下载或安装完整发布包。
+
+## 对齐微软商店版本
+
+Windows Store ID 来自固定源码中的 `apps/desktop/src-tauri/microsoft-store.json`。仅在仓库变量 `MICROSOFT_STORE_PUBLISHED_VERSION` 已核对为真实上架的产品版本，并与 OSS 当前目录版本一致时，下载接口才返回官方 Store Web Installer 入口。审核中、未配置或版本落后时，仍使用该目录的独立 EXE；DMG、DEB 不受影响。不得在草稿创建时提前设置已发布版本。完整操作见[商店分发](microsoft-store.md)。

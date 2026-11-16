@@ -127,7 +127,9 @@
 
 ### 下载桌面测试版
 
-打开[官网立即下载](https://rookiecode.com/#download)，页面会按当前系统选中对应 tab；核对架构后，再点**立即下载**，由浏览器从官网下载安装包。可手动切换系统，展开 SHA-256 核对摘要。安装包目录尚未就绪时会明确提示暂不可用。
+打开[官网立即下载](https://rookiecode.com/#download)，页面会按当前系统选中对应 tab；核对架构后，再点**立即下载**，由浏览器从官网下载安装包。可手动切换系统。安装包目录尚未就绪时会明确提示暂不可用。
+
+Microsoft Store 的 MSIX 通道正在准备。审核上架并核对版本后，官网 Windows 按钮会使用微软官方联网安装入口；尚未上架时继续提供独立 EXE。商店版由安装渠道更新，独立安装包保留原更新方式。构建和上架步骤见[商店分发](docs/engineering/microsoft-store.md)。
 
 [GitHub Releases](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases) 保留独立的发布记录与附件。下载的是成品安装包；Source code 是源码归档。
 
