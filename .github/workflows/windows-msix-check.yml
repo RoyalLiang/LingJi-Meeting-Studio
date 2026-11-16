@@ -81,5 +81,6 @@ jobs:
           path: |
             .agent-runtime/msix-submission/schema-verification.json
             .agent-runtime/msix-installation.json
+            .agent-runtime/msix-installation.json.diagnostics.json
           if-no-files-found: warn
           retention-days: 14

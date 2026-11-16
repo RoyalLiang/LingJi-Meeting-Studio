@@ -37,6 +37,8 @@ public static class LingjiMsixTest {
   [DllImport("kernel32.dll", SetLastError=true)] static extern IntPtr OpenProcess(uint access, bool inherit, uint processId);
   [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr process);
   [DllImport("kernel32.dll", CharSet=CharSet.Unicode, ExactSpelling=true)] static extern int GetPackageFullName(IntPtr process, ref uint length, StringBuilder name);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode, ExactSpelling=true)] static extern int GetClassNameW(IntPtr window, StringBuilder name, int count);
+  public static string WindowClass(IntPtr window) { var name=new StringBuilder(256); GetClassNameW(window,name,name.Capacity); return name.ToString(); }
   public static uint Activate(string id) {
     var manager = (ILingjiActivationManager)new LingjiActivationManager();
     try { uint processId; Marshal.ThrowExceptionForHR(manager.ActivateApplication(id, "", 0, out processId)); return processId; }
@@ -125,6 +127,17 @@ try {
   @{installed=$true;activated=$true;windowCreated=$true;bundledBackendStarted=$true;readOnlyBackendVerified=$true;readOnlyModelInference=$true;packageIdentityVerified=$true;normalBackendPackageIdentityVerified=$true;supplementalNodeContextVerified=$true;sourceRevision=$receipt.sourceRevision;controllerSha=$env:GITHUB_SHA;fixedWebviewUsed=$true;webviewVersion=$webviewVersion;webviewExecutable=$webview.ExecutablePath;packageFullName=$actualPackageName;testSignature='temporary-self-signed-copy';submissionRemainsUnsigned=$true;realAudioDevicesVerified=$false;realProvidersVerified=$false} | ConvertTo-Json | Set-Content -LiteralPath $Output -Encoding utf8
 } catch {
   $primaryError = $_
+  try {
+    $application = Get-Process -Id $applicationProcessId -ErrorAction SilentlyContinue
+    $modulePaths = @()
+    if ($application -and $application.Path.StartsWith($installed.InstallLocation,[StringComparison]::OrdinalIgnoreCase)) {
+      $modulePaths = @($application.Modules | ForEach-Object { $_.FileName })
+    }
+    $webProcesses = @(Get-Process | Where-Object { $_.ProcessName -match '^(msedge|msedgewebview2|WebViewHost)$' } | Select-Object Id,ProcessName,Path)
+    $diagnostics = @{errorCode=$primaryError.Exception.HResult;applicationProcessId=$applicationProcessId;applicationRunning=[bool]$application;windowClass=if($application){[LingjiMsixTest]::WindowClass($application.MainWindowHandle)}else{''};applicationModules=$modulePaths;webProcesses=$webProcesses;webviewProcesses=$webviewProcesses} | ConvertTo-Json -Depth 4
+    $diagnostics | Set-Content -LiteralPath ($Output+'.diagnostics.json') -Encoding utf8
+    Write-Host $diagnostics
+  } catch { Write-Warning ('MSIX failure diagnostics unavailable: '+$_.Exception.Message) }
   throw
 } finally {
   $cleanupErrors = [Collections.Generic.List[string]]::new()
