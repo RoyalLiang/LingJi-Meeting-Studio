@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { access, chmod, copyFile, cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { createRequire } from 'node:module';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const project = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -34,6 +34,39 @@ export function includeBackendDependency(path){
   if(/\/node_modules\/(?:openai|@anthropic-ai\/sdk)\/src(?:\/|$)/.test(normalized)&&/\.[cm]?tsx?$/.test(normalized))return false;
   if(/\/node_modules\/@google\/genai\/dist\/(?:web(?:\/|$)|index\.(?:cjs|mjs)$)/.test(normalized))return false;
   return true;
+}
+
+// Resolve each dependency from its owning package, retaining npm's nested versions.
+export async function bundleBackendDependencies(root, backend) {
+  const lock = JSON.parse(await readFile(join(root, 'package-lock.json'), 'utf8'));
+  const modules = new Map(), visited = new Set();
+  const pending = Object.keys(lock.packages[''].dependencies || {}).map(name => ({ name, parent: root }));
+  while (pending.length) {
+    const { name, parent, optional = false } = pending.shift();
+    const locations = createRequire(join(parent, 'package.json')).resolve.paths(name) || [];
+    let directory, key;
+    for (const location of locations) {
+      const candidate = join(location, name), candidateKey = relative(root, candidate).replaceAll('\\', '/');
+      if (candidateKey.startsWith('node_modules/') && lock.packages[candidateKey]) { directory = candidate; key = candidateKey; break; }
+    }
+    if (!directory && optional) continue;
+    assert.ok(directory, `Dependency package not found in lockfile: ${name}`);
+    if (visited.has(key)) continue;
+    let pkg;
+    try { pkg = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8')); } catch (error) { if (optional && error.code === 'ENOENT') continue; throw error; }
+    assert.equal(pkg.name, lock.packages[key].name || name, `Unexpected dependency package: ${key}`);
+    assert.equal(pkg.version, lock.packages[key].version, `Installed dependency differs from lockfile: ${key}`);
+    visited.add(key);
+    modules.set(key === `node_modules/${name}` ? name : key, pkg.version);
+    await cp(directory, join(backend, key), { recursive: true, dereference: true, filter: path => {
+      const child = relative(directory, path).replaceAll('\\', '/');
+      return child !== 'node_modules' && !child.startsWith('node_modules/') && includeBackendDependency(path);
+    } });
+    const peers = Object.fromEntries(Object.entries(pkg.peerDependencies || {}).filter(([name]) => pkg.peerDependenciesMeta?.[name]?.optional !== true));
+    const dependencies = { ...peers, ...pkg.dependencies, ...pkg.optionalDependencies };
+    pending.push(...Object.keys(dependencies).map(name => ({ name, parent: directory, optional: Object.hasOwn(pkg.optionalDependencies || {}, name) || pkg.peerDependenciesMeta?.[name]?.optional === true })));
+  }
+  return modules;
 }
 
 export async function prepareClientBackend({ root = project, cacheRoot = join(project, '.agent-runtime/runtimes'), platform = process.env.TTS_TARGET_PLATFORM || process.platform, arch = process.env.TTS_TARGET_ARCH || process.arch } = {}) {
@@ -85,24 +118,7 @@ export async function prepareClientBackend({ root = project, cacheRoot = join(pr
   assert.equal(bundledVocabulary.hash, builtinVocabulary.sha256, 'bundled vocabulary missing or changed');
   await mkdir(join(backend,'tools/neohorse'),{recursive:true});
   for(const file of ['learning_data.py','build_learning_round.py','predict_learning.py','score_learning.py','finalize_learning_round.py','train_lora.py','intent_inputs.py','build_dataset.py','intent_policy.json','quantized_runtime.py','train_head.py'])await copyFile(join(root,'tools/neohorse',file),join(backend,'tools/neohorse',file));
-  const lock = JSON.parse(await readFile(join(root, 'package-lock.json'), 'utf8'));
-  const modules = new Map(), pending = Object.keys(lock.packages[''].dependencies || {});
-  while (pending.length) {
-    const name = pending.shift();
-    if (modules.has(name)) continue;
-    let directory = join(root, 'node_modules', name);
-    try { await access(join(directory, 'package.json')); }
-    catch { directory = dirname(createRequire(join(root, 'package.json')).resolve(name)); }
-    let pkg;
-    for (;;) {
-      try { const candidate = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8')); if (candidate.name === name) { pkg = candidate; break; } } catch { /* Walk to package root. */ }
-      const parent = dirname(directory); assert.notEqual(parent, directory, `Dependency package not found: ${name}`); directory = parent;
-    }
-    assert.equal(pkg.version, lock.packages[`node_modules/${name}`]?.version, `Installed dependency differs from lockfile: ${name}`);
-    modules.set(name, pkg.version);
-    await cp(directory, join(backend, 'node_modules', name), { recursive: true, dereference: true, filter: includeBackendDependency });
-    pending.push(...Object.keys(pkg.dependencies || {}));
-  }
+  const modules = await bundleBackendDependencies(root, backend);
   const localAsr = await prepareLocalAsr({ destination: join(backend, 'local-asr'), cacheRoot: join(cacheRoot, 'local-asr'), platform, arch });
   // Verify the packaged import graph, rather than accidentally resolving from
   // the repository's node_modules or source-only provider files.

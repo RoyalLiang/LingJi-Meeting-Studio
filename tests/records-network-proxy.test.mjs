@@ -19,7 +19,7 @@ test('proxy settings default to system, mask secrets and preserve passwords only
   assert.equal((await proxySettings(directory)).mode, 'system');
   const saved = await saveProxySettings(directory, manual('socks5://127.0.0.1:1080', {username:'user',password:'secret'}));
   assert.equal(saved.password, undefined); assert.equal(saved.hasPassword, true);
-  assert.equal((await stat(join(directory,'network-proxy.json'))).mode & 0o777, 0o600);
+  if(process.platform!=='win32') assert.equal((await stat(join(directory,'network-proxy.json'))).mode & 0o777, 0o600);
   await saveProxySettings(directory, {...saved,password:''});
   assert.equal(JSON.parse(await readFile(join(directory,'network-proxy.json'))).password,'secret');
   await saveProxySettings(directory, {...saved,password:'new-draft',clearPassword:true});
