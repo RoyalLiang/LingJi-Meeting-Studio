@@ -82,8 +82,17 @@ try {
   if (-not $backendProcessId) { throw 'Packaged desktop window and bundled backend did not become ready' }
   $actualPackageName = [LingjiMsixTest]::PackageName($applicationProcessId)
   if ($actualPackageName -ne $installed.PackageFullName) { throw 'Activated process has the wrong package identity' }
-  $webview = Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'msedgewebview2.exe' -and $_.ExecutablePath -and $_.ExecutablePath.StartsWith((Join-Path $installed.InstallLocation 'webview2'),[StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1
-  if (-not $webview) { throw 'Packaged application did not use its bundled Fixed WebView2 runtime' }
+  $deadline = [DateTime]::UtcNow.AddSeconds(60)
+  do {
+    $webviewProcesses = @(Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe'" | Select-Object ProcessId,ParentProcessId,ExecutablePath)
+    $webview = $webviewProcesses | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith((Join-Path $installed.InstallLocation 'webview2'),[StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1
+    if ($webview) { break }
+    Start-Sleep -Milliseconds 250
+  } while ([DateTime]::UtcNow -lt $deadline)
+  if (-not $webview) {
+    Write-Host (ConvertTo-Json -InputObject $webviewProcesses -Compress)
+    throw 'Packaged application did not use its bundled Fixed WebView2 runtime'
+  }
   $webviewVersion = (Get-Item -LiteralPath $webview.ExecutablePath).VersionInfo.ProductVersion
   if ($webviewVersion -ne $receipt.webview.version) { throw 'Unexpected active WebView2 version' }
   if ([LingjiMsixTest]::PackageName($backendProcessId) -ne $installed.PackageFullName) { throw 'Normal application backend did not inherit its package identity' }
