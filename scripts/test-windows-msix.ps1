@@ -118,7 +118,7 @@ try {
     try {
       $probe=$env:TTS_MSIX_CONTEXT_PROBE
       $probeOutput=[IO.Path]::GetFullPath($Output)+'.webview-probe.json'
-      Invoke-CommandInDesktopPackage -PackageFamilyName $installed.PackageFamilyName -AppId 'App' -Command $probe -Args ('"'+(Join-Path $installed.InstallLocation 'webview2')+'" "'+$probeOutput+'" "'+$installed.PackageFullName+'"') -PreventBreakaway -ErrorAction Stop | Out-Null
+      Invoke-CommandInDesktopPackage -PackageFamilyName $installed.PackageFamilyName -AppId 'App' -Command $probe -Args ('"'+(Join-Path $installed.InstallLocation 'webview2')+'" "'+$probeOutput+'" "'+$installed.PackageFullName+'"') -ErrorAction Stop | Out-Null
       $deadline=[DateTime]::UtcNow.AddSeconds(60)
       while (-not (Test-Path -LiteralPath $probeOutput)) {
         if (Test-Path -LiteralPath ($probeOutput+'.started')) { $probeProcessId=[int](Get-Content -LiteralPath ($probeOutput+'.started') -Raw) }
