@@ -50,6 +50,7 @@ try {
   if (-not $backendProcessId) { throw 'Packaged desktop window and bundled backend did not become ready' }
   $actualPackageName = [LingjiMsixTest]::PackageName($applicationProcessId)
   if ($actualPackageName -ne $installed.PackageFullName) { throw 'Activated process has the wrong package identity' }
+  if ([LingjiMsixTest]::PackageName($backendProcessId) -ne $installed.PackageFullName) { throw 'Normal application backend did not inherit its package identity' }
   $deadline = [DateTime]::UtcNow.AddSeconds(60)
   do {
     $webviewProcesses = @(Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe'" | Select-Object ProcessId,ParentProcessId,ExecutablePath)
@@ -63,7 +64,6 @@ try {
   }
   $webviewVersion = (Get-Item -LiteralPath $webview.ExecutablePath).VersionInfo.ProductVersion
   if ($webviewVersion -ne $receipt.webview.version) { throw 'Unexpected active WebView2 version' }
-  if ([LingjiMsixTest]::PackageName($backendProcessId) -ne $installed.PackageFullName) { throw 'Normal application backend did not inherit its package identity' }
   $configPath = Join-Path $scratch 'backend-context.json'
   $started = Join-Path $scratch 'started.json'
   $proceed = Join-Path $scratch 'proceed'
@@ -113,7 +113,31 @@ try {
       elseif ($capture.ExitCode -ne 0) { Write-Warning ('Scoped window diagnostics failed: '+$capture.ExitCode) }
     } catch { Write-Warning ('Scoped window diagnostics unavailable: '+$_.Exception.Message) }
   }
-  throw
+  if ($env:TTS_MSIX_CONTEXT_PROBE -and $installed) {
+    $probeProcessId=0
+    try {
+      $probe=$env:TTS_MSIX_CONTEXT_PROBE
+      $probeOutput=[IO.Path]::GetFullPath($Output)+'.webview-probe.json'
+      Invoke-CommandInDesktopPackage -PackageFamilyName $installed.PackageFamilyName -AppId 'App' -Command $probe -Args ('"'+(Join-Path $installed.InstallLocation 'webview2')+'" "'+$probeOutput+'" "'+$installed.PackageFullName+'"') -PreventBreakaway -ErrorAction Stop | Out-Null
+      $deadline=[DateTime]::UtcNow.AddSeconds(60)
+      while (-not (Test-Path -LiteralPath $probeOutput)) {
+        if (Test-Path -LiteralPath ($probeOutput+'.started')) { $probeProcessId=[int](Get-Content -LiteralPath ($probeOutput+'.started') -Raw) }
+        if ([DateTime]::UtcNow -ge $deadline) { throw 'SDK WebView context diagnostic timed out' }
+        Start-Sleep -Milliseconds 200
+      }
+      if (-not $probeProcessId -and (Test-Path -LiteralPath ($probeOutput+'.started'))) { $probeProcessId=[int](Get-Content -LiteralPath ($probeOutput+'.started') -Raw) }
+      Write-Host (Get-Content -LiteralPath $probeOutput -Raw)
+    } catch { Write-Warning ('SDK WebView context diagnostic unavailable: '+$_.Exception.Message) }
+    finally {
+      try {
+        if ($probeProcessId) {
+          $process=Get-Process -Id $probeProcessId -ErrorAction SilentlyContinue
+          if ($process -and $process.Path -eq $probe -and [LingjiMsixTest]::PackageName($probeProcessId) -eq $installed.PackageFullName) { & taskkill.exe /PID $probeProcessId /T /F | Out-Null }
+        }
+      } catch { Write-Warning ('SDK probe cleanup unavailable: '+$_.Exception.Message) }
+    }
+  }
+  throw $primaryError
 } finally {
   $cleanupErrors = [Collections.Generic.List[string]]::new()
   try {
