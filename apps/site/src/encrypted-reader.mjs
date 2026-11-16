@@ -17,6 +17,10 @@ async function check() {
   finally { checking = false; }
 }
 try {
+  if (SHARE_TOKEN.test(token)) {
+    const reference = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token))), byte => byte.toString(16).padStart(2, '0')).join('');
+    document.getElementById('report-content').href = `/content?reference=${reference}#report`;
+  }
   if (!SHARE_TOKEN.test(token) || !SHARE_TOKEN.test(key)) throw new Error('missing_key');
   const response = await fetch(`/api/encrypted-shares/${token}`, { cache: 'no-store', referrerPolicy: 'no-referrer', signal: AbortSignal.timeout(30000) });
   if (!response.ok) throw new Error([404, 410].includes(response.status) ? 'unavailable' : 'network');

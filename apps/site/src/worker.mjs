@@ -31,11 +31,11 @@ function reserveRead(request){
   if(invalidReads.size>=10000){for(const [id,entry] of invalidReads)if(entry.reset<=now)invalidReads.delete(id);if(!value && invalidReads.size>=10000)throw new ShareContentError('share_rate_limited',429);}
   value ||= {count:0,reset:now+60000};value.count++;invalidReads.set(key,value);return value;
 }
-function document(content,expires){
+function document(content,expires,reference=''){
   let html=createShareDocument({id:content.sourceRecordId,title:content.title,capture:content.draft?'recording':'completed',minutes:content.minutes,segments:content.segments || []},content.scope,true);
   if(expires){
     html=html.replace("default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'","default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'");
-    html=html.replace('</footer>',`<p id="share-status" role="status" data-expires="${expires}">只读快照 · 24 小时有效，可由发布者撤销。已保存的副本无法收回。</p></footer>`).replace('</body>','<script type="module" src="/share-status.js"></script></body>');
+    html=html.replace('</footer>',`<p id="share-status" role="status" data-expires="${expires}">只读快照 · 24 小时有效，可由发布者撤销。已保存的副本无法收回。</p><p><a href="/content${reference?'?reference='+reference:''}#report">举报内容</a> · <a href="/content#guidelines">内容准则</a></p></footer>`).replace('</body>','<script type="module" src="/share-status.js"></script></body>');
   }
   return new Response(html,{headers:{...privacy,'Content-Type':'text/html; charset=utf-8','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",'Permissions-Policy':'microphone=(), camera=()'}});
 }
@@ -66,7 +66,7 @@ export function createSiteWorker({identify=publisher,downloadFetch=fetch}={}){
         if(shared[3])return json({valid:true,expires:row.expires_at});
         const content=normalizePublishedContent(JSON.parse(row.payload));
         if(await hash(JSON.stringify(content))!==row.payload_hash)throw new ShareContentError('shared_content_unavailable',503);
-        return document(content,row.expires_at);
+        return document(content,row.expires_at,tokenHash);
       }
       if(path==='/api/published' || path==='/api/publish' || /^\/api\/published\/[a-f0-9-]{36}$/.test(path)){
         ready(env);const owner=await identify(request,env),db=database(env);

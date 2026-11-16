@@ -234,6 +234,8 @@ jobs:
             apps/desktop/src-tauri/src/probe.js
             scripts/test-windows-msix.ps1
             scripts/test-msix-backend.mjs
+            scripts/msix-test-native.cs
+            scripts/capture-msix-window.ps1
           sparse-checkout-cone-mode: false
           persist-credentials: false
       - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6

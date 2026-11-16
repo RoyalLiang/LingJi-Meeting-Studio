@@ -1,0 +1,27 @@
+name: 内容举报
+description: 举报分享内容、不当 AI 输出或侵权问题。此表单公开，请勿提交隐私或完整分享链接。
+title: '[内容举报] '
+body:
+  - type: dropdown
+    id: category
+    attributes:
+      label: 问题类型
+      options:
+        - 分享内容
+        - AI 输出
+        - 隐私或知识产权
+        - 其他违规内容
+    validations:
+      required: true
+  - type: input
+    id: reference
+    attributes:
+      label: 分享引用编号
+      description: 分享页自动附带的 64 位编号。没有编号时可留空；请勿粘贴完整链接。
+  - type: textarea
+    id: details
+    attributes:
+      label: 问题说明
+      description: 说明发生位置、原因及可核实的事实。请勿公开录音、会议原文、密钥或个人敏感信息。
+    validations:
+      required: true

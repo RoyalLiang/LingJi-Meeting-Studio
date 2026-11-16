@@ -22,39 +22,7 @@ $primaryError = $null
 $applicationProcessId = 0
 $backendProcessId = 0
 $contextProcessId = 0
-Add-Type @'
-using System;
-using System.ComponentModel;
-using System.Runtime.InteropServices;
-using System.Text;
-[ComImport, Guid("45BA127D-10A8-46EA-8AB7-56EA9078943C")]
-class LingjiActivationManager { }
-[ComImport, Guid("2e941141-7f97-4756-ba1d-9decde894a3d"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-interface ILingjiActivationManager {
-  [PreserveSig] int ActivateApplication([MarshalAs(UnmanagedType.LPWStr)] string id, [MarshalAs(UnmanagedType.LPWStr)] string args, int options, out uint processId);
-}
-public static class LingjiMsixTest {
-  [DllImport("kernel32.dll", SetLastError=true)] static extern IntPtr OpenProcess(uint access, bool inherit, uint processId);
-  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr process);
-  [DllImport("kernel32.dll", CharSet=CharSet.Unicode, ExactSpelling=true)] static extern int GetPackageFullName(IntPtr process, ref uint length, StringBuilder name);
-  public static uint Activate(string id) {
-    var manager = (ILingjiActivationManager)new LingjiActivationManager();
-    try { uint processId; Marshal.ThrowExceptionForHR(manager.ActivateApplication(id, "", 0, out processId)); return processId; }
-    finally { Marshal.FinalReleaseComObject(manager); }
-  }
-  public static string PackageName(uint processId) {
-    var process = OpenProcess(0x1000, false, processId);
-    if (process == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error());
-    try {
-      uint length=0; int result=GetPackageFullName(process,ref length,null);
-      if (result!=122) throw new Win32Exception(result);
-      var name=new StringBuilder((int)length); result=GetPackageFullName(process,ref length,name);
-      if (result!=0) throw new Win32Exception(result);
-      return name.ToString();
-    } finally { CloseHandle(process); }
-  }
-}
-'@
+Add-Type -Path (Join-Path $PSScriptRoot 'msix-test-native.cs')
 try {
   $signed = Join-Path $scratch 'fixture.msix'
   Copy-Item -LiteralPath $package -Destination $signed
@@ -125,6 +93,26 @@ try {
   @{installed=$true;activated=$true;windowCreated=$true;bundledBackendStarted=$true;readOnlyBackendVerified=$true;readOnlyModelInference=$true;packageIdentityVerified=$true;normalBackendPackageIdentityVerified=$true;supplementalNodeContextVerified=$true;sourceRevision=$receipt.sourceRevision;controllerSha=$env:GITHUB_SHA;fixedWebviewUsed=$true;webviewVersion=$webviewVersion;webviewExecutable=$webview.ExecutablePath;packageFullName=$actualPackageName;testSignature='temporary-self-signed-copy';submissionRemainsUnsigned=$true;realAudioDevicesVerified=$false;realProvidersVerified=$false} | ConvertTo-Json | Set-Content -LiteralPath $Output -Encoding utf8
 } catch {
   $primaryError = $_
+  try {
+    $application = Get-Process -Id $applicationProcessId -ErrorAction SilentlyContinue
+    $modulePaths = @()
+    if ($application -and $application.Path.StartsWith($installed.InstallLocation,[StringComparison]::OrdinalIgnoreCase)) {
+      $modulePaths = @($application.Modules | ForEach-Object { $_.FileName })
+    }
+    $webProcesses = @(Get-Process | Where-Object { $_.ProcessName -match '^(msedge|msedgewebview2|WebViewHost)$' } | Select-Object Id,ProcessName,Path)
+    $diagnostics = @{errorCode=$primaryError.Exception.HResult;applicationProcessId=$applicationProcessId;applicationRunning=[bool]$application;windowClass=if($application){[LingjiMsixTest]::WindowClass($application.MainWindowHandle)}else{''};applicationModules=$modulePaths;webProcesses=$webProcesses;webviewProcesses=$webviewProcesses} | ConvertTo-Json -Depth 4
+    $diagnostics | Set-Content -LiteralPath ($Output+'.diagnostics.json') -Encoding utf8
+    Write-Host $diagnostics
+  } catch { Write-Warning ('MSIX failure diagnostics unavailable: '+$_.Exception.Message) }
+  if ($env:TTS_MSIX_WINDOW_DIAGNOSTICS -eq 'authorized-scoped-app-window' -and $applicationProcessId) {
+    try {
+      $captureHelper=Join-Path $PSScriptRoot 'capture-msix-window.ps1'
+      $arguments=@('-NoProfile','-NonInteractive','-STA','-File',('"'+$captureHelper+'"'),'-Metadata',('"'+(Resolve-Path $Metadata).Path+'"'),'-ApplicationProcessId',$applicationProcessId,'-Output',('"'+[IO.Path]::GetFullPath($Output)+'.window"'))
+      $capture=Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList $arguments -WindowStyle Hidden -PassThru -RedirectStandardOutput ($Output+'.capture-stdout.txt') -RedirectStandardError ($Output+'.capture-stderr.txt')
+      if (-not $capture.WaitForExit(15000)) { $capture.Kill($true); [void]$capture.WaitForExit(2000); Write-Warning 'Scoped window diagnostics timed out' }
+      elseif ($capture.ExitCode -ne 0) { Write-Warning ('Scoped window diagnostics failed: '+$capture.ExitCode) }
+    } catch { Write-Warning ('Scoped window diagnostics unavailable: '+$_.Exception.Message) }
+  }
   throw
 } finally {
   $cleanupErrors = [Collections.Generic.List[string]]::new()

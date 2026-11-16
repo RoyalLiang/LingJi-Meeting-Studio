@@ -23,6 +23,15 @@ async function relay(t) {
   return { sqlite, call, loseNextCommit() { loseResponse = true; } };
 }
 const wire = encrypted => ({ requestId: crypto.randomUUID(), token: encrypted.token, revokeToken: encrypted.revokeToken, envelope: encrypted.envelope });
+
+test('operator revocation by public report reference disables encrypted payload and status without its key', async t => {
+  const remote = await relay(t), encrypted = await encryptShare(exampleContent);
+  await remote.call('/api/encrypted-shares', 'POST', wire(encrypted));
+  const reference = Buffer.from(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(encrypted.token))).toString('hex');
+  remote.sqlite.prepare('UPDATE encrypted_shares SET revoked_at=COALESCE(revoked_at,unixepoch()*1000),payload=NULL WHERE token_hash=?').run(reference);
+  for (const suffix of ['', '/status']) await assert.rejects(remote.call('/api/encrypted-shares/' + encrypted.token + suffix), {code: 'share_expired_or_revoked'});
+  assert.equal(remote.sqlite.prepare('SELECT payload FROM encrypted_shares WHERE token_hash=?').get(reference).payload, null);
+});
 const record = () => ({ ...createRecord('owner-a', { title: exampleContent.title }), id: exampleContent.sourceRecordId, capture: 'completed', minutes: structuredClone(exampleContent.minutes), segments: [], notes: 'never share this note' });
 
 test('AES-GCM roundtrip rejects changed content, a wrong key, a different link and oversized input', async () => {
