@@ -1,11 +1,35 @@
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-import {access, copyFile, cp, mkdir, mkdtemp, readFile, rename, rm, writeFile} from 'node:fs/promises';
+import {access, copyFile, cp, mkdir, mkdtemp, readFile, readdir, lstat, rename, rm, writeFile} from 'node:fs/promises';
+import {createReadStream} from 'node:fs';
+import {createHash} from 'node:crypto';
 import {dirname, join, resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {releaseHash, snapshotReleaseSource} from './release-source.mjs';
 import {verifyWgsInput} from './wgs-build-contract.mjs';
 import {downloadPinned} from './prepare-local-asr.mjs';
+
+export async function fixedRuntimeManifest(directory, version) {
+  assert.match(version, /^\d+\.\d+\.\d+\.\d+$/);
+  const rootInfo=await lstat(directory);assert.ok(rootInfo.isDirectory()&&!rootInfo.isSymbolicLink(),'Runtime root must be a directory');
+  const files=[];
+  async function visit(relative='') {
+    for (const name of (await readdir(join(directory,relative))).sort()) {
+      assert.ok(!/[\\:\u0000-\u001f]/.test(name) && name!=='.' && name!=='..', 'Unsafe runtime filename');
+      const path=relative ? `${relative}/${name}` : name;
+      const info=await lstat(join(directory,path));
+      if (info.isDirectory()) { await visit(path); continue; }
+      assert.ok(info.isFile() && !info.isSymbolicLink(), 'Runtime must contain regular files');
+      const hash=createHash('sha256');
+      for await (const chunk of createReadStream(join(directory,path))) hash.update(chunk);
+      files.push({path,size:info.size,sha256:hash.digest('hex')});
+    }
+  }
+  await visit();
+  assert.ok(files.some(file=>file.path==='msedgewebview2.exe') && files.some(file=>file.path==='msedge.dll') && files.some(file=>file.path==='EBWebView/x64/EmbeddedBrowserWebView.dll'), 'Incomplete Fixed runtime');
+  assert.equal(new Set(files.map(file=>file.path.toLowerCase())).size,files.length,'Case-colliding runtime paths');
+  return {version,files};
+}
 
 export function storeIdentity(input) {
   assert.ok(input && typeof input === 'object', 'Reserved Microsoft Store identity is required');
@@ -85,6 +109,9 @@ export async function buildWindowsMsix({root, prebuilt, destination, sourceRevis
     const runtime = join(extracted, `Microsoft.WebView2.FixedVersionRuntime.${webview.version}.x64`);
     await access(join(runtime, 'msedgewebview2.exe'));
     await cp(runtime, join(payload, 'webview2'), {recursive: true});
+    const runtimeFiles=Buffer.from(JSON.stringify(await fixedRuntimeManifest(runtime,webview.version))+'\n');
+    await writeFile(join(payload,'webview2-files.json'),runtimeFiles);
+    webview.filesManifest={name:'webview2-files.json',size:runtimeFiles.length,sha256:releaseHash(runtimeFiles)};
     await rm(extracted, {recursive: true});
     run('npm', ['exec', '--workspace', '@tts/desktop', '--', 'tauri', 'icon', '--output', join(payload, 'Assets'), join(root, 'apps/desktop/src-tauri/icons/icon.png')]);
     await writeFile(join(payload, 'AppxManifest.xml'), msixManifest(version, identity));

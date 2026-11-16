@@ -23,6 +23,18 @@ $applicationProcessId = 0
 $backendProcessId = 0
 $contextProcessId = 0
 Add-Type -Path (Join-Path $PSScriptRoot 'msix-test-native.cs')
+function Save-ScopedAppWindow([int]$ApplicationProcessId, [string]$Stage = 'window') {
+  if ($env:TTS_MSIX_WINDOW_DIAGNOSTICS -ne 'authorized-scoped-app-window') { return }
+  $application=Get-Process -Id $ApplicationProcessId -ErrorAction SilentlyContinue
+  if (-not $application) { return }
+    try {
+      $captureHelper=Join-Path $PSScriptRoot 'capture-msix-window.ps1'
+    $arguments=@('-NoProfile','-NonInteractive','-STA','-File',('"'+$captureHelper+'"'),'-Metadata',('"'+(Resolve-Path $Metadata).Path+'"'),'-ApplicationProcessId',$applicationProcessId,'-Output',('"'+[IO.Path]::GetFullPath($Output)+'.'+$Stage+'"'))
+      $capture=Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList $arguments -WindowStyle Hidden -PassThru -RedirectStandardOutput ($Output+'.'+$Stage+'.capture-stdout.txt') -RedirectStandardError ($Output+'.'+$Stage+'.capture-stderr.txt')
+      if (-not $capture.WaitForExit(15000)) { $capture.Kill($true); [void]$capture.WaitForExit(2000); Write-Warning 'Scoped window diagnostics timed out' }
+      elseif ($capture.ExitCode -ne 0) { Write-Warning ('Scoped window diagnostics failed: '+$capture.ExitCode) }
+    } catch { Write-Warning ('Scoped window diagnostics unavailable: '+$_.Exception.Message) }
+}
 try {
   $signed = Join-Path $scratch 'fixture.msix'
   Copy-Item -LiteralPath $package -Destination $signed
@@ -40,6 +52,17 @@ try {
   if (-not $installed -or $installed.Version -ne $receipt.packageVersion) { throw 'Expected MSIX version was not installed' }
   $installedNode = Join-Path $installed.InstallLocation 'runtime/node.exe'
   $installedBackend = Join-Path $installed.InstallLocation 'client-backend'
+  $expectedRuntime=Join-Path $installed.InstallLocation 'webview2'
+  $runtimeManifest=$null
+  if ($receipt.webview.filesManifest) {
+    if ($receipt.webview.filesManifest.name -ne 'webview2-files.json' -or $receipt.webview.filesManifest.sha256 -notmatch '^[a-f0-9]{64}$') { throw 'Invalid runtime manifest receipt' }
+    $manifestPath=Join-Path $installed.InstallLocation 'webview2-files.json'
+    if ((Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $receipt.webview.filesManifest.sha256) { throw 'Installed runtime manifest changed' }
+    $runtimeManifest=Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    if ($runtimeManifest.version -ne $receipt.webview.version) { throw 'Runtime manifest version changed' }
+    $expectedRuntime=Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) ('Packages\'+$installed.PackageFamilyName+'\LocalCache\WebView2\'+$receipt.webview.filesManifest.sha256)
+    if (Test-Path -LiteralPath $expectedRuntime) { throw 'Cold-install runtime cache already exists' }
+  }
   $activationTime=[DateTime]::UtcNow
   $applicationProcessId = [LingjiMsixTest]::Activate($installed.PackageFamilyName+'!App')
   if (-not $applicationProcessId) { throw 'Package activation returned no application process' }
@@ -58,7 +81,7 @@ try {
   $deadline = [DateTime]::UtcNow.AddSeconds(60)
   do {
     $webviewProcesses = @(Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe'" | Select-Object ProcessId,ParentProcessId,ExecutablePath)
-    $webview = $webviewProcesses | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith((Join-Path $installed.InstallLocation 'webview2'),[StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1
+    $webview = $webviewProcesses | Where-Object { $_.ExecutablePath -eq (Join-Path $expectedRuntime 'msedgewebview2.exe') } | Select-Object -First 1
     if ($webview) { break }
     Start-Sleep -Milliseconds 250
   } while ([DateTime]::UtcNow -lt $deadline)
@@ -68,6 +91,20 @@ try {
   }
   $webviewVersion = (Get-Item -LiteralPath $webview.ExecutablePath).VersionInfo.ProductVersion
   if ($webviewVersion -ne $receipt.webview.version) { throw 'Unexpected active WebView2 version' }
+  $runtimeReadyMs=[Math]::Round(([DateTime]::UtcNow-$activationTime).TotalMilliseconds)
+  if ($runtimeManifest) {
+    $cacheFiles=@(Get-ChildItem -LiteralPath $expectedRuntime -File -Recurse -Force)
+    if ($cacheFiles.Count -ne $runtimeManifest.files.Count) { throw 'Incomplete runtime cache' }
+    $cachePrefix=[IO.Path]::GetFullPath($expectedRuntime)+'\'
+    foreach ($file in $runtimeManifest.files) {
+      $path=[IO.Path]::GetFullPath((Join-Path $expectedRuntime $file.path))
+      if (-not $path.StartsWith($cachePrefix,[StringComparison]::OrdinalIgnoreCase)) { throw 'Runtime cache escaped expected directory' }
+      $info=Get-Item -LiteralPath $path -Force
+      if (($info.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or $info.Length -ne $file.size -or (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $file.sha256) { throw 'Runtime cache content changed' }
+    }
+    $signature=Get-AuthenticodeSignature -LiteralPath $webview.ExecutablePath
+    if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') { throw 'Cached Fixed runtime does not retain Microsoft signature' }
+  }
   $configPath = Join-Path $scratch 'backend-context.json'
   $started = Join-Path $scratch 'started.json'
   $proceed = Join-Path $scratch 'proceed'
@@ -94,7 +131,33 @@ try {
   }
   $contextResult = Get-Content -LiteralPath $result -Raw | ConvertFrom-Json
   if (-not $contextResult.ok) { throw ('Packaged backend/model test failed: '+$contextResult.error) }
-  @{installed=$true;activated=$true;windowCreated=$true;bundledBackendStarted=$true;readOnlyBackendVerified=$true;readOnlyModelInference=$true;packageIdentityVerified=$true;normalBackendPackageIdentityVerified=$true;supplementalNodeContextVerified=$true;sourceRevision=$receipt.sourceRevision;controllerSha=$env:GITHUB_SHA;fixedWebviewUsed=$true;webviewVersion=$webviewVersion;webviewExecutable=$webview.ExecutablePath;packageFullName=$actualPackageName;testSignature='temporary-self-signed-copy';submissionRemainsUnsigned=$true;realAudioDevicesVerified=$false;realProvidersVerified=$false} | ConvertTo-Json | Set-Content -LiteralPath $Output -Encoding utf8
+  if ($runtimeManifest) { Save-ScopedAppWindow $applicationProcessId 'cold-window' }
+  $warmRuntimeReadyMs=$null
+  if ($runtimeManifest) {
+    $cacheCreated=(Get-Item -LiteralPath $expectedRuntime).CreationTimeUtc
+    $application=Get-Process -Id $applicationProcessId -ErrorAction Stop
+    if ($application.Path -ne (Join-Path $installed.InstallLocation 'tts-client.exe') -or [LingjiMsixTest]::PackageName($applicationProcessId) -ne $installed.PackageFullName) { throw 'Refusing to restart an unrelated process' }
+    & taskkill.exe /PID $applicationProcessId /T /F | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot stop first test activation' }
+    if (-not $application.WaitForExit(10000)) { throw 'First test activation did not exit' }
+    $warmStarted=[DateTime]::UtcNow
+    $applicationProcessId=[LingjiMsixTest]::Activate($installed.PackageFamilyName+'!App')
+    $deadline=[DateTime]::UtcNow.AddSeconds(60)
+    do {
+      $application=Get-Process -Id $applicationProcessId -ErrorAction SilentlyContinue
+      $backend=Get-CimInstance Win32_Process -Filter "ParentProcessId=$applicationProcessId" | Where-Object { $_.ExecutablePath -eq $installedNode } | Select-Object -First 1
+      $webview=Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe'" | Where-Object { $_.ExecutablePath -eq (Join-Path $expectedRuntime 'msedgewebview2.exe') } | Select-Object -First 1
+      if ($application -and $application.MainWindowHandle -ne 0 -and $backend -and $webview) { break }
+      Start-Sleep -Milliseconds 250
+    } while ([DateTime]::UtcNow -lt $deadline)
+    if (-not $application -or $application.MainWindowHandle -eq 0 -or -not $backend -or -not $webview) { throw 'Warm Store activation did not become ready' }
+    if ($application.StartTime.ToUniversalTime() -lt $warmStarted.AddSeconds(-2)) { throw 'Warm probe reused an older application process' }
+    if ([LingjiMsixTest]::PackageName($applicationProcessId) -ne $installed.PackageFullName -or [LingjiMsixTest]::PackageName($backend.ProcessId) -ne $installed.PackageFullName) { throw 'Warm activation package identity changed' }
+    if ((Get-Item -LiteralPath $expectedRuntime).CreationTimeUtc -ne $cacheCreated) { throw 'Warm activation unexpectedly rebuilt runtime cache' }
+    $warmRuntimeReadyMs=[Math]::Round(([DateTime]::UtcNow-$warmStarted).TotalMilliseconds)
+  }
+  Save-ScopedAppWindow $applicationProcessId
+  @{installed=$true;activated=$true;windowCreated=$true;bundledBackendStarted=$true;readOnlyBackendVerified=$true;readOnlyModelInference=$true;packageIdentityVerified=$true;normalBackendPackageIdentityVerified=$true;supplementalNodeContextVerified=$true;sourceRevision=$receipt.sourceRevision;controllerSha=$env:GITHUB_SHA;fixedWebviewUsed=$true;runtimeCacheVerified=[bool]$runtimeManifest;runtimeReadyMs=$runtimeReadyMs;warmRuntimeReadyMs=$warmRuntimeReadyMs;webviewVersion=$webviewVersion;webviewExecutable=$webview.ExecutablePath;packageFullName=$actualPackageName;testSignature='temporary-self-signed-copy';submissionRemainsUnsigned=$true;realAudioDevicesVerified=$false;realProvidersVerified=$false} | ConvertTo-Json | Set-Content -LiteralPath $Output -Encoding utf8
 } catch {
   $primaryError = $_
   try {
@@ -108,15 +171,7 @@ try {
     $diagnostics | Set-Content -LiteralPath ($Output+'.diagnostics.json') -Encoding utf8
     Write-Host $diagnostics
   } catch { Write-Warning ('MSIX failure diagnostics unavailable: '+$_.Exception.Message) }
-  if ($env:TTS_MSIX_WINDOW_DIAGNOSTICS -eq 'authorized-scoped-app-window' -and $applicationProcessId) {
-    try {
-      $captureHelper=Join-Path $PSScriptRoot 'capture-msix-window.ps1'
-      $arguments=@('-NoProfile','-NonInteractive','-STA','-File',('"'+$captureHelper+'"'),'-Metadata',('"'+(Resolve-Path $Metadata).Path+'"'),'-ApplicationProcessId',$applicationProcessId,'-Output',('"'+[IO.Path]::GetFullPath($Output)+'.window"'))
-      $capture=Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList $arguments -WindowStyle Hidden -PassThru -RedirectStandardOutput ($Output+'.capture-stdout.txt') -RedirectStandardError ($Output+'.capture-stderr.txt')
-      if (-not $capture.WaitForExit(15000)) { $capture.Kill($true); [void]$capture.WaitForExit(2000); Write-Warning 'Scoped window diagnostics timed out' }
-      elseif ($capture.ExitCode -ne 0) { Write-Warning ('Scoped window diagnostics failed: '+$capture.ExitCode) }
-    } catch { Write-Warning ('Scoped window diagnostics unavailable: '+$_.Exception.Message) }
-  }
+  Save-ScopedAppWindow $applicationProcessId
   if ($env:TTS_MSIX_CONTEXT_PROBE -and $installed) {
     $probeProcessId=0
     $copiedPackageProcessId=0

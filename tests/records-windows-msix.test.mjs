@@ -1,8 +1,33 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {msixManifest, msixVersion, storeIdentity} from '../scripts/windows-msix.mjs';
+import {msixManifest, msixVersion, storeIdentity, fixedRuntimeManifest} from '../scripts/windows-msix.mjs';
+import {mkdtemp,mkdir,writeFile,rm,symlink} from 'node:fs/promises';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
+import {createHash} from 'node:crypto';
 
 const env = {storeId: '9TESTMSIX001', name: '12345.LingJi', publisher: 'CN=12345678-1234-1234-1234-123456789abc', displayName: '聆记 & "个人"', appDisplayName: '聆记 LingJi'};
+
+test('Fixed runtime manifest includes complete relative paths, hashes and empty hidden files',async t=>{
+  const directory=await mkdtemp(join(tmpdir(),'lingji-runtime-manifest-'));t.after(()=>rm(directory,{recursive:true,force:true}));
+  await mkdir(join(directory,'EBWebView/x64'),{recursive:true});
+  for(const name of ['msedgewebview2.exe','msedge.dll','EBWebView/x64/EmbeddedBrowserWebView.dll']) await writeFile(join(directory,name),name);
+  await writeFile(join(directory,'.empty'),'');
+  const manifest=await fixedRuntimeManifest(directory,'157.0.4341.60');
+  assert.equal(manifest.version,'157.0.4341.60');assert.equal(manifest.files.length,4);
+  assert.deepEqual(manifest.files.find(f=>f.path==='.empty'),{path:'.empty',size:0,sha256:'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'});
+  const name='EBWebView/x64/EmbeddedBrowserWebView.dll';
+  assert.deepEqual(manifest.files.find(f=>f.path===name),{path:name,size:Buffer.byteLength(name),sha256:createHash('sha256').update(name).digest('hex')});
+  await assert.rejects(fixedRuntimeManifest(directory,'../runtime'));
+  await rm(join(directory,'msedge.dll'));await assert.rejects(fixedRuntimeManifest(directory,'157.0.4341.60'),/Incomplete/);
+});
+
+test('Fixed runtime manifest refuses redirected payloads',async t=>{
+  const directory=await mkdtemp(join(tmpdir(),'lingji-runtime-link-'));t.after(()=>rm(directory,{recursive:true,force:true}));
+  await writeFile(join(directory,'original'),'bytes');
+  try { await symlink(join(directory,'original'),join(directory,'redirected')); } catch(error) { if(error.code==='EPERM'&&process.platform==='win32'){t.skip('Windows symlink privilege unavailable');return;}throw error; }
+  await assert.rejects(fixedRuntimeManifest(directory,'157.0.4341.60'),/regular files/);
+});
 
 test('Store identity must be reserved and complete rather than guessed from the application name', () => {
   assert.throws(() => storeIdentity({}));

@@ -22,6 +22,21 @@ try {
   if ($manifest.Package.Identity.Name -ne $receipt.identity.name -or $manifest.Package.Identity.Publisher -ne $receipt.identity.publisher -or $manifest.Package.Identity.Version -ne $receipt.packageVersion) { throw 'MSIX identity differs from receipt' }
   if (Test-Path -LiteralPath (Join-Path $unpacked 'AppxSignature.p7x')) { throw 'Store submission must remain unsigned' }
   $runtime = Join-Path $unpacked 'webview2/msedgewebview2.exe'
+  if ($receipt.webview.filesManifest.name -ne 'webview2-files.json') { throw 'Missing Fixed runtime file manifest' }
+  $runtimeManifestPath=Join-Path $unpacked 'webview2-files.json'
+  if ((Get-FileHash -LiteralPath $runtimeManifestPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $receipt.webview.filesManifest.sha256) { throw 'Runtime manifest does not match WGS receipt' }
+  $runtimeManifest=Get-Content -LiteralPath $runtimeManifestPath -Raw | ConvertFrom-Json
+  $runtimeRoot=[IO.Path]::GetFullPath((Join-Path $unpacked 'webview2'))+'\'
+  $runtimeFiles=@(Get-ChildItem -LiteralPath $runtimeRoot -File -Recurse -Force)
+  if ($runtimeManifest.version -ne $receipt.webview.version -or $runtimeManifest.files.Count -ne $runtimeFiles.Count) { throw 'Incomplete Fixed runtime file manifest' }
+  $seen=@{}
+  foreach ($file in $runtimeManifest.files) {
+    if (-not $file.path -or $file.path -match '[\\:]' -or $file.path.Split('/') -contains '..' -or $seen.ContainsKey($file.path)) { throw 'Unsafe Fixed runtime manifest path' }
+    $seen[$file.path]=$true
+    $path=[IO.Path]::GetFullPath((Join-Path $runtimeRoot $file.path))
+    if (-not $path.StartsWith($runtimeRoot,[StringComparison]::OrdinalIgnoreCase)) { throw 'Fixed runtime manifest escaped package' }
+    if ((Get-Item -LiteralPath $path).Length -ne $file.size -or (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $file.sha256) { throw 'Packaged runtime file changed' }
+  }
   if (-not (Test-Path -LiteralPath $runtime) -or (Get-Item -LiteralPath $runtime).VersionInfo.ProductVersion -ne $receipt.webview.version) { throw 'Incorrect packaged Fixed WebView2 runtime' }
   $signature = Get-AuthenticodeSignature -LiteralPath $runtime
   if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') { throw 'Fixed WebView2 does not have a valid Microsoft signature' }

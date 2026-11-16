@@ -15,6 +15,8 @@ mod recording_widget;
 mod status_bar;
 mod update_gate;
 mod updates;
+#[cfg(any(windows, test))]
+mod packaged_runtime;
 mod preview_updates;
 use std::sync::Arc;
 use tauri::{

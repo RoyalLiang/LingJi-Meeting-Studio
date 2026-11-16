@@ -420,14 +420,24 @@ jobs:
         run: node scripts/windows-msix.mjs
       - name: Verify MSIX identity, desktop activation and bundled backend
         shell: pwsh
+        env:
+          # Temporary scoped capture for the currently authorized MSIX white-window repair.
+          TTS_MSIX_WINDOW_DIAGNOSTICS: ${{ needs.verify.outputs.version == '0.3.33' && 'authorized-scoped-app-window' || '' }}
         run: '& ./.agent-runtime/ci-controller/scripts/test-windows-msix.ps1 -SourceRoot $env:GITHUB_WORKSPACE -Metadata .agent-runtime/msix-submission/store-package.json -Output .agent-runtime/msix-installation.json'
       - name: Upload unsigned Microsoft Store submission and validation
+        if: ${{ always() && !cancelled() }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: microsoft-store-submission-${{ needs.verify.outputs.sha }}
           path: |
             .agent-runtime/msix-submission/*
             .agent-runtime/msix-installation.json
+            .agent-runtime/msix-installation.json.diagnostics.json
+            .agent-runtime/msix-installation.json.window.json
+            .agent-runtime/msix-installation.json.window.jpg
+            .agent-runtime/msix-installation.json.*.capture-stderr.txt
+            .agent-runtime/msix-installation.json.cold-window.json
+            .agent-runtime/msix-installation.json.cold-window.jpg
           if-no-files-found: error
           retention-days: 14
       - name: Collect Windows release files

@@ -38,7 +38,9 @@ WGS 把同次构建的 `windows-app.exe`、资源归档、`windows-store-unsigne
 
 清单声明 `runFullTrust`、麦克风和网络能力；最低系统为 Windows 10 2004（19041），支持 x64。包内 Node 后台和资源保持只读，用户数据使用客户端配置目录。
 
-商店包附带 Fixed Version WebView2。版本、微软下载地址和 CAB 摘要固定在 `tools/release/webview2-fixed.json`；应用在创建首个 WebView 前选择包内运行时。完整运行时、供应商 notices 和独立许可随包保留，不修改包目录 ACL，不关闭浏览器沙箱。Fixed Version 的安全修复需要随应用升级，维护时应更新固定版本和摘要。隐私页保留 SmartScreen 告知及微软隐私链接；提交商店时还须把微软 WebView2 再分发条款加入附加许可条款。[官方运行时分发说明](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution)
+商店包附带 Fixed Version WebView2。版本、微软下载地址和 CAB 摘要固定在 `tools/release/webview2-fixed.json`；应用在创建首个 WebView 前，按构建时生成的完整文件清单将运行时准备到应用专用的 `LocalCache/WebView2/<清单摘要>`，并选择该缓存路径。每次启动核对文件数量、大小和 SHA256；缺失或损坏时先在临时目录完成复制与校验，再发布到目标目录。完整运行时、供应商 notices 和独立许可随包保留，不修改包目录 ACL，不关闭浏览器沙箱。Fixed Version 的安全修复需要随应用升级，维护时应更新固定版本和摘要。隐私页保留 SmartScreen 告知及微软隐私链接；提交商店时还须把微软 WebView2 再分发条款加入附加许可条款。[官方运行时分发说明](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution)
+
+缓存以完整清单摘要复用，相同运行时不因应用补丁版本重复复制。首次启动额外占用一份运行时的磁盘空间；后续启动仍需读取并校验完整运行时。旧摘要目录暂时保留，避免影响仍运行的旧进程；升级固定运行时时应评估磁盘成本，卸载由包数据生命周期清理。该实现须通过真实 AUMID 的冷启动、再次启动与窗口验证后才能作为已验证修复。
 
 `test-windows-msix.ps1` 在一次性 Windows runner 内创建测试签名副本，先通过普通 AUMID 激活验证真实应用、Node 子进程包身份、窗口和包内 WebView2。随后以 `Invoke-CommandInDesktopPackage -PreventBreakaway` 的诊断上下文运行安装目录内的 Node，验证只读后台与本地模型推理，并再次核对 Node 的真实包身份。诊断上下文不能代替普通激活；测试不更改 WindowsApps ACL。测试证书及安装在结束后清理，原始提交包保持未签名。[微软调试命令说明](https://learn.microsoft.com/en-us/powershell/module/appx/invoke-commandindesktoppackage?view=windowsserver2025-ps)
 

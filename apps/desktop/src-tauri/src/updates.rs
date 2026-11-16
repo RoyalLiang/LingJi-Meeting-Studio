@@ -35,10 +35,7 @@ fn packaged_app() -> Result<bool, i32> {
 pub fn configure_packaged_webview() -> Result<(), String> {
     if packaged_app() != Ok(true) { return Ok(()); }
     let executable = std::env::current_exe().map_err(|e| e.to_string())?;
-    let runtime = executable.parent().ok_or("Missing application directory")?.join("webview2");
-    if !runtime.join("msedgewebview2.exe").is_file() {
-        return Err("Packaged WebView2 runtime is missing".into());
-    }
+    let runtime = crate::packaged_runtime::prepare(executable.parent().ok_or("Missing application directory")?, &crate::packaged_runtime::cache_root()?)?;
     // Run before Tauri creates threads; Store installations use their bundled runtime.
     std::env::set_var("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER", runtime);
     Ok(())
