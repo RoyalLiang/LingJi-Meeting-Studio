@@ -16,8 +16,6 @@ $handle=$application.MainWindowHandle
 [uint32]$ownerProcessId=0
 [void][LingjiMsixTest]::GetWindowThreadProcessId($handle,[ref]$ownerProcessId)
 if ($ownerProcessId -ne $ApplicationProcessId -or [LingjiMsixTest]::WindowClass($handle) -ne 'Tauri Window') { throw 'Capture target window mismatch' }
-if ([LingjiMsixTest]::GetForegroundWindow() -ne $handle) { [void][LingjiMsixTest]::SetForegroundWindow($handle) }
-if ([LingjiMsixTest]::GetForegroundWindow() -ne $handle) { throw 'Capture target is not foreground; skip' }
 $window=[System.Windows.Automation.AutomationElement]::FromHandle($handle)
 if ($window.Current.ProcessId -ne $ApplicationProcessId) { throw 'Accessibility target mismatch' }
 $names=@($window.FindAll([System.Windows.Automation.TreeScope]::Subtree,[System.Windows.Automation.Condition]::TrueCondition) | Where-Object { $_.Current.ProcessId -eq $ApplicationProcessId } | Select-Object -First 60 | ForEach-Object { $name=$_.Current.Name; $name.Substring(0,[Math]::Min(512,$name.Length)) })
@@ -30,6 +28,8 @@ $bitmap=[System.Drawing.Bitmap]::new($width,$height)
 $graphics=[System.Drawing.Graphics]::FromImage($bitmap)
 $dc=$graphics.GetHdc()
 try {
+  [void][LingjiMsixTest]::GetWindowThreadProcessId($handle,[ref]$ownerProcessId)
+  if ($ownerProcessId -ne $ApplicationProcessId -or [LingjiMsixTest]::PackageName($ApplicationProcessId) -ne $installed.PackageFullName) { throw 'Capture target changed before rendering' }
   if (-not [LingjiMsixTest]::PrintWindow($handle,$dc,2)) { throw 'Target-only PrintWindow failed' }
 } finally { $graphics.ReleaseHdc($dc) }
 try { $bitmap.Save($Output+'.jpg',[System.Drawing.Imaging.ImageFormat]::Jpeg) }
