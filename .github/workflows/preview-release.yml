@@ -172,7 +172,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: ${{ needs.verify.outputs.sha }}
+          ref: ${{ needs.verify.outputs.controller_sha }}
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -187,7 +187,8 @@ jobs:
           RELEASE_VERSION: ${{ needs.verify.outputs.version }}
           SOURCE_SHA: ${{ needs.verify.outputs.sha }}
           WORKFLOW_SHA: ${{ needs.verify.outputs.controller_sha }}
-        run: node scripts/collect-preview-artifacts.mjs linux
+          WGS_REUSED_BUILD: ${{ steps.packages.outputs.reused }}
+        run: node "$GITHUB_WORKSPACE/scripts/collect-preview-artifacts.mjs" linux
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: preview-linux-x64-${{ needs.verify.outputs.sha }}
@@ -201,6 +202,13 @@ jobs:
           if-no-files-found: error
           retention-days: 2
 
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: steps.packages.outputs.reused == 'true'
+        with:
+          name: wgs-build-reuse-${{ needs.verify.outputs.sha }}
+          path: ${{ steps.packages.outputs.reuse_receipt }}
+          if-no-files-found: error
+          retention-days: 14
   build_windows:
     name: Windows verification - WGS installer
     needs: [verify, build_wgs]
@@ -222,7 +230,10 @@ jobs:
         with:
           ref: ${{ needs.verify.outputs.controller_sha }}
           path: .agent-runtime/ci-controller
-          sparse-checkout: apps/desktop/src-tauri/src/probe.js
+          sparse-checkout: |
+            apps/desktop/src-tauri/src/probe.js
+            scripts/test-windows-msix.ps1
+            scripts/test-msix-backend.mjs
           sparse-checkout-cone-mode: false
           persist-credentials: false
       - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
@@ -250,7 +261,7 @@ jobs:
       - name: Check installer PowerShell syntax
         shell: pwsh
         run: |
-          foreach ($script in @('scripts/test-windows-installer.ps1','scripts/test-windows-installer-ui.ps1','scripts/verify-windows-signature.ps1','scripts/package-windows-msix.ps1','scripts/test-windows-msix.ps1')) {
+          foreach ($script in @('scripts/test-windows-installer.ps1','scripts/test-windows-installer-ui.ps1','scripts/verify-windows-signature.ps1','scripts/package-windows-msix.ps1','.agent-runtime/ci-controller/scripts/test-windows-msix.ps1')) {
             $tokens=$null; $parseErrors=$null
             [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $script),[ref]$tokens,[ref]$parseErrors)
             if ($parseErrors.Count -gt 0) { throw ($parseErrors | Out-String) }
@@ -407,7 +418,7 @@ jobs:
         run: node scripts/windows-msix.mjs
       - name: Verify MSIX identity, desktop activation and bundled backend
         shell: pwsh
-        run: '& ./scripts/test-windows-msix.ps1 -Metadata .agent-runtime/msix-submission/store-package.json -Output .agent-runtime/msix-installation.json'
+        run: '& ./.agent-runtime/ci-controller/scripts/test-windows-msix.ps1 -SourceRoot $env:GITHUB_WORKSPACE -Metadata .agent-runtime/msix-submission/store-package.json -Output .agent-runtime/msix-installation.json'
       - name: Upload unsigned Microsoft Store submission and validation
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:

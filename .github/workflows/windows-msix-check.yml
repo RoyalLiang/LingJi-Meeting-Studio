@@ -1,0 +1,85 @@
+name: Windows MSIX validation
+run-name: MSIX validation · ${{ inputs.source_sha }}
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Frozen source SHA from the original preview build
+        required: true
+        type: string
+      artifact_run_id:
+        description: Successful WGS artifact run, without rebuilding or replacing files
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: msix-validation-${{ inputs.source_sha }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      TTS_RELEASE_SOURCE_REF: ${{ inputs.source_sha }}
+      TTS_PREBUILT_DIRECTORY: ${{ github.workspace }}\.agent-runtime\wgs-windows-input
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          path: .agent-runtime/ci-controller
+          sparse-checkout: |
+            scripts/test-windows-msix.ps1
+            scripts/test-msix-backend.mjs
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '26.12.1'
+          cache: npm
+      - id: source
+        shell: pwsh
+        run: |
+          @'
+          import assert from 'node:assert/strict';
+          import {readFileSync,writeFileSync} from 'node:fs';
+          import {execFileSync} from 'node:child_process';
+          assert.match(process.env.SOURCE_SHA,/^[a-f0-9]{40}$/);
+          assert.equal(execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),process.env.SOURCE_SHA);
+          const manifest=JSON.parse(readFileSync('services/records/src/data/builtin-vocabulary.manifest.json'));
+          writeFileSync(process.env.GITHUB_OUTPUT,`vocabulary_version=${manifest.version}\n`,{flag:'a'});
+          '@ | node --input-type=module
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - run: npm ci
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
+        with:
+          name: wgs-windows-input-${{ inputs.source_sha }}
+          path: .agent-runtime/wgs-windows-input
+          run-id: ${{ inputs.artifact_run_id }}
+          github-token: ${{ github.token }}
+      - name: Materialize the frozen vocabulary input
+        env:
+          TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART1: ${{ (steps.source.outputs.vocabulary_version == '20261105.2' && secrets.TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART1) || (steps.source.outputs.vocabulary_version == '20261105.3' && secrets.TTS_BUILTIN_VOCABULARY_20261105_3_PART1) || (steps.source.outputs.vocabulary_version == '20261106.4' && secrets.TTS_BUILTIN_VOCABULARY_20261106_4_PART1) }}
+          TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART2: ${{ (steps.source.outputs.vocabulary_version == '20261105.2' && secrets.TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART2) || (steps.source.outputs.vocabulary_version == '20261105.3' && secrets.TTS_BUILTIN_VOCABULARY_20261105_3_PART2) || (steps.source.outputs.vocabulary_version == '20261106.4' && secrets.TTS_BUILTIN_VOCABULARY_20261106_4_PART2) }}
+        run: node scripts/materialize-builtin-vocabulary.mjs
+      - run: node scripts/asr-test-fixtures.mjs
+      - name: Verify the same original WGS MSIX
+        run: node scripts/windows-msix.mjs
+      - name: Activate normally, then test the read-only backend in package context
+        shell: pwsh
+        run: '& ./.agent-runtime/ci-controller/scripts/test-windows-msix.ps1 -SourceRoot $env:GITHUB_WORKSPACE -Metadata .agent-runtime/msix-submission/store-package.json -Output .agent-runtime/msix-installation.json'
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: always()
+        with:
+          name: msix-context-validation-${{ inputs.source_sha }}
+          path: |
+            .agent-runtime/msix-submission/schema-verification.json
+            .agent-runtime/msix-installation.json
+          if-no-files-found: warn
+          retention-days: 14
