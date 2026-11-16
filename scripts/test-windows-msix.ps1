@@ -119,6 +119,7 @@ try {
   }
   if ($env:TTS_MSIX_CONTEXT_PROBE -and $installed) {
     $probeProcessId=0
+    $copiedPackageProcessId=0
     try {
       $probe=$env:TTS_MSIX_CONTEXT_PROBE
       $probeOutput=[IO.Path]::GetFullPath($Output)+'.webview-probe.json'
@@ -131,7 +132,7 @@ try {
       }
       if (-not $probeProcessId -and (Test-Path -LiteralPath ($probeOutput+'.started'))) { $probeProcessId=[int](Get-Content -LiteralPath ($probeOutput+'.started') -Raw) }
       Write-Host (Get-Content -LiteralPath $probeOutput -Raw)
-      foreach ($mode in @('unpackaged','unpackaged-copy')) {
+      foreach ($mode in @('unpackaged','unpackaged-copy','packaged-copy')) {
         $runtime=Join-Path $installed.InstallLocation 'webview2'
         if ($mode -eq 'unpackaged-copy') {
           $copy=Join-Path (Split-Path -Parent $probe) 'runtime-copy'
@@ -148,6 +149,18 @@ try {
           Write-Host ('Byte-identical runtime copy verified: '+$copiedFiles.Count+' files')
         }
         $unpackagedOutput=[IO.Path]::GetFullPath($Output)+'.webview-'+$mode+'-probe.json'
+        if ($mode -eq 'packaged-copy') {
+          Invoke-CommandInDesktopPackage -PackageFamilyName $installed.PackageFamilyName -AppId 'App' -Command $probe -Args ('"'+$copy+'" "'+$unpackagedOutput+'" "'+$installed.PackageFullName+'" packaged-copy') -ErrorAction Stop | Out-Null
+          $deadline=[DateTime]::UtcNow.AddSeconds(60)
+          while (-not (Test-Path -LiteralPath $unpackagedOutput)) {
+            if (Test-Path -LiteralPath ($unpackagedOutput+'.started')) { $copiedPackageProcessId=[int](Get-Content -LiteralPath ($unpackagedOutput+'.started') -Raw) }
+            if ([DateTime]::UtcNow -ge $deadline) { throw 'Packaged SDK runtime copy probe timed out' }
+            Start-Sleep -Milliseconds 200
+          }
+          if (-not $copiedPackageProcessId -and (Test-Path -LiteralPath ($unpackagedOutput+'.started'))) { $copiedPackageProcessId=[int](Get-Content -LiteralPath ($unpackagedOutput+'.started') -Raw) }
+          Write-Host (Get-Content -LiteralPath $unpackagedOutput -Raw)
+          continue
+        }
         $unpackaged=$null
         try {
           $arguments=@(('"'+$runtime+'"'),('"'+$unpackagedOutput+'"'),('"'+$installed.PackageFullName+'"'),$mode)
@@ -166,9 +179,10 @@ try {
     } catch { Write-Warning ('SDK WebView context diagnostic unavailable: '+$_.Exception.Message) }
     finally {
       try {
-        if ($probeProcessId) {
-          $process=Get-Process -Id $probeProcessId -ErrorAction SilentlyContinue
-          if ($process -and $process.Path -eq $probe -and [LingjiMsixTest]::PackageName($probeProcessId) -eq $installed.PackageFullName) { & taskkill.exe /PID $probeProcessId /T /F | Out-Null }
+        foreach ($diagnosticProcessId in @($probeProcessId,$copiedPackageProcessId)) {
+          if (-not $diagnosticProcessId) { continue }
+          $process=Get-Process -Id $diagnosticProcessId -ErrorAction SilentlyContinue
+          if ($process -and $process.Path -eq $probe -and [LingjiMsixTest]::PackageName($diagnosticProcessId) -eq $installed.PackageFullName) { & taskkill.exe /PID $diagnosticProcessId /T /F | Out-Null }
         }
       } catch { Write-Warning ('SDK probe cleanup unavailable: '+$_.Exception.Message) }
     }

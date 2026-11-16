@@ -71,9 +71,9 @@ void probe(std::ostream& out, const char* label, const std::filesystem::path& ru
       << ",\"controller\":" << (LONG)state->controller << ",\"elapsedMs\":" << std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now()-start).count() << "}";
 }
 int wmain(int argc, wchar_t** argv) {
-  if (argc != 4 && (argc != 5 || (std::wstring(argv[4]) != L"unpackaged" && std::wstring(argv[4]) != L"unpackaged-copy"))) return 64;
-  const bool packaged = argc == 4;
-  const bool copied = argc == 5 && std::wstring(argv[4]) == L"unpackaged-copy";
+  if (argc != 4 && (argc != 5 || (std::wstring(argv[4]) != L"unpackaged" && std::wstring(argv[4]) != L"unpackaged-copy" && std::wstring(argv[4]) != L"packaged-copy"))) return 64;
+  const bool packaged = argc == 4 || std::wstring(argv[4]) == L"packaged-copy";
+  const bool copied = argc == 5 && std::wstring(argv[4]) != L"unpackaged";
   std::filesystem::path output(argv[2]);
   { std::ofstream started{std::filesystem::path(output.wstring()+L".started.tmp")}; started << GetCurrentProcessId(); if (!started) return 74; }
   if (!MoveFileExW((output.wstring()+L".started.tmp").c_str(), (output.wstring()+L".started").c_str(), MOVEFILE_WRITE_THROUGH)) return 74;

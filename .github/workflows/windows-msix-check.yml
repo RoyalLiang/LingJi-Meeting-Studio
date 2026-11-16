@@ -109,6 +109,7 @@ jobs:
             .agent-runtime/msix-installation.json.webview-probe.json
             .agent-runtime/msix-installation.json.webview-unpackaged-probe.json
             .agent-runtime/msix-installation.json.webview-unpackaged-copy-probe.json
+            .agent-runtime/msix-installation.json.webview-packaged-copy-probe.json
             .agent-runtime/msix-installation.json.policy-events.json
           if-no-files-found: warn
           retention-days: 14
