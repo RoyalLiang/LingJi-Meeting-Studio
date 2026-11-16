@@ -2,6 +2,8 @@
 
 Windows 商店通道使用 MSIX，由 Microsoft Store 审核并签名。现有 NSIS 安装包继续用于独立下载；把 EXE 挂到商店不会获得微软重签。签名边界见[微软包要求](https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msix/app-package-requirements)。
 
+2026-11-16，产品“聆记 LingJi”（Store ID `9NCW0WT5W9D1`）的产品版本 `0.3.33` / 包版本 `1.3.33.0` 已提交认证；提交 1 当前显示预处理中，审核通过后自动发布。中英文介绍、每种语言四张截图、免费价格和 IARC 评级已保存。提交中的附加许可条款包含[完整 WebView2 许可](https://rookiecode.com/licenses/webview2-fixed-version.html)入口与 SmartScreen 告知。当前独立安装包继续经 OSS 提供，官网尚未启用商店下载。
+
 ## 使用已预留的产品身份
 
 2026-11-16 已在 Partner Center 创建 **聆记 LingJi**，类型为 **MSIX 或 PWA 应用**。原有“聆记”EXE/MSI 草稿保留。
