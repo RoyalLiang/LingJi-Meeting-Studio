@@ -16,9 +16,16 @@ public static class LingjiMsixTest {
 
   [DllImport("kernel32.dll", SetLastError=true)] static extern IntPtr OpenProcess(uint access, bool inherit, uint processId);
   [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr process);
+  [DllImport("kernel32.dll", CharSet=CharSet.Unicode, ExactSpelling=true, SetLastError=true)] static extern uint QueryDosDeviceW(string device, StringBuilder target, int count);
   [DllImport("kernel32.dll", CharSet=CharSet.Unicode, ExactSpelling=true)] static extern int GetPackageFullName(IntPtr process, ref uint length, StringBuilder name);
   [DllImport("user32.dll", CharSet=CharSet.Unicode, ExactSpelling=true)] static extern int GetClassNameW(IntPtr window, StringBuilder name, int count);
   public static string WindowClass(IntPtr window) { var name=new StringBuilder(256); GetClassNameW(window,name,name.Capacity); return name.ToString(); }
+  public static string DevicePath(string path) {
+    if (!System.IO.Path.IsPathFullyQualified(path) || path.Length<3 || path[1]!=':') throw new ArgumentException("Expected drive path");
+    var target=new StringBuilder(32768);
+    if (QueryDosDeviceW(path.Substring(0,2),target,target.Capacity)==0) throw new Win32Exception(Marshal.GetLastWin32Error());
+    return target.ToString()+path.Substring(2);
+  }
   public static uint Activate(string id) {
     var manager = (ILingjiActivationManager)new LingjiActivationManager();
     try { uint processId; Marshal.ThrowExceptionForHR(manager.ActivateApplication(id, "", 0, out processId)); return processId; }

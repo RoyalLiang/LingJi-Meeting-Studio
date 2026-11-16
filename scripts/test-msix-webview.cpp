@@ -71,8 +71,9 @@ void probe(std::ostream& out, const char* label, const std::filesystem::path& ru
       << ",\"controller\":" << (LONG)state->controller << ",\"elapsedMs\":" << std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now()-start).count() << "}";
 }
 int wmain(int argc, wchar_t** argv) {
-  if (argc != 4 && (argc != 5 || std::wstring(argv[4]) != L"unpackaged")) return 64;
+  if (argc != 4 && (argc != 5 || (std::wstring(argv[4]) != L"unpackaged" && std::wstring(argv[4]) != L"unpackaged-copy"))) return 64;
   const bool packaged = argc == 4;
+  const bool copied = argc == 5 && std::wstring(argv[4]) == L"unpackaged-copy";
   std::filesystem::path output(argv[2]);
   { std::ofstream started{std::filesystem::path(output.wstring()+L".started.tmp")}; started << GetCurrentProcessId(); if (!started) return 74; }
   if (!MoveFileExW((output.wstring()+L".started.tmp").c_str(), (output.wstring()+L".started").c_str(), MOVEFILE_WRITE_THROUGH)) return 74;
@@ -92,13 +93,20 @@ int wmain(int argc, wchar_t** argv) {
     std::vector<wchar_t> family(familyLength); status = PackageFamilyNameFromFullName(argv[3], &familyLength, family.data());
     if (status != ERROR_SUCCESS) throw HRESULT_FROM_WIN32(status);
     std::filesystem::path runtime(argv[1]);
-    if (!std::filesystem::equivalent(runtime, std::filesystem::path(path.data())/L"webview2") || !std::filesystem::is_regular_file(runtime/L"msedgewebview2.exe")) throw E_ACCESSDENIED;
+    std::filesystem::path expectedRuntime = std::filesystem::path(path.data())/L"webview2";
+    if (copied) {
+      std::vector<wchar_t> executable(32768);
+      DWORD size = GetModuleFileNameW(nullptr, executable.data(), (DWORD)executable.size());
+      if (!size || size == executable.size()) throw E_ACCESSDENIED;
+      expectedRuntime = std::filesystem::path(executable.data()).parent_path()/L"runtime-copy";
+    }
+    if (!std::filesystem::equivalent(runtime, expectedRuntime) || !std::filesystem::is_regular_file(runtime/L"msedgewebview2.exe")) throw E_ACCESSDENIED;
     LPWSTR version = nullptr; HRESULT discovered = GetAvailableCoreWebView2BrowserVersionString(runtime.c_str(), &version);
     std::string digits;
     if (version) { for (size_t i=0; i<64&&version[i]; ++i) if ((version[i]>=L'0'&&version[i]<=L'9')||version[i]==L'.') digits += char(version[i]); CoTaskMemFree(version); }
     GUID id; HRESULT unique = CoCreateGuid(&id); if (FAILED(unique)) throw unique;
     wchar_t text[40]; if (!StringFromGUID2(id, text, 40)) throw E_FAIL; std::wstring suffix = std::wstring(L"LingJi-msix-probe-")+text;
-    out << "{\"expectedContextVerified\":true,\"packaged\":" << packaged << ",\"versionResult\":" << (LONG)discovered << ",\"version\":\"" << digits << "\",\"cases\":[";
+    out << "{\"expectedContextVerified\":true,\"packaged\":" << packaged << ",\"copiedRuntime\":" << copied << ",\"versionResult\":" << (LONG)discovered << ",\"version\":\"" << digits << "\",\"cases\":[";
     probe(out, "roaming", runtime, std::filesystem::path(known(FOLDERID_RoamingAppData))/suffix);
     out << ','; out.flush();
     probe(out, "package-local", runtime, std::filesystem::path(known(FOLDERID_LocalAppData, KF_FLAG_NO_PACKAGE_REDIRECTION))/L"Packages"/family.data()/L"LocalState"/suffix);

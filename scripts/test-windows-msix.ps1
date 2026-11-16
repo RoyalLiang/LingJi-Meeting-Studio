@@ -32,11 +32,15 @@ try {
   Import-Certificate -FilePath $publicCertificate -CertStoreLocation 'Cert:\LocalMachine\TrustedPeople' | Out-Null
   & $signTool.FullName sign /fd SHA256 /sha1 $certificate.Thumbprint /s My $signed
   if ($LASTEXITCODE -ne 0) { throw "Fixture signing failed: $LASTEXITCODE" }
+  Add-Type -AssemblyName System.IO.Compression.ZipFile
+  $signedArchive=[IO.Compression.ZipFile]::OpenRead($signed)
+  try { $signedCatalogPresent=$null -ne $signedArchive.GetEntry('AppxMetadata/CodeIntegrity.cat') } finally { $signedArchive.Dispose() }
   Add-AppxPackage -Path $signed
   $installed = Get-AppxPackage -Name $receipt.identity.name
   if (-not $installed -or $installed.Version -ne $receipt.packageVersion) { throw 'Expected MSIX version was not installed' }
   $installedNode = Join-Path $installed.InstallLocation 'runtime/node.exe'
   $installedBackend = Join-Path $installed.InstallLocation 'client-backend'
+  $activationTime=[DateTime]::UtcNow
   $applicationProcessId = [LingjiMsixTest]::Activate($installed.PackageFamilyName+'!App')
   if (-not $applicationProcessId) { throw 'Package activation returned no application process' }
   $deadline = [DateTime]::UtcNow.AddSeconds(60)
@@ -100,7 +104,7 @@ try {
       $modulePaths = @($application.Modules | ForEach-Object { $_.FileName })
     }
     $webProcesses = @(Get-Process | Where-Object { $_.ProcessName -match '^(msedge|msedgewebview2|WebViewHost)$' } | Select-Object Id,ProcessName,Path)
-    $diagnostics = @{errorCode=$primaryError.Exception.HResult;applicationProcessId=$applicationProcessId;applicationRunning=[bool]$application;windowClass=if($application){[LingjiMsixTest]::WindowClass($application.MainWindowHandle)}else{''};applicationModules=$modulePaths;webProcesses=$webProcesses;webviewProcesses=$webviewProcesses} | ConvertTo-Json -Depth 4
+    $diagnostics = @{signedCatalogPresent=$signedCatalogPresent;errorCode=$primaryError.Exception.HResult;applicationProcessId=$applicationProcessId;applicationRunning=[bool]$application;windowClass=if($application){[LingjiMsixTest]::WindowClass($application.MainWindowHandle)}else{''};applicationModules=$modulePaths;webProcesses=$webProcesses;webviewProcesses=$webviewProcesses} | ConvertTo-Json -Depth 4
     $diagnostics | Set-Content -LiteralPath ($Output+'.diagnostics.json') -Encoding utf8
     Write-Host $diagnostics
   } catch { Write-Warning ('MSIX failure diagnostics unavailable: '+$_.Exception.Message) }
@@ -127,19 +131,36 @@ try {
       }
       if (-not $probeProcessId -and (Test-Path -LiteralPath ($probeOutput+'.started'))) { $probeProcessId=[int](Get-Content -LiteralPath ($probeOutput+'.started') -Raw) }
       Write-Host (Get-Content -LiteralPath $probeOutput -Raw)
-      $unpackagedOutput=[IO.Path]::GetFullPath($Output)+'.webview-unpackaged-probe.json'
-      $unpackaged=$null
-      try {
-        $arguments=@(('"'+(Join-Path $installed.InstallLocation 'webview2')+'"'),('"'+$unpackagedOutput+'"'),('"'+$installed.PackageFullName+'"'),'unpackaged')
-        $unpackaged=Start-Process -FilePath $probe -ArgumentList $arguments -WindowStyle Hidden -PassThru
-        $unpackagedStart=$unpackaged.StartTime
-        if (-not $unpackaged.WaitForExit(60000)) { throw 'Unpackaged SDK WebView probe timed out' }
-        if ($unpackaged.ExitCode -ne 0) { throw ('Unpackaged SDK WebView probe exited '+$unpackaged.ExitCode) }
-        Write-Host (Get-Content -LiteralPath $unpackagedOutput -Raw)
-      } finally {
-        if ($unpackaged) {
-          $remaining=Get-Process -Id $unpackaged.Id -ErrorAction SilentlyContinue
-          if ($remaining -and $remaining.Path -eq $probe -and $remaining.StartTime -eq $unpackagedStart) { & taskkill.exe /PID $remaining.Id /T /F | Out-Null }
+      foreach ($mode in @('unpackaged','unpackaged-copy')) {
+        $runtime=Join-Path $installed.InstallLocation 'webview2'
+        if ($mode -eq 'unpackaged-copy') {
+          $copy=Join-Path (Split-Path -Parent $probe) 'runtime-copy'
+          if (Test-Path -LiteralPath $copy) { throw 'Refusing existing runtime copy' }
+          Copy-Item -LiteralPath $runtime -Destination $copy -Recurse -Force
+          $originalFiles=@(Get-ChildItem -LiteralPath $runtime -File -Recurse -Force)
+          $copiedFiles=@(Get-ChildItem -LiteralPath $copy -File -Recurse -Force)
+          if ($originalFiles.Count -ne $copiedFiles.Count) { throw 'Runtime copy file count changed' }
+          foreach ($file in $originalFiles) {
+            $relative=[IO.Path]::GetRelativePath($runtime,$file.FullName)
+            if ((Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath (Join-Path $copy $relative) -Algorithm SHA256).Hash) { throw 'Runtime copy hash changed' }
+          }
+          $runtime=$copy
+          Write-Host ('Byte-identical runtime copy verified: '+$copiedFiles.Count+' files')
+        }
+        $unpackagedOutput=[IO.Path]::GetFullPath($Output)+'.webview-'+$mode+'-probe.json'
+        $unpackaged=$null
+        try {
+          $arguments=@(('"'+$runtime+'"'),('"'+$unpackagedOutput+'"'),('"'+$installed.PackageFullName+'"'),$mode)
+          $unpackaged=Start-Process -FilePath $probe -ArgumentList $arguments -WindowStyle Hidden -PassThru
+          $unpackagedStart=$unpackaged.StartTime
+          if (-not $unpackaged.WaitForExit(60000)) { throw 'Unpackaged SDK WebView probe timed out' }
+          if ($unpackaged.ExitCode -ne 0) { throw ('Unpackaged SDK WebView probe exited '+$unpackaged.ExitCode) }
+          Write-Host (Get-Content -LiteralPath $unpackagedOutput -Raw)
+        } finally {
+          if ($unpackaged) {
+            $remaining=Get-Process -Id $unpackaged.Id -ErrorAction SilentlyContinue
+            if ($remaining -and $remaining.Path -eq $probe -and $remaining.StartTime -eq $unpackagedStart) { & taskkill.exe /PID $remaining.Id /T /F | Out-Null }
+          }
         }
       }
     } catch { Write-Warning ('SDK WebView context diagnostic unavailable: '+$_.Exception.Message) }
@@ -151,6 +172,48 @@ try {
         }
       } catch { Write-Warning ('SDK probe cleanup unavailable: '+$_.Exception.Message) }
     }
+  }
+  if ($env:TTS_MSIX_CONTEXT_PROBE -and $installed -and $activationTime) {
+    try {
+      $roots=@($installed.InstallLocation.TrimEnd('\')+'\')
+      $deviceAliasAvailable=$false
+      try { $roots+=([LingjiMsixTest]::DevicePath($installed.InstallLocation).TrimEnd('\')+'\'); $deviceAliasAvailable=$true } catch { }
+      if ($installed.InstallLocation.StartsWith($env:SystemDrive+'\',[StringComparison]::OrdinalIgnoreCase)) { $roots+=('%OSDRIVE%'+$installed.InstallLocation.Substring(2).TrimEnd('\')+'\') }
+      Add-Type -AssemblyName System.Diagnostics.EventLog
+      $selector=[System.Diagnostics.Eventing.Reader.EventLogPropertySelector]::new([string[]]@("Event/EventData/Data[@Name='FileName']","Event/EventData/Data[@Name='FileNameBuffer']","Event/EventData/Data[@Name='ProcessName']","Event/EventData/Data[@Name='ProcessNameBuffer']","Event/EventData/Data[@Name='Status']",'Event/UserData/RuleAndFileData/FilePath','Event/UserData/RuleAndFileData/RuleId'))
+      $reports=@()
+      try {
+        foreach ($policy in @(@{provider='Microsoft-Windows-CodeIntegrity';log='Microsoft-Windows-CodeIntegrity/Operational';ids=@(3033,3076,3077)},@{provider='Microsoft-Windows-AppLocker';log='Microsoft-Windows-AppLocker/EXE and DLL';ids=@(8003,8004)})) {
+          $rows=@(); $queryStatus='ok'; $queryError=$null; $events=@()
+          try {
+            $events=@(Get-WinEvent -FilterHashtable @{LogName=$policy.log;ProviderName=$policy.provider;Id=$policy.ids;StartTime=$activationTime;EndTime=[DateTime]::UtcNow} -ErrorAction Stop)
+            foreach ($event in $events) {
+              $value=$event.GetPropertyValues($selector)
+              $file=@($value[0],$value[1],$value[5]) | Where-Object { $_ -is [string] -and $_ } | Select-Object -First 1
+              $process=@($value[2],$value[3]) | Where-Object { $_ -is [string] -and $_ } | Select-Object -First 1
+              $owned=$false
+              foreach ($root in $roots) { if (($file -and $file.StartsWith($root,[StringComparison]::OrdinalIgnoreCase)) -or ($process -and $process.StartsWith($root,[StringComparison]::OrdinalIgnoreCase))) { $owned=$true; break } }
+              if (-not $owned) { continue }
+              $basename=[IO.Path]::GetFileName([string]$file)
+              if ($basename -notmatch '^[A-Za-z0-9_.-]{1,128}\.(exe|dll)$') { $basename=$null }
+              $ruleId=$null; $guid=[guid]::Empty
+              if ($value[6] -and [guid]::TryParse([string]$value[6],[ref]$guid)) { $ruleId=$guid.ToString() }
+              $status=$null
+              if ($null -ne $value[4]) { try { $status=if ([string]$value[4] -match '^0x[0-9a-f]+$') { [Convert]::ToUInt32(([string]$value[4]).Substring(2),16) } else { [long]$value[4] -band [long]4294967295 } } catch { } }
+              $rows+=@{eventId=[int]$event.Id;time=$event.TimeCreated.ToUniversalTime().ToString('O');basename=$basename;ruleId=$ruleId;status=$status}
+              if ($rows.Count -ge 50) { break }
+            }
+          } catch {
+            $queryStatus=if ($_.FullyQualifiedErrorId.StartsWith('NoMatchingEventsFound')) { 'empty-log-interval' } else { 'query-unavailable' }
+            $queryError=$_.Exception.HResult
+          } finally { foreach ($event in $events) { $event.Dispose() } }
+          $reports+=@{provider=$policy.provider;queryStatus=$queryStatus;queryError=$queryError;events=$rows}
+        }
+      } finally { $selector.Dispose() }
+      $policyReport=@{deviceAliasAvailable=$deviceAliasAvailable;providers=$reports} | ConvertTo-Json -Depth 6
+      Set-Content -LiteralPath ($Output+'.policy-events.json') -Value $policyReport -Encoding utf8
+      Write-Host $policyReport
+    } catch { Write-Warning ('Scoped policy metadata unavailable: HRESULT '+$_.Exception.HResult) }
   }
   throw $primaryError
 } finally {
