@@ -105,6 +105,7 @@ impl Proxy {
         );
         Ok(Self {
             client: reqwest::Client::builder()
+                .no_proxy()
                 .cookie_provider(jar)
                 .connect_timeout(std::time::Duration::from_secs(10))
                 .redirect(reqwest::redirect::Policy::none())

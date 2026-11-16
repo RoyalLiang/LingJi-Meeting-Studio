@@ -79,7 +79,7 @@ impl LocalBackend {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        for key in ["HOME", "USERPROFILE", "TEMP", "TMP", "TMPDIR", "SystemRoot"] {
+        for key in ["HOME", "USERPROFILE", "TEMP", "TMP", "TMPDIR", "SystemRoot", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy", "DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR", "XDG_CURRENT_DESKTOP"] {
             if let Some(value) = std::env::var_os(key) {
                 command.env(key, value);
             }
@@ -184,4 +184,14 @@ mod shutdown_tests {
         let backend=LocalBackend{input:Mutex::new(child.stdin.take()),child:Mutex::new(child),url:String::new(),cookie:String::new(),native_root:std::path::PathBuf::new(),native_instance:String::new()};
         backend.stop().unwrap();assert!(backend.child.lock().unwrap().try_wait().unwrap().is_some());backend.stop().unwrap();
     }
+}
+
+// Only the owning native client knows the tunnel credential; it never enters the WebView.
+pub fn network_proxy(app: &tauri::AppHandle) -> Option<url::Url> {
+    let state = app.try_state::<crate::Client>()?;
+    let backend = state._backend.as_ref()?;
+    let mut url = url::Url::parse(&backend.url).ok()?;
+    url.set_username("lingji").ok()?;
+    url.set_password(Some(&backend.native_instance)).ok()?;
+    Some(url)
 }

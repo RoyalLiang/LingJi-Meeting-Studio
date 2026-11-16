@@ -219,7 +219,7 @@ impl Updates {
     async fn check_inner(&self, app: &AppHandle) -> Result<(), String> {
         if self.preview_channel {
             self.phase(app, "checking", None);
-            let release = crate::preview_updates::check(&self.status().current_version).await?;
+            let release = crate::preview_updates::check(&self.status().current_version, crate::local_backend::network_proxy(app).as_ref()).await?;
             let mut state = self.state.lock().unwrap();
             if release.as_ref().map(|r| (&r.version, &r.digest))
                 != state.preview.as_ref().map(|r| (&r.version, &r.digest))
@@ -257,6 +257,7 @@ impl Updates {
         if !secure {
             return Err("更新源必须使用 HTTPS，不能含账户信息".into());
         }
+        let loopback_test = url.scheme() == "http";
         self.phase(app, "checking", None);
         let builder = app
             .updater_builder()
@@ -264,6 +265,10 @@ impl Updates {
             .endpoints(vec![url])
             .map_err(|e| e.to_string())?
             .timeout(Duration::from_secs(15));
+        let builder = match (loopback_test, crate::local_backend::network_proxy(app)) {
+            (false, Some(proxy)) => builder.proxy(proxy),
+            _ => builder.no_proxy(),
+        };
         #[cfg(feature = "smoke-test")]
         let builder = if let Ok(path) = std::env::var("TTS_UPDATE_TEST_EXECUTABLE") {
             let path = std::fs::canonicalize(path).map_err(|_| "test destination unavailable")?;
@@ -352,7 +357,7 @@ impl Updates {
                 drop(state);
                 self.emit(app);
                 last = Instant::now();
-            })
+            }, crate::local_backend::network_proxy(app).as_ref())
             .await?;
             let mut state = self.state.lock().unwrap();
             state.downloaded = Some(Downloaded {

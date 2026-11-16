@@ -1,3 +1,4 @@
+import { networkAgent } from '../network-proxy.mjs';
 import https from 'node:https';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
@@ -28,7 +29,8 @@ export async function remoteRequest(value,{method='GET',headers={},body,signal,m
   requireThat(addresses.length>0&&addresses.every(item=>publicAddress(item.address)||allowProxyFakeIp&&proxyAddress(item.address)||allowPrivateNetwork&&privateNetworkAddress(item.address)),'remote_address_rejected',400);
   const target=addresses[0];
   return new Promise((resolve,reject)=>{
-    const request=https.request(url,{method,headers:{'User-Agent':'Lingji-Meeting-Studio',...headers},signal:AbortSignal.any([AbortSignal.timeout(20000),...(signal?[signal]:[])]),lookup:(_hostname,options,callback)=>{
+    // Hosted connectors keep the validated DNS pin; desktop users may explicitly use their proxy.
+    const request=https.request(url,{agent:allowProxyFakeIp||allowPrivateNetwork?networkAgent():false,method,headers:{'User-Agent':'Lingji-Meeting-Studio',...headers},signal:AbortSignal.any([AbortSignal.timeout(20000),...(signal?[signal]:[])]),lookup:(_hostname,options,callback)=>{
       if(options?.all)callback(null,[target]);else callback(null,target.address,target.family);
     }},response=>{
       const chunks=[],decoder=new StringDecoder('utf8');let size=0,events='';

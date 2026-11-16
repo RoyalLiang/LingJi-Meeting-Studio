@@ -1,3 +1,4 @@
+import { installNetworkProxy } from './network-proxy.mjs';
 import {voiceprints} from './voiceprints.mjs';
 import {voiceLearning} from './voiceprint-learning.mjs';
 import {withModelUsage} from './model-usage.mjs';
@@ -238,6 +239,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all', cacheConfig
 }
 export async function startWorker() {
   const repo = await createRepository(), wakeup = createWorkerWakeup(repo);
+  const network = installNetworkProxy(repo.root);
   let stop = false;
   const shutdown = () => { stop = true; wakeup.close(); };
   process.on('SIGTERM', shutdown); process.on('SIGINT', shutdown);
@@ -265,6 +267,7 @@ export async function startWorker() {
   } finally {
     shutdown(); process.off('SIGTERM', shutdown); process.off('SIGINT', shutdown);
     closeSpeakerStreams(repo); closeRealtime(repo); await repo.close();
+    await network.close();
   }
 }
 
