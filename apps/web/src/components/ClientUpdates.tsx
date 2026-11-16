@@ -1,7 +1,7 @@
 import {currentReleaseNotes} from '../release-notes';
 import {FeedbackNotice} from './FeedbackNotice';
 import { useState } from 'react';
-import { version } from '../../../../package.json';
+import { releaseVersion as version } from '../../../../package.json';
 import { ArrowUp, ArrowsClockwise, DownloadSimple } from '@phosphor-icons/react';
 import type { useClientUpdates } from '../useClientUpdates';
 import { Button, Modal } from './ui';

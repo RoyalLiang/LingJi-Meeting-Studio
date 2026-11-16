@@ -1,3 +1,4 @@
+import {createPortal} from 'react-dom';
 import {VirtualSegments} from './VirtualSegments';
 import {FeedbackNotice} from './FeedbackNotice';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -13,9 +14,9 @@ import './TranslationPanel.css';
 
 export function TranslationPanel({ record, ready, close, configure, save, inspect }: { record: RecordDetail; ready: boolean; close: () => void; configure: () => void; save: (target: string) => Promise<void>; inspect: (segment: Segment) => void }) {
   const [target,setTarget]=useState(record.translationTarget || 'en'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[showOriginal,setShowOriginal]=useState(true);
-  const [mobile,setMobile]=useState(()=>matchMedia('(max-width:1250px)').matches);
+  const [mobile,setMobile]=useState(()=>matchMedia('(max-width:1179px)').matches);
   const active=useRef(true),pending=useRef(false),started=useRef(false);
-  useEffect(()=>{const media=matchMedia('(max-width:1250px)');const change=()=>setMobile(media.matches);media.addEventListener('change',change);active.current=true;return()=>{active.current=false;media.removeEventListener('change',change);};},[]);
+  useEffect(()=>{const media=matchMedia('(max-width:1179px)');const change=()=>setMobile(media.matches);media.addEventListener('change',change);active.current=true;return()=>{active.current=false;media.removeEventListener('change',change);};},[]);
   async function choose(value:string){
     if(pending.current || !ready)return;
     pending.current=true;setBusy(true);setError('');const before=target;if(value)setTarget(value);
@@ -52,5 +53,5 @@ export function TranslationPanel({ record, ready, close, configure, save, inspec
       <div ref={follow.end} className="content-follow-anchor" aria-hidden="true"/>
     </section></div>
     <footer className="translation-footer"><span>{record.translationTarget?(follow.following?'跟随最新':'已暂停跟随'):'翻译已暂停'} · {translated.length}/{segments.length} 条{failed.length>0?` · ${failed.length} 条待重试`:''}</span>{!follow.following && record.translationTarget && <Button variant="primary" onClick={()=>{follow.resume();}}>回到最新译文</Button>}</footer></>;
-  return mobile?<Modal title="实时翻译" className="translation-modal" onClose={close} wide><div className="translation-ui translation-mobile">{content}</div></Modal>:<aside className="translation-panel translation-ui glass" aria-label="实时翻译"><header><div className="heading-icon"><Translate size={20}/><h2>实时翻译</h2></div><CloseButton label="关闭翻译面板" title="关闭面板，翻译继续运行" onClick={close}/></header>{content}</aside>;
+  return mobile?createPortal(<Modal title="实时翻译" className="translation-modal" onClose={close} wide><div className="translation-ui translation-mobile">{content}</div></Modal>,document.body):<aside className="translation-panel translation-ui glass" aria-label="实时翻译"><header><div className="heading-icon"><Translate size={20}/><h2>实时翻译</h2></div><CloseButton label="关闭翻译面板" title="关闭面板，翻译继续运行" onClick={close}/></header>{content}</aside>;
 }

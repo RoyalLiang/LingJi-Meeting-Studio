@@ -37,7 +37,7 @@ if (tabs.length) {
     const manifest = await response.json();
     const store = manifest.windowsStore;
     if (store && (!/^[A-Z0-9]{12}$/.test(store.id) || store.version !== manifest.version || store.href !== `https://apps.microsoft.com/detail/${store.id}?mode=direct`)) throw new Error('invalid_store_listing');
-    if (!/^\d+\.\d+\.\d+$/.test(manifest.version) || !Array.isArray(manifest.assets)) throw new Error('invalid');
+    if (!/^\d+\.\d+\.\d+(?:\.\d+)?$/.test(manifest.version) || !Array.isArray(manifest.assets)) throw new Error('invalid');
     const files = panels.map(panel => {
       const platform = panel.dataset.downloadPanel, suffix = {macos: 'macos-arm64.dmg', windows: 'windows-x64-setup.exe', linux: 'linux-amd64.deb'}[platform];
       const name = `Lingji-${manifest.version}-${suffix}`, asset = manifest.assets.find(item => item.platform === platform && item.name === name);

@@ -8,7 +8,7 @@ export function downloadBase(value) {
 }
 
 export function downloadManifest(input) {
-  if (!input || !/^\d+\.\d+\.\d+$/.test(input.version) || !Array.isArray(input.assets)) throw new Error('invalid_download_manifest');
+  if (!input || !/^\d+\.\d+\.\d+(?:\.\d+)?$/.test(input.version) || !Array.isArray(input.assets)) throw new Error('invalid_download_manifest');
   const assets = Object.entries(platforms).map(([platform, suffix]) => {
     const name = `Lingji-${input.version}-${suffix}`, asset = input.assets.find(item => item.name === name);
     if (!asset || !/^[a-f0-9]{64}$/.test(asset.sha256) || !Number.isSafeInteger(asset.size) || asset.size <= 0 || asset.size > 5 * 1024 ** 3) throw new Error('invalid_download_asset');
@@ -21,7 +21,7 @@ export function microsoftStoreListing(env, releaseVersion) {
   const id = env.MICROSOFT_STORE_ID, version = env.MICROSOFT_STORE_PUBLISHED_VERSION;
   if (id && !/^[A-Z0-9]{12}$/.test(id)) throw new Error('invalid_microsoft_store_id');
   if (!version) return null;
-  if (!id || !/^\d+\.\d+\.\d+$/.test(version)) throw new Error('invalid_microsoft_store_version');
+  if (!id || !/^\d+\.\d+\.\d+(?:\.\d+)?$/.test(version)) throw new Error('invalid_microsoft_store_version');
   if (releaseVersion && version !== releaseVersion) return null;
   return {id, version, href: `https://apps.microsoft.com/detail/${id}?mode=direct`};
 }
@@ -53,7 +53,7 @@ export async function downloadRoute(request, env, fetcher = fetch) {
       if (store) manifest.windowsStore = store;
       return new Response(request.method === 'HEAD' ? null : JSON.stringify(manifest), {headers: {'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=60', 'X-Content-Type-Options': 'nosniff'}});
     }
-    const match = path.match(/^\/downloads\/v(\d+\.\d+\.\d+)\/(Lingji-(\d+\.\d+\.\d+)-(macos-arm64\.dmg|windows-x64-setup\.exe|linux-amd64\.deb))$/);
+    const match = path.match(/^\/downloads\/v(\d+\.\d+\.\d+(?:\.\d+)?)\/(Lingji-(\d+\.\d+\.\d+(?:\.\d+)?)-(macos-arm64\.dmg|windows-x64-setup\.exe|linux-amd64\.deb))$/);
     if (!match || match[1] !== match[3]) return failure(404, 'download_not_found');
     const forwarded = new Headers({'Accept-Encoding': 'identity'});
     for (const header of ['range', 'if-range', 'if-none-match', 'if-modified-since']) if (request.headers.has(header)) forwarded.set(header, request.headers.get(header));

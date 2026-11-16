@@ -1,3 +1,4 @@
+import {previewReleaseConfig} from './preview-version.mjs';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {access,copyFile,mkdir,mkdtemp,readFile,readdir,writeFile,rename,rm} from 'node:fs/promises';
@@ -13,6 +14,7 @@ const root=resolve('.'),revision=execFileSync('git',['rev-parse','HEAD'],{encodi
 assert.equal(revision,process.env.TTS_RELEASE_SOURCE_REF,'WGS must build the requested commit');
 const cargoTarget=process.env.CARGO_TARGET_DIR||join(root,'apps/desktop/src-tauri/target');
 const source=await assertCurrentSource(root,revision),config=JSON.parse(await readFile('apps/desktop/src-tauri/tauri.preview.conf.json'));
+Object.assign(config,previewReleaseConfig(config,JSON.parse(await readFile('package.json'))));
 const finalOutput=join(root,'dist/wgs-input',config.version),resources=join(root,'apps/desktop/src-tauri/resources'),cargoInput=await readFile('apps/desktop/src-tauri/Cargo.toml','utf8');
 await assert.rejects(access(finalOutput),{code:'ENOENT'},'Never overwrite WGS input');await mkdir(join(root,'dist/wgs-input'),{recursive:true});
 const output=await mkdtemp(join(root,'dist/wgs-input','.windows-'));

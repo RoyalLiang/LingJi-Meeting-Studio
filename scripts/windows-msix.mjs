@@ -1,3 +1,4 @@
+import {nativeVersion,previewReleaseConfig} from './preview-version.mjs';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {access, copyFile, cp, mkdir, mkdtemp, readFile, readdir, lstat, rename, rm, writeFile} from 'node:fs/promises';
@@ -42,6 +43,7 @@ export function storeIdentity(input) {
 }
 
 export function msixVersion(version) {
+  version=nativeVersion(version);
   assert.match(version, /^\d+\.\d+\.\d+$/);
   assert.ok(version.split('.').every(value => Number(value) <= 65535 && String(Number(value)) === value), 'MSIX version components must be canonical integers <= 65535');
   const [major, minor, patch] = version.split('.').map(Number);
@@ -71,7 +73,7 @@ export async function buildWindowsMsix({root, prebuilt, destination, sourceRevis
   assert.equal(process.env.TTS_WGS_CURRENT_BUILD, '1');
   const revision = execFileSync('git', ['rev-parse', 'HEAD'], {cwd: root, encoding: 'utf8'}).trim();
   assert.equal(revision, sourceRevision, 'MSIX must use the fixed release checkout');
-  const version = JSON.parse(await readFile(join(root, 'apps/desktop/src-tauri/tauri.preview.conf.json'))).version;
+  const version = previewReleaseConfig(JSON.parse(await readFile(join(root, 'apps/desktop/src-tauri/tauri.preview.conf.json'))),JSON.parse(await readFile(join(root,'package.json')))).version;
   const source = await snapshotReleaseSource({root, ref: sourceRevision});
   const receipt = await verifyWgsInput(prebuilt, {version, sourceRevision, source});
   assert.ok(receipt.files.some(file => file.name === 'windows-app.exe'), 'WGS must provide the application executable');
@@ -127,7 +129,7 @@ export async function buildWindowsMsix({root, prebuilt, destination, sourceRevis
 }
 
 export async function copyWindowsMsix({root, prebuilt, destination, sourceRevision}) {
-  const version = JSON.parse(await readFile(join(root, 'apps/desktop/src-tauri/tauri.preview.conf.json'))).version;
+  const version = previewReleaseConfig(JSON.parse(await readFile(join(root, 'apps/desktop/src-tauri/tauri.preview.conf.json'))),JSON.parse(await readFile(join(root,'package.json')))).version;
   const source = await snapshotReleaseSource({root, ref: sourceRevision});
   await verifyWgsInput(prebuilt, {version, sourceRevision, source});
   const metadata = JSON.parse(await readFile(join(prebuilt, 'store-package.json')));

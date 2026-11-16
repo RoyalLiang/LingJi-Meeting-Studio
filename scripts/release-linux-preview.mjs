@@ -1,3 +1,4 @@
+import {previewReleaseConfig} from './preview-version.mjs';
 import assert from 'node:assert/strict';
 import {execFileSync,spawn} from 'node:child_process';
 import {access,copyFile,mkdir,mkdtemp,readFile,readdir,rename,rm,symlink,writeFile} from 'node:fs/promises';
@@ -18,7 +19,7 @@ const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const capture=(command,args)=>execFileSync(command,args,{cwd:root,maxBuffer:8*1024*1024}).toString().trim();
 const sourceRevision=capture('git',['rev-parse','--verify',`${process.env.TTS_RELEASE_SOURCE_REF||'HEAD'}^{commit}`]);
 const config=JSON.parse(await readReleaseSource(root,sourceRevision,'apps/desktop/src-tauri/tauri.preview.conf.json'));
-assert.match(config.version,/^\d+\.\d+\.\d+$/);
+Object.assign(config,previewReleaseConfig(config,JSON.parse(await readReleaseSource(root,sourceRevision,'package.json'))));
 const output=join(root,'dist/releases',config.version,'linux-x64');
 await mkdir(dirname(output),{recursive:true});
 await assert.rejects(access(output),{code:'ENOENT'},'A release directory cannot be overwritten');
@@ -55,7 +56,7 @@ try{
   const artifact=`Lingji-${config.version}-linux-amd64.deb`,path=join(stage,artifact);
   await copyFile(join(bundle,installers[0]),path);
   const packageName=capture('dpkg-deb',['-f',path,'Package']);assert.match(packageName,/^[a-z0-9][a-z0-9+.-]+$/);
-  assert.equal(capture('dpkg-deb',['-f',path,'Version']),config.version);
+  assert.equal(capture('dpkg-deb',['-f',path,'Version']),config.nativeVersion);
   assert.equal(capture('dpkg-deb',['-f',path,'Architecture']),'amd64');
  const dependencies=capture('dpkg-deb',['-f',path,'Depends']);
  assert.ok(dependencies.split(',').some(group=>group.split('|').some(dep=>/^libasound2(?:\s|$)/.test(dep.trim()))),'Package must resolve ALSA on Ubuntu 22.04');

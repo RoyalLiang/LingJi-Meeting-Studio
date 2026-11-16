@@ -1,4 +1,4 @@
-import { streamAudioImport, waitForImportUpload } from './stream-import';
+import { streamAudioImport, createImportUploadQueue } from './stream-import';
 import { preferredDevice, openMicrophone } from './devices';
 import { api } from '../api';
 import type { RecordDetail, Source, SourceKind } from '../model';
@@ -173,12 +173,13 @@ export class CaptureController {
 }
 export async function importAudio(file: File, record: RecordDetail, progress: (value: number) => void, signal?: AbortSignal) {
   let source: Awaited<ReturnType<typeof api<Source>>> | undefined, sequence = 0, offset = 0;
+  const uploads=createImportUploadQueue(()=>drainQueue(),signal);
   await streamAudioImport(file, async pcm => {
     signal?.throwIfAborted();
     source ??= await api<Source>(`/records/${record.id}/sources`, 'POST', {kind:'import',label:file.name});
     await enqueue(record.id, await makeChunk(source.id, source.epoch, sequence++, offset, pcm, source.sessionId));
     offset += pcm.byteLength / 2;
-    if (sequence % 4 === 0) await waitForImportUpload(drainQueue(), signal);
+    await uploads.added();
   }, progress, signal);
-  await waitForImportUpload(drainQueue(), signal);
+  await uploads.finish();
 }

@@ -1,3 +1,4 @@
+import {previewReleaseConfig} from './preview-version.mjs';
 import {snapshotReleaseSource} from './release-source.mjs';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -17,10 +18,11 @@ const channel=process.env.TTS_RELEASE_CHANNEL || 'alpha';
 assert.ok(['alpha','preview'].includes(channel),'Unknown local test release channel');
 const configPath=`apps/desktop/src-tauri/tauri.${channel}.conf.json`;
 const config = JSON.parse((await readSource(configPath)).toString());
+if(channel==='preview')Object.assign(config,previewReleaseConfig(config,JSON.parse((await readSource('package.json')).toString())));
 const installationGuide=channel==='preview'?`docs/releases/v${config.version}-preview.md`:'docs/releases/macos-alpha.md';
 const baseConfig = JSON.parse((await readSource('apps/desktop/src-tauri/tauri.conf.json')).toString());
-assert.match(config.version, channel==='preview'?/^\d+\.\d+\.\d+$/:/^\d+\.\d+\.\d+-alpha\.\d+$/);
-if(channel==='preview')assert.equal(config.version,baseConfig.version);
+assert.match(config.version, channel==='preview'?/^\d+\.\d+\.\d+(?:\.\d+)?$/:/^\d+\.\d+\.\d+-alpha\.\d+$/);
+if(channel==='preview')assert.equal(config.nativeVersion,baseConfig.version);
 assert.equal(baseConfig.build.frontendDist, '../../web/dist');
 const output = join(root, 'dist/releases', config.version);
 try {
@@ -106,7 +108,7 @@ try {
   await copyFile(join(frozen, installationGuide), join(release, '安装说明.md'));
   const dmgName = `Lingji-${config.version}-macos-arm64.dmg`;
   const dmg = join(release, dmgName);
-  const bundleDmg = join(cargoTarget, 'release/bundle/dmg', `${config.productName}_${config.version}_aarch64.dmg`);
+  const bundleDmg = join(cargoTarget, 'release/bundle/dmg', `${config.productName}_${config.nativeVersion||config.version}_aarch64.dmg`);
   await copyFile(bundleDmg, dmg);
   await run('hdiutil', ['verify', dmg]);
   await mkdir(mount);

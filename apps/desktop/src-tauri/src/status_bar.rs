@@ -37,7 +37,7 @@ impl StatusBar {
         };
         let version = item(
             "status-version",
-            &format!("聆记 · {}", app.package_info().version),
+            &format!("聆记 · {}", crate::preview_updates::PRODUCT_VERSION.trim()),
             false,
         )?;
         let server = item("status-server", &format!("服务：{api_origin}"), false)?;

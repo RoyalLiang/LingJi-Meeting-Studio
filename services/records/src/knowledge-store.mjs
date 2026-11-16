@@ -1,8 +1,9 @@
+import {cjkSearchTokens,isCjkPair,searchGrams} from './record-search.mjs';
 import { createKnowledgeQuestions } from './knowledge-questions.mjs';
 import { knowledgeCandidates, knowledgeStamp, normalizedKnowledgeText, knowledgeHighlight, reviewKnowledge } from '../../../packages/records/src/knowledge.mjs';
 import { requireThat } from '../../../packages/records/src/record.mjs';
 
-const grams = text => [...new Set(Array.from(text.toLowerCase()).flatMap((_, i, letters) => i + 2 < letters.length ? [letters.slice(i, i + 3).join('')] : []))];
+const grams = searchGrams;
 const decode = row => typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
 
 export async function createKnowledgeStore({ db, pool }) {
@@ -12,11 +13,18 @@ export async function createKnowledgeStore({ db, pool }) {
     CREATE INDEX IF NOT EXISTS knowledge_record ON record_knowledge(record_id);`;
   if (pool) {
     for (const statement of schema.split(';').filter(statement => statement.trim())) await pool.query(statement);
-    await pool.query('ALTER TABLE record_knowledge ADD COLUMN IF NOT EXISTS grams TEXT[]');
+    await pool.query('ALTER TABLE record_knowledge ADD COLUMN IF NOT EXISTS grams TEXT[], ADD COLUMN IF NOT EXISTS grams_version INTEGER');
     await pool.query('CREATE INDEX IF NOT EXISTS knowledge_grams ON record_knowledge USING GIN(grams)');
   } else {
     db.exec(schema);
-    db.exec("CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_search USING fts5(text,tokenize='trigram')");
+    db.exec("CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_search USING fts5(text,tokenize='trigram'); CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_search_cjk USING fts5(text,tokenize='unicode61')");
+    const insert=db.prepare('INSERT INTO knowledge_search_cjk(rowid,text) VALUES(?,?)');
+    for (const row of db.prepare('SELECT rowid,data FROM record_knowledge WHERE rowid NOT IN (SELECT rowid FROM knowledge_search_cjk)').all()) insert.run(row.rowid,cjkSearchTokens(decode(row).text));
+  }
+  if (pool) for (;;) {
+    const rows=(await pool.query('SELECT id,data FROM record_knowledge WHERE grams_version IS DISTINCT FROM 4 LIMIT 100')).rows;
+    for (const row of rows) await pool.query('UPDATE record_knowledge SET grams=$2,grams_version=4 WHERE id=$1',[row.id,grams(decode(row).text)]);
+    if (rows.length<100) break;
   }
   // Upgrade only derived search keys; preserve concurrent review fields in the stored JSON.
   let after = '';
@@ -38,7 +46,7 @@ export async function createKnowledgeStore({ db, pool }) {
     if (db.prepare('SELECT stamp FROM record_knowledge_state WHERE record_id=?').get(record.id)?.stamp === stamp) return;
     const previous = db.prepare('SELECT rowid,data FROM record_knowledge WHERE record_id=?').all(record.id);
     if (record.deleted || Date.parse(record.deleteAt) <= Date.now()) {
-      for (const row of previous) db.prepare('DELETE FROM knowledge_search WHERE rowid=?').run(row.rowid);
+      for (const row of previous) { db.prepare('DELETE FROM knowledge_search WHERE rowid=?').run(row.rowid); db.prepare('DELETE FROM knowledge_search_cjk WHERE rowid=?').run(row.rowid); }
       db.prepare('DELETE FROM record_knowledge WHERE record_id=?').run(record.id);
     } else {
       const next = knowledgeCandidates(record), ids = new Set(next.map(entry => entry.id));
@@ -51,6 +59,7 @@ export async function createKnowledgeStore({ db, pool }) {
         if (previous.some(row => decode(row).id === entry.id)) continue;
         const result = db.prepare('INSERT INTO record_knowledge(id,record_id,owner,workspace,expires,data) VALUES(?,?,?,?,?,?)').run(entry.id, record.id, record.owner, record.workspaceId || 'inbox', record.deleteAt, JSON.stringify(entry));
         db.prepare('INSERT INTO knowledge_search(rowid,text) VALUES(?,?)').run(result.lastInsertRowid, entry.text);
+        db.prepare('INSERT INTO knowledge_search_cjk(rowid,text) VALUES(?,?)').run(result.lastInsertRowid,cjkSearchTokens(entry.text));
       }
     }
     db.prepare('INSERT INTO record_knowledge_state(record_id,stamp) VALUES(?,?) ON CONFLICT(record_id) DO UPDATE SET stamp=excluded.stamp').run(record.id, stamp);
@@ -67,7 +76,7 @@ export async function createKnowledgeStore({ db, pool }) {
         if (!ids.has(entry.id) && entry.status !== 'retracted') { entry.status = 'retracted'; entry.reviewRevision++; }
         await client.query('UPDATE record_knowledge SET workspace=$2,expires=$3,data=$4 WHERE id=$1', [entry.id, record.workspaceId || 'inbox', record.deleteAt, JSON.stringify({ ...entry, workspaceId: record.workspaceId || null, title: record.title })]);
       }
-      for (const entry of next) await client.query('INSERT INTO record_knowledge(id,record_id,owner,workspace,expires,data,grams) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(id) DO NOTHING', [entry.id, record.id, record.owner, record.workspaceId || 'inbox', record.deleteAt, JSON.stringify(entry), grams(entry.text)]);
+      for (const entry of next) await client.query('INSERT INTO record_knowledge(id,record_id,owner,workspace,expires,data,grams,grams_version) VALUES($1,$2,$3,$4,$5,$6,$7,4) ON CONFLICT(id) DO NOTHING', [entry.id, record.id, record.owner, record.workspaceId || 'inbox', record.deleteAt, JSON.stringify(entry), grams(entry.text)]);
     }
     await client.query('INSERT INTO record_knowledge_state(record_id,stamp) VALUES($1,$2) ON CONFLICT(record_id) DO UPDATE SET stamp=excluded.stamp', [record.id, stamp]);
   }
@@ -81,7 +90,7 @@ export async function createKnowledgeStore({ db, pool }) {
       let rows, total;
       if (pool) {
         let where = 'owner=$1 AND expires>$2' + scopeWhere(scope, true);
-        if (query) { params.push(query); where += ` AND strpos(lower(data->>'text'),lower($${params.length}))>0`; if (Array.from(query).length >= 3) { params.push(grams(query)); where += ` AND grams @> $${params.length}::text[]`; } }
+        if (query) { params.push(query); where += ` AND strpos(lower(data->>'text'),lower($${params.length}))>0`; if (Array.from(query).length >= 3 || isCjkPair(query)) { params.push(grams(query)); where += ` AND grams @> $${params.length}::text[]`; } }
         if (kind) { params.push(kind); where += ` AND data->>'kind'=$${params.length}`; }
         if (status) { params.push(status); where += ` AND data->>'status'=$${params.length}`; } else where += " AND data->>'status' IN ('candidate','confirmed')";
         total = Number((await pool.query(`SELECT count(*) AS count FROM record_knowledge WHERE ${where}`, params)).rows[0].count);
@@ -89,13 +98,14 @@ export async function createKnowledgeStore({ db, pool }) {
       } else {
         let where = 'k.owner=? AND k.expires>?' + scopeWhere(scope, false), join = '';
         if (query) {
-          if (Array.from(query).length >= 3) { join = ' JOIN knowledge_search ON knowledge_search.rowid=k.rowid'; where += ' AND knowledge_search MATCH ?'; params.push('"' + query.replaceAll('"', '""') + '"'); }
-          where += " AND instr(lower(json_extract(k.data,'$.text')),lower(?))>0"; params.push(query);
+          if (Array.from(query).length >= 3 || isCjkPair(query)) { const table=isCjkPair(query)?'knowledge_search_cjk':'knowledge_search';
+            join = ` JOIN ${table} ON ${table}.rowid=k.rowid`; where += ` AND ${table} MATCH ?`; params.push('"' + query.replaceAll('"', '""') + '"'); }
+          if (!join) { where += " AND instr(lower(json_extract(k.data,'$.text')),lower(?))>0"; params.push(query); }
         }
         if (kind) { where += " AND json_extract(k.data,'$.kind')=?"; params.push(kind); }
         if (status) { where += " AND json_extract(k.data,'$.status')=?"; params.push(status); } else where += " AND json_extract(k.data,'$.status') IN ('candidate','confirmed')";
         total = db.prepare(`SELECT count(*) AS count FROM record_knowledge k${join} WHERE ${where}`).get(...params).count;
-        rows = db.prepare(`SELECT k.data FROM record_knowledge k${join} WHERE ${where} ORDER BY ${join ? 'bm25(knowledge_search),' : ''} json_extract(k.data,'$.createdAt') DESC,k.id LIMIT 40 OFFSET ?`).all(...params,offset);
+        rows = db.prepare(`SELECT k.data FROM record_knowledge k${join} WHERE ${where} ORDER BY ${join ? `bm25(${isCjkPair(query)?'knowledge_search_cjk':'knowledge_search'}),` : ''} json_extract(k.data,'$.createdAt') DESC,k.id LIMIT 40 OFFSET ?`).all(...params,offset);
       }
       const base = [owner,now,...(scope === 'all' ? [] : [scope])];
       const topic = pool ? "data->>'topic'" : "json_extract(data,'$.topic')", topicKey = pool ? "data->>'topicKey'" : "json_extract(data,'$.topicKey')", textKey = pool ? "data->>'textKey'" : "json_extract(data,'$.textKey')";

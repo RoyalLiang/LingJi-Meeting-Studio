@@ -63,14 +63,14 @@ export function voiceLearning(repo,{library=voiceprints(repo)}={}){
     return people(owner);
   }
   async function run(){
-    const pending=await repo.list('voiceprint-job');
+    const pending=await repo.listDueJobs('voiceprint-job');
     for(const job of pending.filter(row=>row.status==='waiting'&&(row.retryAt||0)<Date.now()).slice(0,10)){
       const record=await repo.get(job.source.recordId);
       if(!originActive(job,record)){await repo.change(job.id,current=>{if(current.status==='waiting'){current.status='cancelled';current.error='voiceprint_source_changed';}});continue;}
       const sample=record.segments.find(segment=>segment.personId===job.personId&&segment.speakerConfirmed&&(job.anchor?cluster(segment)===job.anchor:segment.id===(job.origin||job.source).segmentId)&&cleanClip(segment));
-      await repo.change(job.id,current=>{if(current.status!=='waiting')return;if(sample){current.source={recordId:record.id,segmentId:sample.id,revision:sample.revision};current.status='queued';}else current.retryAt=Date.now()+30000;});
+      await repo.change(job.id,current=>{if(current.status!=='waiting')return;if(sample){current.source={recordId:record.id,segmentId:sample.id,revision:sample.revision};current.status='queued';job.status='queued';job.source=current.source;}else current.retryAt=Date.now()+30000;});
     }
-    const jobs=(await repo.list('voiceprint-job')).filter(row=>row.status==='queued'||row.status==='running'&&row.lease<Date.now()).slice(0,2);
+    const jobs=pending.filter(row=>row.status==='queued'||row.status==='running'&&row.lease<Date.now()).slice(0,2);
     for(const candidate of jobs){
       const fence=randomUUID();let claimed=false;
       await repo.change(candidate.id,job=>{if(job.status==='queued'||job.status==='running'&&job.lease<Date.now()){job.status='running';job.fence=fence;job.lease=Date.now()+180000;claimed=true;}});

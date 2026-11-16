@@ -29,3 +29,8 @@ Actions 收集三平台完整源码清单、来源 SHA、安装验证和产物�
 ## Microsoft Store 提交包
 
 WGS 容器使用同份程序和资源额外封装 MSIX，Windows 作业验证原包，并保留未签名提交包与隔离安装验证回执。它在商店审核前不会加入 GitHub Release 或 OSS 下载目录，具体身份、版本映射和官网启用流程见[微软商店分发](microsoft-store.md)。
+
+
+发布前执行[功能与发布回归](release-regressions.md)。`preview-release.yml` 在 main 代码推送后自动运行候选；手动触发默认 `publish=false`，可用计划 tag 名和固定 `source_sha` 验证全部平台而不创建 tag。候选全部成功后再创建 tag；tag 触发或显式 `publish=true` 时，verify 会通过 Actions API 强制寻找同产品版本、源码 SHA 与工作流控制器 SHA 的成功候选，缺失则停止。只有通过该门禁才进入发布构建与 publish。
+
+兼容过渡版之后，公开版本使用 `X.Y.Z.R`；工具链、MSIX 和 macOS 交接的映射见回归文档。四段产品号不直接写进 npm/Cargo/Tauri 或签名客户端的 SemVer 清单。

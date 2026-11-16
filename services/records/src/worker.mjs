@@ -218,6 +218,7 @@ export async function runCycle(repo, providers = {}, { lane = 'all', cacheConfig
     let latest = await repo.get(candidate.id);
     if(!latest.retainAudio&&latest.voiceMatch?.status==='queued'&&!(await voiceprints(repo).list(latest.owner,'all')).entries.some(entry=>entry.global)){await repo.change(latest.id,r=>{if(r.voiceMatch?.status==='queued')r.voiceMatch.status='ready';},{returnRecord:false});latest=await repo.get(candidate.id);}
     if(audioBackupNeedsWork(latest)&&await backupAudioRecord(repo,latest))latest=await repo.get(candidate.id);
+    if(latest.capture==='completed'&&latest.retainAudio&&!latest.deleted)await repo.archiveAudio(latest);
     if (audioPurgeReady(latest)) {
       let purge = false;
       await repo.change(latest.id, r => { if (audioPurgeReady(r)) { delete r.waveforms; r.audioCleanup = true; purge = true; } }, {returnRecord:false});
@@ -255,13 +256,14 @@ export async function startWorker() {
         let due = Infinity;
         try {
           due = await repo.nextWorkAt(lane);
-          if (first || lane === 'audio' || lane === 'realtime' || lane === 'workspace' || lane === 'learning' || lane === 'voiceprints' || due <= Date.now()) {
+          if (first || lane === 'audio' || lane === 'realtime' || due <= Date.now()) {
             await runCycle(repo, {}, { lane }); due = await repo.nextWorkAt(lane);
           }
+          if(!['audio','realtime'].includes(lane)&&wakeup.cursor()===cursor&&due<=Date.now())due=Date.now()+30000;
           first = false;
         } catch (error) { console.error('[record-worker]', lane, error.code || error.name); due = Date.now() + 1000; }
         if (stop) break;
-        await wakeup.wait(cursor, Math.min(lane === 'workspace' || lane === 'learning' || lane === 'voiceprints' ? 5000 : 30000, Math.max(floor, due - Date.now())));
+        await wakeup.wait(cursor, Math.min(30000, Math.max(floor, due - Date.now())));
       }
     }));
   } finally {

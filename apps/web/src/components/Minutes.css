@@ -67,7 +67,7 @@
 .meeting-highlights>header { display:flex; align-items:center; gap:12px; flex:none; padding:17px 26px 12px; }
 .meeting-highlights-heading { display:flex; align-items:center; gap:10px; flex:1; min-width:0; color:var(--accent); }
 .meeting-highlights h3 { flex:none; font-size:17px; font-weight:600; margin:0; color:var(--ink-1); }
-.meeting-highlights-draft { color:var(--ink-2); font-size:11px; white-space:nowrap; }
+.meeting-highlights-draft { color:var(--ink-2); font-size:.75rem; white-space:nowrap; }
 .meeting-highlights-tools { display:flex; align-items:center; gap:4px; flex:none; }
 .meeting-highlights-tools .button { min-width:max(32px,var(--touch-target)); min-height:max(32px,var(--touch-target)); padding:6px; border-radius:8px; }
 .meeting-highlights-heading>svg { flex:none; }
@@ -81,7 +81,7 @@
 .meeting-highlights :is(ol,ul) { display:grid; gap:8px; margin:12px 0 0; padding-left:17px; }
 .meeting-highlights li { font-size:13px; line-height:1.85; overflow-wrap:anywhere; }
 .meeting-highlights li::marker { color:var(--accent); }
-.meeting-highlights li small { display:block; margin-top:5px; color:var(--ink-2); font-size:11px; }
+.meeting-highlights li small { display:block; margin-top:5px; color:var(--ink-2); font-size:.75rem; }
 .meeting-highlights-questions { border-left:1px solid var(--border); padding-left:30px; }
 .meeting-highlights-questions h4,.meeting-highlights-questions li::marker { color:var(--warn); }
 .meeting-highlights .muted,.meeting-highlights-state { font-size:13px; line-height:1.8; }

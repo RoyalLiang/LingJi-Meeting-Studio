@@ -1,3 +1,4 @@
+pub const PRODUCT_VERSION: &str = include_str!("../product-version.txt");
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
@@ -17,12 +18,12 @@ pub struct Release {
     pub size: u64,
     pub digest: [u8; 32],
 }
-fn version(value: &str) -> Option<[u64; 3]> {
+fn version(value: &str) -> Option<[u64; 4]> {
     let parts: Vec<_> = value.split('.').collect();
-    if parts.len() != 3 {
+    if parts.len() != 3 && parts.len() != 4 {
         return None;
     }
-    let mut result = [0; 3];
+    let mut result = [0; 4];
     for (index, part) in parts.iter().enumerate() {
         if part.is_empty()
             || !part.bytes().all(|c| c.is_ascii_digit())
@@ -34,6 +35,13 @@ fn version(value: &str) -> Option<[u64; 3]> {
     }
     Some(result)
 }
+#[cfg(any(target_os = "macos", test))]
+fn native_version(value: &str) -> Result<String, String> {
+    let parts = version(value).ok_or("版本格式无效")?;
+    let patch = if value.split('.').count() == 4 { parts[2].checked_mul(100).and_then(|part| part.checked_add(parts[3])).filter(|part| *part <= 65535 && parts[3] <= 99).ok_or("版本超出平台上限")? } else { parts[2] };
+    Ok(format!("{}.{}.{}", parts[0], parts[1], patch))
+}
+
 fn digest(value: &str) -> Option<[u8; 32]> {
     let hex = value.strip_prefix("sha256:")?;
     if hex.len() != 64 || !hex.bytes().all(|c| c.is_ascii_hexdigit()) {
@@ -333,7 +341,8 @@ pub fn open(app: &tauri::AppHandle, path: &Path, version: &str, validate: impl F
             let bundles: Vec<_> = std::fs::read_dir(mount.path()).map_err(|e| e.to_string())?.filter_map(Result::ok).map(|entry|entry.path()).filter(|path|path.extension().is_some_and(|ext|ext=="app")).collect();
             if bundles.len()!=1 { return Err("更新镜像中的应用不唯一".into()); }
             let plist = bundles[0].join("Contents/Info.plist");
-            for (field, expected) in [("CFBundleIdentifier", app.config().identifier.as_str()),("CFBundleShortVersionString",version)] {
+            let native_version = native_version(version)?;
+                for (field, expected) in [("CFBundleIdentifier", app.config().identifier.as_str()),("CFBundleShortVersionString",native_version.as_str())] {
                 let value=std::process::Command::new("/usr/libexec/PlistBuddy").args(["-c",&format!("Print :{field}")]).arg(&plist).output().map_err(|e|e.to_string())?;
                 if !value.status.success() || String::from_utf8_lossy(&value.stdout).trim()!=expected {return Err("更新应用的身份或版本不匹配".into());}
             }
@@ -375,6 +384,16 @@ pub fn open(app: &tauri::AppHandle, path: &Path, version: &str, validate: impl F
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn four_part_versions_compare_numerically_and_map_to_native() {
+        assert_eq!(super::version("0.3.34"),super::version("0.3.34.0"));
+        assert!(super::version("0.3.34.10") > super::version("0.3.34.9"));
+        assert!(super::version("0.3.35.0") > super::version("0.3.34.99"));
+        assert_eq!(super::native_version("0.3.34.1").unwrap(),"0.3.3401");
+        assert_eq!(super::native_version("0.3.34").unwrap(),"0.3.34");
+        assert!(super::native_version("0.3.34.100").is_err());
+    }
+
     use super::*;
     use serde_json::json;
     fn release(v: &str) -> Value {
@@ -468,7 +487,7 @@ mod tests {
 }
 
 #[cfg(target_os="macos")]
-pub fn finish_handoff(app: &tauri::AppHandle) {
+pub fn finish_handoff(_app: &tauri::AppHandle) {
     let args:Vec<_>=std::env::args_os().collect();
     let Some(index)=args.iter().position(|arg|arg=="--update-handoff") else{return;};
     let Some(stage)=args.get(index+1).and_then(|arg|std::fs::canonicalize(arg).ok()) else{return;};
@@ -476,6 +495,6 @@ pub fn finish_handoff(app: &tauri::AppHandle) {
     let Some(target)=executable.ancestors().find(|path|path.extension().is_some_and(|ext|ext=="app")) else{return;};
     if stage.parent()!=target.parent() || !stage.file_name().is_some_and(|name|name.to_string_lossy().starts_with(".lingji-update-")) {return;}
     let Some(marker)=std::fs::read(stage.join("handoff.json")).ok().and_then(|bytes|serde_json::from_slice::<serde_json::Value>(&bytes).ok()) else{return;};
-    if marker["target"].as_str()!=target.to_str() || marker["version"].as_str()!=Some(app.package_info().version.to_string().as_str()) {return;}
+    if marker["target"].as_str()!=target.to_str() || marker["version"].as_str()!=Some(PRODUCT_VERSION.trim()) {return;}
     if let Err(error)=std::fs::remove_dir_all(&stage) {eprintln!("update backup cleanup: {error}");}
 }

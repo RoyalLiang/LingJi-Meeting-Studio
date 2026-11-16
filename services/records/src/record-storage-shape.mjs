@@ -4,7 +4,7 @@ export const legacyCollectionFields = ['chunks','segments','events'];
 export const collectionFields = [...legacyCollectionFields,'jobs','minutesHistory'];
 export const documentFields = ['minutes','liveMinutes','insights','learning'];
 export const recordBody = value => Object.fromEntries(Object.entries(value).filter(([key]) => !collectionFields.includes(key) && !documentFields.includes(key)));
-export const encodedCollections = value => Object.fromEntries(collectionFields.map(field => [field,(value[field] || []).map(item => JSON.stringify(item))]));
+export const encodedCollections = value => Object.fromEntries(collectionFields.map(field => [field,(value[field] || []).map(item => JSON.stringify(field==='segments' ? {...item,translationPending:Number(Boolean(value.translationTarget && item.translationLanguage!==value.translationTarget && (item.translationAttempts||0)<3))} : item))]));
 export const encodedDocuments = value => Object.fromEntries(documentFields.filter(field => value[field] !== undefined).map(field => [field,JSON.stringify(value[field])]));
 export function hydrateCollections(value, rows, documents = {}) {
   const fields = value.$collections === 1 ? legacyCollectionFields : collectionFields;

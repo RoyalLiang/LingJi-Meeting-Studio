@@ -414,7 +414,7 @@ export function publicRecord(record) {
   const errorCodes = [...new Set([...record.sources.filter(source => source.asr?.state === 'failed').map(source => source.asr.error), ...chunks.filter(chunk => chunk.state !== 'done').map(chunk => chunk.error)].filter(Boolean))].sort();
   const transcriptionIssue = errorCodes.length ? {code: errorCodes[0], identity: digest(JSON.stringify([record.generation, record.transcriptionRetryVersion || 0, errorCodes]))} : undefined;
   return { ...rest, ...(audioBackup?{audioBackup:{status:audioBackup.status,error:audioBackup.error||undefined,savedAt:audioBackup.savedAt}}:{}), ...(transcriptionIssue ? {transcriptionIssue} : {}), durationMs: recordingDurationMs(record),
-    transcription: publicTranscription(record), ...(learning ? {learning:publicLearning(record)} : {}), segments: record.segments.map(({translationFence,translationLease,...segment})=>segment), sources: publicSources(record.sources), audio: record.sources.map(s => receipt(record, s)),
+    transcription: publicTranscription(record), ...(learning ? {learning:publicLearning(record)} : {}), segments: record.segments.map(({translationFence,translationLease,translationPending,...segment})=>segment), sources: publicSources(record.sources), audio: record.sources.map(s => receipt(record, s)),
     pendingChunks: chunks.filter(c => c.state !== 'done').length,
     minuteVersions: [...(minutesHistory || []), ...(record.minutes ? [record.minutes] : [])].map(m => ({ revision: m.revision, transcriptRevision: m.transcriptRevision, edited: m.edited })),
     jobs: publicJobs(jobs) };

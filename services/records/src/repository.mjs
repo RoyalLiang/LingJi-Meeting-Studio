@@ -1,3 +1,4 @@
+import {createAudioArchive} from './audio-archive.mjs';
 import { createRecordSearch } from './record-search.mjs';
 import {createIndexedAudioStore} from './indexed-audio-store.mjs';
 import {createPostgresRecordStore} from './postgres-record-store.mjs';
@@ -33,6 +34,7 @@ function schedule(value, now=Date.now()) {
   else{
     due('audio',Math.min(Date.parse(value.deleteAt),(value.gcAt||0)+3600000));
     if(audioBackupNeedsWork(value)&&audioBackupReady(value))due('audio',Math.max(value.audioBackup.retryAt||0,value.audioBackup.leaseUntil||0));
+    if(value.capture==='completed'&&value.retainAudio&&!value.audioPurged&&value.chunks.filter(chunk=>!chunk.expired).length>1&&value.chunks.every(chunk=>chunk.state==='done')&&value.audioArchive?.generation!==value.generation)due('audio',now);
     due('learning',learningWorkAt(value,now));
     if(value.voiceMatch?.status==='queued'||value.voiceMatch?.status==='running')due('voiceprints',value.voiceMatch.lease||now);
     if(value.learning?.enabled&&value.capture==='completed'&&value.learning.revision!==value.transcriptRevision)due('learning',Math.max(now,value.learning.retryAt||0));
@@ -120,6 +122,11 @@ export async function createRepository(options = {}) {
     await client.query('DELETE FROM record_share_index WHERE record_id=$1', [value.id]);
     for (const share of activeShares(value)) await client.query('INSERT INTO record_share_index(hash,record_id,expires) VALUES($1,$2,$3)', [share.hash, value.id, share.expires]);
   }
+  const inputKey=input=>JSON.stringify(Object.fromEntries(Object.entries(input||{}).sort(([a],[b])=>a.localeCompare(b))));
+  function invalidation(value,previous,input) {
+    if(inputKey(previous)===inputKey(input))return null;
+    return [value.owner,[...new Set(['all',previous?.workspaceId||'inbox',value.workspaceId||'inbox'])],JSON.stringify({status:'stale',snapshot:[],preview:'',result:null,fence:null,updatedAt:new Date().toISOString()})];
+  }
   function writeSqliteProjection(value, before, previousShares) {
     knowledge.writeSqlite(value);
     if(value.kind==='record')audioStore.syncSqlite(value,audioSummary(value));
@@ -129,9 +136,13 @@ export async function createRepository(options = {}) {
       if(before?.kind==='record')for(const table of ['record_feed_meta','record_list_projection','record_feed_events'])db.prepare(`DELETE FROM ${table} WHERE ${table==='record_feed_events'?'record_id':'id'}=?`).run(value.id);
       return;
     }
+    const previousInput=db.prepare("SELECT json_extract(data,'$.analysisInput') AS input FROM record_feed_meta WHERE id=?").get(value.id)?.input;
+    const stale=invalidation(value,previousInput?JSON.parse(previousInput):null,projection.meta.analysisInput);
+    if(stale)db.prepare("UPDATE aggregates SET data=json_set(data,'$.status','stale','$.snapshot',json('[]'),'$.preview','','$.result',NULL,'$.fence',NULL,'$.updatedAt',json_extract(?,'$.updatedAt')) WHERE json_extract(data,'$.kind')='workspace-analysis' AND json_extract(data,'$.owner')=? AND json_extract(data,'$.scope') IN (SELECT value FROM json_each(?)) AND json_extract(data,'$.status') IN ('queued','running','completed')").run(stale[2],stale[0],JSON.stringify(stale[1]));
     projection.meta.writeVersion=randomUUID();
     const previousSearch=db.prepare("SELECT rowid,json_extract(data,'$.search') AS search FROM record_list_projection WHERE id=?").get(value.id);
     db.prepare('INSERT INTO record_list_projection(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(value.id,JSON.stringify(projection.list));
+    recordSearch.writeSqlite(value.id,projection.list.search,value.deleted);
     if(value.deleted)db.prepare('DELETE FROM record_search WHERE rowid=?').run(previousSearch?.rowid??-1);
     else if(!previousSearch||previousSearch.search!==projection.list.search)db.prepare('INSERT OR REPLACE INTO record_search(rowid,search) VALUES((SELECT rowid FROM record_list_projection WHERE id=?),?)').run(value.id,projection.list.search);
     db.prepare('INSERT INTO record_feed_meta(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(value.id,JSON.stringify(projection.meta));
@@ -148,6 +159,9 @@ export async function createRepository(options = {}) {
       if(before?.kind==='record')for(const table of ['record_feed_meta','record_list_projection','record_feed_events'])await client.query(`DELETE FROM ${table} WHERE ${table==='record_feed_events'?'record_id':'id'}=$1`,[value.id]);
       return;
     }
+    const previousInput=(await client.query("SELECT data->'analysisInput' AS input FROM record_feed_meta WHERE id=$1",[value.id])).rows[0]?.input;
+    const stale=invalidation(value,previousInput,projection.meta.analysisInput);
+    if(stale)await client.query("UPDATE record_aggregates SET data=data||$3::jsonb WHERE data->>'kind'='workspace-analysis' AND data->>'owner'=$1 AND data->>'scope'=ANY($2::text[]) AND data->>'status' IN ('queued','running','completed')",stale);
     projection.meta.writeVersion=randomUUID();
     await client.query('INSERT INTO record_list_projection(id,data) VALUES($1,$2) ON CONFLICT(id) DO UPDATE SET data=excluded.data',[value.id,JSON.stringify(projection.list)]);
     await recordSearch.updatePg(client, value.id, projection.list.search);
@@ -158,7 +172,8 @@ export async function createRepository(options = {}) {
   }
   const sqliteStore=db?createSqliteRecordStore(db,options):null;
   const postgresStore=pool?await createPostgresRecordStore(pool):null;
-  const audioStore=await createIndexedAudioStore({db,pool,sqliteStore,putAudio:(...args)=>repository.putAudio(...args),committed:(...args)=>notifications.committed(...args)});
+  const audioArchive=objects?null:await createAudioArchive({root,db,pool,header:sqliteStore?.header,readAudio:(...args)=>repository.readAudio(...args)});
+  const audioStore=await createIndexedAudioStore({db,pool,sqliteStore,postgresStore,putAudio:(...args)=>repository.putAudio(...args),committed:(...args)=>notifications.committed(...args)});
   const decode = row => {
     const value=row?(typeof row.data==='string'?JSON.parse(row.data):row.data):null;
     return sqliteStore?sqliteStore.decode(value):value;
@@ -181,6 +196,7 @@ export async function createRepository(options = {}) {
       const outcome = await audioStore.changeTranslation(id, selector, operation);
       if (outcome.unsupported) return repository.change(id, operation, { returnRecord:false });
     },
+    changeSpeech: audioStore.changeSpeech,
     changeLocalAsr: audioStore.changeLocalAsr,
     inspectLocalAsr: audioStore.inspectLocalAsr,
     localAsrNeedsCleanup: audioStore.localAsrNeedsCleanup,
@@ -190,11 +206,30 @@ export async function createRepository(options = {}) {
     validateKnowledge: knowledge.validateKnowledge,
     reviewKnowledge: knowledge.review,
     subscribeChanges(listener,options){return notifications.subscribe(listener,options);},
+    async listDueJobs(kind, now = Date.now()) {
+      requireThat(['workspace-analysis','voiceprint-job','learning-training'].includes(kind), 'invalid_worker_lane', 400);
+      const state = pool ? "data->>'status'" : "json_extract(data,'$.status')";
+      const num = key => pool ? `COALESCE((data->>'${key}')::bigint,0)` : `COALESCE(json_extract(data,'$.${key}'),0)`;
+      const due = `(${state}='queued' OR (${state}='running' AND ${num('lease')}<=$2) OR (${state}='waiting' AND ${num('retryAt')}<=$2))`;
+      const rows = pool ? (await pool.query(`SELECT data FROM record_aggregates WHERE data->>'kind'=$1 AND ${due} ORDER BY id LIMIT 100`, [kind,now])).rows
+        : db.prepare(`SELECT data FROM aggregates WHERE json_extract(data,'$.kind')=?1 AND ${due.replaceAll('$2','?2')} ORDER BY id LIMIT 100`).all(kind,now);
+      return rows.map(row => typeof row.data === 'string' ? JSON.parse(row.data) : row.data);
+    },
     async nextWorkAt(lane){
       requireThat(workerLanes.includes(lane)||lane==='workspace','invalid_worker_lane',400);
       const kind=lane==='workspace'?'workspace-analysis':'record';
       const row=pool?(await pool.query(`SELECT min(${workExpression(lane,true)}) AS due FROM record_aggregates WHERE data->>'kind'='${kind}'`)).rows[0]:db.prepare(`SELECT min(${workExpression(lane,false)}) AS due FROM aggregates WHERE json_extract(data,'$.kind')='${kind}'`).get();
-      return row?.due==null?Infinity:Number(row.due);
+      let due = row?.due==null?Infinity:Number(row.due);
+      const jobKind = lane==='voiceprints' ? 'voiceprint-job' : lane==='learning' ? 'learning-training' : null;
+      if (jobKind) {
+        const state=pool ? "data->>'status'" : "json_extract(data,'$.status')";
+        const num=key=>pool ? `COALESCE((data->>'${key}')::bigint,0)` : `COALESCE(json_extract(data,'$.${key}'),0)`;
+        const expression=`CASE WHEN ${state}='queued' THEN 0 WHEN ${state}='running' THEN ${num('lease')} WHEN ${state}='waiting' THEN ${num('retryAt')} END`;
+        const job=pool ? (await pool.query(`SELECT MIN(${expression}) AS due FROM record_aggregates WHERE data->>'kind'=$1`,[jobKind])).rows[0]
+          : db.prepare(`SELECT MIN(${expression}) AS due FROM aggregates WHERE json_extract(data,'$.kind')=?`).get(jobKind);
+        due=Math.min(due,job?.due==null?Infinity:Number(job.due));
+      }
+      return due;
     },
     async accessRevision() {
       if (pool) return (await pool.query('SELECT pg_current_snapshot()::text AS revision')).rows[0].revision;
@@ -430,19 +465,30 @@ export async function createRepository(options = {}) {
       await flushAudioObject(file,directory);
       return { digest: hash, object: `${recordId}/${hash}` };
     },
+    async archiveAudio(record) {
+      if(record.capture!=='completed'||!record.retainAudio||record.deleted||record.audioPurged||record.audioArchive?.generation===record.generation)return;
+      if(audioArchive)await audioArchive.compact(record);
+      await repository.change(record.id,current=>{if(current.generation===record.generation&&current.capture==='completed'&&!current.deleted)current.audioArchive={generation:record.generation,backend:objects?'s3':'filesystem'};},{returnRecord:false});
+    },
     async readAudio(object) {
       if (objects) return objects.read(object);
       requireThat(/^[a-f0-9-]{36}\/[a-f0-9]{64}$/.test(object), 'invalid_object', 400);
-      return decodeStorage(await readFile(join(root, 'audio', object)), object.split('/')[1]);
+      const archived=await audioArchive.read(object);
+      if(archived)return archived;
+      try{return decodeStorage(await readFile(join(root, 'audio', object)), object.split('/')[1]);}
+      catch(error){if(error.code!=='ENOENT')throw error;const archived=await audioArchive.read(object);if(archived)return archived;throw error;}
     },
     async cleanAudio(recordId, liveObjects = new Set(), olderThan = Infinity) {
       if (objects) return objects.clean(recordId, liveObjects, olderThan);
       requireThat(/^[a-f0-9-]{36}$/.test(recordId), 'invalid_record_id', 400);
       const directory = join(root, 'audio', recordId);
       const entries = await readdir(directory).catch(e => { if (e.code === 'ENOENT') return []; throw e; });
+      const archives=await audioArchive.liveFiles(recordId,liveObjects);
+      for(const file of entries)if(/^\.tmp-archive-[a-f0-9-]{36}\.pcm$/.test(file)&&(await stat(join(directory,file))).mtimeMs<(olderThan===Infinity&&!liveObjects.size?Infinity:Math.min(olderThan,Date.now()-3600000)))await rm(join(directory,file),{force:true});
+      for(const file of entries)if(/^archive-[a-f0-9-]{36}\.pcm$/.test(file)&&!archives.keep.has(`${recordId}/${file}`)&&(await stat(join(directory,file))).mtimeMs<olderThan){await archives.remove(`${recordId}/${file}`);await rm(join(directory,file),{force:true});}
       for (const file of entries) if (/^[a-f0-9]{64}$/.test(file) && !liveObjects.has(`${recordId}/${file}`) && (await stat(join(directory, file))).mtimeMs < olderThan) await rm(join(directory, file));
     },
-    async close() { notifications.close(); objects?.close(); if (pool) await pool.end(); else db.close(); }
+    async close() { await audioArchive?.close();notifications.close(); objects?.close(); if (pool) await pool.end(); else db.close(); }
   };
   const shareVersion = pool ? (await pool.query('SELECT version FROM record_share_schema WHERE version=1')).rows[0] : db.prepare('SELECT version FROM record_share_schema WHERE version=1').get();
   if (!shareVersion) {

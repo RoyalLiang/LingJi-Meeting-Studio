@@ -10,7 +10,7 @@ const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const title=tag=>tag==='v0.1.0'?`聆记 ${tag} · 首次公开测试版 / First Public Preview`:`聆记 ${tag} · 公开测试版 / Public Preview`;
 const sha=value=>typeof value==='string' && /^[a-f0-9]{40}$/.test(value);
 export async function loadPreview(directory,{tag,commit,repository,workflowSha,runId,requireWindows=false,requireLinux=false}) {
-  assert.match(tag,/^v\d+\.\d+\.\d+$/);
+  assert.match(tag,/^v\d+\.\d+\.\d+(?:\.\d+)?$/);
   assert.ok(sha(commit) && sha(workflowSha),'Full source and workflow SHAs required');
   assert.match(repository,/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/);
   assert.match(runId,/^\d+$/);
@@ -171,12 +171,13 @@ export async function publishPreview(options) {
   verifyInventory(published.assets,files,{complete:true});
   return {published:true,url:published.html_url,tag,sourceRevision:commit,workflowSha,runUrl,assets:published.assets.map(({name,size,digest})=>({name,size,digest}))};
 }
-export function assertReleaseEvent({eventName,ref,tag,commit,workflowSha}) {
-  assert.match(tag,/^v\d+\.\d+\.\d+$/);
+export function assertReleaseEvent({eventName,ref,tag,commit,workflowSha,candidateOnly=false}) {
+  assert.match(tag,/^v\d+\.\d+\.\d+(?:\.\d+)?$/);
   assert.ok(sha(commit) && sha(workflowSha),'Full source and workflow SHAs required');
   const manual=eventName==='workflow_dispatch' && ref==='refs/heads/main';
   const tagPush=eventName==='push' && ref===`refs/tags/${tag}` && commit===workflowSha;
-  assert.ok(manual || tagPush,'Only main manual dispatch or a matching source tag push may publish');
+  const candidatePush=candidateOnly&&eventName==='push'&&ref==='refs/heads/main'&&commit===workflowSha;
+  assert.ok(manual || tagPush || candidatePush,'Only main manual dispatch or matching source tag push may publish');
 }
 
 async function main() {

@@ -81,3 +81,24 @@ export async function streamAudioImport(file: File, consume: (pcm: ArrayBuffer) 
     return samples;
   } finally { signal?.removeEventListener('abort', abort); input.dispose(); }
 }
+
+// Decode one batch ahead while a single ordered uploader drains durable chunks.
+export function createImportUploadQueue(upload:()=>Promise<unknown>,signal?:AbortSignal) {
+  let pending=0,running:Promise<void>|undefined,failure:unknown;
+  function start() {
+    if(running || !pending || failure)return;
+    const count=pending;
+    running=waitForImportUpload(upload(),signal).then(()=>{pending-=count;},error=>{failure=error;}).finally(()=>{running=undefined;});
+  }
+  return {
+    async added() {
+      signal?.throwIfAborted();if(failure)throw failure;
+      pending++;start();
+      if(pending>=8){await running;if(failure)throw failure;start();}
+    },
+    async finish() {
+      while(pending || running){signal?.throwIfAborted();if(failure)throw failure;start();await running;}
+      if(failure)throw failure;
+    },
+  };
+}

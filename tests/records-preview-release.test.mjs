@@ -148,8 +148,9 @@ test('manual releases resolve vocabulary from the selected source rather than th
   await mkdir(join(directory,'services/records/src/data'),{recursive:true});
   const commit=async(version,vocabulary)=>{
     await writeFile(join(directory,config),JSON.stringify({version}));
+    await writeFile(join(directory,'package.json'),JSON.stringify({version,releaseVersion:version}));
     await writeFile(join(directory,manifest),JSON.stringify({version:vocabulary}));
-    git('add','--',config,manifest);git('commit','-qm','fixture');return git('rev-parse','HEAD');
+    git('add','--',config,manifest,'package.json');git('commit','-qm','fixture');return git('rev-parse','HEAD');
   };
   const old=await commit('0.2.35','20261105.2'),current=await commit('0.2.36','20261105.3'),unknown=await commit('0.2.37','unknown');
   const workflow=await readFile(new URL('../.github/workflows/preview-release.yml',import.meta.url),'utf8');

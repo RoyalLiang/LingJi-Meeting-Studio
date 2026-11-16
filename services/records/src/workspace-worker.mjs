@@ -5,7 +5,7 @@ import { analysisMessages, inputHash, retainedRecords, validateWorkspaceAnalysis
 import { completeJson, providerStatus } from './providers.mjs';
 
 export async function processWorkspaceAnalysis(repo, config, providers = {}) {
-  const jobs = await repo.list('workspace-analysis');
+  const jobs = await repo.listDueJobs('workspace-analysis');
   if (!jobs.length) return;
   const inputs = await repo.listAnalysisInputs();
   for (const candidate of jobs) {

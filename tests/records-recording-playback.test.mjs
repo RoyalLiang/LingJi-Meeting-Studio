@@ -158,11 +158,11 @@ test('retained recordings serve complete WAV and byte ranges while temporary or 
 });
 
 async function renderAudioDuration(record) {
-  const source = await readFile(new URL('../apps/web/src/App.tsx', import.meta.url), 'utf8');
-  const span = source.match(/<time className="record-duration"[^>]*>\{timecode\(displayDurationMs\)\}<\/time>/)?.[0];
+  const source = await readFile(new URL('../apps/web/src/components/RecordingProgress.tsx', import.meta.url), 'utf8');
+  const span = source.match(/<time className="record-duration"[^>]*>\{timecode\(durationMs\)\}<\/time>/)?.[0];
   assert.ok(span, 'use the actual meeting header');
   const code = (await transform(`exports.render = () => (${span});`, { loader: 'tsx' })).code;
-  const sandbox = { exports: {}, record, displayDurationMs: record.durationMs, React: { createElement: (_tag, _props, ...children) => children.join('') }, timecode: ms => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000 % 60)).padStart(2, '0')}` };
+  const sandbox = { exports: {}, record, durationMs: record.durationMs, React: { createElement: (_tag, _props, ...children) => children.join('') }, timecode: ms => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000 % 60)).padStart(2, '0')}` };
   vm.runInNewContext(code, sandbox);
   return sandbox.exports.render();
 }

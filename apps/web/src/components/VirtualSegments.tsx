@@ -16,19 +16,25 @@ export function VirtualSegments({ segments, children, className = '', selector =
     anchorTo: 'end', followOnAppend: false,
   });
   useLayoutEffect(() => {
-    const container = root.current?.closest<HTMLElement>(selector);
-    if (container && root.current) {
-      const next = container.scrollTop + root.current.getBoundingClientRect().top - container.getBoundingClientRect().top - container.clientTop;
-      if (Math.abs(next - margin) > 0.5) setMargin(next);
-    }
-  });
+    const element=root.current,container=element?.closest<HTMLElement>(selector);
+    if(!element||!container)return;
+    let frame=0;
+    const measure=()=>{const next=container.scrollTop+element.getBoundingClientRect().top-container.getBoundingClientRect().top-container.clientTop;setMargin(previous=>Math.abs(next-previous)>0.5?next:previous);};
+    const schedule=()=>{cancelAnimationFrame(frame);frame=requestAnimationFrame(measure);};
+    const resize=new ResizeObserver(schedule);
+    for(let node:HTMLElement|null=element;node;node=node===container?null:node.parentElement)resize.observe(node);
+    const mutation=new MutationObserver(schedule);
+    mutation.observe(container,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['hidden','class']});
+    measure();
+    return()=>{cancelAnimationFrame(frame);resize.disconnect();mutation.disconnect();};
+  },[selector,resetKey]);
   const lastHighlight = useRef('');
   useLayoutEffect(() => {
     if (!highlighted) { lastHighlight.current = ''; return; }
     if (lastHighlight.current === highlighted) return;
     const index = segments.findIndex(segment => segment.id === highlighted);
     if (index >= 0) { lastHighlight.current = highlighted; virtualizer.scrollToIndex(index, { align: 'center', behavior: 'auto' }); }
-  });
+  },[highlighted,segments,virtualizer]);
   const previousReset = useRef(resetKey);
   useLayoutEffect(() => {
     if (previousReset.current !== resetKey) { previousReset.current = resetKey; if (segments.length) virtualizer.scrollToIndex(0, { align: 'start' }); }

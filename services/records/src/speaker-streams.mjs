@@ -1,6 +1,6 @@
 import { telemetry } from './telemetry.mjs';
 import { randomUUID } from 'node:crypto';
-import { commitSpeakerTurns, finishSpeakerSource, updateTranscriptPreview } from '../../../packages/records/src/speakers.mjs';
+import { commitSpeakerTurns, finishSpeakerSource } from '../../../packages/records/src/speakers.mjs';
 import { emit } from '../../../packages/records/src/record.mjs';
 import { createDoubaoSpeakerStream } from './doubao.mjs';
 import { canRecoverSpeechSource, canStartSpeechSource, retryableSpeechError } from './asr-recovery.mjs';
@@ -16,6 +16,7 @@ export async function processSpeakerSources(repo,candidate,config,createStream=c
     if(source.asr?.state==='completed' || (!candidate.chunks.some(c=>c.sourceId===source.id && c.state!=='done') && !source.asr))return;
     const key=`${candidate.id}:${source.id}`;
     let entry=streams.get(key);
+    const speech=selector=>repo.changeSpeech(candidate.id,{sourceId:source.id,fence:entry.fence,generation:entry.generation,...selector});
     if(entry && entry.busy)return;
     if(entry && (source.asr?.fence!==entry.fence || candidate.generation!==entry.generation)){entry.client.close();streams.delete(key);entry=null;}
     if(!entry){
@@ -49,7 +50,7 @@ export async function processSpeakerSources(repo,candidate,config,createStream=c
         entry.previewWork=(async()=>{
           while(entry.previewPending){
             const next=entry.previewPending;entry.previewPending=null;
-            await repo.change(candidate.id,r=>updateTranscriptPreview(r,source.id,entry.fence,next.preview,next.runtime,entry.generation), {returnRecord:false});
+            await speech({preview:{value:next.preview,runtime:next.runtime}});
           }
         })().catch(()=>{}).finally(()=>{entry.previewWork=null;});
       };
@@ -62,21 +63,18 @@ export async function processSpeakerSources(repo,candidate,config,createStream=c
       let active=await repo.get(candidate.id),current=active?.sources.find(s=>s.id===source.id);
       if(active.deleted || active.generation!==entry.generation || current?.asr?.fence!==entry.fence){entry.client.close();streams.delete(key);return;}
       if(entry.client.state.error)throw entry.client.state.error;
-      await repo.change(candidate.id,r=>{const s=r.sources.find(s=>s.id===source.id);if(!r.deleted && s.asr?.fence===entry.fence)s.asr.lease=Date.now()+90000;}, {returnRecord:false});
+      await speech({lease:Date.now()+90000});
       const chunk=active.chunks.find(c=>c.sourceId===source.id && c.sequence===current.asr.lastFedSequence+1 && c.sequence<=current.watermark);
       if(chunk && !current.asr.ended){
         await entry.client.write(await repo.readAudio(chunk.object));
-        await repo.change(candidate.id,r=>{
-          const s=r.sources.find(s=>s.id===source.id);if(r.deleted || r.generation!==entry.generation || s.asr?.fence!==entry.fence)return;
-          const c=r.chunks.find(c=>c.key===chunk.key);c.state='streaming';s.asr.lastFedSequence=chunk.sequence;
-        }, {returnRecord:false});
+        await speech({chunkKey:chunk.key,sequence:chunk.sequence});
       }
       active=await repo.get(candidate.id);current=active.sources.find(s=>s.id===source.id);
       if(current.stopped && current.watermark===current.lastSequence && current.asr.lastFedSequence===current.lastSequence && !current.asr.ended){
-        await repo.change(candidate.id,r=>{const s=r.sources.find(s=>s.id===source.id);if(!r.deleted && s.asr?.fence===entry.fence)s.asr.ended=true;}, {returnRecord:false});entry.client.end();
+        await speech({ended:true});entry.client.end();
       }
       await entry.previewWork;
-      await repo.change(candidate.id,r=>updateTranscriptPreview(r,source.id,entry.fence,entry.client.state.preview,entry.client.state.runtime||{},entry.generation), {returnRecord:false});
+      await speech({preview:{value:entry.client.state.preview,runtime:entry.client.state.runtime||{}}});
       const turns=entry.client.state.latest;entry.client.state.latest=null;
       if(turns?.length){await repo.change(candidate.id,r=>commitSpeakerTurns(r,source.id,entry.fence,turns,entry.generation), {returnRecord:false});telemetry.event('asr.confirmed',{recordId:candidate.id,sourceId:source.id,durationMs:entry.client.state.runtime?.firstConfirmedMs});}
       if(entry.client.state.error)throw entry.client.state.error;

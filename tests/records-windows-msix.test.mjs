@@ -41,9 +41,11 @@ test('Store identity must be reserved and complete rather than guessed from the 
 
 test('MSIX maps zero-major product releases monotonically to valid Store versions with a zero fourth part', () => {
   assert.equal(msixVersion('0.3.30'), '1.3.30.0');
+  assert.equal(msixVersion('0.3.34.1'),'1.3.3401.0');
+  assert.equal(msixVersion('0.3.3401'),'1.3.3401.0');
   assert.equal(msixVersion('1.0.0'), '2.0.0.0');
   assert.equal(msixVersion('65534.65535.65535'), '65535.65535.65535.0');
-  for (const version of ['65535.0.0', 'v0.3.30', '0.3.30.1', '0.03.30', '1.2.65536', '../1.2', '1.2']) assert.throws(() => msixVersion(version));
+  for (const version of ['65535.0.0', 'v0.3.30', '0.03.30', '1.2.65536', '../1.2', '1.2']) assert.throws(() => msixVersion(version));
 });
 
 test('Store manifest runs the existing desktop executable with explicit capabilities and escaped publisher text', () => {

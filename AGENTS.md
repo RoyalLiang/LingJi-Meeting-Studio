@@ -4,7 +4,7 @@
 
 - 本项目使用 Git 管理。每轮更新完成验证后必须显式提交本轮文件并推送到远端；提交说明包含目的与验证结果。该要求是用户对后续项目更新的持续授权，无需再次询问是否 commit、push、构建或发布。保留未完成阶段的工作进度，不将它描述为已交付。
 - Linux 与 Windows 安装包直接在 WGS 主机当前代码目录构建，macOS Apple Silicon 继续使用 GitHub Actions。WGS 当前目录为 `/home/westwell/builds/lingji-preview-20261107/source-240245aa`；该目录名不是版本凭证，以固定源码 SHA 和完整文件摘要为准。整个目录加锁后串行构建两个平台，构建前后核对源码，分别准备目标平台资源，不复制每版源码目录、不假冒 GitHub-hosted 环境、不重置未知改动。构建在隔离容器内进行，不安装到 WGS 主机或影响业务服务。
-- 每轮产品更新创建递增且未使用的 `vX.Y.Z` 测试版标签，通过后台 Git/命令行触发 `preview-release.yml`。重建版本从 `v0.3.0` 起，之后默认递增 patch；版本配置、安装说明和标签一致。核对远端 main 为本轮基线祖先后，优先原子推送 main 与新标签。除用户明确授权的历史重写外，不 force push，不移动已发布标签或覆盖附件。
+- 本轮先发布一次三段兼容过渡版 `v0.3.34`，之后产品标签采用 `vX.Y.Z.R`，普通修补递增第四位 R，功能版递增 Z 并将 R 归零，通过后台 Git/命令行触发 `preview-release.yml`。产品号以根 `package.json.releaseVersion` 为准；npm/Cargo/Tauri 的合法三段版本通过 `scripts/preview-version.mjs` 映射，安装说明、公开产物和标签使用产品号。每轮先运行 `npm run verify:feature`，再运行全套检查；固定 SHA 的 `publish=false` 候选流水全部通过后才创建不可变 tag，发布前强制核验同源码/控制器 SHA 的候选结果。核对远端 main 为本轮基线祖先后，优先原子推送 main 与新标签。除用户明确授权的历史重写外，不 force push，不移动已发布标签或覆盖附件。
 - 发布必须由 GitHub Actions 后台工作流完成，不使用浏览器发布页或手工上传本地打包产物。WGS 一次性 runner 生成 Linux/Windows 产物，Windows Actions 验证同一个 NSIS，Linux 保留 Ubuntu 22.04/24.04 验证；macOS 构建和原生检查继续在 Actions。等待 verify、各平台验证和 publish 全部成功。发布后仅通过 Actions 和 API 核对远端 SHA、标签、Release 状态及附件名称、大小、digest，并提供链接；未经另行明确要求不下载、解包或安装复测，不宣称文件下载或安装验证。缺少摘要如实报告。
 - 设计探索、一次性实施计划、原始验证输出和发布流水保存在 gitignored `.agent-runtime/`。版本说明只写最终用户可见行为，不加入探索需求、内部优化过程、实现计划、排查记录或提交流水。维护当前使用、配置与运维文档；同版回执沿用已有证据，不循环创建新版本。
 - 本轮引入的 bug 修复使用 `git commit --amend --no-edit` 合并到本轮最近的本地未推送提交；需要改变提交意图时更新说明。先核对提交归属和远程状态；不改写用户原有提交、已共享或已推送历史，不自动 force push。若没有可安全 amend 的本轮提交，先形成独立的本轮改造提交作为基线。

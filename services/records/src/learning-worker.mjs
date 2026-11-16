@@ -532,7 +532,7 @@ export async function runLearningCycle(repo, providers = {}) {
   for (const record of await repo.listWork({ lane: 'learning', metadataOnly:true }))
     if (!record.deleted && record.capture === "completed")
       await processLearningRecord(repo, record.id, providers);
-  for (const state of await repo.list("learning-training"))
+  for (const state of await repo.listDueJobs("learning-training"))
     if (["queued", "running"].includes(state.status))
       await processLearningTraining(repo, state.owner, providers);
 }

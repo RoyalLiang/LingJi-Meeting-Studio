@@ -152,3 +152,10 @@ test('download page enables all three installers and changes only Windows to a v
   assert.match(invalid.status, /暂不可用/);
   assert.ok(invalid.panels.every(panel => !panel.link.href));
 });
+
+test('four-part repair versions retain download manifest and exact immutable route identity',async()=>{
+  const version='0.3.34.1',next={version,assets:assets.map(asset=>({...asset,name:asset.name.replace('0.3.29',version)}))};
+  const normalized=downloadManifest(next);assert.equal(normalized.version,version);assert.ok(normalized.assets.every(asset=>asset.href.includes('/v'+version+'/')));
+  let requested='';const response=await downloadRoute(new Request('https://rookiecode.com'+normalized.assets[0].href),env,async url=>{requested=url;return new Response('bytes');});
+  assert.equal(response.status,200);assert.ok(requested.includes('/v0.3.34.1/Lingji-0.3.34.1-'));
+});

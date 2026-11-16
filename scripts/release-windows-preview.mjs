@@ -1,3 +1,4 @@
+import {previewReleaseConfig} from './preview-version.mjs';
 import assert from 'node:assert/strict';
 import {execFileSync,spawn} from 'node:child_process';
 import {access,copyFile,mkdir,mkdtemp,readFile,rename,rm,symlink,writeFile} from 'node:fs/promises';
@@ -16,7 +17,7 @@ const git=(...args)=>execFileSync('git',args,{cwd:root,maxBuffer:8*1024*1024}).t
 const sourceRevision=git('rev-parse','--verify',`${process.env.TTS_RELEASE_SOURCE_REF||'HEAD'}^{commit}`);
 const readSource=path=>readReleaseSource(root,sourceRevision,path);
 const config=JSON.parse(await readSource('apps/desktop/src-tauri/tauri.preview.conf.json'));
-assert.match(config.version,/^\d+\.\d+\.\d+$/);
+Object.assign(config,previewReleaseConfig(config,JSON.parse(await readSource('package.json'))));
 const output=join(root,'dist/releases',config.version,'windows-x64');
 await mkdir(dirname(output),{recursive:true});
 await assert.rejects(access(output),{code:'ENOENT'},'A release directory cannot be overwritten');

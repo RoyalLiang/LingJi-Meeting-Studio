@@ -3,7 +3,7 @@ import { requireThat, publicSources, publicTranscription } from '../../../packag
 import { cursorKey } from './projections.mjs';
 
 const MAX_CHUNKS = 128, MAX_SAMPLES = 16000 * 30;
-export async function createLocalAsrStore({ db, pool, sqliteStore, transaction, select, write, getHeader, stats, committed }) {
+export async function createLocalAsrStore({ db, pool, sqliteStore, postgresStore, transaction, select, write, getHeader, stats, committed }) {
   const field = key => pool ? `data->>'${key}'` : `json_extract(data,'$.${key}')`;
   const sequence = pool ? `(${field('sequence')})::bigint` : field('sequence');
   const state = field('state'), source = field('sourceId'), epoch = field('epoch');
@@ -102,7 +102,7 @@ export async function createLocalAsrStore({ db, pool, sqliteStore, transaction, 
     }
     record.$counts=counts;record.$offsets=offsets;record.$version=randomUUID();
     delete record.chunks;delete record.events;
-    if (pool) yield write('UPDATE record_aggregates SET data=$2 WHERE id=$1',[record.id,JSON.stringify(record)]); else sqliteStore.writeHeader(record,false,{baseVersion:before.baseVersion,rows:cacheRows});
+    if (pool) { yield write('UPDATE record_aggregates SET data=$2 WHERE id=$1',[record.id,JSON.stringify(record)]);postgresStore.patchHeader(record,{baseVersion:before.baseVersion,rows:cacheRows}); } else sqliteStore.writeHeader(record,false,{baseVersion:before.baseVersion,rows:cacheRows});
     yield* stats(record,summary);
   }
   return {

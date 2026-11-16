@@ -6,7 +6,7 @@ import {audioChunkIndex} from '../../../packages/records/src/audio-index.mjs';
 import {chunkWaveform} from './waveform.mjs';
 import {cursorKey} from './projections.mjs';
 
-export async function createIndexedAudioStore({db,pool,sqliteStore,putAudio,committed}) {
+export async function createIndexedAudioStore({db,pool,sqliteStore,postgresStore,putAudio,committed}) {
   const schema=`CREATE TABLE IF NOT EXISTS record_audio_ranges(record_id TEXT NOT NULL,source_id TEXT NOT NULL,epoch TEXT NOT NULL,start_seq INTEGER NOT NULL,end_seq INTEGER NOT NULL,PRIMARY KEY(record_id,source_id,epoch,start_seq));
     CREATE UNIQUE INDEX IF NOT EXISTS audio_range_end ON record_audio_ranges(record_id,source_id,epoch,end_seq);
     CREATE TABLE IF NOT EXISTS record_audio_stats(record_id TEXT PRIMARY KEY,chunks INTEGER NOT NULL,duration_ms DOUBLE PRECISION NOT NULL,samples BIGINT NOT NULL,pending INTEGER NOT NULL,updated_at TEXT NOT NULL DEFAULT '',transcription TEXT NOT NULL DEFAULT 'idle');`;
@@ -86,8 +86,8 @@ export async function createIndexedAudioStore({db,pool,sqliteStore,putAudio,comm
     const result=acknowledge(header,chunk,index);
     return {result,accepted,left,right,ranges,source};
   }
-  const localAsr = await createLocalAsrStore({db,pool,sqliteStore,transaction,select,write,getHeader,stats,committed});
-  const liveFields = await createLiveFieldStore({pool,sqliteStore,transaction,select,write,getHeader,committed});
+  const localAsr = await createLocalAsrStore({db,pool,sqliteStore,postgresStore,transaction,select,write,getHeader,stats,committed});
+  const liveFields = await createLiveFieldStore({pool,sqliteStore,postgresStore,transaction,select,write,getHeader,committed});
   return {
     ...localAsr,
     ...liveFields,
@@ -143,7 +143,7 @@ export async function createIndexedAudioStore({db,pool,sqliteStore,putAudio,comm
           yield write('INSERT INTO record_feed_events(record_id,cursor,data) VALUES($1,$2,$3)',[id,cursorKey(event.cursor),JSON.stringify(feed)]);
           yield write('DELETE FROM record_feed_events WHERE record_id=$1 AND cursor<$2',[id,cursorKey(first)]);
           delete header.chunks;delete header.events;header.$counts=counts;header.$offsets=offsets;header.$version=randomUUID();
-        if(pool)yield write('UPDATE record_aggregates SET data=$2 WHERE id=$1',[id,JSON.stringify(header)]);else sqliteStore.writeHeader(header,false,{baseVersion,rows:cacheRows});
+        if(pool){yield write('UPDATE record_aggregates SET data=$2 WHERE id=$1',[id,JSON.stringify(header)]);postgresStore.patchHeader(header,{baseVersion,rows:cacheRows});}else sqliteStore.writeHeader(header,false,{baseVersion,rows:cacheRows});
           yield* stats(header,summary);
         }
         return {header,result,changed:Boolean(checked.accepted)};

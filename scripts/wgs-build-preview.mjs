@@ -18,7 +18,7 @@ const cache=resolve(source,'..','cache');await mkdir(cache,{recursive:true});
 const toolchain=join(cache,'rust-1.92.0');
 assert.match(execFileSync(join(toolchain,'bin/rustc'),['--version'],{encoding:'utf8'}),/^rustc 1\.92\.0 /);
 await access(join(toolchain,'lib/rustlib/x86_64-pc-windows-msvc/lib'));
-const version=JSON.parse(await readFile(join(source,'package.json'))).version;
+const manifest=JSON.parse(await readFile(join(source,'package.json'))),version=manifest.releaseVersion||manifest.version;
 const existing=await reusableWgsBuild(source,{version,sourceRevision:revision,source:await assertCurrentSource(source,revision),repository:process.env.GITHUB_REPOSITORY});
 if(existing){
  const receipt=join(source,'.agent-runtime',`wgs-reuse-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}.json`);

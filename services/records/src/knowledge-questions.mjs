@@ -1,3 +1,4 @@
+import {isCjkPair,searchGrams} from './record-search.mjs';
 import { requireThat } from '../../../packages/records/src/record.mjs';
 const decode=row=>typeof row.data==='string'?JSON.parse(row.data):row.data;
 export const knowledgeFence=entry=>Object.fromEntries(['id','recordId','workspaceId','generation','minutesRevision','transcriptRevision','status','reviewRevision','kind','text','topic','owner','due','evidence'].map(key=>[key,entry[key]??null]));
@@ -24,9 +25,9 @@ export function createKnowledgeQuestions({db,pool}) {
    const words=questionKeywords(question);requireThat(words.length,'knowledge_query_too_broad',400);
    const base=scopeParams(owner,scope),params=[...base],terms=[],scores=[];
    for(const word of words) {params.push(word);const parameter=`$${params.length}`;let term=pool?`strpos(lower(${value('text')}),${parameter})>0`:`instr(lower(${value('text')}),${parameter})>0`;
-    if(Array.from(word).length>=3) {
-     if(pool){const chars=Array.from(word);params.push([...new Set(chars.slice(0,-2).map((_,i)=>chars.slice(i,i+3).join('')))]);term+=` AND grams @> $${params.length}::text[]`;}
-     else {params.push('"'+word.replaceAll('"','""')+'"');term+=` AND rowid IN (SELECT rowid FROM knowledge_search WHERE knowledge_search MATCH $${params.length})`;}
+    if(Array.from(word).length>=3 || isCjkPair(word)) {
+     if(pool){params.push(searchGrams(word));term+=` AND grams @> $${params.length}::text[]`;}
+     else {const table=isCjkPair(word)?'knowledge_search_cjk':'knowledge_search';params.push('"'+word.replaceAll('"','""')+'"');term=`rowid IN (SELECT rowid FROM ${table} WHERE ${table} MATCH $${params.length})`;}
     }
     const contains=pool?`strpos(lower(${value('text')}),${parameter})>0`:`instr(lower(${value('text')}),${parameter})>0`;scores.push(`CASE WHEN ${contains} THEN ${Array.from(word).length} ELSE 0 END`);
     terms.push(`(${term})`);

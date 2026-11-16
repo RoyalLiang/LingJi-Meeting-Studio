@@ -147,7 +147,7 @@ export async function processFunasrAudio(repo, candidate, config, transcriber = 
       }, {returnRecord:false});
     } catch (error) {
       const afterConfig = await readConfig(repo.root).catch(() => config);
-      await repo.change(candidate.id, r => {
+      await changeState(r => {
         if (!owns(r)) return;
         if (error.code === 'local_asr_shutdown' || !sameService(config,afterConfig)) { release(r); return; }
         for (const chunk of r.chunks.filter(c=>c.fence===claim.fence)) {
@@ -158,7 +158,7 @@ export async function processFunasrAudio(repo, candidate, config, transcriber = 
         source.asr={provider:config.ASR_PROVIDER,state:'failed',error:error.code || 'funasr_service_unavailable'};
         r.transcription=r.chunks.some(c=>c.attempts>=5 && c.state!=='done')?'failed':'blocked';
         emit(r,'transcription.blocked',{error:source.asr.error});
-      }, {returnRecord:false});
+      });
     }
   }
   await Promise.all([work(),work()]);

@@ -497,7 +497,7 @@ fn main() {
             let proxy = proxy::Proxy::new_with_session(api_url, origin.clone(), assets, backend.as_ref().map(|local| local.cookie.as_str()))?;
             let api = proxy.clone();
             let cache = directory.join("updates"); std::fs::create_dir_all(&cache)?;
-            let updates = updates::Updates::new(app.package_info().version.to_string(), cache, app.config().product_name.as_deref() == Some("聆记 Preview"));
+            let updates = updates::Updates::new(preview_updates::PRODUCT_VERSION.trim().to_string(), cache, app.config().product_name.as_deref() == Some("聆记 Preview"));
             let listener = binding.listener;
             tauri::async_runtime::spawn(async move {
                 let listener = tokio::net::TcpListener::from_std(listener).expect("client loopback listener");

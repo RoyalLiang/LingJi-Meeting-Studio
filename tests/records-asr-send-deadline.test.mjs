@@ -1,3 +1,4 @@
+import {updateTranscriptPreview} from '../packages/records/src/speakers.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomBytes} from 'node:crypto';
@@ -47,7 +48,7 @@ test('send timeout releases lease and preserves acknowledged chunks for ordered 
   for(let i=0;i<count;i++)acknowledge(record,{sessionId:source.sessionId,sourceId:source.id,epoch:source.epoch,sequence:i,sampleOffset:i*240000,sampleCount:240000,sampleRate:16000,digest:'a'.repeat(64),object:`synthetic-${i}`});
   const identity=chunk=>Object.fromEntries(['key','object','digest','sourceId','sessionId','epoch','sequence','sampleOffset','sampleCount','sampleRate'].map(key=>[key,chunk[key]]));
   const preserved=record.chunks.map(identity),reads=[];
-  const repo={async get(){return structuredClone(record);},async change(_id,mutate){return mutate(record);},async readAudio(object){reads.push(object);return bytes;}};
+  const repo={async get(){return structuredClone(record);},async change(_id,mutate){return mutate(record);},async changeSpeech(_id,selector){const current=record.sources.find(source=>source.id===selector.sourceId);if(record.deleted||record.generation!==selector.generation||current?.asr?.fence!==selector.fence)return;if(selector.preview)updateTranscriptPreview(record,current.id,selector.fence,selector.preview.value,selector.preview.runtime,selector.generation);if(selector.lease)current.asr.lease=selector.lease;if(selector.sequence!==undefined){current.asr.lastFedSequence=selector.sequence;record.chunks.find(chunk=>chunk.key===selector.chunkKey).state='streaming';}if(selector.ended)current.asr.ended=true;},async readAudio(object){reads.push(object);return bytes;}};
   try {
     for(let tick=0;tick<count && record.sources[0].asr?.state!=='failed';tick++)await processSpeakerSources(repo,structuredClone(record),config,factory);
     const failed=record.sources[0].asr;
