@@ -40,3 +40,13 @@ test('an unlocked nested package cannot shadow the locked dependency in the bund
   const output=execFileSync(process.execPath,['--input-type=module','-e',"import version from 'owner';console.log(version);"],{cwd:backend,encoding:'utf8'});
   assert.equal(output.trim(),'2.0.0');
 });
+
+
+test('optional development tooling peers are not implicitly shipped in the application',async t=>{
+  const {source,backend}=await fixture(t),ownerFile=join(source,'node_modules/owner/package.json'),owner=JSON.parse(await readFile(ownerFile));
+  owner.peerDependencies={tooling:'1.0.0'};owner.peerDependenciesMeta={tooling:{optional:true}};await writeFile(ownerFile,JSON.stringify(owner));
+  const lockFile=join(source,'package-lock.json'),lock=JSON.parse(await readFile(lockFile));lock.packages['node_modules/tooling']={version:'1.0.0',dev:true};await writeFile(lockFile,JSON.stringify(lock));
+  await mkdir(join(source,'node_modules/tooling'));await writeFile(join(source,'node_modules/tooling/package.json'),JSON.stringify({name:'tooling',version:'1.0.0'}));
+  const modules=await bundleBackendDependencies(source,backend);assert.equal(modules.has('tooling'),false);
+  await assert.rejects(readFile(join(backend,'node_modules/tooling/package.json')),{code:'ENOENT'});
+});

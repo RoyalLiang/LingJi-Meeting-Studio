@@ -62,7 +62,8 @@ export async function bundleBackendDependencies(root, backend) {
       const child = relative(directory, path).replaceAll('\\', '/');
       return child !== 'node_modules' && !child.startsWith('node_modules/') && includeBackendDependency(path);
     } });
-    const dependencies = { ...pkg.peerDependencies, ...pkg.dependencies, ...pkg.optionalDependencies };
+    const peers = Object.fromEntries(Object.entries(pkg.peerDependencies || {}).filter(([name]) => pkg.peerDependenciesMeta?.[name]?.optional !== true));
+    const dependencies = { ...peers, ...pkg.dependencies, ...pkg.optionalDependencies };
     pending.push(...Object.keys(dependencies).map(name => ({ name, parent: directory, optional: Object.hasOwn(pkg.optionalDependencies || {}, name) || pkg.peerDependenciesMeta?.[name]?.optional === true })));
   }
   return modules;
