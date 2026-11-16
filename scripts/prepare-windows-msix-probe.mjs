@@ -21,7 +21,7 @@ assert.ok(studio, 'MSVC is required for the standalone diagnostic');
 const quote = path => { assert.ok(!/["%!\r\n]/.test(path), 'Unexpected command path'); return '"'+path+'"'; };
 const executable = join(directory, 'webview-context-probe.exe');
 const command = join(directory, 'build.cmd');
-await writeFile(command, '@echo off\r\ncall '+quote(join(studio, 'VC/Auxiliary/Build/vcvars64.bat'))+' >nul\r\nif errorlevel 1 exit /b %errorlevel%\r\ncl /nologo /EHsc /MT /std:c++17 /I'+quote(join(directory, 'build/native/include'))+' '+quote(join(import.meta.dirname, 'test-msix-webview.cpp'))+' /Fe:'+quote(executable)+' /Fo:'+quote(join(directory, 'probe.obj'))+' /link '+quote(join(directory, 'build/native/x64/WebView2LoaderStatic.lib'))+' user32.lib ole32.lib shell32.lib shlwapi.lib version.lib uuid.lib\r\n');
+await writeFile(command, '@echo off\r\ncall '+quote(join(studio, 'VC/Auxiliary/Build/vcvars64.bat'))+' >nul\r\nif errorlevel 1 exit /b %errorlevel%\r\ncl /nologo /EHsc /MT /std:c++17 /I'+quote(join(directory, 'build/native/include'))+' '+quote(join(import.meta.dirname, 'test-msix-webview.cpp'))+' /Fe:'+quote(executable)+' /Fo:'+quote(join(directory, 'probe.obj'))+' /link '+quote(join(directory, 'build/native/x64/WebView2LoaderStatic.lib'))+' user32.lib advapi32.lib ole32.lib shell32.lib shlwapi.lib version.lib uuid.lib\r\n');
 // cmd /s consumes the outer quotes; preserve the inner path quotes verbatim.
 execFileSync('cmd.exe', ['/d', '/s', '/c', '"'+quote(command)+'"'], {stdio: 'inherit', windowsVerbatimArguments: true});
 await writeFile(process.env.GITHUB_OUTPUT, 'executable='+executable+'\n', {flag: 'a'});
