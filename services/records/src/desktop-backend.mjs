@@ -1,3 +1,4 @@
+import { installNetworkProxy } from './network-proxy.mjs';
 import { automaticMinutesAt } from '../../../packages/records/src/automation.mjs';
 import {queueLearningReview} from '../../../packages/records/src/learning.mjs';
 // Private bundled runtime entry; never imports a developer .env or starts Vite.
@@ -92,7 +93,7 @@ export function startupDiagnostic(error) {
 }
 
 export async function startDesktopBackend({ root, port = 0, workers = true } = {}) {
-  let stage='filesystem';
+  let stage='filesystem', network;
   try {
   if (!root) throw new Error('client_data_root_required');
   process.umask(0o077);
@@ -111,6 +112,7 @@ export async function startDesktopBackend({ root, port = 0, workers = true } = {
   const version = sqlite.split('.').map(Number);
   if (version[0] < 3 || (version[0] === 3 && (version[1] < 51 || (version[1] === 51 && version[2] < 3)))) throw new Error('client_sqlite_runtime_too_old');
   stage='repository';
+  network = installNetworkProxy(root);
   const repo = await createRepository({ root, databaseUrl: '', s3: { bucket: '' }, compressAggregates: true, compressAudio: true });
   stage='asr_migration';
   await migrateBundledAsr(repo);
@@ -119,6 +121,7 @@ export async function startDesktopBackend({ root, port = 0, workers = true } = {
   stage='record_server';
   const app = await createRecordServer({ repo, port, host: '127.0.0.1', seedDevelopment: false, localAccount: true, nativeInstance: process.env.LINGJI_NATIVE_INSTANCE });
   stage='listen';
+  const detachTunnel = process.env.LINGJI_NATIVE_INSTANCE ? network.attachNativeTunnel(app.server, process.env.LINGJI_NATIVE_INSTANCE) : () => {};
   const address = await app.start();
   stage='local_session';
   const session = await app.localSession();
@@ -134,9 +137,10 @@ export async function startDesktopBackend({ root, port = 0, workers = true } = {
     }
   })()) : [];
   return { repo, sqlite, url: `http://127.0.0.1:${address.port}`, session,
-    async stop() { stopping = true; await closeLocalAsr(); for (const record of await repo.list()) closeSpeakerStreams(repo, record.id); await Promise.all(loops); closeRealtime(repo); await app.stop(); },
+    async stop() { stopping = true; await closeLocalAsr(); for (const record of await repo.list()) closeSpeakerStreams(repo, record.id); await Promise.all(loops); closeRealtime(repo); detachTunnel(); await app.stop(); await network.close(); },
   };
-  } catch(error) { if(error&&typeof error==='object'&&Object.isExtensible(error))error.startupStage=stage;throw error; }
+  } catch(error) {
+    await network?.close(); if(error&&typeof error==='object'&&Object.isExtensible(error))error.startupStage=stage;throw error; }
 }
 
 // Node resolves module paths; argv can retain Windows 8.3 paths or directory aliases.

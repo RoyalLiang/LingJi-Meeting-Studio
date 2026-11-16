@@ -114,8 +114,10 @@ pub fn select(
     }
     Ok(candidate)
 }
-fn client() -> Result<reqwest::Client, String> {
-    reqwest::Client::builder()
+fn client(proxy: Option<&url::Url>) -> Result<reqwest::Client, String> {
+    let mut builder = reqwest::Client::builder().no_proxy();
+    if let Some(proxy) = proxy { builder = builder.proxy(reqwest::Proxy::all(proxy.as_str()).map_err(|_| "代理地址无效")?); }
+    builder
         .user_agent("Lingji-Preview-Updater")
         .https_only(true)
         .timeout(Duration::from_secs(15 * 60))
@@ -141,8 +143,8 @@ fn client() -> Result<reqwest::Client, String> {
         .build()
         .map_err(|error| error.to_string())
 }
-async fn read(url: &str) -> Result<Vec<u8>, String> {
-    let mut response = client()?
+async fn read(url: &str, proxy: Option<&url::Url>) -> Result<Vec<u8>, String> {
+    let mut response = client(proxy)?
         .get(url)
         .timeout(Duration::from_secs(20))
         .send()
@@ -204,15 +206,15 @@ fn manifest_release(
     select(&Value::Array(vec![manifest]), current, platform, arch)?
         .ok_or_else(|| "新版清单未提供当前平台安装包".into())
 }
-pub async fn check(current: &str) -> Result<Option<Release>, String> {
-    let bytes = read(RELEASES).await?;
+pub async fn check(current: &str, proxy: Option<&url::Url>) -> Result<Option<Release>, String> {
+    let bytes = read(RELEASES, proxy).await?;
     let feed = std::str::from_utf8(&bytes).map_err(|_| "更新订阅源编码无效")?;
     let Some(tag) = latest_tag(feed, current)? else {
         return Ok(None);
     };
     let url =
         format!("https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/{tag}/preview-update.json");
-    let manifest: Value = serde_json::from_slice(&read(&url).await?).map_err(|_| "更新清单无效")?;
+    let manifest: Value = serde_json::from_slice(&read(&url, proxy).await?).map_err(|_| "更新清单无效")?;
     Ok(Some(manifest_release(
         manifest,
         &tag,
@@ -250,13 +252,14 @@ pub async fn download(
     release: &Release,
     cache: &Path,
     mut progress: impl FnMut(u64),
+    proxy: Option<&url::Url>,
 ) -> Result<std::path::PathBuf, String> {
     if fs2::available_space(cache).map_err(|_| "无法检查下载磁盘空间")?
         < release.size * 3 + 64 * 1024 * 1024
     {
         return Err("磁盘空间不足，未下载安装包".into());
     }
-    let mut response = client()?
+    let mut response = client(proxy)?
         .get(&release.url)
         .send()
         .await
@@ -437,10 +440,10 @@ mod tests {
     #[tokio::test]
     #[ignore = "downloads the public Preview installer from GitHub"]
     async fn live_preview_check_download_and_verify() {
-        let release = check("0.1.0").await.unwrap().expect("published Preview");
+        let release = check("0.1.0", None).await.unwrap().expect("published Preview");
         let dir = tempfile::tempdir().unwrap();
         let mut observed = 0;
-        let path = download(&release, dir.path(), |count| observed = count)
+        let path = download(&release, dir.path(), |count| observed = count, None)
             .await
             .unwrap();
         assert_eq!(observed, release.size);

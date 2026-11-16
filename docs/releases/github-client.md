@@ -1,6 +1,6 @@
 # 安装桌面测试版
 
-从[官网立即下载](https://rookiecode.com/#download) 按系统与架构选择安装包；安装包未就绪时可查看 [GitHub Releases](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases) 的发布记录。当前已发布版本为 0.3.29，本轮源码目标为 0.3.30；以实际 Release 和 Actions 结果为准。
+从[官网立即下载](https://rookiecode.com/#download) 按系统与架构选择安装包；安装包未就绪时可查看 [GitHub Releases](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases) 的发布记录。当前已发布版本为 0.3.29，本轮源码目标为 0.3.31；以实际 Release 和 Actions 结果为准。
 
 官网下载通过独立对象存储提供安装包，不跳转 GitHub。SHA-256、版本和文件大小由完整发布的镜像清单提供；系统识别不等于架构兼容性检测。
 

@@ -1,3 +1,4 @@
+import { networkAgent } from './network-proxy.mjs';
 import WebSocket from 'ws';
 import { setTimeout as delay } from 'node:timers/promises';
 import { gzipSync, gunzipSync } from 'node:zlib';
@@ -27,7 +28,7 @@ export function decodeAsrFrame(frame) {
 }
 export async function transcribeDoubaoAsr(bytes, language, config, options = {}) {
   const recognition = doubaoRecognitionForLanguage(config, language);
-  const socket = new WebSocket(config.DOUBAO_ASR_URL, { headers: { 'X-Api-Key': config.DOUBAO_API_KEY, 'X-Api-Resource-Id': config.DOUBAO_ASR_RESOURCE_ID, 'X-Api-Connect-Id': randomUUID() }, handshakeTimeout: 10000, maxPayload: 2000000 });
+  const socket = new WebSocket(config.DOUBAO_ASR_URL, { agent: networkAgent(), headers: { 'X-Api-Key': config.DOUBAO_API_KEY, 'X-Api-Resource-Id': config.DOUBAO_ASR_RESOURCE_ID, 'X-Api-Connect-Id': randomUUID() }, handshakeTimeout: 10000, maxPayload: 2000000 });
   return new Promise((resolve, reject) => {
     let settled = false, sendTimer;
     const done = (error, text) => {
@@ -65,7 +66,7 @@ export async function transcribeDoubaoAsr(bytes, language, config, options = {})
 // One source owns one connection; definite utterances can arrive before the negative tail packet.
 export function createDoubaoSpeakerStream(language, config, options={}) {
   const recognition = doubaoRecognitionForLanguage(config,language);
-  const socket=new WebSocket(config.DOUBAO_ASR_URL,{headers:{'X-Api-Key':config.DOUBAO_API_KEY,'X-Api-Resource-Id':config.DOUBAO_ASR_RESOURCE_ID,'X-Api-Request-Id':randomUUID(),'X-Api-Connect-Id':randomUUID()},handshakeTimeout:10000,maxPayload:2000000});
+  const socket=new WebSocket(config.DOUBAO_ASR_URL,{agent:networkAgent(),headers:{'X-Api-Key':config.DOUBAO_API_KEY,'X-Api-Resource-Id':config.DOUBAO_ASR_RESOURCE_ID,'X-Api-Request-Id':randomUUID(),'X-Api-Connect-Id':randomUUID()},handshakeTimeout:10000,maxPayload:2000000});
   const state={latest:null,preview:null,error:null,complete:false,runtime:{}};
   const createdAt=Date.now();let audioStartedAt;
   const elapsed=()=>audioStartedAt==null ? undefined : Date.now()-audioStartedAt;

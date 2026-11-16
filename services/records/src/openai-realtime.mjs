@@ -1,3 +1,4 @@
+import { networkAgent } from './network-proxy.mjs';
 import {meterModelCall} from './model-usage.mjs';
 import WebSocket from 'ws';
 import { randomUUID } from 'node:crypto';
@@ -19,7 +20,7 @@ export function openRealtime(config) {
   requireThat(config.OPENAI_REALTIME_URL && config.OPENAI_REALTIME_MODEL && config.OPENAI_REALTIME_API_KEY, 'realtime_not_configured', 503);
   const url = new URL(config.OPENAI_REALTIME_URL);
   url.searchParams.set('model', config.OPENAI_REALTIME_MODEL);
-  const socket = new WebSocket(url, { headers: { Authorization: `Bearer ${config.OPENAI_REALTIME_API_KEY}` }, handshakeTimeout: 10000, maxPayload: 2000000 });
+  const socket = new WebSocket(url, { agent: networkAgent(), headers: { Authorization: `Bearer ${config.OPENAI_REALTIME_API_KEY}` }, handshakeTimeout: 10000, maxPayload: 2000000 });
   let failure, closed = false;
   const fail = code => { failure ||= new DomainError(code, 502); return failure; };
   socket.on('error', () => fail('realtime_connection_failed'));

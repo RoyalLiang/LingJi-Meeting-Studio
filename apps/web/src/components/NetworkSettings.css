@@ -1,0 +1,4 @@
+.network-proxy-password { display: grid; gap: 8px; align-content: start; }
+.network-proxy-password .settings-field-label { display: flex; align-items: center; justify-content: space-between; min-height: 24px; }
+.network-proxy-password .settings-field-label label { margin: 0; }
+.network-proxy-password .settings-field-label button { min-height: 24px; padding: 0 8px; font-size: 12px; }

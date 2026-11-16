@@ -1,10 +1,10 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "聆记 Preview",
-  "version": "0.3.30",
+  "version": "0.3.31",
   "bundle": {
     "macOS": {
-      "bundleVersion": "0.3.30",
+      "bundleVersion": "0.3.31",
       "signingIdentity": "-",
       "dmg": {
         "background": "../assets/macos-installer-background.tiff",

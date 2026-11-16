@@ -1,3 +1,4 @@
+import { installNetworkProxy, proxySettings, saveProxySettings } from './network-proxy.mjs';
 import {voiceprintRoutes} from './voiceprint-routes.mjs';
 import {enterModelUsage} from './model-usage.mjs';
 import {createConnectors,connectorRoutes} from './connectors.mjs';
@@ -216,6 +217,12 @@ export async function createRecordServer(options = {}) {
         if(req.method==='GET'){send(res,200,await audioBackupSettings(repo,user.id));return;}
         if(req.method==='PUT'){try{send(res,200,await saveAudioBackupSettings(repo,user.id,await readBody(req,10000)));}catch(error){if(error instanceof DomainError)throw error;throw new DomainError('audio_backup_directory_unwritable',400);}return;}
         throw new DomainError('not_found',404);
+      }
+      if (path === '/api/settings/network-proxy') {
+        requireThat(canConfigure(user), 'configuration_admin_required', 403);
+        if (req.method === 'GET') { send(res, 200, await proxySettings(repo.root)); return; }
+        if (req.method === 'PUT') { send(res, 200, await saveProxySettings(repo.root, await readBody(req, 10000))); return; }
+        throw new DomainError('not_found', 404);
       }
       if (path === '/api/settings/providers/test' && req.method === 'POST') {
         requireThat(canConfigure(user), 'configuration_admin_required', 403);
@@ -562,6 +569,9 @@ export async function createRecordServer(options = {}) {
     stop: async () => { for (const stream of streams) stream.end(); await new Promise(resolve => server.close(resolve)); stopTaskEvents(); taskProducers.close(); await nativeAudio?.close(); await feishu.close(); await gitSync?.close(); await agent?.close(); await meetingTasks(repo).close(); await repo.close(); } };
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const app = await createRecordServer(); console.log('[record-api]', await app.start());
-  const stop = async () => { await app.stop(); process.exit(0); }; process.once('SIGTERM', stop); process.once('SIGINT', stop);
+  const repo = await createRepository(), network = installNetworkProxy(repo.root);
+  let app;
+  try { app = await createRecordServer({repo,seedDevelopment:true}); } catch (error) { await network.close(); await repo.close(); throw error; }
+  console.log('[record-api]', await app.start());
+  const stop = async () => { await app.stop(); await network.close(); process.exit(0); }; process.once('SIGTERM', stop); process.once('SIGINT', stop);
 }
