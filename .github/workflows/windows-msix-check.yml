@@ -17,7 +17,7 @@ on:
         type: boolean
         default: false
       probe_webview_context:
-        description: Compare SDK HRESULTs with two fresh data directories in package context
+        description: Compare SDK HRESULTs inside and outside the package using the installed Fixed runtime
         required: false
         type: boolean
         default: false
@@ -107,5 +107,6 @@ jobs:
             .agent-runtime/msix-installation.json.window.jpg
             .agent-runtime/msix-installation.json.capture-stderr.txt
             .agent-runtime/msix-installation.json.webview-probe.json
+            .agent-runtime/msix-installation.json.webview-unpackaged-probe.json
           if-no-files-found: warn
           retention-days: 14

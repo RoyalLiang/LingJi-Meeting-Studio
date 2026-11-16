@@ -127,6 +127,21 @@ try {
       }
       if (-not $probeProcessId -and (Test-Path -LiteralPath ($probeOutput+'.started'))) { $probeProcessId=[int](Get-Content -LiteralPath ($probeOutput+'.started') -Raw) }
       Write-Host (Get-Content -LiteralPath $probeOutput -Raw)
+      $unpackagedOutput=[IO.Path]::GetFullPath($Output)+'.webview-unpackaged-probe.json'
+      $unpackaged=$null
+      try {
+        $arguments=@(('"'+(Join-Path $installed.InstallLocation 'webview2')+'"'),('"'+$unpackagedOutput+'"'),('"'+$installed.PackageFullName+'"'),'unpackaged')
+        $unpackaged=Start-Process -FilePath $probe -ArgumentList $arguments -WindowStyle Hidden -PassThru
+        $unpackagedStart=$unpackaged.StartTime
+        if (-not $unpackaged.WaitForExit(60000)) { throw 'Unpackaged SDK WebView probe timed out' }
+        if ($unpackaged.ExitCode -ne 0) { throw ('Unpackaged SDK WebView probe exited '+$unpackaged.ExitCode) }
+        Write-Host (Get-Content -LiteralPath $unpackagedOutput -Raw)
+      } finally {
+        if ($unpackaged) {
+          $remaining=Get-Process -Id $unpackaged.Id -ErrorAction SilentlyContinue
+          if ($remaining -and $remaining.Path -eq $probe -and $remaining.StartTime -eq $unpackagedStart) { & taskkill.exe /PID $remaining.Id /T /F | Out-Null }
+        }
+      }
     } catch { Write-Warning ('SDK WebView context diagnostic unavailable: '+$_.Exception.Message) }
     finally {
       try {
