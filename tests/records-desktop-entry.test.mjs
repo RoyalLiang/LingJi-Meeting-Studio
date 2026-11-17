@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-test('desktop backend starts through a directory alias and stops on parent EOF', { timeout: 20000 }, async () => {
+test('desktop backend starts through a directory alias and stops on parent EOF', { timeout: 30000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'lingji-entry-'));
   const source = resolve(dirname(fileURLToPath(import.meta.url)), '..');
   const alias = join(root, 'installed app');
@@ -22,7 +22,8 @@ test('desktop backend starts through a directory alias and stops on parent EOF',
     const stopped = new Promise((resolve, reject) => { child.once('error', reject); child.once('exit', code => resolve(code)); });
     const handshake = await new Promise((resolve, reject) => {
       let output = '';
-      const timer = setTimeout(() => reject(new Error('backend handshake timeout: ' + stderr)), 10000);
+      // Match the native client's 15-second backend-ready deadline.
+      const timer = setTimeout(() => reject(new Error('backend handshake timeout: ' + stderr)), 15000);
       child.stdout.on('data', bytes => {
         output += bytes;
         if (!output.includes('\n')) return;
