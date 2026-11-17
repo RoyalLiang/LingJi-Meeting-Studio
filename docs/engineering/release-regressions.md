@@ -13,7 +13,7 @@
 | Windows 音频落盘刷新方式不兼容 | `records-audio-storage-sync` | Windows 文件刷新与 POSIX 目录屏障分别检查 |
 | 隐藏目录的验证证据未上传、混淆源 SHA 与工作流 SHA | `records-preview-release`、平台 artifact 上传 | 隐藏证据显式保留；源码、运行、产物与摘要一致 |
 | 官网下载 503、旧脚本缓存、HEAD/Range 行为退化 | `records-site-downloads`、`records-site-download-upload` | 本地合约后，发布后单独核对 API 元数据与公网行为 |
-| 四段修订被旧解析器忽略、按字符串比较或重复编码 | `records-preview-version`、Rust preview updater 测试 | 旧三段补零；`.9 → .10`；native 与 MSIX 单调；macOS 交接身份与版本 |
+| 四段修订被旧解析器忽略、按字符串比较或重复编码 | `records-preview-version`、`records-site-download-upload`、Rust preview updater 测试 | 旧三段补零；`.9 → .10`；native 与 MSIX 单调；macOS 交接身份与版本；OSS 四段升级及禁止降级 |
 
 三平台构建、Windows NSIS 与 MSIX、Ubuntu 22.04/24.04、macOS 原生检查在 Actions 中执行。推送 main 的代码改动会自动对固定 SHA 运行候选验证；也可用 `preview-release.yml` 的 `publish=false`、计划版本和固定 `source_sha` 手动验证，无需预建 tag；全部检查成功后才创建不可变 tag 并发布。候选成功不等于已经发布或商店审核通过。
 

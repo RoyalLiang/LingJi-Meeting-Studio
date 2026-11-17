@@ -19,7 +19,10 @@ const manifest = value => {
 };
 function compare(left, right) {
   const a = left.split('.').map(BigInt), b = right.split('.').map(BigInt);
-  for (let index = 0; index < 3; index++) if (a[index] !== b[index]) return a[index] > b[index] ? 1 : -1;
+  for (let index = 0; index < 4; index++) {
+    const leftPart=a[index]??0n,rightPart=b[index]??0n;
+    if(leftPart!==rightPart)return leftPart>rightPart?1:-1;
+  }
   return 0;
 }
 async function readCatalog(stream) {
@@ -51,7 +54,7 @@ export async function mirrorSiteDownloads({env = process.env, run = execute, fet
   assert.equal(env.GITHUB_ACTIONS, 'true', 'Upload runs only in GitHub Actions');
   assert.equal(env.GITHUB_REPOSITORY, 'RoyalLiang/LingJi-Meeting-Studio');
   assert.equal(env.GITHUB_REF, 'refs/heads/main');
-  assert.match(env.RELEASE_TAG || '', /^v\d{1,6}\.\d{1,6}\.\d{1,6}$/);
+  assert.match(env.RELEASE_TAG || '', /^v\d{1,6}\.\d{1,6}\.\d{1,6}(?:\.\d{1,6})?$/);
   assert.ok(env.GH_TOKEN, 'GitHub release read token is required');
   assert.ok(env.ALIBABA_CLOUD_ACCESS_KEY_ID && env.ALIBABA_CLOUD_ACCESS_KEY_SECRET && env.ALIBABA_CLOUD_SECURITY_TOKEN, 'Configure OIDC STS authorization first');
   client ||= new OSS({...downloadStorage, secure: true, authorizationV4: true, accessKeyId: env.ALIBABA_CLOUD_ACCESS_KEY_ID, accessKeySecret: env.ALIBABA_CLOUD_ACCESS_KEY_SECRET, stsToken: env.ALIBABA_CLOUD_SECURITY_TOKEN, timeout: 900000});

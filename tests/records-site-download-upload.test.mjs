@@ -10,9 +10,9 @@ import {mirrorSiteDownloads, downloadStorage, downloadOrigin} from '../scripts/m
 const hash = (algorithm, bytes) => createHash(algorithm).update(bytes).digest('hex');
 const env = {GITHUB_ACTIONS: 'true', GITHUB_REPOSITORY: 'RoyalLiang/LingJi-Meeting-Studio', GITHUB_REF: 'refs/heads/main', RELEASE_TAG: 'v0.3.29', GH_TOKEN: 'test-github-token', ALIBABA_CLOUD_ACCESS_KEY_ID: 'test-sts-id', ALIBABA_CLOUD_ACCESS_KEY_SECRET: 'test-sts-secret', ALIBABA_CLOUD_SECURITY_TOKEN: 'test-sts-token'};
 const sourceSha = 'a'.repeat(40);
-function fixture() {
-  const files = new Map(['macos-arm64.dmg', 'windows-x64-setup.exe', 'linux-amd64.deb'].map(suffix => [`Lingji-0.3.29-${suffix}`, Buffer.from('synthetic release fixture: ' + suffix)]));
-  const release = {draft: false, tag_name: env.RELEASE_TAG, body: '源码 SHA：`' + sourceSha + '`；工作流 SHA：`' + 'b'.repeat(40) + '`。', html_url: `https://github.com/${env.GITHUB_REPOSITORY}/releases/tag/${env.RELEASE_TAG}`, assets: [...files].map(([name, bytes]) => ({name, state: 'uploaded', size: bytes.length, digest: 'sha256:' + hash('sha256', bytes)}))};
+function fixture(version = '0.3.29') {
+  const files = new Map(['macos-arm64.dmg', 'windows-x64-setup.exe', 'linux-amd64.deb'].map(suffix => [`Lingji-${version}-${suffix}`, Buffer.from('synthetic release fixture: ' + suffix)]));
+  const release = {draft: false, tag_name: 'v'+version, body: '源码 SHA：`' + sourceSha + '`；工作流 SHA：`' + 'b'.repeat(40) + '`。', html_url: `https://github.com/${env.GITHUB_REPOSITORY}/releases/tag/v${version}`, assets: [...files].map(([name, bytes]) => ({name, state: 'uploaded', size: bytes.length, digest: 'sha256:' + hash('sha256', bytes)}))};
   const objects = new Map(), writes = [], directories = [];
   let versionStatus;
   const missing = () => Object.assign(new Error('missing'), {code: 'NoSuchKey'});
@@ -20,7 +20,7 @@ function fixture() {
     async getBucketVersioning(bucket) { assert.equal(bucket, downloadStorage.bucket); return {versionStatus}; },
     async getStream(key) { const object = objects.get(key); if (!object) throw missing(); return {stream: Readable.from([object.bytes])}; },
     async putStream(key, stream, options) {
-      assert.ok(key.startsWith('releases/v0.3.29/'));
+      assert.ok(key.startsWith(`releases/v${version}/`));
       assert.equal(options.headers['x-oss-forbid-overwrite'], 'true');
       if (objects.has(key)) throw Object.assign(new Error('exists'), {code: 'FileAlreadyExists'});
       const chunks = [];
@@ -62,9 +62,9 @@ function fixture() {
   };
   return {client, run, fetcher, objects, writes, release, files, directories, setVersioning(value) { versionStatus = value; }};
 }
-async function withFixture(body) {
-  const dir = await mkdtemp(join(tmpdir(), 'lingji-oss-test-')), fixtureData = fixture();
-  const options = {...fixtureData, env: {...env}, receiptPath: join(dir, 'receipt.json')};
+async function withFixture(body, version = '0.3.29') {
+  const dir = await mkdtemp(join(tmpdir(), 'lingji-oss-test-')), fixtureData = fixture(version);
+  const options = {...fixtureData, env: {...env, RELEASE_TAG: 'v'+version}, receiptPath: join(dir, 'receipt.json')};
   try { await body(fixtureData, options); } finally { await rm(dir, {recursive: true, force: true}); }
 }
 
@@ -123,3 +123,12 @@ test('existing changed bytes, unsafe bucket versioning, oversized catalog, and d
     assert.deepEqual(f.objects.get('releases/current.json')?.bytes, before);
   });
 });
+
+for(const [next,current,accepted] of [['0.3.34.10','0.3.34.9',true],['0.3.34.1','0.3.34',true],['0.3.34.9','0.3.34.10',false]]){
+ test(`OSS four-part ordering ${current} to ${next}`,async()=>withFixture(async(f,options)=>{
+  const assets=f.release.assets.map(asset=>({name:asset.name.replace(next,current),size:asset.size,sha256:asset.digest.slice(7)}));
+  f.objects.set('releases/current.json',{bytes:Buffer.from(JSON.stringify({version:current,assets})),acl:'public-read'});
+  if(accepted){const receipt=await mirrorSiteDownloads(options);assert.equal(receipt.version,next);assert.equal(JSON.parse(f.objects.get('releases/current.json').bytes).version,next);}
+  else{await assert.rejects(mirrorSiteDownloads(options),/Cannot downgrade/);assert.equal(f.writes.length,0);}
+ },next));
+}
