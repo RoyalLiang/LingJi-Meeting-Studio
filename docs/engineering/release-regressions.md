@@ -7,6 +7,7 @@
 | 后端嵌套依赖、缺失锁定依赖、可选 peer 被误打包 | `records-backend-dependencies` | 检查真实依赖树与打包闭包 |
 | runner 将 GitHub URL 指向尚无新 SHA 的本地镜像，checkout 报 `not our ref` | runner 登记前的固定 SHA 镜像预检（环境门禁） | 先补齐 Git 对象并确认精确 CI ref 可见，再消耗一次性 runner；工作树保持不变 |
 | WGS 复用旧产物、源码漂移或平台资源混用 | `records-wgs-build-contract` | 固定 SHA、完整文件摘要与目录锁；两个平台串行 |
+| MSIX 固定版本中间目录与旧候选冲突 | WGS 实际候选构建、`records-wgs-build-contract` | Store 包在本次临时输入目录中生成；失败重试前，在锁内核对回执并隔离保留不完整输出，不覆盖旧候选 |
 | 候选改为 SHA 目录后 Linux 收集器仍读取旧路径 | `records-wgs-build-contract` | 直接从隔离目录收集，不复制到旧目录掩盖错误；Windows/macOS 默认输入保持可用 |
 | MSIX 包内 Fixed WebView2 无法从 WindowsApps 启动、缓存不完整 | `records-windows-msix`、`test-windows-msix.ps1` | 临时签名副本安装，正常 AUMID 冷启动及再次启动，验证真实 WebView 进程与缓存摘要 |
 | 包内后端、模型路径与用户数据位置混淆 | `records-desktop-entry`、原生测试、Windows MSIX 脚本 | 包内后台启动及只读本地模型推理；不以文件存在代替运行 |
@@ -30,3 +31,5 @@ v0.3.34 是一次兼容过渡版，使现有只识别三段 tag 的客户端获�
 在目录锁内以非强制 Git push 补齐对应对象和专用 CI ref，不切换工作树、不重置既有改动、不创建每版源码目录。补齐后再核对工作树 HEAD 与修改状态未变，并重新执行上述预检。该远端环境检查跟在本地功能/发布回归之后；它不能由本机合成测试替代。
 
 归档回归覆盖压缩帧原样保留、重复静音去重、十分钟边界、摘要引用重启读取及清理；归档前后比较实际字节量，避免减少小文件时反而放大存储。WGS 回归同时覆盖同产品号不同源码 SHA 的候选目录隔离与同 SHA 的完整回执复用。
+
+WGS 已完成 Linux、尚未完成 Windows 时，不能把部分目录冒充完整可复用产物。恢复前停止对应构建、取得目录锁，核对版本、固定源码 SHA 与干净工作树；将已知不完整输出及冲突的旧 Store 中间目录原样移动到 `.agent-runtime/build-attempts/` 保留回执后，重试同一候选。未知目录或不匹配的回执应停止处理。

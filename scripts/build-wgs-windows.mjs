@@ -37,12 +37,13 @@ run('tar',['-czf',join(output,'resources.tar.gz'),'-C',resources,'runtime','clie
 await finishCurrentBuild(root,revision,cargoInput);
 const files=await Promise.all(['windows-setup.exe','windows-app.exe','resources.tar.gz','lingji-ui-tests.exe'].map(async name=>{const bytes=await readFile(join(output,name));return {name,bytes:bytes.length,sha256:releaseHash(bytes)};}));
 await writeFile(join(output,'wgs-windows-input.json'),JSON.stringify({version:config.version,builder:'wgs',sourceBuildMode:'guarded-current-directory',sourceVerifiedAfterBuild:true,sourceRevision:revision,source,target:'x86_64-pc-windows-msvc',files},null,2)+'\n');
-const msixDirectory=join(root,'.agent-runtime/msix-submission',config.version);
+const msixDirectory=join(output,'store');
 await buildWindowsMsix({root,prebuilt:output,destination:msixDirectory,sourceRevision:revision,identity:storeIdentity(JSON.parse(await readFile(join(root,'apps/desktop/src-tauri/microsoft-store.json'))))});
 for(const name of ['windows-store-unsigned.msix','store-package.json']){
   await copyFile(join(msixDirectory,name),join(output,name));
   const bytes=await readFile(join(output,name));files.push({name,bytes:bytes.length,sha256:releaseHash(bytes)});
 }
+await rm(msixDirectory,{recursive:true,force:true});
 await finishCurrentBuild(root,revision,cargoInput);
 await writeFile(join(output,'wgs-windows-input.json'),JSON.stringify({version:config.version,builder:'wgs',sourceBuildMode:'guarded-current-directory',sourceVerifiedAfterBuild:true,sourceRevision:revision,source,target:'x86_64-pc-windows-msvc',files},null,2)+'\n');
 await rename(output,finalOutput);
