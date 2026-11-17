@@ -28,7 +28,7 @@ em { font-style:normal; color:var(--accent); }
 small { font-size:12px; }
 svg { flex-shrink:0; }
 .glass { background:var(--glass); border:0; box-shadow:none; }
-.button { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:max(40px,var(--touch-target)); padding:8px 14px; border:0; border-radius:var(--r-sm); background:var(--bg); font-size:13px; font-weight:550; white-space:nowrap; line-height:1.5; transition:background .16s,box-shadow .16s; }
+.button { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:max(var(--control-height),var(--touch-target)); padding:8px 14px; border:0; border-radius:var(--control-radius); background:var(--bg); font-size:var(--control-font-size); font-weight:550; white-space:nowrap; line-height:var(--control-line-height); transition:background .16s,box-shadow .16s; }
 .button:hover:not(:disabled) { background:var(--panel-2); }
 .button.primary { background:var(--accent); color:var(--on-accent); border-color:var(--accent); }
 .button.primary:hover:not(:disabled) { background:var(--accent-hover); }
@@ -89,7 +89,7 @@ svg { flex-shrink:0; }
   .record-heading-toolbar>.meeting-actions>.button { padding-inline:8px; }
 }
 .record-meta { display:flex; align-items:center; gap:12px; flex-wrap:wrap; font-size:.75rem; color:var(--ink-3); margin-top:14px; }
-.status { display:inline-flex; align-items:center; font-size:.75rem; letter-spacing:.02em; border-radius:6px; padding:3px 7px; background:var(--panel-2); color:var(--ink-2); line-height:1.5; }
+.status { display:inline-flex; align-items:center; font-size:var(--control-font-size); letter-spacing:.02em; border-radius:var(--control-radius); padding:.125rem .5rem; background:var(--panel-2); color:var(--ink-2); line-height:var(--control-line-height); justify-content:center; min-height:var(--badge-height); vertical-align:middle; }
 .status.live { color:var(--down); background:var(--down-soft); }
 .capture-panel { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:18px 20px; border-radius:var(--r); margin-bottom:14px; }
 .capture-status { display:flex; align-items:center; gap:12px; }
@@ -932,8 +932,8 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 .settings-modal>.modal-header>.modal-close { margin-left:auto; }
 .settings-diagnostics.button { min-width:max(36px,var(--touch-target)); width:max(36px,var(--touch-target)); min-height:max(36px,var(--touch-target)); padding:7px; }
 .settings-modal .provider-form>label { grid-template-columns:minmax(104px,min(190px,34%)) minmax(0,1fr); align-items:center; gap:8px 12px; }
-.settings-field-label { display:flex; align-items:center; gap:5px; min-width:0; }
-.settings-field-label>span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.settings-field-label { display:flex; align-items:center; gap:5px; min-width:0; min-height:var(--badge-height); line-height:var(--control-line-height); flex-wrap:wrap; }
+.settings-field-label>span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:normal; overflow-wrap:anywhere; }
 .settings-field-label>.status { flex:none; font-size:.75rem; padding:1px 4px; }
 .settings-modal .provider-form>label>input,.settings-modal .provider-form>label>.select { grid-column:2; min-width:0; }
 .settings-modal .client-update-policy { display:flex; flex:1; min-width:min(300px,100%); align-items:center; gap:8px; }

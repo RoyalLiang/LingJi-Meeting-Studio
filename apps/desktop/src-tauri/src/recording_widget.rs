@@ -181,6 +181,7 @@ pub fn prepare(app: &AppHandle, client: &Client) -> Result<(), String> {
         .resizable(false)
         .decorations(false)
         .transparent(true)
+        .background_color(tauri::webview::Color(0, 0, 0, 0))
         .shadow(false)
         .always_on_top(true)
         .skip_taskbar(true)

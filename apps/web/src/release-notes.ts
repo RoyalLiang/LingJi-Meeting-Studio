@@ -1,8 +1,7 @@
 // Available even when the update service reports no newer release.
 export const currentReleaseNotes = `## 更新内容
-- 修复 Windows 商店版首次打开时可能出现的空白窗口。
-- 新增网络代理设置，默认跟随系统，支持 HTTP、HTTPS 和 SOCKS5。
 
-- 减少实时转录与纪要更新偶发的等待。
-- 修复极窄窗口中会议操作按钮被裁切的问题，扩大手机宽度下的点击区域。
+- 修复深色模式下录音悬浮框未跟随主题及边角白底的问题。
+- 修复 Windows、Linux 窗口底色与工作台主题不同步的问题。
+- 统一表单、按钮和状态标签的文字对齐与尺寸，设置页签改用轻量胶囊样式。
 `;

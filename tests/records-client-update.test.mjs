@@ -232,7 +232,7 @@ test('release display keeps only change items and removes Markdown destinations 
 
 test('current real publisher body displays changes without install instructions, hashes or CI links', async () => {
   const {previewNotes}=await import('../scripts/publish-preview-release.mjs');
-  const {version}=JSON.parse(await readFile(new URL('../apps/desktop/package.json',import.meta.url),'utf8'));
+  const manifest=JSON.parse(await readFile(new URL('../package.json',import.meta.url),'utf8'));const version=manifest.releaseVersion||manifest.version;
   const guide=await readFile(new URL(`../docs/releases/v${version}-preview.md`,import.meta.url),'utf8');
   const body=previewNotes({tag:`v${version}`,commit:'a'.repeat(40),workflowSha:'b'.repeat(40),runUrl:'https://github.com/example/test/actions/runs/1',guide,metadata:{platform:'macos',architecture:'arm64',artifact:`Lingji-${version}-macos-arm64.dmg`,sha256:'c'.repeat(64)}});
   const items=updateReleaseItems(body);assert.ok(items.length>0);

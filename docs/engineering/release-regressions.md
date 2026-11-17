@@ -4,6 +4,8 @@
 
 | 已出现的故障 | 固定回归入口 | 验收边界 |
 | --- | --- | --- |
+| 已预载录音浮窗不跟随深浅主题、透明窗口出现白底 | `records-theme-sync`、同源双窗口界面检查、原生候选检查 | 初始主题、storage 切换与重置、根节点和原生 WebView 透明；Windows/Linux 客户区随主题更新，Windows 11 标题栏单独配色，Windows 10 与 Linux 系统装饰保留系统主题 |
+| 字段标签带状态徽标后输入框错位、页签和标签尺寸不一致 | 逐页深浅主题与窄屏界面检查 | 模型、音频、网络、词表、更新、会议正文、知识与扩展；按钮/标签共用尺寸变量，保留键盘焦点 |
 | 后端嵌套依赖、缺失锁定依赖、可选 peer 被误打包 | `records-backend-dependencies` | 检查真实依赖树与打包闭包 |
 | runner 将 GitHub URL 指向尚无新 SHA 的本地镜像，checkout 报 `not our ref` | runner 登记前的固定 SHA 镜像预检（环境门禁） | 先补齐 Git 对象并确认精确 CI ref 可见，再消耗一次性 runner；工作树保持不变 |
 | WGS 复用旧产物、源码漂移或平台资源混用 | `records-wgs-build-contract` | 固定 SHA、完整文件摘要与目录锁；两个平台串行 |

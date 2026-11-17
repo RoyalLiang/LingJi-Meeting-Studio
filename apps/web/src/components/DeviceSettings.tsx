@@ -14,7 +14,7 @@ export function DeviceSettings({ disabled = false, compact = false }: { disabled
   const control=<Select label="录音麦克风" disabled={disabled} value={missing ? 'default' : selected} onChange={id => { setPreferredDevice(id); setSelected(id); }} options={[{value:'default',label:'自动'},...devices.map(d => ({value:d.id,label:d.label}))]}/>;
   return <div className={compact ? 'device-compact' : 'settings-section device-settings'}>{compact?control:<>
     <div className="section-title"><Microphone size={19}/><h3>音频设置</h3></div>
-    <div className="device-microphone-row"><label>录音麦克风{control}</label><MicrophoneTest disabled={disabled} refresh={refresh}/></div>
+    <div className="device-microphone-row"><label><span className="settings-field-label">录音麦克风</span>{control}</label><MicrophoneTest disabled={disabled} refresh={refresh}/></div>
     <PlaybackSourceSettings disabled={disabled}/>
   </>}{error&&<FeedbackNotice key={error} message={error} error/>}</div>;
 }

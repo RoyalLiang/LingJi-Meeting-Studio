@@ -201,7 +201,7 @@ export default function MeetingAgentCenter({isVisible=true,titleChanged,automati
   const pendingTitles=pending?.body.recordIds.map(id=>({id,title:records.find(record=>record.id===id)?.title||'所选会议'}))||[];
   return <section className="meeting-agent-center" aria-label="扩展中心">
     <header className="ma-heading">
-      <nav className="ma-navigation" aria-label="扩展中心导航">{navigation.map(item=><button type="button" key={item.id} aria-current={view===item.id?'page':undefined} onClick={()=>navigate(item.id)}>{item.label}</button>)}</nav>
+      <nav className="ma-navigation surface-tabs" aria-label="扩展中心导航">{navigation.map(item=><button type="button" key={item.id} aria-current={view===item.id?'page':undefined} onClick={()=>navigate(item.id)}>{item.label}</button>)}</nav>
       {view==='runs'&&<Button onClick={()=>navigate('assistant')}><Plus size={16}/>新建任务</Button>}
     </header>
     {extensionError&&<FeedbackNotice key={extensionError} message={extensionError} error action={{label:'重试',run:()=>setExtensionRefresh(value=>value+1)}}/>}

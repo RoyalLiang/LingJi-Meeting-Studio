@@ -227,8 +227,20 @@ fn apply_window_theme(window: &WebviewWindow, theme: &str) -> Result<(), String>
         _ => return Err("invalid window theme".into()),
     };
     window.set_theme(Some(appearance)).map_err(|error| error.to_string())?;
-    #[cfg(target_os = "macos")]
-    window.set_background_color(Some(if appearance == tauri::Theme::Dark { tauri::webview::Color(36, 40, 43, 255) } else { tauri::webview::Color(246, 249, 247, 255) })).map_err(|error| error.to_string())?;
+    let background = if appearance == tauri::Theme::Dark { tauri::webview::Color(36, 40, 43, 255) } else { tauri::webview::Color(246, 249, 247, 255) };
+    window.set_background_color(Some(background)).map_err(|error| error.to_string())?;
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::{Foundation::{COLORREF, HWND}, Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_CAPTION_COLOR, DWMWA_TEXT_COLOR}};
+        let hwnd = HWND(window.hwnd().map_err(|error| error.to_string())?.0);
+        let caption = COLORREF(u32::from(background.0) | (u32::from(background.1) << 8) | (u32::from(background.2) << 16));
+        let text = COLORREF(if appearance == tauri::Theme::Dark { 0x00ebe2dc } else { 0x00544034 });
+        // Windows 10 retains the themed caption; custom caption colors require Windows 11.
+        unsafe {
+            let _ = DwmSetWindowAttribute(hwnd, DWMWA_CAPTION_COLOR, (&caption as *const COLORREF).cast(), std::mem::size_of::<COLORREF>() as u32);
+            let _ = DwmSetWindowAttribute(hwnd, DWMWA_TEXT_COLOR, (&text as *const COLORREF).cast(), std::mem::size_of::<COLORREF>() as u32);
+        }
+    }
     Ok(())
 }
 #[tauri::command]

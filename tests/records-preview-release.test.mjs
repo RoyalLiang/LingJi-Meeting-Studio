@@ -249,6 +249,8 @@ test('desktop release versions match preview overrides and every workspace', asy
   const json=async path=>JSON.parse(await readFile(new URL('../'+path,import.meta.url),'utf8'));
   const root=await json('package.json'),base=await json('apps/desktop/src-tauri/tauri.conf.json'),preview=await json('apps/desktop/src-tauri/tauri.preview.conf.json');
   for(const path of ['package-lock.json','apps/desktop/package.json','apps/web/package.json'])assert.equal((await json(path)).version,root.version,path);
+  const {nativeVersion}=await import('../scripts/preview-version.mjs');
+  assert.equal(nativeVersion(root.releaseVersion||root.version),root.version,'product to native mapping');
   assert.equal(base.version,root.version,'base Tauri version');
   assert.equal(preview.version,root.version,'preview Tauri version');
   assert.equal(preview.bundle.macOS.bundleVersion,base.bundle.macOS.bundleVersion,'preview macOS build');
@@ -261,7 +263,7 @@ test('desktop release versions match preview overrides and every workspace', asy
 
 test('current preview guide contains changes accepted by the real publisher', async t => {
   const {options,metadata}=await fixture(t);
-  const {version}=JSON.parse(await readFile(new URL('../apps/desktop/package.json',import.meta.url),'utf8'));
+  const manifest=JSON.parse(await readFile(new URL('../package.json',import.meta.url),'utf8'));const version=manifest.releaseVersion||manifest.version;
   const guide=await readFile(new URL(`../docs/releases/v${version}-preview.md`,import.meta.url),'utf8');
   const notes=previewNotes({...options,tag:`v${version}`,metadata:{...metadata,version,artifact:`Lingji-${version}-macos-arm64.dmg`},runUrl:'https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/1',guide});
   assert.match(notes,/## 版本改动与修复\n[\s\S]+\n## 下载与安装/);

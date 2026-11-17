@@ -5,6 +5,11 @@ import {Button} from './ui';
 export function ThemeToggle(){
   const [theme,setTheme]=useState(()=>document.documentElement.dataset.theme==='dark'?'dark':'light');
   const frame=useRef(0);
+  useEffect(()=>{
+    const sync=()=>setTheme(document.documentElement.dataset.theme==='dark'?'dark':'light');
+    document.addEventListener('meeting:theme',sync);
+    return()=>document.removeEventListener('meeting:theme',sync);
+  },[]);
   useEffect(()=>()=>{cancelAnimationFrame(frame.current);delete document.documentElement.dataset.themeSwitching;},[]);
   return <Button variant="ghost" aria-label={theme==='light'?'切换深色':'切换浅色'} onClick={()=>{
     const next=theme==='light'?'dark':'light';
