@@ -1,7 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,rm} from 'node:fs/promises';
+import {mkdtemp,rm,readdir,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createRepository} from '../services/records/src/repository.mjs';
@@ -10,7 +10,7 @@ import {searchGrams} from '../services/records/src/record-search.mjs';
 
 test('Postgres CJK and mixed-case knowledge search share indexed grams and warm speech writes preserve snapshots',{skip:!process.env.RECORD_TEST_DATABASE_URL},async t=>{
   const databaseUrl=process.env.RECORD_TEST_DATABASE_URL;assert.match(new URL(databaseUrl).pathname,/test/i);
-  const root=await mkdtemp(join(tmpdir(),'postgres-performance-')),repo=await createRepository({root,databaseUrl});
+ const root=await mkdtemp(join(tmpdir(),'postgres-performance-')),repo=await createRepository({root,databaseUrl,compressAudio:true});
   const pg=await import('pg'),pool=new pg.Pool({connectionString:databaseUrl});t.after(async()=>{await pool.end();await repo.close();await rm(root,{recursive:true,force:true});});
   const owner='index-test-'+randomUUID(),record=createRecord(owner,{title:'Project 上海会议'}),source=addSource(record,{kind:'microphone'});source.asr={state:'running',fence:'current',lastFedSequence:-1};record.gcAt=Date.now();record.jobs=[{id:'frozen',status:'running',snapshot:{text:'x'.repeat(100000)}}];await repo.insert(record);
   const bytes=Buffer.alloc(32000,1);await repo.ingestAudio(owner,record.id,{sessionId:source.sessionId,sourceId:source.id,epoch:source.epoch,sequence:0,sampleOffset:0,sampleCount:16000,sampleRate:16000,digest:digest(bytes)},bytes);
@@ -25,5 +25,12 @@ test('Postgres CJK and mixed-case knowledge search share indexed grams and warm 
     await repo.changeSpeech(record.id,{sourceId:source.id,fence:'current',generation:record.generation,sequence:0,chunkKey:key});
     await repo.changeSpeech(record.id,{sourceId:source.id,fence:'current',generation:record.generation,preview:{value:{text:'实时草稿'},runtime:{}}});
     const updated=await repo.get(record.id);assert.equal(updated.sources[0].asr.lastFedSequence,0);assert.equal(updated.sources[0].asr.preview.text,'实时草稿');assert.equal(updated.jobs[0].snapshot.text.length,100000);
-  }finally{pg.Client.prototype.query=query;}
+ }finally{pg.Client.prototype.query=query;}
+ const second=Buffer.alloc(32000,2);await repo.ingestAudio(owner,record.id,{sessionId:source.sessionId,sourceId:source.id,epoch:source.epoch,sequence:1,sampleOffset:16000,sampleCount:16000,sampleRate:16000,digest:digest(second)},second);
+ await repo.change(record.id,value=>{value.capture='completed';value.retainAudio=true;value.chunks.forEach(chunk=>chunk.state='done');});
+ const completed=await repo.get(record.id),directory=join(root,'audio',record.id);let beforeBytes=0;for(const file of await readdir(directory))beforeBytes+=(await readFile(join(directory,file))).length;
+ await repo.archiveAudio(completed);
+ const files=await readdir(directory);assert.equal(files.length,1);assert.match(files[0],/\.pcm\.pack$/);assert.equal((await readFile(join(directory,files[0]))).length,beforeBytes);
+ const offsets=(await pool.query('SELECT byte_offset,byte_length FROM record_audio_archive_offsets WHERE record_id=$1 ORDER BY sequence',[record.id])).rows;assert.equal(offsets.length,2);assert.equal(Number(offsets[1].byte_offset),Number(offsets[0].byte_length));
+ const restarted=await createRepository({root,databaseUrl});try{assert.deepEqual(await restarted.readAudio(completed.chunks[0].object),bytes);assert.deepEqual(await restarted.readAudio(completed.chunks[1].object),second);}finally{await restarted.close();}
 });

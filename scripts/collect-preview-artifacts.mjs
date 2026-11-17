@@ -4,7 +4,7 @@ import {readFile,writeFile,mkdir,copyFile,rm} from 'node:fs/promises';
 import {join} from 'node:path';
 const windows=process.argv[2]==='windows',linux=process.argv[2]==='linux';
 assert.ok(windows||linux||process.argv[2]==='macos');
-const directory=join('dist/releases',process.env.RELEASE_VERSION,...(windows?['windows-x64']:linux?['linux-x64']:[]));
+const directory=process.argv[3]||join('dist/releases',process.env.RELEASE_VERSION,...(windows?['windows-x64']:linux?['linux-x64']:[]));
 const metadataName=windows?'release-windows-x64.json':linux?'release-linux-x64.json':'release.json';
 const meta=JSON.parse(await readFile(join(directory,metadataName),'utf8'));
 assert.equal(meta.sourceRevision,process.env.SOURCE_SHA);assert.equal(meta.sourceDirty,false);assertPackageSourceBuild(meta);

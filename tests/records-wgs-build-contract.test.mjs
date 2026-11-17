@@ -222,8 +222,8 @@ async function reusableFixture(t) {
   const root = await mkdtemp(join(tmpdir(), 'lingji-wgs-reuse-'));
   t.after(() => rm(root, {recursive: true, force: true}));
   const expected = {...input.expected, repository: 'synthetic/fixture'};
-  const windows = join(root, 'dist/wgs-input', expected.version);
-  const linux = join(root, 'dist/releases', expected.version, 'linux-x64');
+  const windows = join(root, 'dist/wgs-input', expected.version, expected.sourceRevision);
+  const linux = join(root, 'dist/releases', expected.version, expected.sourceRevision, 'linux-x64');
   await cp(input.directory, windows, {recursive: true});
   for (const name of ['windows-app.exe', 'windows-store-unsigned.msix', 'store-package.json']) {
     const bytes = Buffer.from(`synthetic ${name}`);
@@ -249,7 +249,7 @@ test('WGS retries reuse only complete source-bound outputs without changing orig
   assert.equal(actual.buildCi.runId, '123');
   assert.equal(await readFile(join(linux, artifact), 'utf8'), 'original deb');
   assert.deepEqual(JSON.parse(await readFile(join(linux, 'release-linux-x64.json'))), metadata);
-  await assert.rejects(reusableWgsBuild(root, {...expected, sourceRevision: 'b'.repeat(40)}));
+  assert.equal(await reusableWgsBuild(root, {...expected, sourceRevision: 'b'.repeat(40)}), null, 'a correction at the same product version gets an independent candidate directory');
   await writeFile(join(linux, artifact), 'tampered');
   await assert.rejects(reusableWgsBuild(root, expected));
   await writeFile(join(linux, artifact), 'original deb');
@@ -293,7 +293,7 @@ test('WGS collector keeps original build provenance when a later controller reva
   const {root, expected, linux, metadata, artifact} = await reusableFixture(t);
   await writeFile(join(linux, 'SHA256SUMS-linux-x64.txt'), metadata.sha256+'  '+artifact+'\n');
   const collector = fileURLToPath(new URL('../scripts/collect-preview-artifacts.mjs', import.meta.url));
-  execFileSync(process.execPath, [collector, 'linux'], {cwd: root, env: {...process.env, RELEASE_VERSION: expected.version, SOURCE_SHA: expected.sourceRevision, GITHUB_REPOSITORY: expected.repository, GITHUB_RUN_ID: '456', WORKFLOW_SHA: 'b'.repeat(40), WGS_REUSED_BUILD: 'true'}, stdio: ['ignore', 'pipe', 'pipe']});
+  execFileSync(process.execPath, [collector, 'linux', linux], {cwd: root, env: {...process.env, RELEASE_VERSION: expected.version, SOURCE_SHA: expected.sourceRevision, GITHUB_REPOSITORY: expected.repository, GITHUB_RUN_ID: '456', WORKFLOW_SHA: 'b'.repeat(40), WGS_REUSED_BUILD: 'true'}, stdio: ['ignore', 'pipe', 'pipe']});
   const result = JSON.parse(await readFile(join(root, 'preview-artifacts/release-linux-x64.json')));
   assert.equal(result.buildCi.runId, '123');
   assert.equal(result.ci.runId, '456');

@@ -1,4 +1,4 @@
-import {finishCurrentBuild,assertCurrentSource,reusableWgsBuild} from './wgs-build-contract.mjs';
+import {finishCurrentBuild,assertCurrentSource,reusableWgsBuild,wgsBuildPaths} from './wgs-build-contract.mjs';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {access,mkdir,readFile,writeFile} from 'node:fs/promises';
@@ -31,5 +31,6 @@ const args=['run','--rm','--network','host','--cpus','4','--memory','6g','--pids
 for(const [name,value]of Object.entries({GITHUB_ACTIONS:process.env.GITHUB_ACTIONS,RUNNER_ENVIRONMENT:'self-hosted',TTS_RELEASE_SOURCE_REF:revision,TTS_WGS_CURRENT_BUILD:'1',TTS_RUNTIME_CACHE:'/cache/runtimes',CARGO_HOME:'/cache/cargo',CARGO_TARGET_DIR:'/cache/target',CARGO_BUILD_JOBS:'4',npm_config_cache:'/cache/npm',XWIN_CACHE_DIR:'/cache/xwin',XDG_CACHE_HOME:'/cache/xdg'}))args.push('--env',`${name}=${value}`);
 // These public-input caches contain no model keys or user meeting data.
 run('docker',[...args,'lingji-wgs-cross:031','bash','-euc','npm ci && npm run build:web && node scripts/prepare-client-backend.mjs && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --features smoke-test -- --test-threads=1 && cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --features smoke-test && NATIVE_CLIENT_EXECUTABLE=/cache/target/debug/tts-client xvfb-run -a node scripts/test-native-evolution.mjs .agent-runtime/native-evolution-linux.json && node --test tests/records-git-sync.test.mjs tests/records-agent-compaction.test.mjs tests/records-meeting-tasks.test.mjs && node scripts/release-linux-preview.mjs && node scripts/build-wgs-windows.mjs']);
-if(process.env.GITHUB_OUTPUT)await writeFile(process.env.GITHUB_OUTPUT,`linux=${join(source,'dist/releases',version,'linux-x64')}\nwindows=${join(source,'dist/wgs-input',version)}\nreused=false\n`,{flag:'a'});
-await access(join(source,'dist/wgs-input',version,'wgs-windows-input.json'));
+const paths=wgsBuildPaths(source,version,revision);
+if(process.env.GITHUB_OUTPUT)await writeFile(process.env.GITHUB_OUTPUT,`linux=${paths.linux}\nwindows=${paths.windows}\nreused=false\n`,{flag:'a'});
+await access(join(paths.windows,'wgs-windows-input.json'));

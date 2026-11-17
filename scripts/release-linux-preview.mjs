@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {dirname,join,resolve} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {readReleaseSource,snapshotReleaseSource,releaseHash} from './release-source.mjs';
-import {assertCurrentSource,finishCurrentBuild} from './wgs-build-contract.mjs';
+import {assertCurrentSource,finishCurrentBuild,wgsBuildPaths} from './wgs-build-contract.mjs';
 const currentBuild=process.env.TTS_WGS_CURRENT_BUILD==='1';
 
 assert.equal(process.platform,'linux','DEB packaging requires Linux');
@@ -20,7 +20,7 @@ const capture=(command,args)=>execFileSync(command,args,{cwd:root,maxBuffer:8*10
 const sourceRevision=capture('git',['rev-parse','--verify',`${process.env.TTS_RELEASE_SOURCE_REF||'HEAD'}^{commit}`]);
 const config=JSON.parse(await readReleaseSource(root,sourceRevision,'apps/desktop/src-tauri/tauri.preview.conf.json'));
 Object.assign(config,previewReleaseConfig(config,JSON.parse(await readReleaseSource(root,sourceRevision,'package.json'))));
-const output=join(root,'dist/releases',config.version,'linux-x64');
+const output=currentBuild?wgsBuildPaths(root,config.version,sourceRevision).linux:join(root,'dist/releases',config.version,'linux-x64');
 await mkdir(dirname(output),{recursive:true});
 await assert.rejects(access(output),{code:'ENOENT'},'A release directory cannot be overwritten');
 const scratch=await mkdtemp(join(tmpdir(),'lingji-linux-build-'));

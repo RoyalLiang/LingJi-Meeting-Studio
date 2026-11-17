@@ -33,8 +33,12 @@ export async function verifyWgsInput(directory,{version,sourceRevision,source}){
  return receipt;
 }
 
+export function wgsBuildPaths(root,version,revision){
+ assert.match(revision,/^[a-f0-9]{40}$/);
+ return {linux:join(root,'dist/releases',version,revision,'linux-x64'),windows:join(root,'dist/wgs-input',version,revision)};
+}
 export async function reusableWgsBuild(root,expected){
- const linux=join(root,'dist/releases',expected.version,'linux-x64'),windows=join(root,'dist/wgs-input',expected.version);
+ const {linux,windows}=wgsBuildPaths(root,expected.version,expected.sourceRevision);
  const exists=async path=>{try{await access(path);return true;}catch(error){if(error.code!=='ENOENT')throw error;return false;}};
  const present=await Promise.all([exists(linux),exists(windows)]);
  if(present.every(value=>!value))return null;

@@ -34,3 +34,5 @@ WGS 容器使用同份程序和资源额外封装 MSIX，Windows 作业验证原
 发布前执行[功能与发布回归](release-regressions.md)。`preview-release.yml` 在 main 代码推送后自动运行候选；手动触发默认 `publish=false`，可用计划 tag 名和固定 `source_sha` 验证全部平台而不创建 tag。候选全部成功后再创建 tag；tag 触发或显式 `publish=true` 时，verify 会通过 Actions API 强制寻找同产品版本、源码 SHA 与工作流控制器 SHA 的成功候选，缺失则停止。只有通过该门禁才进入发布构建与 publish。
 
 兼容过渡版之后，公开版本使用 `X.Y.Z.R`；工具链、MSIX 和 macOS 交接的映射见回归文档。四段产品号不直接写进 npm/Cargo/Tauri 或签名客户端的 SemVer 清单。
+
+候选产物目录按产品号和完整源码 SHA 隔离：`dist/releases/<产品号>/<SHA>/linux-x64` 与 `dist/wgs-input/<产品号>/<SHA>`。同版本修正重新验证时保留旧候选，不覆盖文件或跳升产品号；同一 SHA 的候选与正式发布仍须先核验完整回执、摘要及平台验证结果才复用。源码继续只使用上述当前目录。

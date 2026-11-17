@@ -172,7 +172,7 @@ export async function createRepository(options = {}) {
   }
   const sqliteStore=db?createSqliteRecordStore(db,options):null;
   const postgresStore=pool?await createPostgresRecordStore(pool):null;
-  const audioArchive=objects?null:await createAudioArchive({root,db,pool,header:sqliteStore?.header,readAudio:(...args)=>repository.readAudio(...args)});
+  const audioArchive=objects?null:await createAudioArchive({root,db,pool,header:sqliteStore?.header});
   const audioStore=await createIndexedAudioStore({db,pool,sqliteStore,postgresStore,putAudio:(...args)=>repository.putAudio(...args),committed:(...args)=>notifications.committed(...args)});
   const decode = row => {
     const value=row?(typeof row.data==='string'?JSON.parse(row.data):row.data):null;
@@ -484,8 +484,8 @@ export async function createRepository(options = {}) {
       const directory = join(root, 'audio', recordId);
       const entries = await readdir(directory).catch(e => { if (e.code === 'ENOENT') return []; throw e; });
       const archives=await audioArchive.liveFiles(recordId,liveObjects);
-      for(const file of entries)if(/^\.tmp-archive-[a-f0-9-]{36}\.pcm$/.test(file)&&(await stat(join(directory,file))).mtimeMs<(olderThan===Infinity&&!liveObjects.size?Infinity:Math.min(olderThan,Date.now()-3600000)))await rm(join(directory,file),{force:true});
-      for(const file of entries)if(/^archive-[a-f0-9-]{36}\.pcm$/.test(file)&&!archives.keep.has(`${recordId}/${file}`)&&(await stat(join(directory,file))).mtimeMs<olderThan){await archives.remove(`${recordId}/${file}`);await rm(join(directory,file),{force:true});}
+      for(const file of entries)if(/^\.tmp-archive-[a-f0-9-]{36}\.pcm(?:\.pack)?$/.test(file)&&(await stat(join(directory,file))).mtimeMs<(olderThan===Infinity&&!liveObjects.size?Infinity:Math.min(olderThan,Date.now()-3600000)))await rm(join(directory,file),{force:true});
+      for(const file of entries)if(/^archive-[a-f0-9-]{36}\.pcm(?:\.pack)?$/.test(file)&&!archives.keep.has(`${recordId}/${file}`)&&(await stat(join(directory,file))).mtimeMs<olderThan){await archives.remove(`${recordId}/${file}`);await rm(join(directory,file),{force:true});}
       for (const file of entries) if (/^[a-f0-9]{64}$/.test(file) && !liveObjects.has(`${recordId}/${file}`) && (await stat(join(directory, file))).mtimeMs < olderThan) await rm(join(directory, file));
     },
     async close() { await audioArchive?.close();notifications.close(); objects?.close(); if (pool) await pool.end(); else db.close(); }

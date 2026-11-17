@@ -235,7 +235,8 @@ jobs:
           SOURCE_SHA: ${{ needs.verify.outputs.sha }}
           WORKFLOW_SHA: ${{ needs.verify.outputs.controller_sha }}
           WGS_REUSED_BUILD: ${{ steps.packages.outputs.reused }}
-        run: node "$GITHUB_WORKSPACE/scripts/collect-preview-artifacts.mjs" linux
+          LINUX_BUILD_DIRECTORY: ${{ steps.packages.outputs.linux }}
+        run: node "$GITHUB_WORKSPACE/scripts/collect-preview-artifacts.mjs" linux "$LINUX_BUILD_DIRECTORY"
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: preview-linux-x64-${{ needs.verify.outputs.sha }}
