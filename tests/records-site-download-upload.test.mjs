@@ -132,3 +132,15 @@ for(const [next,current,accepted] of [['0.3.34.10','0.3.34.9',true],['0.3.34.1',
   else{await assert.rejects(mirrorSiteDownloads(options),/Cannot downgrade/);assert.equal(f.writes.length,0);}
  },next));
 }
+
+test('OSS lost PUT response resumes a verified object without publishing a partial catalog',()=>withFixture(async(f,options)=>{
+ const previous=Buffer.from(JSON.stringify({version:'0.3.33',assets:f.release.assets.map(asset=>({name:asset.name.replace('0.3.34','0.3.33'),size:asset.size,sha256:asset.digest.slice(7)}))}));
+ f.objects.set('releases/current.json',{bytes:previous,acl:'public-read'});
+ const put=f.client.putStream;let loseResponse=true;
+ f.client.putStream=async(...args)=>{const result=await put(...args);if(loseResponse){loseResponse=false;throw Object.assign(new Error('upload_response_timeout'),{name:'ResponseTimeoutError'});}return result;};
+ await assert.rejects(mirrorSiteDownloads(options),/upload_response_timeout/);
+ assert.deepEqual(f.objects.get('releases/current.json').bytes,previous);
+ const receipt=await mirrorSiteDownloads(options);assert.equal(receipt.version,'0.3.34');
+ assert.equal(f.writes.filter(key=>key.endsWith('macos-arm64.dmg')).length,1);
+ assert.equal(f.writes.at(-1),'releases/current.json');
+},'0.3.34'));

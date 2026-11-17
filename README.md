@@ -20,7 +20,9 @@
 
 支持 macOS、Windows、Linux 桌面测试版，也可从源码运行 Web 工作台。共享纪要可直接用浏览器阅读。当前仍在测试阶段，功能与验证范围见[当前状态](docs/engineering/current-state.md)，安装包与版本说明以 [Releases](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases) 为准。
 
-当前已发布测试版为 **[v0.3.33](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.3.33)**。当前工作台包含实际请求 Token 计量、可拖动的说话人标注、经同意的声音学习与跨会议匹配，以及项目任务、知识与 Git 归档。模型未返回的用量不估算，声音匹配结果仍需复核。
+当前已发布测试版为 **[v0.3.34](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.3.34)**。当前工作台包含实际请求 Token 计量、可拖动的说话人标注、经同意的声音学习与跨会议匹配，以及项目任务、知识与 Git 归档。模型未返回的用量不估算，声音匹配结果仍需复核。
+
+桌面版升级前请退出应用并备份完整数据目录（含原音）。JSON 记录导出不含原音，不能替代旧版回退备份。
 
 以下截图来自当前工作台，会议内容为演示数据。
 

@@ -15,6 +15,7 @@
 | 后台冷启动测试的10秒预算短于原生客户端15秒预算 | `records-desktop-entry`、原生启动与安装验证 | 测试握手对齐实际15秒上限，健康/父管道EOF退出断言保持；上游测试失败造成缺包时先定位首个失败 |
 | 隐藏目录的验证证据未上传、混淆源 SHA 与工作流 SHA | `records-preview-release`、平台 artifact 上传 | 隐藏证据显式保留；源码、运行、产物与摘要一致 |
 | 官网下载 503、旧脚本缓存、HEAD/Range 行为退化 | `records-site-downloads`、`records-site-download-upload` | 本地合约后，发布后单独核对 API 元数据与公网行为 |
+| OSS 大文件 PUT 超时、响应丢失而服务端可能已提交 | `records-site-download-upload` | 同版本重跑先核对既有对象，不覆盖；三平台全部验证后才更新 current.json 清单 |
 | 四段修订被旧解析器忽略、按字符串比较或重复编码 | `records-preview-version`、`records-site-download-upload`、Rust preview updater 测试 | 旧三段补零；`.9 → .10`；native 与 MSIX 单调；macOS 交接身份与版本；OSS 四段升级及禁止降级 |
 
 三平台构建、Windows NSIS 与 MSIX、Ubuntu 22.04/24.04、macOS 原生检查在 Actions 中执行。推送 main 的代码改动会自动对固定 SHA 运行候选验证；也可用 `preview-release.yml` 的 `publish=false`、计划版本和固定 `source_sha` 手动验证，无需预建 tag；全部检查成功后才创建不可变 tag 并发布。候选成功不等于已经发布或商店审核通过。
