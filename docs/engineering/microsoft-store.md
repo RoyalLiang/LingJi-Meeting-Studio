@@ -2,7 +2,7 @@
 
 Windows 商店通道使用 MSIX，由 Microsoft Store 审核并签名。现有 NSIS 安装包继续用于独立下载；把 EXE 挂到商店不会获得微软重签。签名边界见[微软包要求](https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msix/app-package-requirements)。
 
-2026-11-18 已核对 Partner Center 与[公开商店页面](https://apps.microsoft.com/detail/9NCW0WT5W9D1)：产品“聆记 LingJi”（Store ID `9NCW0WT5W9D1`）已上架，提交 1 为产品 `0.3.33` / 包 `1.3.33.0`。中英文资料、每种语言四张截图、免费价格和 IARC 评级已保存。2026-11-18 的提交 2 仅更新中英文介绍、简短介绍与功能发行说明，保留同一安装包、许可条款、截图、价格和可用性；提交后核对为认证预处理，尚未核实新文案公开上架。附加许可条款包含[完整 WebView2 许可](https://rookiecode.com/licenses/webview2-fixed-version.html)入口与 SmartScreen 告知。
+2026-11-18 已核对 Partner Center 与[公开商店页面](https://apps.microsoft.com/detail/9NCW0WT5W9D1)：产品“聆记 LingJi”（Store ID `9NCW0WT5W9D1`）已上架，公开提交 2 保留产品 `0.3.33` / 包 `1.3.33.0`，并已更新中英文介绍、简短介绍与功能发行说明。提交 3 已上传并校验产品 `0.3.35.0` / 包 `1.3.3500.0`，本次送审后的最后核对为“正在认证／预处理”，设置为通过认证后自动发布，尚未核实新包公开上架。保留原许可条款、每种语言四张截图、免费价格、可用性和 IARC 评级；新包仍为 X64，系统下限保持 `10.0.19041.0`。附加许可条款包含[完整 WebView2 许可](https://rookiecode.com/licenses/webview2-fixed-version.html)入口与 SmartScreen 告知。
 
 ## 使用已预留的产品身份
 
@@ -86,6 +86,6 @@ GitHub Release 和 OSS 只发布已验证的独立安装包。未签名的商店
 
 ## 维护商店介绍与发行说明
 
-中英文最终文案维护在 [microsoft-store-listings.json](../releases/microsoft-store-listings.json)，只描述对应商店包中已存在的能力。会议助手可整理所选材料、问答可访问的目录知识、查看或取消任务并恢复中断处理；Git 归档澄清与已配置授权的 GitLab、飞书、只读 MCP 单独说明，不扩展成通用电脑控制或无限制外发。生成内容的人工核对、模型服务配置及公开反馈隐私提示必须保留。
+中英文最终文案维护在 [microsoft-store-listings.json](../releases/microsoft-store-listings.json)，当前对应已送审的 `0.3.35.0` 包，只描述对应包中已存在的能力。会议助手可整理所选材料、问答可访问的目录知识、查看或取消任务并恢复中断处理；Git 归档澄清与已配置授权的 GitLab、飞书、只读 MCP 单独说明，不扩展成通用电脑控制或无限制外发。生成内容的人工核对、模型服务配置及公开反馈隐私提示必须保留。
 
 发行说明每项只写新增或修复的功能行为，不列配色、排版、控件等视觉调整。修改说明后逐语言读回，核对安装包、附加许可、截图与可用性未变，再提交认证。只有实际上架后才更新公开文案状态；文案审核不代表升级了安装包。
