@@ -213,6 +213,12 @@ jobs:
     needs: verify
     runs-on: windows-2025
     timeout-minutes: 10
+    outputs:
+      sha256: ${{ steps.resources.outputs.sha256 }}
+      part0: ${{ steps.resources.outputs.part0 }}
+      part1: ${{ steps.resources.outputs.part1 }}
+      part2: ${{ steps.resources.outputs.part2 }}
+      part3: ${{ steps.resources.outputs.part3 }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -225,12 +231,16 @@ jobs:
       - name: Generate transparent assets and Windows resource index
         shell: pwsh
         run: ./scripts/prepare-windows-store-icons.ps1
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: store-icons-${{ needs.verify.outputs.sha }}
-          path: store-icons/
-          if-no-files-found: error
-          retention-days: 2
+      - name: Send the small public resource bundle to WGS
+        id: resources
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import {appendFile} from 'node:fs/promises';
+          import {storeResourceOutputs} from './scripts/windows-msix.mjs';
+          const {sha256,parts}=await storeResourceOutputs('store-icons');
+          await appendFile(process.env.GITHUB_OUTPUT,[`sha256=${sha256}`,...parts.map((part,index)=>`part${index}=${part}`),''].join('\n'));
+          NODE
 
   build_wgs:
     name: WGS build - Linux and Windows
@@ -249,10 +259,21 @@ jobs:
         with:
           node-version: '26.12.1'
           package-manager-cache: false
-      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
-        with:
-          name: store-icons-${{ needs.verify.outputs.sha }}
-          path: ${{ runner.temp }}/store-icons-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Verify and restore the Store visual resource bundle
+        env:
+          WGS_STORE_ICONS_DIR: ${{ runner.temp }}/store-icons-${{ github.run_id }}-${{ github.run_attempt }}
+          RESOURCE_HASH: ${{ needs.store_icons.outputs.sha256 }}
+          RESOURCE_PART0: ${{ needs.store_icons.outputs.part0 }}
+          RESOURCE_PART1: ${{ needs.store_icons.outputs.part1 }}
+          RESOURCE_PART2: ${{ needs.store_icons.outputs.part2 }}
+          RESOURCE_PART3: ${{ needs.store_icons.outputs.part3 }}
+        run: |
+          node --input-type=module <<'NODE'
+          import {restoreStoreResources} from './scripts/windows-msix.mjs';
+          const {WGS_STORE_ICONS_DIR,RESOURCE_HASH,TTS_RELEASE_SOURCE_REF}=process.env;
+          const parts=Array.from({length:4},(_,index)=>process.env[`RESOURCE_PART${index}`]||'');
+          await restoreStoreResources(WGS_STORE_ICONS_DIR,{sha256:RESOURCE_HASH,parts},TTS_RELEASE_SOURCE_REF);
+          NODE
       - name: Build Linux and Windows in the locked current WGS checkout
         id: packages
         env:

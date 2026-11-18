@@ -4,6 +4,7 @@ import {execFileSync} from 'node:child_process';
 import {access, copyFile, cp, mkdir, mkdtemp, readFile, readdir, lstat, rename, rm, writeFile} from 'node:fs/promises';
 import {createReadStream} from 'node:fs';
 import {createHash} from 'node:crypto';
+import {gzipSync, gunzipSync} from 'node:zlib';
 import {dirname, join, resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {releaseHash, snapshotReleaseSource} from './release-source.mjs';
@@ -81,13 +82,48 @@ export async function writeStoreIcons(root, assets) {
   }
 }
 
+const storeResourceName = /^(?:resources\.pri|Assets\/[A-Za-z0-9_.-]+\.png)$/;
+const storeResourceChunkSize = 80_000;
+const storeResourceChunks = 4;
+
+export async function storeResourceOutputs(directory){
+  const receipt = JSON.parse(await readFile(join(directory,'store-icons.json'),'utf8'));
+  const contents = await Promise.all(receipt.files.map(async ({name})=>{
+    assert.match(name,storeResourceName);
+    return (await readFile(join(directory,name))).toString('base64');
+  }));
+  const archive = gzipSync(JSON.stringify({receipt,contents}));
+  const encoded = archive.toString('base64');
+  assert.ok(encoded.length <= storeResourceChunkSize * storeResourceChunks,'Store resources exceed the Actions output budget');
+  const parts = Array.from({length:storeResourceChunks},(_,index)=>encoded.slice(index * storeResourceChunkSize,(index+1) * storeResourceChunkSize));
+  return {sha256:releaseHash(archive),parts};
+}
+
+export async function restoreStoreResources(directory,{sha256,parts},sourceRevision){
+  assert.ok(parts.length === storeResourceChunks && parts.every(part=>part.length <= storeResourceChunkSize && /^[A-Za-z0-9+/]*={0,2}$/.test(part)),'Invalid Store resource output chunks');
+  const archive = Buffer.from(parts.join(''),'base64');
+  assert.ok(archive.length && releaseHash(archive) === sha256,'Store resource output hash differs');
+  const {receipt,contents} = JSON.parse(gunzipSync(archive,{maxOutputLength:2_000_000}));
+  assert.equal(receipt.sourceRevision,sourceRevision,'Store visual resources must use the release source');
+  assert.ok(Array.isArray(contents) && contents.length === receipt.files.length && contents.length < 100,'Invalid Store resource output file count');
+  await mkdir(directory);
+  await mkdir(join(directory,'Assets'));
+  for(const [index,{name,sha256:expected}] of receipt.files.entries()){
+    assert.match(name,storeResourceName);
+    const bytes = Buffer.from(contents[index],'base64');
+    assert.equal(releaseHash(bytes),expected,'Store visual resource hash differs');
+    await writeFile(join(directory,name),bytes,{flag:'wx'});
+  }
+  await writeFile(join(directory,'store-icons.json'),JSON.stringify(receipt),{flag:'wx'});
+}
+
 export async function installStoreResources(directory,payload,sourceRevision){
   const receipt=JSON.parse(await readFile(join(directory,'store-icons.json'),'utf8'));
   assert.equal(receipt.sourceRevision,sourceRevision,'Store visual resources must use the release source');
   assert.ok(Array.isArray(receipt.files)&&receipt.files.length>0&&receipt.files.length<100);
   const names=new Set();
   for(const {name,sha256} of receipt.files){
-    assert.match(name,/^(?:resources\.pri|Assets\/[A-Za-z0-9_.-]+\.png)$/);
+    assert.match(name,storeResourceName);
     assert.ok(!names.has(name),'Duplicate Store visual resource');
     names.add(name);
     const bytes=await readFile(join(directory,name));

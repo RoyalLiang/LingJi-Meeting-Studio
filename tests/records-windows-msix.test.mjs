@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {msixManifest, msixVersion, storeIdentity, fixedRuntimeManifest, writeStoreIcons, installStoreResources} from '../scripts/windows-msix.mjs';
+import {msixManifest, msixVersion, storeIdentity, fixedRuntimeManifest, writeStoreIcons, installStoreResources, storeResourceOutputs, restoreStoreResources} from '../scripts/windows-msix.mjs';
 import {mkdtemp,mkdir,readFile,writeFile,rm,symlink} from 'node:fs/promises';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -74,7 +74,13 @@ test('MSIX builds alpha PNGs and unplated light/dark resources for taskbar sizes
   const names=['resources.pri',...(await readdir(assets)).map(name=>'Assets/'+name)];
   const files=await Promise.all(names.map(async name=>({name,sha256:createHash('sha256').update(await readFile(join(resources,name))).digest('hex')})));
   await writeFile(join(resources,'store-icons.json'),JSON.stringify({sourceRevision,files}));
-  await installStoreResources(resources,join(directory,'payload'),sourceRevision);
+  const output=await storeResourceOutputs(resources);
+  assert.ok(output.parts.filter(Boolean).length > 1,'Real icon assets exercise chunked job output');
+  const restored=join(directory,'restored');
+  await assert.rejects(restoreStoreResources(restored,{...output,parts:['',...output.parts.slice(1)]},sourceRevision),/output hash differs/);
+  await assert.rejects(restoreStoreResources(restored,output,'b'.repeat(40)),/release source/);
+  await restoreStoreResources(restored,output,sourceRevision);
+  await installStoreResources(restored,join(directory,'payload'),sourceRevision);
   await assert.rejects(installStoreResources(resources,join(directory,'other'),'b'.repeat(40)),/release source/);
   await writeFile(join(resources,'resources.pri'),'changed resource index');
   await assert.rejects(installStoreResources(resources,join(directory,'other'),sourceRevision),/hash differs/);
