@@ -56,8 +56,8 @@ const xml = value => String(value).replace(/[&<>"']/g, character => ({'&': '&amp
 export async function writeStoreIcons(root, assets) {
   const mark = await readFile(join(root, 'apps/desktop/assets/lingji-brand-mark.svg'), 'utf8');
   const targets = [16,20,24,30,32,36,40,44,48,60,64,72,80,96,256];
-  const stage = await mkdtemp(join(dirname(assets), '.store-icons-'));
   await mkdir(assets, {recursive:true});
+  const stage = await mkdtemp(join(dirname(assets), '.store-icons-'));
   async function render(svg, outputs){
     const source = join(stage, 'mark.svg');
     await writeFile(source, svg);
