@@ -1,0 +1,9 @@
+.capture-remembering{display:inline-flex;white-space:nowrap}
+.capture-remembering-letter{display:inline-block;animation:capture-remembering-wave 1.8s ease-in-out infinite}
+@keyframes capture-remembering-wave{0%,16%,100%{transform:translateY(0)}8%{transform:translateY(-2px)}}
+@media(prefers-reduced-motion:reduce){.capture-remembering-letter{animation:none}}
+@media(max-width:480px){
+  .meeting-header .meeting-controls-main:has(.capture-remembering){flex-wrap:wrap}
+  .meeting-header .meeting-controls .capture-status:has(.capture-remembering){flex-basis:100%}
+  .meeting-header .meeting-controls-main:has(.capture-remembering) .meeting-source-strip{margin-right:auto}
+}

@@ -64,7 +64,7 @@ async function renderControls(props) {
   return JSON.stringify(sandbox.exports.render({ record: { capture: 'recording', sources: [] }, ready: true, signals: [], ...props }));
 }
 
-test('audio processing and import progress stay inside the capture status container',async()=>{
+test('ordinary recording progress stays off the visual line while import progress remains visible',async()=>{
   const findStatus=node=>{
     if(!node||typeof node!=='object')return null;
     if(node.attributes?.className==='capture-status')return node;
@@ -74,8 +74,13 @@ test('audio processing and import progress stay inside the capture status contai
   const processing=await renderControls(props);
   assert.match(JSON.stringify(findStatus(JSON.parse(processing))),/正在处理音频/);
   assert.equal(processing.match(/正在处理音频/g).length,1);
+  const status=findStatus(JSON.parse(processing)),description=status.children.flat(Infinity).flatMap(node=>node?.children?.flat(Infinity)||[]).find(node=>node?.tag==='small');
+  assert.equal(description.attributes.className,'sr-only');
+  assert.match(processing,/capture-remembering-letter/);
+  const listening=await renderControls({...props,record:{...props.record,pendingChunks:0}});assert.match(listening,/正在聆听/);assert.match(listening,/sr-only/);
   const importing=await renderControls({...props,progress:'正在导入音频 75%'});
   assert.match(JSON.stringify(findStatus(JSON.parse(importing))),/正在导入音频 75%/);
+  const importingStatus=findStatus(JSON.parse(importing)),importingDescription=importingStatus.children.flat(Infinity).flatMap(node=>node?.children?.flat(Infinity)||[]).find(node=>node?.tag==='small');assert.equal(importingDescription.attributes.className,undefined);
 });
 
 test('meeting controls distinguish ending capture from starting audio or unrelated page work', async () => {
@@ -129,4 +134,16 @@ test('exhausted tail transcription requires retry while independent minutes can 
  record.jobs=[];record.transcription='queued';
  const retried=await renderControls({record,recording:false,busy:false});
  assert.match(retried,/is-processing/);assert.match(retried,/正在处理尾段转录/);assert.doesNotMatch(retried,/尾段转录待重试|is-blocked/);
+});
+
+
+test('recording caption keeps one accessible phrase and preserves repair and failure details',async()=>{
+ const visit=node=>!node||typeof node!=='object'?[]:[node,...(Array.isArray(node)?node:Object.values(node)).flatMap(visit)];
+ const recording=JSON.parse(await renderControls({recording:true,record:{capture:'recording',sources:[],pendingChunks:1}})),all=visit(recording);
+ const animated=all.find(node=>node.attributes?.className==='capture-remembering');assert.equal(animated.attributes['aria-hidden'],'true');
+ assert.equal(all.filter(node=>node.attributes?.className==='capture-remembering-letter').length,7);
+ assert.equal(all.filter(node=>node.attributes?.className==='sr-only'&&node.children?.includes('对话正在被记住')).length,1);
+  for(const record of [{capture:'paused',sources:[{watermark:1,lastSequence:2}]},{capture:'sealed',sources:[{watermark:1,lastSequence:2}],pendingChunks:0,jobs:[],segments:[]},{capture:'completed',sources:[],transcription:'failed',jobs:[]}]){
+  const tree=JSON.parse(await renderControls({recording:false,record})),nodes=visit(tree),detail=nodes.find(node=>node.tag==='small');assert.ok(detail);assert.equal(detail.attributes.className,undefined);assert.ok(!nodes.some(node=>node.attributes?.className==='capture-remembering'));
+ }
 });
