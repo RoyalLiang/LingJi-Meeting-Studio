@@ -73,6 +73,12 @@ pub fn bind(directory: &Path, api_url: &str) -> Result<Binding, String> {
     bind_with_lock(directory, api_url, acquire_lock(directory)?)
 }
 
+fn unavailable_port(error: &std::io::Error) -> bool {
+    // Winsock reports WSAEACCES for excluded or exclusively bound ports.
+    error.kind() == std::io::ErrorKind::AddrInUse
+        || (cfg!(windows) && error.raw_os_error() == Some(10013))
+}
+
 pub fn bind_with_lock(directory: &Path, api_url: &str, lock: File) -> Result<Binding, String> {
     let registry = directory.join("profiles.json");
     let mut profiles: BTreeMap<String, u16> = if registry.exists() {
@@ -92,7 +98,7 @@ pub fn bind_with_lock(directory: &Path, api_url: &str, lock: File) -> Result<Bin
             if profiles.values().any(|value| *value == port) { continue; }
             match TcpListener::bind(("127.0.0.1", port)) {
                 Ok(listener) => { available = Some(listener); break; }
-                Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => continue,
+                Err(error) if unavailable_port(&error) => continue,
                 Err(error) => return Err(format!("本机会议服务无法绑定端口：{error}")),
             }
         }
@@ -121,6 +127,17 @@ pub fn bind_with_lock(directory: &Path, api_url: &str, lock: File) -> Result<Bin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn skips_windows_excluded_ports_during_initial_allocation() {
+        use std::io::{Error, ErrorKind};
+        assert!(unavailable_port(&Error::from(ErrorKind::AddrInUse)));
+        assert_eq!(
+            unavailable_port(&Error::from_raw_os_error(10013)),
+            cfg!(windows)
+        );
+        assert!(!unavailable_port(&Error::from(ErrorKind::PermissionDenied)));
+    }
     #[test]
     fn rejects_unsafe_urls() {
         for url in [
