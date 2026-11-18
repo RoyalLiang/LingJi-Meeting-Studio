@@ -144,3 +144,21 @@ test('OSS lost PUT response resumes a verified object without publishing a parti
  assert.equal(f.writes.filter(key=>key.endsWith('macos-arm64.dmg')).length,1);
  assert.equal(f.writes.at(-1),'releases/current.json');
 },'0.3.34'));
+
+
+test('interrupted release download keeps the old catalog and reuses completed platforms on same-version retry',()=>withFixture(async(f,options)=>{
+  const previous=Buffer.from(JSON.stringify({version:'0.3.34',assets:f.release.assets.map(asset=>({name:asset.name.replace('0.3.34.1','0.3.34'),size:asset.size,sha256:asset.digest.slice(7)}))}));
+  f.objects.set('releases/current.json',{bytes:previous,acl:'public-read'});
+  const run=f.run;let interrupt=true;
+  options.run=async(program,args,...rest)=>{
+    if(program==='gh'&&args.includes('Lingji-0.3.34.1-linux-amd64.deb')&&interrupt){interrupt=false;throw new Error('release_download_interrupted');}
+    return run(program,args,...rest);
+  };
+  await assert.rejects(mirrorSiteDownloads(options),/release_download_interrupted/);
+  assert.deepEqual(f.objects.get('releases/current.json').bytes,previous);
+  assert.equal(f.writes.length,2);
+  const receipt=await mirrorSiteDownloads(options);
+  assert.equal(receipt.version,'0.3.34.1');
+  assert.equal(f.writes.filter(key=>key!=='releases/current.json').length,3);
+  assert.equal(f.writes.at(-1),'releases/current.json');
+},'0.3.34.1'));

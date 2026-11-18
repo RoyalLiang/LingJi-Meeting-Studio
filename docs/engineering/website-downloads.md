@@ -61,7 +61,7 @@ GitHub 仓库变量 `DOWNLOADS_BASE_URL` 使用上述下载根目录。OSS 上�
 
 版本文件以单个流式 PUT 上传，服务端校验 Content-MD5，发布作业校验实际文件 SHA-256 与 Release digest。上传后核对大小、SHA-256 元数据、单次 PUT 的 ETag、对象公共读及匿名 HEAD；清单写入后再从 OSS 和公开地址读回。ETag 不代替 SHA-256。版本控制启用或暂停时，OSS 的禁止覆盖头无效，作业会拒绝上传，不自动改变 Bucket 版本状态。[PutObject 限制](https://www.alibabacloud.com/help/en/oss/developer-reference/putobject)
 
-官网同步使用 macOS runner 搬运已发布安装包，日志分别标明下载、上传和核对的文件名。遇到上传超时，沿用同一产品版本重跑官网同步，不增加修订号、不移动 tag。
+官网同步使用 macOS runner 搬运已发布安装包，日志分别标明下载、上传和核对的文件名。遇到上传超时或附件获取中断，先定位具体阶段，再沿用同一产品版本重跑官网同步，不增加修订号、不移动 tag。
 
 OSS 不支持 PutObject 的 If-Match 条件写。`releases/` 必须由该工作流单独维护；所有版本共用串行并发组，清单写入前检查版本号，禁止旧作业回退新版本。若增加其他发布者，应先加入共享锁等协调机制，不能直接并行写 `current.json`。[条件写限制](https://www.alibabacloud.com/help/en/oss/user-guide/0017-00000245)
 
