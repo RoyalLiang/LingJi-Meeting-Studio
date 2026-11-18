@@ -26,7 +26,7 @@ export function SpeakerPanel({record,segment,changed,close,position}:{record:Rec
  },[]);
  useEffect(()=>{
     const previous=document.activeElement as HTMLElement|null;alive.current=true;input.current?.focus({preventScroll:true});const controller=new AbortController();
-    const load=()=>api<Bank>('/voiceprints/people','GET',undefined,controller.signal).then(value=>{if(alive.current){setBank(value);if(value.jobs.find(job=>job.id===learnId.current)?.status==='ready')setNotice('声音已更新，将用于后续会议识别。');}}).catch(error=>{if(!controller.signal.aborted)setError(messageOf(error));});
+    const load=()=>api<Bank>('/voiceprints/people','GET',undefined,controller.signal).then(value=>{if(alive.current){setBank(value);if(value.jobs.find(job=>job.id===learnId.current)?.status==='ready')setNotice('声音已更新，可在声纹库管理跨会议识别。');}}).catch(error=>{if(!controller.signal.aborted)setError(messageOf(error));});
     void load();const timer=setInterval(()=>{void load();},4000);
     return()=>{alive.current=false;controller.abort();clearInterval(timer);if(panel.current?.contains(document.activeElement))previous?.focus();};
   },[]);

@@ -2,7 +2,7 @@
 
 Windows 商店通道使用 MSIX，由 Microsoft Store 审核并签名。现有 NSIS 安装包继续用于独立下载；把 EXE 挂到商店不会获得微软重签。签名边界见[微软包要求](https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msix/app-package-requirements)。
 
-2026-11-18 已核对 Partner Center 与[公开商店页面](https://apps.microsoft.com/detail/9NCW0WT5W9D1)：产品“聆记 LingJi”（Store ID `9NCW0WT5W9D1`）已上架，提交 1 为产品 `0.3.33` / 包 `1.3.33.0`。中英文资料、每种语言四张截图、免费价格和 IARC 评级已保存。2026-11-18 的提交 2 仅更新中英文介绍、简短介绍与功能发行说明，保留同一安装包、许可条款、截图、价格和可用性；当前处于认证预处理，尚不能视为新文案已公开。附加许可条款包含[完整 WebView2 许可](https://rookiecode.com/licenses/webview2-fixed-version.html)入口与 SmartScreen 告知。
+2026-11-18 已核对 Partner Center 与[公开商店页面](https://apps.microsoft.com/detail/9NCW0WT5W9D1)：产品“聆记 LingJi”（Store ID `9NCW0WT5W9D1`）已上架，提交 1 为产品 `0.3.33` / 包 `1.3.33.0`。中英文资料、每种语言四张截图、免费价格和 IARC 评级已保存。2026-11-18 的提交 2 仅更新中英文介绍、简短介绍与功能发行说明，保留同一安装包、许可条款、截图、价格和可用性；提交后核对为认证预处理，尚未核实新文案公开上架。附加许可条款包含[完整 WebView2 许可](https://rookiecode.com/licenses/webview2-fixed-version.html)入口与 SmartScreen 告知。
 
 ## 使用已预留的产品身份
 
@@ -66,7 +66,7 @@ WGS 把同次构建的 `windows-app.exe`、资源归档、`windows-store-unsigne
 4. 核对已上架包与本轮产品版本的映射，以及干净 Windows 机器上的安装、录音、数据保存和更新。
 5. 在 GitHub 仓库变量设置 `MICROSOFT_STORE_PUBLISHED_VERSION` 为**产品版本**，例如 `0.3.33`，运行官网部署工作流。 同时保留注明产品版本的 GitHub 独立安装包备用入口，供商店不可用的设备选择。
 
-官网使用固定 Store ID。当前源码已调整渠道，待官网部署核对后生效：核对实际上架后，Windows 主入口使用官方 Store Web Installer；macOS、Linux 及 Windows 独立备用入口使用不可变 GitHub Release。商店与测试版分别标识渠道，允许版本不同；不能把较旧商店包标成最新 GitHub 产品版本。
+官网使用固定 Store ID。2026-11-18 官网渠道调整已部署并核对：核对实际上架后，Windows 主入口使用官方 Store Web Installer；macOS、Linux 及 Windows 独立备用入口使用不可变 GitHub Release。商店与测试版分别标识渠道，允许版本不同；不能把较旧商店包标成最新 GitHub 产品版本。
 
 Store Web Installer 下载微软生成的轻量 EXE，再联网安装商店应用，不是完整离线包。[官方安装流程](https://learn.microsoft.com/en-us/windows/apps/distribute-through-store/how-to-use-store-web-installer-for-distribution)
 

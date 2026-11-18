@@ -129,7 +129,7 @@
 
 ### 下载桌面测试版
 
-打开[官网下载](https://rookiecode.com/#download)，页面按当前系统选择页签，也可手动切换。当前源码将 Windows 主入口改为 Microsoft Store，macOS 与 Linux 改为对应版本的 GitHub Release，待官网部署核对后生效；独立包目录未就绪时会明确提示暂不可用。安装前核对系统与架构。
+打开[官网下载](https://rookiecode.com/#download)，页面按当前系统选择页签，也可手动切换。Windows 主入口使用 Microsoft Store，macOS 与 Linux 使用对应版本的 GitHub Release；独立包目录未就绪时会明确提示暂不可用。安装前核对系统与架构。
 
 Microsoft Store 已上架产品 `0.3.33`（包 `1.3.33.0`），GitHub 测试版与商店分别更新。Windows 页面另保留注明版本的独立 EXE 入口；商店版由安装渠道更新，独立安装包保留原更新方式。构建和上架步骤见[商店分发](docs/engineering/microsoft-store.md)。
 

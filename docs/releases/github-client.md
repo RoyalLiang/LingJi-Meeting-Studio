@@ -1,6 +1,6 @@
 # 安装桌面测试版
 
-以下渠道调整已完成源码修改，待官网部署核对后生效。从[官网下载](https://rookiecode.com/#download)选择系统：Windows 优先进入[Microsoft Store](https://apps.microsoft.com/detail/9NCW0WT5W9D1)，macOS 与 Linux 使用 GitHub Release。当前 GitHub 测试版为 [v0.3.34.1](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.3.34.1)，商店公开包为产品 `0.3.33` / MSIX `1.3.33.0`，两条渠道分别更新。Windows 也可选择注明版本的独立 EXE。
+从[官网下载](https://rookiecode.com/#download)选择系统：Windows 优先进入[Microsoft Store](https://apps.microsoft.com/detail/9NCW0WT5W9D1)，macOS 与 Linux 使用 GitHub Release。当前 GitHub 测试版为 [v0.3.34.1](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.3.34.1)，商店公开包为产品 `0.3.33` / MSIX `1.3.33.0`，两条渠道分别更新。Windows 也可选择注明版本的独立 EXE。
 
 独立安装包链接固定到已发布的 GitHub 版本和附件；版本、文件大小及 SHA-256 仍由完整发布清单提供。既有官网同源下载地址继续兼容旧入口；系统识别不等于架构兼容性检测。
 

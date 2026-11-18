@@ -2,7 +2,7 @@
 
 官网的“立即下载”进入系统选择区，识别 macOS、Windows 或 Linux；用户也可手动选择。macOS 包仅支持 Apple Silicon，Windows 与 Linux 包为 x64。手机不会被识别成可安装的桌面系统。
 
-下载源为阿里云 OSS `lingji-studio`，地域 `cn-shanghai`，发布目录 `releases/`。已通过 GitHub OIDC 上传 v0.3.29 的三个桌面安装包，OSS 公网目录、HEAD 与单字节 Range 已核验。当前源码已调整下载渠道，待本轮官网部署核对后生效：macOS、Linux 主下载按钮使用清单对应的不可变 GitHub Release 附件；Windows 主按钮使用已核实上架的 Microsoft Store，另保留注明产品版本的 GitHub 独立安装包入口。商店与测试版分别显示渠道，允许版本不同，不把旧商店包标为新测试版。目录不完整时独立包显示暂不可下载。
+下载源为阿里云 OSS `lingji-studio`，地域 `cn-shanghai`，发布目录 `releases/`。已通过 GitHub OIDC 上传 v0.3.29 的三个桌面安装包，OSS 公网目录、HEAD 与单字节 Range 已核验。2026-11-18 已部署并核对公网入口：macOS、Linux 主下载按钮使用清单对应的不可变 GitHub Release 附件；Windows 主按钮使用已核实上架的 Microsoft Store，另保留注明产品版本的 GitHub 独立安装包入口。商店与测试版分别显示渠道，允许版本不同，不把旧商店包标为新测试版。目录不完整时独立包显示暂不可下载。
 
 ## 使用既有存储或 CDN
 

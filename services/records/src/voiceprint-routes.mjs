@@ -5,6 +5,12 @@ export async function voiceprintRoutes({req,res,path,user,repo,readBody,send}){
   const service=voiceLearning(repo);
   if(path==='/api/voiceprints/people'&&req.method==='GET'){send(res,200,await service.people(user.id));return true;}
   if(path==='/api/voiceprints/learn'&&req.method==='POST'){send(res,202,await service.learn(user.id,await readBody(req,3000)));return true;}
+  const action=path.match(/^\/api\/voiceprints\/people\/([a-f0-9-]{36})\/(sources|candidates|recognition)$/i);
+  if(action){
+    if(action[2]==='recognition'){requireThat(req.method==='PATCH','method_not_allowed',405);send(res,200,await service.recognition(user.id,action[1],await readBody(req,1000)));}
+    else {requireThat(req.method==='GET','method_not_allowed',405);send(res,200,action[2]==='sources'?await service.sources(user.id,action[1]):await service.candidates(user.id,action[1],new URL(req.url,'http://records.local').searchParams.get('recordId')));}
+    return true;
+  }
   const profile=path.match(/^\/api\/voiceprints\/people\/([a-f0-9-]{36})$/i);
   if(profile){
     if(req.method==='PATCH'){send(res,200,await service.savePerson(user.id,{...await readBody(req,1000),id:profile[1]}));return true;}

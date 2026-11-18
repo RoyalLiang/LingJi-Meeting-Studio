@@ -70,3 +70,17 @@ Record capture 与 transcription 分离。创建时可不提供标题，会后�
 创建 Record 可传 `workspaceId`，默认 null，服务端验证目录所有权。GET /records 新增 `workspace=all|inbox|id` 筛选，响应含 workspaceId；seconds 使用合并并行音轨的会议时长。所有音频身份与持久 ACK 保持原协议。归档新增 record.archived 事件，不增加转录版本。
 
 分析输入和结果绑定会议/转录/纪要版本与范围哈希，内容、归档或保留期变化后隐藏旧结果。供应商 SSE 累计草稿经概览读取，未经校验的草稿不作为正式结论。详见 [工作目录说明](workspaces.md)。
+
+
+## 账户人物与声音（当前源码）
+
+| 路由 | 用途 |
+| --- | --- |
+| GET /voiceprints/people | 账户私有人物、声音条目、库 revision 与最近学习状态；不返回特征向量或密文 |
+| PATCH/DELETE /voiceprints/people/:id | 创建／修改库中姓名；删除人物及声音，保留人工历史称谓；删除可重试 |
+| GET /voiceprints/people/:id/sources | 当前账户人物的来源会议、时间与原文；原引用失效时只返回 `available:false`，不替换成新版本 |
+| GET /voiceprints/people/:id/candidates?recordId=:recordId | 自有会议中已确认归属、保留原音的 2–30 秒非重叠片段；有界返回最多 40 项 |
+| PATCH /voiceprints/people/:id/recognition | `{enabled:boolean,libraryRevision:number,consent:true}`；启用须明确同意账户全目录匹配，停用不要求再次授权；旧库版本返回 409 |
+| POST /voiceprints/learn | `{personId,requestId,recordId,segmentId,revision,consent:true}`；复用学习队列与幂等键，不因添加声音自动恢复已停止人物 |
+
+暂停／删除决策与条目匹配标志、全局库版本同事务提交；后来入库也重新核对人物策略。删除人物不会让旧项目条目重新构造为可见人物。音频试听沿用 `GET /workspaces/all/voiceprints/clip?id=:entryId`，每次复核原音留存、源版本及在途撤销。读写接口保持既有登录、所有权、Origin 和 CSRF 边界。

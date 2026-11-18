@@ -9,6 +9,7 @@
 | 状态徽标与长说明挤在同一行，检测按钮挤压内容 | 共享 `ModuleConnectionCheck` 的模型、翻译、飞书、MCP、诊断界面检查 | 深浅主题、1250px/390px、长错误和配置变化状态；说明在徽标下，操作按钮保持可达 |
 | 网络设置移位后统一保存漏掉代理、重复请求或意外清除密码 | `records-settings-save` | 网络→备份→词表→模型顺序；失败停止后续保存并保留草稿；并发去重；空密码保留、显式清除；切页签保留草稿 |
 | 商店审核落后于 GitHub 导致官网 Windows 入口退回 EXE，或错误显示测试版号 | `records-site-downloads`、三平台真实页面入口检查 | Store 独立版本、固定官方 ID，macOS/Linux 固定仓库 Release，备用独立包带完整版本；旧同源 HEAD/Range 接口保持可用 |
+| 人物停止后在途匹配仍落名、后续学习意外恢复、旧库删除或失败授权留下人物 | `records-local-speakers` | 显式全目录同意与库版本；暂停继承、源引用/留存/账户校验、在途匹配/入库、旧库事务失败、删除残余清理重试；不能由合成向量推导真实识别准确率 |
 | 后端嵌套依赖、缺失锁定依赖、可选 peer 被误打包 | `records-backend-dependencies` | 检查真实依赖树与打包闭包 |
 | runner 将 GitHub URL 指向尚无新 SHA 的本地镜像，checkout 报 `not our ref` | runner 登记前的固定 SHA 镜像预检（环境门禁） | 先补齐 Git 对象并确认精确 CI ref 可见，再消耗一次性 runner；工作树保持不变 |
 | WGS 复用旧产物、源码漂移或平台资源混用 | `records-wgs-build-contract` | 固定 SHA、完整文件摘要与目录锁；两个平台串行 |

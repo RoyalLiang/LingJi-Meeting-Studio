@@ -352,3 +352,97 @@ test('saving a speaker name keeps completed minutes current and does not restart
   assert.equal(current.minutes.sections[0].items[0].text,'保留已整理的内容');
   assert.equal(current.minutes.evidenceSnapshot[0].speaker,'林工');
 }));
+
+test('person recognition can pause without deleting voices or historical names and resumes only with current explicit consent',()=>fixture(async({repo,record,segment,input})=>{
+  let calls=0;const library=voiceprints(repo,{infer:async()=>{calls++;return {embedding:vector(0)};}}),service=voiceLearning(repo,{library}),personId=randomUUID();
+  const updated=await service.annotate('owner',record.id,{segmentId:segment.id,revision:segment.revision,requestId:personId,name:'林工'}),reference={...input,revision:updated.segments[0].revision,personId};
+  await library.enroll('owner','all',reference);const first=await service.people('owner');assert.equal((await library.match('owner','all',reference)).matches.length,1);
+  await assert.rejects(service.recognition('other',personId,{enabled:false,libraryRevision:0}),{code:'voiceprint_not_found'});
+  await service.savePerson('owner',{id:personId,name:'林老师'});
+  await service.recognition('owner',personId,{enabled:false,libraryRevision:first.revision});const stopped=await service.people('owner'),prior=calls;
+  assert.equal(stopped.people[0].name,'林老师','recognition changes must not rename the person');assert.equal(stopped.people[0].recognitionEnabled,false);assert.equal(stopped.people[0].samples,1);assert.equal(stopped.entries[0].global,false);
+  assert.deepEqual((await library.match('owner','all',reference)).matches,[]);assert.equal(calls,prior,'paused entries must not invoke a model');assert.equal((await repo.get(record.id)).segments[0].speaker,'林工');
+  await library.enroll('owner','all',{...reference,requestId:randomUUID(),libraryRevision:stopped.revision});const later=await service.people('owner');assert.equal(later.entries.length,2);assert.ok(later.entries.every(entry=>entry.recognitionDisabled&&!entry.global),'new learning must inherit the paused person state');
+  await assert.rejects(service.recognition('owner',personId,{enabled:true,libraryRevision:later.revision}),{code:'voiceprint_consent_required'});
+  await assert.rejects(service.recognition('owner',personId,{enabled:true,consent:true,libraryRevision:first.revision}),{code:'voiceprint_library_changed'});
+  await service.recognition('owner',personId,{enabled:true,consent:true,libraryRevision:later.revision});assert.ok((await service.people('owner')).entries.every(entry=>entry.global));assert.equal((await library.match('owner','all',reference)).matches.length,1);
+}));
+
+test('pausing a legacy person covers project matching and a match already in flight',()=>fixture(async({repo,input})=>{
+  let holding=false,entered,release;const ready=new Promise(resolve=>{entered=resolve;}),gate=new Promise(resolve=>{release=resolve;});
+  const library=voiceprints(repo,{infer:async()=>{if(holding){entered();await gate;}return {embedding:vector(0)};}}),service=voiceLearning(repo,{library});
+  await library.enroll('owner','inbox',input);const state=await service.people('owner'),personId=state.people[0].id;
+  holding=true;const pending=library.match('owner','inbox',input);await ready;await service.recognition('owner',personId,{enabled:false,libraryRevision:state.revision});release();assert.deepEqual((await pending).matches,[]);
+  assert.deepEqual((await library.match('owner','inbox',input)).matches,[]);assert.equal((await library.list('owner','all')).entries.length,1);
+}));
+
+test('pausing while enrollment runs fences the old write and the retried sample stays paused',()=>fixture(async({repo,input})=>{
+  let holding=true,entered,release;const ready=new Promise(resolve=>{entered=resolve;}),gate=new Promise(resolve=>{release=resolve;});
+  const library=voiceprints(repo,{infer:async()=>{if(holding){entered();await gate;}return {embedding:vector(0)};}}),service=voiceLearning(repo,{library}),personId=randomUUID();
+  await service.savePerson('owner',{id:personId,name:'林工'});const pending=library.enroll('owner','all',{...input,personId}),rejected=assert.rejects(pending,{code:'voiceprint_library_changed'});
+  await ready;const state=await service.people('owner');await service.recognition('owner',personId,{enabled:false,libraryRevision:state.revision});holding=false;release();await rejected;
+  const current=await service.people('owner');const saved=await library.enroll('owner','all',{...input,personId,libraryRevision:current.revision});assert.equal(saved.global,false);assert.equal(saved.recognitionDisabled,true);
+}));
+
+test('person sources and candidate clips require the owner, current references, retained audio and confirmed identity',()=>fixture(async({repo,record,segment,input})=>{
+  const library=voiceprints(repo,{infer:async()=>({embedding:vector(0)})}),service=voiceLearning(repo,{library}),personId=randomUUID();
+  const updated=await service.annotate('owner',record.id,{segmentId:segment.id,revision:segment.revision,requestId:personId,name:'林工'});await repo.change(record.id,r=>{r.title='来源会议';r.retainAudio=true;});
+  await library.enroll('owner','all',{...input,revision:updated.segments[0].revision,personId});const sources=await service.sources('owner',personId);assert.equal(sources.sources[0].title,'来源会议');assert.equal(sources.sources[0].audioAvailable,true);assert.ok(sources.sources[0].text.includes('授权'));
+  await assert.rejects(service.sources('other',personId),{code:'voiceprint_not_found'});await assert.rejects(service.candidates('other',personId,record.id),{code:'voiceprint_not_found'});
+  assert.equal((await service.candidates('owner',personId,record.id)).clips.length,1);
+  await repo.change(record.id,r=>{r.segments.push({...r.segments[0],id:randomUUID(),overlappingSpeech:true},{...r.segments[0],id:randomUUID(),personId:randomUUID()},{...r.segments[0],id:randomUUID(),speakerConfirmed:false});});assert.equal((await service.candidates('owner',personId,record.id)).clips.length,1);
+  const foreign=createRecord('other');await repo.insert(foreign);await assert.rejects(service.candidates('owner',personId,foreign.id),{code:'record_not_found'});
+  await repo.change(record.id,r=>{r.audioPurged=true;});assert.equal((await service.sources('owner',personId)).sources[0].audioAvailable,false);assert.deepEqual((await service.candidates('owner',personId,record.id)).clips,[]);
+  await repo.change(record.id,r=>{r.segments[0].revision++;r.segments[0].text='修订后的私有内容';});assert.deepEqual((await service.sources('owner',personId)).sources,[{id:sources.sources[0].id,available:false}]);
+  await repo.change(record.id,r=>{r.segments[0].revision--;r.deleteAt=new Date(Date.now()-1000).toISOString();});assert.equal((await service.sources('owner',personId)).sources[0].available,false);
+}));
+
+test('person source and recognition routes keep read and write methods separate',()=>fixture(async({repo,record,input})=>{
+  const {voiceprintRoutes}=await import('../services/records/src/voiceprint-routes.mjs'),library=voiceprints(repo,{infer:async()=>({embedding:vector(0)})}),service=voiceLearning(repo,{library}),personId=randomUUID();
+  await service.savePerson('owner',{id:personId,name:'林工'});await library.enroll('owner','all',{...input,personId});const state=await service.people('owner');let result;
+  const path=`/api/voiceprints/people/${personId}/recognition`,base={repo,user:{id:'owner'},res:{},send:(_,status,body)=>{result={status,body};},readBody:async()=>({enabled:false,libraryRevision:state.revision})};
+  assert.equal(await voiceprintRoutes({...base,path,req:{method:'PATCH',url:path}}),true);assert.equal(result.status,200);assert.equal(result.body.people[0].recognitionEnabled,false);
+  await assert.rejects(voiceprintRoutes({...base,path,req:{method:'GET',url:path}}),{code:'method_not_allowed'});
+  const sourcePath=`/api/voiceprints/people/${personId}/sources`;await voiceprintRoutes({...base,path:sourcePath,req:{method:'GET',url:sourcePath}});assert.equal(result.body.sources.length,1);
+  const candidatePath=`/api/voiceprints/people/${personId}/candidates`;await voiceprintRoutes({...base,path:candidatePath,req:{method:'GET',url:candidatePath+'?recordId='+record.id}});assert.deepEqual(result.body.clips,[]);
+}));
+
+test('a failed legacy recognition request cannot materialize a person after its sample was revoked',()=>fixture(async({repo,input})=>{
+  const library=voiceprints(repo,{infer:async()=>({embedding:vector(0)})}),service=voiceLearning(repo,{library});await library.enroll('owner','inbox',input);
+  const state=await service.people('owner'),personId=state.people[0].id,get=repo.get.bind(repo);let entered,release,held=false;const ready=new Promise(resolve=>{entered=resolve;}),gate=new Promise(resolve=>{release=resolve;});
+  repo.get=async id=>{const value=await get(id);if(id===personId&&!held){held=true;entered();await gate;}return value;};
+  const pending=service.recognition('owner',personId,{enabled:false,libraryRevision:state.revision}),rejected=assert.rejects(pending,{code:'voiceprint_library_changed'});
+  await ready;await library.revoke('owner','all',state.entries[0].id,state.revision);release();await rejected;assert.equal(await get(personId),null);assert.deepEqual((await service.people('owner')).people,[]);
+}));
+
+test('a partially failed person deletion hides sources, fences matching and can finish on retry',()=>fixture(async({repo,record,segment,input})=>{
+  const library=voiceprints(repo,{infer:async()=>({embedding:vector(0)})}),service=voiceLearning(repo,{library}),personId=randomUUID();const updated=await service.annotate('owner',record.id,{segmentId:segment.id,revision:segment.revision,requestId:personId,name:'林工'}),reference={...input,revision:updated.segments[0].revision,personId};await repo.change(record.id,r=>{r.retainAudio=true;});await library.enroll('owner','all',reference);
+  const revoke=library.revoke;let entered,release;const ready=new Promise(resolve=>{entered=resolve;}),gate=new Promise(resolve=>{release=resolve;});library.revoke=async()=>{entered();await gate;throw Object.assign(new Error('synthetic cleanup failure'),{code:'synthetic_revoke_failure'});};
+  const deleting=service.remove('owner',personId),rejected=assert.rejects(deleting,{code:'synthetic_revoke_failure'});await ready;
+  const during=await service.people('owner'),sources=await service.sources('owner',personId).then(value=>({value}),error=>({code:error.code})),candidates=await service.candidates('owner',personId,record.id).then(value=>({value}),error=>({code:error.code})),matches=await library.match('owner','all',reference);
+  release();await rejected;library.revoke=revoke;
+  await assert.rejects(library.clip('owner',{id:(await library.list('owner','all')).entries[0].id}),{code:'voiceprint_not_found'});
+  assert.deepEqual(during.people,[]);assert.deepEqual(during.entries,[]);assert.equal(sources.code,'voiceprint_not_found');assert.equal(candidates.code,'voiceprint_not_found');assert.deepEqual(matches.matches,[]);assert.equal((await repo.get(record.id)).segments[0].speaker,'林工');
+  await service.remove('owner',personId);assert.deepEqual((await library.list('owner','all')).entries,[]);await service.remove('owner',personId);assert.deepEqual((await service.people('owner')).people,[]);
+}));
+
+test('a failed legacy deletion transaction cannot hide a still-matching person',()=>fixture(async({repo,input})=>{
+  const library=voiceprints(repo,{infer:async()=>({embedding:vector(0)})}),service=voiceLearning(repo,{library});await library.enroll('owner','inbox',input);const state=await service.people('owner'),personId=state.people[0].id,changeMany=repo.changeMany.bind(repo);let failed=false;
+  repo.changeMany=async(...args)=>{if(!failed){failed=true;throw Object.assign(new Error('synthetic transaction failure'),{code:'synthetic_transaction_failure'});}return changeMany(...args);};
+  await assert.rejects(service.remove('owner',personId),{code:'synthetic_transaction_failure'});assert.equal(await repo.get(personId),null);assert.equal((await service.people('owner')).people.length,1);assert.equal((await library.match('owner','inbox',input)).matches.length,1);
+  await service.remove('owner',personId);assert.deepEqual((await service.people('owner')).people,[]);assert.deepEqual((await library.match('owner','inbox',input)).matches,[]);await service.remove('owner',personId);
+  await assert.rejects(library.enroll('owner','inbox',{...input,libraryRevision:(await library.list('owner','inbox')).revision}),{code:'voiceprint_not_found'});
+  await assert.rejects(service.savePerson('owner',{id:personId,name:'旧人物请求'}),{code:'voiceprint_not_found'});assert.equal(await repo.get(personId),null);
+}));
+
+test('a logical person deletion also stops an audition whose PCM read is in flight',()=>fixture(async({repo,record,input})=>{
+  const library=voiceprints(repo,{infer:async()=>({embedding:vector(0)})}),service=voiceLearning(repo,{library}),personId=randomUUID();await service.savePerson('owner',{id:personId,name:'林工'});const entry=await library.enroll('owner','all',{...input,personId});await repo.change(record.id,r=>{r.retainAudio=true;});
+  const read=repo.readAudio.bind(repo);let entered,release,held=false;const ready=new Promise(resolve=>{entered=resolve;}),gate=new Promise(resolve=>{release=resolve;});repo.readAudio=async key=>{const bytes=await read(key);if(!held){held=true;entered();await gate;}return bytes;};
+  const audition=library.clip('owner',{id:entry.id}),rejected=assert.rejects(audition,{code:'voiceprint_not_found'});await ready;const revoke=library.revoke;library.revoke=async()=>{throw Object.assign(new Error('synthetic cleanup failure'),{code:'synthetic_revoke_failure'});};await assert.rejects(service.remove('owner',personId),{code:'synthetic_revoke_failure'});release();await rejected;library.revoke=revoke;await service.remove('owner',personId);
+}));
+
+test('deleting a waiting person cancels its due learning work instead of polling forever',()=>fixture(async({repo,record,segment})=>{
+  const library=voiceprints(repo,{infer:async()=>assert.fail('deleted waiting person must not infer')}),service=voiceLearning(repo,{library}),personId=randomUUID();await repo.change(record.id,r=>{r.segments[0].endMs=1000;});
+  const updated=await service.annotate('owner',record.id,{segmentId:segment.id,revision:segment.revision,requestId:personId,name:'林工'}),input={personId,recordId:record.id,segmentId:segment.id,revision:updated.segments[0].revision,requestId:randomUUID(),consent:true};assert.equal((await service.learn('owner',input)).status,'waiting');
+  await service.remove('owner',personId);assert.deepEqual((await service.people('owner')).jobs,[]);await service.run();assert.equal((await repo.get(input.requestId)).status,'cancelled');await assert.rejects(service.savePerson('owner',{id:personId,name:'旧请求'}),{code:'voiceprint_not_found'});
+}));
