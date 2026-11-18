@@ -8,7 +8,6 @@ import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import OSS from 'ali-oss';
-import {Agent} from 'node:https';
 import {downloadManifest} from '../apps/site/src/downloads.mjs';
 
 const execute = promisify(execFile);
@@ -58,8 +57,7 @@ export async function mirrorSiteDownloads({env = process.env, run = execute, fet
   assert.match(env.RELEASE_TAG || '', /^v\d{1,6}\.\d{1,6}\.\d{1,6}(?:\.\d{1,6})?$/);
   assert.ok(env.GH_TOKEN, 'GitHub release read token is required');
   assert.ok(env.ALIBABA_CLOUD_ACCESS_KEY_ID && env.ALIBABA_CLOUD_ACCESS_KEY_SECRET && env.ALIBABA_CLOUD_SECURITY_TOKEN, 'Configure OIDC STS authorization first');
-  // GitHub downloads can outlive an idle OSS socket; avoid reusing it for a large PUT.
-  client ||= new OSS({...downloadStorage, secure: true, httpsAgent: new Agent({keepAlive: false}), authorizationV4: true, accessKeyId: env.ALIBABA_CLOUD_ACCESS_KEY_ID, accessKeySecret: env.ALIBABA_CLOUD_ACCESS_KEY_SECRET, stsToken: env.ALIBABA_CLOUD_SECURITY_TOKEN, timeout: 900000});
+  client ||= new OSS({...downloadStorage, secure: true, authorizationV4: true, accessKeyId: env.ALIBABA_CLOUD_ACCESS_KEY_ID, accessKeySecret: env.ALIBABA_CLOUD_ACCESS_KEY_SECRET, stsToken: env.ALIBABA_CLOUD_SECURITY_TOKEN, timeout: 900000});
   const {versionStatus} = await client.getBucketVersioning(downloadStorage.bucket);
   assert.equal(versionStatus, undefined, 'Versioned buckets cannot enforce immutable upload paths');
   const sourceSha = (await run('git', ['rev-parse', '--verify', `refs/tags/${env.RELEASE_TAG}^{commit}`])).stdout.trim();
