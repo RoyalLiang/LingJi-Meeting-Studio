@@ -20,7 +20,9 @@
 | MSIX 固定版本中间目录与旧候选冲突 | WGS 实际候选构建、`records-wgs-build-contract` | Store 包在本次临时输入目录中生成；失败重试前，在锁内核对回执并隔离保留不完整输出，不覆盖旧候选 |
 | 候选改为 SHA 目录后 Linux 收集器仍读取旧路径 | `records-wgs-build-contract` | 直接从隔离目录收集，不复制到旧目录掩盖错误；Windows/macOS 默认输入保持可用 |
 | MSIX 任务栏图标出现系统底板或带底色的缩略图 | `records-windows-msix`、候选原包校验 | 透明素材、主题与像素规格、MakePri 索引与同源码摘要；Windows 实际图标选取需独立验收 |
+| MakePri 全新输出目录不存在，或 WGS 从 GitHub Blob 获取图标产物重试耗尽 | `records-windows-msix`、Windows MakePri 与 WGS 资源恢复步骤 | 从空目录生成图标；作业输出分块传递，拒绝缺块、不同源码及篡改资源 |
 | MSIX 包内 Fixed WebView2 无法从 WindowsApps 启动、缓存不完整 | `records-windows-msix`、`test-windows-msix.ps1` | 临时签名副本安装，正常 AUMID 冷启动及再次启动，验证真实 WebView 进程与缓存摘要 |
+| Windows 首次绑定回环端口返回 Winsock 10013 | Rust `config::tests`、Windows 隐藏录音与重启回放 | 初次分配绕过系统保留或独占端口，记录既有 WebView 来源后沿用同一端口和离线队列 |
 | 包内后端、模型路径与用户数据位置混淆 | `records-desktop-entry`、原生测试、Windows MSIX 脚本 | 包内后台启动及只读本地模型推理；不以文件存在代替运行 |
 | Windows 音频落盘刷新方式不兼容 | `records-audio-storage-sync` | Windows 文件刷新与 POSIX 目录屏障分别检查 |
 | 后台冷启动测试的10秒预算短于原生客户端15秒预算 | `records-desktop-entry`、原生启动与安装验证 | 测试握手对齐实际15秒上限，健康/父管道EOF退出断言保持；上游测试失败造成缺包时先定位首个失败 |
@@ -31,6 +33,10 @@
 | 四段修订被旧解析器忽略、按字符串比较或重复编码 | `records-preview-version`、`records-site-download-upload`、Rust preview updater 测试 | 旧三段补零；`.9 → .10`；native 与 MSIX 单调；macOS 交接身份与版本；OSS 四段升级及禁止降级 |
 
 三平台构建、Windows NSIS 与 MSIX、Ubuntu 22.04/24.04、macOS 原生检查在 Actions 中执行。推送 main 的代码改动会自动对固定 SHA 运行候选验证；也可用 `preview-release.yml` 的 `publish=false`、计划版本和固定 `source_sha` 手动验证，无需预建 tag；全部检查成功后才创建不可变 tag 并发布。候选成功不等于已经发布或商店审核通过。
+
+macOS Apple Silicon 托管 runner 容量不足时，核对作业没有开始执行以及 GitHub 给出的取消原因。重试同一流水中受影响的作业，保留已通过的校验和既有候选版本。
+
+同源码候选已通过，正式 Windows 验证因探针超时或进程挂起中止时，记录首个失败步骤，重跑 Windows 验证及发布下游。重试沿用同一标签、WGS 原产物和其他平台的成功结果。
 
 公开版本从兼容过渡版之后使用 `X.Y.Z.R`，修订号 R 为 0–99。npm/Cargo/Tauri 和安装器采用合法三段版本 `X.Y.(Z*100+R)`；MSIX 为 `(X+1).Y.(Z*100+R).0`，编码后的 patch 不超过 65535。根 `package.json.releaseVersion`、Rust `product-version.txt` 与对外标签、文件名、说明使用同一产品版本；工具链配置和包内部版本使用 native 映射。旧三段版本保留原义，不重新编码已发布包。
 

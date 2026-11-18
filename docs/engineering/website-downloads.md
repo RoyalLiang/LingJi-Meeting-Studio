@@ -85,4 +85,6 @@ Workers 回源使用 `redirect: manual`，并拒绝 3xx 响应；原生 Workers 
 
 ## 核对微软商店渠道
 
-Windows Store ID 来自固定源码中的 `apps/desktop/src-tauri/microsoft-store.json`。仓库变量 `MICROSOFT_STORE_PUBLISHED_VERSION` 必须填入已核对实际公开上架的产品版本；目录版本可以更高。下载接口仅返回固定官方链接，前端显示“Microsoft Store 版”，GitHub 平台页签显示完整产品版本。审核中或草稿不能作为启用依据；未配置时使用 GitHub 独立安装包。当前商店公开包为产品 `0.3.33` / MSIX `1.3.33.0`，与 GitHub 测试版分开管理。完整操作见[商店分发](microsoft-store.md)。
+Windows Store ID 来自固定源码中的 `apps/desktop/src-tauri/microsoft-store.json`。仓库变量 `MICROSOFT_STORE_PUBLISHED_VERSION` 必须填入已核对实际公开上架的产品版本；目录版本可以更高。下载接口仅返回固定官方链接，前端显示“Microsoft Store 版”，GitHub 平台页签显示完整产品版本。审核中或草稿不能作为启用依据；未配置时使用 GitHub 独立安装包。2026-11-19 核对的商店公开包为产品 `0.3.36.0` / MSIX `1.3.3600.0`，与 GitHub 测试版分开管理。完整操作见[商店分发](microsoft-store.md)。
+
+2026-11-19 已核对公网目录和页面进入同一商店产品。下载目录的 `windowsStore.version` 仍为 `0.3.33`，保存仓库变量需要重新验证 GitHub 身份；页面仅显示商店渠道名称，通过固定官方链接获取已上架版本。
