@@ -8,6 +8,7 @@ import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import OSS from 'ali-oss';
+import {Agent} from 'node:https';
 import {downloadManifest} from '../apps/site/src/downloads.mjs';
 
 const execute = promisify(execFile);
@@ -57,7 +58,8 @@ export async function mirrorSiteDownloads({env = process.env, run = execute, fet
   assert.match(env.RELEASE_TAG || '', /^v\d{1,6}\.\d{1,6}\.\d{1,6}(?:\.\d{1,6})?$/);
   assert.ok(env.GH_TOKEN, 'GitHub release read token is required');
   assert.ok(env.ALIBABA_CLOUD_ACCESS_KEY_ID && env.ALIBABA_CLOUD_ACCESS_KEY_SECRET && env.ALIBABA_CLOUD_SECURITY_TOKEN, 'Configure OIDC STS authorization first');
-  client ||= new OSS({...downloadStorage, secure: true, authorizationV4: true, accessKeyId: env.ALIBABA_CLOUD_ACCESS_KEY_ID, accessKeySecret: env.ALIBABA_CLOUD_ACCESS_KEY_SECRET, stsToken: env.ALIBABA_CLOUD_SECURITY_TOKEN, timeout: 900000});
+  // GitHub downloads can outlive an idle OSS socket; avoid reusing it for a large PUT.
+  client ||= new OSS({...downloadStorage, secure: true, httpsAgent: new Agent({keepAlive: false}), authorizationV4: true, accessKeyId: env.ALIBABA_CLOUD_ACCESS_KEY_ID, accessKeySecret: env.ALIBABA_CLOUD_ACCESS_KEY_SECRET, stsToken: env.ALIBABA_CLOUD_SECURITY_TOKEN, timeout: 900000});
   const {versionStatus} = await client.getBucketVersioning(downloadStorage.bucket);
   assert.equal(versionStatus, undefined, 'Versioned buckets cannot enforce immutable upload paths');
   const sourceSha = (await run('git', ['rev-parse', '--verify', `refs/tags/${env.RELEASE_TAG}^{commit}`])).stdout.trim();
@@ -81,6 +83,7 @@ export async function mirrorSiteDownloads({env = process.env, run = execute, fet
   const scratch = await mkdtemp(join(tmpdir(), 'lingji-oss-downloads-'));
   try {
     for (const asset of next.assets) {
+      console.log(`Downloading ${asset.name}`);
       await run('gh', ['release', 'download', env.RELEASE_TAG, '--repo', env.GITHUB_REPOSITORY, '--pattern', asset.name, '--dir', scratch], {env, maxBuffer: 1024 * 1024});
       const file = join(scratch, asset.name), sha256 = createHash('sha256'), md5 = createHash('md5');
       assert.equal((await stat(file)).size, asset.size);
@@ -88,6 +91,7 @@ export async function mirrorSiteDownloads({env = process.env, run = execute, fet
       assert.equal(sha256.digest('hex'), asset.sha256, 'Release asset digest mismatch');
       const checksum = md5.digest(), key = `${downloadStorage.prefix}v${version}/${asset.name}`;
       const stream = createReadStream(file);
+      console.log(`Uploading ${asset.name}`);
       try {
         await client.putStream(key, stream, {contentLength: asset.size, mime: 'application/octet-stream', meta: {sha256: asset.sha256}, headers: {'Content-MD5': checksum.toString('base64'), 'x-oss-forbid-overwrite': 'true', 'x-oss-object-acl': 'public-read', 'Cache-Control': 'public, max-age=31536000, immutable', 'Content-Disposition': `attachment; filename="${asset.name}"`}});
       } catch (error) {
@@ -101,6 +105,7 @@ export async function mirrorSiteDownloads({env = process.env, run = execute, fet
       const publicHead = await fetcher(downloadOrigin + `v${version}/${asset.name}`, {method: 'HEAD', redirect: 'error', signal: AbortSignal.timeout(30000)});
       assert.equal(publicHead.status, 200, 'OSS release is not publicly readable');
       assert.equal(Number(publicHead.headers.get('content-length')), asset.size);
+      console.log(`Verified ${asset.name}`);
       await rm(file);
     }
     checkCurrent(await readCurrent(client), next);
