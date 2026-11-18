@@ -2,7 +2,7 @@
 
 Windows 商店通道使用 MSIX，由 Microsoft Store 审核并签名。现有 NSIS 安装包继续用于独立下载；把 EXE 挂到商店不会获得微软重签。签名边界见[微软包要求](https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msix/app-package-requirements)。
 
-2026-11-16，产品“聆记 LingJi”（Store ID `9NCW0WT5W9D1`）的产品版本 `0.3.33` / 包版本 `1.3.33.0` 已提交认证；提交 1 当前显示预处理中，审核通过后自动发布。中英文介绍、每种语言四张截图、免费价格和 IARC 评级已保存。提交中的附加许可条款包含[完整 WebView2 许可](https://rookiecode.com/licenses/webview2-fixed-version.html)入口与 SmartScreen 告知。当前独立安装包继续经 OSS 提供，官网尚未启用商店下载。
+2026-11-18 已核对 Partner Center 与[公开商店页面](https://apps.microsoft.com/detail/9NCW0WT5W9D1)：产品“聆记 LingJi”（Store ID `9NCW0WT5W9D1`）已上架，提交 1 为产品 `0.3.33` / 包 `1.3.33.0`。中英文资料、每种语言四张截图、免费价格和 IARC 评级已保存。2026-11-18 的提交 2 仅更新中英文介绍、简短介绍与功能发行说明，保留同一安装包、许可条款、截图、价格和可用性；当前处于认证预处理，尚不能视为新文案已公开。附加许可条款包含[完整 WebView2 许可](https://rookiecode.com/licenses/webview2-fixed-version.html)入口与 SmartScreen 告知。
 
 ## 使用已预留的产品身份
 
@@ -18,7 +18,7 @@ Windows 商店通道使用 MSIX，由 Microsoft Store 审核并签名。现有 N
 | PublisherDisplayName | `Fengqi` |
 | Package Family Name | `Fengqi.LingJi_zfjq9r1geh5sg` |
 
-构建从固定源码读取身份，不使用猜测名称、临时证书或个人 CA 替代商店身份。产品目前仍是草稿；创建产品不代表已上架，提交与安装验证结果以本轮 Actions 和 Partner Center 的实际回执为准。
+构建从固定源码读取身份，不使用猜测名称、临时证书或个人 CA 替代商店身份。创建产品、认证、上架与设备安装验证是不同证据；当前上架包以 Partner Center 的提交 1 和公开产品页面为准。
 
 ## 区分产品版本和商店包版本
 
@@ -30,7 +30,7 @@ Windows 商店通道使用 MSIX，由 Microsoft Store 审核并签名。现有 N
 1.0.0      → 2.0.0.0
 ```
 
-产品主版本最大为 65534，其余段最大为 65535。README、客户端和 GitHub 标签继续使用产品版本，构建回执同时记录 `version` 和 `packageVersion`。不能直接按商店包前三段匹配 GitHub 标签。[微软版本规则](https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msix/app-package-requirements#package-version-numbering)
+三段历史版本按原义映射，不重新编码已发布包。四段产品版本 `X.Y.Z.R` 先映射为 native `X.Y.(Z*100+R)`，再映射为 MSIX `(X+1).Y.(Z*100+R).0`；例如 `0.3.34.1 → 0.3.3401 → 1.3.3401.0`。产品主版本最大为 65534，编码后的其余段不超过 65535。根 `package.json.releaseVersion`、客户端和 GitHub 标签使用产品版本，构建回执显式记录产品版本与包版本；native 版本按映射推导。不能直接按商店包前三段匹配 GitHub 标签。[微软版本规则](https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msix/app-package-requirements#package-version-numbering)
 
 ## 在现有发布流水线生成 MSIX
 
@@ -64,9 +64,9 @@ WGS 把同次构建的 `windows-app.exe`、资源归档、`windows-store-unsigne
 2. 填写实际功能、支持联系方式、年龄分级、隐私说明和审核说明。隐私页面为 `https://rookiecode.com/privacy`。说明 `runFullTrust` 用于桌面窗口、本地后台、音频采集和工作目录访问；本地转录与用户配置的云端模型分别说明。
 3. 等待包验证、认证与实际公开发布。产品 ID、提交成功或审核中都不能作为可下载的证明。
 4. 核对已上架包与本轮产品版本的映射，以及干净 Windows 机器上的安装、录音、数据保存和更新。
-5. 在 GitHub 仓库变量设置 `MICROSOFT_STORE_PUBLISHED_VERSION` 为**产品版本**，例如 `0.3.33`，运行官网部署工作流。 同时保留“独立安装包”OSS 备用入口，供商店不可用的设备选择。
+5. 在 GitHub 仓库变量设置 `MICROSOFT_STORE_PUBLISHED_VERSION` 为**产品版本**，例如 `0.3.33`，运行官网部署工作流。 同时保留注明产品版本的 GitHub 独立安装包备用入口，供商店不可用的设备选择。
 
-官网使用固定 Store ID，仅在已确认上架版本与 OSS 当前目录版本一致时，将 Windows 按钮指向官方 Store Web Installer；其他平台仍用 OSS。商店审核落后于独立发布时，官网保留当前版本的独立下载，不把旧商店包标为新版。
+官网使用固定 Store ID。当前源码已调整渠道，待官网部署核对后生效：核对实际上架后，Windows 主入口使用官方 Store Web Installer；macOS、Linux 及 Windows 独立备用入口使用不可变 GitHub Release。商店与测试版分别标识渠道，允许版本不同；不能把较旧商店包标成最新 GitHub 产品版本。
 
 Store Web Installer 下载微软生成的轻量 EXE，再联网安装商店应用，不是完整离线包。[官方安装流程](https://learn.microsoft.com/en-us/windows/apps/distribute-through-store/how-to-use-store-web-installer-for-distribution)
 
@@ -82,4 +82,10 @@ GitHub Release 和 OSS 只发布已验证的独立安装包。未签名的商店
 
 ## 内容举报与审核说明
 
-商店介绍应明确外部模型生成内容的用途和限制。官网和分享页提供[内容准则与举报](https://rookiecode.com/content)，使用公开 Issue 接收问题；分享引用编号不包含访问 token 或解密密钥。处理流程见[内容举报运维](content-reports.md)。2026-11-16 已上线举报入口并更新保存 IARC：全球 12+、美国 Teen、德国 12+、俄罗斯 18+。这仍是提交草稿，尚未上架；人工撤销分享不等于用户封禁或模型输出过滤。完整功能、可配置模型仍需微软认证确认，举报机制本身不证明所有生成内容符合政策。
+商店介绍应明确外部模型生成内容的用途和限制。官网和分享页提供[内容准则与举报](https://rookiecode.com/content)，使用公开 Issue 接收问题；分享引用编号不包含访问 token 或解密密钥。处理流程见[内容举报运维](content-reports.md)。已保存 IARC：全球 12+、美国 Teen、德国 12+、俄罗斯 18+。人工撤销分享不等于用户封禁或模型输出过滤；举报机制本身不证明所有生成内容符合政策。
+
+## 维护商店介绍与发行说明
+
+中英文最终文案维护在 [microsoft-store-listings.json](../releases/microsoft-store-listings.json)，只描述对应商店包中已存在的能力。会议助手可整理所选材料、问答可访问的目录知识、查看或取消任务并恢复中断处理；Git 归档澄清与已配置授权的 GitLab、飞书、只读 MCP 单独说明，不扩展成通用电脑控制或无限制外发。生成内容的人工核对、模型服务配置及公开反馈隐私提示必须保留。
+
+发行说明每项只写新增或修复的功能行为，不列配色、排版、控件等视觉调整。修改说明后逐语言读回，核对安装包、附加许可、截图与可用性未变，再提交认证。只有实际上架后才更新公开文案状态；文案审核不代表升级了安装包。

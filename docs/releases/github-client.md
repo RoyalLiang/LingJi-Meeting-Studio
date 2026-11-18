@@ -1,13 +1,13 @@
 # 安装桌面测试版
 
-从[官网立即下载](https://rookiecode.com/#download) 按系统与架构选择安装包；安装包未就绪时可查看 [GitHub Releases](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases) 的发布记录。当前已发布版本为 [v0.3.33](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.3.33)，三平台独立安装包已同步至官网下载。Windows 商店版仍需审核上架。
+以下渠道调整已完成源码修改，待官网部署核对后生效。从[官网下载](https://rookiecode.com/#download)选择系统：Windows 优先进入[Microsoft Store](https://apps.microsoft.com/detail/9NCW0WT5W9D1)，macOS 与 Linux 使用 GitHub Release。当前 GitHub 测试版为 [v0.3.34.1](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.3.34.1)，商店公开包为产品 `0.3.33` / MSIX `1.3.33.0`，两条渠道分别更新。Windows 也可选择注明版本的独立 EXE。
 
-官网下载通过独立对象存储提供安装包，不跳转 GitHub。SHA-256、版本和文件大小由完整发布的镜像清单提供；系统识别不等于架构兼容性检测。
+独立安装包链接固定到已发布的 GitHub 版本和附件；版本、文件大小及 SHA-256 仍由完整发布清单提供。既有官网同源下载地址继续兼容旧入口；系统识别不等于架构兼容性检测。
 
 | 平台 | 附件 | 条件 |
 | --- | --- | --- |
 | macOS Apple Silicon | DMG | 测试签名，未公证；见 [macOS 信任说明](macos-trust.md) |
-| Windows x64 | NSIS EXE | Windows 10/11 与 WebView2；安装器支持跳过新本地模型、保留升级位置已有模型 |
+| Windows x64 | Microsoft Store（MSIX）；可选独立 NSIS EXE | 商店版要求 Windows 10 2004 或更新版本；独立安装器可跳过新本地模型并保留升级位置已有模型 |
 | Linux x64 | DEB | Ubuntu 22.04/24.04；其他发行版需另外验证 |
 
 系统麦克风、屏幕与系统音频需要分别授权。内置本地转录可以离线使用；云端转录、翻译和纪要依赖相应服务配置，见[本地与云端配置](../engineering/funasr.md)。

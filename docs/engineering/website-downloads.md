@@ -2,7 +2,7 @@
 
 官网的“立即下载”进入系统选择区，识别 macOS、Windows 或 Linux；用户也可手动选择。macOS 包仅支持 Apple Silicon，Windows 与 Linux 包为 x64。手机不会被识别成可安装的桌面系统。
 
-下载源为阿里云 OSS `lingji-studio`，地域 `cn-shanghai`，发布目录 `releases/`。已通过 GitHub OIDC 上传 v0.3.29 的三个桌面安装包，OSS 公网目录、HEAD 与单字节 Range 已核验。页面显示清单中的已发布版本；目录不完整时显示暂不可下载。
+下载源为阿里云 OSS `lingji-studio`，地域 `cn-shanghai`，发布目录 `releases/`。已通过 GitHub OIDC 上传 v0.3.29 的三个桌面安装包，OSS 公网目录、HEAD 与单字节 Range 已核验。当前源码已调整下载渠道，待本轮官网部署核对后生效：macOS、Linux 主下载按钮使用清单对应的不可变 GitHub Release 附件；Windows 主按钮使用已核实上架的 Microsoft Store，另保留注明产品版本的 GitHub 独立安装包入口。商店与测试版分别显示渠道，允许版本不同，不把旧商店包标为新测试版。目录不完整时独立包显示暂不可下载。
 
 ## 使用既有存储或 CDN
 
@@ -19,7 +19,7 @@ v0.3.30/Lingji-0.3.30-linux-amd64.deb
 
 `current.json` 必须包含同一已发布版本的三个成品安装包。每项字段为 `name`、实际字节数 `size`、64 位十六进制 `sha256`；顶层字段为 `version` 和 `assets`。摘要取最终发布的文件，不能用源码或签名前产物的摘要替代。
 
-完整文件先上传并核对大小及 SHA-256，再更新目录。版本路径不覆盖，失败保留上一个完整目录。`Publish OSS website downloads` 工作流在桌面预览版发布成功后执行，也可在 main 手动指定已发布标签；它在隔离 runner 中转存附件，浏览器不会访问 GitHub 安装包地址。
+完整文件先上传并核对大小及 SHA-256，再更新目录。版本路径不覆盖，失败保留上一个完整目录。`Publish OSS website downloads` 工作流在桌面预览版发布成功后执行，也可在 main 手动指定已发布标签；它在隔离 runner 中转存附件，为既有同源下载接口和目录校验保留存储副本；页面主下载按钮直接进入 GitHub Release 或 Microsoft Store。
 
 当前下载根目录：
 
@@ -65,9 +65,11 @@ GitHub 仓库变量 `DOWNLOADS_BASE_URL` 使用上述下载根目录。OSS 上�
 
 OSS 不支持 PutObject 的 If-Match 条件写。`releases/` 必须由该工作流单独维护；所有版本共用串行并发组，清单写入前检查版本号，禁止旧作业回退新版本。若增加其他发布者，应先加入共享锁等协调机制，不能直接并行写 `current.json`。[条件写限制](https://www.alibabacloud.com/help/en/oss/user-guide/0017-00000245)
 
-## 让浏览器下载文件
+## 页面入口与既有下载接口
 
-页面只读取同源 `/api/downloads`，不需要开放 CDN 的浏览器 CORS。安装包从官网 `/downloads/v版本/文件名` 读取既有 CDN，并以 `Content-Disposition: attachment` 流式返回；不跳转或回源 GitHub，也不把整个文件读入 Worker 内存。
+页面读取同源 `/api/downloads` 核对目录，macOS、Linux 及 Windows 独立备用入口使用固定仓库、版本与文件名构造 GitHub Release URL；Windows 主入口固定为官方 Store ID。
+
+既有 `/downloads/v版本/文件名` API 保留，供旧页面和客户端兼容；它读取既有 CDN，并以 `Content-Disposition: attachment` 流式返回，不跳转或回源 GitHub，不把整个文件读入 Worker 内存。
 
 下载源需直接返回文件，支持 GET、HEAD，并正确处理 Range、If-Range、ETag 和 Content-Length。下载路由传递这些请求/响应头；不跟随下载源的重定向，不转发用户 Cookie 或 Authorization。HTML 错误页不能作为安装包返回。
 
@@ -81,6 +83,6 @@ Workers 回源使用 `redirect: manual`，并拒绝 3xx 响应；原生 Workers 
 
 本地检查覆盖系统识别、键盘 tab、合成文件下载、范围/缓存响应和错误分支。接入实际 CDN 后，再核对完整目录、三个文件的 HEAD/小范围请求和浏览器下载。未经单独要求，不在开发机下载或安装完整发布包。
 
-## 对齐微软商店版本
+## 核对微软商店渠道
 
-Windows Store ID 来自固定源码中的 `apps/desktop/src-tauri/microsoft-store.json`。仅在仓库变量 `MICROSOFT_STORE_PUBLISHED_VERSION` 已核对为真实上架的产品版本，并与 OSS 当前目录版本一致时，下载接口才返回官方 Store Web Installer 入口。审核中、未配置或版本落后时，仍使用该目录的独立 EXE；DMG、DEB 不受影响。不得在草稿创建时提前设置已发布版本。完整操作见[商店分发](microsoft-store.md)。
+Windows Store ID 来自固定源码中的 `apps/desktop/src-tauri/microsoft-store.json`。仓库变量 `MICROSOFT_STORE_PUBLISHED_VERSION` 必须填入已核对实际公开上架的产品版本；目录版本可以更高。下载接口仅返回固定官方链接，前端显示“Microsoft Store 版”，GitHub 平台页签显示完整产品版本。审核中或草稿不能作为启用依据；未配置时使用 GitHub 独立安装包。当前商店公开包为产品 `0.3.33` / MSIX `1.3.33.0`，与 GitHub 测试版分开管理。完整操作见[商店分发](microsoft-store.md)。

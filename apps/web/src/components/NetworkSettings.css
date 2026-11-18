@@ -2,3 +2,13 @@
 .network-proxy-password .settings-field-label { display: flex; align-items: center; justify-content: space-between; min-height: 24px; }
 .network-proxy-password .settings-field-label label { margin: 0; }
 .network-proxy-password .settings-field-label button { min-height: 24px; padding: 0 8px; font-size: 12px; }
+.network-overview { display: flex; align-items: end; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.network-mode { display: grid; gap: 8px; flex: 1 1 14rem; max-width: 22rem; min-width: 0; }
+.network-mode > span,.network-address > span { font-size: .75rem; }
+.network-save-state { min-height: var(--control-height); display: flex; align-items: center; font-size: .75rem; color: var(--ink-3); }
+.network-address { display: grid; gap: 8px; min-width: 0; }
+.network-settings .network-proxy-credentials { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.network-scope,.network-error { margin: 0; font-size: .75rem; overflow-wrap: anywhere; }
+.network-scope { color: var(--ink-3); }
+.network-error { color: var(--down); }
+@media(max-width:560px) { .network-settings .network-proxy-credentials { grid-template-columns: minmax(0,1fr); } }

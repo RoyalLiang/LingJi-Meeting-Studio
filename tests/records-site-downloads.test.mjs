@@ -100,19 +100,19 @@ test('system selection distinguishes desktops, iOS desktop mode and mobile devic
 });
 
 
-test('Store downloads stay hidden until the published product version matches the direct-download catalog', async () => {
+test('published Store stays available independently of the standalone release version', async () => {
   const config = {MICROSOFT_STORE_ID: '9TESTMSIX001', MICROSOFT_STORE_PUBLISHED_VERSION: '0.3.29'};
   assert.equal(microsoftStoreListing({}), null);
   assert.equal(microsoftStoreListing({MICROSOFT_STORE_ID: config.MICROSOFT_STORE_ID}), null);
-  assert.equal(microsoftStoreListing(config, '0.3.30'), null);
+  const listing = microsoftStoreListing(config);
+  assert.deepEqual(microsoftStoreListing(config, '0.3.30'), listing);
   assert.throws(() => microsoftStoreListing({...config, MICROSOFT_STORE_ID: 'https://example.test'}));
-  const listing = microsoftStoreListing(config, manifest.version);
   assert.equal(listing.href, 'https://apps.microsoft.com/detail/9TESTMSIX001?mode=direct');
   for (const extra of [{MICROSOFT_STORE_ID: config.MICROSOFT_STORE_ID}, config, {...config, MICROSOFT_STORE_PUBLISHED_VERSION: '0.3.28'}]) {
     const response = await downloadRoute(new Request('https://rookiecode.com/api/downloads'), {...env, ...extra}, async () => Response.json(manifest));
     const catalog = await response.json();
     assert.deepEqual(catalog.assets, downloadManifest(manifest).assets);
-    assert.deepEqual(catalog.windowsStore, extra === config ? listing : undefined);
+    assert.deepEqual(catalog.windowsStore, microsoftStoreListing(extra) || undefined);
   }
 });
 
@@ -120,7 +120,7 @@ async function downloadPage(catalog) {
   let finish;
   const done = new Promise(resolve => {finish = resolve;});
   const status = {set textContent(value) {finish(value);}};
-  const tabs = ['macos','windows','linux'].map(platform => ({dataset:{downloadPlatform:platform},setAttribute(){},addEventListener(){}}));
+  const tabs = ['macos','windows','linux'].map(platform => ({dataset:{downloadPlatform:platform},events:{},setAttribute(){},addEventListener(name,handler){this.events[name]=handler;},focus(){}}));
   const panels = tabs.map(tab => {
     const attrs = {'aria-disabled':'true',tabindex:'-1'};
     const link = {download:'',setAttribute(name,value){attrs[name]=value;},removeAttribute(name){delete attrs[name];if(name==='download')this.download='';}};
@@ -130,27 +130,33 @@ async function downloadPage(catalog) {
   const elements = {'#download-status':status,'#download-device':{},'#download-version':{}};
   const source = await readFile(new URL('../apps/site/public/downloads.js', import.meta.url), 'utf8');
   runInNewContext(source.replace('export function', 'function'), {document:{querySelectorAll:selector=>selector==='[data-download-platform]'?tabs:selector==='[data-download-panel]'?panels:[],querySelector:selector=>elements[selector]},navigator:{platform:'Win32'},AbortSignal,fetch:async()=>({ok:true,json:async()=>catalog})});
-  return {status:await done,panels};
+  return {status:await done,panels,tabs,elements};
 }
 
-test('download page enables all three installers and changes only Windows to a verified Store entry', async () => {
+test('website channels send Windows to the published Store and macOS/Linux to immutable GitHub assets', async () => {
   const catalog = downloadManifest(manifest);
   const direct = await downloadPage(catalog);
   assert.equal(direct.status, '');
-  assert.ok(direct.panels.every(panel => panel.link.href.startsWith('/downloads/') && !panel.attrs['aria-disabled']));
-  const windowsStore = microsoftStoreListing({MICROSOFT_STORE_ID:'9TESTMSIX001',MICROSOFT_STORE_PUBLISHED_VERSION:manifest.version});
+  const github = name => `https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v${manifest.version}/${name}`;
+  assert.equal(direct.panels[0].link.href, github(catalog.assets[0].name));
+  assert.equal(direct.panels[2].link.href, github(catalog.assets[2].name));
+  const windowsStore = microsoftStoreListing({MICROSOFT_STORE_ID:'9TESTMSIX001',MICROSOFT_STORE_PUBLISHED_VERSION:'0.3.28'});
   const store = await downloadPage({...catalog,windowsStore});
   assert.equal(store.status, '');
   assert.equal(store.panels[1].link.href, windowsStore.href);
   assert.equal(store.panels[1].link.download, '');
   assert.equal(store.panels[1].size.textContent, '');
-  assert.equal(direct.panels[1].standalone.hidden, true);
-  assert.equal(store.panels[1].standalone.hidden, false);
-  assert.equal(store.panels[1].standalone.href, direct.panels[1].link.href);
-  assert.ok(store.panels[0].link.href.endsWith('.dmg') && store.panels[2].link.href.endsWith('.deb'));
-  const invalid = await downloadPage({...catalog,windowsStore:{...windowsStore,href:'https://example.test/installer.exe'}});
-  assert.match(invalid.status, /暂不可用/);
-  assert.ok(invalid.panels.every(panel => !panel.link.href));
+  assert.equal(store.elements['#download-version'].textContent, 'Microsoft Store 版');
+  store.tabs[0].events.click();
+  assert.equal(store.elements['#download-version'].textContent, `v${manifest.version} 测试版`);
+  assert.equal(store.panels[0].link.href, github(catalog.assets[0].name));
+  assert.equal(store.panels[2].link.href, github(catalog.assets[2].name));
+  assert.equal(store.panels[1].standalone.href, github(catalog.assets[1].name));
+  for (const patch of [{href:'https://example.test/installer.exe'},{version:'invalid'}]) {
+    const invalid = await downloadPage({...catalog,windowsStore:{...windowsStore,...patch}});
+    assert.match(invalid.status, /暂不可用/);
+    assert.ok(invalid.panels.every(panel => !panel.link.href));
+  }
 });
 
 test('four-part repair versions retain download manifest and exact immutable route identity',async()=>{

@@ -129,9 +129,9 @@
 
 ### 下载桌面测试版
 
-打开[官网立即下载](https://rookiecode.com/#download)，页面会按当前系统选中对应 tab；核对架构后，再点**立即下载**，由浏览器从官网下载安装包。可手动切换系统。安装包目录尚未就绪时会明确提示暂不可用。
+打开[官网下载](https://rookiecode.com/#download)，页面按当前系统选择页签，也可手动切换。当前源码将 Windows 主入口改为 Microsoft Store，macOS 与 Linux 改为对应版本的 GitHub Release，待官网部署核对后生效；独立包目录未就绪时会明确提示暂不可用。安装前核对系统与架构。
 
-Microsoft Store 的 MSIX 通道正在准备。审核上架并核对版本后，官网 Windows 按钮会使用微软官方联网安装入口；尚未上架时继续提供独立 EXE。商店版由安装渠道更新，独立安装包保留原更新方式。构建和上架步骤见[商店分发](docs/engineering/microsoft-store.md)。
+Microsoft Store 已上架产品 `0.3.33`（包 `1.3.33.0`），GitHub 测试版与商店分别更新。Windows 页面另保留注明版本的独立 EXE 入口；商店版由安装渠道更新，独立安装包保留原更新方式。构建和上架步骤见[商店分发](docs/engineering/microsoft-store.md)。
 
 [GitHub Releases](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases) 保留独立的发布记录与附件。下载的是成品安装包；Source code 是源码归档。
 
@@ -141,12 +141,12 @@ Microsoft Store 的 MSIX 通道正在准备。审核上架并核对版本后，�
 | Windows x64 | Windows 10 / 11、WebView2 | `Lingji-版本-windows-x64-setup.exe` |
 | Linux x64 | Ubuntu 22.04 / 24.04，按本版 CI 回执核对 | `Lingji-版本-linux-amd64.deb` |
 
-1. 安装客户端：macOS 将应用拖入“应用程序”；Windows 运行 EXE；Linux 在下载目录运行 `sudo apt install ./Lingji-版本-linux-amd64.deb`。
+1. 安装客户端：macOS 将应用拖入“应用程序”；Windows 优先从商店安装，独立版运行 EXE；Linux 在下载目录运行 `sudo apt install ./Lingji-版本-linux-amd64.deb`。
 2. 进入**设置 → 模型与转录服务**，选择并测试转录和纪要服务。
 3. 点击**快速记录**，确认音源与授权，开始一场短会议。
 4. 结束后核对纪要和引用，再按需导出或分享。
 
-Windows 默认勾选安装本地 SenseVoice 模型，可取消；macOS 与 Linux 包含模型。Windows 取消后若无已有模型，需要配置云端转录；这不会减小完整安装包的下载大小。原位置升级可保留已有模型。
+Windows 独立安装器默认勾选安装本地 SenseVoice 模型，可取消；macOS 与 Linux 包含模型。Windows 取消后若无已有模型，需要配置云端转录；这不会减小完整安装包的下载大小。原位置升级可保留已有模型。
 
 当前 Windows 包未签名，macOS 包为临时签名且未公证。安装提示见 [macOS 安装与信任说明](docs/releases/macos-trust.md)。Linux 实体 PipeWire/声卡仍需目标设备验收；关闭窗口进入退出确认流程，不提供托盘常驻。Windows 与 macOS 收起主窗口后可继续工作，停止采集请使用会议内的暂停或结束。
 

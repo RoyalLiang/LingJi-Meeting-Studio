@@ -17,12 +17,11 @@ export function downloadManifest(input) {
   return {version: input.version, assets};
 }
 
-export function microsoftStoreListing(env, releaseVersion) {
+export function microsoftStoreListing(env) {
   const id = env.MICROSOFT_STORE_ID, version = env.MICROSOFT_STORE_PUBLISHED_VERSION;
   if (id && !/^[A-Z0-9]{12}$/.test(id)) throw new Error('invalid_microsoft_store_id');
   if (!version) return null;
   if (!id || !/^\d+\.\d+\.\d+(?:\.\d+)?$/.test(version)) throw new Error('invalid_microsoft_store_version');
-  if (releaseVersion && version !== releaseVersion) return null;
   return {id, version, href: `https://apps.microsoft.com/detail/${id}?mode=direct`};
 }
 
@@ -49,7 +48,7 @@ export async function downloadRoute(request, env, fetcher = fetch) {
       const data = new Uint8Array(length); let offset = 0;
       for (const chunk of chunks) {data.set(chunk, offset); offset += chunk.byteLength;}
       const manifest = downloadManifest(JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(data)));
-      const store = microsoftStoreListing(env, manifest.version);
+      const store = microsoftStoreListing(env);
       if (store) manifest.windowsStore = store;
       return new Response(request.method === 'HEAD' ? null : JSON.stringify(manifest), {headers: {'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=60', 'X-Content-Type-Options': 'nosniff'}});
     }

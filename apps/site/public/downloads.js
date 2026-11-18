@@ -11,16 +11,21 @@ const tabs = [...document.querySelectorAll('[data-download-platform]')];
 const panels = [...document.querySelectorAll('[data-download-panel]')];
 const status = document.querySelector('#download-status');
 const system = platformFor();
+let selectedPlatform = system || 'windows';
 function select(platform, focus = false) {
+  selectedPlatform = platform;
   for (const tab of tabs) {
     const selected = tab.dataset.downloadPlatform === platform;
     tab.setAttribute('aria-selected', String(selected)); tab.tabIndex = selected ? 0 : -1;
     if (selected && focus) tab.focus();
   }
-  for (const panel of panels) panel.hidden = panel.dataset.downloadPanel !== platform;
+  for (const panel of panels) {
+    panel.hidden = panel.dataset.downloadPanel !== platform;
+    if (!panel.hidden && panel.dataset.releaseLabel) document.querySelector('#download-version').textContent = panel.dataset.releaseLabel;
+  }
 }
 if (tabs.length) {
-  select(system || 'windows');
+  select(selectedPlatform);
   document.querySelector('#download-device').textContent = system ? '' : '仅提供桌面安装包';
   for (const tab of tabs) {
     tab.addEventListener('click', () => select(tab.dataset.downloadPlatform));
@@ -36,7 +41,7 @@ if (tabs.length) {
     if (!response.ok) throw new Error('unavailable');
     const manifest = await response.json();
     const store = manifest.windowsStore;
-    if (store && (!/^[A-Z0-9]{12}$/.test(store.id) || store.version !== manifest.version || store.href !== `https://apps.microsoft.com/detail/${store.id}?mode=direct`)) throw new Error('invalid_store_listing');
+    if (store && (!/^[A-Z0-9]{12}$/.test(store.id) || !/^\d+\.\d+\.\d+(?:\.\d+)?$/.test(store.version) || store.href !== `https://apps.microsoft.com/detail/${store.id}?mode=direct`)) throw new Error('invalid_store_listing');
     if (!/^\d+\.\d+\.\d+(?:\.\d+)?$/.test(manifest.version) || !Array.isArray(manifest.assets)) throw new Error('invalid');
     const files = panels.map(panel => {
       const platform = panel.dataset.downloadPanel, suffix = {macos: 'macos-arm64.dmg', windows: 'windows-x64-setup.exe', linux: 'linux-amd64.deb'}[platform];
@@ -44,23 +49,27 @@ if (tabs.length) {
       if (!asset || asset.href !== `/downloads/v${manifest.version}/${name}` || !Number.isSafeInteger(asset.size) || asset.size <= 0 || !/^[a-f0-9]{64}$/.test(asset.sha256)) throw new Error('invalid');
       return {panel, asset, store: platform === 'windows' ? store : null};
     });
-    document.querySelector('#download-version').textContent = `v${manifest.version} 测试版`;
     for (const {panel, asset, store} of files) {
+      const github = `https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/download/v${manifest.version}/${asset.name}`;
       const link = panel.querySelector('a[data-installer]');
       const standalone = panel.querySelector('[data-standalone-installer]');
       if (standalone) {
         standalone.hidden = !store;
-        if (store) { standalone.href = asset.href; standalone.download = asset.name; }
+        if (store) { standalone.href = github; standalone.download = asset.name; standalone.textContent = `独立版 v${manifest.version}`; }
       }
-      link.href = store?.href || asset.href;
+      panel.dataset.releaseLabel = store ? 'Microsoft Store 版' : `v${manifest.version} 测试版`;
+      link.href = store?.href || github;
+      link.textContent = store ? 'Microsoft Store 获取' : 'GitHub 下载';
       if (store) {
         link.removeAttribute('download');
         link.setAttribute('aria-label', '从 Microsoft Store 下载聆记');
+        link.target = '_blank'; link.rel = 'noopener noreferrer';
         panel.querySelector('[data-system-requirements]').textContent = 'Windows 10 2004 及以上 / Windows 11 · 64 位';
       } else link.download = asset.name;
       link.removeAttribute('aria-disabled'); link.removeAttribute('tabindex');
       panel.querySelector('[data-file-size]').textContent = store ? '' : `${(asset.size / 1024 ** 2).toFixed(0)} MB`;
     }
+    select(selectedPlatform);
     status.textContent = '';
   }).catch(() => { status.textContent = '安装包暂不可用，请稍后刷新重试。'; });
 }
