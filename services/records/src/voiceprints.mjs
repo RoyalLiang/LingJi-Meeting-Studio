@@ -8,7 +8,13 @@ import { normalizedVoice, voiceSimilarity } from './local-speakers.mjs';
 
 const registries = new WeakMap(), uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const validOrigin=(record,input)=>!input.origin||(record&&input.origin.recordId===record.id&&record.segments.some(segment=>segment.id===input.origin.segmentId&&segment.revision===input.origin.revision&&segment.personId===input.personId&&segment.speakerConfirmed));
-const publicEntry = ({ id, name, createdAt, source,personId,recognitionDisabled }) => ({ id, name, createdAt, source,personId,...(recognitionDisabled?{recognitionDisabled:true}:{}) });
+const publicEntry = ({ id, name, createdAt, source,personId,recognitionDisabled,automatic }) => ({ id, name, createdAt, source,personId,...(recognitionDisabled?{recognitionDisabled:true}:{}),...(automatic?{automatic:true}:{}) });
+function checkAutomaticSample(person, bank, record, input){
+  if(!input.autoLearnKey)return;
+  requireThat(person?.autoLearnKey===input.autoLearnKey&&person.recognitionEnabled!==false&&!bank.disabledPeople?.includes(input.personId),'voiceprint_auto_learning_stopped',409);
+  requireThat(record?.capture==='completed'&&record.retainAudio&&!record.audioPurged&&!record.audioCleanup,'voiceprint_audio_unavailable',409);
+  requireThat(!bank.entries.some(entry=>entry.personId===input.personId&&entry.source?.recordId===input.recordId),'voiceprint_auto_learning_duplicate',409);
+}
 const vaultId = (owner, scope) => 'voiceprints:' + createHash('sha256').update(JSON.stringify([owner, scope])).digest('hex');
 async function ownedSegment(repo, owner, scope, input) {
   requireThat(input && typeof input === 'object' && !Array.isArray(input) && uuid.test(input.recordId) && uuid.test(input.segmentId) && Number.isSafeInteger(input.revision), 'invalid_voiceprint_source', 400);
@@ -93,7 +99,7 @@ export function voiceprints(repo, { infer = transcribeLocalAsr } = {}) {
       const value = await vault(owner, scope), config = await readConfig(repo.root);
       return { available: localSpeakersConfigured(config), revision: value?.revision || 0, entries: (value?.entries || []).map(publicEntry) };
     },
-    async enroll(owner, scope, input) {
+    async enroll(owner, scope, input, {autoLearnKey}={}) {
       requireThat(input && typeof input === 'object' && !Array.isArray(input) && input.consent === true, 'voiceprint_consent_required', 400);
       requireThat(uuid.test(input.requestId) && typeof input.name === 'string' && input.name.trim().length > 0 && input.name.trim().length <= 80 && !/[\u0000-\u001f\u007f]/u.test(input.name), 'invalid_voiceprint_name', 400);
       requireThat(Number.isSafeInteger(input.libraryRevision) && input.libraryRevision >= 0, 'voiceprint_library_changed', 409);
@@ -108,8 +114,10 @@ export function voiceprints(repo, { infer = transcribeLocalAsr } = {}) {
       const originRecord=await repo.get(input.recordId);requireThat(validOrigin(originRecord,input),'voiceprint_source_changed',409);
       const person=input.personId?await repo.get(input.personId):null;
       requireThat(!input.personId||(person?.kind==='voice-person'&&person.owner===owner&&!person.deleted),'voiceprint_not_found',404);
+      const automaticInput={...input,autoLearnKey};
+      checkAutomaticSample(person,global,originRecord,automaticInput);
       const vector = await embedding(owner, scope, input), store = await secretStore();
-      const entry = { id: input.requestId, name, personId:input.personId, origin:input.origin, fingerprint, model: LOCAL_SPEAKER_MODEL, createdAt: new Date().toISOString(), consentVersion: scope==='all'?2:1, source: { recordId: input.recordId, segmentId: input.segmentId, revision: input.revision }, sealed: store.seal(`${value.id}:${input.requestId}`, { model: LOCAL_SPEAKER_MODEL, vector }) };
+      const entry = { id: input.requestId, name, personId:input.personId, origin:input.origin, fingerprint, model: LOCAL_SPEAKER_MODEL, createdAt: new Date().toISOString(), consentVersion: scope==='all'?2:1, source: { recordId: input.recordId, segmentId: input.segmentId, revision: input.revision }, ...(autoLearnKey?{automatic:true}:{}), sealed: store.seal(`${value.id}:${input.requestId}`, { model: LOCAL_SPEAKER_MODEL, vector }) };
       await repo.changeMany([...new Set([value.id, input.recordId,global.id,...(input.personId?[input.personId]:[])])], records => {
         const current = records.find(record => record.id === value.id), source = records.find(record => record.id === input.recordId);
         requireThat(source?.owner === owner && source.kind === 'record' && !source.deleted && Date.parse(source.deleteAt) > Date.now() && (scope === 'all' || (source.workspaceId || 'inbox') === scope) && source.segments.some(segment => segment.id === input.segmentId && segment.revision === input.revision), 'voiceprint_source_changed', 409);
@@ -120,6 +128,7 @@ export function voiceprints(repo, { infer = transcribeLocalAsr } = {}) {
         requireThat(current.entries.length < 100, 'voiceprint_limit', 429); if(input.personId){const person=records.find(row=>row.id===input.personId);requireThat(person?.owner===owner&&!person.deleted,'voiceprint_not_found',404);requireThat(current.entries.filter(entry=>entry.personId===input.personId).length<8,'voiceprint_limit',429);}
       const globalBank=records.find(bank=>bank.id===global.id);
       requireThat(!globalBank.deletedPeople?.includes(input.personId||globalId(current,entry)),'voiceprint_not_found',404);
+      checkAutomaticSample(records.find(row=>row.id===input.personId),globalBank,source,automaticInput);
       if(globalBank.disabledPeople?.includes(input.personId||globalId(current,entry))||input.personId&&records.find(row=>row.id===input.personId).recognitionEnabled===false)entry.recognitionDisabled=true;
       requireThat(globalBank.revision===globalRevision,'voiceprint_library_changed',409);current.entries.push(entry);globalBank.revision=(globalBank.revision||0)+1;
       }); return scope==='all'?globalEntry(value,entry):publicEntry(entry);

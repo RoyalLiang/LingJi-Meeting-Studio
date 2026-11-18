@@ -3,4 +3,8 @@ export function minutesBoard(minutes:any,options?:{theme?:'light'|'dark';include
 export function boardSvg(nodes:any[],options?:{responsiveTheme?:boolean}):string;
 
 export function minutesCompactOverview(minutes:any):any;
+export function minutesSummaryCards(minutes:any):{
+  kind:'decision'|'action'|'risk'|'question'|'timeline'|'comparison';title:string;
+  items:{text:string;label?:string;evidence:{segmentId:string;revision:number}[]}[]
+}[];
 export function minutesOverviewBoard(minutes:any,options?:{theme?:'light'|'dark';citations?:(refs:any[])=>string}):any[];

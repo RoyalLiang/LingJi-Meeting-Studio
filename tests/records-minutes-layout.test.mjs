@@ -251,7 +251,8 @@ test('topic details are grouped while tables and charts stay outside connector n
  const html=render({liveMinutes:value});
  assert.equal((html.match(/class="branch-node branch-points"/g)||[]).length,1);
  assert.match(html,/class="branch-content"/);
- assert.doesNotMatch(html,/branch-node branch-table|citation-entry|查看.*引用原文|scope="col">来源/);
+ assert.match(html,/data-kind="comparison"/);
+ assert.doesNotMatch(html.slice(html.indexOf('class="minutes-tree')),/branch-node branch-table|citation-entry|查看.*引用原文|scope="col">来源/);
  for(let i=0;i<5;i++)assert.match(html,new RegExp(`规格参数${i}`));
  assert.match(html,/规格表/);assert.match(html,/功耗/);
 });

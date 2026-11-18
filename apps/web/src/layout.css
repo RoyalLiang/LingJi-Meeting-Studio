@@ -36,6 +36,13 @@ html:not(.recording-capsule-mode) body{background:var(--page)}
 .module-connection-check{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:8px;padding:0;margin:0;min-height:var(--control-height-compact);min-width:0;max-width:100%}
 .module-connection-check>.button{align-self:start}.module-check-result{display:grid;grid-template-rows:minmax(max(var(--control-height-compact),var(--touch-target)),auto);gap:4px;min-width:0;font-size:.75rem}
 .module-check-result small{font-size:.75rem;line-height:1.7;color:var(--ink-3);overflow-wrap:anywhere}.module-check-state{display:inline-flex;align-items:center;gap:4px;align-self:center;justify-self:start;border-radius:999px;padding:2px 8px;font-size:.75rem;background:var(--accent-soft);color:var(--ink-2)}
+/* Keep successful checks on the same row as the retry control. */
+.module-check-result[data-state=success]{display:flex;align-items:center;min-height:max(var(--control-height-compact),var(--touch-target))}
+.module-check-result[data-state=success] .module-check-state{white-space:nowrap}
+.module-check-tick{flex:none}
+.module-check-tick path{stroke-dasharray:1;animation:module-check-draw .32s ease-out both}
+@keyframes module-check-draw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
+@media(prefers-reduced-motion:reduce){.module-check-tick path{animation:none}}
 .module-check-result[data-state=success] .module-check-state{background:var(--accent-soft);color:var(--up)}.module-check-result[data-state=error] .module-check-state{background:var(--down-soft);color:var(--down)}.module-check-result[data-state=stale] .module-check-state{background:var(--warn-soft);color:var(--warn)}
 .app-shell .button,.modal .button{min-height:max(var(--control-height-compact),var(--touch-target));padding:7px 13px;gap:7px;font-size:var(--control-font-size);line-height:var(--control-line-height);font-weight:500;border:1px solid var(--border);border-radius:var(--control-radius);background:var(--bg);color:var(--ink-2);box-shadow:none;transition:background-color 160ms,border-color 160ms,color 160ms,transform 120ms,box-shadow 160ms}
 .app-shell .button:hover,.modal .button:hover{background:var(--panel-2);border-color:var(--border);color:var(--ink-1);transform:none;box-shadow:none}

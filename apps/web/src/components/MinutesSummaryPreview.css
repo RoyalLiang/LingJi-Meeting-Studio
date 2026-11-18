@@ -25,3 +25,10 @@
 [data-theme=dark] .minutes-summary-callout.tone-3{background:#373024;border-color:#6e5939}
 [data-theme=dark] .tone-6>p:first-child{color:#b7bbf2}[data-theme=dark] .tone-4>p:first-child{color:#add2af}[data-theme=dark] .tone-3>p:first-child{color:#ddbf88}
 @media(max-width:700px){.minutes-summary-columns{grid-template-columns:1fr}.minutes-summary-callout{padding:14px 16px}}
+
+.minutes-person-pill{display:inline-block;max-width:100%;padding:0 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent);font-size:.75rem;font-weight:600}
+.minutes-summary-callout.tone-1{background:var(--down-soft);border-color:var(--down)}
+.minutes-summary-callout.tone-5{background:var(--panel-2);border-color:var(--border)}
+.minutes-summary-callout{border-radius:12px}
+.minutes-summary-callout+.minutes-summary-callout,.minutes-summary-columns+.minutes-summary-callout{margin-top:12px}
+@media(min-width:701px){.minutes-summary-columns[data-columns="2"]{grid-template-columns:repeat(2,minmax(0,1fr))}}

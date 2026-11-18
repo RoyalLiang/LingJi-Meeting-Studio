@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowsClockwise, Check, Clock, WarningCircle } from '@phosphor-icons/react';
+import { ArrowsClockwise, Clock, WarningCircle } from '@phosphor-icons/react';
 import { messageOf } from '../api';
 import { Button } from './ui';
 
@@ -26,9 +26,16 @@ export function ModuleConnectionCheck({ label, revision, blockedReason, disabled
     } finally {if(request.current===controller)request.current=null;}
   }
   const texts={idle:'未检测',pending:'检测中',success:'检测通过',error:'检测未通过',stale:'待重新检测'};
+  const message=blockedReason||result.message;
+  const passed=result.status==='success'&&!blockedReason;
   return <div className="module-connection-check" data-module={label}>
-
-    <div className="module-check-result" data-state={result.status} role="status" aria-live="polite" aria-atomic="true"><span className="module-check-state">{result.status==='success'?<Check size={12}/>:result.status==='error'?<WarningCircle size={12}/>:<Clock size={12}/>} {texts[result.status]}</span>{(blockedReason||result.message)&&<small>{blockedReason||result.message}</small>}</div>
+    <div className="module-check-result" data-state={passed?'success':blockedReason?'stale':result.status} role="status" aria-live="polite" aria-atomic="true">
+      <span className="module-check-state" title={passed?message:undefined}>
+        {passed?<svg className="module-check-tick" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4.5" pathLength="1" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>:result.status==='error'?<WarningCircle size={12}/>:<Clock size={12}/>}
+        {blockedReason?texts.stale:texts[result.status]}
+      </span>
+      {message&&<small className={passed?'sr-only':undefined}>{message}</small>}
+    </div>
     <Button type="button" disabled={disabled||Boolean(blockedReason)||result.status==='pending'} aria-busy={result.status==='pending'} aria-label={`检测${label}`} onClick={()=>void run()}><ArrowsClockwise size={15}/>{result.status==='pending'?'检测中…':result.status==='idle'?'检测连接':'重新检测'}</Button>
   </div>;
 }

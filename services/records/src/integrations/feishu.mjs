@@ -69,7 +69,11 @@ function exportSnapshot(record, input) {
   const source = {minutesRevision:minutes.revision, transcriptRevision:minutes.transcriptRevision,
     notesRevision:input.includeNotes ? record.notesRevision : null, edited:Boolean(minutes.edited), draft:minutes !== record.minutes || record.capture !== 'completed',...(includeBoard?{exportSkill:MEETING_MINUTES_SKILL}:{})};
   const citations=input.includeEvidence?refs=>{const numbers=[...new Set((refs||[]).map(ref=>referenceMap.get(`${ref.segmentId}@${ref.revision}`)?.number).filter(Boolean))];return numbers.length?` [${numbers.join(', ')}]`:'';}:undefined;
-  const summaryBlocks=minutesSummaryBlocks(minutes,{citations,overview:includeBoard?'board':'compact'});
+  const matched=new Map(input.includeEvidence?(minutes.evidenceSnapshot||[]).filter(segment=>segment.personId&&segment.speaker&&(segment.speakerConfirmed||segment.speakerMatch==='automatic')).map(segment=>[
+    `${segment.id}@${segment.revision}`,{id:segment.personId,name:segment.speaker}
+  ]):[]);
+  const personNames=refs=>[...new Map(refs.map(ref=>matched.get(`${ref.segmentId}@${ref.revision}`)).filter(Boolean).map(person=>[person.id,person.name])).values()].slice(0,12);
+  const summaryBlocks=minutesSummaryBlocks(minutes,{citations,overview:includeBoard?'board':'compact',personNames,personRefs:[...referenceMap.values()]});
   requireThat(summaryBlocks.descendants.length<=1000&&Buffer.byteLength(JSON.stringify(summaryBlocks))<=500000,'feishu_document_too_large',400);
   const boardPages=includeBoard?feishuBoardPages(minutes,{theme:boardTheme,citations}):[],boardNodes=boardPages[0]?.nodes||[];
   return {title, folderToken, destinationEmail, includeBoard, boardTheme, boardNodes, boardPages, summaryBlocks, includeNotes:input.includeNotes, includeEvidence:input.includeEvidence, markdown, source,

@@ -418,3 +418,24 @@ test('connector v1 cancellation during recording-priority queue makes no Feishu 
  const cancelled=await h.request('/connectors/feishu/tasks/'+encodeURIComponent(task.body.taskId)+'/cancel','POST',{protocolVersion:1});assert.equal(cancelled.status,200,JSON.stringify(cancelled));assert.equal(cancelled.body.task.status,'cancelled');
  await h.app.repo.change(blocker.id,value=>{value.capture='completed';});assert.equal(h.remote.calls.filter(call=>call.url.endsWith('/docx/v1/documents')).length,0);
 });
+
+test('Feishu freezes matched person chips only from included, exact-version citation evidence',async t=>{
+  const h=await harness(t);await h.connect();
+  await h.app.repo.change(h.recordId,record=>{
+    const source=record.minutes.evidenceSnapshot[0];
+    Object.assign(source,{speaker:'林工',personId:'p1',speakerMatch:'automatic'});
+    record.segments[0].speaker='后续称谓';
+    record.minutes.evidenceSnapshot.push({id:'unused',revision:1,speaker:'未引用人物',personId:'p2',speakerConfirmed:true});
+    record.minutes.highlights=[{text:'核对计划',evidence:[{segmentId:'s1',revision:1}]}];
+  });
+  const preview=async includeEvidence=>(await h.request(`/records/${h.recordId}/feishu/preview`,'POST',{title:'人工核对的会议纪要',includeNotes:false,includeEvidence})).body;
+  const draft=await preview(true);
+  const chips=blocks=>blocks.descendants.flatMap(block=>(block.text||block.bullet)?.elements||[]).filter(element=>element.text_run?.text_element_style?.background_color===4);
+  assert.ok(chips(draft.summaryBlocks).some(chip=>chip.text_run.content.trim()==='林工'));
+  assert.doesNotMatch(JSON.stringify(draft.summaryBlocks),/未引用人物|后续称谓/);
+  assert.equal(chips((await preview(false)).summaryBlocks).length,0);
+  await h.request(`/integrations/feishu/exports/${draft.id}/publish`,'POST',{confirmed:true});
+  assert.equal((await h.wait(draft.id)).status,'succeeded');
+  const written=JSON.parse(h.remote.calls.find(call=>call.url.includes('/descendant?')).body);
+  assert.deepEqual(chips(written),chips(draft.summaryBlocks));
+});

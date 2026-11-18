@@ -15,4 +15,17 @@
 @media(max-width:1000px){.voice-person-columns{grid-template-columns:minmax(0,1fr)}.voice-recognition{max-width:none}.voice-person-detail{padding:18px}}
 @media(max-width:640px){.modal.glass.wide.voice-people-modal{width:calc(100vw - 20px);height:calc(100dvh - 24px)}.voice-library-toolbar{padding:12px;align-items:flex-start;flex-direction:column;gap:8px}.voice-library-toolbar>label{max-width:none;width:100%}.voice-library-layout{display:flex;flex-direction:column;overflow:auto}.voice-person-list{display:flex;gap:6px;flex:none;border-right:0;border-bottom:1px solid var(--border);padding:8px;overflow:auto}.voice-list-count{display:none}.voice-person-list>button{width:164px;flex:none;min-height:68px}.voice-person-detail{flex:none;overflow:visible;padding:16px}.voice-person-heading{margin-bottom:18px}.voice-person-heading .actions{width:100%}.voice-person-heading .actions>.button{flex:1}.voice-section-heading{flex-wrap:wrap}.voice-source{padding:14px}.voice-header-actions>.button{padding-inline:10px}.voice-person-columns{gap:14px}}
 
-.voice-person-list small>span{white-space:nowrap}
+.voice-chip{display:inline-flex;width:fit-content;align-items:center;padding:2px 8px;border-radius:999px;background:var(--panel-2);color:var(--ink-2);font-size:.75rem;line-height:1.5;white-space:nowrap}
+.voice-chip-accent,.voice-person-list>button[aria-pressed=true] .voice-chip{background:var(--accent-soft);color:var(--accent)}
+.voice-person-list>button{border-radius:24px}
+.voice-person-list small{gap:3px}
+.voice-source{padding:12px 16px;border-radius:20px}
+.voice-source>header{justify-content:flex-start;align-items:center}
+.voice-source>header strong{margin-right:auto}
+.voice-source blockquote{margin-block:10px}
+.voice-source audio{margin-block:8px}
+.voice-recognition{border-radius:20px}
+.voice-learning{margin-top:16px;padding-top:14px;border-top:1px solid var(--border)}
+.voice-learning-heading{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.voice-learning-heading h4{margin:0}
+.voice-recognition button{border-radius:999px}

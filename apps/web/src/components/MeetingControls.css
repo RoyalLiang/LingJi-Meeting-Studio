@@ -1,4 +1,5 @@
-.capture-remembering{display:inline-flex;white-space:nowrap}
+.capture-status .record-indicator{align-items:center;justify-content:center}
+.capture-remembering{display:flex;width:max-content;line-height:1.5;white-space:nowrap}
 .capture-remembering-letter{display:inline-block;animation:capture-remembering-wave 1.8s ease-in-out infinite}
 @keyframes capture-remembering-wave{0%,16%,100%{transform:translateY(0)}8%{transform:translateY(-2px)}}
 @media(prefers-reduced-motion:reduce){.capture-remembering-letter{animation:none}}

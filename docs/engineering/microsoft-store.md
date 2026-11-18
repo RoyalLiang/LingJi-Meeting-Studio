@@ -89,3 +89,6 @@ GitHub Release 和 OSS 只发布已验证的独立安装包。未签名的商店
 中英文最终文案维护在 [microsoft-store-listings.json](../releases/microsoft-store-listings.json)，当前对应已送审的 `0.3.35.0` 包，只描述对应包中已存在的能力。会议助手可整理所选材料、问答可访问的目录知识、查看或取消任务并恢复中断处理；Git 归档澄清与已配置授权的 GitLab、飞书、只读 MCP 单独说明，不扩展成通用电脑控制或无限制外发。生成内容的人工核对、模型服务配置及公开反馈隐私提示必须保留。
 
 发行说明每项只写新增或修复的功能行为，不列配色、排版、控件等视觉调整。修改说明后逐语言读回，核对安装包、附加许可、截图与可用性未变，再提交认证。只有实际上架后才更新公开文案状态；文案审核不代表升级了安装包。
+
+
+当前源码为 MSIX 使用透明品牌图形。发布候选的 Windows Actions 使用 SDK MakePri 生成任务栏和开始菜单可用的无底板资源索引。WGS 校验同一源码和资源摘要，在原有隔离构建路径中封装；Windows 验证确认原包中包含资源索引及深浅图标。系统实际选择的图标仍需在 Windows 上验收。参见[微软图标说明](https://learn.microsoft.com/en-us/windows/apps/design/iconography/app-icon-construction)。

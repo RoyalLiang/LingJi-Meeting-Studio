@@ -1,5 +1,5 @@
 import {randomUUID} from 'node:crypto';
-import {emit,editSegments,publicRecord,requireThat} from '../../../packages/records/src/record.mjs';
+import {digest,emit,editSegments,publicRecord,requireThat} from '../../../packages/records/src/record.mjs';
 import {voiceprints,voiceprintEntryId} from './voiceprints.mjs';
 
 const uuid=/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
@@ -7,13 +7,18 @@ const validName=name=>typeof name==='string'&&name.trim().length>0&&name.trim().
 const cleanClip=segment=>segment.sourceId!=='text-import'&&!segment.overlappingSpeech&&segment.endMs-segment.startMs>=2000&&segment.endMs-segment.startMs<=30000;
 const originActive=(job,record)=>{const origin=job.origin||job.source;return record?.owner===job.owner&&!record.deleted&&Date.parse(record.deleteAt)>Date.now()&&record.segments.some(segment=>segment.id===origin.segmentId&&segment.revision===origin.revision&&segment.personId===job.personId&&segment.speakerConfirmed);};
 const cluster=segment=>segment.speakerAnchorId||segment.speakerId||segment.speakerHash;
+const retained=record=>record.retainAudio&&!record.audioPurged&&!record.audioCleanup;
+const automaticJobId=(source,person)=>{
+  const hash=digest(JSON.stringify(['voiceprint-automatic',source,person.id,person.autoLearnKey]));
+  return [hash.slice(0,8),hash.slice(8,12),hash.slice(12,16),hash.slice(16,20),hash.slice(20,32)].join('-');
+};
 export function voiceLearning(repo,{library=voiceprints(repo)}={}){
   async function person(owner,id){const value=await repo.get(id);requireThat(value?.kind==='voice-person'&&value.owner===owner&&!value.deleted,'voiceprint_not_found',404);requireThat(!await library.personDeleted(owner,id),'voiceprint_not_found',404);return value;}
   async function people(owner){
     const [saved,state]=await Promise.all([repo.list('voice-person'),library.list(owner,'all')]),{disabledPeople=[],deletedPeople=[],...bank}=state;
     const disabled=new Set(disabledPeople),deleted=new Set([...deletedPeople,...saved.filter(row=>row.owner===owner&&row.deleted).map(row=>row.id)]);
     bank.entries=bank.entries.filter(entry=>!deleted.has(entry.personId||entry.id));
-    const profiles=new Map(saved.filter(row=>row.owner===owner&&!row.deleted&&!deleted.has(row.id)).map(row=>[row.id,{id:row.id,name:row.name,recognitionEnabled:row.recognitionEnabled!==false&&!disabled.has(row.id),samples:0,entries:[]}]));
+    const profiles=new Map(saved.filter(row=>row.owner===owner&&!row.deleted&&!deleted.has(row.id)).map(row=>[row.id,{id:row.id,name:row.name,recognitionEnabled:row.recognitionEnabled!==false&&!disabled.has(row.id),automaticLearning:Boolean(row.autoLearnKey)&&!disabled.has(row.id),canAutoLearn:true,samples:0,entries:[]}]));
     for(const entry of bank.entries){const id=entry.personId||entry.id,profile=profiles.get(id)||{id,name:entry.name,recognitionEnabled:!entry.recognitionDisabled&&!disabled.has(id),samples:0,entries:[]};profile.samples++;profile.entries.push(entry);profiles.set(id,profile);}
     const jobs=(await repo.list('voiceprint-job')).filter(row=>row.owner===owner&&profiles.has(row.personId)).sort((a,b)=>a.createdAt.localeCompare(b.createdAt)).slice(-50);
     return {...bank,people:[...profiles.values()],jobs:jobs.map(({id,personId,status,error})=>({id,personId,status,error}))};
@@ -33,7 +38,7 @@ export function voiceLearning(repo,{library=voiceprints(repo)}={}){
     return {sources:profile.entries.map(entry=>{
       const reference=entry.source,record=records.get(reference?.recordId),segment=record?.segments?.find(segment=>segment.id===reference.segmentId&&segment.revision===reference.revision);
       if(record?.kind!=='record'||record.owner!==owner||record.deleted||!(Date.parse(record.deleteAt)>Date.now())||!segment)return {id:entry.id,available:false};
-      return {id:entry.id,available:true,recordId:record.id,title:record.title,startMs:segment.startMs,endMs:segment.endMs,text:segment.text.slice(0,2000),audioAvailable:Boolean(record.retainAudio&&!record.audioPurged&&!record.audioCleanup)};
+      return {id:entry.id,available:true,recordId:record.id,title:record.title,startMs:segment.startMs,endMs:segment.endMs,text:segment.text.slice(0,2000),audioAvailable:Boolean(retained(record)),automatic:Boolean(entry.automatic)};
     })};
   }
   async function candidates(owner,id,recordId){
@@ -54,10 +59,27 @@ export function voiceLearning(repo,{library=voiceprints(repo)}={}){
       const current=rows.find(row=>row.id===id),global=rows.find(row=>row.kind==='voiceprints'&&row.scope==='all');
       requireThat(!current||current.owner===owner&&!current.deleted,'voiceprint_not_found',404);
       requireThat(global?.revision===input.libraryRevision,'voiceprint_library_changed',409);
-      if(current)current.recognitionEnabled=input.enabled;
+      if(current){current.recognitionEnabled=input.enabled;if(!input.enabled)delete current.autoLearnKey;}
       global.disabledPeople=input.enabled?(global.disabledPeople||[]).filter(value=>value!==id):[...new Set([...(global.disabledPeople||[]),id])];
       for(const bank of rows.filter(row=>row.kind==='voiceprints')){let changed=false;for(const entry of bank.entries)if((entry.personId||voiceprintEntryId(bank,entry))===id){entry.recognitionDisabled=!input.enabled;if(input.enabled)entry.consentVersion=2;changed=true;}if(changed&&bank.id!==global.id)bank.revision=(bank.revision||0)+1;}
       global.revision++;
+    });
+    return people(owner);
+  }
+  async function automaticLearning(owner,id,input){
+    requireThat(typeof input?.enabled==='boolean'&&Number.isSafeInteger(input.libraryRevision),'invalid_voiceprint',400);
+    requireThat(!input.enabled||input.consent===true,'voiceprint_consent_required',400);
+    const profile=await person(owner,id),state=await people(owner);
+    const global=(await repo.list('voiceprints')).find(row=>row.owner===owner&&row.scope==='all');
+    await repo.changeMany([profile.id,global.id],rows=>{
+      const current=rows.find(row=>row.id===id),bank=rows.find(row=>row.id===global.id);
+      requireThat(current.owner===owner&&!current.deleted&&!bank.deletedPeople?.includes(id),'voiceprint_not_found',404);
+      requireThat(bank.revision===input.libraryRevision,'voiceprint_library_changed',409);
+      if(input.enabled){
+        requireThat(current.recognitionEnabled!==false&&!bank.disabledPeople?.includes(id)&&state.people.some(row=>row.id===id&&row.entries.some(entry=>entry.global)),'voiceprint_recognition_required',409);
+        current.autoLearnKey ||= randomUUID();
+      }else delete current.autoLearnKey;
+      bank.revision++;
     });
     return people(owner);
   }
@@ -67,7 +89,7 @@ export function voiceLearning(repo,{library=voiceprints(repo)}={}){
     const original=before.segments.find(segment=>segment.id===input.segmentId);requireThat(original?.revision===input.revision,'segment_revision_conflict',409);
     const id=input.personId||input.requestId;requireThat(uuid.test(id),'invalid_voiceprint',400);
     const existing=await repo.get(id);
-    if(existing)await person(owner,id);else await savePerson(owner,{id,name:input.name});
+    const profile=existing?await person(owner,id):await savePerson(owner,{id,name:input.name});
     const label=input.name.trim();
     const banks=(await repo.list('voiceprints')).filter(bank=>bank.owner===owner);
     await repo.changeMany([recordId,...banks.map(bank=>bank.id)],rows=>{
@@ -77,6 +99,10 @@ export function voiceLearning(repo,{library=voiceprints(repo)}={}){
       const key=cluster(selected),targets=record.segments.filter(segment=>segment.id===selected.id||key&&cluster(segment)===key&&!segment.speakerConfirmed&&!segment.edited);
       editSegments(record,targets.map(segment=>({id:segment.id,revision:segment.revision,text:segment.text,speaker:label})));
       for(const segment of targets){segment.personId=id;segment.speakerConfirmed=true;delete segment.speakerMatch;}
+      if(profile.autoLearnKey&&record.capture==='completed'&&retained(record)){
+        const matching=['queued','running'].includes(record.voiceMatch?.status)&&!record.voiceMatch.learningOnly;
+        record.voiceMatch={status:'queued',revision:record.transcriptRevision,learningOnly:!matching,...(matching?{expiresAt:record.voiceMatch.expiresAt}:{})};
+      }
       let removed=false;
       for(const bank of rows.filter(row=>row.kind==='voiceprints')){const count=bank.entries.length;bank.entries=bank.entries.filter(entry=>!targets.some(segment=>entry.source?.recordId===recordId&&entry.source.segmentId===segment.id||entry.origin?.recordId===recordId&&entry.origin.segmentId===segment.id)||(entry.personId||voiceprintEntryId(bank,entry))===id);if(count!==bank.entries.length){bank.revision=(bank.revision||0)+1;removed=true;}}
       const global=rows.find(row=>row.kind==='voiceprints'&&row.scope==='all');if(removed&&global)global.revision=(global.revision||0)+1;
@@ -104,7 +130,7 @@ export function voiceLearning(repo,{library=voiceprints(repo)}={}){
       try{await repo.changeMany([...(stored?[id]:[]),...banks.map(bank=>bank.id)],rows=>{
         const current=rows.find(row=>row.id===id),global=rows.find(row=>row.kind==='voiceprints'&&row.scope==='all');
         requireThat(!current||current.owner===owner,'voiceprint_not_found',404);requireThat(global?.revision===state.revision,'voiceprint_library_changed',409);
-        if(current){current.deleted=true;current.recognitionEnabled=false;}
+        if(current){current.deleted=true;current.recognitionEnabled=false;delete current.autoLearnKey;}
         global.deletedPeople=[...new Set([...(global.deletedPeople||[]),id])];global.disabledPeople=[...new Set([...(global.disabledPeople||[]),id])];
         for(const bank of rows.filter(row=>row.kind==='voiceprints')){let changed=false;for(const entry of bank.entries)if((entry.personId||voiceprintEntryId(bank,entry))===id){entry.recognitionDisabled=true;changed=true;}if(changed&&bank.id!==global.id)bank.revision=(bank.revision||0)+1;}
         global.revision++;
@@ -132,11 +158,29 @@ export function voiceLearning(repo,{library=voiceprints(repo)}={}){
         requireThat(originActive(candidate,await repo.get(candidate.source.recordId)),'voiceprint_source_changed',409);
         for(let attempt=0;;attempt++){
           const bank=await library.list(candidate.owner,'all');
-          try{await library.enroll(candidate.owner,'all',{...candidate.source,origin:candidate.origin||candidate.source,personId:profile.id,name:candidate.name||profile.name,requestId:candidate.id,consent:true,libraryRevision:bank.revision});break;}
+          try{
+            requireThat(!candidate.autoLearnKey||bank.entries.some(entry=>entry.personId===profile.id&&entry.global),'voiceprint_auto_learning_stopped',409);
+            await library.enroll(candidate.owner,'all',{...candidate.source,origin:candidate.origin||candidate.source,personId:profile.id,name:candidate.name||profile.name,requestId:candidate.id,consent:true,libraryRevision:bank.revision},{autoLearnKey:candidate.autoLearnKey});
+            break;
+          }
           catch(error){if(error.code!=='voiceprint_library_changed'||attempt>=2)throw error;}
         }
         await repo.change(candidate.id,job=>{if(job.fence===fence){job.status='ready';delete job.error;delete job.lease;}});
-      }catch(error){await repo.change(candidate.id,job=>{if(job.fence===fence){job.status=error.code==='voiceprint_source_changed'?'cancelled':'failed';job.error=/^voiceprint_|^local_asr_/.test(error.code||'')?error.code:'voiceprint_learning_failed';delete job.lease;}});}
+      }catch(error){await repo.change(candidate.id,job=>{if(job.fence===fence){job.status=['voiceprint_source_changed','voiceprint_auto_learning_stopped','voiceprint_auto_learning_duplicate'].includes(error.code)?'cancelled':'failed';job.error=/^voiceprint_|^local_asr_/.test(error.code||'')?error.code:'voiceprint_learning_failed';delete job.lease;}});}
+    }
+  }
+  async function queueAutomaticSamples(record,bank){
+    if(!bank.available||!retained(record)||!(Date.parse(record.deleteAt)>Date.now()))return;
+    const eligible=new Map(bank.people.filter(profile=>profile.automaticLearning&&profile.recognitionEnabled&&profile.samples<8&&profile.entries.some(entry=>entry.global)&&!profile.entries.some(entry=>entry.source?.recordId===record.id)).map(profile=>[profile.id,profile]));
+    for(const segment of record.segments){
+      if(!eligible.size)break;
+      if(!segment.speakerConfirmed||!cleanClip(segment)||!eligible.has(segment.personId))continue;
+      eligible.delete(segment.personId);
+      const profile=await repo.get(segment.personId);
+      if(!profile?.autoLearnKey||profile.deleted||profile.owner!==record.owner)continue;
+      const source={recordId:record.id,segmentId:segment.id,revision:segment.revision},id=automaticJobId(source,profile);
+      const job={id,kind:'voiceprint-job',owner:record.owner,personId:profile.id,name:profile.name,createdAt:new Date().toISOString(),status:'queued',source,origin:source,autoLearnKey:profile.autoLearnKey};
+      try{await repo.insert(job);}catch(error){if(error.code!=='already_exists')throw error;}
     }
   }
   async function matchRecord(candidate){
@@ -146,7 +190,8 @@ export function voiceLearning(repo,{library=voiceprints(repo)}={}){
     if(!claimed)return;
     try{
       const bank=await people(record.owner),groups=new Map(),matches=[];
-      for(const segment of record.segments){const key=cluster(segment);if(key&&!segment.edited&&!segment.speakerConfirmed&&cleanClip(segment)&&!groups.has(key))groups.set(key,segment);}
+      await queueAutomaticSamples(record,bank);
+      if(!record.voiceMatch.learningOnly)for(const segment of record.segments){const key=cluster(segment);if(key&&!segment.edited&&!segment.speakerConfirmed&&cleanClip(segment)&&!groups.has(key))groups.set(key,segment);}
       if(bank.people.length)for(const [key,segment] of groups){
         const found=await library.match(record.owner,'all',{recordId:record.id,segmentId:segment.id,revision:segment.revision}),byPerson=new Map();
         for(const entry of found.matches){const id=entry.personId||entry.id,old=byPerson.get(id);if(!old||old.similarity<entry.similarity)byPerson.set(id,entry);}
@@ -171,5 +216,5 @@ export function voiceLearning(repo,{library=voiceprints(repo)}={}){
       });
     }catch(error){await repo.change(record.id,current=>{if(current.voiceMatch?.fence===fence){current.voiceMatch.status='failed';current.voiceMatch.error=error.code||'voiceprint_matching_failed';delete current.voiceMatch.lease;}});}
   }
-  return {people,savePerson,sources,candidates,recognition,annotate,learn,remove,run,matchRecord};
+  return {people,savePerson,sources,candidates,recognition,automaticLearning,annotate,learn,remove,run,matchRecord};
 }

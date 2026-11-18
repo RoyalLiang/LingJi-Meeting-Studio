@@ -18,6 +18,9 @@ try {
   if ($LASTEXITCODE -ne 0) { throw "MakeAppx unpack failed: $LASTEXITCODE" }
   if ((Get-FileHash -LiteralPath (Join-Path $unpacked 'tts-client.exe') -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath (Join-Path $Prebuilt 'windows-app.exe') -Algorithm SHA256).Hash) { throw 'MSIX changed the WGS executable' }
   [xml]$manifest = Get-Content -LiteralPath (Join-Path $unpacked 'AppxManifest.xml') -Raw
+    foreach ($visual in @('resources.pri', 'Assets/Square44x44Logo.targetsize-24_altform-unplated.png', 'Assets/Square44x44Logo.targetsize-24_altform-lightunplated.png')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $unpacked $visual) -PathType Leaf)) { throw "Missing Store visual resource: $visual" }
+    }
   if ($manifest.Package.Applications.Application.Executable -ne 'tts-client.exe' -or $manifest.Package.Identity.ProcessorArchitecture -ne 'x64') { throw 'Unexpected package entry point or architecture' }
   if ($manifest.Package.Identity.Name -ne $receipt.identity.name -or $manifest.Package.Identity.Publisher -ne $receipt.identity.publisher -or $manifest.Package.Identity.Version -ne $receipt.packageVersion) { throw 'MSIX identity differs from receipt' }
   if (Test-Path -LiteralPath (Join-Path $unpacked 'AppxSignature.p7x')) { throw 'Store submission must remain unsigned' }

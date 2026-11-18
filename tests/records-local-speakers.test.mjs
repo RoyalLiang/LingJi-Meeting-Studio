@@ -446,3 +446,47 @@ test('deleting a waiting person cancels its due learning work instead of polling
   const updated=await service.annotate('owner',record.id,{segmentId:segment.id,revision:segment.revision,requestId:personId,name:'林工'}),input={personId,recordId:record.id,segmentId:segment.id,revision:updated.segments[0].revision,requestId:randomUUID(),consent:true};assert.equal((await service.learn('owner',input)).status,'waiting');
   await service.remove('owner',personId);assert.deepEqual((await service.people('owner')).jobs,[]);await service.run();assert.equal((await repo.get(input.requestId)).status,'cancelled');await assert.rejects(service.savePerson('owner',{id:personId,name:'旧请求'}),{code:'voiceprint_not_found'});
 }));
+
+test('automatic learning requires consent and confirmed fresh audio, deduplicates, and fences revocation during inference',()=>fixture(async({repo,record,segment,input})=>{
+  let entered, release, holding=false;
+  const started=new Promise(resolve=>{entered=resolve;}),proceed=new Promise(resolve=>{release=resolve;});
+  const library=voiceprints(repo,{infer:async()=>{if(holding){entered();await proceed;}return {embedding:vector(0)};}});
+  const service=voiceLearning(repo,{library}),personId=randomUUID();
+  await service.savePerson('owner',{id:personId,name:'林工'});
+  await library.enroll('owner','all',{...input,personId});
+  const enable=async consent=>service.automaticLearning('owner',personId,{enabled:true,consent,libraryRevision:(await service.people('owner')).revision});
+  await assert.rejects(enable(false),{code:'voiceprint_consent_required'});
+  assert.equal((await enable(true)).people[0].automaticLearning,true);
+  const next=async()=>{
+    const id=randomUUID(),copy={...record,id,retainAudio:true,capture:'completed',voiceMatch:{status:'queued',learningOnly:true},
+      segments:[{...segment,speaker:'林工',personId,speakerMatch:'automatic'}]};
+    await repo.insert(copy);
+    return id;
+  };
+  const confirm=async id=>{
+    await service.annotate('owner',id,{segmentId:segment.id,revision:segment.revision,personId,name:'林工'});
+    await service.matchRecord({id});
+  };
+  const first=await next();
+  await service.matchRecord({id:first});
+  assert.equal((await service.people('owner')).jobs.length,0,'automatic attribution is never a training label');
+  await confirm(first);
+  await service.run();
+  const learned=await service.people('owner');
+  assert.equal(learned.people[0].samples,2);
+  assert.equal((await service.sources('owner',personId)).sources.filter(entry=>entry.automatic).length,1);
+  await repo.change(first,r=>{r.voiceMatch={status:'queued',learningOnly:true};});
+  await service.matchRecord({id:first});
+  assert.equal((await service.people('owner')).jobs.length,1);
+  const second=await next();await confirm(second);holding=true;
+  const processing=service.run();
+  try{
+    await started;
+    const state=await service.people('owner');
+    await service.recognition('owner',personId,{enabled:false,libraryRevision:state.revision});
+  }finally{release();await processing;}
+  const state=await service.people('owner');
+  assert.equal(state.people[0].automaticLearning,false);
+  assert.equal(state.people[0].samples,2);
+  assert.equal(state.jobs.filter(job=>job.status==='cancelled').length,1);
+}));

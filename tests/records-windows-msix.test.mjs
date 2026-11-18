@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {msixManifest, msixVersion, storeIdentity, fixedRuntimeManifest} from '../scripts/windows-msix.mjs';
-import {mkdtemp,mkdir,writeFile,rm,symlink} from 'node:fs/promises';
+import {msixManifest, msixVersion, storeIdentity, fixedRuntimeManifest, writeStoreIcons, installStoreResources} from '../scripts/windows-msix.mjs';
+import {mkdtemp,mkdir,readFile,writeFile,rm,symlink} from 'node:fs/promises';
 import {join} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {tmpdir} from 'node:os';
 import {createHash} from 'node:crypto';
 
@@ -57,4 +58,24 @@ test('Store manifest runs the existing desktop executable with explicit capabili
   assert.match(manifest, /Name="microphone"/);
   assert.match(manifest, /MinVersion="10\.0\.19041\.0"/);
   assert.doesNotMatch(manifest, /setup\.exe|broadFileSystemAccess|AppxSignature/);
+});
+
+test('MSIX builds alpha PNGs and unplated light/dark resources for taskbar sizes',async t=>{
+  const directory=await mkdtemp(join(tmpdir(),'lingji-store-icons-'));t.after(()=>rm(directory,{recursive:true,force:true}));
+  const root=fileURLToPath(new URL('../',import.meta.url)), assets=join(directory,'Assets');
+  await writeStoreIcons(root,assets);
+  for(const [name,size] of [['StoreLogo',50],['Square150x150Logo.scale-200',300],['Square44x44Logo',44],['Square44x44Logo.targetsize-24_altform-unplated',24],['Square44x44Logo.targetsize-24_altform-lightunplated',24],['Square44x44Logo.targetsize-96_altform-unplated',96]]){
+    const png=await readFile(join(assets,name+'.png'));
+    assert.deepEqual([png.readUInt32BE(16),png.readUInt32BE(20),png[25]],[size,size,6],name);
+  }
+  const sourceRevision='a'.repeat(40);
+  await writeFile(join(directory,'resources.pri'),'synthetic resource index');
+  const {readdir}=await import('node:fs/promises');
+  const names=['resources.pri',...(await readdir(assets)).map(name=>'Assets/'+name)];
+  const files=await Promise.all(names.map(async name=>({name,sha256:createHash('sha256').update(await readFile(join(directory,name))).digest('hex')})));
+  await writeFile(join(directory,'store-icons.json'),JSON.stringify({sourceRevision,files}));
+  await installStoreResources(directory,join(directory,'payload'),sourceRevision);
+  await assert.rejects(installStoreResources(directory,join(directory,'other'),'b'.repeat(40)),/release source/);
+  await writeFile(join(directory,'resources.pri'),'changed resource index');
+  await assert.rejects(installStoreResources(directory,join(directory,'other'),sourceRevision),/hash differs/);
 });

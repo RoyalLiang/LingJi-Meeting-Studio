@@ -27,7 +27,9 @@ if(existing){
  console.log(JSON.stringify({reused:true,sourceRevision:revision,originalBuildRun:existing.buildCi.runId}));
  process.exit(0);
 }
-const args=['run','--rm','--network','host','--cpus','4','--memory','6g','--pids-limit','2048','--user',`${process.getuid()}:${process.getgid()}`,'--mount',`type=bind,src=${source},dst=/work`,'--mount',`type=bind,src=${cache},dst=/cache`,'--mount',`type=bind,src=${toolchain},dst=/opt/rust,readonly`,'-w','/work'];
+const storeIcons=resolve(process.env.WGS_STORE_ICONS_DIR||'.missing-store-icons');
+await access(join(storeIcons,'store-icons.json'));
+const args=['run','--rm','--network','host','--cpus','4','--memory','6g','--pids-limit','2048','--user',`${process.getuid()}:${process.getgid()}`,'--mount',`type=bind,src=${source},dst=/work`,'--mount',`type=bind,src=${cache},dst=/cache`,'--mount',`type=bind,src=${toolchain},dst=/opt/rust,readonly`,'--mount',`type=bind,src=${storeIcons},dst=/store-icons,readonly`,'-w','/work'];
 for(const [name,value]of Object.entries({GITHUB_ACTIONS:process.env.GITHUB_ACTIONS,RUNNER_ENVIRONMENT:'self-hosted',TTS_RELEASE_SOURCE_REF:revision,TTS_WGS_CURRENT_BUILD:'1',TTS_RUNTIME_CACHE:'/cache/runtimes',CARGO_HOME:'/cache/cargo',CARGO_TARGET_DIR:'/cache/target',CARGO_BUILD_JOBS:'4',npm_config_cache:'/cache/npm',XWIN_CACHE_DIR:'/cache/xwin',XDG_CACHE_HOME:'/cache/xdg'}))args.push('--env',`${name}=${value}`);
 // These public-input caches contain no model keys or user meeting data.
 run('docker',[...args,'lingji-wgs-cross:031','bash','-euc','npm ci && npm run build:web && node scripts/prepare-client-backend.mjs && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --features smoke-test -- --test-threads=1 && cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --features smoke-test && NATIVE_CLIENT_EXECUTABLE=/cache/target/debug/tts-client xvfb-run -a node scripts/test-native-evolution.mjs .agent-runtime/native-evolution-linux.json && node --test tests/records-git-sync.test.mjs tests/records-agent-compaction.test.mjs tests/records-meeting-tasks.test.mjs && node scripts/release-linux-preview.mjs && node scripts/build-wgs-windows.mjs']);

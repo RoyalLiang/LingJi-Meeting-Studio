@@ -51,3 +51,15 @@ test('compact no-board summary keeps full native action rows and valid column ra
   assert.equal(graph.descendants.filter(block=>block.block_type===31).reduce((total,block)=>total+block.table.property.row_size-1,0),60);
   assert.match(content(graph),/完整人工行动 59/);assert.match(content(graph),/…/);
 });
+
+test('compact summaries select card types from meaningful content and preserve generated evidence',()=>{
+  const minutes=fixture();minutes.actions=[];
+  minutes.decisions=[{text:'撤回的结论',status:'withdrawn',evidence}];
+  minutes.sections=[{heading:'后续',items:[{text:'依赖尚未准备',kind:'risk',evidence},{text:'确认窗口',kind:'question',evidence}]}];
+  minutes.visuals=[{kind:'timeline',title:'切换计划',entries:[{label:'周一',text:'核对配置',evidence}]},{kind:'bar',title:'流量对比',unit:'次',entries:[{label:'入口',valueText:'42',evidence}]}];
+  const graph=minutesSummaryBlocks(minutes,{overview:'compact',citations:()=> ' [1]'}),html=summaryBlocksHtml(graph);
+  for(const expected of ['风险与约束','待确认事项','切换计划','周一','流量对比','42 次'])assert.ok(html.includes(expected),expected);
+  assert.doesNotMatch(html,/撤回的结论|下一步行动|关键决策/);
+  assert.match(html,/核对配置 \[1\]/);
+  assert.doesNotThrow(()=>feishuBlocks({first_level_block_ids:graph.children_id,blocks:graph.descendants}));
+});

@@ -208,9 +208,33 @@ jobs:
           path: preview-artifacts/*
           if-no-files-found: error
           retention-days: 14
+  store_icons:
+    name: Prepare Windows Store visual resources
+    needs: verify
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '26.12.1'
+      - run: npm ci --ignore-scripts
+      - name: Generate transparent assets and Windows resource index
+        shell: pwsh
+        run: ./scripts/prepare-windows-store-icons.ps1
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: store-icons-${{ needs.verify.outputs.sha }}
+          path: store-icons/
+          if-no-files-found: error
+          retention-days: 2
+
   build_wgs:
     name: WGS build - Linux and Windows
-    needs: verify
+    needs: [verify, store_icons]
     runs-on: [self-hosted, Linux, X64, lingji-wgs]
     timeout-minutes: 90
     env:
@@ -225,8 +249,14 @@ jobs:
         with:
           node-version: '26.12.1'
           package-manager-cache: false
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: store-icons-${{ needs.verify.outputs.sha }}
+          path: ${{ runner.temp }}/store-icons-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Build Linux and Windows in the locked current WGS checkout
         id: packages
+        env:
+          WGS_STORE_ICONS_DIR: ${{ runner.temp }}/store-icons-${{ github.run_id }}-${{ github.run_attempt }}
         run: node scripts/wgs-build-preview.mjs
       - name: Collect verified Linux package
         working-directory: /home/westwell/builds/lingji-preview-20261107/source-240245aa

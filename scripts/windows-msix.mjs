@@ -53,6 +53,54 @@ export function msixVersion(version) {
 
 const xml = value => String(value).replace(/[&<>"']/g, character => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;'}[character]));
 
+export async function writeStoreIcons(root, assets) {
+  const mark = await readFile(join(root, 'apps/desktop/assets/lingji-brand-mark.svg'), 'utf8');
+  const targets = [16,20,24,30,32,36,40,44,48,60,64,72,80,96,256];
+  const stage = await mkdtemp(join(dirname(assets), '.store-icons-'));
+  await mkdir(assets, {recursive:true});
+  async function render(svg, outputs){
+    const source = join(stage, 'mark.svg');
+    await writeFile(source, svg);
+    const sizes = [...new Set(outputs.map(([,size])=>size))];
+    execFileSync(process.execPath, [join(root,'node_modules/@tauri-apps/cli/tauri.js'),'icon','--fit','contain','--output',stage,
+      ...sizes.flatMap(size=>['--png',String(size)]),source], {cwd:root,stdio:'pipe'});
+    await Promise.all(outputs.map(([name,size])=>copyFile(join(stage,`${size}x${size}.png`),join(assets,name+'.png'))));
+  }
+  const appList = 'Square44x44Logo';
+  try{
+    await render(mark, [
+      ...[[appList,44],['Square150x150Logo',150],['StoreLogo',50]].flatMap(([name,base])=>[1,2,4].map(scale=>[
+        scale === 1 ? name : `${name}.scale-${scale * 100}`, base * scale
+      ])),
+      ...targets.map(size=>[`${appList}.targetsize-${size}`,size])
+    ]);
+    await render(mark.replace('#0B5644','#269675'), targets.map(size=>[`${appList}.targetsize-${size}_altform-unplated`,size]));
+    await render(mark.replace('#48AD8C','#238365'), targets.map(size=>[`${appList}.targetsize-${size}_altform-lightunplated`,size]));
+  }finally{
+    await rm(stage,{recursive:true,force:true});
+  }
+}
+
+export async function installStoreResources(directory,payload,sourceRevision){
+  const receipt=JSON.parse(await readFile(join(directory,'store-icons.json'),'utf8'));
+  assert.equal(receipt.sourceRevision,sourceRevision,'Store visual resources must use the release source');
+  assert.ok(Array.isArray(receipt.files)&&receipt.files.length>0&&receipt.files.length<100);
+  const names=new Set();
+  for(const {name,sha256} of receipt.files){
+    assert.match(name,/^(?:resources\.pri|Assets\/[A-Za-z0-9_.-]+\.png)$/);
+    assert.ok(!names.has(name),'Duplicate Store visual resource');
+    names.add(name);
+    const bytes=await readFile(join(directory,name));
+    assert.equal(releaseHash(bytes),sha256,'Store visual resource hash differs');
+    const destination=join(payload,name);
+    await mkdir(dirname(destination),{recursive:true});
+    await writeFile(destination,bytes,{flag:'wx'});
+  }
+  for(const name of ['resources.pri','Assets/StoreLogo.png','Assets/Square150x150Logo.png','Assets/Square44x44Logo.png','Assets/Square44x44Logo.targetsize-24_altform-unplated.png','Assets/Square44x44Logo.targetsize-24_altform-lightunplated.png']){
+    assert.ok(names.has(name),'Missing Store visual resource: '+name);
+  }
+}
+
 export function msixManifest(version, identity) {
   storeIdentity(identity);
   return `<?xml version="1.0" encoding="utf-8"?>
@@ -115,7 +163,7 @@ export async function buildWindowsMsix({root, prebuilt, destination, sourceRevis
     await writeFile(join(payload,'webview2-files.json'),runtimeFiles);
     webview.filesManifest={name:'webview2-files.json',size:runtimeFiles.length,sha256:releaseHash(runtimeFiles)};
     await rm(extracted, {recursive: true});
-    run('npm', ['exec', '--workspace', '@tts/desktop', '--', 'tauri', 'icon', '--output', join(payload, 'Assets'), join(root, 'apps/desktop/src-tauri/icons/icon.png')]);
+    await installStoreResources('/store-icons',payload,sourceRevision);
     await writeFile(join(payload, 'AppxManifest.xml'), msixManifest(version, identity));
     const fileName = 'windows-store-unsigned.msix';
     const packagePath = join(stage, fileName);

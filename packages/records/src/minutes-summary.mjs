@@ -1,29 +1,39 @@
-import {minutesOverview,minutesCompactOverview} from './minutes-presentation.mjs';
+import {minutesOverview,minutesCompactOverview,minutesSummaryCards} from './minutes-presentation.mjs';
+
+const cardColors={decision:6,action:4,risk:1,question:3,timeline:5,comparison:7};
+const personStyle={bold:true,background_color:4};
 
 // DocX descendants accepts GridColumn/TableCell when their children are present.
 // Keep this frozen graph as the source for both publication and preview.
-export function minutesSummaryBlocks(minutes,{citations=()=>'',overview='full'}={}) {
+export function minutesSummaryBlocks(minutes,{citations=()=>'',overview='full',personNames=()=>[],personRefs=[]}={}) {
   const view=overview==='full'?minutesOverview(minutes):minutesCompactOverview(minutes),descendants=[],children_id=[];
   const add=(block_type,key,data,children)=>{
     const block={block_id:`lingji-summary-${descendants.length+1}`,block_type,[key]:data,...(children?{children}: {})};
     descendants.push(block);return block.block_id;
   };
-  const text=(content,{bold=false,color,type=2}={})=>add(type,type===4?'heading2':type===12?'bullet':'text',{
-    elements:[{text_run:{content:String(content),...(bold||color?{text_element_style:{...(bold?{bold:true}:{}),...(color?{text_color:color}:{})}}:{})}}]
+  const run=(content,style)=>({text_run:{content,...(style?{text_element_style:style}:{})}});
+  const text=(content,{bold=false,type=2,refs=[]}={})=>add(type,type===4?'heading2':type===12?'bullet':'text',{
+    elements:[run(String(content),bold?{bold:true}:undefined),...personNames(refs).flatMap(name=>[run(' '),run(`\u00a0${name}\u00a0`,personStyle)])]
   });
   const cite=item=>`${item.text}${citations(item.evidence||[])}`;
   const callout=(label,items,color,background=color)=>add(19,'callout',{background_color:background,border_color:color},[
-    text(label,{bold:true}),...(items.length?items.map(item=>text(cite(item),{type:12})):[text('纪要未列出')])
+    text(label,{bold:true}),...(items.length?items.map(item=>text(cite(item),{type:12,refs:item.evidence})):[text('纪要未列出')])
   ]);
+  if(personNames(personRefs).length)children_id.push(text('引用中的人物',{bold:true,refs:personRefs}));
+  const selected=overview==='full'?[]:minutesSummaryCards(minutes,view);
   if(overview!=='board'){
   children_id.push(text('总结',{type:4}));
   children_id.push(callout(view.summaryLabel,overview==='compact'?view.brief:view.summary,7,15));
-  const groups=overview==='compact'?view.themes.map((theme,index)=>[theme.title,[...(theme.summary?[{text:theme.summary,evidence:theme.evidence}]:[]),...theme.items],[6,4,3][index]]):[['关键决策',view.decisions,6],['下一步行动',view.actions.map(item=>({...item,text:`${item.text}\n负责人：${item.owner||'待确认'} · 时间：${item.due||'待确认'}`})),4],['风险与待确认',view.pending,3]];
-  if(groups.length===1){const [label,items,color]=groups[0];children_id.push(callout(label,items,color));}
-  else{
-    const columns=groups.map(([label,items,color],index)=>add(25,'grid_column',{width_ratio:index===groups.length-1?100-Math.floor(100/groups.length)*(groups.length-1):Math.floor(100/groups.length)},[callout(label,items,color)]));
-    children_id.push(add(24,'grid',{column_size:groups.length},columns));
   }
+  const groups=overview==='full'?[['关键决策',view.decisions,6],['下一步行动',view.actions.map(item=>({...item,text:`${item.text}\n负责人：${item.owner||'待确认'} · 时间：${item.due||'待确认'}`})),4],['风险与待确认',view.pending,3]]
+    :selected.length?selected.map(card=>[card.title,card.items.map(item=>({...item,text:item.label?`${item.label} · ${item.text}`:item.text})),cardColors[card.kind]])
+    :overview==='compact'?view.themes.map((theme,index)=>[theme.title,[...(theme.summary?[{text:theme.summary,evidence:theme.evidence}]:[]),...theme.items],[6,4,3][index]]):[];
+  for(let start=0;start<groups.length;start+=3){
+    const row=groups.slice(start,start+3);
+    if(row.length===1){children_id.push(callout(...row[0]));continue;}
+    const width=Math.floor(100/row.length);
+    const columns=row.map(([label,items,color],index)=>add(25,'grid_column',{width_ratio:index===row.length-1?100-width*index:width},[callout(label,items,color)]));
+    children_id.push(add(24,'grid',{column_size:row.length},columns));
   }
   if(view.actions.length){
     children_id.push(text('推进安排与前置条件',{type:4}));
@@ -47,8 +57,8 @@ export function summaryBlocksHtml(graph) {
   const render=id=>{
     const block=blocks.get(id);if(!block||seen.has(id))return '';seen.add(id);
     const children=()=> (block.children||[]).map(render).join('');
-    if(block.block_type===19)return `<aside class="minutes-summary-callout tone-${[3,4,6].includes(block.callout.background_color)?block.callout.background_color:7}">${children()}</aside>`;
-    if(block.block_type===24)return `<div class="minutes-summary-columns">${children()}</div>`;
+    if(block.block_type===19)return `<aside class="minutes-summary-callout tone-${[1,3,4,5,6].includes(block.callout.background_color)?block.callout.background_color:7}">${children()}</aside>`;
+    if(block.block_type===24)return `<div class="minutes-summary-columns" data-columns="${block.grid.column_size===2?2:3}">${children()}</div>`;
     if(block.block_type===25)return `<div class="minutes-summary-column">${children()}</div>`;
     if(block.block_type===31){
       const size=block.table.property.column_size,rows=[];
@@ -58,7 +68,9 @@ export function summaryBlocksHtml(graph) {
     if(block.block_type===32)return children();
     const key=block.block_type===4?'heading2':block.block_type===12?'bullet':'text';
     const content=(block[key]?.elements||[]).map(element=>{
-      const run=element.text_run;if(!run)return '';const value=escape(run.content).replaceAll('\n','<br>');return run.text_element_style?.bold?`<strong>${value}</strong>`:value;
+      const run=element.text_run;if(!run)return '';const value=escape(run.content).replaceAll('\n','<br>');
+      if(run.text_element_style?.background_color===personStyle.background_color)return `<span class="minutes-person-pill">${value}</span>`;
+      return run.text_element_style?.bold?`<strong>${value}</strong>`:value;
     }).join('');
     return key==='heading2'?`<h2>${content}</h2>`:`<p${key==='bullet'?' class="minutes-summary-item"':''}>${content}</p>`;
   };

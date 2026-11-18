@@ -69,6 +69,26 @@ function canvas(theme,citations){
 }
 // These are explicit excerpts; full source wording remains in the native minutes.
 const excerpt=(value,limit)=>{const chars=Array.from(String(value??'').replace(/\s+/g,' ').trim());return chars.length>limit?chars.slice(0,limit-1).join('')+'…':chars.join('');};
+export function minutesSummaryCards(minutes,view=minutesOverview(minutes)){
+  const active=items=>items.filter(item=>item.text?.trim()&&!['withdrawn','corrected'].includes(item.status));
+  const items=view.layout.branches.flatMap(branch=>branch.items);
+  const decisions=active(view.decisions).filter(item=>!pending(item));
+  const questions=active(view.pending).filter(item=>item.kind!=='risk');
+  const timeline=minutes.visuals?.find(visual=>visual.kind==='timeline');
+  const comparison=minutes.visuals?.find(visual=>visual.kind==='bar');
+  const card=(kind,title,values)=>({kind,title,items:active(values).slice(0,3).map(item=>({
+    ...item,text:excerpt(item.text,120),evidence:(item.evidence||[]).slice(0,3)
+  }))});
+  return [
+    card('decision','关键决策',decisions),
+    card('action','下一步行动',view.actions.map(item=>({...item,label:[item.owner,item.due].filter(Boolean).join(' · ')}))),
+    card('risk','风险与约束',items.filter(item=>item.kind==='risk').map(item=>({...item,text:minutesItemText(item)}))),
+    card('question','待确认事项',questions),
+    card('timeline',timeline?.title||'时间节点',(timeline?.entries||[]).map(item=>({...item,label:item.label}))),
+    card('comparison',comparison?.title||'数据对比',(comparison?.entries||[]).map(item=>({...item,text:item.label,label:`${item.valueText} ${comparison.unit}` })))
+  ].filter(value=>value.items.length);
+}
+
 export function minutesCompactOverview(minutes){
   const view=minutesOverview(minutes),brief=(items,count,limit)=>items.slice(0,count).map(item=>({...item,text:excerpt(item.text,limit),evidence:(item.evidence||[]).slice(0,3)}));
   const themes=view.layout.branches.slice(0,3).map(branch=>({title:excerpt(branch.title,24),summary:excerpt(branch.summary,90),evidence:(branch.evidence||[]).slice(0,3),items:brief((branch.items||[]).map(item=>({...item,text:minutesItemText(item)})),3,64)}));

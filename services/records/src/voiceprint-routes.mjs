@@ -5,15 +5,19 @@ export async function voiceprintRoutes({req,res,path,user,repo,readBody,send}){
   const service=voiceLearning(repo);
   if(path==='/api/voiceprints/people'&&req.method==='GET'){send(res,200,await service.people(user.id));return true;}
   if(path==='/api/voiceprints/learn'&&req.method==='POST'){send(res,202,await service.learn(user.id,await readBody(req,3000)));return true;}
-  const action=path.match(/^\/api\/voiceprints\/people\/([a-f0-9-]{36})\/(sources|candidates|recognition)$/i);
+  const action=path.match(/^\/api\/voiceprints\/people\/([a-f0-9-]{36})\/(sources|candidates|recognition|automatic-learning)$/i);
   if(action){
     if(action[2]==='recognition'){requireThat(req.method==='PATCH','method_not_allowed',405);send(res,200,await service.recognition(user.id,action[1],await readBody(req,1000)));}
+    else if(action[2]==='automatic-learning'){requireThat(req.method==='PATCH','method_not_allowed',405);send(res,200,await service.automaticLearning(user.id,action[1],await readBody(req,1000)));}
     else {requireThat(req.method==='GET','method_not_allowed',405);send(res,200,action[2]==='sources'?await service.sources(user.id,action[1]):await service.candidates(user.id,action[1],new URL(req.url,'http://records.local').searchParams.get('recordId')));}
     return true;
   }
   const profile=path.match(/^\/api\/voiceprints\/people\/([a-f0-9-]{36})$/i);
   if(profile){
-    if(req.method==='PATCH'){send(res,200,await service.savePerson(user.id,{...await readBody(req,1000),id:profile[1]}));return true;}
+    if(req.method==='PATCH'){
+      const {id,name,recognitionEnabled,createdAt,kind,owner}=await service.savePerson(user.id,{...await readBody(req,1000),id:profile[1]});
+      send(res,200,{id,name,recognitionEnabled,createdAt,kind,owner});return true;
+    }
     if(req.method==='DELETE'){send(res,200,await service.remove(user.id,profile[1]));return true;}
   }
   const annotation=path.match(/^\/api\/records\/([a-f0-9-]{36})\/speakers$/i);

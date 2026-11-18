@@ -8,7 +8,7 @@ import { ContentFollowAction } from './ContentFollowAction';
 import { currentMinutesJob, speakerLabels } from '../minutes-views';
 import { MinutesUsage } from './MinutesUsage';
 import { TopicMap } from './TopicMap';
-import { MinutesTree, SpeakerMinutes, DecisionMinutes, MinuteSpeakers } from './MinutesViews';
+import { MinutesCards, MinutesTree, SpeakerMinutes, DecisionMinutes, MinuteSpeakers } from './MinutesViews';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowClockwise, Check, Sparkle, PencilSimple, ArrowsOutSimple, ArrowsInSimple } from '@phosphor-icons/react';
 import type { Evidence, Minutes as MinutesModel, RecordDetail, Segment } from '../model';
@@ -113,7 +113,7 @@ export function MinutesPanel({ contextVisible = false, viewTarget, record, busy,
         : <><div className="minutes-title"><div><h3>{minutes.title}</h3><span className="minutes-refresh-state" role="status">{running && <><ArrowClockwise size={14} aria-hidden="true"/>正在整理新版本</>}</span></div>{inline&&viewTarget?createPortal(documentActions,viewTarget):documentActions}</div>
           {viewTarget?createPortal(viewSwitch,viewTarget):viewSwitch}
           <div id="minutes-view" className="minutes-view" role="tabpanel" aria-labelledby={`minutes-tab-${view==='topics'?'ai':view}`}>
-          {view==='ai' && <MinutesTree speakerMap={speakers} minutes={minutes} cite={citeMinutes} showHighlights={false}/>}
+          {view==='ai' && <><MinutesCards minutes={minutes} cite={citeMinutes}/><MinutesTree speakerMap={speakers} minutes={minutes} cite={citeMinutes} showHighlights={false}/></>}
           {view==='tables' && <><SummaryTables minutes={minutes} speakerMap={speakers} cite={citeMinutes}/><SummaryCharts minutes={minutes} cite={citeMinutes}/></>}
           {view==='speakers' && <SpeakerMinutes minutes={minutes} speakerMap={speakers} cite={citeMinutes}/>}
           {view==='decisions' && <DecisionMinutes speakerMap={speakers} minutes={minutes} cite={citeMinutes}/>}
