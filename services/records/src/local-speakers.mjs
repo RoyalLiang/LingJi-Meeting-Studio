@@ -23,7 +23,9 @@ export function labelLocalTurns(record, turns) {
     const vector = normalizedVoice(turn.embedding), { embedding: _privateVector, ...publicTurn } = turn;
     if (!vector || turn.overlap) return publicTurn;
     const ranked = meeting.profiles.map(profile => ({ profile, score: voiceSimilarity(vector, profile.vector) })).sort((a, b) => b.score - a.score);
-    let profile = ranked[0]?.score >= 0.55 && (ranked.length < 2 || ranked[0].score - ranked[1].score >= 0.08) ? ranked[0].profile : null;
+    const [best, second] = ranked;
+    if (best?.score >= 0.55 && second && best.score - second.score < 0.08) return publicTurn;
+    let profile = best?.score >= 0.55 ? best.profile : null;
     if (!profile && meeting.profiles.length < 32) {
       profile = { id: speakerHash(record.id, randomUUID()), vector }; meeting.profiles.push(profile);
     }

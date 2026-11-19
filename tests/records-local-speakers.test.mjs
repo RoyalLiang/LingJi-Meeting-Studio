@@ -71,6 +71,39 @@ test('workspace voiceprints require opt in, encrypt vectors, isolate owners/scop
   assert.equal((await repo.get(stored.id)).entries.length, 0);
 }));
 
+test('ambiguous speech on one microphone stays unlabeled without creating a third profile', () => {
+  const record = createRecord('owner');
+  const turn = (embedding, startMs) => ({text:'发言',startMs,endMs:startMs+2500,embedding,overlap:false});
+  const a = vector(0), b = vector(1);
+  const mixed = a.map((value, index) => (value + b[index]) / Math.SQRT2);
+  const [first, second, ambiguous, repeated] = labelLocalTurns(record, [turn(a,0),turn(b,2500),turn(mixed,5000),turn(a,7500)]);
+  assert.notEqual(first.speakerId, second.speakerId);
+  assert.equal(ambiguous.speakerId, undefined);
+  assert.equal(repeated.speakerId, first.speakerId);
+  assert.equal(record.speakers.length, 2);
+});
+
+test('repeated speaker save and learning reuse the same confirmed sample across request IDs', () => fixture(async ({repo,record,input}) => {
+  let calls = 0;
+  const library = voiceprints(repo, {infer:async()=>{calls++;return {embedding:vector(0)};}});
+  const service = voiceLearning(repo,{library}), personId = randomUUID();
+  const saved = await service.annotate('owner',record.id,{...input,requestId:personId});
+  const reference = {...input,personId,revision:saved.segments[0].revision};
+  const first = await service.learn('owner',reference);
+  await service.run();
+  const original = await library.list('owner','all');
+  assert.equal((await repo.get(first.id)).status,'ready');
+  const savedAgain = await service.annotate('owner',record.id,reference);
+  assert.equal(savedAgain.segments[0].revision,reference.revision);
+  const repeated = await service.learn('owner',{...reference,requestId:randomUUID()});
+  await service.run();
+  assert.equal((await repo.get(repeated.id)).status,'ready');
+  assert.equal(calls, 1);
+  const latest = await library.list('owner','all');
+  assert.equal(latest.revision,original.revision);
+  assert.deepEqual(latest.entries,original.entries);
+}));
+
 test('enrollment rejects source edits during inference and route access requires the owning workspace', async () => fixture(async ({ repo, record, input }) => {
   const registry = voiceprints(repo, { infer: async () => { await repo.change(record.id, r => editSegment(r, input.segmentId, {revision:input.revision,text:'编辑后的内容',speaker:''})); return { embedding: vector(0) }; } });
   await assert.rejects(registry.enroll('owner', 'inbox', input), { code: 'voiceprint_source_changed' });
@@ -277,11 +310,13 @@ test('future meeting matching preserves human names and rejects ambiguous candid
   await service.savePerson('owner',{id:personId,name:'林工'});
   const entry=await library.enroll('owner','all',{...input,personId});
   const future=createRecord('owner');future.capture='completed';future.transcriptRevision=1;future.voiceMatch={status:'queued'};
-  future.segments=[{...segment,id:randomUUID(),speakerId:'a',speaker:'说话人 1',edited:false},{...segment,id:randomUUID(),speakerId:'a',speaker:'手工称谓',speakerConfirmed:true,edited:true}];await repo.insert(future);
+  future.segments=[{...segment,id:randomUUID(),speakerId:'a',speaker:'说话人 1',edited:false},{...segment,id:randomUUID(),speakerId:'a',speaker:'手工称谓',speakerConfirmed:true,edited:true},{...segment,id:randomUUID(),speakerId:'a',speaker:'重叠发言',overlappingSpeech:true,edited:false}];await repo.insert(future);
   assert.ok((await repo.listWork({lane:'voiceprints'})).some(row=>row.id===future.id));
   const matcher=voiceLearning(repo,{library:{...library,match:async()=>({matches:[{...entry,personId,similarity:0.95}]})}});
   await matcher.matchRecord(future);const matched=await repo.get(future.id);
   assert.equal(matched.segments[0].speaker,'林工');assert.equal(matched.segments[0].speakerMatch,'automatic');assert.equal(matched.segments[1].speaker,'手工称谓');
+  assert.equal(matched.segments[2].speaker, '重叠发言');
+  assert.equal(matched.segments[2].personId, undefined);
   const other=createRecord('owner');other.capture='completed';other.transcriptRevision=1;other.voiceMatch={status:'queued'};other.segments=[{...segment,id:randomUUID(),speakerId:'b',speaker:'说话人 2',edited:false}];await repo.insert(other);
   await voiceLearning(repo,{library:{...library,match:async()=>({matches:[{...entry,personId,similarity:0.89},{id:randomUUID(),similarity:0.85}]})}}).matchRecord(other);
   assert.equal((await repo.get(other.id)).segments[0].speaker,'说话人 2');
@@ -362,7 +397,9 @@ test('person recognition can pause without deleting voices or historical names a
   await service.recognition('owner',personId,{enabled:false,libraryRevision:first.revision});const stopped=await service.people('owner'),prior=calls;
   assert.equal(stopped.people[0].name,'林老师','recognition changes must not rename the person');assert.equal(stopped.people[0].recognitionEnabled,false);assert.equal(stopped.people[0].samples,1);assert.equal(stopped.entries[0].global,false);
   assert.deepEqual((await library.match('owner','all',reference)).matches,[]);assert.equal(calls,prior,'paused entries must not invoke a model');assert.equal((await repo.get(record.id)).segments[0].speaker,'林工');
-  await library.enroll('owner','all',{...reference,requestId:randomUUID(),libraryRevision:stopped.revision});const later=await service.people('owner');assert.equal(later.entries.length,2);assert.ok(later.entries.every(entry=>entry.recognitionDisabled&&!entry.global),'new learning must inherit the paused person state');
+  const additional = {...updated.segments[0],id:randomUUID(),startMs:500};
+  await repo.change(record.id,current=>{current.segments.push(additional);});
+  await library.enroll('owner','all',{...reference,segmentId:additional.id,requestId:randomUUID(),libraryRevision:stopped.revision});const later=await service.people('owner');assert.equal(later.entries.length,2);assert.ok(later.entries.every(entry=>entry.recognitionDisabled&&!entry.global),'new learning must inherit the paused person state');
   await assert.rejects(service.recognition('owner',personId,{enabled:true,libraryRevision:later.revision}),{code:'voiceprint_consent_required'});
   await assert.rejects(service.recognition('owner',personId,{enabled:true,consent:true,libraryRevision:first.revision}),{code:'voiceprint_library_changed'});
   await service.recognition('owner',personId,{enabled:true,consent:true,libraryRevision:later.revision});assert.ok((await service.people('owner')).entries.every(entry=>entry.global));assert.equal((await library.match('owner','all',reference)).matches.length,1);

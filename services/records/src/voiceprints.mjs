@@ -116,6 +116,11 @@ export function voiceprints(repo, { infer = transcribeLocalAsr } = {}) {
       requireThat(!input.personId||(person?.kind==='voice-person'&&person.owner===owner&&!person.deleted),'voiceprint_not_found',404);
       const automaticInput={...input,autoLearnKey};
       checkAutomaticSample(person,global,originRecord,automaticInput);
+      const sameSample = input.personId && !autoLearnKey && value.entries.find(({personId,source})=>personId===input.personId&&source?.recordId===input.recordId&&source.segmentId===input.segmentId&&source.revision===input.revision);
+      if(sameSample){
+        await ownedSegment(repo,owner,scope,input);
+        return scope==='all'?globalEntry(value,sameSample):publicEntry(sameSample);
+      }
       const vector = await embedding(owner, scope, input), store = await secretStore();
       const entry = { id: input.requestId, name, personId:input.personId, origin:input.origin, fingerprint, model: LOCAL_SPEAKER_MODEL, createdAt: new Date().toISOString(), consentVersion: scope==='all'?2:1, source: { recordId: input.recordId, segmentId: input.segmentId, revision: input.revision }, ...(autoLearnKey?{automatic:true}:{}), sealed: store.seal(`${value.id}:${input.requestId}`, { model: LOCAL_SPEAKER_MODEL, vector }) };
       await repo.changeMany([...new Set([value.id, input.recordId,global.id,...(input.personId?[input.personId]:[])])], records => {

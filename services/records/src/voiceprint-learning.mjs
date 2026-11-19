@@ -96,7 +96,11 @@ export function voiceLearning(repo,{library=voiceprints(repo)}={}){
       const record=rows.find(row=>row.id===recordId);
       requireThat(record.owner===owner&&!record.deleted&&Date.parse(record.deleteAt)>Date.now(),'record_not_found',404);
       const selected=record.segments.find(segment=>segment.id===input.segmentId);requireThat(selected?.revision===input.revision,'segment_revision_conflict',409);
-      const key=cluster(selected),targets=record.segments.filter(segment=>segment.id===selected.id||key&&cluster(segment)===key&&!segment.speakerConfirmed&&!segment.edited);
+      const key=cluster(selected),targets=record.segments.filter(segment=>{
+        if(segment.id===selected.id)return !segment.speakerConfirmed||segment.personId!==id||segment.speaker!==label;
+        return key&&cluster(segment)===key&&!segment.speakerConfirmed&&!segment.edited;
+      });
+      if(!targets.length)return;
       editSegments(record,targets.map(segment=>({id:segment.id,revision:segment.revision,text:segment.text,speaker:label})));
       for(const segment of targets){segment.personId=id;segment.speakerConfirmed=true;delete segment.speakerMatch;}
       if(profile.autoLearnKey&&record.capture==='completed'&&retained(record)){
@@ -209,7 +213,7 @@ export function voiceLearning(repo,{library=voiceprints(repo)}={}){
         for(const match of matches){const profile=active.people.find(profile=>profile.id===match.id&&profile.entries.some(entry=>entry.id===match.entryId&&entry.global));const saved=rows.find(row=>row.id===match.id);
           const allowed=rows.some(bank=>bank.kind==='voiceprints'&&bank.entries.some(entry=>voiceprintEntryId(bank,entry)===match.entryId&&!entry.recognitionDisabled&&(bank.scope==='all'||entry.consentVersion===2)));
           if(!profile||saved?.deleted||!allowed)continue;
-          for(const segment of current.segments)if(cluster(segment)===match.key&&!segment.edited&&!segment.speakerConfirmed){const {versions,...previous}=segment;segment.versions=[...(versions||[]),previous].slice(-20);segment.revision++;segment.speaker=saved?.name||profile.name;segment.personId=profile.id;segment.speakerMatch='automatic';changed=true;}
+          for(const segment of current.segments)if(cluster(segment)===match.key&&!segment.edited&&!segment.speakerConfirmed&&!segment.overlappingSpeech){const {versions,...previous}=segment;segment.versions=[...(versions||[]),previous].slice(-20);segment.revision++;segment.speaker=saved?.name||profile.name;segment.personId=profile.id;segment.speakerMatch='automatic';changed=true;}
         }
         if(changed){current.transcriptRevision++;emit(current,'transcript.speakers-matched',{transcriptRevision:current.transcriptRevision});}
         Object.assign(current.voiceMatch,{status:'ready',revision:current.transcriptRevision});delete current.voiceMatch.lease;
