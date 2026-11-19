@@ -1,6 +1,6 @@
 # 当前能力与验证边界
 
-最近一次已验证的 GitHub 测试版为 **[v0.3.37.0](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.3.37.0)**，源码与工作流均为 `136af64`。[候选流水](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/44453788339)和[正式流水](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/44460358180)均通过 macOS、Windows 与 Ubuntu 22.04/24.04 检查。三个安装包和更新清单的大小及 SHA-256 已核对。微软商店审核与上架状态见[商店分发](microsoft-store.md)。真机、声音设备与模型供应商服务需分别验收。
+最近一次已验证的 GitHub 测试版为 **[v0.3.38.0](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.3.38.0)**，源码与工作流均为 `519fe6d`。[候选流水](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/44531735392)和[正式流水](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/44553006759)的 macOS、Windows 和 Ubuntu 检查均已通过。三个安装包和更新清单的大小及 SHA-256 已核对。微软商店状态见[商店分发](microsoft-store.md)。安装后的真机使用需分别验收。
 
 当前源码可在支持窗口共享的浏览器中，经每场授权自动截取所选飞书或 Chrome 会议画面。生成纪要时，配置的模型可从关键截图提取补充观察。实现与验证边界见[用会议画面补充纪要](intelligent-minutes.md#用会议画面补充纪要)。
 
