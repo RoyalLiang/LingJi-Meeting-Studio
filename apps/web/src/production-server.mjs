@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 const defaultRoot = fileURLToPath(new URL('../dist/', import.meta.url));
 export function createProductionServer({ root = defaultRoot, apiUrl = process.env.RECORD_API_URL || 'http://127.0.0.1:3030' } = {}) {
 const target = new URL(apiUrl);
+  const syncHost = process.env.RECORD_SYNC_ORIGIN ? new URL(process.env.RECORD_SYNC_ORIGIN).host : null;
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.woff2': 'font/woff2' };
 const files=new Map();let fileBytes=0;
 async function content(file){
@@ -31,7 +32,7 @@ const server = http.createServer(async (req, res) => {
     }
     await sendHttpPayload(res,200,await content(file), { 'Content-Type': mime[extname(file)] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff',
       'Referrer-Policy': 'no-referrer', 'Cache-Control': file.includes('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache',
-      'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'",
+      'Content-Security-Policy': `default-src 'self'; script-src 'self'${req.headers.host === syncHost ? " 'wasm-unsafe-eval'" : ''}; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'`,
       'Permissions-Policy': 'microphone=(self), display-capture=(self), camera=()' });
   } catch { res.writeHead(500); res.end('Unable to load application'); }
 });

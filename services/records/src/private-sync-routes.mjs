@@ -1,0 +1,118 @@
+import { createHash } from 'node:crypto';
+import { DomainError, requireThat } from '../../../packages/records/src/record.mjs';
+import { SYNC_PAGE_BYTES } from './private-sync-store.mjs';
+
+const idPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
+const validId = value => typeof value === 'string' && idPattern.test(value);
+const base64url = (value, min, max = min) => typeof value === 'string' && value.length >= min && value.length <= max && /^[\w-]+$/.test(value);
+const keyEnvelope = value => {
+  requireThat(base64url(value?.nonce, 16) && base64url(value?.body, 64), 'sync_invalid_envelope', 400);
+  return { nonce: value.nonce, body: value.body };
+};
+
+export function privateSyncOrigin(value) {
+  if (!value) return null;
+  const url = new URL(value);
+  const secure = url.protocol === 'https:' || (process.env.NODE_ENV !== 'production' && url.protocol === 'http:' && url.hostname === 'localhost');
+  if (!secure || value !== url.origin || url.username || url.password) throw new Error('Invalid RECORD_SYNC_ORIGIN');
+  return url;
+}
+
+export function createPrivateSyncRoutes({ store, origin }) {
+  const rpID = origin.hostname;
+  const webauthn = () => import('@simplewebauthn/server');
+  const time = () => Date.now();
+  async function verify(callback) {
+    try { return await callback(); }
+    catch { throw new DomainError('sync_webauthn_verification_failed', 400); }
+  }
+  return async ({ req, res, path, url, user, readBody, send, limit }) => {
+    const method = req.method;
+    const owner = user.id;
+    if (!path.startsWith('/api/private-sync/')) return false;
+    requireThat(req.headers.host === origin.host && (method === 'GET' || req.headers.origin === origin.origin), 'origin_rejected', 403);
+    limit('private-sync:' + owner, 160);
+    const route = path.slice('/api/private-sync/'.length);
+    if (route.startsWith('passkey/')) limit('sync-passkey:' + owner, 24);
+    if (route === 'vault' && method === 'GET') {
+      send(res, 200, { vault: await store.vault(owner) });
+    } else if (route === 'vault' && method === 'PUT') {
+      const { id, salt, recovery } = await readBody(req, 1024);
+      requireThat(validId(id) && base64url(salt, 43), 'sync_invalid_vault', 400);
+      send(res, 201, { vault: await store.initialize(owner, { id, salt, recovery: keyEnvelope(recovery) }) });
+    } else if (route === 'delta' && method === 'GET') {
+      const after = url.searchParams.get('after') ?? '0';
+      const id = url.searchParams.get('vault');
+      requireThat(validId(id) && /^\d{1,15}$/.test(after), 'sync_invalid_cursor', 400);
+      send(res, 200, await store.pull(owner, id, Number(after)));
+    } else if (route === 'delta' && method === 'POST') {
+      const { vault, operations } = await readBody(req, SYNC_PAGE_BYTES);
+      requireThat(validId(vault) && Array.isArray(operations) && operations.length >= 1 && operations.length <= 64, 'sync_invalid_operations', 400);
+      const batch = operations.map(operation => {
+        requireThat(validId(operation?.id) && base64url(operation?.nonce, 16) && base64url(operation?.body, 22, 256 * 1024), 'sync_invalid_operation', 400);
+        return { id: operation.id, nonce: operation.nonce, body: operation.body };
+      });
+      send(res, 200, await store.push(owner, vault, batch));
+    } else if (route === 'pair/start' && method === 'POST') {
+      const { id, proof } = await readBody(req, 1024);
+      requireThat(validId(id) && base64url(proof, 43), 'sync_invalid_pair', 400);
+      await store.startPair(owner, id, createHash('sha256').update(proof).digest('hex'), time());
+      send(res, 201, { ok: true });
+    } else if (route === 'pair/exchange' && method === 'POST') {
+      const { id, proof, frame } = await readBody(req, 8000);
+      requireThat(validId(id) && base64url(proof, 43), 'sync_invalid_pair', 400);
+      requireThat(!frame || ([1, 2, 3, 4].includes(frame.step) && base64url(frame.data, 16, 6000)), 'sync_invalid_pair_frame', 400);
+      send(res, 200, await store.pair(owner, id, createHash('sha256').update(proof).digest('hex'), frame, time()));
+    } else if (route === 'passkey/register' && method === 'POST') {
+      requireThat(await store.vault(owner), 'sync_vault_unavailable', 404);
+      const { generateRegistrationOptions } = await webauthn();
+      const credentials = await store.credentials(owner);
+      const options = await generateRegistrationOptions({
+        rpID, rpName: '聆记', userName: user.email, userID: createHash('sha256').update(owner).digest(),
+        attestationType: 'none', authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
+        excludeCredentials: credentials.map(({ id, transports }) => ({ id, transports })),
+      });
+      await store.challenge(owner, 'register', options.challenge, time());
+      send(res, 200, options);
+    } else if (route === 'passkey/register/finish' && method === 'POST') {
+      const { response, envelope } = await readBody(req, 64 * 1024);
+      const sealed = keyEnvelope(envelope);
+      const challenge = await store.takeChallenge(owner, 'register', time());
+      requireThat(challenge, 'sync_challenge_expired', 409);
+      const { verifyRegistrationResponse } = await webauthn();
+      const result = await verify(() => verifyRegistrationResponse({
+        response, expectedChallenge: challenge, expectedOrigin: origin.origin, expectedRPID: rpID, requireUserVerification: true,
+      }));
+      requireThat(result.verified && result.registrationInfo, 'sync_webauthn_verification_failed', 400);
+      const { id, publicKey, counter, transports } = result.registrationInfo.credential;
+      await store.addCredential(owner, { id, publicKey: Buffer.from(publicKey).toString('base64url'), counter, transports, envelope: sealed });
+      send(res, 201, { id });
+    } else if (route === 'passkey/unlock' && method === 'POST') {
+      const credentials = await store.credentials(owner);
+      requireThat(credentials.length > 0, 'sync_no_passkey', 404);
+      const { generateAuthenticationOptions } = await webauthn();
+      const options = await generateAuthenticationOptions({
+        rpID, userVerification: 'required', allowCredentials: credentials.map(({ id, transports }) => ({ id, transports })),
+      });
+      await store.challenge(owner, 'unlock', options.challenge, time());
+      send(res, 200, options);
+    } else if (route === 'passkey/unlock/finish' && method === 'POST') {
+      const { response } = await readBody(req, 32 * 1024);
+      const challenge = await store.takeChallenge(owner, 'unlock', time());
+      requireThat(challenge, 'sync_challenge_expired', 409);
+      const credential = (await store.credentials(owner)).find(item => item.id === response?.id);
+      requireThat(credential, 'sync_webauthn_verification_failed', 400);
+      const { verifyAuthenticationResponse } = await webauthn();
+      const result = await verify(() => verifyAuthenticationResponse({
+        response, expectedChallenge: challenge, expectedOrigin: origin.origin, expectedRPID: rpID, requireUserVerification: true,
+        credential: { id: credential.id, publicKey: Buffer.from(credential.publicKey, 'base64url'), counter: credential.counter, transports: credential.transports },
+      }));
+      requireThat(result.verified, 'sync_webauthn_verification_failed', 400);
+      await store.finishAssertion(owner, credential, result.authenticationInfo.newCounter);
+      send(res, 200, { envelope: credential.envelope });
+    } else {
+      throw new DomainError('not_found', 404);
+    }
+    return true;
+  };
+}

@@ -1,3 +1,6 @@
+import { restorePrivateMeeting } from './private-sync-restore.mjs';
+import { createDesktopPrivateSync } from './private-sync-desktop.mjs';
+import { createPrivateSyncRoutes, privateSyncOrigin } from './private-sync-routes.mjs';
 import {meetingScreenshotFrames,saveMeetingScreenshot} from './meeting-screenshots.mjs';
 import { installNetworkProxy, proxySettings, saveProxySettings } from './network-proxy.mjs';
 import {voiceprintRoutes} from './voiceprint-routes.mjs';
@@ -87,6 +90,14 @@ export async function createRecordServer(options = {}) {
   const repo = options.repo || await createRepository(options); const nativeAudio = options.localAccount && options.nativeInstance ? await createNativeAudio(repo, { instanceId: options.nativeInstance }) : null;
   await nativeAudio?.idle();
   const auth = await createAuth(repo, { seedDevelopment: !options.repo, ...options });
+  const syncOrigin = options.localAccount ? null : privateSyncOrigin(options.syncOrigin ?? process.env.RECORD_SYNC_ORIGIN);
+  if (syncOrigin && process.env.NODE_ENV === 'production') {
+    requireThat(repo.backend === 'postgres', 'private_sync_postgres_required', 500);
+    requireThat((process.env.RECORD_INVITE_CODE?.length ?? 0) >= 16, 'private_sync_invite_required', 500);
+  }
+  const syncRoutes = syncOrigin && createPrivateSyncRoutes({ store: await repo.privateSync(), origin: syncOrigin });
+  const desktopSync = options.localAccount && createDesktopPrivateSync(options.desktopSync);
+
   const encryptedSharing = createEncryptedSharing(repo, options.encryptedSharing);
   const feishu = await createFeishu(repo, options.feishuOptions);
   const extensions = await createExtensions(repo, {localAccount:Boolean(options.localAccount),...options.extensionOptions});
@@ -166,9 +177,10 @@ export async function createRecordServer(options = {}) {
       const url = new URL(req.url, 'http://localhost'), path = url.pathname;
       if (path === '/api/health') { await repo.list('health-probe'); send(res, 200, { ok: true, service: 'records', storage: repo.backend, audioStorage: repo.audioBackend }); return; }
       requireThat(path.startsWith('/api/'), 'not_found', 404);
+      if (syncOrigin) requireThat(req.headers.host === syncOrigin.host, 'origin_rejected', 403);
       requireThat(!options.localAccount || !/^\/api\/auth\/(register|login|logout)$/.test(path), 'not_found', 404);
       if (!['GET', 'HEAD'].includes(req.method) && req.headers.origin) {
-        const allowed = options.origin || process.env.RECORD_PUBLIC_ORIGIN;
+        const allowed = syncOrigin?.origin || options.origin || process.env.RECORD_PUBLIC_ORIGIN;
         const host = req.headers.host;
         requireThat(allowed ? req.headers.origin === allowed : new URL(req.headers.origin).host === host, 'origin_rejected', 403);
       }
@@ -197,6 +209,21 @@ export async function createRecordServer(options = {}) {
       enterModelUsage({repo,owner:user.id,kind:path.includes('automation')?'automation':'assistant'});
       if (path === '/api/client/update-barrier' && req.method === 'GET') { send(res, 200, await clientUpdateBarrier(repo, user.id)); return; }
       if (!['GET', 'HEAD'].includes(req.method)) auth.checkCsrf(req, user);
+      if (path.startsWith('/api/private-sync/')) {
+        if (path === '/api/private-sync/restore' && req.method === 'POST') {
+          requireThat(options.localAccount, 'not_found', 404);
+          send(res, 200, await restorePrivateMeeting(repo, user.id, await readBody(req, 1024 * 1024)));
+          return;
+        }
+        const routeSync = desktopSync || syncRoutes;
+        requireThat(routeSync, 'not_found', 404);
+        await routeSync({ req, res, path, url, user, readBody, send, limit: limitRequest });
+        return;
+      }
+
+      if (syncOrigin) {
+        requireThat(['/api/bootstrap', '/api/auth/logout'].includes(path), 'not_found', 404);
+      }
       if (path === '/api/client/native-captures' && req.method === 'POST') {
       requireThat(nativeAudio && req.headers['x-native-instance'] === options.nativeInstance, 'not_found', 404);
       const body = await readBody(req, 2048); send(res, 200, await (body.action === 'cancel' ? nativeAudio.cancel(user, body) : nativeAudio.bind(user, body))); return;
@@ -215,7 +242,7 @@ export async function createRecordServer(options = {}) {
         send(res, 200, { enabled, ...(enabled && supported ? learningService.read() : { available:false, status:'disabled', checkedAt:null }) }); return;
       }
       if (path === '/api/bootstrap' && req.method === 'GET') {
-        send(res, 200, { email: user.email, csrf: auth.csrf(user), audioTransport: 'pcm-v1', nativeAudioTransport: nativeAudio ? 'native-file-v1' : null, audioMinutesDefault:user.autoAudioMinutes===true, localAccount: Boolean(options.localAccount), learning:{enabled:await learningEnabled(),...learningService.snapshot()}, meetingAutomation:meetingAutomationConfig(await readConfig(repo.root)), providers: providerStatus(await readConfig(repo.root)), limits: { maxMinutes: null, maxRecords: 200, maxChunkSeconds: 15 }, storage: repo.backend, canConfigure: canConfigure(user) }); return;
+        send(res, 200, { email: user.email, csrf: auth.csrf(user), audioTransport: 'pcm-v1', nativeAudioTransport: nativeAudio ? 'native-file-v1' : null, audioMinutesDefault:user.autoAudioMinutes===true, localAccount: Boolean(options.localAccount), learning:{enabled:await learningEnabled(),...learningService.snapshot()}, meetingAutomation:meetingAutomationConfig(await readConfig(repo.root)), providers: providerStatus(await readConfig(repo.root)), limits: { maxMinutes: null, maxRecords: 200, maxChunkSeconds: 15 }, storage: repo.backend, canConfigure: canConfigure(user), ...(desktopSync || syncOrigin?.host === req.headers.host ? { privateSync: true } : {}) }); return;
       }
       if(path==='/api/settings/audio-backup'){
         requireThat(canConfigure(user),'configuration_admin_required',403);

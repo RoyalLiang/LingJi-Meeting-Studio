@@ -1,0 +1,15 @@
+.sync-settings { display: grid; gap: 16px; max-width: 720px; }
+.sync-settings > .button, .sync-form > .button, .sync-stack > .button { justify-self: start; }
+.sync-settings h3, .sync-settings p { margin: 0; }
+.sync-settings a { color: var(--accent); width: fit-content; }
+.sync-form, .sync-stack { display: grid; gap: 12px; }
+.sync-form label, .sync-invitation label { display: grid; gap: 5px; min-width: 0; }
+.sync-form input:not([type="file"]), .sync-invitation input { min-width: 0; width: 100%; max-width: 420px; }
+.sync-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.sync-invitation { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+.sync-invitation img { background: white; border-radius: 8px; }
+.sync-invitation > div { flex: 1 1 230px; min-width: 0; }
+.sync-copies { display: grid; padding: 0; margin: 0; list-style: none; }
+.sync-copies li { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 12px 0; border-top: 1px solid var(--border); }
+.sync-copies time { display: block; font-size: .85rem; color: var(--muted); }
+.sync-companion { width: min(720px, calc(100% - 32px)); margin: 40px auto; }

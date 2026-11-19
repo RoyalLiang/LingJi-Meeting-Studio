@@ -115,15 +115,15 @@ test('a late refresh cannot replace the fully saved recording with an older savi
 
 test('initial list effect skips only the hydrated default view, keeping filtered loads live',async()=>{
  const app=await readFile(new URL('../apps/web/src/App.tsx',import.meta.url),'utf8');
- const start=app.indexOf('  useEffect(() => {\n    if (!authReady) return;',app.indexOf('  const refresh = useCallback('));
+ const start=app.indexOf('  useEffect(() => {\n    if (!authReady || syncCompanion) return;',app.indexOf('  const refresh = useCallback('));
  const end=app.indexOf('  useEffect(',start+5);
  assert.ok(start>=0 && end>start);
  const code=(await transform(app.slice(start,end),{loader:'ts'})).code;
- for(const [query,scope,expected] of [['','all',0],['needle','all',1],['','folder',1]]){
+ for(const [query,scope,expected,syncCompanion=false] of [['','all',0],['needle','all',1],['','folder',1],['needle','all',0,true]]){
   let scheduled=0;const ready={current:true};
-  vm.runInNewContext(code,{useEffect:fn=>fn(),authReady:true,bootListReady:ready,query,scope,AbortController,loadList:async()=>{},setError(){},messageOf:()=>'',setTimeout:()=>{scheduled++;return 1;},clearTimeout(){}});
+  vm.runInNewContext(code,{useEffect:fn=>fn(),authReady:true,syncCompanion,bootListReady:ready,query,scope,AbortController,loadList:async()=>{},setError(){},messageOf:()=>'',setTimeout:()=>{scheduled++;return 1;},clearTimeout(){}});
   assert.equal(scheduled,expected,`query=${query}, scope=${scope}`);
-  assert.equal(ready.current,false);
+  assert.equal(ready.current,syncCompanion);
  }
 });
 

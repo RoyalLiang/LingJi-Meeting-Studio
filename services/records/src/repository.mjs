@@ -1,3 +1,4 @@
+import { createPrivateSyncStore } from './private-sync-store.mjs';
 import {createAudioArchive} from './audio-archive.mjs';
 import { createRecordSearch } from './record-search.mjs';
 import {createIndexedAudioStore} from './indexed-audio-store.mjs';
@@ -186,7 +187,9 @@ export async function createRepository(options = {}) {
     else db.exec(`CREATE INDEX IF NOT EXISTS ${name} ON aggregates((${workExpression(lane,false)})) WHERE json_extract(data,'$.kind')='${kind}'`);
   }
   const notifications=await createRepositoryNotifications({root,db,pool}).catch(async error=>{if(pool)await pool.end();else db.close();throw error;});
+  let privateSync;
   const repository = {
+    privateSync() { return privateSync ??= createPrivateSyncStore({ root, pool }); },
     ingestAudio: audioStore.ingest,
     async changeMinutesPreview(id, jobId, fence, text, runtime) {
       const outcome = await audioStore.changeMinutesPreview(id, jobId, fence, text, runtime);
@@ -488,7 +491,7 @@ export async function createRepository(options = {}) {
       for(const file of entries)if(/^archive-[a-f0-9-]{36}\.pcm(?:\.pack)?$/.test(file)&&!archives.keep.has(`${recordId}/${file}`)&&(await stat(join(directory,file))).mtimeMs<olderThan){await archives.remove(`${recordId}/${file}`);await rm(join(directory,file),{force:true});}
       for (const file of entries) if (/^[a-f0-9]{64}$/.test(file) && !liveObjects.has(`${recordId}/${file}`) && (await stat(join(directory, file))).mtimeMs < olderThan) await rm(join(directory, file));
     },
-    async close() { await audioArchive?.close();notifications.close(); objects?.close(); if (pool) await pool.end(); else db.close(); }
+    async close() { await (await privateSync?.catch(() => null))?.close(); await audioArchive?.close();notifications.close(); objects?.close(); if (pool) await pool.end(); else db.close(); }
   };
   const shareVersion = pool ? (await pool.query('SELECT version FROM record_share_schema WHERE version=1')).rows[0] : db.prepare('SELECT version FROM record_share_schema WHERE version=1').get();
   if (!shareVersion) {
