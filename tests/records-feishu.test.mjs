@@ -24,15 +24,25 @@ function provider(){
   const remote={calls,flags,connections:[],async fetch(url,options){
     const form=options.body instanceof FormData?options.body:null;
     const body=form?'':options.body?String(options.body):'';calls.push({url,body,form,method:options.method,headers:options.headers});
-    if(url.endsWith('/blocks/convert')){if(flags.convertGate)await flags.convertGate;return Response.json({code:0,data:{first_level_block_ids:['heading'],blocks:[{block_id:'heading',parent_id:'readonly',block_type:3,heading1:{elements:[{text_run:{content:'发布计划'}}]}}]}});}
-    if(url.endsWith('/docx/v1/documents')){if(flags.createTimeout)throw new Error('network lost');return Response.json({code:0,data:{document:{document_id:documentId}}});}
+    if(url.endsWith('/blocks/convert')){
+   if(flags.convertGate)await flags.convertGate;
+   const blocks=[{block_id:'heading',parent_id:'readonly',block_type:3,heading1:{elements:[{text_run:{content:'发布计划'}}]}}];
+   const content=JSON.parse(body).content;
+   if(content.includes('LingJiImage')){
+    for(const [index,line] of content.split('\n').entries()){
+     if(!line.trim()||flags.dropPhotoMarker&&line.startsWith('LingJiImage'))continue;
+     const heading=/^(#{2,3}) (.*)$/.exec(line);
+     const type=heading?heading[1].length+2:2,key=heading?`heading${heading[1].length}`:'text';
+     blocks.push({block_id:`converted-block-${index}`,block_type:type,[key]:{elements:[{text_run:{content:heading?.[2]||line}}]}});
+    }
+   }
+   return Response.json({code:0,data:{first_level_block_ids:blocks.map(block=>block.block_id),blocks}});
+  }
+  if(url.endsWith('/docx/v1/documents')){if(flags.createTimeout)throw new Error('network lost');return Response.json({code:0,data:{document:{document_id:documentId}}});}
     if(url.includes('/descendant?')){if(flags.writeFail)return Response.json({code:1770001,msg:'private-upstream-message'},{status:400});return Response.json({code:0,data:{block_id_relations:JSON.parse(body).descendants.filter(block=>!flags.missingNativeBlock||block.block_type!==4).map(block=>({temporary_block_id:block.block_id,block_id:`remote-${block.block_id}`}))}});}
     if(url.endsWith('/metas/batch_query'))return Response.json({code:0,data:{metas:[{doc_token:documentId,doc_type:'docx',title:'人工核对的会议纪要',url:`https://fixture.feishu.cn/docx/${documentId}`}],failed_list:[]}});
-    if(url.includes('-screenshots')){
-      return Response.json({code:0,data:{children:JSON.parse(body).children.map((block,index)=>({...block,block_id:`screenshot-block-${index}`}))}});
-    }
     if(url.endsWith('/medias/upload_all'))return Response.json({code:0,data:{file_token:`media-${form.get('parent_node')}`}});
-    if(options.method==='PATCH'&&url.includes('/blocks/screenshot-block-')){
+    if(options.method==='PATCH'&&url.includes('/blocks/remote-converted-block-')){
       return Response.json({code:0,data:{block:{image:{token:JSON.parse(body).replace_image.token}}}});
     }
     if(url.includes('/children?')){const index=(remote.boardResources||0)+1;remote.boardResources=index;return Response.json({code:0,data:{children:JSON.parse(body).children.map(block=>block.block_type===43?{block_type:43,board:{token:`boardFixture123456789012-${index}`}}:block)}});}
@@ -448,37 +458,73 @@ test('Feishu freezes matched person chips only from included, exact-version cita
   assert.deepEqual(chips(written),chips(draft.summaryBlocks));
 });
 
-test('confirmed cloud export attaches only screenshots frozen into the previewed minutes',async t=>{
+test('confirmed cloud export places frozen originals inside the right topics',async t=>{
   const h=await harness(t);
   await h.connect();
-  const record=await h.app.repo.get(h.recordId);
-  const jpeg='AAECAw==';
+  const record=await h.app.repo.get(h.recordId),jpeg='AAECAw==';
   await h.app.repo.insert({id:'meeting-screenshots:'+h.recordId,kind:'meeting-screenshots',owner:record.owner,recordId:h.recordId,
     frames:[{revision:1,atMs:17000,jpeg},{revision:2,atMs:35000,jpeg},{revision:3,atMs:54000,jpeg}]});
   await h.app.repo.change(h.recordId,r=>{
     r.visualRevision=3;
     r.minutes.visualRevision=2;
-    r.minutes.decisions=[{text:'按本轮范围推进',evidence:r.minutes.sections[0].items[0].evidence}];
+    r.minutes.evidenceSnapshot[0].startMs=15000;
+    r.minutes.evidenceSnapshot[0].endMs=19000;
+    r.minutes.evidenceSnapshot.push({id:'s2',revision:1,text:'核对恢复策略',startMs:33000,endMs:37000});
+    r.minutes.sections.push({heading:'恢复策略',items:[{text:'先核对恢复策略',evidence:[{segmentId:'s2',revision:1}]}]});
   });
   const preview=await h.request(`/records/${h.recordId}/feishu/preview`,'POST',{
-    title:'人工核对的会议纪要',includeBoard:false,includeNotes:false,includeEvidence:true,includeScreenshots:true,
+    title:'人工核对的会议纪要',includeBoard:true,includeNotes:false,includeEvidence:true,includeScreenshots:true,
   });
   assert.equal(preview.status,201);
   assert.equal(preview.body.source.visualRevision,2);
   assert.ok(preview.body.includeScreenshots);
   assert.ok(!JSON.stringify(preview.body).includes(jpeg));
+  const lines=preview.body.markdown.split('\n');
+  assert.deepEqual(preview.body.pictureSlots.map(slot=>slot.revisions),[[1],[2]]);
+  assert.match(lines.slice(0,preview.body.pictureSlots[0].line).join('\n'),/保留人工修订/);
+  assert.match(lines.slice(preview.body.pictureSlots[0].line,preview.body.pictureSlots[1].line).join('\n'),/恢复策略/);
+  assert.deepEqual((await h.request(`/integrations/feishu/exports/${preview.body.id}`)).body.pictureSlots,preview.body.pictureSlots);
+
   await h.request(`/integrations/feishu/exports/${preview.body.id}/publish`,'POST',{confirmed:true});
   const result=await h.wait(preview.body.id);
   assert.equal(result.status,'succeeded',JSON.stringify(result));
   const uploads=h.remote.calls.filter(call=>call.url.endsWith('/medias/upload_all'));
   const attachments=h.remote.calls.filter(call=>call.method==='PATCH');
+  const graph=JSON.parse(h.remote.calls.find(call=>call.url.includes('/descendant?')).body);
+  const native=new Map(graph.descendants.map(block=>[block.block_id,block]));
+  const document=graph.children_id.map(id=>native.get(id));
+  const imageIndexes=document.flatMap((block,index)=>block.block_type===27?[index]:[]);
+  const first=document.findIndex(block=>block.heading2?.elements[0]?.text_run?.content==='结论');
+  const second=document.findIndex(block=>block.heading2?.elements[0]?.text_run?.content==='恢复策略');
+  assert.equal(imageIndexes.length,2);
+  assert.ok(first>=0&&first<imageIndexes[0]&&imageIndexes[0]<second&&second<imageIndexes[1]);
+  assert.doesNotMatch(JSON.stringify(graph),/LingJiImage/);
   assert.equal(uploads.length,2);
   assert.deepEqual(uploads.map(call=>call.form.get('file_name')),['meeting-1.jpg','meeting-2.jpg']);
   for(const [index,call] of uploads.entries()){
     assert.equal(call.form.get('parent_type'),'docx_image');
-    assert.equal(call.form.get('parent_node'),`screenshot-block-${index+1}`);
+    assert.equal(call.form.get('parent_node'),`remote-${document[imageIndexes[index]].block_id}`);
     assert.equal(call.form.get('size'),'4');
     assert.equal(Buffer.from(await call.form.get('file').arrayBuffer()).toString('base64'),jpeg);
   }
   assert.deepEqual(attachments.map(call=>JSON.parse(call.body).replace_image.caption.content),['00:17','00:35']);
+});
+
+test('cloud export fails before creation if the converter loses an image position',async t=>{
+  const h=await harness(t);
+  await h.connect();
+  const record=await h.app.repo.get(h.recordId);
+  await h.app.repo.insert({id:'meeting-screenshots:'+h.recordId,kind:'meeting-screenshots',owner:record.owner,recordId:h.recordId,
+    frames:[{revision:1,atMs:90000,jpeg:'AAECAw=='}]});
+  await h.app.repo.change(h.recordId,r=>{r.visualRevision=1;r.minutes.visualRevision=1;});
+  const {body:preview}=await h.request(`/records/${h.recordId}/feishu/preview`,'POST',{
+    title:'人工核对的会议纪要',includeNotes:false,includeEvidence:false,includeScreenshots:true,
+  });
+  assert.equal(preview.pictureSlots?.[0]?.heading,'其他会议画面');
+  h.remote.flags.dropPhotoMarker=true;
+  await h.request(`/integrations/feishu/exports/${preview.id}/publish`,'POST',{confirmed:true});
+  const result=await h.wait(preview.id);
+  assert.equal(result.status,'failed');
+  assert.equal(result.error,'feishu_verification_failed');
+  assert.ok(!h.remote.calls.some(call=>call.url.endsWith('/docx/v1/documents')));
 });

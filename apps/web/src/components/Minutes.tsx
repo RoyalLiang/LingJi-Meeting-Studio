@@ -1,4 +1,5 @@
-import {MinutesScreenshots} from './MinutesScreenshots';
+import {placeMeetingImages,otherMeetingImages} from '../../../../packages/records/src/minutes-images.mjs';
+import {MinutesScreenshots,useMinutesScreenshots} from './MinutesScreenshots';
 import { createPortal } from 'react-dom';
 import { MeetingHighlights } from './MeetingHighlights';
 import { SummaryTables } from './SummaryTables';
@@ -10,7 +11,7 @@ import { currentMinutesJob, speakerLabels } from '../minutes-views';
 import { MinutesUsage } from './MinutesUsage';
 import { TopicMap } from './TopicMap';
 import { MinutesTree, SpeakerMinutes, DecisionMinutes, MinuteSpeakers } from './MinutesViews';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ArrowClockwise, Check, Sparkle, PencilSimple, ArrowsOutSimple, ArrowsInSimple } from '@phosphor-icons/react';
 import type { Evidence, Minutes as MinutesModel, RecordDetail, Segment } from '../model';
 import { api, ApiError, messageOf } from '../api';
@@ -26,10 +27,15 @@ export function updateMinutesDraftItem(draft:MinutesModel|null,sectionIndex:numb
   const sections=draft.sections.slice();sections[sectionIndex]={...section,items};
   return {...draft,sections};
 }
-const MinutesDocumentSection=memo(function MinutesDocumentSection({section,sectionIndex,editable,speakers,cite,change}:{section:MinutesModel['sections'][number];sectionIndex:number;editable:boolean;speakers:Map<string,string>;cite:(ref:Evidence)=>void;change:(sectionIndex:number,itemIndex:number,text:string)=>void}){
+function readingDocument(minutes: MinutesModel) {
+  const positions:{section:MinutesModel['sections'][number]; index:number}[]=[];
+  const content=manualMinutesContent(minutes,(section,index)=>positions.push({section,index}));
+  return {content,positions};
+}
+const MinutesDocumentSection=memo(function MinutesDocumentSection({section,sectionIndex,editable,speakers,cite,change,children}:{children:ReactNode;section:MinutesModel['sections'][number];sectionIndex:number;editable:boolean;speakers:Map<string,string>;cite:(ref:Evidence)=>void;change:(sectionIndex:number,itemIndex:number,text:string)=>void}){
   return <section className="minutes-section"><h4>{section.heading}</h4>{section.items.map((item,itemIndex)=><div className="minute-item" key={itemIndex}>
     <MinuteSpeakers evidence={item.evidence} speakers={speakers}/>{editable ? <textarea aria-label={`${section.heading}第 ${itemIndex + 1} 项`} value={item.text} onChange={event=>change(sectionIndex,itemIndex,event.target.value)}/> : <p>{item.text}</p>}
-  </div>)}</section>;
+  </div>)}{children}</section>;
 });
 
 export function MinutesPanel({ contextVisible = false, viewTarget, record, busy, onClose, generate, edit, cite, automate, historyActionsRef, focusTarget, visible = true, focusSuspended = false, inline = false, modelReady = false, realtimeMode = false, audioOnly = false, settingsOpen = false, closeSettings = () => {} }: { contextVisible?:boolean; viewTarget?:HTMLElement|null; record: RecordDetail; busy: boolean; inline?: boolean; focusTarget?: HTMLElement | null; focusSuspended?: boolean; visible?: boolean; historyActionsRef?:(node:HTMLDivElement|null)=>void; modelReady?: boolean; realtimeMode?: boolean; audioOnly?: boolean; settingsOpen?: boolean; closeSettings?: () => void; onClose: () => void;
@@ -55,6 +61,7 @@ export function MinutesPanel({ contextVisible = false, viewTarget, record, busy,
   }, [mobile,inline]);
   const [mode,setMode] = useState(record.autoMinutes?.enabled || modelReady ? 'model' : 'extractive');
   const [template, setTemplate] = useState('meeting'), [draft, setDraft] = useState<MinutesModel | null>(null);
+  const draftPositions=useRef<ReturnType<typeof readingDocument>['positions']>([]);
   const [draftSpeakers,setDraftSpeakers]=useState<Map<string,string>|null>(null);
   const changeDraftItem=useCallback((sectionIndex:number,itemIndex:number,text:string)=>setDraft(current=>updateMinutesDraftItem(current,sectionIndex,itemIndex,text)),[]);
   const [historical, setHistorical] = useState<MinutesModel | null>(null), [historyError, setHistoryError] = useState('');
@@ -93,7 +100,17 @@ export function MinutesPanel({ contextVisible = false, viewTarget, record, busy,
   const formal = minutes === record.minutes && Boolean(minutes); const runtime = running ? job?.runtime : minutes?.runtime;
   const active = visible && inline && (record.capture === 'recording' || running);
   const follow = useContentFollow(`${minutes?.transcriptRevision}:${minutes?.revision}:${partial ? job?.progress?.completed : ""}:${JSON.stringify(showPreview ? job?.preview || [] : [])}`, Boolean(!visible || historical || draft || settingsOpen || view !== 'ai'), '[aria-label="会议内容滚动区"]', active, `minutes-reading:${record.id}`);
-  const documentContent=useMemo(()=>minutes&&view==='document'?manualMinutesContent({...minutes,sections:minutes.sections.map(section=>({...section,items:section.items.filter(item=>item.label!=='过程记录')})).filter(section=>section.items.length)}):null,[minutes,view]);
+  const readDocument=useMemo(()=>minutes&&view==='document'?readingDocument({...minutes,sections:minutes.sections.map(section=>({...section,items:section.items.filter(item=>item.label!=='过程记录')})).filter(section=>section.items.length)}):null,[minutes,view]);
+  const wantsImages=view==='ai'||view==='document';
+  const {frames,unavailable}=useMinutesScreenshots(record.id,wantsImages?minutes?.visualRevision:undefined);
+  const documentContent=readDocument?.content;
+  const documentMinutes=draft||documentContent||minutes;
+  const documentImages=useMemo(()=>{
+    if(!minutes||view!=='document'||!frames.length)return null;
+    const positions=draft?draftPositions.current:readDocument?.positions||[];
+    const {placed,other}=placeMeetingImages(draft||minutes,positions.map(value=>value.section),frames);
+    return {bySection:new Map(positions.map(({index},position)=>[index,placed[position]])),other};
+  },[draft,minutes,readDocument,frames,view]);
   const displayedActions=(draft||documentContent||minutes)?.actions||[];
   const Container = inline ? 'section' : 'aside';
   const highlightsVisible = visible && focusOpen && !focusSuspended;
@@ -102,7 +119,7 @@ export function MinutesPanel({ contextVisible = false, viewTarget, record, busy,
   const focusPanel = highlightsVisible && <MeetingHighlights id={`meeting-highlights-${record.id}`} minutes={complete || partial || null} ended={ended} job={job} collapsed={focusCollapsed} toggleCollapsed={()=>setFocusCollapsed(!focusCollapsed)} close={closeFocus} retry={()=>void regenerate()} busy={busy || generating || !record.segments?.length} />;
   const focusToggle = visible && !focusSuspended && <button ref={focusTrigger} type="button" className={`meeting-focus-trigger${focusOpen ? " is-open" : ""}`} aria-hidden={focusOpen} disabled={focusOpen} tabIndex={focusOpen ? -1 : 0} title="重点速览" aria-label="重点速览" aria-controls={`meeting-highlights-${record.id}`} aria-expanded={focusOpen} onClick={openFocus}><Sparkle size={20}/></button>;
   const viewSwitch=<div className="minutes-tabs" role="tablist" aria-label="纪要视图">{[{id:'ai',label:'树视图'},{id:'tables',label:'表格与图表'},{id:'speakers',label:'发言人总结'},{id:'decisions',label:'关键决策'},{id:'document',label:'正文'}].map(tab=><button key={tab.id} id={`minutes-tab-${tab.id}`} role="tab" aria-selected={view===tab.id || (view==='topics' && tab.id==='ai')} aria-controls="minutes-view" tabIndex={view===tab.id || (view==='topics' && tab.id==='ai') ? 0 : -1} onClick={()=>setView(tab.id)} onKeyDown={event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const ids=['ai','tables','speakers','decisions','document'];const index=ids.indexOf(tab.id),next=event.key==='Home'?0:event.key==='End'?4:(index+(event.key==='ArrowRight'?1:4))%5;setView(ids[next]);document.getElementById(`minutes-tab-${ids[next]}`)?.focus();}}>{tab.label}</button>)}</div>;
-  const documentActions = minutes ? (<div className="minutes-document-actions"><Button variant="ghost" disabled={Boolean(historical || incomplete)} title={incomplete ? "本批内容正在整理，完成后可修订" : undefined} onClick={()=>{setView('document');if(!draft){setDraftSpeakers(speakers);setDraft(Object.assign({...minutes},manualMinutesContent(minutes)));}}} aria-label="修订纪要"><PencilSimple size={16}/></Button></div>) : null;
+  const documentActions = minutes ? (<div className="minutes-document-actions"><Button variant="ghost" disabled={Boolean(historical || incomplete)} title={incomplete ? "本批内容正在整理，完成后可修订" : undefined} onClick={()=>{setView('document');if(!draft){const {content,positions}=readingDocument(minutes);draftPositions.current=positions;setDraftSpeakers(speakers);setDraft(Object.assign({...minutes},content));}}} aria-label="修订纪要"><PencilSimple size={16}/></Button></div>) : null;
   return <Container ref={node=>{panel.current=node;follow.root.current=node;}} onPointerDown={event=>{if((event.target as HTMLElement).closest('button,input,textarea,a'))follow.pause();}} role={inline ? 'region' : mobile ? 'dialog' : undefined} aria-modal={!inline && mobile || undefined} className={`minutes-panel glass ${inline ? 'is-inline' : ''} ${expanded ? 'is-expanded' : ''}`} aria-label="智能会议纪要"><header><div className="heading-icon"><Sparkle size={20}/><h2>智能会议纪要</h2></div><div className="minutes-header-actions" ref={historyActionsRef}>{!inline && !mobile && <Button variant="ghost" aria-label={expanded ? '恢复纪要侧栏' : '展开纪要阅读'} aria-pressed={expanded} onClick={()=>setExpanded(!expanded)}>{expanded ? <ArrowsInSimple size={18}/> : <ArrowsOutSimple size={18}/>}</Button>}{!inline && <CloseButton label="收起纪要" onClick={onClose}/>}</div></header>
     <div className={`minutes-reading-layout ${focusOpen ? 'has-highlights' : ''}`}><div className="minutes-content">{realtimeMode && record.autoMinutes?.enabled && record.realtime?.state === 'blocked' && <FeedbackNotice key={`audio:${record.realtime.error}`} message={new ApiError(record.realtime.error || 'realtime_connection_failed', 502).message}/>} {record.capture === 'paused' && record.autoMinutes?.enabled && !record.minutes?.edited && (running || record.pendingChunks > 0) && <p className="fine-print" role="status">{record.pendingChunks > 0 ? '正在处理暂离前的剩余录音…' : '正在补齐已录内容，稍后可继续本场记录。'}</p>}{settingsOpen && <Modal title="整理设置" onClose={closeSettings}><section id="minutes-settings" className="minutes-settings"><section className="automation-card"><label className="checkbox-label"><input type="checkbox" checked={Boolean(record.autoMinutes?.enabled && (!realtimeMode || record.realtimeAudioConsent))} disabled={busy} onChange={e => void automate(e.target.checked, record.autoMinutes?.intervalSeconds || 90)}/><span>自动 AI 纪要<small>会中草稿 · 结束后自动整理终稿</small></span></label><Select label="自动纪要刷新间隔" value={String(record.autoMinutes?.intervalSeconds || 90)} disabled={busy || !record.autoMinutes?.enabled || (realtimeMode && !record.realtimeAudioConsent)} onChange={v => void automate(true,Number(v))} options={[{value:'15',label:'每 15 秒 · 更及时'},{value:'30',label:'每 30 秒'},{value:'60',label:'每 1 分钟'},{value:'90',label:'每 1 分半 · 默认'},{value:'120',label:'每 2 分钟'}]}/><p className="fine-print">{audioOnly ? '启用后允许本场原音用于豆包模型转录和纪要。关闭自动纪要仅停止纪要更新，转录继续；结束录音后停止采集。人工修订不会被覆盖。' : realtimeMode ? '启用后，允许将本场音频直接发送到所选纪要模型，转录并行留证；只在内容变化时生成。人工修订后自动暂停覆盖。' : '启用后，转录和笔记会发送到已配置模型；只在内容变化时生成。人工修订后自动暂停覆盖。'}</p>{record.minutes?.edited && <Status>人工版本已保护</Status>}</section>{record.minuteVersions?.length > 1 && <label className="history-select">纪要版本<Select label="纪要版本" value={String(historical?.revision || record.minutesRevision)} onChange={async value => { const revision = Number(value); setDraft(null); setHistoryError(''); try { setHistorical(revision === record.minutesRevision ? null : await api<MinutesModel>(`/records/${record.id}/minutes/versions/${revision}`)); } catch (e) { setHistoryError(messageOf(e)); } }} options={[...record.minuteVersions].reverse().map(version => ({value:String(version.revision),label:`v${version.revision} · ${version.edited ? '人工修订' : 'AI 草稿'}${version.revision === record.minutesRevision ? ' · 当前' : ''}`}))}/></label>}{historyError && <FeedbackNotice key={`history:${historyError}`} message={historyError}/>}<div className="minutes-mode"><Select label="纪要处理方式" value={mode} onChange={setMode} options={[{value:'extractive',label:'本地提取 · 无需模型'},{value:'model',label:'AI 整理 · 使用已配置模型'}]}/><p className="fine-print">{mode === 'model' ? (realtimeMode ? '生成后将本场音频、转录与笔记发送到所选音频纪要模型；保留版本引用。' : '转录与笔记将发送到已配置模型。') : '按规则引用原文，不发送到云端；不等同于 AI 总结。'}</p></div><div className="minutes-toolbar"><label className="sr-only" htmlFor="template">纪要模板</label><Select label="纪要模板" value={template} onChange={setTemplate} options={[{value:'meeting',label:'会议纪要'},{value:'interview',label:'访谈整理'},{value:'lecture',label:'学习笔记'}]}/>
       <Button disabled={busy || generating || record.segments.length === 0} aria-busy={generating} onClick={() => void regenerate()}><ArrowClockwise size={16} className={generating || running ? 'minutes-refresh-icon' : undefined}/>{generating ? '正在提交…' : running ? '重新开始整理' : minutes ? '重新整理' : '生成纪要'}</Button></div>
@@ -114,13 +131,14 @@ export function MinutesPanel({ contextVisible = false, viewTarget, record, busy,
         : <><div className="minutes-title"><div><h3>{minutes.title}</h3><span className="minutes-refresh-state" role="status">{running && <><ArrowClockwise size={14} aria-hidden="true"/>正在整理新版本</>}</span></div>{inline&&viewTarget?createPortal(documentActions,viewTarget):documentActions}</div>
           {viewTarget?createPortal(viewSwitch,viewTarget):viewSwitch}
           <div id="minutes-view" className="minutes-view" role="tabpanel" aria-labelledby={`minutes-tab-${view==='topics'?'ai':view}`}>
-          {view==='ai' && <MinutesTree speakerMap={speakers} minutes={minutes} cite={citeMinutes} showHighlights={false}/>}
+          {view==='ai' && <MinutesTree speakerMap={speakers} minutes={minutes} cite={citeMinutes} frames={frames} showHighlights={false}/>}
           {view==='tables' && <><SummaryTables minutes={minutes} speakerMap={speakers} cite={citeMinutes}/><SummaryCharts minutes={minutes} cite={citeMinutes}/></>}
           {view==='speakers' && <SpeakerMinutes minutes={minutes} speakerMap={speakers} cite={citeMinutes}/>}
           {view==='decisions' && <DecisionMinutes speakerMap={speakers} minutes={minutes} cite={citeMinutes}/>}
           {view==='topics' && <TopicMap minutes={minutes}/>}
-          {view==='document' && (draft || documentContent || minutes).sections.map((section,sectionIndex)=><MinutesDocumentSection key={sectionIndex} section={section} sectionIndex={sectionIndex} editable={Boolean(draft)} speakers={documentSpeakers} cite={citeDocument} change={changeDraftItem}/>)}
-          {['document','ai','topics'].includes(view)&&Boolean(minutes.visualRevision)&&<MinutesScreenshots key={`${record.id}:${minutes.visualRevision}`} recordId={record.id} through={minutes.visualRevision!}/>}
+          {view==='document' && documentMinutes?.sections.map((section,sectionIndex)=><MinutesDocumentSection key={sectionIndex} section={section} sectionIndex={sectionIndex} editable={Boolean(draft)} speakers={documentSpeakers} cite={citeDocument} change={changeDraftItem}><MinutesScreenshots frames={documentImages?.bySection.get(sectionIndex)||[]}/></MinutesDocumentSection>)}
+          {view==='document'&&Boolean(documentImages?.other.length)&&<section className="minutes-section"><h4>{otherMeetingImages}</h4><MinutesScreenshots frames={documentImages!.other}/></section>}
+          {wantsImages&&unavailable&&<p className="muted" role="status">会议截图暂不可用</p>}
           {draft && <div className="actions"><Button variant="primary" disabled={busy} onClick={async () => { if (await edit(draft)) setDraft(null); }}><Check size={16}/>保存修订</Button><Button disabled={Boolean(historical)} onClick={() => setDraft(null)}>取消</Button></div>}
           {(view==='decisions' || view==='document') && displayedActions.length > 0 && <section className="minutes-section"><h4>行动候选</h4><p className="muted">请人工确认负责人和日期。下载不会发送给他人。</p>{displayedActions.map((action, i) => <div className="action-candidate" key={i}><span className="checkbox-mark"/><div><MinuteSpeakers evidence={action.evidence} speakers={documentSpeakers}/><p>{minutesActionText(action,(draft||documentContent||minutes).topics)}</p><small>{action.owner || '负责人待定'} · {action.due || '日期待定'}</small></div></div>)}</section>}
 

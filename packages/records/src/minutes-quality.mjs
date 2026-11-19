@@ -87,10 +87,14 @@ export function minutesDiscussionItems(minutes){
     ...(minutes.visuals||[]).flatMap(visual=>visual.entries.map(entry=>({heading:visual.title,text:`${entry.label}：${entry.text||entry.quote||entry.valueText}`,evidence:entry.evidence})))
   ];
 }
-export function manualMinutesContent(minutes) {
+export function manualMinutesContent(minutes, onSourceSection) {
+  let sectionCount=0;
   const sections=minutes.sections.flatMap(section=>{
     const items=minutesDiscussionItems({sections:[section]}).flatMap(item=>minutesTextChunks(item.text).map(text=>({text,evidence:item.evidence,...(item.knowledgeKind?{knowledgeKind:item.knowledgeKind}:{})})));
-    return Array.from({length:Math.max(1,Math.ceil(items.length/100))},(_,index)=>({heading:section.heading,items:items.slice(index*100,(index+1)*100)}));
+    const chunks=Array.from({length:Math.max(1,Math.ceil(items.length/100))},(_,index)=>({heading:section.heading,items:items.slice(index*100,(index+1)*100)}));
+    sectionCount+=chunks.length;
+    onSourceSection?.(section,sectionCount-1);
+    return chunks;
   });
   const actions=(minutes.actions||[]).filter(item=>!['withdrawn','corrected'].includes(item.status)).map(item=>{const {text,owner,due,evidence,status,kind}=item,label=minutesActionLabel(item,minutes.topics);return {text,owner:owner??null,due:due??null,evidence,...(label?{label}:{}),...(kind?{kind}:{}),...(status==='pending'?{status}:{})};});
   const result={title:minutes.title,sections,actions,decisions:[],highlights:undefined,visuals:undefined,topics:undefined,tables:undefined,speakerSummaries:undefined,currentDiscussion:undefined,corrections:undefined,terms:undefined};

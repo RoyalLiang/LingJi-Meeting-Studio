@@ -1,0 +1,4 @@
+.minutes-screenshot-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr)); align-items:start; gap:12px; max-width:720px; margin-block:12px 0; }
+.minutes-screenshot-grid figure { min-width:0; margin:0; }
+.minutes-screenshot-grid img { display:block; width:100%; height:auto; border:1px solid var(--border); border-radius:var(--r-sm); }
+.minutes-screenshot-grid figcaption { margin-top:4px; color:var(--ink-2); font: .75rem var(--mono); }

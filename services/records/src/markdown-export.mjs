@@ -7,7 +7,7 @@ const inline = value => String(value ?? '').replace(/\\/g, '\\\\').replace(/([`*
 export function minutesForExport(record) {
   return record.minutes?.edited ? record.minutes : record.capture === 'completed' ? record.minutes || record.liveMinutes : record.liveMinutes || record.minutes;
 }
-export function exportMinutesMarkdown(record, {includeNotes = true, includeEvidence = true, includeTitle = true, referenceMap} = {}) {
+export function exportMinutesMarkdown(record, {includeNotes = true, includeEvidence = true, includeTitle = true, referenceMap, topicBoundary} = {}) {
   const minutes = minutesForExport(record);
   requireThat(minutes, 'minutes_unavailable', 409);
   const draft = minutes !== record.minutes || record.capture !== 'completed';
@@ -50,14 +50,16 @@ export function exportMinutesMarkdown(record, {includeNotes = true, includeEvide
   };
   const layout=minutesReadingLayout(minutes);
   if(minutes.topics?.length)lines.push('## 讨论主题','');
-  for(const branch of layout.branches){
+  for(const [index,branch] of layout.branches.entries()){
     lines.push(`${minutes.topics?.length?'###':'##'} ${inline(branch.title)}`,'');
     if(branch.summary)lines.push(`${inline(branch.summary)}${cite(branch.evidence)}`,'');
     for(const item of branch.items)lines.push(`- ${inline(minutesItemText(item))}${cite(item.evidence)}`);
     if(branch.items.length)lines.push('');
+    topicBoundary?.(index,lines.length);
     for(const visual of branch.visuals)visualBlock(visual,minutes.topics?.length?4:3);
     for(const table of branch.tables)tableBlock(table,minutes.topics?.length?4:3);
   }
+  topicBoundary?.(-1,lines.length);
   for(const visual of layout.unassigned.visuals)visualBlock(visual);
   for(const table of layout.unassigned.tables)tableBlock(table);
 

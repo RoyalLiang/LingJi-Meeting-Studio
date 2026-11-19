@@ -97,3 +97,5 @@
 .automation-context-tasks .automation-history time{grid-column:1;grid-row:2;margin:0;font-size:.75rem}
 .automation-context-tasks .automation-history-main a{grid-column:2;grid-row:2;font-size:.75rem}
 .automation-context-tasks .automation-history-error{grid-column:1 / -1;max-height:3em;overflow:hidden;margin:3px 0 0;font-size:.75rem}
+
+.feishu-preview .minutes-screenshot-grid { grid-template-columns:minmax(0,1fr); margin:12px 0 20px; }

@@ -1,3 +1,5 @@
+import {placeMeetingImages,otherMeetingImages} from '../../../../packages/records/src/minutes-images.mjs';
+import {minutesReadingLayout} from '../../../../packages/records/src/minutes-reading.mjs';
 import {meetingScreenshotFrames} from '../meeting-screenshots.mjs';
 import {externalWrite} from '../external-write.mjs';
 import {taskHistoryPage} from '../task-history.mjs';
@@ -14,7 +16,7 @@ import {createFeishuSdk} from './feishu-sdk.mjs';
 import {MEETING_MINUTES_SKILL} from '../../../../packages/records/src/meeting-minutes-skill.mjs';
 export {FEISHU_SCOPES};
 const api = 'https://open.feishu.cn/open-apis';
-const clearFrozen=()=>({markdown:'',boardNodes:[],boardPages:[],summaryBlocks:null});
+const clearFrozen=()=>({pictureSlots:[],markdown:'',boardNodes:[],boardPages:[],summaryBlocks:null});
 const autoId = owner => `feishu-auto:${digest(owner)}`;
 const exportFields=['authMode','recordId','title','folderToken','destinationEmail','includeBoard','boardTheme','includeNotes','includeEvidence','includeScreenshots','source','fingerprint','status','stage','createdAt','updatedAt','documentId','url','error','automatic','timeline'];
 const connectionId = owner => `feishu-connection:${digest(owner)}`;
@@ -65,10 +67,15 @@ function exportSnapshot(record, input) {
   requireThat(input.includeScreenshots===undefined||typeof input.includeScreenshots==='boolean','feishu_scope_required',400);
   const includeBoard=input.includeBoard===true,boardTheme=input.boardTheme||'light';
   requireThat(['light','dark'].includes(boardTheme),'feishu_scope_required',400);
-  const referenceMap=new Map();
-  const markdown = exportMinutesMarkdown(record, {...input,includeTitle:false,referenceMap}), minutes = minutesForExport(record);
+  const minutes=minutesForExport(record);
+  requireThat(minutes,'minutes_unavailable',409);
+  const includeScreenshots=input.includeScreenshots===true && Boolean(minutes.visualRevision);
+  const referenceMap=new Map(),topicLines=new Map();
+  const markdown=exportMinutesMarkdown(record,{
+    includeNotes:input.includeNotes,includeEvidence:input.includeEvidence,includeTitle:false,referenceMap,
+    ...(includeScreenshots?{topicBoundary:(topic,line)=>topicLines.set(topic,line)}:{}),
+  });
   requireThat(Buffer.byteLength(markdown) <= 500000, 'feishu_document_too_large', 400);
-  const includeScreenshots = input.includeScreenshots===true && Boolean(minutes.visualRevision);
   const source = {minutesRevision:minutes.revision, transcriptRevision:minutes.transcriptRevision,
     notesRevision:input.includeNotes ? record.notesRevision : null, ...(includeScreenshots?{visualRevision:minutes.visualRevision}:{}), edited:Boolean(minutes.edited), draft:minutes !== record.minutes || record.capture !== 'completed',...(includeBoard?{exportSkill:MEETING_MINUTES_SKILL}:{})};
   const citations=input.includeEvidence?refs=>{const numbers=[...new Set((refs||[]).map(ref=>referenceMap.get(`${ref.segmentId}@${ref.revision}`)?.number).filter(Boolean))];return numbers.length?` [${numbers.join(', ')}]`:'';}:undefined;
@@ -79,8 +86,8 @@ function exportSnapshot(record, input) {
   const summaryBlocks=minutesSummaryBlocks(minutes,{citations,overview:includeBoard?'board':'compact',personNames,personRefs:[...referenceMap.values()]});
   requireThat(summaryBlocks.descendants.length<=1000&&Buffer.byteLength(JSON.stringify(summaryBlocks))<=500000,'feishu_document_too_large',400);
   const boardPages=includeBoard?feishuBoardPages(minutes,{theme:boardTheme,citations}):[],boardNodes=boardPages[0]?.nodes||[];
-  return {title, folderToken, destinationEmail, includeBoard, boardTheme, boardNodes, boardPages, summaryBlocks, includeNotes:input.includeNotes, includeEvidence:input.includeEvidence, ...(includeScreenshots?{includeScreenshots}:{}), markdown, source,
-    fingerprint:digest(JSON.stringify({title, folderToken, destinationEmail, includeBoard, boardTheme, boardNodes, boardPages, summaryBlocks, markdown, source}))};
+  return {title, folderToken, destinationEmail, includeBoard, boardTheme, boardNodes, boardPages, summaryBlocks, includeNotes:input.includeNotes, includeEvidence:input.includeEvidence, ...(includeScreenshots?{includeScreenshots}:{}), markdown, source,topicLines,
+    fingerprint:digest(JSON.stringify({title, folderToken, destinationEmail, includeBoard, boardTheme, boardNodes, boardPages, summaryBlocks, markdown, source,...(includeScreenshots?{pictureLayout:1}:{})}))};
 }
 
 const publicExport = value => Object.fromEntries(['authMode','id','recordId','title','folderToken','destinationEmail','includeBoard','boardTheme','includeNotes','includeEvidence','includeScreenshots','source','fingerprint','status','stage','createdAt','updatedAt','documentId','url','error','automatic','timeline'].filter(key => value[key] !== undefined && value[key] !== null).map(key => [key,['includeBoard','includeNotes','includeEvidence','automatic'].includes(key)?Boolean(value[key]):value[key]]));
@@ -168,12 +175,23 @@ export async function createFeishu(repo, {sdkFactory=createFeishuSdk,now=Date.no
   async function ownedExport(owner,id){const value=await repo.get(id);requireThat(value?.kind==='feishu-export'&&value.owner===owner,'not_found',404);await ownedRecord(owner,value.recordId);return value;}
   async function preview(owner,recordId,input,automatic=false,id=randomUUID(),rule){
     const conn=await load(owner);requireThat((await settings(owner)).connected,'feishu_not_connected',409);
-    const record=await ownedRecord(owner,recordId),snapshot=exportSnapshot(record,input);
+    const record=await ownedRecord(owner,recordId),{topicLines,...snapshot}=exportSnapshot(record,input);
+    const pictureSlots=[];
+    if(snapshot.includeScreenshots){
+      const frames=await meetingScreenshotFrames(repo,record,snapshot.source.visualRevision);
+      requireThat(frames.length===snapshot.source.visualRevision,'feishu_preview_stale',409);
+      const minutes=minutesForExport(record),{branches}=minutesReadingLayout(minutes);
+      const {placed,other}=placeMeetingImages(minutes,branches,frames);
+      for(const [index,group] of placed.entries()){
+        if(group.length)pictureSlots.push({line:topicLines.get(index),revisions:group.map(frame=>frame.revision)});
+      }
+      if(other.length)pictureSlots.push({line:topicLines.get(-1),revisions:other.map(frame=>frame.revision),heading:otherMeetingImages});
+    }
     requireThat((await history(owner)).filter(value=>value.createdAt>now()-86400000).length<200,'feishu_export_limit',429);
-    const draft=await repo.insert({id,kind:'feishu-export',owner,recordId,...snapshot,authMode:'app',connectionGeneration:conn.generation,status:'draft',stage:'preview',createdAt:now(),updatedAt:now(),automatic,...(rule?{ruleGeneration:rule.generation}:{})});
-    return {...publicExport(draft),markdown:draft.markdown,boardNodes:draft.boardNodes,boardPages:draft.boardPages,summaryBlocks:draft.summaryBlocks};
+    const draft=await repo.insert({id,kind:'feishu-export',owner,recordId,...snapshot,...(pictureSlots.length?{pictureSlots}:{}),authMode:'app',connectionGeneration:conn.generation,status:'draft',stage:'preview',createdAt:now(),updatedAt:now(),automatic,...(rule?{ruleGeneration:rule.generation}:{})});
+    return {...publicExport(draft),markdown:draft.markdown,boardNodes:draft.boardNodes,boardPages:draft.boardPages,summaryBlocks:draft.summaryBlocks,pictureSlots:draft.pictureSlots};
   }
-  async function get(owner,id){const value=await ownedExport(owner,id);if(value.status==='publishing'&&value.stage!=='queued'&&!taskControllers.has(id)&&value.updatedAt<now()-180000)await repo.change(id,current=>{if(current.status==='publishing'&&current.stage!=='queued'&&!taskControllers.has(id)&&current.updatedAt<now()-180000){current.status=current.documentId?'partial':'unknown';current.error='feishu_interrupted';Object.assign(current,clearFrozen());current.updatedAt=now();}});const current=await ownedExport(owner,id);if(current.status==='publishing'&&current.stage==='queued')scheduleExport(owner,id);return {...publicExport(current),kernelId:await kernel.adopt('feishu-export',owner,id,[current.recordId]),...(current.status==='draft'?{markdown:current.markdown,boardNodes:current.boardNodes,boardPages:current.boardPages,summaryBlocks:current.summaryBlocks}:{})};}
+  async function get(owner,id){const value=await ownedExport(owner,id);if(value.status==='publishing'&&value.stage!=='queued'&&!taskControllers.has(id)&&value.updatedAt<now()-180000)await repo.change(id,current=>{if(current.status==='publishing'&&current.stage!=='queued'&&!taskControllers.has(id)&&current.updatedAt<now()-180000){current.status=current.documentId?'partial':'unknown';current.error='feishu_interrupted';Object.assign(current,clearFrozen());current.updatedAt=now();}});const current=await ownedExport(owner,id);if(current.status==='publishing'&&current.stage==='queued')scheduleExport(owner,id);return {...publicExport(current),kernelId:await kernel.adopt('feishu-export',owner,id,[current.recordId]),...(current.status==='draft'?{markdown:current.markdown,boardNodes:current.boardNodes,boardPages:current.boardPages,summaryBlocks:current.summaryBlocks,pictureSlots:current.pictureSlots}:{})};}
   async function run(owner,id){
     runningOwners.set(owner,(runningOwners.get(owner)||0)+1);
     let stage='convert';
@@ -185,8 +203,36 @@ export async function createFeishu(repo, {sdkFactory=createFeishuSdk,now=Date.no
       await guard();const signal=AbortSignal.any([connectionSignal(owner,conn.generation),taskControllers.get(id)?.signal||stopping.signal]);
       const frames = value.includeScreenshots ? await meetingScreenshotFrames(repo,await ownedRecord(owner,value.recordId),value.source.visualRevision) : [];
       requireThat(!value.includeScreenshots || frames.length === value.source.visualRevision,'feishu_preview_stale',409);
-      const client=clients.get(owner)?.sdk,converted=await request(client,`${api}/docx/v1/documents/blocks/convert`,{signal,body:{content_type:'markdown',content:value.markdown}});
+      const client=clients.get(owner)?.sdk,markers=new Map();
+      let markdown=value.markdown;
+      if(frames.length){
+        const lines=markdown.split('\n');
+        for(const {line,heading,revisions} of value.pictureSlots.slice().reverse()){
+          const content=heading?[`## ${heading}`,'']:[];
+          for(const revision of revisions){
+            const marker=`LingJiImage${id.replaceAll('-','')}N${revision}`;
+            markers.set(marker,revision);
+            content.push(marker,'');
+          }
+          lines.splice(line,0,...content);
+        }
+        markdown=lines.join('\n');
+      }
+      const converted=await request(client,`${api}/docx/v1/documents/blocks/convert`,{signal,body:{content_type:'markdown',content:markdown}});
       const blocks=feishuBlocks({first_level_block_ids:[...value.summaryBlocks.children_id,...converted.data.first_level_block_ids],blocks:[...value.summaryBlocks.descendants,...converted.data.blocks]});
+      const imageIds=new Map(),roots=new Set(converted.data.first_level_block_ids);
+      for(const block of blocks.descendants){
+        if(!markers.size||!roots.has(block.block_id)||block.block_type!==2||block.children?.length)continue;
+        const text=block.text?.elements?.map(element=>element.text_run?.content).join('').trim();
+        const revision=markers.get(text);
+        if(!revision)continue;
+        requireThat(!imageIds.has(revision),'feishu_verification_failed',502);
+        imageIds.set(revision,block.block_id);
+        delete block.text;
+        block.block_type=27;
+        block.image={};
+      }
+      requireThat(imageIds.size===frames.length&&frames.every(frame=>imageIds.has(frame.revision)),'feishu_verification_failed',502);
       requireThat(Buffer.byteLength(JSON.stringify(blocks))<=500000,'feishu_document_too_large',400);
       await guard();stage='create';await update({stage});
       const created=await externalWrite({key:'document-create',fingerprint:value.fingerprint,load:()=>repo.get(id),save:(key,state)=>repo.change(id,row=>{row.writes||={};row.writes[key]=state;}),guard,reconcile:async({attempted})=>{const row=await repo.get(id);return row.documentId?{status:'confirmed',receipt:{data:{document:{document_id:row.documentId}}}}:{status:attempted?'unknown':'absent'};},execute:async()=>{const created=await request(client,`${api}/docx/v1/documents`,{signal,body:{title:value.title,...(value.folderToken?{folder_token:value.folderToken}:{})},write:true});const doc=created.data?.document?.document_id;requireThat(documentToken(doc),'feishu_write_unknown',502);return {data:{document:{document_id:doc}}};}});
@@ -222,13 +268,10 @@ export async function createFeishu(repo, {sdkFactory=createFeishuSdk,now=Date.no
       }
       if(frames.length){
         stage='screenshots';await update({stage});await guard();
-        const children = [{block_type:4,heading2:{elements:[{text_run:{content:'会议截图'}}]}},
-          ...frames.map(()=>({block_type:27,image:{}}))];
-        const {data:attachments}=await request(client,`${api}/docx/v1/documents/${documentId}/blocks/${documentId}/children?document_revision_id=-1&client_token=${id}-screenshots`,{signal,body:{children,index:-1},write:true});
-        const imageBlocks=attachments?.children?.filter(block=>block.block_type===27);
-        requireThat(imageBlocks?.length===frames.length && imageBlocks.every(block=>documentToken(block.block_id)) && new Set(imageBlocks.map(block=>block.block_id)).size===frames.length,'feishu_verification_failed',502);
-        for (const [index,frame] of frames.entries()){
-          const blockId=imageBlocks[index].block_id, filename=`meeting-${frame.revision}.jpg`;
+        const imageBlocks=frames.map(frame=>relations.get(imageIds.get(frame.revision)));
+        requireThat(imageBlocks.every(documentToken)&&new Set(imageBlocks).size===frames.length,'feishu_verification_failed',502);
+        for(const [index,frame] of frames.entries()){
+          const blockId=imageBlocks[index],filename=`meeting-${frame.revision}.jpg`;
           const bytes=Buffer.from(frame.jpeg,'base64'), form=new FormData();
           form.append('file_name',filename);form.append('parent_type','docx_image');form.append('parent_node',blockId);form.append('size',String(bytes.length));
           form.append('file',new Blob([bytes],{type:'image/jpeg'}),filename);

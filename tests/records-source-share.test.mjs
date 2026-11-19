@@ -1,3 +1,4 @@
+import {placeMeetingImages,otherMeetingImages} from '../packages/records/src/minutes-images.mjs';
 import {minutesBoard,boardSvg} from '../packages/records/src/minutes-presentation.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -9,11 +10,11 @@ import { join } from 'node:path';
 import { truncateText } from '../packages/records/src/text.mjs';
 import { sharedMinutes } from '../packages/records/src/shared-content.mjs';
 import { minutesReadingLayout } from '../packages/records/src/minutes-reading.mjs';
-import { minutesItemText, minutesActionText } from '../packages/records/src/minutes-quality.mjs';
+import { manualMinutesContent, minutesItemText, minutesActionText } from '../packages/records/src/minutes-quality.mjs';
 import { createRecordServer } from '../services/records/src/server.mjs';
 
 const frontend = await Promise.all(['citation-context.ts', 'share-content.ts'].map(async file => stripTypeScriptTypes(await readFile(new URL(`../apps/web/src/${file}`, import.meta.url), 'utf8')).replace(/^import .*$/gm, '').replace(/export /g, '')));
-const sandbox = { exports: {}, URL, sharedMinutes, truncateText, minutesReadingLayout, minutesItemText, minutesActionText, minutesBoard, boardSvg };
+const sandbox = { exports: {}, URL, sharedMinutes, truncateText, minutesReadingLayout, minutesItemText, minutesActionText, minutesBoard, boardSvg, placeMeetingImages, otherMeetingImages };
 vm.runInNewContext(frontend.join('\n') + '\nObject.assign(exports,{citationContext,canCreateShareLinks,minutesForShare,shareFilename,createShareDocument});', sandbox);
 const { citationContext, canCreateShareLinks, minutesForShare, shareFilename, createShareDocument } = sandbox.exports;
 const segment = (id, revision, text, startMs) => ({ id, revision, text, startMs, endMs: startMs + 1000, speaker: '说话人 1', sourceId: 'fixture', edited: false });
@@ -56,14 +57,50 @@ test('standalone and loopback clients never offer unreachable share links while 
   assert.equal(canCreateShareLinks(false, 'https://studio.example'), true);
 });
 
-test('offline minutes embed deliberately supplied screenshots, including their capture time', () => {
-  const record = {title:'窗口截图',capture:'completed',minutes:{...minutes(),visualRevision:1},segments:snapshot};
-  const frame = {revision:1,atMs:17200,jpeg:'AAECAw=='};
-  const html = createShareDocument(record,'minutes',true,[frame]);
+test('offline minutes embed the original images inside their cited topics', () => {
+  const first=segment('a',1,'核对容量',15000), second=segment('b',1,'确认备份',42000);
+  const value={...minutes(),visualRevision:3,topics:[],evidenceSnapshot:[first,second],sections:[
+    {heading:'容量核对',items:[{text:'准备看板',evidence:[ref('a')]}]},
+    {heading:'备份安排',items:[{text:'检查备份',evidence:[ref('b')]}]},
+  ]};
+  const record={title:'窗口截图',capture:'completed',minutes:value,segments:[first,second]};
+  const frames=[
+    {revision:2,atMs:43000,jpeg:'AQID'},
+    {revision:3,atMs:90000,jpeg:'AwQF'},
+    {revision:1,atMs:17200,jpeg:'AAEC'},
+  ];
+  const html=createShareDocument(record,'minutes',true,frames);
   assert.match(html,/img-src data:/);
-  assert.match(html,/<h2>会议截图<\/h2>/);
-  assert.match(html,/src="data:image\/jpeg;base64,AAECAw==" alt="会议截图 00:17"/);
-  assert.doesNotMatch(createShareDocument(record,'minutes'), /data:image\/jpeg|会议截图 00:17/);
+  assert.match(html,/<h3>容量核对<\/h3>[^]*?准备看板[^]*?base64,AAEC" alt="会议截图 00:17"[^]*?<\/section><section class="topic"><h3>备份安排<\/h3>[^]*?base64,AQID" alt="会议截图 00:43"[^]*?<\/section>/);
+  assert.match(html,/<h2>其他会议画面<\/h2>[^]*?base64,AwQF" alt="会议截图 01:30"/);
+  assert.doesNotMatch(createShareDocument(record,'minutes'), /data:image\/jpeg|其他会议画面/);
+});
+
+test('placement avoids conflating overlapping topics, distant frames, and stale citations', () => {
+  const value={evidenceSnapshot:[
+    segment('a',1,'容量',10000),segment('b',1,'切换',11000),segment('c',2,'已更新',80000),
+  ]};
+  const groups=[{items:[{evidence:[ref('a')]}]},{items:[{evidence:[ref('b')]}]},{items:[{evidence:[ref('c')]}]}];
+  const {placed,other}=placeMeetingImages(value,groups,[
+    {revision:4,atMs:80000},{revision:2,atMs:11000},{revision:3,atMs:42000},{revision:1,atMs:10000},{revision:5,atMs:12500},
+  ]);
+  assert.deepEqual(placed.map(group=>group.map(frame=>frame.revision)),[[1],[5],[]]);
+  assert.deepEqual(other.map(frame=>frame.revision),[2,3,4]);
+});
+
+test('document image positions use source sections and skip duplicate supplemental citations', () => {
+  const evidence=[ref('a')];
+  const value={title:'验收',evidenceSnapshot:[segment('a',1,'核对容量',15000)],sections:[
+    {heading:'容量核对',items:Array.from({length:101},(_,index)=>({text:`事项 ${index}`,evidence}))},
+  ],highlights:[{text:'先检查容量',evidence}],actions:[]};
+  const sources=[];
+  const document=manualMinutesContent(value,(section,index)=>sources.push({section,index}));
+  assert.deepEqual(document.sections.map(section=>section.heading),['容量核对','容量核对','补充记录']);
+  assert.deepEqual(sources.map(source=>source.index),[1]);
+  const frame={revision:1,atMs:17000};
+  const {placed,other}=placeMeetingImages(value,sources.map(source=>source.section),[frame]);
+  assert.deepEqual(placed,[[frame]]);
+  assert.deepEqual(other,[]);
 });
 
 test('portable HTML escapes content and restricts minutes scope to cited frozen text without network assets or scripts', () => {

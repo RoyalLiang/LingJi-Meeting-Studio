@@ -14,7 +14,7 @@ type ManualContent={
   currentDiscussion:undefined;
   corrections:undefined;
 };
-export function manualMinutesContent<T extends SourceMinutes>(minutes:T):ManualContent;
+export function manualMinutesContent<T extends SourceMinutes>(minutes:T,onSourceSection?:(section:T['sections'][number],index:number)=>void):ManualContent;
 export const minutesKindLabels:Readonly<Record<'fact'|'decision'|'action'|'risk'|'question',string>>;
 export function minutesStateLabel<T extends object>(item:T):string|undefined;
 

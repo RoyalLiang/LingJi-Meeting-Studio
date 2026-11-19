@@ -1,29 +1,32 @@
-import {useEffect, useState} from 'react';
+import './MinutesScreenshots.css';
+import {useEffect,useState} from 'react';
 import {loadMinutesScreenshots} from '../meeting-screenshot-client';
 import type {MeetingScreenshot} from '../model';
 import {timecode} from '../model';
 
-export function MinutesScreenshots({recordId, through}:{recordId:string;through:number}) {
-  const [frames, setFrames] = useState<MeetingScreenshot[]>([]);
-  const [status, setStatus] = useState('正在读取会议截图…');
-  useEffect(()=>{
+const noFrames: MeetingScreenshot[] = [];
+export function useMinutesScreenshots(recordId: string, through?: number) {
+  const key = through ? `${recordId}:${through}` : '';
+  const [result,setResult] = useState<{key:string; frames:MeetingScreenshot[]; unavailable:boolean}>();
+  useEffect(() => {
+    if (!through) return;
     const controller = new AbortController();
-    void loadMinutesScreenshots(recordId, through, controller.signal).then(value=>{
-      if (!controller.signal.aborted) {
-        setFrames(value);
-        setStatus(value.length ? '' : '会议截图已不可用。');
-      }
-    }).catch(()=>{
-      if (!controller.signal.aborted) setStatus('暂时无法读取会议截图。');
+    loadMinutesScreenshots(recordId,through,controller.signal).then(frames => {
+      if (!controller.signal.aborted) setResult({key,frames,unavailable:frames.length!==through});
+    }).catch(() => {
+      if (!controller.signal.aborted) setResult({key,frames:noFrames,unavailable:true});
     });
-    return ()=>controller.abort();
-  },[recordId,through]);
-  return <section className="minutes-section" aria-label="会议截图">
-    <h4>会议截图</h4>
-    {status && <p role="status">{status}</p>}
-    <div className="minutes-screenshot-grid">{frames.map(frame=><figure key={frame.revision}>
+    return () => controller.abort();
+  },[key,recordId,through]);
+  return result?.key===key ? result : {frames:noFrames,unavailable:false};
+}
+
+export function MinutesScreenshots({frames}: {frames:readonly MeetingScreenshot[]}) {
+  if (!frames.length) return null;
+  return <div className="minutes-screenshot-grid" aria-label="会议截图" role="group">
+    {frames.map(frame => <figure key={frame.revision}>
       <img src={`data:image/jpeg;base64,${frame.jpeg}`} alt={`会议截图 ${timecode(frame.atMs)}`} loading="lazy"/>
       <figcaption>{timecode(frame.atMs)}</figcaption>
-    </figure>)}</div>
-  </section>;
+    </figure>)}
+  </div>;
 }

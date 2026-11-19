@@ -1,6 +1,8 @@
+import {placeMeetingImages,otherMeetingImages} from '../../../../packages/records/src/minutes-images.mjs';
+import {MinutesScreenshots} from './MinutesScreenshots';
 import { memo, useMemo } from 'react';
 import { CheckCircle, TreeStructure, UsersThree } from '@phosphor-icons/react';
-import type { Evidence, Minutes, MinutesItem } from '../model';
+import type { Evidence, MeetingScreenshot, Minutes, MinutesItem } from '../model';
 import { decisionItems, speakerViews, topicTableLayout, speakerLabels } from '../minutes-views';
 import { SummaryTables } from './SummaryTables';
 import { MinutesVisuals } from './MinutesVisuals';
@@ -9,7 +11,7 @@ import { Empty } from './ui';
 import { MinuteSpeakers } from './MinuteSpeakers';
 import { CitationSources } from './CitationSources';
 
-type Props = { showHighlights?: boolean; speakerMap?: Map<string,string>; minutes: Minutes; cite: (evidence: Evidence) => void };
+type Props = { frames?: readonly MeetingScreenshot[]; showHighlights?: boolean; speakerMap?: Map<string,string>; minutes: Minutes; cite: (evidence: Evidence) => void };
 import { minutesKindLabels as kindLabels, minutesStateLabel } from '../../../../packages/records/src/minutes-quality.mjs';
 export { MinuteSpeakers } from './MinuteSpeakers';
 
@@ -18,7 +20,7 @@ function Point({ item, speakers }: { item: MinutesItem; speakers: Map<string,str
   const label=[...new Set(labels)].join(' · ');
   return <div className="branch-point" data-kind={item.kind || 'fact'}><MinuteSpeakers evidence={item.evidence} speakers={speakers}/><p>{label && <strong className="point-label">{label}<span aria-hidden="true"> · </span></strong>}{item.text}</p></div>;
 }
-function Branch({ branch, index, minutes, cite, speakers }: { branch: ReturnType<typeof topicTableLayout>['branches'][number]; index: number; minutes: Minutes; cite: Props['cite']; speakers: Map<string,string> }) {
+function Branch({ branch, index, minutes, cite, speakers, frames }: { frames:readonly MeetingScreenshot[]; branch: ReturnType<typeof topicTableLayout>['branches'][number]; index: number; minutes: Minutes; cite: Props['cite']; speakers: Map<string,string> }) {
   const groups = new Map<string, MinutesItem[]>();
   for (const item of branch.items) {
     const key = item.kind || 'fact';
@@ -30,19 +32,21 @@ function Branch({ branch, index, minutes, cite, speakers }: { branch: ReturnType
     <div className="branch-children">{branch.summary && <div className="branch-node branch-summary"><MinuteSpeakers evidence={branch.evidence} speakers={speakers}/><p>{branch.summary}</p></div>}
       {[...groups].map(([kind,items]) => <div className="branch-node branch-points" key={kind} data-kind={kind}>{items.map((item,index)=><Point key={index} item={item} speakers={speakers}/>)}</div>)}
     </div>
-    {(visuals.length > 0 || branch.tables.length > 0) && <div className="branch-content"><MinutesVisuals visuals={visuals}/>{branch.tables.length > 0 && <SummaryTables minutes={minutes} tables={branch.tables} speakerMap={speakers}/>}</div>}
+    {(frames.length > 0 || visuals.length > 0 || branch.tables.length > 0) && <div className="branch-content"><MinutesScreenshots frames={frames}/><MinutesVisuals visuals={visuals}/>{branch.tables.length > 0 && <SummaryTables minutes={minutes} tables={branch.tables} speakerMap={speakers}/>}</div>}
   </section>;
 }
-export const MinutesTree=memo(function MinutesTree({ minutes, cite, speakerMap, showHighlights = true }: Props) {
+export const MinutesTree=memo(function MinutesTree({ minutes, cite, speakerMap, frames, showHighlights = true }: Props) {
   const speakers=useMemo(()=>speakerMap || speakerLabels(minutes.evidenceSnapshot || []),[minutes,speakerMap]);
   const branches = useMemo(() => {
     const layout = topicTableLayout(minutes);
     return layout.unassigned.length ? [...layout.branches, { title: '补充表格', summary: '', evidence: [], items: [], tables: layout.unassigned }] : layout.branches;
   }, [minutes]).filter(branch=>Boolean(branch.summary?.trim() || branch.items.length || branch.tables.length || (minutes.visuals||[]).some(visual=>branch.id&&visual.topicId===branch.id)));
+  const {placed,other}=useMemo(()=>placeMeetingImages(minutes,branches,frames || []),[minutes,branches,frames]);
   const unassignedVisuals = (minutes.visuals || []).filter(visual => !visual.topicId || !branches.some(branch => branch.id === visual.topicId));
-  return branches.length || minutes.highlights?.length || unassignedVisuals.length ? <div className="minutes-reading">
+  return branches.length || minutes.highlights?.length || unassignedVisuals.length || other.length ? <div className="minutes-reading">
     {Boolean(showHighlights && minutes.highlights?.length) && <section className="minutes-highlights" aria-label="重点速览"><h4>重点速览</h4><ul>{minutes.highlights!.map((item, index) => <li key={index}><MinuteSpeakers evidence={item.evidence} speakers={speakers}/><p>{item.text}</p></li>)}</ul></section>}
-    <div className="minutes-tree is-compact" aria-label="按主题整理的纪要">{branches.map((branch, index) => <Branch key={branch.id || `${index}:${branch.title}`} branch={branch} index={index} minutes={minutes} cite={cite} speakers={speakers}/>)}</div>
+    <div className="minutes-tree is-compact" aria-label="按主题整理的纪要">{branches.map((branch, index) => <Branch key={branch.id || `${index}:${branch.title}`} branch={branch} index={index} minutes={minutes} cite={cite} speakers={speakers} frames={placed[index]}/>)}</div>
+    {other.length>0&&<section className="minutes-section"><h4>{otherMeetingImages}</h4><MinutesScreenshots frames={other}/></section>}
     <MinutesVisuals visuals={unassignedVisuals}/>
   </div> : <Empty icon={<TreeStructure size={28}/>} title="尚无可展示的主题">整理完成后将在这里显示。</Empty>;
 });

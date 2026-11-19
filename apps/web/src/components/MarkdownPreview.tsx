@@ -1,6 +1,6 @@
 import {boardSvg} from '../../../../packages/records/src/minutes-presentation.mjs';
 import './MarkdownPreview.css';
-import {memo,useId,useMemo,useRef,useState,type ReactNode} from 'react';
+import {Fragment,memo,useId,useMemo,useRef,useState,type ReactNode} from 'react';
 import {Modal} from './ui';
 import DOMPurify from 'dompurify';
 import {isTauri,invoke} from '@tauri-apps/api/core';
@@ -8,16 +8,26 @@ import {renderMarkdown} from '../markdown.mjs';
 import {FeedbackNotice} from './FeedbackNotice';
 import {messageOf} from '../api';
 
-export const MarkdownPreview=memo(function MarkdownPreview({text}:{text:string}){
+const noInserts: {line:number;content:ReactNode}[]=[];
+export const MarkdownPreview=memo(function MarkdownPreview({text,inserts=noInserts}:{text:string;inserts?:{line:number;content:ReactNode}[]}){
   const prefix=useId().replace(/[^a-zA-Z0-9_-]/g,''),[error,setError]=useState('');
-  const html=useMemo(()=>{const rendered=renderMarkdown(text,prefix);return typeof DOMPurify.sanitize==='function'?DOMPurify.sanitize(rendered,{USE_PROFILES:{html:true},FORBID_TAGS:['style','iframe','object','embed','form'],FORBID_ATTR:['style','autofocus'],ALLOW_DATA_ATTR:false}):rendered;},[text,prefix]);
-  return <><article className="markdown-preview" aria-label="文档内容预览" dangerouslySetInnerHTML={{__html:html}} onClick={event=>{
+  const html=useMemo(()=>{
+    const lines=inserts.length?text.split('\n'):[];
+    const parts=inserts.length
+      ? [...inserts.map(({line},index)=>lines.slice(inserts[index-1]?.line||0,line).join('\n')),lines.slice(inserts.at(-1)!.line).join('\n')]
+      : [text];
+    return parts.map(part=>{
+      const rendered=renderMarkdown(part,prefix);
+      return typeof DOMPurify.sanitize==='function'?DOMPurify.sanitize(rendered,{USE_PROFILES:{html:true},FORBID_TAGS:['style','iframe','object','embed','form'],FORBID_ATTR:['style','autofocus'],ALLOW_DATA_ATTR:false}):rendered;
+    });
+  },[text,inserts,prefix]);
+  return <><article className="markdown-preview" aria-label="文档内容预览" dangerouslySetInnerHTML={inserts.length?undefined:{__html:html[0]}} onClick={event=>{
     const target=event.target as Element,copy=target.closest<HTMLButtonElement>('.markdown-copy');
     if(copy){const code=copy.closest('.markdown-code')?.querySelector('code')?.textContent||'';void navigator.clipboard.writeText(code).then(()=>{copy.textContent='已复制';},()=>setError('复制失败，请选择代码后复制。'));return;}
     const link=target.closest<HTMLAnchorElement>('a');if(!link||link.getAttribute('href')?.startsWith('#'))return;
     if(!/^https?:$/.test(new URL(link.href).protocol)){event.preventDefault();return;}
     event.preventDefault();if(isTauri())void invoke('integration_open',{url:link.href}).catch(failure=>setError(typeof failure==='string'?failure:messageOf(failure)));else window.open(link.href,'_blank','noopener,noreferrer');
-  }}/>{error&&<FeedbackNotice key={error} message={error} error/>}</>;
+  }}>{inserts.length?html.map((part,index)=><Fragment key={index}><div dangerouslySetInnerHTML={{__html:part}}/>{inserts[index]?.content}</Fragment>):null}</article>{error&&<FeedbackNotice key={error} message={error} error/>}</>;
 });
 export type BoardNode={id:string;type?:string;text?:{text?:string};mind_map_node?:{parent_id:string};[key:string]:unknown};
 export function BoardPreview({nodes,title="会议总览与主题图表"}:{nodes:BoardNode[];title?:string}){
