@@ -1,79 +1,117 @@
-import {createPortal} from 'react-dom';
-import {useEffect,useLayoutEffect,useRef,useState} from 'react';
-import {Check,PencilSimple,Plus,Trash,Waveform,X} from '@phosphor-icons/react';
-import {api,messageOf} from '../api';
-import type {RecordDetail,Segment} from '../model';
-import {Button} from './ui';
-import {FeedbackNotice} from './FeedbackNotice';
+import { useEffect, useId, useRef, useState } from 'react';
+import { Check, MagnifyingGlass, Plus, X } from '@phosphor-icons/react';
+import { api, messageOf } from '../api';
+import type { RecordDetail, Segment } from '../model';
+import { Button } from './ui';
+import { FeedbackNotice } from './FeedbackNotice';
 import './SpeakerPanel.css';
 
-type Person={id:string;name:string;samples:number;entries:{id:string}[]};
-type Bank={available:boolean;people:Person[];jobs:{id:string;personId:string;status:string}[]};
-export function SpeakerPanel({record,segment,changed,close,position}:{record:RecordDetail;segment:Segment;changed?:()=>void;close:()=>void;position:{current:{x:number;y:number}|null}}){
-  const [bank,setBank]=useState<Bank|null>(null),[name,setName]=useState(segment.speaker||''),[personId,setPersonId]=useState(segment.personId||''),[query,setQuery]=useState(''),[consent,setConsent]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[deleting,setDeleting]=useState(''),[renaming,setRenaming]=useState(''),[profileName,setProfileName]=useState('');
-  const panel=useRef<HTMLElement>(null),input=useRef<HTMLInputElement>(null),alive=useRef(true),newPerson=useRef(crypto.randomUUID()),sample=useRef(segment),learnId=useRef(crypto.randomUUID());
-  const [location,setLocation]=useState(position.current);
- const drag=useRef<{x:number;y:number;left:number;top:number}|null>(null);
- const move=(x:number,y:number)=>{
-  const bounds=panel.current?.getBoundingClientRect();if(!bounds)return;
-  const next={x:Math.max(12,Math.min(x,window.innerWidth-bounds.width-12)),y:Math.max(12,Math.min(y,window.innerHeight-bounds.height-12))};
-  position.current=next;setLocation(current=>current?.x===next.x&&current.y===next.y?current:next);
- };
- useLayoutEffect(()=>{
-  const clamp=()=>move(position.current?.x??window.innerWidth-384,position.current?.y??96);
-  clamp();const observer=new ResizeObserver(clamp);if(panel.current)observer.observe(panel.current);
-  window.addEventListener('resize',clamp);return()=>{observer.disconnect();window.removeEventListener('resize',clamp);};
- },[]);
- useEffect(()=>{
-    const previous=document.activeElement as HTMLElement|null;alive.current=true;input.current?.focus({preventScroll:true});const controller=new AbortController();
-    const load=()=>api<Bank>('/voiceprints/people','GET',undefined,controller.signal).then(value=>{if(alive.current){setBank(value);if(value.jobs.find(job=>job.id===learnId.current)?.status==='ready')setNotice('声音已更新，可在声纹库管理跨会议识别。');}}).catch(error=>{if(!controller.signal.aborted)setError(messageOf(error));});
-    void load();const timer=setInterval(()=>{void load();},4000);
-    return()=>{alive.current=false;controller.abort();clearInterval(timer);if(panel.current?.contains(document.activeElement))previous?.focus();};
-  },[]);
-  const learn=async(id:string)=>{
-    const current=sample.current;
-    const result=await api<{status:string}>('/voiceprints/learn','POST',{personId:id,requestId:learnId.current,recordId:record.id,segmentId:current.id,revision:current.revision,consent:true});
-    if(alive.current)setNotice(result.status==='waiting'?'称谓已保存，等待可用的独立发言片段。':'称谓已保存，声音正在后台学习。');
+type Person = { id: string; name: string; samples: number; automaticLearning?: boolean };
+type Job = { id: string; status: string };
+type Bank = { available: boolean; people: Person[]; jobs: Job[] };
+const jobMessages: Record<string,string> = {
+  queued: '声音已排队学习。', running: '声音正在后台学习。', waiting: '等待可用的独立发言。',
+  ready: '声音已更新。', failed: '声音学习未完成，可重新核对片段后重试。', cancelled: '片段已变化，学习已取消。',
+};
+
+export function SpeakerPanel({recordId,segment,playable,unavailable,onSaved,close}: {
+  recordId: string; segment: Segment; playable: boolean; unavailable: string; onSaved: (before: Segment, after: Segment) => void; close: () => void;
+}) {
+  const [bank,setBank] = useState<Bank|null>(null), [name,setName] = useState(segment.speaker||'');
+  const [choice,setChoice] = useState(segment.personId||''), [query,setQuery] = useState('');
+  const [searching,setSearching] = useState(false), [consent,setConsent] = useState(false), [busy,setBusy] = useState(false);
+  const [error,setError] = useState(''), [libraryError,setLibraryError] = useState(''), [notice,setNotice] = useState(''), [job,setJob] = useState<Job|null>(null);
+  const sample = useRef(segment), input = useRef<HTMLInputElement>(null), alive = useRef(false), pending = useRef(false);
+  const nameId=useId();
+  const personRequest = useRef(crypto.randomUUID()), learnRequest = useRef(crypto.randomUUID());
+  useEffect(() => {
+    const controller = new AbortController();
+    alive.current = true;
+    input.current?.focus({preventScroll:true});
+    void api<Bank>('/voiceprints/people','GET',undefined,controller.signal).then(value=>{if(!controller.signal.aborted)setBank(value);}).catch(error=>{
+      if(!controller.signal.aborted)setLibraryError(messageOf(error));
+    });
+    return () => {alive.current=false;controller.abort();};
+  }, []);
+  useEffect(() => {
+    if(!job||!['queued','running','waiting'].includes(job.status))return;
+    const controller=new AbortController();
+    const timer=setTimeout(()=>void api<Bank>('/voiceprints/people','GET',undefined,controller.signal).then(value=>{
+      if(controller.signal.aborted)return;
+      setBank(value);
+      setJob(value.jobs.find(row=>row.id===job.id)||job);
+    }).catch(()=>{if(!controller.signal.aborted)setJob({...job});}),4000);
+    return ()=>{clearTimeout(timer);controller.abort();};
+  },[job]);
+
+  const duration=segment.endMs-segment.startMs;
+  const learningBlock= !playable ? unavailable :
+    segment.overlappingSpeech ? '重叠发言暂不可学习' :
+    duration<2000 ? '学习至少需要 2 秒原音' :
+    duration>30000 ? '学习最多使用 30 秒原音' : '';
+  const canLearn=Boolean(choice&&bank?.available&&!learningBlock);
+  const selected=bank?.people.find(person=>person.id===choice);
+  const people=(bank?.people||[]).filter(person=>person.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+  const choices=searching?people:[...(selected?[selected]:[]),...people.filter(person=>person.id!==choice)].slice(0,3);
+  const resetLearning=()=>{setConsent(false);setJob(null);learnRequest.current=crypto.randomUUID();};
+  const choose=(id:string,personName?:string)=>{
+    setChoice(choice===id?'':id);
+    if(choice!==id&&personName)setName(personName);
+    resetLearning();
   };
-  const save=async()=>{
-    setBusy(true);setError('');setNotice('');
+
+  const save=async(learn:boolean)=>{
+    if(pending.current||!name.trim()||learn&&(!canLearn||!consent))return;
+    pending.current=true;setBusy(true);setError('');setNotice('');setJob(null);
     try{
-      const id=personId||newPerson.current;
-      const updated=await api<RecordDetail>(`/records/${record.id}/speakers`,'PATCH',{segmentId:sample.current.id,revision:sample.current.revision,personId:personId||undefined,requestId:newPerson.current,name});
-      sample.current=updated.segments.find(value=>value.id===segment.id)!;
-      learnId.current=crypto.randomUUID();
-      if(alive.current){setPersonId(id);setNotice('称谓已保存。');}changed?.();
-      if(consent)await learn(id);
-      const value=await api<Bank>('/voiceprints/people');if(alive.current)setBank(value);
-    }catch(error){if(alive.current)setError(messageOf(error));}finally{if(alive.current)setBusy(false);}
+      const current=sample.current;
+      const personId=choice&&choice!=='new'?choice:undefined;
+      const create=learn&&choice==='new';
+      const updated=await api<RecordDetail>(`/records/${recordId}/speakers`,'PATCH',{
+        segmentId:current.id,revision:current.revision,name,personId,
+        ...(create?{requestId:personRequest.current}:!personId?{meetingOnly:true}:{}),
+      });
+      const saved=updated.segments.find(value=>value.id===current.id);
+      if(!saved)throw Error('无法确认已保存的片段，请重新加载转录。');
+      sample.current=saved;
+      if(alive.current)setNotice('称谓已保存');
+      onSaved(current,saved);
+      if(create){
+        personRequest.current=crypto.randomUUID();
+        if(alive.current)setChoice(saved.personId||'');
+      }
+      if(learn&&saved.personId){
+        const result=await api<Job>('/voiceprints/learn','POST',{
+          personId:saved.personId,requestId:learnRequest.current,recordId,segmentId:saved.id,revision:saved.revision,consent:true,
+        });
+        if(alive.current){setJob(result);setConsent(false);}
+      }
+    }catch(error){if(alive.current)setError(messageOf(error));}
+    finally{pending.current=false;if(alive.current)setBusy(false);}
   };
-  const validClip=segment.sourceId!=='text-import'&&!segment.overlappingSpeech&&segment.endMs-segment.startMs>=2000&&segment.endMs-segment.startMs<=30000;
-  const clip=`/api/workspaces/all/voiceprints/clip?${new URLSearchParams({recordId:record.id,segmentId:sample.current.id,revision:String(sample.current.revision)})}`;
-  const people=(bank?.people||[]).filter(person=>person.name.toLowerCase().includes(query.toLowerCase()));
-  return createPortal(<aside ref={panel} style={location?{left:location.x,top:location.y}:undefined} className="speaker-panel" aria-label="说话人标注" onKeyDown={event=>{if(event.key==='Escape'){event.stopPropagation();close();}}}>
-    <header tabIndex={0} aria-label="移动说话人标注窗口" onPointerDown={event=>{
-  if(event.target instanceof Element&&event.target.closest('button'))return;
-  const bounds=panel.current!.getBoundingClientRect();drag.current={x:event.clientX,y:event.clientY,left:bounds.left,top:bounds.top};event.currentTarget.setPointerCapture(event.pointerId);event.preventDefault();event.currentTarget.focus({preventScroll:true});
- }} onPointerMove={event=>{if(drag.current)move(drag.current.left+event.clientX-drag.current.x,drag.current.top+event.clientY-drag.current.y);}} onPointerUp={()=>{drag.current=null;}} onPointerCancel={()=>{drag.current=null;}} onKeyDown={event=>{
-  const delta=event.shiftKey?40:10;const offsets:Record<string,[number,number]>={ArrowLeft:[-delta,0],ArrowRight:[delta,0],ArrowUp:[0,-delta],ArrowDown:[0,delta]};const offset=offsets[event.key];
-  if(event.target===event.currentTarget&&offset&&position.current){event.preventDefault();move(position.current.x+offset[0],position.current.y+offset[1]);}
- }}><h3><Waveform size={20}/>说话人</h3><Button variant="ghost" aria-label="关闭说话人标注" onClick={close}><X size={18}/></Button></header>
-    <div className="speaker-panel-body"><fieldset className="speaker-panel-form" disabled={busy}>
-      <blockquote>{segment.text}</blockquote>
-      {validClip&&<audio controls preload="none" src={clip} aria-label="试听当前发言"/>}
-      <label className="speaker-name">称谓<input ref={input} value={name} maxLength={80} onChange={event=>setName(event.target.value)} placeholder="输入姓名或称谓" onKeyDown={event=>{if(event.key==='Enter'&&name.trim()&&!busy)void save();}}/></label>
-      <div className="speaker-library-heading"><h4>声纹库</h4><Button variant="ghost" aria-label="新建说话人" onClick={()=>{setPersonId('');newPerson.current=crypto.randomUUID();learnId.current=crypto.randomUUID();setName('');input.current?.focus();}}><Plus size={17}/></Button></div>
-      <input className="speaker-search" aria-label="查找说话人" placeholder="查找说话人" value={query} onChange={event=>setQuery(event.target.value)}/>
-      <div className="speaker-people">{people.map(person=><div className="speaker-person" data-selected={person.id===personId} key={person.id}>
-        <button type="button" className="speaker-person-select" aria-pressed={person.id===personId} onClick={()=>{setPersonId(person.id);setName(person.name);learnId.current=crypto.randomUUID();}}><span className="speaker-person-avatar">{person.name[0]}</span><span><b>{person.name}</b><small>{person.samples?`${person.samples} 段声音`:'尚未学习声音'}</small></span>{person.id===personId&&<Check size={17}/>}</button>
-        <Button variant="ghost" aria-label={`修改 ${person.name} 的库中名称`} onClick={()=>{setRenaming(person.id);setProfileName(person.name);}}><PencilSimple size={15}/></Button>
-        <Button variant="ghost" aria-label={`删除 ${person.name}`} onClick={()=>setDeleting(person.id)}><Trash size={15}/></Button>
-        {renaming===person.id&&<div className="speaker-profile-name"><label>库中名称<input value={profileName} maxLength={80} onChange={event=>setProfileName(event.target.value)}/></label><Button disabled={!profileName.trim()} onClick={async()=>{setBusy(true);try{await api(`/voiceprints/people/${person.id}`,'PATCH',{name:profileName});const value=await api<Bank>('/voiceprints/people');if(alive.current){setBank(value);setRenaming('');}}catch(error){if(alive.current)setError(messageOf(error));}finally{if(alive.current)setBusy(false);}}}>保存</Button><Button onClick={()=>setRenaming('')}>取消</Button></div>}
-        {deleting===person.id&&<div className="speaker-delete"><span>删除此人及声音？</span><Button disabled={busy} onClick={async()=>{setBusy(true);try{const value=await api<Bank>(`/voiceprints/people/${person.id}`,'DELETE');if(alive.current){setBank(value);setDeleting('');if(personId===person.id)setPersonId('');}}catch(error){setError(messageOf(error));}finally{setBusy(false);}}}>删除</Button><Button onClick={()=>setDeleting('')}>取消</Button></div>}
-      </div>)}</div>
-      {bank?.jobs.filter(job=>job.personId===personId).slice(-1).map(job=><p className="speaker-learning-state" role="status" key={job.id}>{({queued:'等待学习',running:'正在学习声音',ready:'声音已更新',cancelled:'标注已更新，旧学习已取消',waiting:'等待独立发言片段',failed:'声音学习未完成，可重新保存重试'} as Record<string,string>)[job.status]}</p>)}
-      {!bank?.available&&bank&&<p className="speaker-learning-state">本地声音模型未就绪，称谓仍可保存。</p>}
-    </fieldset></div>
-    <footer><label className="speaker-consent"><input type="checkbox" checked={consent} disabled={busy||!bank?.available||segment.sourceId==='text-import'} onChange={event=>{setConsent(event.target.checked);learnId.current=crypto.randomUUID();}}/>已获同意，保存声音用于后续会议识别</label>{error&&<FeedbackNotice key={error} message={error} error persistent inline/>}{notice&&<p role="status" className="speaker-learning-state">{notice}</p>}<Button variant="primary" disabled={busy||!name.trim()} onClick={()=>{void save();}}><Check size={16}/>{busy?'保存中…':'保存称谓'}</Button></footer>
-  </aside>,document.body);
+
+  return <form className="speaker-panel" aria-label="说话人标注" onSubmit={event=>{event.preventDefault();void save(false);}} onKeyDown={event=>{
+    if(event.key==='Escape'){event.stopPropagation();close();}
+  }}>
+    <header><label htmlFor={nameId}>本场称谓</label><Button type="button" variant="ghost" aria-label="关闭说话人标注" onClick={close}><X size={16}/></Button></header>
+    <fieldset className="speaker-panel-form" disabled={busy}>
+      <input className="speaker-name" id={nameId} ref={input} value={name} maxLength={80} placeholder="输入姓名或称谓" onChange={event=>{setName(event.target.value);resetLearning();}}/>
+      {searching&&<label className="speaker-search"><MagnifyingGlass size={15} aria-hidden="true"/><input autoFocus type="search" aria-label="搜索库中人物" value={query} maxLength={80} placeholder="搜索库中人物" onChange={event=>setQuery(event.target.value)}/></label>}
+      <div className="speaker-people">
+        {choices.map(person=><Button type="button" key={person.id} className="speaker-person-select" aria-pressed={person.id===choice} onClick={()=>choose(person.id,person.name)}><span className="speaker-person-avatar" aria-hidden="true">{Array.from(person.name)[0]}</span><span>{person.name}</span></Button>)}
+        {bank&&<><Button type="button" aria-pressed={choice==='new'} onClick={()=>choose('new')}><Plus size={14}/>新建人物</Button>{bank.people.length>3&&<Button type="button" variant="ghost" aria-expanded={searching} onClick={()=>{setSearching(!searching);setQuery('');}}>{searching?'收起搜索':'选择其他人物'}</Button>}</>}
+      </div>
+      {searching&&!choices.length&&<p className="speaker-learning-state">没有匹配的人物。</p>}
+      {libraryError&&<p className="speaker-learning-state" role="status">{libraryError}</p>}
+      <footer>
+        {canLearn&&<label className="speaker-consent"><input type="checkbox" checked={consent} onChange={event=>setConsent(event.target.checked)}/>已获本人同意将这段声音用于跨会议识别</label>}
+        {choice&&learningBlock&&<p className="speaker-learning-state">{learningBlock}</p>}
+        {selected?.automaticLearning&&<p className="speaker-learning-state">此人物已授权会后自动深化</p>}
+
+        {error&&<FeedbackNotice key={error} message={error} error persistent inline/>}
+        {(notice||job)&&<p role="status" className="speaker-learning-state">{job ? jobMessages[job.status] : notice}</p>}
+        <div className="actions"><Button type="submit" disabled={busy||!name.trim()} variant={consent?'secondary':'primary'}><Check size={15}/>仅保存称谓</Button>{canLearn&&<Button type="button" variant={consent?'primary':'secondary'} disabled={busy||!consent||!name.trim()} onClick={()=>void save(true)}>保存并学习</Button>}</div>
+      </footer>
+    </fieldset>
+  </form>;
 }

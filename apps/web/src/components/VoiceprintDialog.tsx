@@ -1,10 +1,11 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
-import {Check,MagnifyingGlass,PencilSimple,Plus,Trash,Waveform} from '@phosphor-icons/react';
+import {CaretDown,Check,MagnifyingGlass,PencilSimple,Plus,Trash,Waveform} from '@phosphor-icons/react';
 import {api,messageOf} from '../api';
 import type {RecordListItem} from '../model';
 import {Button,Modal,Status} from './ui';
 import {Select} from './Select';
 import {FeedbackNotice} from './FeedbackNotice';
+import {ClipPlayButton,useClipPlayback} from './ClipPlayback';
 import './VoiceprintDialog.css';
 
 type Entry={id:string;global?:boolean;recognitionDisabled?:boolean};
@@ -16,21 +17,31 @@ type LearnInput={personId:string;requestId:string;recordId:string;segmentId:stri
 const time=(ms=0)=>`${Math.floor(ms/60000)}:${String(Math.floor(ms/1000)%60).padStart(2,'0')}`;
 
 function VoiceSources({person,revision,open}:{person:Person;revision:number;open?:(id:string)=>void}){
-  const [sources,setSources]=useState<Source[]|null>(null),[error,setError]=useState(''),[failed,setFailed]=useState<Record<string,boolean>>({});
-  const root=useRef<HTMLDivElement>(null);
+  const [sources,setSources]=useState<Source[]|null>(null),[error,setError]=useState(''),[expanded,setExpanded]=useState('');
+  const {status,toggle}=useClipPlayback();
   useEffect(()=>{
-    const controller=new AbortController(),element=root.current;
+    const controller=new AbortController();
     api<{sources:Source[]}>(`/voiceprints/people/${person.id}/sources`,'GET',undefined,controller.signal).then(value=>{if(!controller.signal.aborted)setSources(value.sources);}).catch(error=>{if(!controller.signal.aborted)setError(messageOf(error));});
-    return()=>{controller.abort();element?.querySelectorAll('audio').forEach(audio=>{audio.pause();audio.removeAttribute('src');audio.load();});};
+    return()=>controller.abort();
   },[person.id,revision]);
-  return <div className="voice-sources" ref={root} aria-busy={!sources&&!error}>
+  return <div className="voice-sources" aria-busy={!sources&&!error}>
     {error&&<FeedbackNotice message={error} error inline persistent/>}
     {!sources&&!error&&<p className="muted" role="status">正在读取声音来源…</p>}
-    {sources?.map((source,index)=><article className="voice-source" key={source.id}>
-      <header><strong>{source.available?source.title:'来源已不可用'}</strong><span className="voice-chip">{source.available?`${time(source.startMs)}–${time(source.endMs)}`:`声音 ${index+1}`}</span>{source.automatic&&<span className="voice-chip voice-chip-accent">自动深化</span>}</header>
-      {source.available?<><blockquote>{source.text}</blockquote>{source.audioAvailable&&!failed[source.id]?<audio controls preload="none" src={`/api/workspaces/all/voiceprints/clip?id=${encodeURIComponent(source.id)}`} aria-label={`试听 ${person.name} 在 ${source.title} 的声音`} onError={()=>setFailed(current=>({...current,[source.id]:true}))}/>:<p className="muted">原音未保留或暂不可用</p>}{open&&source.recordId&&<Button variant="ghost" onClick={()=>open(source.recordId!)}>打开会议</Button>}</>:<p className="muted">原文已修订、过期或移除，无法用这份引用试听。</p>}
-    </article>)}
-    {sources?.length===0&&<p className="voice-empty">还没有声音来源。先在会议原文中确认此人的称谓，再添加已获同意的片段。</p>}
+    {sources?.map((source,index)=>{
+      const title=source.available?source.title||'声音来源':'来源已不可用';
+      const opened=expanded===source.id, state=status?.key===source.id?status.state:undefined;
+      return <article className="voice-source" key={source.id}>
+        <header>
+          <ClipPlayButton label={source.audioAvailable?`${person.name}在${title}的声音`:'原音不可用'} state={state} disabled={!source.audioAvailable} toggle={()=>toggle(source.id,`/api/workspaces/all/voiceprints/clip?id=${encodeURIComponent(source.id)}`)}/>
+          <strong title={title}>{title}</strong>
+          <span className="voice-source-time">{source.available?`${time(source.startMs)}–${time(source.endMs)}`:`声音 ${index+1}`}</span>
+          <Button type="button" variant="ghost" className="voice-source-toggle" aria-label={`${opened?'收起':'展开'}${title}原文`} aria-expanded={opened} onClick={()=>setExpanded(opened?'':source.id)}><CaretDown size={15}/></Button>
+        </header>
+        {state==='failed'&&<p className="muted" role="status">原音暂无法播放，请重新试听。</p>}
+        {opened&&<div className="voice-source-detail">{source.available?<><blockquote>{source.text}</blockquote><div className="actions">{source.automatic&&<span className="voice-chip voice-chip-accent">自动深化</span>}{open&&source.recordId&&<Button variant="ghost" onClick={()=>open(source.recordId!)}>打开会议</Button>}</div></>:<p className="muted">原文已修订、过期或移除。</p>}</div>}
+      </article>;
+    })}
+    {sources?.length===0&&<p className="voice-empty">还没有声音来源。可以添加已确认的片段。</p>}
   </div>;
 }
 
@@ -79,18 +90,17 @@ export function VoiceprintDialog({close,open}:{scope:string;close:()=>void;open?
   const enabled=person?.recognitionEnabled!==false&&person?.entries.some(entry=>entry.global),stoppable=person?.recognitionEnabled!==false&&(enabled||activeJobs.length>0);
   return <Modal title="人物与声音" wide className="voice-people-modal" onClose={close} headerActions={<div className="voice-header-actions"><Button disabled={busy||!bank} onClick={()=>{setName('');setMode('new');}}><Plus size={16}/>新建人物</Button></div>}>
     <div className="voice-library" ref={libraryRoot} aria-busy={busy}>
-      <div className="voice-library-toolbar"><label><MagnifyingGlass size={16} aria-hidden="true"/><input type="search" aria-label="搜索人物" placeholder="搜索人物" value={query} maxLength={80} disabled={busy} onChange={event=>setQuery(event.target.value)}/></label><span>当前账户私有 · 所有工作目录</span></div>
+      <div className="voice-library-toolbar"><label><MagnifyingGlass size={16} aria-hidden="true"/><input type="search" aria-label="搜索人物" placeholder="搜索人物" value={query} maxLength={80} disabled={busy} onChange={event=>setQuery(event.target.value)}/></label></div>
       {error&&<FeedbackNotice key={error} message={error} error persistent inline/>}
       {!bank&&!error&&<p role="status">正在读取人物库…</p>}
       {error&&<Button disabled={busy} onClick={()=>void load().catch(error=>setError(messageOf(error)))}>重新读取</Button>}
       <fieldset disabled={busy} className="voice-library-layout">
-        <nav className="voice-person-list" aria-label="人物"><span className="voice-list-count">人物 {people.length}</span>{people.map(value=><button type="button" key={value.id} aria-pressed={person?.id===value.id} onClick={()=>{setSelected(value.id);setMode('detail');}}><span className="voice-person-avatar">{value.name[0]}</span><span><strong>{value.name}</strong><small><span className="voice-chip">{value.samples} 段声音</span>{value.automaticLearning&&<span className="voice-chip voice-chip-accent">自动深化</span>}</small></span></button>)}{bank&&!people.length&&<p className="voice-empty">{query?'没有匹配人物':'还没有人物'}</p>}</nav>
+        <nav className="voice-person-list" aria-label="人物">{people.map(value=><button type="button" key={value.id} aria-pressed={person?.id===value.id} onClick={()=>{setSelected(value.id);setMode('detail');setConsent(false);}}><span className="voice-person-avatar" aria-hidden="true">{Array.from(value.name)[0]}</span><strong title={value.name}>{value.name}</strong><small aria-label={`${value.samples} 段声音`}>{value.samples} 段</small></button>)}</nav>
         <section className="voice-person-detail">
           {mode==='new'?<form className="voice-edit-form" onSubmit={event=>{event.preventDefault();const id=createId.current;if(name.trim())void mutate(()=>api(`/voiceprints/people/${id}`,'PATCH',{name}),()=>{setQuery('');setSelected(id);setMode('detail');createId.current=crypto.randomUUID();});}}><h3>新建人物</h3><label>姓名或称谓<input autoFocus aria-label="新人物姓名" value={name} maxLength={80} onChange={event=>setName(event.target.value)} required/></label><div className="actions"><Button variant="primary" type="submit" disabled={!name.trim()}>创建人物</Button><Button type="button" onClick={()=>setMode('detail')}>取消</Button></div></form>:!person?<p className="voice-empty">{query?'换个名字再试试。':'先新建人物，再从已确认的会议片段添加声音。'}</p>:<>
-            <header className="voice-person-heading"><div><span className="voice-person-avatar">{person.name[0]}</span><div><h3>{person.name}</h3><p><span className="voice-chip">{person.samples} 段声音</span></p></div></div><div className="actions"><Button onClick={()=>{setName(person.name);setMode('rename');}}><PencilSimple size={15}/>改名</Button><Button onClick={()=>setMode('add')} disabled={!bank?.available}><Plus size={15}/>添加已确认片段</Button></div></header>
+            <header className="voice-person-heading"><div><span className="voice-person-avatar">{person.name[0]}</span><h3>{person.name}</h3></div><div className="actions"><Button onClick={()=>{setName(person.name);setMode('rename');}}><PencilSimple size={15}/>改名</Button><Button onClick={()=>setMode('add')} disabled={!bank?.available}><Plus size={15}/>添加已确认片段</Button></div></header>
             {mode==='rename'&&<form className="voice-edit-form" onSubmit={event=>{event.preventDefault();if(name.trim())void mutate(()=>api(`/voiceprints/people/${person.id}`,'PATCH',{name}),()=>{setQuery('');setSelected(person.id);setMode('detail');});}}><label>库中姓名<input autoFocus aria-label="库中姓名" value={name} maxLength={80} required onChange={event=>setName(event.target.value)}/></label><div className="actions"><Button variant="primary" type="submit" disabled={!name.trim()}><Check size={15}/>保存姓名</Button><Button type="button" onClick={()=>setMode('detail')}>取消</Button></div></form>}
-            {mode==='add'?<SamplePicker key={person.id} person={person} available={Boolean(bank?.available)} busy={busy} save={input=>void mutate(()=>api('/voiceprints/learn','POST',input),()=>setMode('detail'))} cancel={()=>setMode('detail')}/>:<div className="voice-person-columns"><section><div className="voice-section-heading"><h4><Waveform size={17}/>声音来源</h4></div><VoiceSources key={`${person.id}:${bank?.revision}`} person={person} revision={bank?.revision||0} open={open}/></section>
-              <aside className="voice-recognition"><h4>跨会议识别</h4><Status tone={enabled?'success':''}>{enabled?'已启用':person.recognitionEnabled===false?'已停止':stoppable?'等待声音':'尚未启用'}</Status><p>{stoppable?'已授权声音会在就绪后参与当前账户的跨会议匹配。':'人物与历史称谓保留，声音匹配需另行授权。'}</p><Button disabled={!person.samples&&!stoppable} onClick={()=>{setConsent(false);setMode(stoppable?'stop':'consent');}}>{stoppable?'停止使用':'授权启用'}</Button>
+            {mode==='add'?<SamplePicker key={person.id} person={person} available={Boolean(bank?.available)} busy={busy} save={input=>void mutate(()=>api('/voiceprints/learn','POST',input),()=>setMode('detail'))} cancel={()=>setMode('detail')}/>:<div className="voice-person-columns"><aside className="voice-recognition"><h4>跨会议识别</h4><Status tone={enabled?'success':''}>{enabled?'已启用':person.recognitionEnabled===false?'已停止':stoppable?'等待声音':'尚未启用'}</Status><Button disabled={!person.samples&&!stoppable} onClick={()=>{setConsent(false);setMode(stoppable?'stop':'consent');}}>{stoppable?'停止使用':'授权启用'}</Button>
                 {(mode==='consent'||mode==='stop')&&<div className="voice-confirm"><p>{mode==='stop'?'停止后保留人物、声音来源与人工称谓；新的学习任务也不会自动重新启用识别。':'将这些声音用于当前账户所有工作目录的匹配。'}</p>{mode==='consent'&&<label className="voice-consent"><input type="checkbox" checked={consent} onChange={event=>setConsent(event.target.checked)}/><span>已获本人对此范围的同意</span></label>}<div className="actions"><Button disabled={mode==='consent'&&!consent} onClick={()=>void mutate(()=>api(`/voiceprints/people/${person.id}/recognition`,'PATCH',{enabled:mode==='consent',consent:mode==='consent'&&consent,libraryRevision:bank?.revision}),()=>setMode('detail'))}>{mode==='stop'?'确认停止':'确认授权'}</Button><Button variant="ghost" onClick={()=>setMode('detail')}>取消</Button></div></div>}
                 {person.canAutoLearn&&(enabled||person.automaticLearning)&&<section className="voice-learning">
                   <div className="voice-learning-heading"><h4>自动深化学习</h4><Status tone={person.automaticLearning?'success':''}>{person.automaticLearning?'已启用':'已关闭'}</Status></div>
@@ -100,9 +110,9 @@ export function VoiceprintDialog({close,open}:{scope:string;close:()=>void;open?
                     <div className="actions"><Button disabled={!consent} onClick={()=>void mutate(()=>api(`/voiceprints/people/${person.id}/automatic-learning`,'PATCH',{enabled:true,consent:true,libraryRevision:bank?.revision}),()=>setMode('detail'))}>确认授权</Button><Button variant="ghost" onClick={()=>setMode('detail')}>取消</Button></div>
                   </div>}
                 </section>}
-                <p className="voice-priority">人工标注优先，自动结果不覆盖已确认称谓。</p><Button variant="ghost" onClick={()=>setMode('delete')}><Trash size={15}/>删除人物</Button>
+                <Button variant="ghost" onClick={()=>setMode('delete')}><Trash size={15}/>删除人物</Button>
                 {mode==='delete'&&<div className="voice-confirm"><p>删除此人及全部声音样本？会议中已确认的称谓保留。</p><div className="actions"><Button variant="danger" onClick={()=>{libraryRoot.current?.querySelectorAll('audio').forEach(audio=>audio.pause());void mutate(()=>api(`/voiceprints/people/${person.id}`,'DELETE'),()=>setMode('detail'));}}>确认删除</Button><Button type="button" onClick={()=>setMode('detail')}>取消</Button></div></div>}
-              </aside></div>}
+              </aside><section><div className="voice-section-heading"><h4><Waveform size={17}/>声音来源</h4></div><VoiceSources key={`${person.id}:${bank?.revision}`} person={person} revision={bank?.revision||0} open={open}/></section></div>}
             {activeJobs.length>0&&<p className="voice-job" role="status">{activeJobs.every(job=>job.status==='waiting')?'声音学习等待合适的独立片段。':'声音正在后台学习…'}</p>}{personJobs.at(-1)?.status==='failed'&&<p className="voice-job" role="status">声音学习未完成，请重新核对原音后添加。</p>}
           </>}
           {bank&&!bank.available&&<p className="voice-model-state">本地声音模型未就绪；人物和称谓仍可管理。</p>}

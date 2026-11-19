@@ -48,7 +48,7 @@
     "release:linux:preview": "node scripts/release-linux-preview.mjs",
     "build:site": "node scripts/build-public-site.mjs",
     "signing:status": "node scripts/signing-status.mjs",
-    "test:release-regression": "node --test tests/records-preview-release.test.mjs tests/records-wgs-build-contract.test.mjs tests/records-windows-msix.test.mjs tests/records-backend-dependencies.test.mjs tests/records-desktop-entry.test.mjs tests/records-audio-storage-sync.test.mjs tests/records-site-downloads.test.mjs tests/records-site-download-upload.test.mjs tests/records-preview-version.test.mjs tests/records-settings-save.test.mjs tests/records-local-speakers.test.mjs tests/records-meeting-lifecycle.test.mjs tests/records-minutes-summary.test.mjs",
+    "test:release-regression": "node --test tests/records-preview-release.test.mjs tests/records-wgs-build-contract.test.mjs tests/records-windows-msix.test.mjs tests/records-backend-dependencies.test.mjs tests/records-desktop-entry.test.mjs tests/records-audio-storage-sync.test.mjs tests/records-recording-playback.test.mjs tests/records-site-downloads.test.mjs tests/records-site-download-upload.test.mjs tests/records-preview-version.test.mjs tests/records-settings-save.test.mjs tests/records-local-speakers.test.mjs tests/records-meeting-lifecycle.test.mjs tests/records-minutes-summary.test.mjs",
     "verify:feature": "npm run test:smoke && npm run test:release-regression"
   },
   "dependencies": {

@@ -267,6 +267,20 @@ test('a global revoke during the first bank creation also fences a legacy enroll
 }));
 
 
+test('meeting-only annotation confirms the label without creating a library person or learning job',()=>fixture(async({repo,record,segment})=>{
+  const service=voiceLearning(repo);
+  const input={segmentId:segment.id,revision:segment.revision,name:'本场值班员',meetingOnly:true};
+  const updated=await service.annotate('owner',record.id,input);
+  const saved=updated.segments[0];
+  assert.equal(saved.speaker,input.name);
+  assert.equal(saved.speakerConfirmed,true);
+  assert.equal(saved.personId,undefined);
+  const repeated=await service.annotate('owner',record.id,{...input,revision:saved.revision});
+  assert.equal(repeated.segments[0].revision,saved.revision);
+  assert.deepEqual(await repo.list('voice-person'),[]);
+  assert.deepEqual(await repo.list('voiceprint-job'),[]);
+}));
+
 test('short speech can save a name without waiting for a usable voice clip',()=>fixture(async({repo,record,segment})=>{
   let calls=0;const library=voiceprints(repo,{infer:async()=>{calls++;return {embedding:vector(0)};}}),service=voiceLearning(repo,{library}),personId=randomUUID();
   await repo.change(record.id,r=>{r.segments[0].endMs=1000;r.segments[0].speakerId='local-a';});

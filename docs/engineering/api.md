@@ -23,7 +23,7 @@
 | POST /settings/providers/test | kind 为 asr 或 minutes；仅使用静音或虚构连通性文本 |
 | GET /development-account | 仅开发模式提供默认本地账户信息；自定义密码不返回 |
 | GET /records/:id/minutes/versions/:revision | 有限历史纪要快照 |
-| GET /records/:id/audio/:sourceId | 保留原音的 WAV 与单范围 Range 回放 |
+| GET /records/:id/audio/:sourceId | 保留原音的 WAV 与单范围 Range 回放；可同时传 `segment` 和 `revision` 读取该转录片段的原音 |
 | GET /records/:id/export?format=markdown/json/ics/issues | 记录与人工可审阅候选文件 |
 | GET/POST /records/:id/shares；DELETE /records/:id/shares/:shareId | 默认纪要范围、24 小时有效、可撤销 |
 | GET /shared/:token | 选定分享范围，纪要只含实际引用的快照 |

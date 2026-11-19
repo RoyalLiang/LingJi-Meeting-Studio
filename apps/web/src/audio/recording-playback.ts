@@ -1,10 +1,11 @@
-import type { RecordDetail, Source } from '../model';
+import type { RecordDetail, Segment, Source } from '../model';
 
-type PlaybackRecord = Pick<RecordDetail, 'capture' | 'retainAudio' | 'audioPurged' | 'sources'>;
+type PlaybackRecord = Pick<RecordDetail, 'capture' | 'retainAudio' | 'audioPurged' | 'audioCleanup' | 'sources'>;
 export type RecordingPlaybackState = { available: true; sources: Source[] } | { available: false; label: string; message: string };
 
 export function recordingPlaybackState(record: PlaybackRecord): RecordingPlaybackState {
   if (record.audioPurged) return { available: false, label: '原音已清理 · 无法恢复', message: '原始录音已清理，无法恢复。下次录音前可开启“保留原音供回放”。' };
+  if (record.audioCleanup) return { available: false, label: '原音正在清理', message: '原音正在清理，暂无法播放。' };
   if (!record.retainAudio) return { available: false, label: '原音未留存', message: '本场未开启“保留原音供回放”，原音会在转录后清理。' };
   if (!['sealed', 'completed'].includes(record.capture)) return {
     available: false, label: '原音待结束', message: '结束会议并完整保存原音后可播放。',
@@ -18,4 +19,8 @@ export function recordingPlaybackState(record: PlaybackRecord): RecordingPlaybac
 
 export function recordingAudioUrl(recordId: string, sourceId: string): string {
   return `/api/records/${encodeURIComponent(recordId)}/audio/${encodeURIComponent(sourceId)}`;
+}
+
+export function segmentAudioUrl(recordId: string, segment: Segment): string {
+  return `${recordingAudioUrl(recordId, segment.sourceId)}?segment=${encodeURIComponent(segment.id)}&revision=${segment.revision}`;
 }

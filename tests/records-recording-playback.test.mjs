@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, mkdtemp, rm } from 'node:fs/promises';
+import { readFile, mkdtemp, readdir, rm } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { stripTypeScriptTypes } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -139,6 +140,24 @@ test('retained recordings serve complete WAV and byte ranges while temporary or 
     }
     assert.equal((await fetch(url, { headers: { ...headers, Range: `bytes=${wav.length}-` } })).status, 416);
     assert.equal((await fetch(url)).status, 401);
+    const segment = {id:randomUUID(),revision:1,sourceId:retained.sourceId,startMs:375,endMs:425,text:'短句重叠',speaker:'',overlappingSpeech:true};
+    await app.repo.change(retained.id,value=>{value.sources[0].timelineOffsetMs=300;value.segments.push(segment);});
+    const clipUrl = url+`?segment=${segment.id}&revision=1`;
+    const expectedClip = audioBytes.subarray(75*32,125*32);
+    const clip = await fetch(clipUrl,{headers});
+    assert.equal(clip.status,200);
+    const clippedWav = Buffer.from(await clip.arrayBuffer());
+    assert.equal(clippedWav.readUInt32LE(40),expectedClip.length);
+    assert.deepEqual(clippedWav.subarray(44),expectedClip,'Play only the requested source interval across the chunk boundary');
+    assert.equal((await fetch(clipUrl)).status,401);
+    assert.equal((await fetch(clipUrl.replace('revision=1','revision=2'),{headers})).status,409);
+    await app.repo.archiveAudio(await app.repo.get(retained.id));
+    assert.ok((await readdir(join(root,'audio',retained.id))).some(name=>name.startsWith('archive-')));
+    const archivedPart = await fetch(clipUrl,{headers:{...headers,Range:'bytes=40-61'}});
+    assert.equal(archivedPart.status,206);
+    assert.deepEqual(Buffer.from(await archivedPart.arrayBuffer()),clippedWav.subarray(40,62));
+    await app.repo.change(retained.id,value=>{value.audioCleanup={};});
+    assert.equal((await fetch(clipUrl,{headers})).status,404);
     await app.repo.change(retained.id, value => { value.audioPurged = true; });
     assert.equal((await fetch(url, { headers })).status, 404, 'purged flag denies even an object still on disk');
     const temporary = await recording(false), temporaryUrl = base + recordingAudioUrl(temporary.id, temporary.sourceId).slice(4);

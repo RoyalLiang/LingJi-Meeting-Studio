@@ -342,7 +342,7 @@ export async function createRecordServer(options = {}) {
       }
       if (action.startsWith('audio/') && req.method === 'GET') {
         const source = record.sources.find(source => source.id === action.slice(6));
-        requireThat(record.retainAudio && !record.audioPurged && ['sealed', 'completed'].includes(record.capture) &&
+        requireThat(record.retainAudio && !record.audioPurged && !record.audioCleanup && ['sealed', 'completed'].includes(record.capture) &&
           source?.stopped && Number.isSafeInteger(source.lastSequence) && source.lastSequence >= 0 && source.watermark === source.lastSequence, 'audio_unavailable', 404);
         const chunks = record.chunks.filter(chunk => chunk.sourceId === source.id).sort((a, b) => a.sequence - b.sequence);
         let sampleOffset = 0;
@@ -352,7 +352,15 @@ export async function createRecordServer(options = {}) {
         }), 'audio_unavailable', 404);
         const leadingSamples = Math.round((source.timelineOffsetMs || 0) * 16);
         requireThat(Number.isSafeInteger(leadingSamples) && leadingSamples >= 0, 'audio_unavailable', 404);
-        if (url.searchParams.get('waveform') === '1') {
+        let firstSample = 0, lastSample = leadingSamples + sampleOffset;
+        const segmentId = url.searchParams.get('segment');
+        if (segmentId !== null || url.searchParams.has('revision')) {
+          const segment = record.segments.find(segment => segment.id === segmentId && segment.sourceId === source.id);
+          requireThat(segment && String(segment.revision) === url.searchParams.get('revision'), 'segment_revision_conflict', 409);
+          firstSample = Math.round(segment.startMs * 16);
+          lastSample = Math.min(lastSample, Math.round(segment.endMs * 16));
+          requireThat(Number.isSafeInteger(firstSample) && Number.isSafeInteger(lastSample) && firstSample >= leadingSamples && lastSample > firstSample, 'audio_unavailable', 404);
+        } else if (url.searchParams.get('waveform') === '1') {
           const key = waveformKey(chunks,leadingSamples), samples = leadingSamples + sampleOffset;
           const cached = record.waveforms?.[source.id];
           if (cached?.key === key && validWaveform(cached.value,samples)) { send(res,200,cached.value); return; }
@@ -368,7 +376,7 @@ export async function createRecordServer(options = {}) {
           return;
         }
         const leadingBytes = leadingSamples * 2;
-        const length = leadingBytes + chunks.reduce((n, c) => n + c.sampleCount * 2, 0), total = length + 44;
+        const length = (lastSample - firstSample) * 2, total = length + 44;
         requireThat(length <= 0xffffffff - 36, 'audio_unavailable', 413);
         const range = req.headers.range?.match(/^bytes=(\d+)-(\d*)$/);
         const start = range ? Number(range[1]) : 0, end = range && range[2] ? Math.min(Number(range[2]), total - 1) : total - 1;
@@ -394,12 +402,14 @@ export async function createRecordServer(options = {}) {
         const pending=reads.get(index);reads.delete(index);const result=await pending;
         if(result.error)throw result.error;return result.bytes;
       };
-      let offset = 0;
-        for (let i = -2; i < chunks.length; i++) {
+      if (start < 44) await write(waveHeader(length).subarray(start, Math.min(44, end + 1)));
+      const payloadStart = Math.max(44, start);
+      let offset = 44 - firstSample * 2;
+        for (let i = -1; end >= 44 && i < chunks.length; i++) {
           if (res.destroyed || res.writableEnded) break;
-          const size=i===-2?44:i===-1?leadingBytes:chunks[i].sampleCount*2;
-          if(offset+size<=start){offset+=size;continue;}
-          const from = Math.max(0, start - offset), until = Math.min(size, end - offset + 1);
+          const size=i===-1?leadingBytes:chunks[i].sampleCount*2;
+          if(offset+size<=payloadStart){offset+=size;continue;}
+          const from = Math.max(0, payloadStart - offset), until = Math.min(size, end - offset + 1);
           if (i === -1) {
             // Virtual silence aligns resumed sources without copying or changing stored PCM.
             let remaining = until - from;
@@ -408,7 +418,7 @@ export async function createRecordServer(options = {}) {
               const count = Math.min(remaining, silence.length); await write(silence.subarray(0,count)); remaining -= count;
             }
           } else {
-            const bytes = i === -2 ? waveHeader(length) : await readChunk(i);
+            const bytes = await readChunk(i);
             if (res.destroyed || res.writableEnded) break;
             await write(bytes.subarray(from,until));
           }

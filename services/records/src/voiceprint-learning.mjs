@@ -87,9 +87,10 @@ export function voiceLearning(repo,{library=voiceprints(repo)}={}){
     requireThat(uuid.test(recordId)&&uuid.test(input?.segmentId)&&Number.isSafeInteger(input.revision)&&validName(input.name),'invalid_voiceprint_source',400);
     const before=await repo.get(recordId);requireThat(before?.kind==='record'&&before.owner===owner&&!before.deleted&&Date.parse(before.deleteAt)>Date.now(),'record_not_found',404);
     const original=before.segments.find(segment=>segment.id===input.segmentId);requireThat(original?.revision===input.revision,'segment_revision_conflict',409);
-    const id=input.personId||input.requestId;requireThat(uuid.test(id),'invalid_voiceprint',400);
-    const existing=await repo.get(id);
-    const profile=existing?await person(owner,id):await savePerson(owner,{id,name:input.name});
+    const id=input.meetingOnly===true?null:input.personId||input.requestId;
+    requireThat(id===null?!input.personId:uuid.test(id),'invalid_voiceprint',400);
+    const existing=id&&await repo.get(id);
+    const profile=id?(existing?await person(owner,id):await savePerson(owner,{id,name:input.name})):null;
     const label=input.name.trim();
     const banks=(await repo.list('voiceprints')).filter(bank=>bank.owner===owner);
     await repo.changeMany([recordId,...banks.map(bank=>bank.id)],rows=>{
@@ -97,13 +98,16 @@ export function voiceLearning(repo,{library=voiceprints(repo)}={}){
       requireThat(record.owner===owner&&!record.deleted&&Date.parse(record.deleteAt)>Date.now(),'record_not_found',404);
       const selected=record.segments.find(segment=>segment.id===input.segmentId);requireThat(selected?.revision===input.revision,'segment_revision_conflict',409);
       const key=cluster(selected),targets=record.segments.filter(segment=>{
-        if(segment.id===selected.id)return !segment.speakerConfirmed||segment.personId!==id||segment.speaker!==label;
+        if(segment.id===selected.id)return !segment.speakerConfirmed||(segment.personId||null)!==id||segment.speaker!==label;
         return key&&cluster(segment)===key&&!segment.speakerConfirmed&&!segment.edited;
       });
       if(!targets.length)return;
       editSegments(record,targets.map(segment=>({id:segment.id,revision:segment.revision,text:segment.text,speaker:label})));
-      for(const segment of targets){segment.personId=id;segment.speakerConfirmed=true;delete segment.speakerMatch;}
-      if(profile.autoLearnKey&&record.capture==='completed'&&retained(record)){
+      for(const segment of targets){
+        if(id)segment.personId=id;else delete segment.personId;
+        segment.speakerConfirmed=true;delete segment.speakerMatch;
+      }
+      if(profile?.autoLearnKey&&record.capture==='completed'&&retained(record)){
         const matching=['queued','running'].includes(record.voiceMatch?.status)&&!record.voiceMatch.learningOnly;
         record.voiceMatch={status:'queued',revision:record.transcriptRevision,learningOnly:!matching,...(matching?{expiresAt:record.voiceMatch.expiresAt}:{})};
       }
