@@ -10,7 +10,7 @@ async function fixture(t){
   const calls=[],flags={},sockets=new Set();let connections=0,tokens=0;
   const server=http.createServer(async(req,res)=>{
     let raw='';for await(const chunk of req)raw+=chunk;
-    calls.push({path:req.url,body:raw?JSON.parse(raw):null,authorization:req.headers.authorization});
+    calls.push({path:req.url,method:req.method,contentType:req.headers['content-type'],body:raw?(req.headers['content-type']?.includes('multipart/form-data')?raw:JSON.parse(raw)):null,authorization:req.headers.authorization});
     const send=value=>{res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify(value));};
     if(req.url==='/callback/ws/endpoint'){
       if(flags.discoveryGate)await flags.discoveryGate;
@@ -51,4 +51,20 @@ test('aborting official SDK discovery cannot resurrect a late socket',async t=>{
   try{await waitFor(()=>h.calls.some(call=>call.path==='/callback/ws/endpoint'));h.controller.abort();}finally{release();}
   await waitFor(()=>h.runtime.status().state==='idle');
   assert.equal(h.connections(),0);assert.equal(h.runtime.status().state,'idle');
+});
+
+test('SDK preserves multipart image payload and explicit block patch', async t=>{
+  const h=await fixture(t);
+  const form=new FormData();
+  form.append('parent_type','docx_image');
+  form.append('file',new Blob(['fixed image fixture'],{type:'image/jpeg'}),'fixture.jpg');
+  await h.runtime.request(h.base+'/open-apis/probe',{body:form});
+  await h.runtime.request(h.base+'/open-apis/probe',{method:'PATCH',body:{replace_image:{token:'fixture'}}});
+  const [upload,patch]=h.calls.filter(call=>call.path==='/open-apis/probe');
+  assert.equal(upload.method,'POST');
+  assert.match(upload.contentType,/multipart\/form-data; boundary=/);
+  assert.match(upload.body,/name="parent_type"\r?\n\r?\ndocx_image/);
+  assert.match(upload.body,/filename="fixture.jpg"/);
+  assert.equal(patch.method,'PATCH');
+  assert.deepEqual(patch.body,{replace_image:{token:'fixture'}});
 });

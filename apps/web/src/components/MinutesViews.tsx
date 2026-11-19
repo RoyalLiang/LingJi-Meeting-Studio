@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react';
-import { CalendarBlank, ChartBar, CheckCircle, ListChecks, Question, TreeStructure, UsersThree, Warning } from '@phosphor-icons/react';
+import { CheckCircle, TreeStructure, UsersThree } from '@phosphor-icons/react';
 import type { Evidence, Minutes, MinutesItem } from '../model';
 import { decisionItems, speakerViews, topicTableLayout, speakerLabels } from '../minutes-views';
 import { SummaryTables } from './SummaryTables';
@@ -8,30 +8,10 @@ import './minutes-tree.css';
 import { Empty } from './ui';
 import { MinuteSpeakers } from './MinuteSpeakers';
 import { CitationSources } from './CitationSources';
-import { minutesSummaryCards } from '../../../../packages/records/src/minutes-presentation.mjs';
 
 type Props = { showHighlights?: boolean; speakerMap?: Map<string,string>; minutes: Minutes; cite: (evidence: Evidence) => void };
 import { minutesKindLabels as kindLabels, minutesStateLabel } from '../../../../packages/records/src/minutes-quality.mjs';
 export { MinuteSpeakers } from './MinuteSpeakers';
-
-const summaryIcons={decision:CheckCircle,action:ListChecks,risk:Warning,question:Question,timeline:CalendarBlank,comparison:ChartBar};
-export const MinutesCards=memo(function MinutesCards({minutes,cite}:{minutes:Minutes;cite:(ref:Evidence)=>void}){
-  const cards=useMemo(()=>minutesSummaryCards(minutes),[minutes]);
-  if(!cards.length)return null;
-  return <section className="minutes-summary-cards" aria-label="纪要总结卡片">
-    {cards.map(card=>{
-      const Icon=summaryIcons[card.kind];
-      return <article className="minutes-summary-card" data-kind={card.kind} key={card.kind}>
-        <h4><Icon size={16} aria-hidden="true"/>{card.title}</h4>
-        <ul>{card.items.map((item,index)=><li key={index}>
-          {item.label&&<span className="minutes-summary-chip">{item.label}</span>}
-          <p>{item.text}</p>
-          <CitationSources evidence={item.evidence} cite={cite} compact/>
-        </li>)}</ul>
-      </article>;
-    })}
-  </section>;
-});
 
 function Point({ item, speakers }: { item: MinutesItem; speakers: Map<string,string> }) {
   const state=minutesStateLabel(item),labels=[state,item.label||(!state&&item.kind&&item.kind!=='fact'?kindLabels[item.kind]:undefined)].filter(Boolean);

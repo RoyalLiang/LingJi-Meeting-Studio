@@ -8,3 +8,5 @@
   .meeting-header .meeting-controls .capture-status:has(.capture-remembering){flex-basis:100%}
   .meeting-header .meeting-controls-main:has(.capture-remembering) .meeting-source-strip{margin-right:auto}
 }
+
+.meeting-screenshot-status{margin:0 0 6px;color:var(--ink-2);font-size:.75rem}

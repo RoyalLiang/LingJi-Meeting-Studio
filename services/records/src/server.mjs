@@ -1,3 +1,4 @@
+import {meetingScreenshotFrames,saveMeetingScreenshot} from './meeting-screenshots.mjs';
 import { installNetworkProxy, proxySettings, saveProxySettings } from './network-proxy.mjs';
 import {voiceprintRoutes} from './voiceprint-routes.mjs';
 import {enterModelUsage} from './model-usage.mjs';
@@ -329,6 +330,12 @@ export async function createRecordServer(options = {}) {
         send(res, 202, {queued:true}); return;
       }
       if (action === '' && req.method === 'GET') { send(res, 200, publicRecord(record)); return; }
+      if (action === 'screenshots' && req.method === 'GET') {
+        const through = Number(url.searchParams.get('through') || record.visualRevision || 0);
+        requireThat(Number.isSafeInteger(through) && through >= 0 && through <= (record.visualRevision || 0), 'invalid_screenshot', 400);
+        const frames = (await meetingScreenshotFrames(repo, record, through)).map(({revision,atMs,jpeg})=>({revision,atMs,jpeg}));
+        send(res, 200, {frames}, {'Cache-Control':'no-store'}); return;
+      }
       if (action === 'corrections' && req.method === 'GET') { send(res, 200, await correctionCandidates(repo, record)); return; }
       if (action === 'corrections/model' && req.method === 'POST') {
         const config = await readConfig(repo.root);
@@ -485,6 +492,9 @@ export async function createRecordServer(options = {}) {
       const bodyLimit=editBytes?Math.min(16*1024*1024,Math.max(600000,editBytes*3+65536)):600000;
       const body = await readBody(req, bodyLimit);
       let result;
+      if (action === 'screenshots' && req.method === 'POST') {
+        send(res, 200, await saveMeetingScreenshot(repo, record, user.id, body)); return;
+      }
       if (action === 'corrections' && req.method === 'POST') {
         const vocabulary = await loadCorrectionVocabulary(repo, record);
         requireThat(body.fingerprint === vocabulary.fingerprint, 'vocabulary_revision_conflict', 409);

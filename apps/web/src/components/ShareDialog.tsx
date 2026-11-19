@@ -1,3 +1,4 @@
+import {loadMinutesScreenshots} from '../meeting-screenshot-client';
 import {FeedbackNotice} from './FeedbackNotice';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CaretDown, Check, Copy, DownloadSimple, LinkSimple, ShareNetwork } from '@phosphor-icons/react';
@@ -78,17 +79,22 @@ export function ShareDialog({ record, close, notify }: { record: RecordDetail; l
     } catch (error) { if (mounted.current) setError(messageOf(error)); }
     finally { request.current = false; if (mounted.current) setBusy(false); }
   }
-  function exportFile(online = false) {
-    setError('');
+  async function exportFile(online = false) {
+    if (request.current) return;
+    request.current = true; setBusy(true); setError('');
     try {
-      const content = online ? JSON.stringify(createPublishedContent(record, scope)) : createShareDocument(record, scope, true);
+      const through = minutes?.visualRevision;
+      const frames = !online && through ? await loadMinutesScreenshots(record.id, through) : [];
+      if (!mounted.current) return;
+      const content = online ? JSON.stringify(createPublishedContent(record, scope)) : createShareDocument(record, scope, true, frames);
       if (online && new TextEncoder().encode(content).length > MAX_PUBLISHED_BYTES - 1024) throw new Error('内容超过在线分享的 1 MiB 限额，请改选仅纪要或导出 HTML 文件。');
       const file = { url: URL.createObjectURL(new Blob([content], { type: online ? 'application/json;charset=utf-8' : 'text/html;charset=utf-8' })), name: shareFilename(record.title).replace(/\.html$/, online ? '.lingji.json' : '.html') };
       setPrepared(file);
       beginDownload(file.url);
       const link = document.createElement('a'); link.href = file.url; link.download = file.name; document.body.append(link); link.click(); link.remove();
       notify('已开始下载分享文件。');
-    } catch (error) { setError(messageOf(error)); }
+    } catch (error) { if(mounted.current)setError(messageOf(error)); }
+    finally {request.current=false;if(mounted.current)setBusy(false);}
   }
   function beginDownload(url: string) {
     if (!native) return;
@@ -117,7 +123,7 @@ export function ShareDialog({ record, close, notify }: { record: RecordDetail; l
         catch (error) { if (mounted.current) setError(messageOf(error)); }
         finally { request.current = false; if (mounted.current) setBusy(false); }
       }}>撤销旧链接</Button></div>)}</section>}
-      <details className="meeting-share-files"><summary><DownloadSimple size={16}/>导出文件<CaretDown size={14} className="share-files-chevron"/></summary><div className="actions meeting-share-actions"><Button disabled={!hasContent||!downloadReady||downloading} onClick={()=>exportFile()}><DownloadSimple size={16}/>{downloading?'正在保存…':'HTML 文件'}</Button><Button disabled={!hasContent||!downloadReady||downloading} onClick={()=>exportFile(true)}>明文备份</Button></div></details>
+      <details className="meeting-share-files"><summary><DownloadSimple size={16}/>导出文件<CaretDown size={14} className="share-files-chevron"/></summary><div className="actions meeting-share-actions"><Button disabled={!hasContent||!downloadReady||downloading||busy} onClick={()=>exportFile()}><DownloadSimple size={16}/>{downloading?'正在保存…':'HTML 文件'}</Button><Button disabled={!hasContent||!downloadReady||downloading||busy} onClick={()=>exportFile(true)}>明文备份</Button></div></details>
     </div>
   </Modal>;
 }

@@ -136,7 +136,7 @@ test('a late seal response cannot restore saving state over the newer durable ev
  const saving={...complete,cursor:'11',capture:'sealed',sources:[{...complete.sources[0],watermark:3}]};
  let displayed,resolveSeal,waiting=false;
  const seal=new Promise(resolve=>{resolveSeal=resolve;});
- const sandbox={exports:{},useCallback:fn=>fn,recordCache:{current:new Map()},mounted:{current:true},activeId:{current:'record'},pendingStop:{current:null},stopping:{current:false},capture:{current:{stop:async()=>{}}},AbortSignal,
+ const sandbox={exports:{},useCallback:fn=>fn,recordCache:{current:new Map()},mounted:{current:true},activeId:{current:'record'},screenshots:{stop:async()=>{}},pendingStop:{current:null},stopping:{current:false},capture:{current:{stop:async()=>{}}},AbortSignal,
   setRecord:value=>{displayed=value;},setBusy(){},setCapturePhase(){},setError(error){assert.equal(error,'');},setRecording(){},setModal(){},showToast(){},localManifests:async()=>[],upload:async()=>{},refresh:async()=>{},loadList:async()=>{},messageOf:error=>error.message,
   api:async(_path,method)=>{if(method==='GET')return saving;waiting=true;return seal;}};
  vm.runInNewContext(code,sandbox);

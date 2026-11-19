@@ -1,5 +1,5 @@
 type SummaryText={elements:{text_run:{content:string;text_element_style?:{bold?:boolean;text_color?:number;background_color?:number}}}[]};
-export type SummaryBlock={block_id:string;block_type:number;children?:string[];text?:SummaryText;heading2?:SummaryText;bullet?:SummaryText;
+export type SummaryBlock={block_id:string;block_type:number;children?:string[];text?:SummaryText;heading2?:SummaryText;heading3?:SummaryText;bullet?:SummaryText;
   callout?:{background_color:number;border_color:number};grid?:{column_size:number};grid_column?:{width_ratio:number};
   table?:{property:{row_size:number;column_size:number;column_width:number[]}};table_cell?:Record<string,never>};
 export type SummaryBlocks={children_id:string[];descendants:SummaryBlock[];index:number};

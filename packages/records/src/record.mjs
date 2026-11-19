@@ -285,7 +285,8 @@ export function requestMinutes(record, input = {}) {
   const snapshot = selected.map(({versions, ...s}) => ({ ...s, ...(scope === 'live' ? {contextOnly:covered.has(`${s.id}:${s.revision}`)} : {}) }));
   const liveBaseHash = scope === 'live' ? digest(JSON.stringify(record.liveMinutes || null)) : undefined;
   const liveIncremental = Boolean(liveBaseline(record)?.template === template);
-  const manifestHash = digest(JSON.stringify({snapshot, liveBaseHash, liveContext}));
+  const visualRevision = record.visualRevision;
+  const manifestHash = digest(JSON.stringify({snapshot, liveBaseHash, liveContext, visualRevision}));
   requireThat(input.modelRouting === undefined || (typeof input.modelRouting === 'string' && input.modelRouting.length <= 20000), 'invalid_model_roles', 400);
   const key = `${record.id}:${record.transcriptRevision}:${manifestHash}:${template}:v8:${record.notesRevision}:${input.modelVersion || 'default'}:${input.mode || 'model'}:${scope}` + (input.modelRouting ? `:roles:${digest(input.modelRouting)}` : '');
   requireThat(input.retry === undefined || typeof input.retry === 'boolean', 'invalid_minutes_retry', 400);
@@ -298,7 +299,7 @@ export function requestMinutes(record, input = {}) {
   for(const job of record.jobs)if(['queued','running'].includes(job.status) && job.scope==='live' && scope==='live' && job.status==='queued'){job.status='cancelled';job.fence=null;job.snapshot=[];delete job.preview; delete job.partialMinutes;}
   requireThat(record.jobs.filter(j => ['queued', 'running'].includes(j.status)).length < 3, 'job_limit', 429);
   const job = { id: randomUUID(), key, status: 'queued', transcriptRevision: record.transcriptRevision, notesRevision: record.notesRevision,
-    baseMinutesRevision: record.minutesRevision, generation: record.generation, template, scope, automatic: input.automatic === true, mode: input.mode || 'model', modelVersion: input.modelVersion || 'default', modelRouting: input.modelRouting ?? '', snapshot, snapshotOffset, liveBaseHash, liveContext, liveIncremental, notes: record.notes, manifestHash,
+    baseMinutesRevision: record.minutesRevision, generation: record.generation, template, scope, automatic: input.automatic === true, ...(visualRevision ? {visualRevision} : {}), mode: input.mode || 'model', modelVersion: input.modelVersion || 'default', modelRouting: input.modelRouting ?? '', snapshot, snapshotOffset, liveBaseHash, liveContext, liveIncremental, notes: record.notes, manifestHash,
     createdAt: new Date().toISOString(), attempts: 0 };
   record.jobs.push(job); emit(record, 'minutes.queued', { jobId: job.id }); return job;
 }
@@ -373,7 +374,7 @@ export function commitMinutes(record, jobId, result, fence) {
     const baseline = liveBaseline(record);
     const merged = mergeLiveMinutes(baseline?.template === job.template ? baseline : null, result, job.snapshot);
     validateMinutes(merged, merged.evidenceSnapshot,undefined,{aggregate:true,maxSections:Math.min(25650,(baseline?.sections.length||0)+result.sections.length+1)});
-    record.liveMinutes = { ...merged, notesRevision: job.notesRevision, template: job.template, transcriptRevision: job.transcriptRevision, generatedAt: new Date().toISOString() };
+    record.liveMinutes = { ...merged, ...(job.visualRevision ? {visualRevision:job.visualRevision} : {}), ...(result.screenshotInput ? {screenshotInput:result.screenshotInput} : {}), notesRevision: job.notesRevision, template: job.template, transcriptRevision: job.transcriptRevision, generatedAt: new Date().toISOString() };
     job.status = 'completed'; job.snapshot = []; delete job.preview; delete job.partialMinutes;
     if(!usageRecorded)record.usage.llmTokens += Number.isSafeInteger(result.usageTokens) && result.usageTokens >= 0 ? result.usageTokens : 0;
     if(job.mode==='model')autoNameRecord(record,record.liveMinutes.title);
@@ -381,7 +382,7 @@ export function commitMinutes(record, jobId, result, fence) {
   }
   if (record.minutes) record.minutesHistory = [...(record.minutesHistory || []), record.minutes].slice(-10);
   record.minutesRevision++;
-  record.minutes = { ...result, actions: result.actions || [], revision: record.minutesRevision, transcriptRevision: job.transcriptRevision, notesRevision: job.notesRevision, manifestHash: job.manifestHash,
+  record.minutes = { ...result, ...(job.visualRevision ? {visualRevision:job.visualRevision} : {}), actions: result.actions || [], revision: record.minutesRevision, transcriptRevision: job.transcriptRevision, notesRevision: job.notesRevision, manifestHash: job.manifestHash,
     evidenceSnapshot: job.snapshot, edited: false, generatedAt: new Date().toISOString() };
   delete record.minutes.attributionBaseRevision;
   if(job.mode==='model')autoNameRecord(record,result.title);

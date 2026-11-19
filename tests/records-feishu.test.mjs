@@ -22,11 +22,19 @@ function recordMinutes(record){
 function provider(){
   const calls=[],flags={};
   const remote={calls,flags,connections:[],async fetch(url,options){
-    const body=options.body?String(options.body):'';calls.push({url,body,headers:options.headers});
+    const form=options.body instanceof FormData?options.body:null;
+    const body=form?'':options.body?String(options.body):'';calls.push({url,body,form,method:options.method,headers:options.headers});
     if(url.endsWith('/blocks/convert')){if(flags.convertGate)await flags.convertGate;return Response.json({code:0,data:{first_level_block_ids:['heading'],blocks:[{block_id:'heading',parent_id:'readonly',block_type:3,heading1:{elements:[{text_run:{content:'发布计划'}}]}}]}});}
     if(url.endsWith('/docx/v1/documents')){if(flags.createTimeout)throw new Error('network lost');return Response.json({code:0,data:{document:{document_id:documentId}}});}
     if(url.includes('/descendant?')){if(flags.writeFail)return Response.json({code:1770001,msg:'private-upstream-message'},{status:400});return Response.json({code:0,data:{block_id_relations:JSON.parse(body).descendants.filter(block=>!flags.missingNativeBlock||block.block_type!==4).map(block=>({temporary_block_id:block.block_id,block_id:`remote-${block.block_id}`}))}});}
     if(url.endsWith('/metas/batch_query'))return Response.json({code:0,data:{metas:[{doc_token:documentId,doc_type:'docx',title:'人工核对的会议纪要',url:`https://fixture.feishu.cn/docx/${documentId}`}],failed_list:[]}});
+    if(url.includes('-screenshots')){
+      return Response.json({code:0,data:{children:JSON.parse(body).children.map((block,index)=>({...block,block_id:`screenshot-block-${index}`}))}});
+    }
+    if(url.endsWith('/medias/upload_all'))return Response.json({code:0,data:{file_token:`media-${form.get('parent_node')}`}});
+    if(options.method==='PATCH'&&url.includes('/blocks/screenshot-block-')){
+      return Response.json({code:0,data:{block:{image:{token:JSON.parse(body).replace_image.token}}}});
+    }
     if(url.includes('/children?')){const index=(remote.boardResources||0)+1;remote.boardResources=index;return Response.json({code:0,data:{children:JSON.parse(body).children.map(block=>block.block_type===43?{block_type:43,board:{token:`boardFixture123456789012-${index}`}}:block)}});}
     if(url.includes('/whiteboards/')&&url.includes('/nodes?')){remote.boardWrites=(remote.boardWrites||0)+1;if(flags.boardFailAt===remote.boardWrites)return Response.json({code:1770001},{status:400});return Response.json({code:0,data:{ids:JSON.parse(body).nodes.map(node=>node.id)}});}
     if(url.includes('/members/transfer_owner?'))return Response.json({code:0,data:{}});
@@ -36,7 +44,7 @@ function provider(){
     let state='idle';const close=()=>{state='idle';};signal.addEventListener('abort',close,{once:true});
     return {async start(){remote.connections.push({appId,secret});if(flags.connectGate)await flags.connectGate;if(flags.connectError||signal.aborted)throw new Error('private-sdk-details');state='connected';},
       status:()=>({state:flags.offline?'reconnecting':state,reconnectAttempts:0}),
-      async request(url,{body}={}){const response=await remote.fetch(url,{body:body?JSON.stringify(body):undefined,headers:{Authorization:`Bearer ${accessToken}`}});const data=await response.json();if(!response.ok)throw {response:{status:response.status,data}};return data;},
+      async request(url,{body,method}={}){const response=await remote.fetch(url,{method,body:body instanceof FormData?body:body?JSON.stringify(body):undefined,headers:{Authorization:`Bearer ${accessToken}`}});const data=await response.json();if(!response.ok)throw {response:{status:response.status,data}};return data;},
       close(){signal.removeEventListener('abort',close);close();}
     };
   };return remote;
@@ -337,7 +345,7 @@ test('native summary publishes without a board, retains scope and clears frozen 
  await h.request(`/integrations/feishu/exports/${preview.body.id}/publish`,'POST',{confirmed:true});assert.equal((await h.wait(preview.body.id)).status,'succeeded');
  assert.ok(!h.remote.calls.some(call=>call.url.includes('/children?')||call.url.includes('/whiteboards/')));
  const written=JSON.parse(h.remote.calls.find(call=>call.url.includes('/descendant?')).body);
- assert.ok(written.descendants.some(block=>block.block_type===19));assert.ok(written.descendants.some(block=>block.block_type===31));
+ assert.ok(written.descendants.some(block=>block.block_type===5));assert.ok(!written.descendants.some(block=>[19,24,25].includes(block.block_type)));assert.ok(written.descendants.some(block=>block.block_type===31));
  const saved=await h.app.repo.get(preview.body.id);assert.equal(saved.summaryBlocks,null);assert.equal(saved.markdown,'');
 });
 
@@ -438,4 +446,39 @@ test('Feishu freezes matched person chips only from included, exact-version cita
   assert.equal((await h.wait(draft.id)).status,'succeeded');
   const written=JSON.parse(h.remote.calls.find(call=>call.url.includes('/descendant?')).body);
   assert.deepEqual(chips(written),chips(draft.summaryBlocks));
+});
+
+test('confirmed cloud export attaches only screenshots frozen into the previewed minutes',async t=>{
+  const h=await harness(t);
+  await h.connect();
+  const record=await h.app.repo.get(h.recordId);
+  const jpeg='AAECAw==';
+  await h.app.repo.insert({id:'meeting-screenshots:'+h.recordId,kind:'meeting-screenshots',owner:record.owner,recordId:h.recordId,
+    frames:[{revision:1,atMs:17000,jpeg},{revision:2,atMs:35000,jpeg},{revision:3,atMs:54000,jpeg}]});
+  await h.app.repo.change(h.recordId,r=>{
+    r.visualRevision=3;
+    r.minutes.visualRevision=2;
+    r.minutes.decisions=[{text:'按本轮范围推进',evidence:r.minutes.sections[0].items[0].evidence}];
+  });
+  const preview=await h.request(`/records/${h.recordId}/feishu/preview`,'POST',{
+    title:'人工核对的会议纪要',includeBoard:false,includeNotes:false,includeEvidence:true,includeScreenshots:true,
+  });
+  assert.equal(preview.status,201);
+  assert.equal(preview.body.source.visualRevision,2);
+  assert.ok(preview.body.includeScreenshots);
+  assert.ok(!JSON.stringify(preview.body).includes(jpeg));
+  await h.request(`/integrations/feishu/exports/${preview.body.id}/publish`,'POST',{confirmed:true});
+  const result=await h.wait(preview.body.id);
+  assert.equal(result.status,'succeeded',JSON.stringify(result));
+  const uploads=h.remote.calls.filter(call=>call.url.endsWith('/medias/upload_all'));
+  const attachments=h.remote.calls.filter(call=>call.method==='PATCH');
+  assert.equal(uploads.length,2);
+  assert.deepEqual(uploads.map(call=>call.form.get('file_name')),['meeting-1.jpg','meeting-2.jpg']);
+  for(const [index,call] of uploads.entries()){
+    assert.equal(call.form.get('parent_type'),'docx_image');
+    assert.equal(call.form.get('parent_node'),`screenshot-block-${index+1}`);
+    assert.equal(call.form.get('size'),'4');
+    assert.equal(Buffer.from(await call.form.get('file').arrayBuffer()).toString('base64'),jpeg);
+  }
+  assert.deepEqual(attachments.map(call=>JSON.parse(call.body).replace_image.caption.content),['00:17','00:35']);
 });

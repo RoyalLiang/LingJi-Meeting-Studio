@@ -1,3 +1,4 @@
+import {useMeetingScreenshots} from './audio/meeting-screenshots';
 const SettingsPage=lazy(()=>import('./components/SettingsPage').then(module=>({default:module.SettingsPage})));
 import {RecordingProgress,RecordingRuntime,createCaptureSignals} from './components/RecordingProgress';
 import { WorkbenchContext } from './components/WorkbenchContext';
@@ -166,7 +167,7 @@ function Workspace() {
   const [minutesActions,setMinutesActions]=useState<HTMLDivElement|null>(null);
   const [focusTarget,setFocusTarget]=useState<HTMLDivElement|null>(null);
   const [gitActions,setGitActions]=useState<HTMLDivElement|null>(null);
-  const [modal, setModal] = useState<'new' | 'settings' | 'share' | 'export' | 'delete' | 'import-text' | 'capture' | 'finish' | 'directory' | 'archive' | 'learning' | null>(null);
+  const [modal, setModal] = useState<'new' | 'settings' | 'share' | 'export' | 'delete' | 'import-text' | 'capture' | 'meeting-visual' | 'finish' | 'directory' | 'archive' | 'learning' | null>(null);
   const [visited,setVisited]=useState({home:false,agent:false,settings:false});
   const homeActive=!id&&!agentOpen&&workspacePage!=='workspaces'&&modal!=='settings';
   useEffect(()=>{setVisited(current=>{
@@ -191,6 +192,8 @@ function Workspace() {
  };
  useLayoutEffect(()=>{if(scrollRoot.current&&id)scrollRoot.current.scrollTop=meetingScroll.current[`${id}:${meetingPage}`]||0;},[id,meetingPage]);
   const stopping = useRef(false), capture = useRef<CaptureController | null>(null), activeId = useRef(''), mounted = useRef(true), fileInput = useRef<HTMLInputElement>(null);
+  const screenshotSession = record?.sources.find(source=>!source.stopped)?.sessionId;
+  const screenshots = useMeetingScreenshots(record?.id,screenshotSession,authReady&&recording&&record?.capture==='recording');
   const pendingStop = useRef<{recordId:string;mode:'pause'|'seal';title:string}|null>(null);
   // Keep ownership while a failed seal needs retry after capture has stopped.
   const meetingAutomation=useMeetingAutomation(authReady ? boot?.meetingAutomation : undefined,{id:record?.id || '',recording:recording || Boolean(pendingStop.current?.recordId===activeId.current && pendingStop.current?.mode==='seal'),paused:record?.capture==='paused',busy:busy || stopping.current,startBlocked:Boolean(modal)},{start:quickRecord,stop:async ownedId=>activeId.current===ownedId ? stopCapture('seal') : false,error:setError});
@@ -332,6 +335,7 @@ function Workspace() {
     const controller = capture.current; let completed = false;
     if (pendingStop.current?.recordId === activeId.current) { if (pendingStop.current.mode === 'seal') mode = 'seal'; if (!title.trim()) title = pendingStop.current.title; }
     pendingStop.current = {recordId:activeId.current,mode,title};
+    const finishingScreenshots = screenshots.stop();
     stopping.current = true; setBusy(true); setCapturePhase('stopping'); setError('');
     try {
       try {
@@ -340,6 +344,7 @@ function Workspace() {
       } catch (error) { if (!interrupted || controller && 'finishNative' in controller) throw error; }
       setRecording(false);
       if (controller && 'finishNative' in controller) await controller.finishNative(mode);
+      await finishingScreenshots;
       if (!activeId.current) return false;
       const current = await api<RecordDetail>(`/records/${activeId.current}`, 'GET', undefined, AbortSignal.timeout(15000));
       const manifests = [...await localManifests(current.id), ...(controller && 'nativeManifests' in controller ? controller.nativeManifests : [])];
@@ -496,8 +501,11 @@ function Workspace() {
         <RecordingPlayback key={record.id} record={record}/>
         <MeetingControls record={record} recording={recording} busy={busy} phase={capturePhase} ready={sourceReady} signals={signals} cancelImport={importProgress !== null ? () => importRequest.current?.abort() : undefined} progress={importProgress === 1 ? '音频已读取，正在完成上传…' : importProgress !== null ? `正在导入音频 ${Math.round(importProgress * 100)}%` : undefined}
       start={kind => void startCapture(kind)} quick={() => void quickRecord()} sources={() => setModal('capture')}
+        screenshots={screenshots.supported&&screenshotSession?{active:screenshots.active,picking:screenshots.picking,toggle:()=>{if(screenshots.active)void screenshots.stop();else setModal('meeting-visual');}}:undefined}
         microphone={() => void toggleMicrophone()}
-        finish={() => { setError(''); setModal('finish'); }} importAudio={() => fileInput.current?.click()}/></section>,recordHeaderTarget)}
+        finish={() => { setError(''); setModal('finish'); }} importAudio={() => fileInput.current?.click()}/>{(screenshots.issue||record.visualRevision)?<p className="meeting-screenshot-status" role="status">{screenshots.issue||(record.minutes?.screenshotInput||record.liveMinutes?.screenshotInput
+          ? ((record.minutes?.screenshotInput||record.liveMinutes?.screenshotInput)?.used ? '纪要已参考会议截图' : '本次纪要未使用截图')
+          : `已保存 ${record.visualRevision} 张会议截图`)}</p>:null}</section>,recordHeaderTarget)}
       {!sourceReady && <FeedbackNotice key={`provider:${id}`} message="语音服务尚未配置。可先导入已有转录；录音前请在设置与诊断中配置服务。" action={{label: boot.canConfigure ? '检查配置' : '导入转录', run: () => setModal(boot.canConfigure ? 'settings' : 'import-text')}}/>}
         {record.capture === 'recording' && !recording && <FeedbackNotice key={`recovery:${id}`} message="检测到上次未结束的采集。可继续录音，或封存本机已保存的片段。" action={{label: '整理本场记录', disabled: busy, run: () => setModal('finish')}}/>}
           <TranscriptionNotice active={['blocked', 'failed'].includes(record.transcription)} key={`transcription:${record.id}`} recordId={record.id} issue={record.transcriptionIssue} reopenVersion={noticeVersion} audioOnly={boot.providers.minutesMode === 'doubao-audio-only'} busy={busy} retained={record.retainAudio && !record.audioPurged && record.usage.samples > 0} retry={() => mutate(`/records/${id}/retry`, 'POST')} configure={boot.canConfigure ? () => setModal('settings') : undefined}/>
@@ -516,7 +524,8 @@ function Workspace() {
     {voiceOpen&&<Suspense fallback={null}><VoiceprintDialog scope="all" close={()=>setVoiceOpen(false)} open={recording||busy?undefined:next=>{setVoiceOpen(false);setModal(null);chooseScope('all');selectRecord(next);}}/></Suspense>}
     {modal === 'directory' && <WorkspaceEditor directory={editingDirectory} save={saveDirectory} close={()=>{setModal(archiveIds.length?'archive':null);}}/>}
     {modal === 'archive' && <ArchiveRecords key={archiveInitial||'inbox'} directories={directories} count={archiveIds.length} initial={archiveInitial} save={saveArchive} close={()=>{setModal(null);setArchiveIds([]);}} create={newDirectory}/>}
-{modal === 'capture' && <CaptureSetup connected={connectedKinds} signals={signals} issues={captureIssues} busy={busy} onConnect={kind => void startCapture(kind)} onMicrophoneOff={() => void toggleMicrophone()} onClose={() => setModal(null)}/>}
+{modal === 'meeting-visual' && <Modal title="会议画面" onClose={()=>setModal(null)}><p>选择飞书或 Chrome 会议窗口，也可选择 Chrome 会议标签页。录制期间会自动截取变化的画面，并发送给配置的纪要模型作为补充资料。</p><div className="actions"><Button variant="primary" disabled={!recording||!screenshotSession} onClick={()=>{setModal(null);void screenshots.start();}}>选择会议窗口</Button></div></Modal>}
+      {modal === 'capture' && <CaptureSetup connected={connectedKinds} signals={signals} issues={captureIssues} busy={busy} onConnect={kind => void startCapture(kind)} onMicrophoneOff={() => void toggleMicrophone()} onClose={() => setModal(null)}/>}
     {modal === 'export' && record && <Suspense fallback={<Modal title="导出会议" onClose={()=>setModal(null)}><p role="status">正在打开导出选项…</p></Modal>}><ExportDialog key={record.id} record={record} close={()=>setModal(null)}/></Suspense>}
     {modal === 'finish' && record && <MeetingFinish title={record.title} paused={record.capture === 'paused'} busy={busy} error={error} pause={title => void stopCapture('pause',title)} finish={title => void stopCapture('seal',title)} close={() => setModal(null)}/>}
     {modal === 'new' && <Modal title="新建一段记录" initialFocus="field" onClose={() => setModal(null)}><form onSubmit={create}><label><span className="field-label">记录标题 <span className="muted">可稍后填写</span></span><input autoFocus name="title" maxLength={160} placeholder="例如：产品周会"/></label><div className="form-grid"><label>识别语言<Select label="识别语言" name="language" defaultValue="auto" options={boot.providers.asrProvider === "sensevoice-local" ? [{value:"auto",label:"自动识别 · 中英日韩粤"}] : [{value:"auto",label:"自动识别"},{value:"zh",label:"中文"},{value:"en",label:"English"},{value:"ja",label:"日本語"},{value:"ko",label:"한국어"},{value:"yue",label:"粤语"}]}/></label><label>记录留存<Select label="记录留存" name="retentionDays" defaultValue="30" options={[{"value": "1", "label": "1 天"}, {"value": "7", "label": "7 天"}, {"value": "30", "label": "30 天"}, {"value": "90", "label": "90 天"}]}/></label></div><label className="checkbox-label"><input type="checkbox" name="autoMinutes" defaultChecked={minutesAvailable(boot.providers) && (!['openai-realtime', 'doubao-audio', 'doubao-audio-only'].includes(boot.providers.minutesMode || '') || boot.audioMinutesDefault || Boolean(boot.providers.textMinutes) && boot.providers.minutesMode!=='doubao-audio-only')} disabled={!minutesAvailable(boot.providers)}/><span>自动生成 AI 纪要<small>{['openai-realtime', 'doubao-audio', 'doubao-audio-only'].includes(boot.providers.minutesMode || '') ? boot.providers.textMinutes&&boot.providers.minutesMode!=='doubao-audio-only'?'默认根据转录生成；音频直连需单独勾选。':'需单独勾选本场音频直连后生成纪要。' : '会中持续归纳主题，停止后整理终稿；转录和笔记将发送到已配置模型。'}</small></span></label>{['openai-realtime','doubao-audio','doubao-audio-only'].includes(boot.providers.minutesMode||'')&&<label className="checkbox-label"><input type="checkbox" name="audioConsent" defaultChecked={boot.audioMinutesDefault}/><span>本场使用音频直连模型</span></label>}<Button disabled={busy} variant="primary" type="submit"><Plus size={18}/>创建记录</Button></form></Modal>}

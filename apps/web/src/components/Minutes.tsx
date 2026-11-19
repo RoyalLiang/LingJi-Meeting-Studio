@@ -1,3 +1,4 @@
+import {MinutesScreenshots} from './MinutesScreenshots';
 import { createPortal } from 'react-dom';
 import { MeetingHighlights } from './MeetingHighlights';
 import { SummaryTables } from './SummaryTables';
@@ -8,7 +9,7 @@ import { ContentFollowAction } from './ContentFollowAction';
 import { currentMinutesJob, speakerLabels } from '../minutes-views';
 import { MinutesUsage } from './MinutesUsage';
 import { TopicMap } from './TopicMap';
-import { MinutesCards, MinutesTree, SpeakerMinutes, DecisionMinutes, MinuteSpeakers } from './MinutesViews';
+import { MinutesTree, SpeakerMinutes, DecisionMinutes, MinuteSpeakers } from './MinutesViews';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowClockwise, Check, Sparkle, PencilSimple, ArrowsOutSimple, ArrowsInSimple } from '@phosphor-icons/react';
 import type { Evidence, Minutes as MinutesModel, RecordDetail, Segment } from '../model';
@@ -113,12 +114,13 @@ export function MinutesPanel({ contextVisible = false, viewTarget, record, busy,
         : <><div className="minutes-title"><div><h3>{minutes.title}</h3><span className="minutes-refresh-state" role="status">{running && <><ArrowClockwise size={14} aria-hidden="true"/>正在整理新版本</>}</span></div>{inline&&viewTarget?createPortal(documentActions,viewTarget):documentActions}</div>
           {viewTarget?createPortal(viewSwitch,viewTarget):viewSwitch}
           <div id="minutes-view" className="minutes-view" role="tabpanel" aria-labelledby={`minutes-tab-${view==='topics'?'ai':view}`}>
-          {view==='ai' && <><MinutesCards minutes={minutes} cite={citeMinutes}/><MinutesTree speakerMap={speakers} minutes={minutes} cite={citeMinutes} showHighlights={false}/></>}
+          {view==='ai' && <MinutesTree speakerMap={speakers} minutes={minutes} cite={citeMinutes} showHighlights={false}/>}
           {view==='tables' && <><SummaryTables minutes={minutes} speakerMap={speakers} cite={citeMinutes}/><SummaryCharts minutes={minutes} cite={citeMinutes}/></>}
           {view==='speakers' && <SpeakerMinutes minutes={minutes} speakerMap={speakers} cite={citeMinutes}/>}
           {view==='decisions' && <DecisionMinutes speakerMap={speakers} minutes={minutes} cite={citeMinutes}/>}
           {view==='topics' && <TopicMap minutes={minutes}/>}
           {view==='document' && (draft || documentContent || minutes).sections.map((section,sectionIndex)=><MinutesDocumentSection key={sectionIndex} section={section} sectionIndex={sectionIndex} editable={Boolean(draft)} speakers={documentSpeakers} cite={citeDocument} change={changeDraftItem}/>)}
+          {['document','ai','topics'].includes(view)&&Boolean(minutes.visualRevision)&&<MinutesScreenshots key={`${record.id}:${minutes.visualRevision}`} recordId={record.id} through={minutes.visualRevision!}/>}
           {draft && <div className="actions"><Button variant="primary" disabled={busy} onClick={async () => { if (await edit(draft)) setDraft(null); }}><Check size={16}/>保存修订</Button><Button disabled={Boolean(historical)} onClick={() => setDraft(null)}>取消</Button></div>}
           {(view==='decisions' || view==='document') && displayedActions.length > 0 && <section className="minutes-section"><h4>行动候选</h4><p className="muted">请人工确认负责人和日期。下载不会发送给他人。</p>{displayedActions.map((action, i) => <div className="action-candidate" key={i}><span className="checkbox-mark"/><div><MinuteSpeakers evidence={action.evidence} speakers={documentSpeakers}/><p>{minutesActionText(action,(draft||documentContent||minutes).topics)}</p><small>{action.owner || '负责人待定'} · {action.due || '日期待定'}</small></div></div>)}</section>}
 

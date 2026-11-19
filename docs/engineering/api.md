@@ -23,6 +23,8 @@
 | POST /settings/providers/test | kind 为 asr 或 minutes；仅使用静音或虚构连通性文本 |
 | GET /development-account | 仅开发模式提供默认本地账户信息；自定义密码不返回 |
 | GET /records/:id/minutes/versions/:revision | 有限历史纪要快照 |
+| GET /records/:id/screenshots?through=N | 仅记录所有者读取，按纪要冻结的截图修订上限返回 JPEG、截图修订和会议时间。响应禁止缓存 |
+| POST /records/:id/screenshots | 记录所有者在活动录音会话提交已授权窗口的 JPEG。参数为 `sessionId`、`consent: true`、`surface: "window"` 或 `"browser"` 及 `jpeg`（Base64）。返回已保存数量和是否达到上限 |
 | GET /records/:id/audio/:sourceId | 保留原音的 WAV 与单范围 Range 回放；可同时传 `segment` 和 `revision` 读取该转录片段的原音 |
 | GET /records/:id/export?format=markdown/json/ics/issues | 记录与人工可审阅候选文件 |
 | GET/POST /records/:id/shares；DELETE /records/:id/shares/:shareId | 默认纪要范围、24 小时有效、可撤销 |

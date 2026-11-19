@@ -1,6 +1,5 @@
 import {minutesOverview,minutesCompactOverview,minutesSummaryCards} from './minutes-presentation.mjs';
 
-const cardColors={decision:6,action:4,risk:1,question:3,timeline:5,comparison:7};
 const personStyle={bold:true,background_color:4};
 
 // DocX descendants accepts GridColumn/TableCell when their children are present.
@@ -12,28 +11,48 @@ export function minutesSummaryBlocks(minutes,{citations=()=>'',overview='full',p
     descendants.push(block);return block.block_id;
   };
   const run=(content,style)=>({text_run:{content,...(style?{text_element_style:style}:{})}});
-  const text=(content,{bold=false,type=2,refs=[]}={})=>add(type,type===4?'heading2':type===12?'bullet':'text',{
+  const text=(content,{bold=false,type=2,refs=[]}={})=>add(type,type===4?'heading2':type===5?'heading3':type===12?'bullet':'text',{
     elements:[run(String(content),bold?{bold:true}:undefined),...personNames(refs).flatMap(name=>[run(' '),run(`\u00a0${name}\u00a0`,personStyle)])]
   });
   const cite=item=>`${item.text}${citations(item.evidence||[])}`;
+  const group=(label,items,kind)=>{
+    if(!items.length)return;
+    children_id.push(text(label,{type:5}));
+    for(const item of items){
+      const prefix=item.label?.trim();
+      let content=item.text.trim();
+      if(prefix){
+        while(content.startsWith(prefix)){
+          const suffix=content.slice(prefix.length).trimStart();
+          if(suffix&&!/^[：:·，,—]/u.test(suffix))break;
+          content=suffix.slice(1).trimStart();
+        }
+      }
+      const line=!prefix?content:!content?prefix:kind==='action'?`${content}（${prefix}）`:`${prefix}：${content}`;
+      children_id.push(text(cite({...item,text:line}),{type:12,refs:item.evidence}));
+    }
+  };
+
   const callout=(label,items,color,background=color)=>add(19,'callout',{background_color:background,border_color:color},[
     text(label,{bold:true}),...(items.length?items.map(item=>text(cite(item),{type:12,refs:item.evidence})):[text('纪要未列出')])
   ]);
   if(personNames(personRefs).length)children_id.push(text('引用中的人物',{bold:true,refs:personRefs}));
-  const selected=overview==='full'?[]:minutesSummaryCards(minutes,view);
-  if(overview!=='board'){
-  children_id.push(text('总结',{type:4}));
-  children_id.push(callout(view.summaryLabel,overview==='compact'?view.brief:view.summary,7,15));
-  }
-  const groups=overview==='full'?[['关键决策',view.decisions,6],['下一步行动',view.actions.map(item=>({...item,text:`${item.text}\n负责人：${item.owner||'待确认'} · 时间：${item.due||'待确认'}`})),4],['风险与待确认',view.pending,3]]
-    :selected.length?selected.map(card=>[card.title,card.items.map(item=>({...item,text:item.label?`${item.label} · ${item.text}`:item.text})),cardColors[card.kind]])
-    :overview==='compact'?view.themes.map((theme,index)=>[theme.title,[...(theme.summary?[{text:theme.summary,evidence:theme.evidence}]:[]),...theme.items],[6,4,3][index]]):[];
-  for(let start=0;start<groups.length;start+=3){
-    const row=groups.slice(start,start+3);
-    if(row.length===1){children_id.push(callout(...row[0]));continue;}
-    const width=Math.floor(100/row.length);
-    const columns=row.map(([label,items,color],index)=>add(25,'grid_column',{width_ratio:index===row.length-1?100-width*index:width},[callout(label,items,color)]));
-    children_id.push(add(24,'grid',{column_size:row.length},columns));
+  if(overview==='full'){
+    children_id.push(text('总结',{type:4}),callout(view.summaryLabel,view.summary,7,15));
+    const groups=[['关键决策',view.decisions,6],['下一步行动',view.actions.map(item=>({...item,text:`${item.text}\n负责人：${item.owner||'待确认'} · 时间：${item.due||'待确认'}`})),4],['风险与待确认',view.pending,3]];
+    const columns=groups.map(([label,items,color],index)=>add(25,'grid_column',{width_ratio:index===2?34:33},[callout(label,items,color)]));
+    children_id.push(add(24,'grid',{column_size:3},columns));
+  }else{
+    const selected=minutesSummaryCards(minutes,view);
+    if(overview!=='board'&&view.brief.length){
+      children_id.push(text('总结',{type:4}));
+      for(const item of view.brief)children_id.push(text(cite(item),{refs:item.evidence}));
+    }
+    if(selected.length||(overview==='compact'&&view.themes.length)){
+      children_id.push(text('会议要点',{type:4}));
+      if(selected.length)for(const card of selected)group(card.title,card.items,card.kind);
+      else for(const theme of view.themes)group(theme.title,[...(theme.summary?[{text:theme.summary,evidence:theme.evidence}]:[]),...theme.items]);
+    }
   }
   if(view.actions.length){
     children_id.push(text('推进安排与前置条件',{type:4}));
@@ -66,13 +85,13 @@ export function summaryBlocksHtml(graph) {
       return `<div class="minutes-summary-table" role="region" aria-label="推进安排与前置条件" tabindex="0"><table><thead>${rows[0]||''}</thead><tbody>${rows.slice(1).join('')}</tbody></table></div>`;
     }
     if(block.block_type===32)return children();
-    const key=block.block_type===4?'heading2':block.block_type===12?'bullet':'text';
+    const key=block.block_type===4?'heading2':block.block_type===5?'heading3':block.block_type===12?'bullet':'text';
     const content=(block[key]?.elements||[]).map(element=>{
       const run=element.text_run;if(!run)return '';const value=escape(run.content).replaceAll('\n','<br>');
       if(run.text_element_style?.background_color===personStyle.background_color)return `<span class="minutes-person-pill">${value}</span>`;
       return run.text_element_style?.bold?`<strong>${value}</strong>`:value;
     }).join('');
-    return key==='heading2'?`<h2>${content}</h2>`:`<p${key==='bullet'?' class="minutes-summary-item"':''}>${content}</p>`;
+    return key==='heading2'?`<h2>${content}</h2>`:key==='heading3'?`<h3>${content}</h3>`:`<p${key==='bullet'?' class="minutes-summary-item"':''}>${content}</p>`;
   };
   return `<section class="minutes-summary" aria-label="会议总结">${(graph?.children_id||[]).map(render).join('')}</section>`;
 }

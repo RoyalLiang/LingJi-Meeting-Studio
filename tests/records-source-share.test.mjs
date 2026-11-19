@@ -56,6 +56,16 @@ test('standalone and loopback clients never offer unreachable share links while 
   assert.equal(canCreateShareLinks(false, 'https://studio.example'), true);
 });
 
+test('offline minutes embed deliberately supplied screenshots, including their capture time', () => {
+  const record = {title:'窗口截图',capture:'completed',minutes:{...minutes(),visualRevision:1},segments:snapshot};
+  const frame = {revision:1,atMs:17200,jpeg:'AAECAw=='};
+  const html = createShareDocument(record,'minutes',true,[frame]);
+  assert.match(html,/img-src data:/);
+  assert.match(html,/<h2>会议截图<\/h2>/);
+  assert.match(html,/src="data:image\/jpeg;base64,AAECAw==" alt="会议截图 00:17"/);
+  assert.doesNotMatch(createShareDocument(record,'minutes'), /data:image\/jpeg|会议截图 00:17/);
+});
+
 test('portable HTML escapes content and restricts minutes scope to cited frozen text without network assets or scripts', () => {
   const record = { title: '<img src=x onerror=alert(1)>', capture: 'completed', minutes: minutes(), segments: snapshot, notes: '私密人工笔记' };
   const html = createShareDocument(record, 'minutes');

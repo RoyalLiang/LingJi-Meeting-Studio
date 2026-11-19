@@ -73,7 +73,7 @@ export function minutesSummaryCards(minutes,view=minutesOverview(minutes)){
   const active=items=>items.filter(item=>item.text?.trim()&&!['withdrawn','corrected'].includes(item.status));
   const items=view.layout.branches.flatMap(branch=>branch.items);
   const decisions=active(view.decisions).filter(item=>!pending(item));
-  const questions=active(view.pending).filter(item=>item.kind!=='risk');
+  const questions=items.filter(item=>pending(item)&&item.kind!=='risk').map(item=>({...item,text:minutesItemText(item)}));
   const timeline=minutes.visuals?.find(visual=>visual.kind==='timeline');
   const comparison=minutes.visuals?.find(visual=>visual.kind==='bar');
   const card=(kind,title,values)=>({kind,title,items:active(values).slice(0,3).map(item=>({

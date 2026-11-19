@@ -5,7 +5,7 @@ import {feishuBlocks} from '../services/records/src/integrations/feishu.mjs';
 
 const evidence=[{segmentId:'s1',revision:2}];
 const fixture=()=>({edited:true,highlights:[{text:'按已确认范围推进',evidence}],decisions:[{text:'先核对字段',evidence}],actions:[{text:'补充用例',owner:null,due:null,evidence}],sections:[]});
-const content=graph=>graph.descendants.flatMap(block=>(block.text||block.bullet||block.heading2)?.elements||[]).map(element=>element.text_run.content).join('\n');
+const content=graph=>graph.descendants.flatMap(block=>(block.text||block.bullet||block.heading2||block.heading3)?.elements||[]).map(element=>element.text_run.content).join('\n');
 
 test('summary is a complete editable DocX graph of callouts, columns and a native table',()=>{
   const graph=minutesSummaryBlocks(fixture(),{citations:refs=>refs.length?' [1]':''});
@@ -62,4 +62,18 @@ test('compact summaries select card types from meaningful content and preserve g
   assert.doesNotMatch(html,/撤回的结论|下一步行动|关键决策/);
   assert.match(html,/核对配置 \[1\]/);
   assert.doesNotThrow(()=>feishuBlocks({first_level_block_ids:graph.children_id,blocks:graph.descendants}));
+});
+
+test('Feishu summaries use native headings and concise bullets with or without a board',()=>{
+  const minutes=fixture();
+  minutes.sections=[{heading:'后续',items:[{label:'当前阻塞',text:'当前阻塞 · 当前阻塞：依赖尚未准备',kind:'risk',evidence}]}];
+  for(const overview of ['compact','board']){
+    const graph=minutesSummaryBlocks(minutes,{overview,citations:refs=>refs.length?' [1]':''});
+    assert.ok(!graph.descendants.some(block=>[19,24,25].includes(block.block_type)));
+    const html=summaryBlocksHtml(graph);
+    assert.match(html,/<h2>会议要点<\/h2>/);
+    assert.match(html,/<h3>风险与约束<\/h3>/);
+    assert.match(html,/当前阻塞：依赖尚未准备 \[1\]/);
+    assert.doesNotMatch(html,/当前阻塞[^<]*当前阻塞|待确认事项/);
+  }
 });

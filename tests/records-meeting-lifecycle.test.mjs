@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import { transform } from 'esbuild';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
-async function stopHarness({ backgroundWait = Promise.resolve(), refreshFails = false } = {}) {
+async function stopHarness({ backgroundWait = Promise.resolve(), screenshotWait = Promise.resolve(), refreshFails = false } = {}) {
   const app = await readFile(new URL('../apps/web/src/App.tsx', import.meta.url), 'utf8');
   const start = app.indexOf('  async function stopCapture('), end = app.indexOf('  function captureAllowed(', start);
   assert.ok(start >= 0 && end > start);
@@ -14,6 +14,7 @@ async function stopHarness({ backgroundWait = Promise.resolve(), refreshFails = 
   const state = { busy: false, phase: 'idle', recording: true, record: current, modal: 'finish', error: '', calls: [] };
   const controller = { active: true, async stop() { this.active = false; state.calls.push('local-stop'); } };
   const sandbox = {
+    screenshots: {stop:()=>screenshotWait},
     exports: {}, pendingStop: {current:null}, stopping: { current: false }, capture: { current: controller }, activeId: { current: current.id },
     setBusy: value => { state.busy = value; }, setCapturePhase: value => { state.phase = value; },
     setError: value => { state.error = value; }, setRecording: value => { state.recording = value; },
@@ -45,6 +46,18 @@ test('ending a meeting releases the controls after sealing even while background
     assert.equal(h.state.phase, 'idle');
     assert.equal(h.state.calls.find(call => call.method === 'POST').body.sources[0].lastSequence, 3, 'seal preserves the locally saved tail watermark');
   } finally { release(); await stopping; }
+});
+
+test('ending drains an accepted screenshot before sealing the meeting', async () => {
+  let release;
+  const h = await stopHarness({screenshotWait:new Promise(resolve=>{release=resolve;})});
+  const finishing = h.stopCapture();
+  await tick();
+  try {
+    assert.ok(h.state.calls.includes('local-stop'), 'audio collection stops immediately');
+    assert.ok(!h.state.calls.some(call=>call.method==='POST'), 'never seal ahead of the last screenshot');
+  } finally {release();}
+  assert.equal(await finishing,true);
 });
 
 test('a failed refresh after a successful seal cannot report the meeting as unfinished', async () => {
