@@ -28,7 +28,7 @@ export class CaptureController {
   private connecting = new Map<CaptureKind, Promise<Source>>();
   private disconnected = new WeakSet<AudioWorkletNode>();
   private streams: MediaStream[] = []; private contexts: AudioContext[] = []; private nodes: AudioWorkletNode[] = [];
-  private writes: Promise<void>[] = []; private flushes = new Map<AudioWorkletNode, () => void>();
+  private writes = new Set<Promise<void>>(); private flushes = new Map<AudioWorkletNode, () => void>();
   private disconnecting = new Map<CaptureKind, Promise<void>>();
   private writeFailure: Error | undefined;
   private signals: CaptureSignal[] = [];
@@ -95,13 +95,14 @@ export class CaptureController {
         if (event.data.type === 'flushed') { this.flushes.get(node)?.(); return; }
         if (event.data.type !== 'pcm') return;
         if (!track.enabled || track.muted) { signal.rms = 0; report(); return; }
-        const { rms } = pcmSignal(event.data.buffer), seconds = event.data.buffer.byteLength / 32000;
+        const rms = Number.isFinite(event.data.rms) ? event.data.rms : pcmSignal(event.data.buffer).rms;
+        const seconds = event.data.buffer.byteLength / 32000;
         signal.rms = rms; signal.seconds += seconds; quietSeconds = rms >= 0.0005 ? 0 : quietSeconds + seconds; report();
         const current = sequence++, start = offset; offset += event.data.buffer.byteLength / 2;
         const write = makeChunk(source.id, source.epoch, current, start, event.data.buffer, source.sessionId).then(chunk => this.disconnected.has(node) ? undefined : enqueue(recordId, chunk)).then(this.onSaved)
-          .catch(error => { this.writeFailure ||= error; this.onFailure(error); void this.stop(); });
-        this.writes.push(write);
-        if (this.writes.length > 100) this.writes.splice(0, this.writes.length - 100);
+          .catch(error => { this.writeFailure ||= error; this.onFailure(error); void this.stop(); })
+          .finally(() => this.writes.delete(write));
+        this.writes.add(write);
       };
       track.addEventListener('ended', () => {
         if (!this.active || this.disconnected.has(node)) return;
@@ -168,7 +169,7 @@ export class CaptureController {
     await Promise.all(this.contexts.map(context => context.close()));
     await Promise.all(this.writes);
     this.nodes.forEach(node => { this.disconnected.add(node); node.port.onmessage = null; });
-    this.streams = []; this.nodes = []; this.contexts = []; this.sources = []; this.writes = []; this.writeFailure = undefined; this.onMeter(0); this.signals = []; this.onSignals([]);
+    this.streams = []; this.nodes = []; this.contexts = []; this.sources = []; this.writeFailure = undefined; this.onMeter(0); this.signals = []; this.onSignals([]);
   }
 }
 export async function importAudio(file: File, record: RecordDetail, progress: (value: number) => void, signal?: AbortSignal) {

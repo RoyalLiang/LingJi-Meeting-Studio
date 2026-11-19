@@ -134,10 +134,14 @@ export async function createRecordServer(options = {}) {
   const send = (res,status,data,headers) => sendPayload(res,status,JSON.stringify(data),headers);
   const recordResponses=new Map();let responseBytes=0;
   const forgetResponse=id=>{const cached=recordResponses.get(id);if(cached){responseBytes-=cached.payload.length;recordResponses.delete(id);}};
-  async function readRecordResponse(id,user){
+  async function readableRecordAccess(id,user){
     const [access]=await repo.getRecordAccess([id]);
     requireThat(access?.kind==='record'&&access.owner===user.id,'not_found',404);
     requireThat(!access.deleted&&Date.parse(access.deleteAt)>Date.now(),'record_deleted',410);
+    return access;
+  }
+  async function readRecordResponse(id,user){
+    const access=await readableRecordAccess(id,user);
     const cached=recordResponses.get(id);
     if(cached?.version===access.version){recordResponses.delete(id);recordResponses.set(id,cached);return cached.payload;}
     forgetResponse(id);
@@ -313,6 +317,59 @@ export async function createRecordServer(options = {}) {
         telemetry.event('audio.ack',{traceId,recordId:id,sourceId:body.sourceId,sequence:body.sequence,bytes:bytes.length,durationMs:performance.now()-started});
         send(res,200,ack);return;
       }
+      if (action === 'events' && req.method === 'GET') {
+        const record = deltaEnabled ? await readableRecordAccess(id, user) : await owned(id, user);
+        let cursor = String(req.headers['last-event-id'] || url.searchParams.get('after') || record.cursor);
+        requireThat(/^\d{1,20}$/.test(cursor), 'invalid_cursor', 400);
+        res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+        let busy = false, closed = false, draining = false, timer, unsubscribe, lastHeartbeat = Date.now();
+        const cleanup = () => { closed = true; clearInterval(timer); unsubscribe?.(); res.off('drain', drained); streams.delete(res); };
+        const ended = () => closed || res.destroyed || res.writableEnded;
+        const finish = () => { cleanup(); if (!res.destroyed && !res.writableEnded) res.end(); };
+        const write = frame => {
+          if (ended()) return false;
+          try { draining = !res.write(frame); return true; } catch { /* The response can close during an asynchronous poll. */ }
+          finish(); return false;
+        };
+        res.once('close', cleanup);
+        res.once('error', () => { cleanup(); res.destroy(); });
+        req.once('close', cleanup);
+        streams.add(res);
+        const flush = async () => {
+          if (busy || draining || ended()) return; busy = true;
+          try {
+            await auth.user(req); if (ended()) return;
+            const r = deltaEnabled ? await feedAfter(id, cursor) : await owned(id, user);
+            if (ended()) return;
+            requireThat(r && r.owner === user.id && !r.deleted && Date.parse(r.deleteAt) > Date.now(), 'record_deleted', 410);
+            const first = BigInt(r.first || r.events[0]?.cursor || r.cursor);
+            if (BigInt(cursor) < first - 1n || BigInt(cursor) > BigInt(r.cursor)) {
+              if (!write(`event: reset\ndata: ${JSON.stringify({ cursor: r.cursor })}\n\n`)) return;
+              cursor = r.cursor;
+            }
+            for (const event of r.events.filter(e => BigInt(e.cursor) > BigInt(cursor))) {
+              if (!write(`id: ${event.cursor}\ndata: ${JSON.stringify(event)}\n\n`)) return;
+              cursor = event.cursor; if (draining) break;
+            }
+            if (!draining && Date.now() - lastHeartbeat >= 15000) { lastHeartbeat = Date.now(); write(': heartbeat\n\n'); }
+          } catch {
+            if (!ended()) { write('event: revoked\ndata: {}\n\n'); finish(); }
+          } finally { busy = false; }
+        };
+        const drained = () => {
+          draining = false;
+          void flush();
+        };
+        res.on('drain', drained);
+        if (!write(': connected\n\n')) return;
+        unsubscribe = repo.subscribeChanges(ids => {
+          if (!ids.length || ids.includes(id)) void flush();
+        }, { all: true });
+        // Separate API/worker processes retain a bounded cross-process fallback.
+        timer = setInterval(flush, 1000);
+        void flush();
+        return;
+      }
       const record = await owned(id, user);
       enterModelUsage({repo,owner:user.id,recordId:record.id,workspaceId:record.workspaceId||'inbox',kind:'record'});
       if(await learningRoutes({req,res,url,action,repo,user,record,readBody,send,csrf:auth.csrf(user),requireLearning,learningService}))return;
@@ -432,53 +489,6 @@ export async function createRecordServer(options = {}) {
           offset += size; if (offset > end) break;
         }
         if (!res.destroyed && !res.writableEnded) res.end(); return;
-      }
-      if (action === 'events' && req.method === 'GET') {
-        let cursor = String(req.headers['last-event-id'] || url.searchParams.get('after') || record.cursor);
-        requireThat(/^\d{1,20}$/.test(cursor), 'invalid_cursor', 400);
-        res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
-        let busy = false, closed = false, draining = false, timer, unsubscribe, lastHeartbeat = Date.now();
-        const drained = () => { draining = false; };
-        const cleanup = () => { closed = true; clearInterval(timer); unsubscribe?.(); res.off('drain', drained); streams.delete(res); };
-        const ended = () => closed || res.destroyed || res.writableEnded;
-        const finish = () => { cleanup(); if (!res.destroyed && !res.writableEnded) res.end(); };
-        const write = frame => {
-          if (ended()) return false;
-          try { draining = !res.write(frame); return true; } catch { /* The response can close during an asynchronous poll. */ }
-          finish(); return false;
-        };
-        res.on('drain', drained);
-        res.once('close', cleanup);
-        res.once('error', () => { cleanup(); res.destroy(); });
-        req.once('close', cleanup);
-        streams.add(res);
-        if (!write(': connected\n\n')) return;
-        const flush = async () => {
-          if (busy || draining || ended()) return; busy = true;
-          try {
-            await auth.user(req); if (ended()) return;
-            const r = deltaEnabled ? await feedAfter(id, cursor) : await owned(id, user);
-            if (ended()) return;
-            requireThat(r && r.owner === user.id && !r.deleted && Date.parse(r.deleteAt) > Date.now(), 'record_deleted', 410);
-            const first = BigInt(r.first || r.events[0]?.cursor || r.cursor);
-            if (BigInt(cursor) < first - 1n || BigInt(cursor) > BigInt(r.cursor)) {
-              if (!write(`event: reset\ndata: ${JSON.stringify({ cursor: r.cursor })}\n\n`)) return;
-              cursor = r.cursor;
-            }
-            for (const event of r.events.filter(e => BigInt(e.cursor) > BigInt(cursor))) {
-              if (!write(`id: ${event.cursor}\ndata: ${JSON.stringify(event)}\n\n`)) return;
-              cursor = event.cursor; if (draining) break;
-            }
-            if (!draining && Date.now() - lastHeartbeat >= 15000) { lastHeartbeat = Date.now(); write(': heartbeat\n\n'); }
-          } catch {
-            if (!ended()) { write('event: revoked\ndata: {}\n\n'); finish(); }
-          } finally { busy = false; }
-        };
-      unsubscribe=repo.subscribeChanges(ids=>{if(ids.includes(id))void flush();},{all:true});
-      // Separate API/worker processes retain a bounded cross-process fallback.
-      timer=setInterval(flush,1000);
-      void flush();
-        return;
       }
       if (action === 'export' && req.method === 'GET') {
         const format = url.searchParams.get('format') || 'markdown'; requireThat(['markdown', 'json', 'ics', 'issues'].includes(format), 'invalid_format', 400);

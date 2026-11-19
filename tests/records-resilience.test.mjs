@@ -120,6 +120,12 @@ test('AudioWorklet resamples to PCM16 and flushes final short chunk', async () =
   assert.equal(pcm.length, 4); assert.equal(pcm[0].buffer.byteLength, 12800); assert.equal(pcm[1].buffer.byteLength, 32000);
   assert.equal(pcm.at(-1).buffer.byteLength, 19200);
   assert.equal(pcm.reduce((n,p)=>n+p.buffer.byteLength,0),96000);
+  for (const { buffer, rms } of pcm) {
+    const view = new DataView(buffer);
+    let energy = 0;
+    for (let i = 0; i < view.byteLength; i += 2) energy += (view.getInt16(i, true) / 32768) ** 2;
+    assert.equal(rms, Math.sqrt(energy / (view.byteLength / 2)));
+  }
   assert.ok(messages.some(m => m.type === 'meter' && m.value > .1)); assert.equal(messages.at(-1).type, 'flushed');
 });
 test('SSE delivers committed event IDs, expired cursor reset, and share revoke', async () => {

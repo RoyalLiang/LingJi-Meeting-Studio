@@ -23,11 +23,18 @@ test('a committed event wakes SSE immediately after an empty read, including con
     let readDone; const initialRead = new Promise(resolve => {readDone = resolve;});
     const eventsAfter = repo.eventsAfter.bind(repo);
     repo.eventsAfter = async (...args) => {const result = await eventsAfter(...args); readDone(); return result;};
+    const get = repo.get.bind(repo);
+    let aggregateReads = 0;
+    repo.get = id => {
+      if (id === record.id) aggregateReads++;
+      return get(id);
+    };
     const readers = await Promise.all([0, 1].map(async () => {
       const controller = new AbortController(); controllers.push(controller);
       return (await fetch(`${base}/records/${record.id}/events?after=${record.cursor}`, {headers, signal: controller.signal})).body.getReader();
     }));
     await initialRead; await new Promise(resolve => setImmediate(resolve));
+    assert.equal(aggregateReads, 0, 'delta SSE must not read the full meeting snapshot');
     const started = performance.now();
     await repo.change(record.id, value => {value.notes = 'Synthetic'; emit(value, 'transcript.updated');});
     await Promise.all(readers.map(async reader => {

@@ -271,8 +271,8 @@ export async function createRepository(options = {}) {
       const unique=[...new Set(ids)], rows=[];
       for(let offset=0;offset<unique.length;offset+=500){
         const batch=unique.slice(offset,offset+500);
-        rows.push(...(pool ? (await pool.query(`SELECT id, COALESCE(data->'analysisInput'->>'kind','record') AS kind, data->>'owner' AS owner, (data->>'deleted')::boolean AS deleted, data->>'deleteAt' AS "deleteAt", data->>'capture' AS capture, COALESCE(data->>'writeVersion',data->>'cursor') AS version FROM record_feed_meta WHERE id=ANY($1::text[])`,[batch])).rows
-          : db.prepare(`SELECT id, COALESCE(json_extract(data,'$.analysisInput.kind'),'record') AS kind, json_extract(data,'$.owner') AS owner, json_extract(data,'$.deleted') AS deleted, json_extract(data,'$.deleteAt') AS deleteAt, json_extract(data,'$.capture') AS capture, COALESCE(json_extract(data,'$.writeVersion'),json_extract(data,'$.cursor')) AS version FROM record_feed_meta WHERE id IN (${batch.map(()=>'?').join(',')})`).all(...batch)));
+        rows.push(...(pool ? (await pool.query(`SELECT id, COALESCE(data->'analysisInput'->>'kind','record') AS kind, data->>'owner' AS owner, (data->>'deleted')::boolean AS deleted, data->>'deleteAt' AS "deleteAt", data->>'capture' AS capture, data->>'cursor' AS cursor, COALESCE(data->>'writeVersion',data->>'cursor') AS version FROM record_feed_meta WHERE id=ANY($1::text[])`,[batch])).rows
+          : db.prepare(`SELECT id, COALESCE(json_extract(data,'$.analysisInput.kind'),'record') AS kind, json_extract(data,'$.owner') AS owner, json_extract(data,'$.deleted') AS deleted, json_extract(data,'$.deleteAt') AS deleteAt, json_extract(data,'$.capture') AS capture, json_extract(data,'$.cursor') AS cursor, COALESCE(json_extract(data,'$.writeVersion'),json_extract(data,'$.cursor')) AS version FROM record_feed_meta WHERE id IN (${batch.map(()=>'?').join(',')})`).all(...batch)));
       }
       return rows.map(row=>({...row,deleted:!!row.deleted}));
     },
