@@ -1,6 +1,6 @@
 # 当前能力与验证边界
 
-最近一次已验证发布为 **[v0.3.36.0](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.3.36.0)**。[正式流水](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/44360827032)通过源码、WGS、Windows、Ubuntu 22.04/24.04 和 macOS 检查，[官网同步](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/44378110870)完成，公开附件名称、大小及摘要已核对。微软商店的公开提交 4 对应产品 `0.3.36.0` / MSIX `1.3.3600.0`。真机、声音设备与模型供应商服务需分别验收。
+最近一次已验证的 GitHub 测试版为 **[v0.3.37.0](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.3.37.0)**，源码与工作流均为 `136af64`。[候选流水](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/44453788339)和[正式流水](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/44460358180)均通过 macOS、Windows 与 Ubuntu 22.04/24.04 检查。三个安装包和更新清单的大小及 SHA-256 已核对。微软商店审核与上架状态见[商店分发](microsoft-store.md)。真机、声音设备与模型供应商服务需分别验收。
 
 实时事件仅合并进行中的读取，不再复用已完成的空查询结果，避免刚提交的转录或纪要等待下一次恢复轮询。420px 及以下的会议操作按四列排列，560px 及以下的操作按钮保持 44px 触摸宽度。
 
