@@ -11,7 +11,6 @@ import { acknowledgeMobileRecording, nextMobileRecording, pushMobileRecordings, 
 import { Button } from './ui';
 import { ExternalLink } from './ExternalLink';
 import { FeedbackNotice } from './FeedbackNotice';
-import { ThemeToggle } from './ThemeToggle';
 import { QuickMobileRecording } from './QuickMobileRecording';
 import './PrivateSyncSettings.css';
 
@@ -559,7 +558,7 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
         {feedback}
       </form> : <>
         <p>{online ? '登录后可同步会议和接收手机录音。' : '当前离线，可以继续在本机记录和查看会议。'}</p>
-        <div className="sync-actions">{online && <Button variant="primary" onClick={() => setShowLogin(true)}>登录在线账号</Button>}<ThemeToggle/></div>
+        {online && <div className="sync-actions"><Button variant="primary" onClick={() => setShowLogin(true)}>登录在线账号</Button></div>}
       </>}
     </AccountSection>
     {localSpace}
@@ -637,7 +636,6 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
             await api('/private-sync/session', 'DELETE', undefined, signal);
             lock(); setSession({ ...session, email: null }); accountChanged?.(null); setVault(undefined); setLegacyAccount(false); setNewLoginNeeded(false); setProfile(''); setName(''); setShowLogin(false); setTab('account');
           })}><SignOut size={16}/>退出账号</Button>}
-          {!desktop && <ThemeToggle/>}
         </div>
         <form className="sync-form profile-settings" onSubmit={event => {
           event.preventDefault();
