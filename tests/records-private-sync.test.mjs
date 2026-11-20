@@ -82,7 +82,7 @@ test('desktop account registration authenticates once and logout clears the sync
   assert.deepEqual((await call('profile', 'PATCH', { name: '  设备验收  ' })).data, { name: '设备验收' });
   assert.deepEqual((await call('profile', 'GET')).data, { name: '设备验收' });
   assert.equal((await call('profile', 'PATCH', { name: 'x'.repeat(61) })).status, 400);
-  assert.deepEqual((await call('vault', 'GET')).data, { vault: null, legacy: true });
+  assert.deepEqual((await call('vault', 'GET')).data, { vault: null, legacy: true, liveAudio: true });
   await call('session', 'DELETE');
   assert.equal((await call('session', 'GET')).data.email, null);
   await assert.rejects(call('vault', 'GET'), { code: 'sync_sign_in_required' });
@@ -99,7 +99,7 @@ test('encrypted delta across authenticated accounts preserves ordering and idemp
   assert.equal((await first('/private-sync/vault', 'PUT', vault, { 'X-CSRF-Token': '' })).status, 403);
   assert.equal((await first('/private-sync/vault', 'PUT', vault)).status, 201);
   assert.equal((await first('/private-sync/vault', 'PUT', vault)).status, 409);
-  assert.deepEqual((await second('/private-sync/vault')).data, { vault: null, legacy: true });
+  assert.deepEqual((await second('/private-sync/vault')).data, { vault: null, legacy: true, liveAudio: true });
   const id = randomUUID();
   const operation = { id, ...await seal(root, vault, 'revision', id, encoder.encode(stamp)) };
   const payload = { vault: vault.id, operations: [operation] };
@@ -307,6 +307,71 @@ test('encrypted mobile audio has its own idempotent cursor and imports only once
   const { recordMinutesConfig } = await import('../services/records/src/config.mjs');
   assert.deepEqual(recordMinutesConfig(copy, { ASR_PROVIDER: 'doubao', MINUTES_MODE: 'doubao-audio-only' }),
     { ASR_PROVIDER: 'sensevoice-local', MINUTES_MODE: 'asr-llm' });
+});
+
+test('live audio is visible before sealing and has an isolated durable receipt journal', async t => {
+  const { account } = await cloud(t);
+  const phone = await account('live-owner@example.test');
+  const other = await account('live-other@example.test');
+  const { vault, root } = await createVault();
+  await phone('/private-sync/vault', 'PUT', vault);
+  const capability = (await phone('/private-sync/vault')).data;
+  assert.equal(capability.liveAudio, true);
+  assert.equal(capability.emptyUpgrade, true);
+  const query = '?vault=' + vault.id;
+
+  const folder = await mkdtemp(join(tmpdir(), 'lingji-live-import-'));
+  const { createRepository } = await import('../services/records/src/repository.mjs');
+  const { preparePrivateRecording } = await import('../services/records/src/private-sync-restore.mjs');
+  const { runCycle } = await import('../services/records/src/worker.mjs');
+  const repo = await createRepository({ root: folder, databaseUrl: '' });
+  t.after(async () => { await repo.close(); await rm(folder, { recursive: true, force: true }); });
+  const recording = { id: randomUUID(), vault: vault.id, title: '手机录音', live: true };
+  const [record, retry] = await Promise.all([
+    preparePrivateRecording(repo, 'desktop', recording),
+    preparePrivateRecording(repo, 'desktop', recording)
+  ]);
+  assert.equal(record.capture, 'recording');
+  assert.equal(record.sources.length, 1);
+  assert.equal(retry.sources[0].id, record.sources[0].id);
+  assert.equal(record.realtimeAudioConsent, false);
+
+  const pcm = Buffer.alloc(32000);
+  pcm.writeInt16LE(1024);
+  const frame = { kind: 'pcm', id: recording.id, title: recording.title, sequence: 0, offset: 0, data: pcm.toString('base64url') };
+  async function append(path, value) {
+    const id = randomUUID();
+    const operation = { id, ...await seal(root, vault, 'mobile-live-audio/1', id, encoder.encode(JSON.stringify(value))) };
+    const payload = { vault: vault.id, operations: [operation] };
+    const first = await phone(path, 'POST', payload);
+    assert.deepEqual(first.data, { acknowledgements: [{ id, seq: 1 }] });
+    assert.deepEqual((await phone(path, 'POST', payload)).data, first.data);
+    assert.equal((await other(path + query)).status, 404);
+    const pulled = (await phone(path + query)).data;
+    assert.equal(pulled.cursor, 1);
+    assert(!JSON.stringify(pulled).includes(recording.title));
+    return JSON.parse(new TextDecoder().decode(await unseal(root, vault, 'mobile-live-audio/1', id, pulled.operations[0])));
+  }
+  const received = await append('/private-sync/live-audio', frame);
+  assert.deepEqual(received, frame);
+  assert.equal((await phone('/private-sync/audio' + query)).data.cursor, 0);
+  assert.equal((await phone('/private-sync/live-receipts' + query)).data.cursor, 0);
+  assert.equal((await phone('/private-sync/vault')).data.emptyUpgrade, undefined);
+  const source = record.sources[0];
+  const chunk = {
+    sourceId: source.id, sessionId: source.sessionId, epoch: source.epoch, sequence: received.sequence,
+    sampleOffset: received.offset, sampleRate: 16000, sampleCount: pcm.byteLength / 2,
+    digest: createHash('sha256').update(pcm).digest('hex')
+  };
+  assert.equal((await repo.ingestAudio('desktop', record.id, chunk, pcm)).watermark, 0);
+  assert.equal((await repo.ingestAudio('desktop', record.id, chunk, pcm)).watermark, 0);
+  await runCycle(repo, { transcribe: async () => '录音中的转录' });
+  const live = await repo.get(record.id);
+  assert.equal(live.capture, 'recording');
+  assert(live.segments.length > 0);
+  assert.equal(live.chunks.length, 1);
+  const receipt = { kind: 'received', id: recording.id, title: recording.title };
+  assert.deepEqual(await append('/private-sync/live-receipts', receipt), receipt);
 });
 
 async function accountExchange(call, email, password, { register = false, currentPassword, vault, root, replaceEmpty = false } = {}) {

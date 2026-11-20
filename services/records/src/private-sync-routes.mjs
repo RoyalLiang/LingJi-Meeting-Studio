@@ -37,8 +37,11 @@ export function createPrivateSyncRoutes({ store, origin, repo }) {
     const owner = user.replacementVault ? user.id + ':current' : user.id;
     if (!path.startsWith('/api/private-sync/')) return false;
     requireThat(req.headers.host === origin.host && (method === 'GET' || req.headers.origin === origin.origin), 'origin_rejected', 403);
-    limit('private-sync:' + user.id, 160);
     const route = path.slice('/api/private-sync/'.length);
+    const liveStream = route === 'live-audio' || route === 'live-receipts';
+    if (liveStream) limit('private-sync-live:' + user.id, 360);
+    else limit('private-sync:' + user.id, 160);
+    const audioStream = route === 'audio' || liveStream;
     if (route.startsWith('passkey/')) limit('sync-passkey:' + owner, 24);
     if (route === 'profile' && method === 'GET') {
       send(res, 200, { name: user.profile?.name || '' });
@@ -60,20 +63,20 @@ export function createPrivateSyncRoutes({ store, origin, repo }) {
       const account = user.accountEnvelope?.vault === vault?.id ? user.accountEnvelope : vault?.account;
       const hasPasskey = vault && (await store.credentials(owner)).length > 0;
       const emptyUpgrade = !user.opaqueRecord && vault && await store.emptyUpgradeAvailable(owner);
-      send(res, 200, { vault, account, legacy: !user.opaqueRecord, ...(hasPasskey ? { hasPasskey } : {}), ...(emptyUpgrade ? { emptyUpgrade } : {}) });
+      send(res, 200, { vault, account, legacy: !user.opaqueRecord, ...(hasPasskey ? { hasPasskey } : {}), ...(emptyUpgrade ? { emptyUpgrade } : {}), liveAudio: true });
     } else if (route === 'vault' && method === 'PUT') {
       requireThat(!user.replacementVault, 'sync_vault_exists', 409);
       const { account, ...descriptor } = await readBody(req, 1024);
       requireThat(user.opaqueRecord ? validAccountEnvelope(account) : account === undefined, 'sync_invalid_envelope', 400);
       send(res, 201, { vault: await store.initialize(owner, { ...parseVault(descriptor), ...(account ? { account: keyEnvelope(account) } : {}) }) });
-    } else if (['delta', 'audio'].includes(route) && method === 'GET') {
+    } else if ((route === 'delta' || audioStream) && method === 'GET') {
       const after = url.searchParams.get('after') ?? '0';
       const id = url.searchParams.get('vault');
       requireThat(validId(id) && /^\d{1,15}$/.test(after), 'sync_invalid_cursor', 400);
       let stream = owner;
-      if (route === 'audio') {
+      if (audioStream) {
         requireThat((await store.vault(owner))?.id === id, 'sync_vault_unavailable', 404);
-        stream += ':audio';
+        stream += ':' + route;
         if (!await store.vault(stream)) {
           requireThat(Number(after) === 0, 'sync_cursor_ahead', 409);
           send(res, 200, { operations: [], cursor: 0, more: false });
@@ -81,7 +84,7 @@ export function createPrivateSyncRoutes({ store, origin, repo }) {
         }
       }
       send(res, 200, await store.pull(stream, id, Number(after)));
-    } else if (['delta', 'audio'].includes(route) && method === 'POST') {
+    } else if ((route === 'delta' || audioStream) && method === 'POST') {
       const { vault, operations } = await readBody(req, SYNC_PAGE_BYTES);
       requireThat(validId(vault) && Array.isArray(operations) && operations.length >= 1 && operations.length <= 64, 'sync_invalid_operations', 400);
       const batch = operations.map(operation => {
@@ -89,16 +92,16 @@ export function createPrivateSyncRoutes({ store, origin, repo }) {
         return { id: operation.id, nonce: operation.nonce, body: operation.body };
       });
       let stream = owner;
-      if (route === 'audio') {
+      if (audioStream) {
         const descriptor = await store.vault(owner);
         requireThat(descriptor?.id === vault, 'sync_vault_unavailable', 404);
-        stream += ':audio';
+        stream += ':' + route;
         if (!await store.vault(stream)) {
           try { await store.initialize(stream, descriptor); }
           catch (error) { if (error?.code !== 'sync_vault_exists') throw error; }
         }
       }
-      send(res, 200, await store.push(stream, vault, batch, route === 'audio' ? owner : undefined));
+      send(res, 200, await store.push(stream, vault, batch, audioStream ? owner : undefined));
     } else if (route === 'pair/start' && method === 'POST') {
       const { id, proof } = await readBody(req, 1024);
       requireThat(validId(id) && base64url(proof, 43), 'sync_invalid_pair', 400);

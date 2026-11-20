@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pause, Play } from '@phosphor-icons/react';
-import { MOBILE_AUDIO_LIMIT } from '../sync/mobile';
+import { MOBILE_RECORDING_BYTES, type MobileFrame } from '../sync/mobile';
+import { encodeBytes } from '../sync/vault';
 import { Button } from './ui';
 
 function wavHeader(size: number) {
@@ -20,11 +21,18 @@ function wavHeader(size: number) {
   return bytes;
 }
 
-export function QuickMobileRecording({ save, status, onActive }: { save: (blob: Blob, title: string) => Promise<void>; status: string; onActive?: (active: boolean) => void }) {
+export function QuickMobileRecording({ save, status, live, onActive, onLiveRecording }: {
+  save: (blob: Blob, title: string) => Promise<void>;
+  status: string;
+  live?: (id: string, title: string, frame: MobileFrame) => Promise<void>;
+  onActive?: (active: boolean) => void;
+  onLiveRecording?: (id: string) => void;
+}) {
   const [phase, setPhase] = useState<'idle' | 'starting' | 'recording' | 'paused' | 'saving'>('idle');
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState('');
-  const draft = useRef<{ blob: Blob; name: string } | null>(null);
+  const draft = useRef<(() => Promise<void>) | null>(null);
+  const waveform = useRef<SVGGElement>(null);
   const closeCapture = useRef<(() => void) | null>(null);
   const finishCapture = useRef<(() => void) | null>(null);
   const setCapturePaused = useRef<((paused: boolean) => void) | null>(null);
@@ -36,18 +44,21 @@ export function QuickMobileRecording({ save, status, onActive }: { save: (blob: 
   }, [onActive]);
 
   useEffect(() => {
+    if (phase === 'idle' && waveform.current) {
+      for (const bar of waveform.current.children) bar.setAttribute('y2', '38');
+    }
     if (phase === 'idle' && !draft.current) return;
     const keepOpen = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
     addEventListener('beforeunload', keepOpen);
     return () => removeEventListener('beforeunload', keepOpen);
   }, [phase]);
 
-  async function persist(blob: Blob, name: string) {
-    draft.current = { blob, name };
+  async function persist(commit: () => Promise<void>) {
+    draft.current = commit;
     setPhase('saving');
     setError('');
     try {
-      await save(blob, name);
+      await commit();
       draft.current = null;
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : '保存失败，请重试');
@@ -82,7 +93,24 @@ export function QuickMobileRecording({ save, status, onActive }: { save: (blob: 
       mute.gain.value = 0;
       context.createMediaStreamSource(stream).connect(node).connect(mute).connect(context.destination);
       const chunks: ArrayBuffer[] = [];
-      const limit = Math.min(MOBILE_AUDIO_LIMIT - 44, 5 * 60 * 32000);
+      const limit = MOBILE_RECORDING_BYTES;
+      const id = crypto.randomUUID();
+      const name = '手机录音 · ' + new Date().toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      let queued = 0, offset = 0, beats = 0;
+      let writing: Promise<void> | null = null;
+      function drain() {
+        if (!live) return Promise.resolve();
+        return writing ??= (async () => {
+          while (queued < chunks.length) {
+            const pcm = new Uint8Array(chunks[queued]);
+            await live(id, name, { kind: 'pcm', sequence: queued, offset, data: encodeBytes(pcm) });
+            chunks[queued++] = new ArrayBuffer(0);
+            offset += pcm.byteLength / 2;
+          }
+        })().finally(() => { writing = null; });
+      }
+      onLiveRecording?.(live ? id : '');
       let size = 0, ending = false, finished = false, deadline = 0;
       setCapturePaused.current = paused => {
         if (ending) return;
@@ -100,8 +128,14 @@ export function QuickMobileRecording({ save, status, onActive }: { save: (blob: 
         close();
         if (!mounted.current) return;
         if (!size) { setError('没有录到音频'); setPhase('idle'); onActive?.(false); return; }
-        const name = '手机录音 · ' + new Date().toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-        void persist(new Blob([wavHeader(size), ...chunks], { type: 'audio/wav' }), name);
+        void persist(async () => {
+          if (!live) {
+            await save(new Blob([wavHeader(size), ...chunks], { type: 'audio/wav' }), name);
+            return;
+          }
+          await drain();
+          await live(id, name, { kind: 'finish', sequence: queued });
+        });
       };
       finishCapture.current = () => {
         if (ending) return;
@@ -112,12 +146,23 @@ export function QuickMobileRecording({ save, status, onActive }: { save: (blob: 
       };
       node.port.onmessage = ({ data }) => {
         if (data.type === 'flushed') { if (ending && data.reason === 'finish') finish(); return; }
+        if (data.type === 'meter' && !ending && !reduceMotion && waveform.current) {
+          const peak = Math.min(28, Math.sqrt(Math.max(0, Number(data.value) || 0)) * 36);
+          Array.from(waveform.current.children).forEach((bar, i) => {
+            bar.setAttribute('y2', String(38 - peak * (.5 + .5 * Math.sin(i * .65 + beats))));
+          });
+          beats += .5;
+          return;
+        }
         if (data.type !== 'pcm') return;
         const pcm = data.buffer as ArrayBuffer;
         const available = Math.min(pcm.byteLength, limit - size);
         if (available > 0) {
           chunks.push(available === pcm.byteLength ? pcm : pcm.slice(0, available));
           size += available;
+          if (live) void drain().catch(() => {
+            if (mounted.current && !ending) setError('手机暂无法保存音频片段');
+          });
           setElapsed(Math.floor(size / 32000));
         }
         if (size >= limit) finishCapture.current?.();
@@ -137,19 +182,30 @@ export function QuickMobileRecording({ save, status, onActive }: { save: (blob: 
   const active = phase === 'recording' || phase === 'paused';
   const label = phase === 'recording' ? '暂停' : phase === 'paused' ? '继续'
     : phase === 'saving' ? '正在保存' : phase === 'starting' ? '正在启动' : draft.current ? '重试保存' : '开始';
-  return <section className="quick-mobile-recording" aria-label="快速记录">
+  const capturing = phase === 'recording' || phase === 'paused';
+  return <section className="quick-mobile-recording" data-phase={phase} aria-label="快速记录">
+    <div className="quick-mobile-orb">
+      <svg className="quick-mobile-wave" viewBox="0 0 196 196" aria-hidden="true">
+        <circle cx="98" cy="98" r="81" />
+        <g ref={waveform}>
+          {Array.from({ length: 36 }, (_, i) => <line key={i} x1="98" x2="98" y1="47" y2="38" transform={`rotate(${i * 10} 98 98)`} />)}
+        </g>
+      </svg>
+      <Button className="quick-mobile-control" aria-label={label} disabled={phase === 'starting' || phase === 'saving'} onClick={() => {
+        if (capturing) setCapturePaused.current?.(phase === 'recording');
+        else if (draft.current) void persist(draft.current);
+        else void start();
+      }}>
+        {phase === 'recording' ? <Pause size={28} weight="fill"/> : <Play size={28} weight="fill"/>}
+      </Button>
+    </div>
     <div className="quick-mobile-time" aria-label="录音用时">{time}</div>
-    <Button className="quick-mobile-control" variant="primary" disabled={phase === 'starting' || phase === 'saving'} onClick={() => {
-      if (active) setCapturePaused.current?.(phase === 'recording');
-      else if (draft.current) void persist(draft.current.blob, draft.current.name);
-      else void start();
-    }}>
-      {phase === 'recording' ? <Pause size={25} weight="fill"/> : <Play size={25} weight="fill"/>}
-      {label}
-    </Button>
+    <p className="quick-mobile-state">{label}</p>
     <div className="quick-mobile-feedback">
-      {phase === 'paused' && <Button variant="ghost" onClick={() => finishCapture.current?.()}>结束并保存</Button>}
-      {error ? <p className="quick-mobile-issue" role="alert">{error}</p> : !active && status && <p role="status">{status}</p>}
+      {error ? <p className="quick-mobile-issue" role="alert">{error}</p> : status && <p role="status">{status}</p>}
+    </div>
+    <div className="quick-mobile-actions">
+      {capturing && <Button variant="ghost" onClick={() => finishCapture.current?.()}>结束并保存</Button>}
     </div>
   </section>;
 }

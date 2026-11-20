@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { createRecord, DomainError, emit, requireThat } from '../../../packages/records/src/record.mjs';
+import { addSource, createRecord, DomainError, emit, requireThat } from '../../../packages/records/src/record.mjs';
 import { normalizePublishedContent, ShareContentError } from '../../../packages/records/src/published-content.mjs';
 
 const recordingId = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
@@ -54,7 +54,8 @@ export async function restorePrivateMeeting(repo, owner, input) {
 }
 
 export async function preparePrivateRecording(repo, owner, input) {
-  const { id: recording, vault, title } = input || {};
+  const { id: recording, vault, title, live = false } = input || {};
+  requireThat(typeof live === 'boolean', 'sync_invalid_recording', 400);
   requireThat(typeof recording === 'string' && recordingId.test(recording) && typeof vault === 'string' && recordingId.test(vault), 'sync_invalid_recording', 400);
   const id = localId('private-sync/recording/v1', owner, vault, recording);
   requireThat(typeof title === 'string' && title.trim().length > 0 && title.length <= 160, 'sync_invalid_recording', 400);
@@ -69,6 +70,7 @@ export async function preparePrivateRecording(repo, owner, input) {
   const record = createRecord(owner, { title });
   record.id = id;
   record.syncRecording = true;
+  if (live) addSource(record, { kind: 'import', label: '手机麦克风' });
   try { return await repo.insert(record); }
   catch (error) {
     const duplicate = await existing();

@@ -7,7 +7,8 @@ import { authenticateAccount, openAccountVault, wrapAccountVault } from '../sync
 import { readDeviceVault, rememberDeviceVault, type DeviceVault } from '../sync/device';
 import { loadMeetingCopy, meetingCopies, queueMeeting, syncMeetings, type CopySummary } from '../sync/journal';
 import { enrollPasskey, unlockPasskey } from '../sync/passkey';
-import { acknowledgeMobileRecording, nextMobileRecording, pushMobileRecordings, queueMobileRecording, receiveMobileRecordings } from '../sync/mobile';
+import { acknowledgeMobileRecording, nextMobileRecording, pullLiveAudio, pushLiveAudio, pushMobileRecordings, queueLiveAudio, queueMobileRecording, receiveMobileRecordings } from '../sync/mobile';
+import { receiveLiveAudio } from '../sync/mobile-desktop';
 import { Button } from './ui';
 import { ExternalLink } from './ExternalLink';
 import { FeedbackNotice } from './FeedbackNotice';
@@ -95,6 +96,10 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
   const [hasPasskey, setHasPasskey] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
   const [vault, setVault] = useState<Vault>();
+  const [liveAudio, setLiveAudio] = useState(false);
+  const [liveIssue, setLiveIssue] = useState('');
+  const [liveRecording, setLiveRecording] = useState('');
+  const [receivedRecording, setReceivedRecording] = useState('');
   const [backup, setBackup] = useState<string>();
   const [unlocked, setUnlocked] = useState(false);
   const [copies, setCopies] = useState<CopySummary[]>([]);
@@ -114,6 +119,11 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
   const pending = useRef<AbortController | null>(null);
   const background = useRef<Promise<void> | null>(null);
   const accountEmail = desktop ? session?.email : email;
+  useEffect(() => {
+    if (mobile && unlocked && liveAudio && vault) {
+      try { localStorage.setItem('lingji:live-audio', vault.id); } catch {}
+    }
+  }, [mobile, unlocked, liveAudio, vault]);
   const automationKey = vault ? 'lingji:auto-sync:' + vault.id : undefined;
 
   useEffect(() => {
@@ -146,14 +156,19 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
 
   async function connectAccount(account: string, signal: AbortSignal, material?: Uint8Array<ArrayBuffer>) {
     let local: DeviceVault | null = null;
+    setLiveAudio(false);
+    setLiveIssue('');
     try {
       if (mobile && !navigator.onLine) {
         local = await readDeviceVault(account);
         signal.throwIfAborted();
-        if (local) await enter(local, signal);
+        if (local) {
+          try { setLiveAudio(localStorage.getItem('lingji:live-audio') === local.vault.id); } catch {}
+          await enter(local, signal);
+        }
         return;
       }
-      const getVault = () => api<{ vault: Vault | null; account?: Envelope; legacy: boolean; hasPasskey?: boolean; emptyUpgrade?: boolean }>('/private-sync/vault', 'GET', undefined, signal);
+      const getVault = () => api<{ vault: Vault | null; account?: Envelope; legacy: boolean; hasPasskey?: boolean; emptyUpgrade?: boolean; liveAudio?: boolean }>('/private-sync/vault', 'GET', undefined, signal);
       let remote = await getVault();
       let cloud = remote.vault;
       signal.throwIfAborted();
@@ -185,6 +200,10 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
       }
       if (!cloud) return;
       signal.throwIfAborted();
+      setLiveAudio(remote.liveAudio === true);
+      if (mobile) {
+        try { localStorage.setItem('lingji:live-audio', remote.liveAudio && cloud ? cloud.id : ''); } catch {}
+      }
       setLegacyAccount(remote.legacy);
       setHasPasskey(remote.hasPasskey === true);
       setEmptyUpgrade(remote.emptyUpgrade === true);
@@ -337,6 +356,47 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
       controller.abort();
     };
   }, [ready, online, accountEmail, unlocked, vault, desktop, mobile, automatic, recording, accountChanged]);
+
+  useEffect(() => {
+    if (!ready || !online || !unlocked || !accountEmail || !vault || !liveAudio || (!desktop && !mobile)) return;
+    const controller = new AbortController();
+    const { signal } = controller;
+    const localVault = vault;
+    let running = false, retryAt = 0;
+    async function cycle() {
+      if (running || signal.aborted || !secret.current || Date.now() < retryAt) return;
+      running = true;
+      const key = secret.current.slice();
+      try {
+        if (mobile) {
+          await pushLiveAudio(localVault, 'phone', signal);
+          if (liveRecording && receivedRecording !== liveRecording) {
+            await pullLiveAudio(localVault, key, 'phone', signal, frame => {
+              if (frame.id === liveRecording && !signal.aborted) setReceivedRecording(frame.id);
+            });
+          }
+        } else {
+          await receiveLiveAudio(localVault, key, signal, () => {
+            if (!signal.aborted) importedCallback.current?.();
+          });
+          await pushLiveAudio(localVault, 'desktop', signal);
+        }
+        if (!signal.aborted && mobile) setLiveIssue('');
+      } catch (failure) {
+        if (signal.aborted) return;
+        retryAt = Date.now() + 8000;
+        if (mobile) setLiveIssue(failure instanceof ApiError && failure.status === 413
+          ? '云空间已满，音频保存在手机上' : '同步暂缓，音频保存在手机上');
+        else setBackgroundIssue(syncError(failure));
+      } finally {
+        key.fill(0);
+        running = false;
+      }
+    }
+    const timer = window.setInterval(() => void cycle(), 1800);
+    void cycle();
+    return () => { clearInterval(timer); controller.abort(); };
+  }, [ready, online, unlocked, accountEmail, vault, liveAudio, liveRecording, receivedRecording, desktop, mobile]);
 
   async function enter(device: DeviceVault, signal: AbortSignal, remember = false) {
     const { vault: localVault, root: key } = device;
@@ -599,7 +659,19 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
   </AccountSection>;
 
   if (mobile) return <div className="quick-mobile-home">
-    {vault && unlocked && !legacyAccount ? <QuickMobileRecording status={mobileStatus} onActive={mobileActive} save={async (blob, title) => {
+    {vault && unlocked && !legacyAccount ? <QuickMobileRecording
+      status={!online ? '离线保存，回网自动同步' : liveIssue || (liveRecording
+        ? receivedRecording === liveRecording ? '电脑已接收' : '等待电脑接收'
+        : mobileStatus || '自动同步')}
+      live={liveAudio ? async (id, title, frame) => {
+        if (!secret.current) throw new Error('资料库未解锁');
+        const key = secret.current.slice();
+        try { await queueLiveAudio(vault, key, id, title, frame); }
+        finally { key.fill(0); }
+      } : undefined}
+      onLiveRecording={setLiveRecording}
+      onActive={mobileActive}
+      save={async (blob, title) => {
       if (!secret.current) throw new Error('请先解锁会议同步');
       const key = secret.current.slice();
       try {

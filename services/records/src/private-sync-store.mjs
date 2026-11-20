@@ -71,9 +71,9 @@ export async function createPrivateSyncStore({ root, pool }) {
   const reserved = row => Number(row.head) < -Date.now();
   async function canReplaceEmpty(conn, owner, row) {
     if (!row || Number(row.head) > 0 || reserved(row)) return false;
-    const associated = await run(conn, `SELECT 1 FROM sync_vaults WHERE owner=$2 AND head>0
+    const associated = await run(conn, `SELECT 1 FROM sync_vaults WHERE owner IN ($2,$3,$4) AND head>0
       UNION ALL SELECT 1 FROM sync_credentials WHERE owner=$1
-      UNION ALL SELECT 1 FROM sync_pairs WHERE owner=$1 AND expires>$3 LIMIT 1`, [owner, owner + ':audio', Date.now()]);
+      UNION ALL SELECT 1 FROM sync_pairs WHERE owner=$1 AND expires>$5 LIMIT 1`, [owner, owner + ':audio', owner + ':live-audio', owner + ':live-receipts', Date.now()]);
     return associated.length === 0;
   }
 
@@ -116,6 +116,11 @@ export async function createPrivateSyncStore({ root, pool }) {
         requireThat(!reserved(row), 'sync_legacy_history', 409);
         const acknowledgements = [];
         let head = Math.max(0, Number(row.head)), bytes = Number(row.bytes);
+        // Keep the existing audio quota across both journals, serialized by the parent row lock.
+        const siblings = parentOwner ? ['audio', 'live-audio', 'live-receipts']
+          .map(stream => parentOwner + ':' + stream).filter(stream => stream !== owner) : [];
+        const others = siblings.length ? await run(conn, 'SELECT bytes FROM sync_vaults WHERE owner IN ($1,$2)', siblings) : [];
+        const quota = VAULT_QUOTA - others.reduce((total, entry) => total + Number(entry.bytes), 0);
         for (const operation of operations) {
           const data = JSON.stringify(operation);
           const [prior] = await run(conn, 'SELECT seq,data FROM sync_delta WHERE owner=$1 AND op=$2', [owner, operation.id]);
@@ -125,7 +130,7 @@ export async function createPrivateSyncStore({ root, pool }) {
             continue;
           }
           bytes += Buffer.byteLength(data);
-          requireThat(bytes <= VAULT_QUOTA, 'sync_quota_exceeded', 413);
+          requireThat(bytes <= quota, 'sync_quota_exceeded', 413);
           head++;
           await run(conn, 'INSERT INTO sync_delta(owner,seq,op,data) VALUES($1,$2,$3,$4)', [owner, head, operation.id, data]);
           acknowledgements.push({ id: operation.id, seq: head });
