@@ -5,7 +5,7 @@
 .sync-settings { min-width: 0; padding-block-end: 24px; }
 .sync-settings [hidden] { display: none; }
 .sync-settings p { overflow-wrap: anywhere; }
-.sync-settings > [role="status"] { margin: 16px 26px; }
+.sync-settings > .account-feedback { margin: 16px 26px; }
 .account-tabs.surface-tabs {
   position: sticky;
   top: 0;
@@ -121,7 +121,7 @@
   .account-section > header h2 { margin: 0; }
 }
 @container (max-width: 440px) {
-  .account-section, .sync-settings > [role="status"] { margin-inline: 16px; }
+  .account-section, .sync-settings > .account-feedback { margin-inline: 16px; }
   .account-tabs.surface-tabs { padding-inline: 16px; gap: 16px; }
   .sync-settings .account-tabs > button { font-size: .76rem; }
   .account-panel { padding: 14px; }
