@@ -2,6 +2,12 @@ import { createHash } from 'node:crypto';
 import { createRecord, DomainError, emit, requireThat } from '../../../packages/records/src/record.mjs';
 import { normalizePublishedContent, ShareContentError } from '../../../packages/records/src/published-content.mjs';
 
+const recordingId = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
+function localId(...identity) {
+  const hash = createHash('sha256').update(JSON.stringify(identity)).digest('hex');
+  return [hash.slice(0, 8), hash.slice(8, 12), '4' + hash.slice(13, 16), '8' + hash.slice(17, 20), hash.slice(20, 32)].join('-');
+}
+
 export async function restorePrivateMeeting(repo, owner, input) {
   requireThat(typeof input?.id === 'string' && /^[a-f0-9-]{36}$/.test(input.id), 'sync_invalid_operation', 400);
   requireThat(typeof input.notes === 'string' && input.notes.length <= 100_000, 'sync_invalid_notes', 400);
@@ -12,8 +18,7 @@ export async function restorePrivateMeeting(repo, owner, input) {
     throw error;
   }
   requireThat(content.scope === 'full' && !content.draft, 'sync_record_not_final', 400);
-  const hash = createHash('sha256').update(JSON.stringify(['private-sync/restore/v1', owner, input.id])).digest('hex');
-  const id = [hash.slice(0, 8), hash.slice(8, 12), '4' + hash.slice(13, 16), '8' + hash.slice(17, 20), hash.slice(20, 32)].join('-');
+  const id = localId('private-sync/restore/v1', owner, input.id);
   const existing = async () => {
     const stored = await repo.get(id);
     if (!stored) return null;
@@ -46,4 +51,28 @@ export async function restorePrivateMeeting(repo, owner, input) {
     throw error;
   }
   return { id, duplicate: false };
+}
+
+export async function preparePrivateRecording(repo, owner, input) {
+  const { id: recording, vault, title } = input || {};
+  requireThat(typeof recording === 'string' && recordingId.test(recording) && typeof vault === 'string' && recordingId.test(vault), 'sync_invalid_recording', 400);
+  const id = localId('private-sync/recording/v1', owner, vault, recording);
+  requireThat(typeof title === 'string' && title.trim().length > 0 && title.length <= 160, 'sync_invalid_recording', 400);
+  async function existing() {
+    const record = await repo.get(id);
+    if (!record) return null;
+    requireThat(record.owner === owner && record.syncRecording === true, 'sync_recording_unavailable', 409);
+    return record;
+  }
+  const stored = await existing();
+  if (stored) return stored;
+  const record = createRecord(owner, { title });
+  record.id = id;
+  record.syncRecording = true;
+  try { return await repo.insert(record); }
+  catch (error) {
+    const duplicate = await existing();
+    if (duplicate) return duplicate;
+    throw error;
+  }
 }

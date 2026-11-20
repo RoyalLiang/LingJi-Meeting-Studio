@@ -29,6 +29,7 @@ let permittedRecords = new Set<string>(), uploading = false;
 let draining: Promise<void> | undefined;
 let wakeDrain: (() => void) | undefined;
 export const setQueueRecords = (ids: string[]) => { permittedRecords = new Set(ids); };
+export const permitQueueRecord = (id: string) => { permittedRecords.add(id); };
 function db() {
   return database ||= new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open('meeting-studio-audio', 2);

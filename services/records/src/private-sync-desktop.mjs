@@ -3,6 +3,8 @@ import { SYNC_PAGE_BYTES } from './private-sync-store.mjs';
 
 export const PRIVATE_SYNC_COMPANION = 'https://lingji.rookiehouse.com';
 const routes = new Map([
+  ['profile', new Set(['GET', 'PATCH'])],
+  ['audio', new Set(['GET', 'POST'])],
   ['vault', new Set(['GET', 'PUT'])],
   ['delta', new Set(['GET', 'POST'])],
   ['pair/start', new Set(['POST'])],

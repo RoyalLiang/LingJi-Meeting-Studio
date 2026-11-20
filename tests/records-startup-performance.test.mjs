@@ -32,7 +32,7 @@ test('bootstrap reuses the unfiltered record list to initialize the workspace', 
   assert.ok(start >= 0 && end > start);
   const compiled = (await transform(app.slice(start, end) + '\nexports.loadBoot = loadBoot;', { loader: 'ts' })).code;
   const pending = [], calls = []; let initialized=false;
-  const sandbox = { exports: {}, useCallback: fn => fn, bootRequest: { current: null }, bootListReady:{current:false}, listView:{current:{query:'',scope:'all'}}, cacheEpoch: { current: 0 }, recordCache: { current: new Map() },
+  const sandbox = { exports: {}, mobile: false, useCallback: fn => fn, bootRequest: { current: null }, bootListReady:{current:false}, listView:{current:{query:'',scope:'all'}}, cacheEpoch: { current: 0 }, recordCache: { current: new Map() },
     api: async path => { calls.push(path); if (path === '/bootstrap') return { csrf:'fixture', localAccount: true }; return new Promise(resolve => pending.push(() => resolve(path === '/records' ? { records: [] } : { workspaces: [] }))); },
     setError() {}, setCsrf() {}, setAudioTransport() {}, setNativeAudioTransport() {}, nativeCaptureSessions:async()=>[], setLocalQueueBackend() {}, setQueueRecords() {}, setDirectories() {}, setRecords() { initialized=true; }, setBoot() {}, setAuthReady() {}, setLoading() {},
     messageOf: error => error.message, ApiError: class extends Error {}, Promise,

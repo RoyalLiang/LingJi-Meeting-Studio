@@ -141,6 +141,7 @@ export async function queueMeeting(vault: Vault, root: Uint8Array<ArrayBuffer>, 
 
 export async function syncMeetings(vault: Vault, root: Uint8Array<ArrayBuffer>, signal?: AbortSignal) {
   const db = await database();
+  let received = false;
   const pending = await dbRequest<Row[]>(db.transaction('operations').objectStore('operations').index('pending').getAll([vault.id, 1], 32));
   for (const row of pending) {
     const { acknowledgements } = await api<{ acknowledgements: { id: string; seq: number }[] }>('/private-sync/delta', 'POST', {
@@ -163,6 +164,7 @@ export async function syncMeetings(vault: Vault, root: Uint8Array<ArrayBuffer>, 
       verified.push(row);
     }
     if (batch.cursor !== cursor || (cursor === after && batch.more)) throw new Error('同步游标无效');
+    received ||= verified.length > 0;
     await transaction('readwrite', tx => {
       const saved = tx.objectStore('cursor').get(vault.id);
       saved.onsuccess = () => {
@@ -174,5 +176,5 @@ export async function syncMeetings(vault: Vault, root: Uint8Array<ArrayBuffer>, 
     if (!batch.more) break;
   }
   const morePending = await dbRequest(db.transaction('operations').objectStore('operations').index('pending').count([vault.id, 1]));
-  return { pending: morePending };
+  return { pending: morePending, received };
 }

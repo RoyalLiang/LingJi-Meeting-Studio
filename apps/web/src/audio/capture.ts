@@ -172,8 +172,8 @@ export class CaptureController {
     this.streams = []; this.nodes = []; this.contexts = []; this.sources = []; this.writeFailure = undefined; this.onMeter(0); this.signals = []; this.onSignals([]);
   }
 }
-export async function importAudio(file: File, record: RecordDetail, progress: (value: number) => void, signal?: AbortSignal) {
-  let source: Awaited<ReturnType<typeof api<Source>>> | undefined, sequence = 0, offset = 0;
+export async function importAudio(file: File, record: RecordDetail, progress: (value: number) => void, signal?: AbortSignal, existingSource?: Source) {
+  let source = existingSource, sequence = 0, offset = 0;
   const uploads=createImportUploadQueue(()=>drainQueue(),signal);
   await streamAudioImport(file, async pcm => {
     signal?.throwIfAborted();

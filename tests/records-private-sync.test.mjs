@@ -72,6 +72,10 @@ test('desktop account registration authenticates once and logout clears the sync
   const email = 'desktop-account@example.test', password = 'synthetic-backend-phrase';
   assert.deepEqual(await call('session', 'POST', { email, password, register: true }),
     { status: 200, data: { email, companion: fixtureOrigin } });
+  assert.deepEqual((await call('profile', 'GET')).data, { name: '' });
+  assert.deepEqual((await call('profile', 'PATCH', { name: '  设备验收  ' })).data, { name: '设备验收' });
+  assert.deepEqual((await call('profile', 'GET')).data, { name: '设备验收' });
+  assert.equal((await call('profile', 'PATCH', { name: 'x'.repeat(61) })).status, 400);
   assert.deepEqual((await call('vault', 'GET')).data, { vault: null });
   await call('session', 'DELETE');
   assert.equal((await call('session', 'GET')).data.email, null);
@@ -257,4 +261,41 @@ test('restoring a revision keeps its source citations and never overwrites local
   assert.equal(second.duplicate, true);
   assert.equal(second.id, first.id);
   assert.equal((await repo.get(second.id)).notes, '本机已校订');
+});
+
+test('encrypted mobile audio has its own idempotent cursor and imports only once per vault', async t => {
+  const { account } = await cloud(t);
+  const phone = await account('mobile-owner@example.test');
+  const unrelated = await account('mobile-other@example.test');
+  const { vault, root } = await createVault();
+  assert.equal((await phone('/private-sync/vault', 'PUT', vault)).status, 201);
+  const after = '?vault=' + vault.id;
+  assert.deepEqual((await phone('/private-sync/audio' + after)).data, { cursor: 0, more: false, operations: [] });
+  const partId = randomUUID();
+  const operation = { id: partId, ...await seal(root, vault, 'mobile-audio/1', partId, encoder.encode(stamp)) };
+  const payload = { vault: vault.id, operations: [operation] };
+  const first = await phone('/private-sync/audio', 'POST', payload);
+  assert.deepEqual(first.data, { acknowledgements: [{ id: partId, seq: 1 }] });
+  assert.deepEqual((await phone('/private-sync/audio', 'POST', payload)).data, first.data);
+  assert.equal((await unrelated('/private-sync/audio' + after)).status, 404);
+  assert.deepEqual((await phone('/private-sync/delta' + after)).data.operations, []);
+  const inbound = (await phone('/private-sync/audio' + after)).data;
+  assert.equal(inbound.cursor, 1);
+  assert(!JSON.stringify(inbound).includes(stamp));
+  assert.equal(new TextDecoder().decode(await unseal(root, vault, 'mobile-audio/1', partId, inbound.operations[0])), stamp);
+
+  const folder = await mkdtemp(join(tmpdir(), 'lingji-mobile-import-'));
+  const { createRepository } = await import('../services/records/src/repository.mjs');
+  const { preparePrivateRecording } = await import('../services/records/src/private-sync-restore.mjs');
+  const repo = await createRepository({ root: folder, databaseUrl: '' });
+  t.after(async () => { await repo.close(); await rm(folder, { recursive: true, force: true }); });
+  const input = { id: randomUUID(), vault: vault.id, title: '手机录音' };
+  const [copy, retry] = await Promise.all([preparePrivateRecording(repo, 'desktop', input), preparePrivateRecording(repo, 'desktop', input)]);
+  assert.equal(copy.id, retry.id);
+  assert.notEqual(copy.id, (await preparePrivateRecording(repo, 'desktop', { ...input, vault: randomUUID() })).id);
+  assert.equal(copy.capture, 'idle');
+  assert.equal(copy.realtimeAudioConsent, false);
+  const { recordMinutesConfig } = await import('../services/records/src/config.mjs');
+  assert.deepEqual(recordMinutesConfig(copy, { ASR_PROVIDER: 'doubao', MINUTES_MODE: 'doubao-audio-only' }),
+    { ASR_PROVIDER: 'sensevoice-local', MINUTES_MODE: 'asr-llm' });
 });

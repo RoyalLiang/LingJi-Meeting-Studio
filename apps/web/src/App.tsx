@@ -123,6 +123,12 @@ const ExportDialog = lazy(() => import('./components/ExportDialog').then(module=
 const MeetingAgentCenter = lazy(() => import('./components/MeetingAgentCenter'));
 
 function Workspace() {
+  const mobile = location.pathname === '/quick-record';
+  const [mobileRecording, setMobileRecording] = useState(false);
+  const [mobileEmail, setMobileEmail] = useState<string | null>(() => {
+    try { return mobile ? localStorage.getItem('lingji:mobile-email') : null; }
+    catch { return null; }
+  });
   const [workspacePage,setWorkspacePage]=useState<WorkspacePage>('overview'),[sidebarOpen,setSidebarOpen]=useState(false),[voiceOpen,setVoiceOpen]=useState(false);
   const closeSidebar=useCallback(()=>setSidebarOpen(false),[]);
   const [contextOpen,setContextOpen]=useState(false),[workspaceOverview,setWorkspaceOverview]=useState<WorkspaceOverview|null>(null);
@@ -135,14 +141,6 @@ function Workspace() {
   const syncCompanion = Boolean(boot?.privateSync && !boot.localAccount);
   const desktopAccount = Boolean(boot?.localAccount && boot.privateSync);
   const [syncEmail, setSyncEmail] = useState<string | null>();
-  useEffect(() => {
-    if (!desktopAccount) return;
-    const controller = new AbortController();
-    void api<{email:string|null}>('/private-sync/session', 'GET', undefined, controller.signal).then(({ email }) => {
-      if (!controller.signal.aborted) setSyncEmail(current => current === undefined ? email : current);
-    }).catch(() => {});
-    return () => controller.abort();
-  }, [desktopAccount]);
   const [records, setRecords] = useState<RecordListItem[]>([]), [query, setQuery] = useState(''), [id, setId] = useState(new URLSearchParams(location.search).get('record') || ''), [record, setRecord] = useState<RecordDetail | null>(null);
   useEffect(()=>{setMeetingPage('minutes');},[id]);
   const learningService=useLearningService(Boolean(authReady && boot?.learning?.enabled));
@@ -190,9 +188,9 @@ function Workspace() {
   const [visited,setVisited]=useState({home:false,agent:false,settings:false});
   const homeActive=!id&&!agentOpen&&workspacePage!=='workspaces'&&modal!=='settings';
   useEffect(()=>{setVisited(current=>{
-    const next={home:current.home||homeActive,agent:current.agent||agentOpen,settings:current.settings||modal==='settings'};
+    const next={home:current.home||homeActive,agent:current.agent||agentOpen,settings:current.settings||(modal==='settings'&&!accountOpen)};
     return next.home===current.home&&next.agent===current.agent&&next.settings===current.settings?current:next;
-  });},[homeActive,agentOpen,modal]);
+  });},[homeActive,agentOpen,modal,accountOpen]);
 
   const [signals]=useState(createCaptureSignals);
   const [connectedKinds,setConnectedKinds]=useState<CaptureSignal['kind'][]>([]);
@@ -230,7 +228,13 @@ function Workspace() {
     if (bootRequest.current) return bootRequest.current;
     const request = (async () => {
     cacheEpoch.current++; recordCache.current.clear(); bootListReady.current=false; setError(''); try { const b = await api<Bootstrap>('/bootstrap'); setCsrf(b.csrf);
-        if (b.privateSync && !b.localAccount) { setBoot(b); setAuthReady(true); return true; }
+        if (b.privateSync && !b.localAccount) {
+          if (mobile) {
+            try { localStorage.setItem('lingji:mobile-email', b.email); } catch {}
+            setMobileEmail(b.email);
+          }
+          setBoot(b); setAuthReady(true); return true;
+        }
         setAudioTransport(b.audioTransport); setNativeAudioTransport(b.nativeAudioTransport); setLocalQueueBackend(Boolean(b.localAccount)); const [list, folders] = await Promise.all([api<{records: RecordListItem[]}>('/records'), api<{workspaces:WorkspaceDirectory[]}>('/workspaces')]);
         setQueueRecords(list.records.map(r => r.id)); setDirectories(folders.workspaces);
         bootListReady.current = !listView.current.query && listView.current.scope === 'all';
@@ -249,16 +253,32 @@ function Workspace() {
           }
         }
         return true; }
-    catch (e) { if (!(e instanceof ApiError && e.status === 401)) setError(messageOf(e)); setAuthReady(false); return false; } finally { setLoading(false); }
+    catch (e) { if (e instanceof ApiError && e.status === 401 && mobile) {
+          try { localStorage.removeItem('lingji:mobile-email'); } catch {}
+          setMobileEmail(null);
+        } else if (!(e instanceof ApiError && e.status === 401) && navigator.onLine) setError(messageOf(e));
+        setAuthReady(false);
+        return false; } finally { setLoading(false); }
     })();
     bootRequest.current = request;
     void request.then(() => { if (bootRequest.current === request) bootRequest.current = null; });
     return request;
-  }, []);
+  }, [mobile]);
   const refreshProviders = useCallback((state: Pick<Bootstrap,'providers'|'meetingAutomation'|'audioMinutesDefault'>) => {
     setBoot(current => current ? {...current,...state} : current);
   }, []);
   useEffect(() => { void loadBoot(); mounted.current = true; return () => { mounted.current = false; importRequest.current?.abort(); void capture.current?.stop(); }; }, [loadBoot]);
+  useEffect(() => {
+    if (!mobile) return;
+    const update = () => {
+      setOnline(navigator.onLine);
+      if (navigator.onLine && !authReady && !mobileRecording) void loadBoot();
+    };
+    addEventListener('online', update);
+    addEventListener('offline', update);
+    update();
+    return () => { removeEventListener('online', update); removeEventListener('offline', update); };
+  }, [mobile, loadBoot, authReady, mobileRecording]);
   const loadList = useCallback(async (signal?: AbortSignal) => {
     if (listView.current.query !== query || listView.current.scope !== scope) return;
     const version = ++listRequest.current, epoch = cacheEpoch.current;
@@ -505,19 +525,28 @@ function Workspace() {
   }
   useEffect(()=>{const open=()=>{setModal(null);setSidebarOpen(false);setTranslationOpen(false);setAgentOpen(true);};window.addEventListener('lingji:git-configure',open);return()=>window.removeEventListener('lingji:git-configure',open);},[]);
   if (loading) return <main className="loading-page" role="status"><Brand markOnly/><p>正在打开会议空间…</p></main>;
-  if (authReady && syncCompanion) return <main className="sync-companion">
-    <header className="surface-heading"><Brand /><Button onClick={() => {
-      void api('/auth/logout', 'POST').then(() => { setAuthReady(false); setBoot(null); }).catch(failure => setError(messageOf(failure)));
-    }}>退出账号</Button></header>
+  if ((authReady && syncCompanion) || (mobile && mobileEmail)) return <main className={mobile ? 'sync-companion quick-mobile-app' : 'sync-companion'}>
+    <header className="surface-heading"><Brand /><h1>{mobile ? '快速记录' : '个人中心'}</h1>{online && <Button disabled={mobileRecording} onClick={() => {
+      void api('/auth/logout', 'POST').then(() => {
+        if (mobile) {
+          try { localStorage.removeItem('lingji:mobile-email'); } catch {}
+          setMobileEmail(null);
+        }
+        setAuthReady(false); setBoot(null);
+      }).catch(failure => setError(messageOf(failure)));
+    }}>退出账号</Button>}</header>
     {error && <FeedbackNotice key={error} message={error} error />}
-    <Suspense fallback={<p role="status">正在加载加密同步…</p>}><PrivateSyncSettings desktop={false} email={boot?.email}/></Suspense>
+    <Suspense fallback={<p role="status">正在加载个人中心…</p>}><PrivateSyncSettings desktop={false} email={boot?.email || mobileEmail || undefined} mobile={mobile} mobileActive={setMobileRecording} online={online}/></Suspense>
   </main>;
   if (!authReady || !boot) return <Auth ready={loadBoot}/>;
   const sourceReady = boot.providers.asr || boot.providers.fixture;
   return <div className="app-shell"><a className="skip-link" href="#workspace">跳到会议内容</a>
-    <RecordingRuntime record={record} recording={recording} busy={busy||stopping.current} signals={signals} manifests={localAudio.recordId===record?.id?localAudio.manifests:[]} onError={setError}/><AppSidebar directories={directories} scope={scope} records={records} recordId={id} page={workspacePage} extensionOpen={agentOpen} settingsOpen={modal==='settings'} voiceOpen={voiceOpen} open={sidebarOpen} disabled={recording||busy} canRecord={sourceReady} name={desktopAccount ? syncEmail || '' : localBackend ? '我的会议空间' : boot.email.split('@')[0]} account={desktopAccount ? syncEmail || '未登录' : localBackend ? '本机账户' : boot.email} openAccount={desktopAccount ? () => openSettings('account') : undefined} accountOpen={accountOpen} version={<ClientVersion updates={updates}/>} notice={boot.providers.fixture&&<span className="fixture-badge">开发测试模式 · 测试数据</span>} tools={<>{!boot.localAccount&&<Button aria-label="退出登录" disabled={recording} onClick={async()=>{try{await api('/auth/logout','POST');setCsrf('');setQueueRecords([]);setAuthReady(false);selectRecord('');}catch(e){setError(messageOf(e));}}}><SignOut size={16}/></Button>}</>} chooseScope={chooseScope} navigate={page=>{chooseScope(scope);setWorkspacePage(page);}} selectRecord={next=>{setModal(null);setSidebarOpen(false);selectRecord(next);}} create={newDirectory} prepare={()=>{setSidebarOpen(false);setModal('new');}} quick={()=>{setSidebarOpen(false);void quickRecord();}} extensions={()=>{setModal(null);setSidebarOpen(false);setTranslationOpen(false);setAgentOpen(true);}} settings={()=>openSettings()} voices={()=>{setSidebarOpen(false);setVoiceOpen(true);}} search={()=>{chooseScope(scope);setWorkspacePage('meetings');requestAnimationFrame(()=>document.getElementById('record-search')?.focus());}} close={closeSidebar}/>
+    <RecordingRuntime record={record} recording={recording} busy={busy||stopping.current} signals={signals} manifests={localAudio.recordId===record?.id?localAudio.manifests:[]} onError={setError}/><AppSidebar directories={directories} scope={scope} records={records} recordId={id} page={workspacePage} extensionOpen={agentOpen} settingsOpen={modal==='settings'} voiceOpen={voiceOpen} open={sidebarOpen} disabled={recording||busy} canRecord={sourceReady} name={desktopAccount ? (online ? syncEmail || '' : '') : localBackend ? '我的会议空间' : boot.email.split('@')[0]} account={desktopAccount ? (online ? syncEmail || '' : '') : localBackend ? '本机账户' : boot.email} openAccount={desktopAccount ? () => openSettings('account') : undefined} accountOpen={accountOpen} version={<ClientVersion updates={updates} compact/>} notice={boot.providers.fixture&&<span className="fixture-badge">开发测试模式 · 测试数据</span>} tools={<>{!boot.localAccount&&<Button aria-label="退出登录" disabled={recording} onClick={async()=>{try{await api('/auth/logout','POST');setCsrf('');setQueueRecords([]);setAuthReady(false);selectRecord('');}catch(e){setError(messageOf(e));}}}><SignOut size={16}/></Button>}</>} chooseScope={chooseScope} navigate={page=>{chooseScope(scope);setWorkspacePage(page);}} selectRecord={next=>{setModal(null);setSidebarOpen(false);selectRecord(next);}} create={newDirectory} prepare={()=>{setSidebarOpen(false);setModal('new');}} quick={()=>{setSidebarOpen(false);void quickRecord();}} extensions={()=>{setModal(null);setSidebarOpen(false);setTranslationOpen(false);setAgentOpen(true);}} settings={()=>openSettings()} voices={()=>{setSidebarOpen(false);setVoiceOpen(true);}} search={()=>{chooseScope(scope);setWorkspacePage('meetings');requestAnimationFrame(()=>document.getElementById('record-search')?.focus());}} close={closeSidebar}/>
     <main id="workspace" className={`workspace ${translationOpen ? 'with-translation' : ''} ${modal==='settings'?'showing-settings':''} ${id&&!agentOpen?'showing-record':''} ${agentOpen?'showing-extensions':''} ${!id&&!agentOpen&&workspacePage==='meetings'?'is-meeting-list':''}`}><header className="topbar glass"><Button variant="ghost" className="mobile-navigation" aria-label="打开项目导航" aria-controls="project-sidebar" aria-expanded={sidebarOpen} onClick={()=>setSidebarOpen(true)}><House size={18}/></Button><div className="workbench-page-identity"><Brand markOnly/><div><button disabled={recording||busy} onClick={()=>chooseScope(scope)}>{agentOpen?agentTitle:workspacePage==='workspaces'?'所有项目空间':directoryName}</button></div></div><div className="search-box topbar-search"><MagnifyingGlass size={18}/><input id="record-search" type="search" aria-label="搜索当前目录会议内容" placeholder="搜索当前目录的会议、纪要与内容" value={query} onChange={e => setQuery(e.target.value)}/></div><Button className="context-toggle" onClick={()=>{setSidebarOpen(false);setContextOpen(true);}}>项目动态</Button><div className="workspace-automation-actions" ref={setGitActions}/><div className="sync-state" title="页面与记录服务的连接状态；与语音、AI 模型服务连接无关" data-connection-state={connectionState}><ConnectionStatus state={connectionState} localBackend={localBackend} online={online} pending={pending}/><ScrollToTop root={scrollRoot}/></div></header>
-      <div className="record-header-host" ref={setRecordHeaderTarget} hidden={!record||agentOpen||modal==='settings'}/><GitSyncNotifier/><div className="workspace-body">{(visited.settings||modal==='settings')&&<div className="settings-route" hidden={modal!=='settings'}><Suspense fallback={null}><SettingsPage visible={modal === 'settings'} tab={settingsTab} setTab={setSettingsTab} accountChanged={setSyncEmail} restored={id=>{setModal(null);selectRecord(id);void loadList().catch(failure=>setError(messageOf(failure)));}} voices={()=>setVoiceOpen(true)} openContext={()=>{setSidebarOpen(false);setContextOpen(true);}} close={()=>setModal(null)} boot={boot} record={record} recording={recording} busy={busy} updates={updates} saved={refreshProviders} language={async language=>{await mutate(`/records/${id}`,'PATCH',{language});}} translated={target=>setRecord(current=>current&&record&&current.id===record.id?{...current,translationTarget:target}:current)} diagnostics={()=>{const blob=new Blob([JSON.stringify({capabilities:capabilities(),storage:boot.storage,providers:boot.providers,pending,capture:record?.capture,transcription:record?.transcription},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='meeting-diagnostics.json';link.click();URL.revokeObjectURL(url);}} backup={()=>void (record?downloadPendingAudio(record.id):Promise.resolve(false)).then(downloaded=>{if(!downloaded)showToast('当前没有待传音频。');}).catch(e=>setError(messageOf(e)))}/></Suspense></div>}<div className="workspace-reading-row" inert={modal==='settings'}><div className="meeting-highlights-slot" ref={setFocusTarget}/><div ref={scrollRoot} className={`workspace-scroll ${!agentOpen && record ? 'record-reading' : ''}`} tabIndex={0} aria-label="会议内容滚动区">
+      <div className="record-header-host" ref={setRecordHeaderTarget} hidden={!record||agentOpen||modal==='settings'}/><GitSyncNotifier/><div className="workspace-body">{desktopAccount&&<div className="settings-route" hidden={!accountOpen}><section className="settings-page" onKeyDown={event=>{if(event.key==='Escape'&&!document.querySelector('dialog[open]'))setModal(null);}} aria-label={online&&syncEmail?'个人中心':'本地空间'}>
+        <header className="surface-heading"><Button variant="ghost" className="settings-back" aria-label="返回工作台" onClick={()=>setModal(null)}><Brand markOnly/></Button><div><h1>{online&&syncEmail?'个人中心':'本地空间'}</h1></div><Button className="context-toggle" onClick={()=>setContextOpen(true)}>同步说明</Button></header>
+        <div className="settings-pages account-page"><div><Suspense fallback={<p role="status">正在加载账号…</p>}><PrivateSyncSettings desktop online={online} visible={accountOpen} record={record} recording={recording||busy} imported={()=>{void loadList().catch(()=>{});setHomeVersion(value=>value+1);}} restored={id=>{setModal(null);selectRecord(id);void loadList().catch(failure=>setError(messageOf(failure)));}} accountChanged={setSyncEmail}/></Suspense></div></div>
+      </section></div>}{(visited.settings||(modal==='settings'&&!accountOpen))&&<div className="settings-route" hidden={modal!=='settings'||accountOpen}><Suspense fallback={null}><SettingsPage tab={settingsTab} setTab={setSettingsTab} voices={()=>setVoiceOpen(true)} openContext={()=>{setSidebarOpen(false);setContextOpen(true);}} close={()=>setModal(null)} boot={boot} record={record} recording={recording} busy={busy} updates={updates} saved={refreshProviders} language={async language=>{await mutate(`/records/${id}`,'PATCH',{language});}} translated={target=>setRecord(current=>current&&record&&current.id===record.id?{...current,translationTarget:target}:current)} diagnostics={()=>{const blob=new Blob([JSON.stringify({capabilities:capabilities(),storage:boot.storage,providers:boot.providers,pending,capture:record?.capture,transcription:record?.transcription},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='meeting-diagnostics.json';link.click();URL.revokeObjectURL(url);}} backup={()=>void (record?downloadPendingAudio(record.id):Promise.resolve(false)).then(downloaded=>{if(!downloaded)showToast('当前没有待传音频。');}).catch(e=>setError(messageOf(e)))}/></Suspense></div>}<div className="workspace-reading-row" inert={modal==='settings'}><div className="meeting-highlights-slot" ref={setFocusTarget}/><div ref={scrollRoot} className={`workspace-scroll ${!agentOpen && record ? 'record-reading' : ''}`} tabIndex={0} aria-label="会议内容滚动区">
       {uploadIssue && !error && <FeedbackNotice key="audio-upload-retry" message={uploadIssue} action={{label:'立即重试',run:()=>void upload()}}/>}
       {id && !uploadIssue && connectionState==='reconnecting' && <FeedbackNotice key="connection-retry" message="实时更新暂时中断，正在重连记录服务。"/>}
       {id && record && connectionState==='unavailable' && <FeedbackNotice key="connection-unavailable" message="记录服务暂时不可用，正在自动重试。" action={{label: '重新连接', run: () => setRetryVersion(v=>v+1)}}/>}

@@ -43,10 +43,10 @@ export function ClientUpdateActions({ updates }: { updates: ReturnType<typeof us
   return <div className="actions"><Button disabled={busy || status.phase === 'disabled'} onClick={() => void updates.check()}><ArrowsClockwise size={17}/>{status.phase === 'checking' ? '正在检查…' : '检查更新'}</Button><Button disabled={busy || (ready ? Boolean(installReason) : !available)} title={ready ? installReason || '使用已校验的更新安装包' : undefined} onClick={() => void (ready ? updates.install() : updates.download())}><DownloadSimple size={17}/>{ready ? '安装并重启' : '下载更新'}</Button></div>;
 }
 
-export function ClientVersion({ updates }: { updates: ReturnType<typeof useClientUpdates> }) {
+export function ClientVersion({ updates, compact = false }: { updates: ReturnType<typeof useClientUpdates>; compact?: boolean }) {
   const [open,setOpen]=useState(false);
   const {status}=updates, currentVersion=status.currentVersion || version;
   const available=Boolean(status.version && status.version!==currentVersion), latest=status.phase==='current';
-  return <><button type="button" className="client-update-version" aria-label={`版本 v${currentVersion}${latest?'，latest':available?'，有可用更新':''}，查看版本更新内容`} aria-haspopup="dialog" onClick={()=>setOpen(true)}>v{currentVersion}{latest&&<span className="client-version-latest">latest</span>}{available && <span className="client-update-available" aria-label={`可升级至 v${status.version}`}><ArrowUp size={10} weight="bold" aria-hidden="true"/></span>}</button>
+  return <><button type="button" className="client-update-version" aria-label={`版本 v${currentVersion}${latest?'，latest':available?'，有可用更新':''}，查看版本更新内容`} aria-haspopup="dialog" onClick={()=>setOpen(true)}>v{compact ? currentVersion.replace(/^(\d+\.\d+\.\d+)\.\d+$/, '$1') : currentVersion}{latest&&!compact&&<span className="client-version-latest">latest</span>}{available && <span className="client-update-available" aria-label={`可升级至 v${status.version}`}><ArrowUp size={10} weight="bold" aria-hidden="true"/></span>}</button>
     {open&&<Modal className="client-version-modal" title={`版本 v${status.version||currentVersion}`} onClose={()=>setOpen(false)}><ClientUpdatesPanel updates={updates}/>{!updates.native&&<p className="muted">浏览器版本随服务更新。</p>}</Modal>}</>;
 }

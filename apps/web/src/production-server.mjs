@@ -7,7 +7,7 @@ const defaultRoot = fileURLToPath(new URL('../dist/', import.meta.url));
 export function createProductionServer({ root = defaultRoot, apiUrl = process.env.RECORD_API_URL || 'http://127.0.0.1:3030' } = {}) {
 const target = new URL(apiUrl);
   const syncHost = process.env.RECORD_SYNC_ORIGIN ? new URL(process.env.RECORD_SYNC_ORIGIN).host : null;
-const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.woff2': 'font/woff2' };
+const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.svg': 'image/svg+xml', '.woff2': 'font/woff2' };
 const files=new Map();let fileBytes=0;
 async function content(file){
   const info=await stat(file),key=`${info.mtimeMs}:${info.ctimeMs}:${info.size}:${info.ino}`,cached=files.get(file);

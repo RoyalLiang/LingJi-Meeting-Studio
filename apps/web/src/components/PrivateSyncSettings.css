@@ -30,3 +30,21 @@
 .sync-copies li { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 12px 0; border-top: 1px solid var(--border); }
 .sync-copies time { display: block; font-size: .85rem; color: var(--muted); }
 .sync-companion { width: min(720px, calc(100% - 32px)); margin: 40px auto; }
+
+.profile-settings { padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+.sync-preference { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 20px; }
+.sync-preference label { display: inline-flex; align-items: center; gap: 8px; }
+.sync-preference input { accent-color: var(--accent); }
+.quick-mobile-app { max-width: 480px; }
+.quick-mobile-app > .surface-heading { padding-inline: 0; }
+.quick-mobile-app > .surface-heading h1 { flex: 1; margin: 0; }
+.quick-mobile-app > .sync-settings { padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+.quick-mobile-recording {
+  display: grid; gap: 18px; padding: 20px; border: 1px solid var(--border);
+  border-radius: 16px; background: var(--bg); margin-bottom: 10px;
+}
+.quick-mobile-recording label { display: grid; gap: 6px; font-size: var(--control-font-size); }
+.quick-mobile-recording input { width: 100%; min-width: 0; }
+.quick-mobile-time { font-size: 2.75rem; font-weight: 550; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.quick-mobile-recording .button { min-height: 48px; width: 100%; }
+.quick-mobile-recording [role="alert"] { color: var(--danger, var(--warn)); }

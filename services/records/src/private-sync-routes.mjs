@@ -18,7 +18,7 @@ export function privateSyncOrigin(value) {
   return url;
 }
 
-export function createPrivateSyncRoutes({ store, origin }) {
+export function createPrivateSyncRoutes({ store, origin, repo }) {
   const rpID = origin.hostname;
   const webauthn = () => import('@simplewebauthn/server');
   const time = () => Date.now();
@@ -34,25 +34,53 @@ export function createPrivateSyncRoutes({ store, origin }) {
     limit('private-sync:' + owner, 160);
     const route = path.slice('/api/private-sync/'.length);
     if (route.startsWith('passkey/')) limit('sync-passkey:' + owner, 24);
-    if (route === 'vault' && method === 'GET') {
+    if (route === 'profile' && method === 'GET') {
+      send(res, 200, { name: user.profile?.name || '' });
+    } else if (route === 'profile' && method === 'PATCH') {
+      const { name } = await readBody(req, 1024);
+      requireThat(typeof name === 'string' && name.trim().length <= 60 && !/[\p{Cc}\p{Cf}]/u.test(name), 'sync_invalid_profile', 400);
+      const profile = { name: name.trim() };
+      await repo.change(owner, account => { account.profile = profile; });
+      send(res, 200, profile);
+    } else if (route === 'vault' && method === 'GET') {
       send(res, 200, { vault: await store.vault(owner) });
     } else if (route === 'vault' && method === 'PUT') {
       const { id, salt, recovery } = await readBody(req, 1024);
       requireThat(validId(id) && base64url(salt, 43), 'sync_invalid_vault', 400);
       send(res, 201, { vault: await store.initialize(owner, { id, salt, recovery: keyEnvelope(recovery) }) });
-    } else if (route === 'delta' && method === 'GET') {
+    } else if (['delta', 'audio'].includes(route) && method === 'GET') {
       const after = url.searchParams.get('after') ?? '0';
       const id = url.searchParams.get('vault');
       requireThat(validId(id) && /^\d{1,15}$/.test(after), 'sync_invalid_cursor', 400);
-      send(res, 200, await store.pull(owner, id, Number(after)));
-    } else if (route === 'delta' && method === 'POST') {
+      let stream = owner;
+      if (route === 'audio') {
+        requireThat((await store.vault(owner))?.id === id, 'sync_vault_unavailable', 404);
+        stream += ':audio';
+        if (!await store.vault(stream)) {
+          requireThat(Number(after) === 0, 'sync_cursor_ahead', 409);
+          send(res, 200, { operations: [], cursor: 0, more: false });
+          return true;
+        }
+      }
+      send(res, 200, await store.pull(stream, id, Number(after)));
+    } else if (['delta', 'audio'].includes(route) && method === 'POST') {
       const { vault, operations } = await readBody(req, SYNC_PAGE_BYTES);
       requireThat(validId(vault) && Array.isArray(operations) && operations.length >= 1 && operations.length <= 64, 'sync_invalid_operations', 400);
       const batch = operations.map(operation => {
         requireThat(validId(operation?.id) && base64url(operation?.nonce, 16) && base64url(operation?.body, 22, 256 * 1024), 'sync_invalid_operation', 400);
         return { id: operation.id, nonce: operation.nonce, body: operation.body };
       });
-      send(res, 200, await store.push(owner, vault, batch));
+      let stream = owner;
+      if (route === 'audio') {
+        const descriptor = await store.vault(owner);
+        requireThat(descriptor?.id === vault, 'sync_vault_unavailable', 404);
+        stream += ':audio';
+        if (!await store.vault(stream)) {
+          try { await store.initialize(stream, descriptor); }
+          catch (error) { if (error?.code !== 'sync_vault_exists') throw error; }
+        }
+      }
+      send(res, 200, await store.push(stream, vault, batch));
     } else if (route === 'pair/start' && method === 'POST') {
       const { id, proof } = await readBody(req, 1024);
       requireThat(validId(id) && base64url(proof, 43), 'sync_invalid_pair', 400);

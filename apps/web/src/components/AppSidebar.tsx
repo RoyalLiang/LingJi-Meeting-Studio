@@ -55,7 +55,7 @@ export function AppSidebar(props: Props) {
     </div><footer className="rail-footer">{props.openAccount ? (
       <button type="button" className="account sidebar-account" aria-current={props.accountOpen ? 'page' : undefined} onClick={props.openAccount}>
         <span className="avatar" aria-hidden="true">{props.name ? props.name.slice(0,1).toUpperCase() : <User size={15}/>}</span>
-        <span><b>账号</b><small title={props.account}>{props.account}</small></span>
+        <span><b>{props.account?'个人中心':'本地空间'}</b>{props.account&&<small title={props.account}>{props.account}</small>}</span>
         <CaretRight size={14} aria-hidden="true"/>
       </button>
     ) : <div className="account"><span className="avatar">{props.name.slice(0,1)}</span><span><b>{props.name}</b><small title={props.account}>{props.account}</small></span></div>}<div className="rail-system-tools">{props.notice}{props.tools}</div></footer>
