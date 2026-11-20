@@ -5,7 +5,7 @@ import { seal, unseal, type EncryptedOperation, type Vault } from './vault';
 
 export type MeetingCopy = { content: PublishedContent; notes: string };
 type Revision = MeetingCopy & { id: string; parents: string[]; at: number };
-export type CopySummary = { id: string; title: string; at: number };
+export type CopySummary = { id: string; sourceId: string; title: string; at: number };
 type Row = { key: string; vault: string; pending: 0 | 1; operation: EncryptedOperation; seq: number };
 type Delta = { cursor: number; more: boolean; operations: (EncryptedOperation & { seq: number })[] };
 const encoder = new TextEncoder();
@@ -88,7 +88,7 @@ async function decodeRow(row: Row, vault: Vault, root: Uint8Array<ArrayBuffer>):
   return { id: operation.id, parents: value.parents, at: value.at, notes: value.notes, content: normalizePublishedContent(value.content) };
 }
 
-export async function meetingCopies(vault: Vault, root: Uint8Array<ArrayBuffer>): Promise<CopySummary[]> {
+export async function meetingCopies(vault: Vault, root: Uint8Array<ArrayBuffer>, query = ''): Promise<CopySummary[]> {
   const db = await database();
   const revisions: CopySummary[] = [];
   const superseded = new Set<string>();
@@ -100,7 +100,10 @@ export async function meetingCopies(vault: Vault, root: Uint8Array<ArrayBuffer>)
     for (const row of rows) {
       const revision = await decodeRow(row, vault, root);
       for (const parent of revision.parents) superseded.add(parent);
-      revisions.push({ id: revision.id, at: revision.at, title: revision.content.title });
+      if (!query || [revision.content.title, revision.notes, JSON.stringify(revision.content.minutes), JSON.stringify(revision.content.segments || [])]
+        .some(value => value.toLowerCase().includes(query))) {
+        revisions.push({ id: revision.id, sourceId: revision.content.sourceRecordId, at: revision.at, title: revision.content.title });
+      }
     }
     if (rows.length < 64) break;
     lower = rows.at(-1)!.key;

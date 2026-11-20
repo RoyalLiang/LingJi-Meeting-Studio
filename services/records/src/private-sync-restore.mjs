@@ -70,6 +70,7 @@ export async function preparePrivateRecording(repo, owner, input) {
   const record = createRecord(owner, { title });
   record.id = id;
   record.syncRecording = true;
+  record.syncSourceId = recording;
   if (live) addSource(record, { kind: 'import', label: '手机麦克风' });
   try { return await repo.insert(record); }
   catch (error) {

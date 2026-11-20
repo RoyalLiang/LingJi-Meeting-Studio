@@ -303,6 +303,7 @@ test('encrypted mobile audio has its own idempotent cursor and imports only once
   assert.equal(copy.id, retry.id);
   assert.notEqual(copy.id, (await preparePrivateRecording(repo, 'desktop', { ...input, vault: randomUUID() })).id);
   assert.equal(copy.capture, 'idle');
+  assert.equal(copy.syncSourceId, input.id);
   assert.equal(copy.realtimeAudioConsent, false);
   const { recordMinutesConfig } = await import('../services/records/src/config.mjs');
   assert.deepEqual(recordMinutesConfig(copy, { ASR_PROVIDER: 'doubao', MINUTES_MODE: 'doubao-audio-only' }),

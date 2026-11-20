@@ -63,9 +63,9 @@ async function decode(operation: EncryptedOperation, vault: Vault, root: Uint8Ar
   return value;
 }
 
-export async function queueMobileRecording(vault: Vault, root: Uint8Array<ArrayBuffer>, blob: Blob, title: string) {
+export async function queueMobileRecording(vault: Vault, root: Uint8Array<ArrayBuffer>, blob: Blob, title: string, id: string = crypto.randomUUID()) {
   if (!blob.size || blob.size > MOBILE_AUDIO_LIMIT || !mimePattern.test(blob.type)) throw new Error('录音格式或大小不支持');
-  const recording = { id: crypto.randomUUID(), title: title.trim().slice(0, 160) || '手机录音', mime: blob.type, total: Math.ceil(blob.size / PART) };
+  const recording = { id, title: title.trim().slice(0, 160) || '手机录音', mime: blob.type, total: Math.ceil(blob.size / PART) };
   const operations: EncryptedOperation[] = [];
   for (let index = 0; index < recording.total; index++) {
     const bytes = new Uint8Array(await blob.slice(index * PART, (index + 1) * PART).arrayBuffer());

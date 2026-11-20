@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { FileText, Phone, SignOut, User } from '@phosphor-icons/react';
 import { api, ApiError, messageOf } from '../api';
 import type { RecordDetail, RecordListItem } from '../model';
@@ -12,6 +12,8 @@ import { receiveLiveAudio } from '../sync/mobile-desktop';
 import { Button } from './ui';
 import { ExternalLink } from './ExternalLink';
 import { FeedbackNotice } from './FeedbackNotice';
+import { MobileWorkspace, type MobilePage } from './MobileWorkspace';
+import { mobilePlayback, mobileRecordings, rememberMobileRecording, type MobileRecording } from '../sync/mobile-library';
 import { QuickMobileRecording } from './QuickMobileRecording';
 import './PrivateSyncSettings.css';
 
@@ -69,7 +71,7 @@ function syncError(error: unknown) {
   return messageOf(error);
 }
 
-export function PrivateSyncSettings({ desktop, email, accountLogin, accountChanged, record, restored, imported, mobileActive, overviewChanged, localRecords, workspaceCount, online = true, visible = true, recording = false, mobile = false }: {
+export function PrivateSyncSettings({ desktop, email, accountLogin, accountChanged, record, restored, imported, mobileActive, signOut, overviewChanged, localRecords, workspaceCount, online = true, visible = true, recording = false, mobile = false }: {
   desktop: boolean;
   email?: string;
   accountLogin?: { email: string; material: Uint8Array<ArrayBuffer> };
@@ -85,6 +87,7 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
   visible?: boolean;
   recording?: boolean;
   mobile?: boolean;
+  signOut?: () => void;
 }) {
   const [tab, setTab] = useState<typeof accountTabs[number][0]>('account');
   const [session, setSession] = useState<Session | null>(null);
@@ -103,6 +106,9 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
   const [backup, setBackup] = useState<string>();
   const [unlocked, setUnlocked] = useState(false);
   const [copies, setCopies] = useState<CopySummary[]>([]);
+  const [mobilePage, setMobilePage] = useState<MobilePage>('record');
+  const [phoneCopies, setPhoneCopies] = useState<MobileRecording[]>([]);
+  const [phoneMeetingSync, setPhoneMeetingSync] = useState(true);
   const [busy, setBusy] = useState(false), [ready, setReady] = useState(false);
   const [notice, setNotice] = useState(''), [error, setError] = useState('');
   const [profile, setProfile] = useState(''), [name, setName] = useState('');
@@ -124,6 +130,34 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
       try { localStorage.setItem('lingji:live-audio', vault.id); } catch {}
     }
   }, [mobile, unlocked, liveAudio, vault]);
+  useEffect(() => {
+    if (!mobile || !vault || !unlocked || !secret.current) return;
+    const root = secret.current.slice();
+    let mounted = true;
+    void mobileRecordings(vault, root).then(items => {
+      if (mounted) setPhoneCopies(items);
+    }).catch(() => {}).finally(() => root.fill(0));
+    try { setPhoneMeetingSync(localStorage.getItem('lingji:phone-meetings:' + vault.id) !== '0'); } catch {}
+    return () => { mounted = false; };
+  }, [mobile, vault, unlocked]);
+  const readMobileMeeting = useCallback(async (id: string) => {
+    if (!vault || !secret.current) return null;
+    const root = secret.current.slice();
+    try { return await loadMeetingCopy(vault, root, id); }
+    finally { root.fill(0); }
+  }, [vault]);
+  const playMobileRecording = useCallback(async (id: string) => {
+    if (!vault || !secret.current) return null;
+    const root = secret.current.slice();
+    try { return await mobilePlayback(vault, root, id); }
+    finally { root.fill(0); }
+  }, [vault]);
+  const searchMobileMeetings = useCallback(async (query: string) => {
+    if (!vault || !secret.current) return [];
+    const root = secret.current.slice();
+    try { return await meetingCopies(vault, root, query); }
+    finally { root.fill(0); }
+  }, [vault]);
   const automationKey = vault ? 'lingji:auto-sync:' + vault.id : undefined;
 
   useEffect(() => {
@@ -272,7 +306,7 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
   }
 
   useEffect(() => {
-    if (!ready || !online || !unlocked || !vault || !accountEmail || recording) return;
+    if (!ready || !online || !unlocked || !vault || !accountEmail || (desktop && recording)) return;
     if (!desktop && !mobile) return;
     const localVault = vault, owner = accountEmail;
     const controller = new AbortController(), signal = controller.signal;
@@ -286,6 +320,7 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
           const result = await pushMobileRecordings(localVault, signal);
           signal.throwIfAborted();
           if (result.sent || result.pending) setMobileStatus(result.pending ? '正在同步到电脑…' : '已同步到云端');
+          if (phoneMeetingSync) await update(localVault, key, signal, false);
         } else {
           if (automatic) {
             const { records } = await api<{ records: RecordListItem[] }>('/records', 'GET', undefined, signal);
@@ -355,7 +390,7 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
       removeEventListener('lingji:sync-wakeup', runCycle);
       controller.abort();
     };
-  }, [ready, online, accountEmail, unlocked, vault, desktop, mobile, automatic, recording, accountChanged]);
+  }, [ready, online, accountEmail, unlocked, vault, desktop, mobile, automatic, recording && desktop, accountChanged, phoneMeetingSync]);
 
   useEffect(() => {
     if (!ready || !online || !unlocked || !accountEmail || !vault || !liveAudio || (!desktop && !mobile)) return;
@@ -510,7 +545,7 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
   function lock() {
     forget();
     setNewLoginNeeded(!legacyAccount);
-    setUnlocked(false); setBackup(undefined); setInvitation(null); setApprove(null); setCopies([]); setQr(''); setPairCode(''); setBusy(false);
+    setUnlocked(false); setBackup(undefined); setInvitation(null); setApprove(null); setCopies([]); setPhoneCopies([]); setQr(''); setPairCode(''); setBusy(false);
     setBackgroundIssue(''); setNotice('当前会话已锁定');
   }
 
@@ -658,11 +693,31 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
     </details>
   </AccountSection>;
 
-  if (mobile) return <div className="quick-mobile-home">
-    {vault && unlocked && !legacyAccount ? <QuickMobileRecording
+  function saveProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    run(async signal => {
+      const data = await api<{ name: string }>('/private-sync/profile', 'PATCH', { name }, signal);
+      signal.throwIfAborted(); setName(data.name); setProfile(data.name); setNotice('个人设置已保存');
+    });
+  }
+  if (mobile) {
+    const account = <section className="mobile-account-card" aria-label="账号资料">
+      <div className="mobile-account-identity">
+        <span className="account-avatar" aria-hidden="true">{(profile || accountEmail || '聆').slice(0, 1).toUpperCase()}</span>
+        <div><strong>{profile || '个人账号'}</strong><small>{accountEmail}</small></div>
+        {signOut && <Button variant="ghost" disabled={!online || busy || recording} aria-label="退出账号" onClick={signOut}>退出</Button>}
+      </div>
+      <form className="mobile-profile-form" onSubmit={saveProfile}>
+        <input aria-label="显示名称" placeholder="显示名称" autoComplete="nickname" maxLength={60} value={name} disabled={!online || busy} onChange={event => setName(event.target.value)}/>
+        <Button type="submit" disabled={!online || busy || name.trim() === profile}>保存</Button>
+      </form>
+    </section>;
+    const recorder = vault && unlocked && !legacyAccount ? <QuickMobileRecording
+      visible={mobilePage === 'record'}
+      showRecorder={() => { setMobilePage('record'); window.scrollTo(0, 0); }}
       status={!online ? '离线保存，回网自动同步' : liveIssue || (liveRecording
         ? receivedRecording === liveRecording ? '电脑已接收' : '等待电脑接收'
-        : mobileStatus || '自动同步')}
+        : mobileStatus || '最长 5 分钟 · 端侧加密')}
       live={liveAudio ? async (id, title, frame) => {
         if (!secret.current) throw new Error('资料库未解锁');
         const key = secret.current.slice();
@@ -671,24 +726,43 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
       } : undefined}
       onLiveRecording={setLiveRecording}
       onActive={mobileActive}
-      save={async (blob, title) => {
-      if (!secret.current) throw new Error('请先解锁会议同步');
-      const key = secret.current.slice();
-      try {
-        await queueMobileRecording(vault, key, blob, title);
-        setMobileStatus(online ? '已在本机保存，正在同步…' : '已在本机保存，联网后自动同步');
-        dispatchEvent(new Event('lingji:sync-wakeup'));
-      } finally { key.fill(0); }
-    }}/>  :
-      <div className="quick-mobile-setup sync-settings">
+      archive={async (entry, blob) => {
+        if (!secret.current) throw new Error('资料库未解锁');
+        const key = secret.current.slice();
+        try {
+          await rememberMobileRecording(vault, key, entry, blob);
+          setPhoneCopies(items => [entry, ...items.filter(item => item.id !== entry.id)]);
+        } finally { key.fill(0); }
+      }}
+      save={async (id, blob, title) => {
+        if (!secret.current) throw new Error('请先解锁会议同步');
+        const key = secret.current.slice();
+        try {
+          await queueMobileRecording(vault, key, blob, title, id);
+          setMobileStatus(online ? '已在本机保存，正在同步…' : '已在本机保存，联网后自动同步');
+          dispatchEvent(new Event('lingji:sync-wakeup'));
+        } finally { key.fill(0); }
+      }}/> : mobilePage === 'record' && <div className="quick-mobile-setup sync-settings">
         {upgradeForm}
         {!upgradingHere && recoverAccess}
         {!vault && <p role="status">{online ? (newLoginNeeded ? '退出后重新登录以开始录音。' : '正在准备同步…') : '联网后登录以开始录音。'}</p>}
         {error && !vault && accountEmail && <Button disabled={busy} onClick={() => run(signal => connectAccount(accountEmail, signal))}>重试</Button>}
-      </div>}
-    {feedback}
-    {backgroundIssue && <p className="account-feedback" role="status">{backgroundIssue}。将自动重试。</p>}
-  </div>;
+      </div>;
+    return <>
+      <MobileWorkspace page={mobilePage} setPage={setMobilePage} online={online} unlocked={unlocked}
+        automatic={phoneMeetingSync} setAutomatic={enabled => {
+          if (!vault) return;
+          try { localStorage.setItem('lingji:phone-meetings:' + vault.id, enabled ? '1' : '0'); }
+          catch { setError('无法在本机保存同步设置'); return; }
+          setPhoneMeetingSync(enabled);
+        }}
+        copies={copies} saved={phoneCopies} recorder={recorder} account={account}
+        refresh={() => { if (vault && secret.current) run(signal => update(vault, secret.current!, signal)); }}
+        read={readMobileMeeting} play={playMobileRecording} search={searchMobileMeetings}/>
+      {feedback}
+      {backgroundIssue && <p className="account-feedback" role="status">{backgroundIssue}。将自动重试。</p>}
+    </>;
+  }
 
   return <div className="sync-settings" aria-label="个人中心">
     <nav className="surface-tabs account-tabs" aria-label="个人中心分类">
@@ -709,13 +783,7 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
             lock(); setSession({ ...session, email: null }); accountChanged?.(null); setVault(undefined); setLegacyAccount(false); setNewLoginNeeded(false); setProfile(''); setName(''); setShowLogin(false); setTab('account');
           })}><SignOut size={16}/>退出账号</Button>}
         </div>
-        <form className="sync-form profile-settings" onSubmit={event => {
-          event.preventDefault();
-          run(async signal => {
-            const data = await api<{ name: string }>('/private-sync/profile', 'PATCH', { name }, signal);
-            signal.throwIfAborted(); setName(data.name); setProfile(data.name); setNotice('个人设置已保存');
-          });
-        }}>
+        <form className="sync-form profile-settings" onSubmit={saveProfile}>
           <label>显示名称<input autoComplete="nickname" maxLength={60} value={name} disabled={!online || busy} onChange={event => setName(event.target.value)}/></label>
           <Button type="submit" disabled={!online || busy || name.trim() === profile}>保存</Button>
         </form>

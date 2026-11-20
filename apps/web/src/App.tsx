@@ -551,19 +551,23 @@ function Workspace() {
   }
   useEffect(()=>{const open=()=>{setModal(null);setSidebarOpen(false);setTranslationOpen(false);setAgentOpen(true);};window.addEventListener('lingji:git-configure',open);return()=>window.removeEventListener('lingji:git-configure',open);},[]);
   if (loading) return <main className="loading-page" role="status"><Brand markOnly/><p>正在打开会议空间…</p></main>;
-  if ((authReady && syncCompanion) || (mobile && mobileEmail)) return <main className={mobile ? 'sync-companion quick-mobile-app' : 'sync-companion'}>
-    <header className={mobile ? 'quick-mobile-header' : 'surface-heading'}>{mobile ? <Brand markOnly /> : <><Brand /><h1>个人中心</h1></>}{online && <Button variant={mobile ? 'ghost' : undefined} aria-label="退出账号" disabled={mobileRecording} onClick={() => {
-      void api('/auth/logout', 'POST').then(() => {
+  function logoutCompanion() {
+    void api('/auth/logout', 'POST').then(() => {
       storeAccountLogin();
-        if (mobile) {
-          try { localStorage.removeItem('lingji:mobile-email'); } catch {}
-          setMobileEmail(null);
-        }
-        setAuthReady(false); setBoot(null);
-      }).catch(failure => setError(messageOf(failure)));
-    }}>{mobile ? <SignOut size={18}/> : '退出账号'}</Button>}</header>
+      if (mobile) {
+        try { localStorage.removeItem('lingji:mobile-email'); } catch {}
+        setMobileEmail(null);
+      }
+      setAuthReady(false); setBoot(null);
+    }).catch(failure => setError(messageOf(failure)));
+  }
+  if ((authReady && syncCompanion) || (mobile && mobileEmail)) return <main className={mobile ? 'sync-companion quick-mobile-app' : 'sync-companion'}>
+    {!mobile && <header className="surface-heading"><Brand /><h1>个人中心</h1>{online && <Button onClick={logoutCompanion}>退出账号</Button>}</header>}
     {error && <FeedbackNotice key={error} message={error} error />}
-    <Suspense fallback={<p role="status">正在加载个人中心…</p>}><PrivateSyncSettings desktop={false} email={boot?.email || mobileEmail || undefined} accountLogin={accountLogin} mobile={mobile} mobileActive={setMobileRecording} online={online}/></Suspense>
+    <Suspense fallback={<p role="status">正在加载个人中心…</p>}>
+      <PrivateSyncSettings desktop={false} email={boot?.email || mobileEmail || undefined} accountLogin={accountLogin} mobile={mobile}
+        mobileActive={setMobileRecording} recording={mobileRecording} signOut={logoutCompanion} online={online}/>
+    </Suspense>
   </main>;
   if (!authReady || !boot) return <Auth ready={loadBoot} accountLogin={storeAccountLogin}/>;
   const sourceReady = boot.providers.asr || boot.providers.fixture;
