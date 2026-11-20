@@ -578,7 +578,7 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
         </li>)}
       </ul>}
       <details className="sync-options" open={invitation ? true : undefined}>
-        <summary>连接设备与恢复</summary>
+        <summary>{legacyAccount ? '连接设备与恢复' : '备份与恢复'}</summary>
         <div className="sync-actions">
           {!invitation && <Button onClick={pair} disabled={busy}>配对新设备</Button>}
           {desktop ? <ExternalLink href={relay}>在浏览器验证设备</ExternalLink> :

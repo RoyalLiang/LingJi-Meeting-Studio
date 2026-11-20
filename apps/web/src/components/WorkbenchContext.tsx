@@ -44,7 +44,7 @@ export function WorkbenchContext({record,records,overview,mode,open,close,cite,s
         <div className="context-section-title">统计</div><dl className="context-stats"><div><dt>会议记录</dt><dd>{overview?.totals.meetings??records.length} 场</dd></div><div><dt>累计时长</dt><dd>{Math.ceil((overview?.totals.seconds??records.reduce((sum,item)=>sum+item.seconds,0))/60)} 分钟</dd></div><div><dt>已保存纪要</dt><dd>{overview?.totals.withMinutes??records.filter(item=>item.hasMinutes).length} 场</dd></div></dl>
       </>:mode==='account'?<>
         <article className="context-item"><p>同步范围</p><small>登录后可开启已完成会议的自动同步。</small></article>
-        <article className="context-item"><p>换新设备</p><small>首次登录新设备时，使用已有设备确认。</small></article>
+        <article className="context-item"><p>换新设备</p><small>新设备登录同一账号后即可同步。旧账号升级后也可使用。</small></article>
       </>:mode==='automation'?null:<><div className="context-section-title">{mode==='settings'?'当前配置':'本次范围'}</div><article className="context-item"><p>{mode==='settings'?'账户与本机配置':'会议资料按 Workspace 选择'}</p>{mode!=='settings'&&<small>运行前核对会议范围</small>}</article><article className="context-item"><p>{mode==='settings'?'项目资料保持原有范围':'外部写入需要确认'}</p><small>{mode==='settings'?'保存设置不会改变会议归属与分享权限。':'飞书目标与 Git 仓库分别核对。'}</small></article></>}
     <div className="automation-context-tasks" ref={tasksRef} hidden={mode!=='automation'}/></div>
   </aside></>;
