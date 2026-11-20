@@ -37,7 +37,6 @@ function syncError(error: unknown) {
       invalid_credentials: '邮箱或密码有误',
       already_exists: '该邮箱已注册，请登录',
       sync_pair_unavailable: '配对已过期或已被另一台设备领取',
-      sync_no_passkey: '此账号尚未添加通行密钥',
       sync_challenge_expired: '通行密钥验证已过期，请重试',
       sync_webauthn_verification_failed: '通行密钥验证未通过',
       sync_restore_conflict: '先前恢复的副本已删除或过期',
@@ -68,6 +67,7 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
   const [legacyPrompt, setLegacyPrompt] = useState(false);
   const [legacyAccount, setLegacyAccount] = useState(false);
   const [newLoginNeeded, setNewLoginNeeded] = useState(false);
+  const [hasPasskey, setHasPasskey] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
   const [vault, setVault] = useState<Vault>();
   const [backup, setBackup] = useState<string>();
@@ -121,13 +121,11 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
         if (local) await enter(local, signal);
         return;
       }
-      const getVault = () => api<{ vault: Vault | null; account?: Envelope; legacy: boolean }>('/private-sync/vault', 'GET', undefined, signal);
+      const getVault = () => api<{ vault: Vault | null; account?: Envelope; legacy: boolean; hasPasskey?: boolean }>('/private-sync/vault', 'GET', undefined, signal);
       let remote = await getVault();
       let cloud = remote.vault;
       signal.throwIfAborted();
-      setLegacyAccount(remote.legacy);
       setNewLoginNeeded(false);
-      if (cloud) setVault(cloud);
       local = await readDeviceVault(account, cloud ?? undefined);
 
       if (!cloud && !local) {
@@ -155,6 +153,8 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
       }
       if (!cloud) return;
       signal.throwIfAborted();
+      setLegacyAccount(remote.legacy);
+      setHasPasskey(remote.hasPasskey === true);
       setVault(cloud);
       if (local?.vault.id === cloud.id && local.vault.salt === cloud.salt) {
         await enter({ ...local, vault: cloud }, signal);
@@ -378,6 +378,18 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
     });
   }
 
+  function useBoundPasskey(localVault: Vault) {
+    run(async signal => {
+      try {
+        await enter({ vault: localVault, root: await unlockPasskey(localVault, signal) }, signal, true);
+      } catch (failure) {
+        if (!(failure instanceof ApiError) || failure.code !== 'sync_no_passkey') throw failure;
+        signal.throwIfAborted();
+        setHasPasskey(false);
+      }
+    });
+  }
+
   function recover(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -486,7 +498,7 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
 
   return <section className="settings-section sync-settings" aria-label="个人中心">
     {mobile && unlocked && vault && <QuickMobileRecording status={mobileStatus} onActive={mobileActive} save={async (blob, title) => {
-      if (!secret.current) throw new Error('请先验证此设备');
+      if (!secret.current) throw new Error('请先解锁会议同步');
       const key = secret.current.slice();
       try {
         await queueMobileRecording(vault, key, blob, title);
@@ -514,21 +526,22 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
     </form>
     {!mobile && <h3>会议同步</h3>}
     {backgroundIssue && <p className="sync-background-issue" role="status">{backgroundIssue}。将自动重试。</p>}
-    {legacyAccount && unlocked && <details className="sync-options">
-      <summary>升级账号，登录即同步</summary>
-      <p>设置一个新密码，之后在其他设备登录就能自动解锁。</p>
+    {legacyAccount && unlocked && <div className="sync-stack">
+      <h3>升级账号，登录即同步</h3>
+      <p>验证当前密码并设置新密码。历史会议会保留，其他设备直接用新密码登录。</p>
       <form className="sync-form" onSubmit={upgradeAccount}>
         <label>当前密码<input type="password" name="currentPassword" required minLength={10} maxLength={128} autoComplete="current-password"/></label>
         <label>新密码<input type="password" name="newPassword" required minLength={10} maxLength={128} autoComplete="new-password"/></label>
         <Button type="submit" disabled={busy || !online}>升级账号</Button>
       </form>
-    </details>}
-    {!vault && (!online ? <p role="status">联网后可验证此设备。</p> : newLoginNeeded ? <p role="status">请退出后重新登录以解锁同步。</p> : error && accountEmail ? <Button disabled={busy} onClick={() => run(signal => connectAccount(accountEmail, signal))}>重新连接</Button> : <p role="status" className="muted">正在准备会议同步…</p>)}
+    </div>}
+    {!vault && (!online ? <p role="status">联网后可继续同步。</p> : newLoginNeeded ? <p role="status">请退出后重新登录以解锁同步。</p> : error && accountEmail ? <Button disabled={busy} onClick={() => run(signal => connectAccount(accountEmail, signal))}>重新连接</Button> : <p role="status" className="muted">正在准备会议同步…</p>)}
     {vault && !unlocked && <div className="sync-stack">
-      <p>{newLoginNeeded ? '请退出后重新登录以解锁同步。' : '旧账号需确认一次设备，升级后可直接登录同步。'}</p>
+      <p>{newLoginNeeded ? '退出账号再登录，即可解锁同步。' : '此账号还未升级。请在能打开历史会议的设备上进入「个人中心」升级账号。升级后，在这台设备重新登录即可同步。'}</p>
       <details className="sync-options">
-        <summary>其他验证方式</summary>
-        {!desktop && <Button variant="primary" disabled={busy} onClick={() => run(async signal => enter({ vault, root: await unlockPasskey(vault, signal) }, signal, true))}>验证此设备</Button>}
+        <summary>其他恢复方式</summary>
+        {!desktop && hasPasskey && typeof PublicKeyCredential !== 'undefined' &&
+          <Button disabled={!online || busy} onClick={() => useBoundPasskey(vault)}>使用已绑定的通行密钥</Button>}
         <details className="sync-options">
           <summary>从旧设备配对</summary>
           <form className="sync-form" onSubmit={useInvitation}>
@@ -581,8 +594,8 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
         <summary>{legacyAccount ? '连接设备与恢复' : '备份与恢复'}</summary>
         <div className="sync-actions">
           {!invitation && <Button onClick={pair} disabled={busy}>配对新设备</Button>}
-          {desktop ? <ExternalLink href={relay}>在浏览器验证设备</ExternalLink> :
-            <Button disabled={busy} onClick={() => run(async signal => { await enrollPasskey(vault, secret.current!, signal); setNotice('已信任此浏览器'); })}>信任此浏览器</Button>}
+          {desktop ? <ExternalLink href={relay}>在浏览器管理通行密钥</ExternalLink> :
+            <Button disabled={busy} onClick={() => run(async signal => { await enrollPasskey(vault, secret.current!, signal); setHasPasskey(true); setNotice('已信任此浏览器'); })}>信任此浏览器</Button>}
           {backup && <Button onClick={() => downloadKit(backup)}>下载恢复文件</Button>}
           <Button variant="ghost" onClick={lock}>锁定当前会话</Button>
         </div>

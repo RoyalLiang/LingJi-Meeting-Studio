@@ -46,7 +46,8 @@ export function createPrivateSyncRoutes({ store, origin, repo }) {
     } else if (route === 'vault' && method === 'GET') {
       const vault = await store.vault(owner);
       const account = user.accountEnvelope?.vault === vault?.id ? user.accountEnvelope : vault?.account;
-      send(res, 200, { vault, account, legacy: !user.opaqueRecord });
+      const hasPasskey = vault && (await store.credentials(owner)).length > 0;
+      send(res, 200, { vault, account, legacy: !user.opaqueRecord, ...(hasPasskey ? { hasPasskey } : {}) });
     } else if (route === 'vault' && method === 'PUT') {
       const { id, salt, recovery, account } = await readBody(req, 1024);
       requireThat(validId(id) && base64url(salt, 43), 'sync_invalid_vault', 400);

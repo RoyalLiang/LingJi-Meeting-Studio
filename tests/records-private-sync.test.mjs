@@ -196,6 +196,8 @@ test('WebAuthn registration and assertion release only the credential envelope',
   const owner = await account('sync-passkey@example.test');
   const { vault, root } = await createVault();
   assert.equal((await owner('/private-sync/vault', 'PUT', vault)).status, 201);
+  assert.equal((await owner('/private-sync/vault')).data.hasPasskey, undefined);
+  assert.equal((await owner('/private-sync/passkey/unlock', 'POST', {})).data.error, 'sync_no_passkey');
   const rpHash = createHash('sha256').update(new URL(fixtureOrigin).hostname).digest();
   const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
   const { x, y } = publicKey.export({ format: 'jwk' });
@@ -217,6 +219,7 @@ test('WebAuthn registration and assertion release only the credential envelope',
     },
   });
   assert.equal(start.status, 201, JSON.stringify(start.data));
+  assert.equal((await owner('/private-sync/vault')).data.hasPasskey, true);
   const challenge = await owner('/private-sync/passkey/unlock', 'POST', {});
   assert.equal(challenge.status, 200, JSON.stringify(challenge.data));
   assert.equal(challenge.data.allowCredentials[0].id, b64id);
