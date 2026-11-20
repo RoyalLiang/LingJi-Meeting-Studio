@@ -4,11 +4,11 @@
 
 ## 启动独立的 HTTPS 实例
 
-测试域使用 `https://sync.rookiecode.com`。反向代理只把这个域路由到独立 Web 服务，保留原始 `Host`。云端使用单独的 PostgreSQL 和记录目录，使用运行环境的 secret 注入方式配置数据库地址、会话密钥和注册邀请码。
+测试域使用 `https://lingji.rookiehouse.com`。DNS 指向独立同步 API 的 HTTPS 入口。反向代理只把这个域路由到独立 Web 服务，保留原始 `Host`。云端使用单独的 PostgreSQL 和记录目录，使用运行环境的 secret 注入方式配置数据库地址、会话密钥和注册邀请码。
 
 ```sh
 export NODE_ENV=production
-export RECORD_SYNC_ORIGIN=https://sync.rookiecode.com
+export RECORD_SYNC_ORIGIN=https://lingji.rookiehouse.com
 export RECORD_DATA_DIR=/path/to/isolated/sync-data
 export RECORD_API_PORT=3030
 export WEB_PORT=3000

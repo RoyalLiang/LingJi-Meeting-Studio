@@ -1,7 +1,7 @@
 import { DomainError, requireThat } from '../../../packages/records/src/record.mjs';
 import { SYNC_PAGE_BYTES } from './private-sync-store.mjs';
 
-export const PRIVATE_SYNC_COMPANION = 'https://sync.rookiecode.com';
+export const PRIVATE_SYNC_COMPANION = 'https://lingji.rookiehouse.com';
 const routes = new Map([
   ['vault', new Set(['GET', 'PUT'])],
   ['delta', new Set(['GET', 'POST'])],

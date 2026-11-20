@@ -161,7 +161,7 @@ export function PrivateSyncSettings({ desktop, record, restored }: { desktop: bo
     });
   }
 
-  const relay = desktop ? session?.companion || 'https://sync.rookiecode.com' : location.origin;
+  const relay = desktop ? session?.companion || 'https://lingji.rookiehouse.com' : location.origin;
 
   function pair() {
     if (!vault || !secret.current) return;
@@ -238,7 +238,7 @@ export function PrivateSyncSettings({ desktop, record, restored }: { desktop: bo
       <label>密码<input type="password" name="password" autoComplete="current-password" required minLength={10}/></label>
       <Button variant="primary" type="submit" disabled={busy}>登录</Button>
     </form>
-    <ExternalLink href={session?.companion || 'https://sync.rookiecode.com'}>在浏览器注册账号或管理通行密钥</ExternalLink>
+    <ExternalLink href={relay}>在浏览器注册账号或管理通行密钥</ExternalLink>
     {status}
   </section>;
 
@@ -279,7 +279,7 @@ export function PrivateSyncSettings({ desktop, record, restored }: { desktop: bo
         {!desktop && <Button disabled={busy} onClick={() => run(async signal => { await enrollPasskey(vault, secret.current!, signal); setNotice('通行密钥已添加'); })}>添加通行密钥</Button>}
         <Button onClick={lock}>锁定</Button>
       </div>
-      {desktop && <ExternalLink href={session?.companion || 'https://sync.rookiecode.com'}>在浏览器添加通行密钥</ExternalLink>}
+      {desktop && <ExternalLink href={relay}>在浏览器添加通行密钥</ExternalLink>}
       {invitation && <div className="sync-invitation">
         <img src={qr} width={220} height={220} alt="新设备配对二维码"/>
         <div className="sync-stack">
