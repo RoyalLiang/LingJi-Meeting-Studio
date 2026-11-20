@@ -1,3 +1,4 @@
+import type { AccountOverview } from './PrivateSyncSettings';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowUpRight, LinkSimple, X } from '@phosphor-icons/react';
 import type { Evidence, MinutesItem, RecordDetail, RecordListItem, Segment } from '../model';
@@ -5,7 +6,7 @@ import type { WorkspaceOverview } from '../workspace-model';
 import { Button } from './ui';
 import { CitationSources } from './CitationSources';
 
-export function WorkbenchContext({record,records,overview,mode,open,close,cite,selectRecord,children,tasksRef,translation=false}:{record:RecordDetail|null;records:RecordListItem[];overview:WorkspaceOverview|null;name:string;mode:'meeting'|'workspace'|'settings'|'account'|'extensions'|'automation';open:boolean;close:()=>void;cite:(ref:Evidence,snapshot?:Segment[],revision?:number)=>void;selectRecord:(id:string)=>void;children?:ReactNode;tasksRef?:(node:HTMLDivElement|null)=>void;translation?:boolean}) {
+export function WorkbenchContext({record,records,overview,account,mode,open,close,cite,selectRecord,children,tasksRef,translation=false}:{record:RecordDetail|null;records:RecordListItem[];overview:WorkspaceOverview|null;account?:AccountOverview;name:string;mode:'meeting'|'workspace'|'settings'|'account'|'extensions'|'automation';open:boolean;close:()=>void;cite:(ref:Evidence,snapshot?:Segment[],revision?:number)=>void;selectRecord:(id:string)=>void;children?:ReactNode;tasksRef?:(node:HTMLDivElement|null)=>void;translation?:boolean}) {
   const [tab,setTab]=useState('重点');
   const ref=useRef<HTMLElement>(null);
   useEffect(()=>setTab('重点'),[record?.id,mode]);
@@ -35,16 +36,24 @@ export function WorkbenchContext({record,records,overview,mode,open,close,cite,s
   const actions=minutes?.actions||[];
   const sourceItems=[...points,...actions];
   const items=(list:MinutesItem[])=>list.length?list.map((item,index)=><article className="context-item" key={index}><p>{item.text}</p>{item.evidence.length>0&&<CitationSources evidence={item.evidence} cite={citeSelected} compact/>}</article>):<p className="context-empty">{record?.capture==='recording'?'正在记录…':'暂无内容'}</p>;
-  return <><button className="context-backdrop" hidden={!open} aria-label="收起上下文" onClick={close}/><aside ref={ref} data-mode={mode} className={`workbench-context ${open?'is-open':''}`} aria-label={mode==='meeting'?'本场会议上下文':mode==='automation'?'自动化任务':mode==='account'?'同步说明':'项目上下文'}>
-    <header><div><h2>{mode==='meeting'?'本场会议':mode==='settings'?'配置与使用':mode==='account'?'同步说明':mode==='automation'?'自动化任务':mode==='extensions'?'运行与授权':'项目动态'}</h2></div><Button className="context-close" aria-label="收起上下文" onClick={close}><X size={16}/></Button></header>
+  const localSpace = account?.status === 'local' || account?.status === 'offline';
+  const accountHeading = localSpace ? '本地空间' : '同步概览';
+  const accountStatus = account?.status === 'offline' ? '离线' : account?.status === 'local' ? '未登录'
+    : account?.status === 'locked' ? '同步已锁定' : account?.status === 'unlocked' ? '资料库已解锁' : '正在连接';
+  return <><button className="context-backdrop" hidden={!open} aria-label="收起上下文" onClick={close}/><aside ref={ref} data-mode={mode} className={`workbench-context ${open?'is-open':''}`} aria-label={mode==='meeting'?'本场会议上下文':mode==='automation'?'自动化任务':mode==='account'?accountHeading:'项目上下文'}>
+    <header><div><h2>{mode==='meeting'?'本场会议':mode==='settings'?'配置与使用':mode==='account'?accountHeading:mode==='automation'?'自动化任务':mode==='extensions'?'运行与授权':'项目动态'}</h2></div><Button className="context-close" aria-label="收起上下文" onClick={close}><X size={16}/></Button></header>
     <div className="context-scroll">
       {translation?children:mode==='meeting'?<><nav className="context-tabs" aria-label="会议上下文分类">{['重点','行动','来源'].map(label=><button key={label} aria-current={tab===label?'page':undefined} onClick={()=>setTab(label)}>{label}</button>)}</nav>{tab==='重点'?<>{children}{items(points)}</>:tab==='行动'?items(actions):sourceItems.some(item=>item.evidence.length)?sourceItems.filter(item=>item.evidence.length).map((item,index)=><article className="context-item" key={index}><p>{item.text}</p><CitationSources evidence={item.evidence} cite={citeSelected} compact/></article>):<p className="context-empty">暂无引用来源，可在转录中核对原文。</p>}</>:mode==='workspace'?<>
         <div className="context-section-title">最近的讨论</div>{overview?.summaries.length?overview.summaries.slice(0,3).map((summary,index)=><article className="context-item" key={index}><p title={summary.text}>{summary.text}</p><button className="context-link" onClick={()=>selectRecord(summary.source.recordId)}><LinkSimple size={14}/>核对原文<ArrowUpRight size={12}/></button></article>):<p className="context-empty">暂无纪要</p>}
         <div className="context-section-title">要跟进的</div>{overview?.actions.length?overview.actions.slice(0,4).map((action,index)=><article className="context-item context-action" key={index}><p>{action.text}</p><small>{action.owner||'负责人待确认'} · {action.due||'日期待确认'}</small><button className="context-link" onClick={()=>selectRecord(action.source.recordId)}>查看会议<ArrowUpRight size={12}/></button></article>):<p className="context-empty">暂无行动候选</p>}
         <div className="context-section-title">统计</div><dl className="context-stats"><div><dt>会议记录</dt><dd>{overview?.totals.meetings??records.length} 场</dd></div><div><dt>累计时长</dt><dd>{Math.ceil((overview?.totals.seconds??records.reduce((sum,item)=>sum+item.seconds,0))/60)} 分钟</dd></div><div><dt>已保存纪要</dt><dd>{overview?.totals.withMinutes??records.filter(item=>item.hasMinutes).length} 场</dd></div></dl>
       </>:mode==='account'?<>
-        <article className="context-item"><p>同步范围</p><small>登录后可开启已完成会议的自动同步。</small></article>
-        <article className="context-item"><p>换新设备</p><small>新设备登录同一账号后即可同步。旧账号升级后也可使用。</small></article>
+        <div className="account-context-status">
+          <span><i className={account?.status === 'unlocked' ? 'is-active' : ''} aria-hidden="true"/>{accountStatus}</span>
+          {localSpace ? <small>当前范围 {records.length} 场会议</small> : account?.status === 'unlocked' && <small>{account.copies} 条同步记录</small>}
+        </div>
+        {!localSpace && <article className="context-item"><p>自动同步</p><small>{account?.retrying ? '遇到网络问题，将自动重试' : account?.status === 'unlocked' ? (account.automatic ? '已开启' : '已暂停') : '登录并解锁后可用'}</small></article>}
+        <article className="context-item"><p>资料保护</p><small>会议内容由设备加密，云端保存密文。</small></article>
       </>:mode==='automation'?null:<><div className="context-section-title">{mode==='settings'?'当前配置':'本次范围'}</div><article className="context-item"><p>{mode==='settings'?'账户与本机配置':'会议资料按 Workspace 选择'}</p>{mode!=='settings'&&<small>运行前核对会议范围</small>}</article><article className="context-item"><p>{mode==='settings'?'项目资料保持原有范围':'外部写入需要确认'}</p><small>{mode==='settings'?'保存设置不会改变会议归属与分享权限。':'飞书目标与 Git 仓库分别核对。'}</small></article></>}
     <div className="automation-context-tasks" ref={tasksRef} hidden={mode!=='automation'}/></div>
   </aside></>;

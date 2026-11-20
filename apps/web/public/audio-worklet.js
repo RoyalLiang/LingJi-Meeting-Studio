@@ -10,10 +10,18 @@ class MeetingPcm extends AudioWorkletProcessor {
     this.sum = 0;
     this.count = 0;
     this.meterFrames = 0;
-    this.port.onmessage = event => { if (event.data.type === 'flush' || event.data.type === 'pause') {
-        if (event.data.type === 'pause') this.capturing = false;
-        this.flush(); this.port.postMessage({ type: 'flushed' });
-      } };
+    this.port.onmessage = ({ data }) => {
+      if (data.type === 'resume') {
+        this.capturing = true;
+      } else if (data.type === 'flush' || data.type === 'pause') {
+        if (data.type === 'pause') {
+          this.capturing = false;
+          this.phase = this.sum = this.count = 0;
+        }
+        this.flush();
+        this.port.postMessage({ type: 'flushed', reason: data.reason });
+      }
+    };
   }
   flush() {
     if (!this.used) return;

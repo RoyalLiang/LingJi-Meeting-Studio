@@ -15,7 +15,7 @@ export function openAccountVault(material: Uint8Array<ArrayBuffer>, vault: Vault
 
 export async function authenticateAccount(input: {
   email: string; password: string; register?: boolean; desktop?: boolean; signal?: AbortSignal;
-  upgrade?: { currentPassword: string; vault: Vault; root: Uint8Array<ArrayBuffer> };
+  upgrade?: { currentPassword: string; vault: Vault; root: Uint8Array<ArrayBuffer>; replaceEmpty?: boolean };
 }) {
   const { email, password, signal, upgrade, register, desktop } = input;
   if (password.length < 10 || password.length > 128) throw new ApiError('password_length_10_128', 400);
@@ -41,6 +41,7 @@ export async function authenticateAccount(input: {
         : undefined;
       response = await api<Exchange>(path, 'POST', {
         step: 'prove', challenge: reply.challenge, registrationRecord, message: begin.startLoginRequest, ...(envelope ? { envelope } : {}),
+        ...(upgrade?.replaceEmpty ? { replacementVault: upgrade.vault } : {}),
       }, signal);
     } finally { material.fill(0); }
   } else {

@@ -53,9 +53,9 @@ export function AppSidebar(props: Props) {
     </nav><div className="rail-section-label recent-heading"><span>最近讨论</span><Button variant="ghost" disabled={props.disabled} onClick={()=>props.navigate('meetings')}>全部</Button></div>
     <div className="sidebar-scroll"><nav className="record-list" aria-label="会议记录">{props.records.slice(0,8).map(r=><button key={r.id} className={`record-row ${r.id===props.recordId&&!props.extensionOpen&&!props.settingsOpen?'selected':''}`} aria-current={r.id===props.recordId&&!props.extensionOpen&&!props.settingsOpen?'page':undefined} title={r.title} disabled={props.disabled&&r.id!==props.recordId} onClick={()=>props.selectRecord(r.id)}><span className="record-icon">{r.hasMinutes?<FileText size={16}/>:<Microphone size={16}/>}</span><span><b><SearchHighlights text={r.title} ranges={r.search?.titleHighlights}/></b><small>{new Date(r.createdAt).toLocaleDateString('zh-CN',{month:'short',day:'numeric'})}<span className="record-duration-pill">{r.capture==='recording'?'录音中':`${Math.ceil(r.seconds/60)} 分钟`}</span></small></span></button>)}{!props.records.length&&<p className="rail-empty">这个范围还没有会议。</p>}</nav>
     </div><footer className="rail-footer">{props.openAccount ? (
-      <button type="button" className="account sidebar-account" aria-current={props.accountOpen ? 'page' : undefined} onClick={props.openAccount}>
+      <button type="button" className="account sidebar-account" aria-label={props.account ? '打开个人中心' : '打开本地空间'} aria-current={props.accountOpen ? 'page' : undefined} onClick={props.openAccount}>
         <span className="avatar" aria-hidden="true">{props.name ? props.name.slice(0,1).toUpperCase() : <User size={15}/>}</span>
-        <span><b>{props.account?'个人中心':'本地空间'}</b>{props.account&&<small title={props.account}>{props.account}</small>}</span>
+        <span><b>{props.account ? (props.name !== props.account && props.name ? props.name : '个人中心') : '本地空间'}</b>{props.account&&<small title={props.account}>{props.account}</small>}</span>
         <CaretRight size={14} aria-hidden="true"/>
       </button>
     ) : <div className="account"><span className="avatar">{props.name.slice(0,1)}</span><span><b>{props.name}</b><small title={props.account}>{props.account}</small></span></div>}<div className="rail-system-tools">{props.notice}{props.tools}</div></footer>

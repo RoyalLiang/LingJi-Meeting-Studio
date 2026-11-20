@@ -180,6 +180,7 @@ const messages: Record<string, string> = {
 
   login_required: '请先登录。', invalid_credentials: '邮箱或密码不正确。', password_length_10_128: '密码需要 10 至 128 个字符。',
   already_exists: '该邮箱已注册，请登录。', invalid_email: '请输入有效的邮箱。',
+  sync_legacy_history: '资料库有历史数据或正在连接。请先从恢复入口解锁，再升级账号。',
   account_legacy: '这是旧账号，可继续登录并在个人中心升级。',
   account_challenge_expired: '本次验证已过期，请重试。',
   account_changed: '账号状态已变化，请重新登录。',

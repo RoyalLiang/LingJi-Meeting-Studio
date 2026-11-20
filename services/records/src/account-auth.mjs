@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { link, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import * as opaque from '@serenity-kit/opaque';
+import { parseVault } from './private-sync-routes.mjs';
 import { accountId, normalizeAccountEmail, validAccountEmail, validAccountEnvelope } from './auth.mjs';
 import { DomainError, requireThat } from '../../../packages/records/src/record.mjs';
 
@@ -55,7 +56,7 @@ export async function createAccountAuth({ repo, auth, store, origin }) {
 
   return async function accountAuth({ req, res, user, readBody, send, limit }) {
     requireThat(req.method === 'POST' && req.headers.origin === origin.origin, 'origin_rejected', 403);
-    const { step, email: input, message, challenge, registrationRecord, currentPassword, envelope } = await readBody(req, 8192);
+    const { step, email: input, message, challenge, registrationRecord, currentPassword, envelope, replacementVault } = await readBody(req, 8192);
     requireThat(frame(message), 'account_message_invalid', 400);
 
     if (step === 'login' || step === 'register') {
@@ -96,12 +97,14 @@ export async function createAccountAuth({ repo, auth, store, origin }) {
     if (step === 'prove') {
       const state = claim(challenge, 'prove', user?.id);
       requireThat(frame(registrationRecord), 'account_message_invalid', 400);
-      if (user) requireThat(validAccountEnvelope(envelope) && envelope.vault === state.upgrade.vault, 'sync_invalid_envelope', 400);
+      const replacement = user && replacementVault ? parseVault(replacementVault) : undefined;
+      if (user) requireThat(validAccountEnvelope(envelope) && envelope.vault === (replacement?.id ?? state.upgrade.vault) &&
+        (!replacement || replacement.id !== state.upgrade.vault), 'sync_invalid_envelope', 400);
       const { serverLoginState, loginResponse } = protocol('account_message_invalid', () => opaque.server.startLogin({
         serverSetup, userIdentifier: state.id, registrationRecord, startLoginRequest: message,
       }));
       const token = remember({
-        ...state, phase: 'finish', serverLoginState, registrationRecord,
+        ...state, phase: 'finish', serverLoginState, registrationRecord, replacement,
         envelope: state.upgrade ? { vault: envelope.vault, nonce: envelope.nonce, body: envelope.body } : undefined,
       });
       send(res, 200, { challenge: token, message: loginResponse });
@@ -116,14 +119,21 @@ export async function createAccountAuth({ repo, auth, store, origin }) {
       account = await repo.get(state.id);
       requireThat(account?.opaqueRecord && account.authVersion === state.version, 'invalid_credentials', 401);
     } else if (state.upgrade) {
-      account = await repo.change(state.id, current => {
-        requireThat(current.kind === 'user' && !current.opaqueRecord && current.authVersion === state.upgrade.version, 'account_changed', 409);
-        current.opaqueRecord = state.registrationRecord;
-        current.accountEnvelope = state.envelope;
-        delete current.password;
-        delete current.salt;
-        current.authVersion++;
-      });
+      const fence = state.replacement && await store.reserveEmptyUpgrade(state.id, state.upgrade.vault);
+      try {
+        account = await repo.change(state.id, current => {
+          requireThat(current.kind === 'user' && !current.opaqueRecord && current.authVersion === state.upgrade.version, 'account_changed', 409);
+          current.opaqueRecord = state.registrationRecord;
+          current.accountEnvelope = state.envelope;
+          if (state.replacement) current.replacementVault = state.replacement;
+          delete current.password;
+          delete current.salt;
+          current.authVersion++;
+        });
+      } catch (error) {
+        if (fence) await store.releaseEmptyUpgrade(state.id, fence).catch(() => {});
+        throw error;
+      }
     } else {
       account = { id: state.id, kind: 'user', email: state.email, opaqueRecord: state.registrationRecord, authVersion: 1 };
       await repo.insert(account);

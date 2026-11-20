@@ -11,6 +11,11 @@ const keyEnvelope = value => {
   return { nonce: value.nonce, body: value.body };
 };
 
+export function parseVault({ id, salt, recovery }) {
+  requireThat(validId(id) && base64url(salt, 43), 'sync_invalid_vault', 400);
+  return { id, salt, recovery: keyEnvelope(recovery) };
+}
+
 export function privateSyncOrigin(value) {
   if (!value) return null;
   const url = new URL(value);
@@ -29,10 +34,10 @@ export function createPrivateSyncRoutes({ store, origin, repo }) {
   }
   return async ({ req, res, path, url, user, readBody, send, limit }) => {
     const method = req.method;
-    const owner = user.id;
+    const owner = user.replacementVault ? user.id + ':current' : user.id;
     if (!path.startsWith('/api/private-sync/')) return false;
     requireThat(req.headers.host === origin.host && (method === 'GET' || req.headers.origin === origin.origin), 'origin_rejected', 403);
-    limit('private-sync:' + owner, 160);
+    limit('private-sync:' + user.id, 160);
     const route = path.slice('/api/private-sync/'.length);
     if (route.startsWith('passkey/')) limit('sync-passkey:' + owner, 24);
     if (route === 'profile' && method === 'GET') {
@@ -41,18 +46,26 @@ export function createPrivateSyncRoutes({ store, origin, repo }) {
       const { name } = await readBody(req, 1024);
       requireThat(typeof name === 'string' && name.trim().length <= 60 && !/[\p{Cc}\p{Cf}]/u.test(name), 'sync_invalid_profile', 400);
       const profile = { name: name.trim() };
-      await repo.change(owner, account => { account.profile = profile; });
+      await repo.change(user.id, account => { account.profile = profile; });
       send(res, 200, profile);
     } else if (route === 'vault' && method === 'GET') {
-      const vault = await store.vault(owner);
+      let vault = await store.vault(owner);
+      if (!vault && user.replacementVault) {
+        try { vault = await store.initialize(owner, user.replacementVault); }
+        catch (error) {
+          if (error?.code !== 'sync_vault_exists') throw error;
+          vault = await store.vault(owner);
+        }
+      }
       const account = user.accountEnvelope?.vault === vault?.id ? user.accountEnvelope : vault?.account;
       const hasPasskey = vault && (await store.credentials(owner)).length > 0;
-      send(res, 200, { vault, account, legacy: !user.opaqueRecord, ...(hasPasskey ? { hasPasskey } : {}) });
+      const emptyUpgrade = !user.opaqueRecord && vault && await store.emptyUpgradeAvailable(owner);
+      send(res, 200, { vault, account, legacy: !user.opaqueRecord, ...(hasPasskey ? { hasPasskey } : {}), ...(emptyUpgrade ? { emptyUpgrade } : {}) });
     } else if (route === 'vault' && method === 'PUT') {
-      const { id, salt, recovery, account } = await readBody(req, 1024);
-      requireThat(validId(id) && base64url(salt, 43), 'sync_invalid_vault', 400);
+      requireThat(!user.replacementVault, 'sync_vault_exists', 409);
+      const { account, ...descriptor } = await readBody(req, 1024);
       requireThat(user.opaqueRecord ? validAccountEnvelope(account) : account === undefined, 'sync_invalid_envelope', 400);
-      send(res, 201, { vault: await store.initialize(owner, { id, salt, recovery: keyEnvelope(recovery), ...(account ? { account: keyEnvelope(account) } : {}) }) });
+      send(res, 201, { vault: await store.initialize(owner, { ...parseVault(descriptor), ...(account ? { account: keyEnvelope(account) } : {}) }) });
     } else if (['delta', 'audio'].includes(route) && method === 'GET') {
       const after = url.searchParams.get('after') ?? '0';
       const id = url.searchParams.get('vault');
@@ -85,7 +98,7 @@ export function createPrivateSyncRoutes({ store, origin, repo }) {
           catch (error) { if (error?.code !== 'sync_vault_exists') throw error; }
         }
       }
-      send(res, 200, await store.push(stream, vault, batch));
+      send(res, 200, await store.push(stream, vault, batch, route === 'audio' ? owner : undefined));
     } else if (route === 'pair/start' && method === 'POST') {
       const { id, proof } = await readBody(req, 1024);
       requireThat(validId(id) && base64url(proof, 43), 'sync_invalid_pair', 400);

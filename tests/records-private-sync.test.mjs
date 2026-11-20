@@ -309,7 +309,7 @@ test('encrypted mobile audio has its own idempotent cursor and imports only once
     { ASR_PROVIDER: 'sensevoice-local', MINUTES_MODE: 'asr-llm' });
 });
 
-async function accountExchange(call, email, password, { register = false, currentPassword, vault, root } = {}) {
+async function accountExchange(call, email, password, { register = false, currentPassword, vault, root, replaceEmpty = false } = {}) {
   await opaque.ready;
   const begin = opaque.client.startLogin({ password });
   let response;
@@ -323,6 +323,7 @@ async function accountExchange(call, email, password, { register = false, curren
     response = await call({
       step: 'prove', challenge: started.data.challenge, message: begin.startLoginRequest, registrationRecord: learned.registrationRecord,
       ...(vault ? { envelope: { vault: vault.id, ...await seal(decodeBytes(learned.exportKey), vault, 'account-wrap/1', vault.id, root) } } : {}),
+      ...(replaceEmpty ? { replacementVault: vault } : {}),
     });
   } else {
     response = await call({ step: 'login', email, message: begin.startLoginRequest });
@@ -387,4 +388,46 @@ test('legacy upgrade preserves existing vault, invalidates old logins and cannot
   const changed = await request('/private-sync/vault', 'GET', undefined, session);
   assert.deepEqual(changed.data.vault, vault);
   assert.deepEqual(await unseal(other.key, vault, 'account-wrap/1', vault.id, changed.data.account), root);
+});
+
+
+test('a blank device can upgrade an empty legacy vault, but cannot replace meetings or mobile audio', async t => {
+  const { request, restart } = await cloud(t, process.env.RECORD_TEST_DATABASE_URL);
+  const password = 'legacy-password-device-test';
+  const newPassword = 'new-password-device-test';
+  const headers = res => ({ Cookie: res.cookies[0].split(';')[0], 'X-CSRF-Token': res.data.csrf });
+  for (const stream of ['delta', 'audio', null]) {
+    const email = randomUUID() + '@example.test';
+    const old = await request('/auth/register', 'POST', { email, password });
+    assert.equal(old.status, 200);
+    const oldSession = headers(old);
+    const legacy = await createVault();
+    assert.equal((await request('/private-sync/vault', 'PUT', legacy.vault, oldSession)).status, 201);
+    assert.equal((await request('/private-sync/vault', 'GET', undefined, oldSession)).data.emptyUpgrade, true);
+    if (stream) {
+      const id = randomUUID();
+      const operation = { id, ...await seal(legacy.root, legacy.vault, stream, id, encoder.encode(stamp)) };
+      assert.equal((await request('/private-sync/' + stream, 'POST', { vault: legacy.vault.id, operations: [operation] }, oldSession)).status, 200);
+    }
+    const replacement = await createVault();
+    const upgrade = body => request('/private-sync/account-upgrade', 'POST', body, oldSession);
+    const result = await accountExchange(upgrade, email, newPassword, { register: true, currentPassword: password, ...replacement, replaceEmpty: true });
+    if (stream) {
+      assert.equal(result.status, 409);
+      assert.equal(result.data.error, 'sync_legacy_history');
+      const previous = await request('/private-sync/' + stream + '?vault=' + legacy.vault.id, 'GET', undefined, oldSession);
+      assert.equal(previous.data.operations.length, 1);
+    } else {
+      assert.equal(result.status, 200, JSON.stringify(result.data));
+      await restart();
+      assert.equal((await request('/private-sync/vault', 'GET', undefined, oldSession)).status, 401);
+      const other = await accountExchange(body => request('/auth/account', 'POST', body), email, newPassword);
+      assert.equal(other.status, 200);
+      const changed = await request('/private-sync/vault', 'GET', undefined, headers(other));
+      assert.deepEqual(changed.data.vault, replacement.vault);
+      assert.deepEqual(await unseal(other.key, changed.data.vault, 'account-wrap/1', replacement.vault.id, changed.data.account), replacement.root);
+      const id = randomUUID(), operation = { id, ...await seal(replacement.root, replacement.vault, 'mobile-audio/1', id, encoder.encode(stamp)) };
+      assert.equal((await request('/private-sync/audio', 'POST', { vault: replacement.vault.id, operations: [operation] }, headers(other))).status, 200);
+    }
+  }
 });

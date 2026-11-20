@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Microphone, Stop } from '@phosphor-icons/react';
+import { Pause, Play } from '@phosphor-icons/react';
 import { MOBILE_AUDIO_LIMIT } from '../sync/mobile';
 import { Button } from './ui';
 
@@ -21,13 +21,13 @@ function wavHeader(size: number) {
 }
 
 export function QuickMobileRecording({ save, status, onActive }: { save: (blob: Blob, title: string) => Promise<void>; status: string; onActive?: (active: boolean) => void }) {
-  const [phase, setPhase] = useState<'idle' | 'starting' | 'recording' | 'saving'>('idle');
+  const [phase, setPhase] = useState<'idle' | 'starting' | 'recording' | 'paused' | 'saving'>('idle');
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState('');
-  const [title, setTitle] = useState('');
   const draft = useRef<{ blob: Blob; name: string } | null>(null);
   const closeCapture = useRef<(() => void) | null>(null);
   const finishCapture = useRef<(() => void) | null>(null);
+  const setCapturePaused = useRef<((paused: boolean) => void) | null>(null);
   const mounted = useRef(false);
 
   useEffect(() => {
@@ -49,7 +49,6 @@ export function QuickMobileRecording({ save, status, onActive }: { save: (blob: 
     try {
       await save(blob, name);
       draft.current = null;
-      setTitle('');
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : '保存失败，请重试');
     } finally {
@@ -76,7 +75,7 @@ export function QuickMobileRecording({ save, status, onActive }: { save: (blob: 
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       if (!mounted.current) { close(); return; }
       await resumed;
-      await context.audioWorklet.addModule('/audio-worklet.js');
+      await context.audioWorklet.addModule('/audio-worklet.js?v=2');
       if (!mounted.current) { close(); return; }
       const node = new AudioWorkletNode(context, 'meeting-pcm');
       const mute = context.createGain();
@@ -85,27 +84,34 @@ export function QuickMobileRecording({ save, status, onActive }: { save: (blob: 
       const chunks: ArrayBuffer[] = [];
       const limit = Math.min(MOBILE_AUDIO_LIMIT - 44, 5 * 60 * 32000);
       let size = 0, ending = false, finished = false, deadline = 0;
+      setCapturePaused.current = paused => {
+        if (ending) return;
+        node.port.postMessage({ type: paused ? 'pause' : 'resume' });
+        for (const track of stream?.getAudioTracks() ?? []) track.enabled = !paused;
+        setPhase(paused ? 'paused' : 'recording');
+      };
       const finish = () => {
         if (finished) return;
         finished = true;
         clearTimeout(deadline);
         finishCapture.current = null;
+        setCapturePaused.current = null;
         node.port.onmessage = null;
         close();
         if (!mounted.current) return;
         if (!size) { setError('没有录到音频'); setPhase('idle'); onActive?.(false); return; }
-        const name = title.trim() || '手机录音 · ' + new Date().toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        const name = '手机录音 · ' + new Date().toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
         void persist(new Blob([wavHeader(size), ...chunks], { type: 'audio/wav' }), name);
       };
       finishCapture.current = () => {
         if (ending) return;
         ending = true;
         setPhase('saving');
-        node.port.postMessage({ type: 'pause' });
+        node.port.postMessage({ type: 'pause', reason: 'finish' });
         deadline = window.setTimeout(finish, 2000);
       };
       node.port.onmessage = ({ data }) => {
-        if (data.type === 'flushed') { finish(); return; }
+        if (data.type === 'flushed') { if (ending && data.reason === 'finish') finish(); return; }
         if (data.type !== 'pcm') return;
         const pcm = data.buffer as ArrayBuffer;
         const available = Math.min(pcm.byteLength, limit - size);
@@ -128,13 +134,22 @@ export function QuickMobileRecording({ save, status, onActive }: { save: (blob: 
   }
 
   const time = String(Math.floor(elapsed / 60)).padStart(2, '0') + ':' + String(elapsed % 60).padStart(2, '0');
+  const active = phase === 'recording' || phase === 'paused';
+  const label = phase === 'recording' ? '暂停' : phase === 'paused' ? '继续'
+    : phase === 'saving' ? '正在保存' : phase === 'starting' ? '正在启动' : draft.current ? '重试保存' : '开始';
   return <section className="quick-mobile-recording" aria-label="快速记录">
-    <label>录音标题<input value={title} maxLength={160} placeholder="选填" disabled={phase !== 'idle' || Boolean(draft.current)} onChange={event => setTitle(event.target.value)}/></label>
     <div className="quick-mobile-time" aria-label="录音用时">{time}</div>
-    <p className="muted">最长 5 分钟</p>
-    {phase === 'recording'
-      ? <Button variant="primary" onClick={() => finishCapture.current?.()}><Stop size={19} weight="fill"/>结束并保存</Button>
-      : <Button variant="primary" disabled={phase !== 'idle'} onClick={() => draft.current ? void persist(draft.current.blob, draft.current.name) : void start()}><Microphone size={19}/>{phase === 'saving' ? '正在加密保存…' : phase === 'starting' ? '正在打开麦克风…' : draft.current ? '重试保存' : '开始录音'}</Button>}
-    {(error || status) && <p role={error ? 'alert' : 'status'}>{error || status}</p>}
+    <Button className="quick-mobile-control" variant="primary" disabled={phase === 'starting' || phase === 'saving'} onClick={() => {
+      if (active) setCapturePaused.current?.(phase === 'recording');
+      else if (draft.current) void persist(draft.current.blob, draft.current.name);
+      else void start();
+    }}>
+      {phase === 'recording' ? <Pause size={25} weight="fill"/> : <Play size={25} weight="fill"/>}
+      {label}
+    </Button>
+    <div className="quick-mobile-feedback">
+      {phase === 'paused' && <Button variant="ghost" onClick={() => finishCapture.current?.()}>结束并保存</Button>}
+      {error ? <p className="quick-mobile-issue" role="alert">{error}</p> : !active && status && <p role="status">{status}</p>}
+    </div>
   </section>;
 }

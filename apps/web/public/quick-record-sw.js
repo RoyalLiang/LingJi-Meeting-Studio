@@ -1,9 +1,9 @@
 const shell = '/quick-record';
-const name = 'lingji-quick-record-v2';
+const name = 'lingji-quick-record-v3';
 const isAsset = url => url.origin === self.location.origin && (url.pathname.startsWith('/assets/') || url.pathname.startsWith('/brand/') || url.pathname === '/audio-worklet.js');
 
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(name).then(cache => cache.addAll([shell, '/audio-worklet.js'])).then(() => self.skipWaiting()));
+  event.waitUntil(caches.open(name).then(cache => cache.addAll([shell, '/audio-worklet.js', '/audio-worklet.js?v=2'])).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', event => {
   event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key.startsWith('lingji-quick-record-') && key !== name).map(key => caches.delete(key)))).then(() => self.clients.claim()));

@@ -68,6 +68,15 @@ export async function createPrivateSyncStore({ root, pool }) {
   const decode = row => row && JSON.parse(row.data);
 
 
+  const reserved = row => Number(row.head) < -Date.now();
+  async function canReplaceEmpty(conn, owner, row) {
+    if (!row || Number(row.head) > 0 || reserved(row)) return false;
+    const associated = await run(conn, `SELECT 1 FROM sync_vaults WHERE owner=$2 AND head>0
+      UNION ALL SELECT 1 FROM sync_credentials WHERE owner=$1
+      UNION ALL SELECT 1 FROM sync_pairs WHERE owner=$1 AND expires>$3 LIMIT 1`, [owner, owner + ':audio', Date.now()]);
+    return associated.length === 0;
+  }
+
   return {
     vault(owner) {
       return read(async conn => decode((await run(conn, 'SELECT data FROM sync_vaults WHERE owner=$1', [owner]))[0]) ?? null);
@@ -79,12 +88,34 @@ export async function createPrivateSyncStore({ root, pool }) {
         return data;
       });
     },
-    push(owner, vaultId, operations) {
+    emptyUpgradeAvailable(owner) {
+      return read(async conn => canReplaceEmpty(conn, owner,
+        (await run(conn, 'SELECT head FROM sync_vaults WHERE owner=$1', [owner]))[0]));
+    },
+    reserveEmptyUpgrade(owner, vaultId) {
       return write(async conn => {
+        const [row] = await run(conn, 'SELECT data,head FROM sync_vaults WHERE owner=$1' + (pool ? ' FOR UPDATE' : ''), [owner]);
+        requireThat(decode(row)?.id === vaultId && await canReplaceEmpty(conn, owner, row), 'sync_legacy_history', 409);
+        // A reserved empty vault stays readable and cannot accept new ciphertext.
+        const fence = -Date.now() - 180_000;
+        await run(conn, 'UPDATE sync_vaults SET head=$2 WHERE owner=$1', [owner, fence]);
+        return fence;
+      });
+    },
+    releaseEmptyUpgrade(owner, fence) {
+      return write(conn => run(conn, 'UPDATE sync_vaults SET head=0 WHERE owner=$1 AND head=$2', [owner, fence]));
+    },
+    push(owner, vaultId, operations, parentOwner) {
+      return write(async conn => {
+        if (parentOwner) {
+          const [parent] = await run(conn, 'SELECT head FROM sync_vaults WHERE owner=$1' + (pool ? ' FOR UPDATE' : ''), [parentOwner]);
+          requireThat(parent && !reserved(parent), 'sync_legacy_history', 409);
+        }
         const [row] = await run(conn, 'SELECT data,head,bytes FROM sync_vaults WHERE owner=$1' + (pool ? ' FOR UPDATE' : ''), [owner]);
         requireThat(decode(row)?.id === vaultId, 'sync_vault_unavailable', 404);
+        requireThat(!reserved(row), 'sync_legacy_history', 409);
         const acknowledgements = [];
-        let head = Number(row.head), bytes = Number(row.bytes);
+        let head = Math.max(0, Number(row.head)), bytes = Number(row.bytes);
         for (const operation of operations) {
           const data = JSON.stringify(operation);
           const [prior] = await run(conn, 'SELECT seq,data FROM sync_delta WHERE owner=$1 AND op=$2', [owner, operation.id]);
@@ -107,7 +138,7 @@ export async function createPrivateSyncStore({ root, pool }) {
       return read(async conn => {
         const [row] = await run(conn, 'SELECT data,head FROM sync_vaults WHERE owner=$1', [owner]);
         requireThat(decode(row)?.id === vaultId, 'sync_vault_unavailable', 404);
-        const head = Number(row.head);
+        const head = Math.max(0, Number(row.head));
         requireThat(after <= head, 'sync_invalid_cursor', 409);
         const rows = await run(conn,
           'SELECT seq,data FROM sync_delta WHERE owner=$1 AND seq>$2 AND seq<=$3 ORDER BY seq LIMIT $4',
@@ -140,8 +171,9 @@ export async function createPrivateSyncStore({ root, pool }) {
     },
     addCredential(owner, credential) {
       return write(async conn => {
-        const [row] = await run(conn, 'SELECT data FROM sync_vaults WHERE owner=$1' + (pool ? ' FOR UPDATE' : ''), [owner]);
+        const [row] = await run(conn, 'SELECT data,head FROM sync_vaults WHERE owner=$1' + (pool ? ' FOR UPDATE' : ''), [owner]);
         requireThat(decode(row), 'sync_vault_unavailable', 404);
+        requireThat(!reserved(row), 'sync_legacy_history', 409);
         const existing = await run(conn, 'SELECT id FROM sync_credentials WHERE owner=$1 LIMIT 32', [owner]);
         requireThat(existing.length < 32, 'sync_credential_limit', 409);
         const rows = await run(conn, 'INSERT INTO sync_credentials(owner,id,data) VALUES($1,$2,$3) ON CONFLICT(owner,id) DO NOTHING RETURNING id',
@@ -159,8 +191,9 @@ export async function createPrivateSyncStore({ root, pool }) {
     },
     startPair(owner, id, hostProof, now) {
       return write(async conn => {
-        const [vault] = await run(conn, 'SELECT owner FROM sync_vaults WHERE owner=$1' + (pool ? ' FOR UPDATE' : ''), [owner]);
+        const [vault] = await run(conn, 'SELECT head FROM sync_vaults WHERE owner=$1' + (pool ? ' FOR UPDATE' : ''), [owner]);
         requireThat(vault, 'sync_vault_unavailable', 404);
+        requireThat(!reserved(vault), 'sync_legacy_history', 409);
         await run(conn, 'DELETE FROM sync_pairs WHERE owner=$1 AND expires<=$2', [owner, now]);
         const active = await run(conn, 'SELECT id FROM sync_pairs WHERE owner=$1 LIMIT 8', [owner]);
         requireThat(active.length < 8, 'sync_pair_limit', 429);
