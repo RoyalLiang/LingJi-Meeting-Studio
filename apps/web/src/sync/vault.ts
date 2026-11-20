@@ -1,5 +1,5 @@
 export type Envelope = { nonce: string; body: string };
-export type Vault = { id: string; salt: string; recovery: Envelope };
+export type Vault = { id: string; salt: string; recovery: Envelope; account?: Envelope };
 export type EncryptedOperation = Envelope & { id: string };
 
 const encoder = new TextEncoder();

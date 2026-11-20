@@ -74,30 +74,45 @@ const VocabularySettings = memo(VocabularySettingsForm);
 const DeviceSettings = memo(DeviceSettingsForm);
 const AudioBackupSettings=lazy(()=>import('./components/AudioBackupSettings').then(module=>({default:module.AudioBackupSettings})));
 
-function Auth({ ready }: { ready: () => Promise<boolean> }) {
+type AccountLogin = { email: string; material: Uint8Array<ArrayBuffer> };
+function Auth({ ready, accountLogin }: { ready: () => Promise<boolean>; accountLogin: (login?: AccountLogin) => void }) {
   const [register, setRegister] = useState(false), [error, setError] = useState(''), [busy, setBusy] = useState(false);
+  const [legacy, setLegacy] = useState(false);
   const [development, setDevelopment] = useState<{email:string;password:string|null}|null>(null);
   const submitting = useRef(false);
   useEffect(() => { api<{email:string;password:string|null}>('/development-account').then(setDevelopment).catch(() => {}); }, []);
-  async function authenticate(path: string, body: unknown) {
+  async function authenticate(path: string, body: { email: string; password: string }, developmentLogin = false) {
     if (submitting.current) return;
     submitting.current = true; setBusy(true); setError('');
     try {
-      const response = await api<{csrf:string}>(path, 'POST', body); setCsrf(response.csrf);
-      if (!await ready()) setError('会议空间暂未加载，请重试。');
-    } catch (e) { setError(messageOf(e)); }
+      const mode = developmentLogin ? { opaque: false } : await api<{ opaque: boolean }>('/auth/account');
+      if (mode.opaque && !legacy) {
+        const { authenticateAccount } = await import('./sync/account');
+        const { user, material } = await authenticateAccount({ ...body, register: path.endsWith('register') });
+        accountLogin({ email: user.email, material });
+      } else {
+        const response = await api<{ csrf: string }>(path, 'POST', body);
+        setCsrf(response.csrf);
+        accountLogin();
+      }
+      if (!await ready()) { accountLogin(); setError('会议空间暂未加载，请重试。'); }
+    } catch (e) {
+      if (e instanceof ApiError && e.code === 'account_legacy') setLegacy(true);
+      setError(messageOf(e));
+    }
     finally { submitting.current = false; setBusy(false); }
   }
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    return authenticate(`/auth/${register ? 'register' : 'login'}`, Object.fromEntries(new FormData(event.currentTarget)));
+    const data = new FormData(event.currentTarget);
+    return authenticate(`/auth/${register ? 'register' : 'login'}`, { email: String(data.get('email')), password: String(data.get('password')) });
   }
   return <main className="auth-page"><section className="auth-story"><Brand/>
     <div><p className="kicker">让注意力，回到对话</p><h1>好好听。<br/>值得记住的，<br/><em>交给聆记。</em></h1><p>实时转录，梳理共识。<br/>从一句话，追溯每一个决定。</p></div><span className="auth-foot">浏览器打开即用 · 数据按账户隔离</span></section>
     <section className="auth-card glass"><p className="kicker">你的会议空间</p><h2>{register ? '创建账户' : '欢迎回来'}</h2><p className="muted">{register ? '记录、回看与整理，从这里开始。' : '继续上次的讨论，或开始一场新对话。'}</p>
-      <form onSubmit={submit}><label>用户名 / 邮箱<input name="email" type="email" autoComplete="email" required placeholder="you@example.com"/></label><label>密码<input name="password" type="password" autoComplete={register ? 'new-password' : 'current-password'} minLength={10} maxLength={128} required placeholder="至少 10 个字符"/></label>
-        {error && <FeedbackNotice key={error} message={error} error/>}<Button variant="primary" disabled={busy} type="submit">{busy ? '请稍候…' : register ? '创建账户并进入' : '进入会议空间'}<CaretRight size={18}/></Button></form>
-      <Button variant="ghost" disabled={busy} onClick={() => { setRegister(!register); setError(''); }}>{register ? '已有账户？登录' : '还没有账户？创建一个'}</Button>{development && <div className="development-account"><Status>本地开发账户</Status><p>用户名 <b>{development.email}</b></p><p>密码 <code>{development.password || '使用本机自定义密码'}</code></p>{development.password && <Button disabled={busy} onClick={() => authenticate('/auth/login', development)}>使用开发账户进入</Button>}</div>}<p className="fine-print">录制前请告知参会者并取得适用的许可。登录不会自动启用麦克风或屏幕共享。</p>
+      <form onSubmit={submit}><label>用户名 / 邮箱<input name="email" type="email" autoComplete="email" required placeholder="you@example.com" onChange={()=>{if(legacy){setLegacy(false);setError('');}}}/></label><label>密码<input name="password" type="password" autoComplete={register ? 'new-password' : 'current-password'} minLength={10} maxLength={128} required placeholder="至少 10 个字符"/></label>
+        {error && <FeedbackNotice key={error} message={error} error/>}<Button variant="primary" disabled={busy} type="submit">{busy ? '请稍候…' : register ? '创建账户并进入' : legacy ? '使用旧账号登录' : '进入会议空间'}<CaretRight size={18}/></Button></form>
+      <Button variant="ghost" disabled={busy} onClick={() => { setRegister(!register); setLegacy(false); setError(''); }}>{register ? '已有账户？登录' : '还没有账户？创建一个'}</Button>{development && <div className="development-account"><Status>本地开发账户</Status><p>用户名 <b>{development.email}</b></p><p>密码 <code>{development.password || '使用本机自定义密码'}</code></p>{development.password && <Button disabled={busy} onClick={() => authenticate('/auth/login', { email: development.email, password: development.password! }, true)}>使用开发账户进入</Button>}</div>}<p className="fine-print">录制前请告知参会者并取得适用的许可。登录不会自动启用麦克风或屏幕共享。</p>
     </section></main>;
 }
 function SharedView({ token }: { token: string }) {
@@ -137,6 +152,10 @@ function Workspace() {
   const [meetingViewsTarget,setMeetingViewsTarget]=useState<HTMLDivElement|null>(null);
   const [agentTitle,setAgentTitle]=useState('Skills'),[automationVisible,setAutomationVisible]=useState(false),[automationTasksTarget,setAutomationTasksTarget]=useState<HTMLDivElement|null>(null);
   const [agentOpen,setAgentOpen] = useState(() => new URLSearchParams(location.search).get('agent') === '1');
+  const [accountLogin, setAccountLogin] = useState<AccountLogin>();
+  const storeAccountLogin = useCallback((login?: AccountLogin) => {
+    setAccountLogin(previous => { previous?.material.fill(0); return login; });
+  }, []);
   const [boot, setBoot] = useState<Bootstrap | null>(null), [authReady, setAuthReady] = useState(false), [loading, setLoading] = useState(true);
   const syncCompanion = Boolean(boot?.privateSync && !boot.localAccount);
   const desktopAccount = Boolean(boot?.localAccount && boot.privateSync);
@@ -528,6 +547,7 @@ function Workspace() {
   if ((authReady && syncCompanion) || (mobile && mobileEmail)) return <main className={mobile ? 'sync-companion quick-mobile-app' : 'sync-companion'}>
     <header className="surface-heading"><Brand /><h1>{mobile ? '快速记录' : '个人中心'}</h1>{online && <Button disabled={mobileRecording} onClick={() => {
       void api('/auth/logout', 'POST').then(() => {
+      storeAccountLogin();
         if (mobile) {
           try { localStorage.removeItem('lingji:mobile-email'); } catch {}
           setMobileEmail(null);
@@ -536,9 +556,9 @@ function Workspace() {
       }).catch(failure => setError(messageOf(failure)));
     }}>退出账号</Button>}</header>
     {error && <FeedbackNotice key={error} message={error} error />}
-    <Suspense fallback={<p role="status">正在加载个人中心…</p>}><PrivateSyncSettings desktop={false} email={boot?.email || mobileEmail || undefined} mobile={mobile} mobileActive={setMobileRecording} online={online}/></Suspense>
+    <Suspense fallback={<p role="status">正在加载个人中心…</p>}><PrivateSyncSettings desktop={false} email={boot?.email || mobileEmail || undefined} accountLogin={accountLogin} mobile={mobile} mobileActive={setMobileRecording} online={online}/></Suspense>
   </main>;
-  if (!authReady || !boot) return <Auth ready={loadBoot}/>;
+  if (!authReady || !boot) return <Auth ready={loadBoot} accountLogin={storeAccountLogin}/>;
   const sourceReady = boot.providers.asr || boot.providers.fixture;
   return <div className="app-shell"><a className="skip-link" href="#workspace">跳到会议内容</a>
     <RecordingRuntime record={record} recording={recording} busy={busy||stopping.current} signals={signals} manifests={localAudio.recordId===record?.id?localAudio.manifests:[]} onError={setError}/><AppSidebar directories={directories} scope={scope} records={records} recordId={id} page={workspacePage} extensionOpen={agentOpen} settingsOpen={modal==='settings'} voiceOpen={voiceOpen} open={sidebarOpen} disabled={recording||busy} canRecord={sourceReady} name={desktopAccount ? (online ? syncEmail || '' : '') : localBackend ? '我的会议空间' : boot.email.split('@')[0]} account={desktopAccount ? (online ? syncEmail || '' : '') : localBackend ? '本机账户' : boot.email} openAccount={desktopAccount ? () => openSettings('account') : undefined} accountOpen={accountOpen} version={<ClientVersion updates={updates} compact/>} notice={boot.providers.fixture&&<span className="fixture-badge">开发测试模式 · 测试数据</span>} tools={<>{!boot.localAccount&&<Button aria-label="退出登录" disabled={recording} onClick={async()=>{try{await api('/auth/logout','POST');setCsrf('');setQueueRecords([]);setAuthReady(false);selectRecord('');}catch(e){setError(messageOf(e));}}}><SignOut size={16}/></Button>}</>} chooseScope={chooseScope} navigate={page=>{chooseScope(scope);setWorkspacePage(page);}} selectRecord={next=>{setModal(null);setSidebarOpen(false);selectRecord(next);}} create={newDirectory} prepare={()=>{setSidebarOpen(false);setModal('new');}} quick={()=>{setSidebarOpen(false);void quickRecord();}} extensions={()=>{setModal(null);setSidebarOpen(false);setTranslationOpen(false);setAgentOpen(true);}} settings={()=>openSettings()} voices={()=>{setSidebarOpen(false);setVoiceOpen(true);}} search={()=>{chooseScope(scope);setWorkspacePage('meetings');requestAnimationFrame(()=>document.getElementById('record-search')?.focus());}} close={closeSidebar}/>

@@ -5,6 +5,11 @@ import { promisify } from 'node:util';
 import { DomainError, digest, requireThat } from '../../../packages/records/src/record.mjs';
 
 const derivePassword = promisify(scrypt);
+export const normalizeAccountEmail = value => typeof value === 'string' ? value.trim().toLowerCase() : '';
+export const validAccountEmail = email => /^[^@\s]{1,80}@[^@\s]{1,100}\.[^@\s]{2,20}$/.test(email);
+export const accountId = email => 'user:' + digest(email);
+export const validAccountEnvelope = value => typeof value?.nonce === 'string' && /^[\w-]{16}$/.test(value.nonce)
+  && typeof value?.body === 'string' && /^[\w-]{64}$/.test(value.body);
 const same = (a, b) => {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
   const left = Buffer.from(a), right = Buffer.from(b);
@@ -35,18 +40,18 @@ export async function createAuth(repo, options = {}) {
   const auth = {
     csrf: user => sign(`csrf:${user.id}:${user.authVersion}`),
     async register(body) {
-      const email = String(body.email || '').trim().toLowerCase();
-      requireThat(/^[^@\s]{1,80}@[^@\s]{1,100}\.[^@\s]{2,20}$/.test(email), 'invalid_email', 400);
+      const email = normalizeAccountEmail(body?.email);
+      requireThat(validAccountEmail(email), 'invalid_email', 400);
       requireThat(typeof body.password === 'string' && body.password.length >= 10 && body.password.length <= 128, 'password_length_10_128', 400);
       const salt = randomBytes(16).toString('hex');
       const user = { id: `user:${digest(email)}`, kind: 'user', email, salt, password: await passwordHash(body.password, salt), authVersion: 1 };
       await repo.insert(user); return user;
     },
     async login(body) {
-      const user = await repo.get(`user:${digest(String(body.email || '').trim().toLowerCase())}`);
+      const user = await repo.get(accountId(normalizeAccountEmail(body?.email)));
       const password = String(body.password || '').slice(0, 128);
       const computed = await passwordHash(password, user?.salt || 'unknown-user-salt');
-      requireThat(user && same(computed, user.password), 'invalid_credentials', 401); return user;
+      requireThat(user && !user.opaqueRecord && same(computed, user.password), 'invalid_credentials', 401); return user;
     },
     issue(user) {
       const data = Buffer.from(JSON.stringify({ id: user.id, version: user.authVersion, expires: options.localAccount ? null : Date.now() + 604800000 })).toString('base64url');

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { DomainError, requireThat } from '../../../packages/records/src/record.mjs';
 import { SYNC_PAGE_BYTES } from './private-sync-store.mjs';
+import { validAccountEnvelope } from './auth.mjs';
 
 const idPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const validId = value => typeof value === 'string' && idPattern.test(value);
@@ -43,11 +44,14 @@ export function createPrivateSyncRoutes({ store, origin, repo }) {
       await repo.change(owner, account => { account.profile = profile; });
       send(res, 200, profile);
     } else if (route === 'vault' && method === 'GET') {
-      send(res, 200, { vault: await store.vault(owner) });
+      const vault = await store.vault(owner);
+      const account = user.accountEnvelope?.vault === vault?.id ? user.accountEnvelope : vault?.account;
+      send(res, 200, { vault, account, legacy: !user.opaqueRecord });
     } else if (route === 'vault' && method === 'PUT') {
-      const { id, salt, recovery } = await readBody(req, 1024);
+      const { id, salt, recovery, account } = await readBody(req, 1024);
       requireThat(validId(id) && base64url(salt, 43), 'sync_invalid_vault', 400);
-      send(res, 201, { vault: await store.initialize(owner, { id, salt, recovery: keyEnvelope(recovery) }) });
+      requireThat(user.opaqueRecord ? validAccountEnvelope(account) : account === undefined, 'sync_invalid_envelope', 400);
+      send(res, 201, { vault: await store.initialize(owner, { id, salt, recovery: keyEnvelope(recovery), ...(account ? { account: keyEnvelope(account) } : {}) }) });
     } else if (['delta', 'audio'].includes(route) && method === 'GET') {
       const after = url.searchParams.get('after') ?? '0';
       const id = url.searchParams.get('vault');

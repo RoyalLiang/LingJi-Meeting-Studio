@@ -18,15 +18,16 @@ const stamp = '合成会议正文，仅在端上解密';
 const encoder = new TextEncoder();
 const fixtureOrigin = 'http://localhost:32141';
 
-async function cloud(t) {
+async function cloud(t, databaseUrl = '') {
+  if (databaseUrl) assert.match(new URL(databaseUrl).pathname, /test/i);
   const root = await mkdtemp(join(tmpdir(), 'lingji-private-sync-cloud-'));
-  const app = await createRecordServer({ root, databaseUrl: '', port: 0, syncOrigin: fixtureOrigin });
-  const { port } = await app.start();
+  const start = () => createRecordServer({ root, databaseUrl, port: 0, syncOrigin: fixtureOrigin });
+  let app = await start();
+  let { port } = await app.start();
   t.after(async () => { await app.stop(); await rm(root, { recursive: true, force: true }); });
-  const base = 'http://127.0.0.1:' + port;
   async function request(path, method = 'GET', body, headers = {}) {
     return new Promise((resolve, reject) => {
-      const req = httpRequest(base + '/api' + path, {
+      const req = httpRequest('http://127.0.0.1:' + port + '/api' + path, {
         method, headers: { Host: new URL(fixtureOrigin).host, Origin: fixtureOrigin, 'Content-Type': 'application/json', ...headers },
       }, async response => {
         try {
@@ -45,7 +46,12 @@ async function cloud(t) {
     const headers = { Cookie: registered.cookies[0].split(';')[0], 'X-CSRF-Token': registered.data.csrf };
     return (path, method, value, overrides) => request(path, method, value, { ...headers, ...overrides });
   }
-  return { request, account };
+  async function restart() {
+    await app.stop();
+    app = await start();
+    ({ port } = await app.start());
+  }
+  return { request, account, restart };
 }
 
 test('desktop account registration authenticates once and logout clears the sync session', async t => {
@@ -76,7 +82,7 @@ test('desktop account registration authenticates once and logout clears the sync
   assert.deepEqual((await call('profile', 'PATCH', { name: '  设备验收  ' })).data, { name: '设备验收' });
   assert.deepEqual((await call('profile', 'GET')).data, { name: '设备验收' });
   assert.equal((await call('profile', 'PATCH', { name: 'x'.repeat(61) })).status, 400);
-  assert.deepEqual((await call('vault', 'GET')).data, { vault: null });
+  assert.deepEqual((await call('vault', 'GET')).data, { vault: null, legacy: true });
   await call('session', 'DELETE');
   assert.equal((await call('session', 'GET')).data.email, null);
   await assert.rejects(call('vault', 'GET'), { code: 'sync_sign_in_required' });
@@ -93,7 +99,7 @@ test('encrypted delta across authenticated accounts preserves ordering and idemp
   assert.equal((await first('/private-sync/vault', 'PUT', vault, { 'X-CSRF-Token': '' })).status, 403);
   assert.equal((await first('/private-sync/vault', 'PUT', vault)).status, 201);
   assert.equal((await first('/private-sync/vault', 'PUT', vault)).status, 409);
-  assert.deepEqual((await second('/private-sync/vault')).data, { vault: null });
+  assert.deepEqual((await second('/private-sync/vault')).data, { vault: null, legacy: true });
   const id = randomUUID();
   const operation = { id, ...await seal(root, vault, 'revision', id, encoder.encode(stamp)) };
   const payload = { vault: vault.id, operations: [operation] };
@@ -298,4 +304,84 @@ test('encrypted mobile audio has its own idempotent cursor and imports only once
   const { recordMinutesConfig } = await import('../services/records/src/config.mjs');
   assert.deepEqual(recordMinutesConfig(copy, { ASR_PROVIDER: 'doubao', MINUTES_MODE: 'doubao-audio-only' }),
     { ASR_PROVIDER: 'sensevoice-local', MINUTES_MODE: 'asr-llm' });
+});
+
+async function accountExchange(call, email, password, { register = false, currentPassword, vault, root } = {}) {
+  await opaque.ready;
+  const begin = opaque.client.startLogin({ password });
+  let response;
+  if (register) {
+    const registration = opaque.client.startRegistration({ password });
+    const started = await call({ step: 'register', email, currentPassword, message: registration.registrationRequest });
+    if (started.status !== 200) return started;
+    const learned = opaque.client.finishRegistration({
+      password, clientRegistrationState: registration.clientRegistrationState, registrationResponse: started.data.message,
+    });
+    response = await call({
+      step: 'prove', challenge: started.data.challenge, message: begin.startLoginRequest, registrationRecord: learned.registrationRecord,
+      ...(vault ? { envelope: { vault: vault.id, ...await seal(decodeBytes(learned.exportKey), vault, 'account-wrap/1', vault.id, root) } } : {}),
+    });
+  } else {
+    response = await call({ step: 'login', email, message: begin.startLoginRequest });
+  }
+  if (response.status !== 200) return response;
+  const proof = opaque.client.finishLogin({ password, clientLoginState: begin.clientLoginState, loginResponse: response.data.message });
+  if (!proof) return { status: 401 };
+  const finish = { step: 'finish', challenge: response.data.challenge, message: proof.finishLoginRequest };
+  const result = await call(finish);
+  return { ...result, key: decodeBytes(proof.exportKey), finish };
+}
+
+test('one account login unlocks across clients after restart without transferring raw meeting keys', async t => {
+  const { request, restart } = await cloud(t, process.env.RECORD_TEST_DATABASE_URL);
+  const email = 'new-opaque@example.test', password = 'new-synthetic-test-credential';
+  const login = body => request('/auth/account', 'POST', body);
+  assert.deepEqual((await request('/auth/account')).data, { opaque: true });
+  const first = await accountExchange(login, email, password, { register: true });
+  assert.equal(first.status, 200, JSON.stringify(first.data));
+  assert.deepEqual(Object.keys(first.data).sort(), ['csrf', 'email']);
+  assert.equal((await login(first.finish)).status, 409, 'login verification is single use');
+  const headers = res => ({ Cookie: res.cookies[0].split(';')[0], 'X-CSRF-Token': res.data.csrf });
+  const { vault, root } = await createVault();
+  assert.equal((await request('/private-sync/vault', 'PUT', vault, headers(first))).status, 400, 'new accounts must keep a login-wrapped vault');
+  const wrapped = await seal(first.key, vault, 'account-wrap/1', vault.id, root);
+  assert.equal((await request('/private-sync/vault', 'PUT', { ...vault, account: wrapped }, headers(first))).status, 201);
+
+  await restart();
+  const phone = await accountExchange(login, '  NEW-OPAQUE@example.test  ', password);
+  assert.equal(phone.status, 200, JSON.stringify(phone.data));
+  const remote = await request('/private-sync/vault', 'GET', undefined, headers(phone));
+  assert.equal(remote.data.legacy, false);
+  assert.deepEqual(await unseal(phone.key, remote.data.vault, 'account-wrap/1', vault.id, remote.data.account), root);
+  await assert.rejects(unseal(randomBytes(32), vault, 'account-wrap/1', vault.id, remote.data.account));
+  assert.equal((await accountExchange(login, email, password + '-incorrect')).status, 401);
+  assert.equal((await request('/auth/login', 'POST', { email, password })).status, 401, 'migrated accounts cannot downgrade');
+  assert.equal((await request('/auth/account', 'POST', first.finish, { Origin: 'https://other.test' })).status, 403);
+});
+
+test('legacy upgrade preserves existing vault, invalidates old logins and cannot replay a challenge', async t => {
+  const { request } = await cloud(t, process.env.RECORD_TEST_DATABASE_URL);
+  const email = 'upgrade-opaque@example.test', oldPassword = 'old-synthetic-account-password', newPassword = 'new-synthetic-account-password';
+  const old = await request('/auth/register', 'POST', { email, password: oldPassword });
+  assert.equal(old.status, 200);
+  const headers = { Cookie: old.cookies[0].split(';')[0], 'X-CSRF-Token': old.data.csrf };
+  const legacy = body => request('/private-sync/account-upgrade', 'POST', body, headers);
+  const login = body => request('/auth/account', 'POST', body);
+  assert.equal((await accountExchange(login, email, oldPassword)).data.error, 'account_legacy');
+  const { vault, root } = await createVault();
+  assert.equal((await request('/private-sync/vault', 'PUT', vault, headers)).status, 201);
+  const registration = { register: true, currentPassword: oldPassword, vault, root };
+  assert.equal((await accountExchange(legacy, email, newPassword, { ...registration, currentPassword: 'wrong-current-password' })).status, 401);
+  const migrated = await accountExchange(legacy, email, newPassword, registration);
+  assert.equal(migrated.status, 200, JSON.stringify(migrated.data));
+  assert.equal((await request('/private-sync/vault', 'GET', undefined, headers)).status, 401);
+  assert.equal((await legacy(migrated.finish)).status, 401);
+  assert.equal((await request('/auth/login', 'POST', { email, password: oldPassword })).status, 401);
+
+  const other = await accountExchange(login, email, newPassword);
+  assert.equal(other.status, 200, JSON.stringify(other.data));
+  const session = { Cookie: other.cookies[0].split(';')[0], 'X-CSRF-Token': other.data.csrf };
+  const changed = await request('/private-sync/vault', 'GET', undefined, session);
+  assert.deepEqual(changed.data.vault, vault);
+  assert.deepEqual(await unseal(other.key, vault, 'account-wrap/1', vault.id, changed.data.account), root);
 });

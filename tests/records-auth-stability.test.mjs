@@ -33,7 +33,7 @@ function harness(api, {search='',modules={}} = {}) {
     } : name === './components/RecordingProgress' ? {createCaptureSignals:()=>({update(){}}),RecordingProgress:component,RecordingRuntime:component,LiveMeetingControls:component,LiveCaptureSetup:component} : name === './useClientUpdates' ? { useClientUpdates: () => ({native:false,status:{phase:'idle',currentVersion:'0.1.47',downloaded:0}}) } : name === './audio/native-runtime' ? {setNativeAudioTransport(){},nativeCaptureSessions:async()=>[]} : name === './api' ? { api, ApiError: class ApiError extends Error { constructor(message, status) { super(message); this.status = status; } }, setCsrf() {}, setAudioTransport() {}, messageOf: error => error.message } : modules[name] || generic,
     location: { pathname: '/', search }, localStorage: { getItem: () => null }, navigator: { onLine: true },
     URLSearchParams, AbortController, document: { documentElement: { dataset: {} } },
-    FormData: class { constructor(form) { this.form = form; } *[Symbol.iterator]() { yield* Object.entries(this.form); } },
+    FormData: class { constructor(form) { this.form = form; } get(name) { return this.form[name] ?? null; } },
   };
   vm.runInNewContext(compiled, sandbox);
   return { render(name, props = {}) { cursor = 0; return sandbox.module.exports.authTestComponents[name](props); }, effects };
@@ -48,16 +48,23 @@ const form = node => find(node, item => item.type === 'form');
 
 test('rapid login and development-account clicks submit once and stay busy through bootstrap', async () => {
   const login = deferred(), boot = deferred(); let posts = 0, readyCalls = 0;
-  const h = harness(path => path === '/development-account' ? Promise.resolve({ email: 'test@example.com', password: 'local-only-test' }) : (posts++, login.promise));
+  const h = harness(path => {
+    if (path === '/development-account') return Promise.resolve({ email: 'test@example.com', password: 'local-only-test' });
+    if (path === '/auth/account') return Promise.resolve({ opaque: false });
+    assert.equal(path, '/auth/login');
+    posts++;
+    return login.promise;
+  });
   const props = { ready: () => { readyCalls++; return boot.promise; } };
-  h.render('Auth', props); h.effects.shift()(); await tick();
-  let page = h.render('Auth', props);
+  h.render('Auth', { accountLogin() {}, ...props }); h.effects.shift()(); await tick();
+  let page = h.render('Auth', { accountLogin() {}, ...props });
   const submit = () => form(page).props.onSubmit({ preventDefault() {}, currentTarget: { email: 'test@example.com', password: 'local-only-test' } });
   const first = submit(), second = submit(), third = button(page, '使用开发账户进入').props.onClick();
+  await tick();
   assert.equal(posts, 1, 'one login request must own all login entry points');
   login.resolve({ csrf: 'test-csrf' }); await tick();
   assert.equal(readyCalls, 1);
-  page = h.render('Auth', props);
+  page = h.render('Auth', { accountLogin() {}, ...props });
   assert.equal(button(page, '使用开发账户进入').props.disabled, true);
   assert.equal(button(page, '还没有账户？创建一个').props.disabled, true);
   assert.equal(find(page, item => item.props?.type === 'submit').props.disabled, true, 'login remains busy until workspace bootstrap finishes');
@@ -66,11 +73,16 @@ test('rapid login and development-account clicks submit once and stay busy throu
 
 test('failed bootstrap reports the error on the existing login form and permits one retry', async () => {
   let posts = 0, readyCalls = 0;
-  const h = harness(() => { posts++; return Promise.resolve({ csrf: 'test-csrf' }); });
+  const h = harness(path => {
+    if (path === '/auth/account') return Promise.resolve({ opaque: false });
+    assert.equal(path, '/auth/login');
+    posts++;
+    return Promise.resolve({ csrf: 'test-csrf' });
+  });
   const props = { ready: () => { readyCalls++; return Promise.reject(new Error('会议空间暂时不可用')); } };
-  let page = h.render('Auth', props);
+  let page = h.render('Auth', { accountLogin() {}, ...props });
   await form(page).props.onSubmit({ preventDefault() {}, currentTarget: {} });
-  page = h.render('Auth', props);
+  page = h.render('Auth', { accountLogin() {}, ...props });
   assert.equal(find(page, item => item.props?.error === true)?.props.message, '会议空间暂时不可用');
   assert.equal(find(page, item => item.props?.type === 'submit').props.disabled, false);
   await form(page).props.onSubmit({ preventDefault() {}, currentTarget: {} });

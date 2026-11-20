@@ -94,7 +94,9 @@ export async function createRecordServer(options = {}) {
   if (syncOrigin && process.env.NODE_ENV === 'production') {
     requireThat(repo.backend === 'postgres', 'private_sync_postgres_required', 500);
   }
-  const syncRoutes = syncOrigin && createPrivateSyncRoutes({ store: await repo.privateSync(), origin: syncOrigin, repo });
+  const syncStore = syncOrigin && await repo.privateSync();
+  const syncRoutes = syncOrigin && createPrivateSyncRoutes({ store: syncStore, origin: syncOrigin, repo });
+  const accountAuth = syncOrigin && await (await import('./account-auth.mjs')).createAccountAuth({ repo, auth, store: syncStore, origin: syncOrigin });
   const desktopSync = options.localAccount && createDesktopPrivateSync(options.desktopSync);
 
   const encryptedSharing = createEncryptedSharing(repo, options.encryptedSharing);
@@ -183,6 +185,13 @@ export async function createRecordServer(options = {}) {
         const host = req.headers.host;
         requireThat(allowed ? req.headers.origin === allowed : new URL(req.headers.origin).host === host, 'origin_rejected', 403);
       }
+      if (path === '/api/auth/account') {
+        if (req.method === 'GET') { send(res, 200, { opaque: Boolean(accountAuth) }); return; }
+        requireThat(accountAuth, 'not_found', 404);
+        limitRequest('account-ip:' + clientAddress(req), 60, 'login_rate_limited');
+        await accountAuth({ req, res, readBody, send, limit: limitRequest });
+        return;
+      }
       if (/^\/api\/auth\/(register|login)$/.test(path) && req.method === 'POST') {
         limitRequest(`auth:${clientAddress(req)}`, 20, 'login_rate_limited');
         const body = await readBody(req, 4000); const user = path.endsWith('register') ? await auth.register(body) : await auth.login(body);
@@ -209,6 +218,11 @@ export async function createRecordServer(options = {}) {
       if (path === '/api/client/update-barrier' && req.method === 'GET') { send(res, 200, await clientUpdateBarrier(repo, user.id)); return; }
       if (!['GET', 'HEAD'].includes(req.method)) auth.checkCsrf(req, user);
       if (path.startsWith('/api/private-sync/')) {
+        if (path === '/api/private-sync/account-upgrade' && accountAuth) {
+          limitRequest('account-upgrade:' + user.id, 18, 'login_rate_limited');
+          await accountAuth({ req, res, user, readBody, send, limit: limitRequest });
+          return;
+        }
         if (path === '/api/private-sync/recording' && req.method === 'POST') {
           requireThat(options.localAccount, 'not_found', 404);
           send(res, 200, publicRecord(await preparePrivateRecording(repo, user.id, await readBody(req, 1024))));

@@ -25,6 +25,13 @@ async function jsonResponse(response) {
 
 export function createDesktopPrivateSync({ origin = PRIVATE_SYNC_COMPANION, fetcher = fetch } = {}) {
   let session, generation = 0;
+  function startSession(upstream, data, current) {
+    const cookie = upstream.headers.getSetCookie().map(value => value.split(';')[0]).find(value => value.startsWith('record_session='));
+    requireThat(cookie && typeof data.csrf === 'string' && typeof data.email === 'string', 'sync_sign_in_failed', 502);
+    requireThat(generation === current, 'sync_account_changed', 409);
+    session = { cookie, csrf: data.csrf, email: data.email };
+    return { email: data.email, companion: origin };
+  }
   async function remote(path, method, body, auth) {
     try {
       return await fetcher(new URL(path, origin), {
@@ -47,32 +54,34 @@ export function createDesktopPrivateSync({ origin = PRIVATE_SYNC_COMPANION, fetc
       send(res, 200, { email: session?.email ?? null, companion: origin });
     } else if (route === 'session' && req.method === 'POST') {
       limit('private-sync-login', 10);
-      const current = ++generation;
-      session = undefined;
-      const { email, password, register } = await readBody(req, 4000);
-      const upstream = register === true
-        ? await remote('/api/auth/register', 'POST', { email, password })
-        : await remote('/api/auth/login', 'POST', { email, password });
+      const body = await readBody(req, 8192);
+      const current = body.step && body.step !== 'finish' ? generation : ++generation;
+      const upstream = body.step
+        ? await remote('/api/auth/account', 'POST', body)
+        : await remote(body.register === true ? '/api/auth/register' : '/api/auth/login', 'POST', { email: body.email, password: body.password });
       const data = await jsonResponse(upstream);
       if (!upstream.ok) return send(res, upstream.status, { error: data.error || 'sync_sign_in_failed' });
-      const cookie = upstream.headers.getSetCookie().map(value => value.split(';')[0]).find(value => value.startsWith('record_session='));
-      requireThat(cookie && typeof data.csrf === 'string' && typeof data.email === 'string', 'sync_sign_in_failed', 502);
       requireThat(generation === current, 'sync_account_changed', 409);
-      session = { cookie, csrf: data.csrf, email: data.email };
-      send(res, 200, { email: session.email, companion: origin });
+      send(res, 200, body.step && body.step !== 'finish' ? data : startSession(upstream, data, current));
     } else if (route === 'session' && req.method === 'DELETE') {
       generation++;
       session = undefined;
       send(res, 200, { ok: true });
     } else {
-      requireThat(routes.get(route)?.has(req.method), 'not_found', 404);
+      const upgrade = route === 'account-upgrade' && req.method === 'POST';
+      requireThat(upgrade || routes.get(route)?.has(req.method), 'not_found', 404);
       const auth = session;
       requireThat(auth, 'sync_sign_in_required', 401);
-      const body = req.method === 'GET' ? null : await readBody(req, SYNC_PAGE_BYTES);
+      const body = req.method === 'GET' ? null : await readBody(req, upgrade ? 8192 : SYNC_PAGE_BYTES);
+      const current = generation;
       const upstream = await remote(path + url.search, req.method, body, auth);
       if (session !== auth) throw new DomainError('sync_account_changed', 409);
-      if (upstream.status === 401) session = undefined;
+      if (upstream.status === 401 && !upgrade) session = undefined;
       const data = await jsonResponse(upstream);
+      if (upstream.ok && upgrade && body.step === 'finish') {
+        send(res, 200, startSession(upstream, data, current));
+        return;
+      }
       send(res, upstream.status, upstream.ok ? data : { error: data.error || 'sync_request_failed' });
     }
   };
