@@ -7,10 +7,12 @@ import { join } from 'node:path';
 import test from 'node:test';
 import * as opaque from '@serenity-kit/opaque';
 import { encodeCBOR } from '@levischuck/tiny-cbor';
+import 'fake-indexeddb/auto';
 import { createRecordServer } from '../services/records/src/server.mjs';
 import { createPrivateSyncStore } from '../services/records/src/private-sync-store.mjs';
 import { createDesktopPrivateSync } from '../services/records/src/private-sync-desktop.mjs';
 import { createVault, newPairSecret, recoverVault, seal, unseal, decodeBytes } from '../apps/web/src/sync/vault.ts';
+import { readDeviceVault, rememberDeviceVault } from '../apps/web/src/sync/device.ts';
 
 const stamp = '合成会议正文，仅在端上解密';
 const encoder = new TextEncoder();
@@ -48,13 +50,6 @@ async function cloud(t) {
 
 test('desktop account registration authenticates once and logout clears the sync session', async t => {
   const { request } = await cloud(t);
-  const previousInvite = process.env.RECORD_INVITE_CODE;
-  const inviteCode = 'synthetic-desktop-invite';
-  process.env.RECORD_INVITE_CODE = inviteCode;
-  t.after(() => {
-    if (previousInvite === undefined) delete process.env.RECORD_INVITE_CODE;
-    else process.env.RECORD_INVITE_CODE = previousInvite;
-  });
   const desktop = createDesktopPrivateSync({
     origin: fixtureOrigin,
     fetcher: async (url, options) => {
@@ -75,8 +70,7 @@ test('desktop account registration authenticates once and logout clears the sync
     return result;
   }
   const email = 'desktop-account@example.test', password = 'synthetic-backend-phrase';
-  assert.equal((await call('session', 'POST', { email, password, register: true })).status, 403);
-  assert.deepEqual(await call('session', 'POST', { email, password, register: true, inviteCode }),
+  assert.deepEqual(await call('session', 'POST', { email, password, register: true }),
     { status: 200, data: { email, companion: fixtureOrigin } });
   assert.deepEqual((await call('vault', 'GET')).data, { vault: null });
   await call('session', 'DELETE');
@@ -150,6 +144,18 @@ test('OPAQUE pairing relay enforces account and turn order; only the endpoints r
   const reply = await owner('/private-sync/pair/exchange', 'POST', { id, proof: guestProof });
   const wrapped = JSON.parse(Buffer.from(reply.data.frames[3], 'base64url'));
   assert.deepEqual(await unseal(decodeBytes(guest.sessionKey), vault, 'pair', id, wrapped), root);
+});
+
+test('a trusted device keeps the first key and unlocks only its account and matching vault', async () => {
+  const account = 'trusted-device@example.test';
+  const original = await createVault();
+  const other = await createVault();
+  assert.equal(await readDeviceVault(account), null);
+  assert.equal(await rememberDeviceVault(account, original, true), true);
+  assert.equal(await rememberDeviceVault(account, other, true), false);
+  assert.equal(await readDeviceVault('another@example.test', original.vault), null);
+  assert.equal(await readDeviceVault(account, other.vault), null);
+  assert.deepEqual(await readDeviceVault(account, original.vault), original);
 });
 
 test('journal commit serialization and a new reader survive reopen', async t => {

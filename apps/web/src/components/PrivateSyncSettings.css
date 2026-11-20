@@ -10,6 +10,14 @@
 .sync-form label, .sync-invitation label { display: grid; gap: 5px; min-width: 0; }
 .sync-form input:not([type="file"]), .sync-invitation input { min-width: 0; width: 100%; max-width: 420px; }
 .sync-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.settings-page .account-page > div { max-width: 39rem; margin-inline: 0; }
+.settings-page .account-access {
+  gap: 20px; max-width: 29rem; padding: 0; border-radius: 0; background: transparent;
+}
+.account-access h2 { font-size: 1.375rem; letter-spacing: -.025em; }
+.account-access .sync-form { gap: 16px; }
+.account-access .sync-form input:not([type="file"]) { max-width: none; }
+.account-access .sync-actions { margin-top: 4px; }
 .sync-options { border-top: 1px solid var(--border); }
 .sync-options > summary { padding: 12px 0; color: var(--ink-1); font-weight: 550; cursor: pointer; }
 .sync-options > summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }

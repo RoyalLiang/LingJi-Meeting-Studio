@@ -47,7 +47,7 @@ Postgres 设置 `RECORD_DATABASE_URL`，启动创建独立 `record_aggregates` �
 - `RECORD_SESSION_SECRET`：至少 32 个字符的随机密钥，多实例相同。
 - `RECORD_PUBLIC_ORIGIN`：用户访问的完整 HTTPS Origin。
 - HTTPS 反向代理：转发到 Web 3000，保留 Host 与 Origin，SSE 关闭代理缓冲和短超时。
-- 持久数据库/对象卷；注册公开时设置 `RECORD_INVITE_CODE`。当前没有邮箱验证/找回密码/组织权限，正式公开前应接入适当身份服务。
+- 持久数据库和对象卷。账号使用邮箱和密码注册。邮箱验证、找回密码和组织权限需由部署方接入身份服务。
 
 `npm start` 强制生产环境，cookie 为 Secure；不要用外网 HTTP 规避这一要求。程序默认只监听本机回环，不自动配置代理或部署服务器。`GET /api/health` 检查数据库，不证明供应商、对象存储或整体业务可用。
 

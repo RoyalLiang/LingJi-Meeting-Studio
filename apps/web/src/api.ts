@@ -179,7 +179,7 @@ const messages: Record<string, string> = {
   invalid_asr_hotwords: '术语总长最多 100 字，每词最多 50 字，请精简后重试。',
 
   login_required: '请先登录。', invalid_credentials: '邮箱或密码不正确。', password_length_10_128: '密码需要 10 至 128 个字符。',
-  already_exists: '该邮箱已注册，请登录。', invite_required: '请输入有效的邀请码。', invalid_email: '请输入有效的邮箱。',
+  already_exists: '该邮箱已注册，请登录。', invalid_email: '请输入有效的邮箱。',
   asr_not_configured: '尚未配置语音识别服务。', minutes_not_configured: '尚未配置纪要模型，请联系服务维护者。',
   record_not_finalized: '音频仍在补传或转录，请等待处理完成。', empty_transcript: '还没有可总结的转录。',
   notes_revision_conflict: '笔记已有更新，请保留当前内容并重新载入后合并。', minutes_revision_conflict: '纪要已有更新，请重新载入后合并。',

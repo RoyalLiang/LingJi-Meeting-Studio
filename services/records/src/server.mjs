@@ -93,7 +93,6 @@ export async function createRecordServer(options = {}) {
   const syncOrigin = options.localAccount ? null : privateSyncOrigin(options.syncOrigin ?? process.env.RECORD_SYNC_ORIGIN);
   if (syncOrigin && process.env.NODE_ENV === 'production') {
     requireThat(repo.backend === 'postgres', 'private_sync_postgres_required', 500);
-    requireThat((process.env.RECORD_INVITE_CODE?.length ?? 0) >= 16, 'private_sync_invite_required', 500);
   }
   const syncRoutes = syncOrigin && createPrivateSyncRoutes({ store: await repo.privateSync(), origin: syncOrigin });
   const desktopSync = options.localAccount && createDesktopPrivateSync(options.desktopSync);

@@ -38,7 +38,6 @@ export async function createAuth(repo, options = {}) {
       const email = String(body.email || '').trim().toLowerCase();
       requireThat(/^[^@\s]{1,80}@[^@\s]{1,100}\.[^@\s]{2,20}$/.test(email), 'invalid_email', 400);
       requireThat(typeof body.password === 'string' && body.password.length >= 10 && body.password.length <= 128, 'password_length_10_128', 400);
-      requireThat(!process.env.RECORD_INVITE_CODE || body.inviteCode === process.env.RECORD_INVITE_CODE, 'invite_required', 403);
       const salt = randomBytes(16).toString('hex');
       const user = { id: `user:${digest(email)}`, kind: 'user', email, salt, password: await passwordHash(body.password, salt), authVersion: 1 };
       await repo.insert(user); return user;

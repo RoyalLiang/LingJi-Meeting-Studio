@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { api, ApiError, messageOf } from '../api';
 import type { RecordDetail } from '../model';
 import { createVault, recoverVault, type Vault } from '../sync/vault';
+import { readDeviceVault, rememberDeviceVault, type DeviceVault } from '../sync/device';
 import { loadMeetingCopy, meetingCopies, queueMeeting, syncMeetings, type CopySummary } from '../sync/journal';
 import { enrollPasskey, unlockPasskey } from '../sync/passkey';
 import { Button } from './ui';
@@ -10,7 +11,6 @@ import { FeedbackNotice } from './FeedbackNotice';
 import './PrivateSyncSettings.css';
 
 type Session = { email: string | null; companion: string };
-type Initial = Awaited<ReturnType<typeof createVault>>;
 type Invitation = Awaited<ReturnType<typeof import('../sync/pairing').createInvitation>>;
 
 function downloadKit(text: string) {
@@ -30,7 +30,6 @@ function syncError(error: unknown) {
       sync_server_unavailable: '暂时无法连接同步服务，已排队的内容会保留在本机',
       sync_sign_in_required: '请重新登录同步账号',
       sync_vault_exists: '该账号已创建加密资料库，请刷新后解锁',
-      invite_required: '请输入有效的邀请码',
       invalid_credentials: '邮箱或密码有误',
       already_exists: '该邮箱已注册，请登录',
       sync_pair_unavailable: '配对已过期或已被另一台设备领取',
@@ -55,9 +54,8 @@ export function PrivateSyncSettings({ desktop, email, accountChanged, record, re
 }) {
   const [session, setSession] = useState<Session | null>(null);
   const [register, setRegister] = useState(false);
-  const [vault, setVault] = useState<Vault | null>();
-  const [initial, setInitial] = useState<Initial | null>(null);
-  const [kitConfirmed, setKitConfirmed] = useState(false);
+  const [vault, setVault] = useState<Vault>();
+  const [backup, setBackup] = useState<string>();
   const [unlocked, setUnlocked] = useState(false);
   const [copies, setCopies] = useState<CopySummary[]>([]);
   const [busy, setBusy] = useState(false), [ready, setReady] = useState(false);
@@ -67,19 +65,52 @@ export function PrivateSyncSettings({ desktop, email, accountChanged, record, re
   const [approve, setApprove] = useState<(() => void) | null>(null);
   const secret = useRef<Uint8Array<ArrayBuffer> | null>(null);
   const pending = useRef<AbortController | null>(null);
-  const initialRef = useRef<Initial | null>(null);
+  const accountEmail = desktop ? session?.email : email;
   function forget() {
     pending.current?.abort();
     pending.current = null;
     secret.current?.fill(0);
     secret.current = null;
-    initialRef.current?.root.fill(0);
-    initialRef.current = null;
   }
-  async function readVault(signal: AbortSignal) {
-    const { vault } = await api<{ vault: Vault | null }>('/private-sync/vault', 'GET', undefined, signal);
+
+  async function connectAccount(account: string, signal: AbortSignal) {
+    const getVault = async () => (await api<{ vault: Vault | null }>('/private-sync/vault', 'GET', undefined, signal)).vault;
+    let cloud = await getVault();
     signal.throwIfAborted();
-    setVault(vault);
+    if (cloud) setVault(cloud);
+    let local = await readDeviceVault(account, cloud ?? undefined);
+    try {
+      signal.throwIfAborted();
+      if (!cloud && !local) {
+        const generated = await createVault();
+        local = generated;
+        signal.throwIfAborted();
+        // Save before publishing the descriptor so a lost response cannot leave an unusable vault.
+        if (!await rememberDeviceVault(account, generated, true)) {
+          generated.root.fill(0);
+          local = await readDeviceVault(account);
+        }
+      }
+      if (!local) return;
+      signal.throwIfAborted();
+      if (!cloud) {
+        try {
+          await api('/private-sync/vault', 'PUT', local.vault, signal);
+          cloud = local.vault;
+        } catch (failure) {
+          if (!(failure instanceof ApiError) || failure.code !== 'sync_vault_exists') throw failure;
+          cloud = await getVault();
+          if (!cloud) throw failure;
+        }
+      }
+      signal.throwIfAborted();
+      setVault(cloud);
+      if (local.vault.id === cloud.id && local.vault.salt === cloud.salt) {
+        await enter({ ...local, vault: cloud }, signal);
+      }
+    } finally {
+      if (local && local.root !== secret.current) local.root.fill(0);
+    }
   }
   useEffect(() => {
     const controller = new AbortController();
@@ -87,13 +118,14 @@ export function PrivateSyncSettings({ desktop, email, accountChanged, record, re
       const account = desktop ? await api<Session>('/private-sync/session', 'GET', undefined, controller.signal) : null;
       controller.signal.throwIfAborted();
       if (account) { setSession(account); accountChanged?.(account.email); }
-      if (account?.email || !desktop) await readVault(controller.signal);
+      const owner = desktop ? account?.email : email;
+      if (owner) await connectAccount(owner, controller.signal);
       setError('');
       setReady(true);
     }
     void load().catch(failure => { if (!controller.signal.aborted) { setError(syncError(failure)); setReady(true); } });
     return () => { controller.abort(); forget(); };
-  }, [desktop, accountChanged]);
+  }, [desktop, email, accountChanged]);
 
   function run(action: (signal: AbortSignal) => Promise<void>) {
     if (pending.current) return;
@@ -116,17 +148,34 @@ export function PrivateSyncSettings({ desktop, email, accountChanged, record, re
     setNotice(result.pending ? '仍有会议待传，可继续同步' : '同步完成');
   }
 
-  async function enter(localVault: Vault, key: Uint8Array<ArrayBuffer>, signal: AbortSignal) {
-    if (signal.aborted) { key.fill(0); return; }
-    secret.current?.fill(0);
-    secret.current = key;
-    setUnlocked(true);
-    setVault(localVault);
-    setPairCode('');
-    const local = await meetingCopies(localVault, key);
-    signal.throwIfAborted();
-    setCopies(local);
-    await update(localVault, key, signal);
+  async function enter(device: DeviceVault, signal: AbortSignal, remember = false) {
+    const { vault: localVault, root: key } = device;
+    let kit = device.kit;
+    try {
+      signal.throwIfAborted();
+      if (remember && accountEmail) {
+        if (!kit) {
+          const previous = await readDeviceVault(accountEmail, localVault).catch(() => null);
+          kit = previous?.kit;
+          previous?.root.fill(0);
+        }
+        signal.throwIfAborted();
+        await rememberDeviceVault(accountEmail, { ...device, kit });
+      }
+      signal.throwIfAborted();
+      secret.current?.fill(0);
+      secret.current = key;
+      setUnlocked(true);
+      setVault(localVault);
+      setBackup(kit);
+      setPairCode('');
+      const local = await meetingCopies(localVault, key);
+      signal.throwIfAborted();
+      setCopies(local);
+      await update(localVault, key, signal);
+    } finally {
+      if (secret.current !== key) key.fill(0);
+    }
   }
 
   function signIn(event: FormEvent<HTMLFormElement>) {
@@ -138,7 +187,7 @@ export function PrivateSyncSettings({ desktop, email, accountChanged, record, re
       signal.throwIfAborted();
       setRegister(false);
       form.reset(); setSession(user); accountChanged?.(user.email); setVault(undefined);
-      await readVault(signal);
+      if (user.email) await connectAccount(user.email, signal);
     });
   }
 
@@ -147,32 +196,13 @@ export function PrivateSyncSettings({ desktop, email, accountChanged, record, re
     const form = event.currentTarget;
     const code = String(new FormData(form).get('kit'));
     form.reset();
-    if (vault) run(async signal => enter(vault, await recoverVault(vault, code), signal));
+    if (vault) run(async signal => enter({ vault, root: await recoverVault(vault, code), kit: code.trim() }, signal, true));
   }
 
   function lock() {
     forget();
-    setUnlocked(false); setInitial(null); setInvitation(null); setApprove(null); setCopies([]); setQr(''); setPairCode(''); setBusy(false);
-    setNotice('这台设备已锁定同步');
-  }
-
-  async function beginSetup(signal: AbortSignal) {
-    const draft = await createVault();
-    if (signal.aborted) { draft.root.fill(0); return; }
-    initialRef.current = draft;
-    setInitial(draft);
-    setKitConfirmed(false);
-  }
-
-  function enroll() {
-    if (!initial || !kitConfirmed) return;
-    run(async signal => {
-      await api('/private-sync/vault', 'PUT', initial.vault, signal);
-      const key = initial.root;
-      initialRef.current = null;
-      setInitial(null);
-      await enter(initial.vault, key, signal);
-    });
+    setUnlocked(false); setBackup(undefined); setInvitation(null); setApprove(null); setCopies([]); setQr(''); setPairCode(''); setBusy(false);
+    setNotice('当前会话已锁定');
   }
 
   const relay = desktop ? session?.companion || 'https://lingji.rookiehouse.com' : location.origin;
@@ -217,7 +247,7 @@ export function PrivateSyncSettings({ desktop, email, accountChanged, record, re
     event.preventDefault();
     if (vault) run(async signal => {
       const { joinInvite } = await import('../sync/pairing');
-      await enter(vault, await joinInvite(vault, pairCode, relay, signal), signal);
+      await enter({ vault, root: await joinInvite(vault, pairCode, relay, signal) }, signal, true);
     });
   }
 
@@ -245,12 +275,11 @@ export function PrivateSyncSettings({ desktop, email, accountChanged, record, re
 
   const status = error ? <FeedbackNotice key={error} message={error} error/> : notice ? <p role="status" className="muted">{notice}</p> : null;
   if (!ready) return <section className="settings-section"><p role="status">正在加载账号…</p></section>;
-  if (desktop && !session?.email) return <section className="settings-section sync-settings" aria-label="聆记账号">
-    <div className="sync-intro"><h2>{register ? '注册聆记账号' : '登录聆记账号'}</h2><p className="muted">使用同一个账号，在设备间同步选中的会议。</p></div>
+  if (desktop && !session?.email) return <section className="settings-section sync-settings account-access" aria-label="聆记账号">
+    <div className="sync-intro"><h2>{register ? '创建聆记账号' : '登录聆记账号'}</h2></div>
     <form onSubmit={signIn} className="sync-form">
       <label>邮箱<input type="email" name="email" autoComplete="username" required/></label>
       <label>密码<input key={register ? 'new' : 'existing'} type="password" name="password" autoComplete={register ? 'new-password' : 'current-password'} required minLength={10} maxLength={128}/></label>
-      {register && <label>邀请码<input name="inviteCode" autoComplete="off"/></label>}
       <div className="sync-actions">
         <Button variant="primary" type="submit" disabled={busy}>{busy ? '请稍候…' : register ? '注册并登录' : '登录'}</Button>
         <Button type="button" variant="ghost" disabled={busy} onClick={() => { setRegister(!register); setError(''); setNotice(''); }}>{register ? '返回登录' : '注册账号'}</Button>
@@ -268,20 +297,10 @@ export function PrivateSyncSettings({ desktop, email, accountChanged, record, re
       })}>退出账号</Button>}
     </div>
     <h3>会议同步</h3>
-    {vault === undefined && (error ? <Button disabled={busy} onClick={() => run(readVault)}>重新连接</Button> : <p role="status" className="muted">正在检查同步状态…</p>)}
-    {vault === null && !initial && <div className="sync-stack">
-      <p>可同步已完成会议的转录、纪要和手记。原音和截图保存在本机。</p>
-      <Button variant="primary" disabled={busy} onClick={() => run(beginSetup)}>设置同步</Button>
-    </div>}
-    {initial && <div className="sync-stack">
-      <p>请先下载恢复密钥。换设备或遗失旧设备时，可用它恢复会议。</p>
-      <Button onClick={() => downloadKit(initial.kit)}>下载恢复密钥</Button>
-      <label className="checkbox-label"><input type="checkbox" checked={kitConfirmed} onChange={event => setKitConfirmed(event.target.checked)}/>我已妥善保存</label>
-      <Button variant="primary" disabled={busy || !kitConfirmed} onClick={enroll}>启用同步</Button>
-    </div>}
+    {!vault && (error && accountEmail ? <Button disabled={busy} onClick={() => run(signal => connectAccount(accountEmail, signal))}>重新连接</Button> : <p role="status" className="muted">正在准备会议同步…</p>)}
     {vault && !unlocked && <div className="sync-stack">
-      <p>请解锁这台设备，以访问该账号的同步会议。</p>
-      {!desktop && <Button variant="primary" disabled={busy} onClick={() => run(async signal => enter(vault, await unlockPasskey(vault, signal), signal))}>用通行密钥解锁</Button>}
+      <p>首次在这台设备使用同步时，需要确认设备。</p>
+      {!desktop && <Button variant="primary" disabled={busy} onClick={() => run(async signal => enter({ vault, root: await unlockPasskey(vault, signal) }, signal, true))}>用通行密钥解锁</Button>}
       <details className="sync-options">
         <summary>从旧设备配对</summary>
         <form className="sync-form" onSubmit={useInvitation}>
@@ -326,7 +345,8 @@ export function PrivateSyncSettings({ desktop, email, accountChanged, record, re
           {!invitation && <Button onClick={pair} disabled={busy}>配对新设备</Button>}
           {desktop ? <ExternalLink href={relay}>在浏览器管理通行密钥</ExternalLink> :
             <Button disabled={busy} onClick={() => run(async signal => { await enrollPasskey(vault, secret.current!, signal); setNotice('通行密钥已添加'); })}>添加通行密钥</Button>}
-          <Button variant="ghost" onClick={lock}>锁定此设备</Button>
+          {backup && <Button onClick={() => downloadKit(backup)}>下载恢复密钥</Button>}
+          <Button variant="ghost" onClick={lock}>锁定当前会话</Button>
         </div>
         {invitation && <div className="sync-invitation">
           <img src={qr} width={220} height={220} alt="新设备配对二维码"/>

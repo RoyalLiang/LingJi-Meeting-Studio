@@ -47,9 +47,9 @@ export function createDesktopPrivateSync({ origin = PRIVATE_SYNC_COMPANION, fetc
       limit('private-sync-login', 10);
       const current = ++generation;
       session = undefined;
-      const { email, password, register, inviteCode } = await readBody(req, 4000);
+      const { email, password, register } = await readBody(req, 4000);
       const upstream = register === true
-        ? await remote('/api/auth/register', 'POST', { email, password, inviteCode })
+        ? await remote('/api/auth/register', 'POST', { email, password })
         : await remote('/api/auth/login', 'POST', { email, password });
       const data = await jsonResponse(upstream);
       if (!upstream.ok) return send(res, upstream.status, { error: data.error || 'sync_sign_in_failed' });

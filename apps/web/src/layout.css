@@ -469,5 +469,3 @@ html:not(.recording-capsule-mode) body{background:var(--page)}
 .settings-page .settings-dependent-fields>label{grid-template-rows:minmax(var(--badge-height),1fr) auto;align-content:stretch;align-items:center}
 
 .settings-page :is(input:not([type=checkbox]):not([type=radio]):not([type=hidden]),.select-trigger){min-height:max(var(--control-height),var(--touch-target));padding:.625rem .75rem;font-size:var(--control-font-size);line-height:var(--control-line-height)}
-
-@media(min-width:801px){.app-shell.showing-account{grid-template-columns:minmax(195px,min(20vw,256px)) minmax(0,1fr)}}
