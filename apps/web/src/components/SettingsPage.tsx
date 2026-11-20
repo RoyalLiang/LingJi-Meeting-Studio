@@ -1,7 +1,7 @@
 import { Brand } from './Brand';
 import { ModuleConnectionCheck } from './ModuleConnectionCheck';
 import { api } from '../api';
-import { lazy, Suspense, useCallback, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Translate, WarningCircle } from '@phosphor-icons/react';
 import type { Bootstrap, RecordDetail } from '../model';
 import type { useClientUpdates } from '../useClientUpdates';
@@ -15,9 +15,14 @@ import { Select } from './Select';
 import { Button } from './ui';
 const PrivateSyncSettings = lazy(() => import('./PrivateSyncSettings').then(module => ({ default: module.PrivateSyncSettings })));
 const AudioBackupSettings=lazy(()=>import('./AudioBackupSettings').then(module=>({default:module.AudioBackupSettings})));
-type Props={visible?:boolean;restored?:(id:string)=>void;voices?:()=>void;openContext:()=>void;close:()=>void;boot:Bootstrap;record:RecordDetail|null;recording:boolean;busy:boolean;updates:ReturnType<typeof useClientUpdates>;saved:(state:Pick<Bootstrap,'providers'|'meetingAutomation'|'audioMinutesDefault'>)=>void;language:(value:string)=>Promise<void>;translated:(value:string)=>void;diagnostics:()=>void;backup:()=>void};
-export function SettingsPage({visible=true,restored,voices,openContext,close,boot,record,recording,busy,updates,saved,language,translated,diagnostics,backup}:Props) {
-  const [tab,setTab]=useState('models'),[actions,setActions]=useState<HTMLDivElement|null>(null);
+const tabs = [['models','模型与转录'], ['audio','音频与原音'], ['vocabulary','词表与翻译'], ['updates','更新与诊断'], ['account','账号']] as const;
+export type SettingsTab = typeof tabs[number][0];
+type Props={visible?:boolean;tab:SettingsTab;setTab:(tab:SettingsTab)=>void;accountChanged:(email:string|null)=>void;restored?:(id:string)=>void;voices?:()=>void;openContext:()=>void;close:()=>void;boot:Bootstrap;record:RecordDetail|null;recording:boolean;busy:boolean;updates:ReturnType<typeof useClientUpdates>;saved:(state:Pick<Bootstrap,'providers'|'meetingAutomation'|'audioMinutesDefault'>)=>void;language:(value:string)=>Promise<void>;translated:(value:string)=>void;diagnostics:()=>void;backup:()=>void};
+export function SettingsPage({visible=true,tab,setTab,accountChanged,restored,voices,openContext,close,boot,record,recording,busy,updates,saved,language,translated,diagnostics,backup}:Props) {
+  const [actions,setActions]=useState<HTMLDivElement|null>(null);
+  const accountVisible = visible && tab === 'account';
+  const [visitedAccount, setVisitedAccount] = useState(accountVisible);
+  useEffect(() => { if (accountVisible) setVisitedAccount(true); }, [accountVisible]);
   const vocabularySave=useRef<(()=>Promise<void>)|null>(null);
   const registerVocabulary=useCallback((save:(()=>Promise<void>)|null)=>{vocabularySave.current=save;},[]);
   const backupSave=useRef<(()=>Promise<void>)|null>(null);
@@ -25,11 +30,10 @@ export function SettingsPage({visible=true,restored,voices,openContext,close,boo
   const networkSave=useRef<(()=>Promise<void>)|null>(null);
   const registerNetwork=useCallback((save:(()=>Promise<void>)|null)=>{networkSave.current=save;},[]);
   const savePendingSettings=useCallback(async()=>{await networkSave.current?.();await backupSave.current?.();await vocabularySave.current?.();},[]);
-  const tabs=[['models','模型与转录'],['audio','音频与原音'],['vocabulary','词表与翻译'],['updates','更新与诊断'],['sync','加密同步']];
-  return <section className="settings-page" aria-label="设置与诊断" onKeyDown={event=>{if(event.key==='Escape'&&!document.querySelector('dialog[open],[role=listbox]:popover-open,[role=menu]:popover-open')){event.preventDefault();close();}}}><header className="surface-heading"><Button variant="ghost" className="settings-back" aria-label="返回工作台" onClick={close}><Brand markOnly/></Button><div><h1>{tabs.find(item=>item[0]===tab)?.[1]}</h1></div><div className="surface-actions">{voices&&<Button onClick={voices}>声纹库</Button>}<Button className="context-toggle" onClick={openContext}>配置与使用</Button><div className="settings-action-slot" ref={setActions}/></div></header>
-    <nav className="surface-tabs" aria-label="设置分类">{tabs.filter(([id]) => id !== 'sync' || boot.privateSync).map(([id,label])=><button key={id} aria-current={tab===id?'page':undefined} onClick={()=>setTab(id)}>{label}</button>)}</nav>
+  return <section className="settings-page" aria-label={tab==='account' ? '账号' : '设置与诊断'} onKeyDown={event=>{if(event.key==='Escape'&&!document.querySelector('dialog[open],[role=listbox]:popover-open,[role=menu]:popover-open')){event.preventDefault();close();}}}><header className="surface-heading"><Button variant="ghost" className="settings-back" aria-label="返回工作台" onClick={close}><Brand markOnly/></Button><div><h1>{tabs.find(item=>item[0]===tab)?.[1]}</h1></div>{tab!=='account'&&<div className="surface-actions">{voices&&<Button onClick={voices}>声纹库</Button>}<Button className="context-toggle" onClick={openContext}>配置与使用</Button><div className="settings-action-slot" ref={setActions}/></div>}</header>
+    {tab!=='account'&&<nav className="surface-tabs" aria-label="设置分类">{tabs.filter(([id]) => id !== 'account' || boot.privateSync).map(([id,label])=><button key={id} aria-current={tab===id?'page':undefined} onClick={()=>setTab(id)}>{label}</button>)}</nav>}
     <div className="settings-pages">
-      {visible && tab === 'sync' && boot.privateSync && <Suspense fallback={<p role="status">正在加载加密同步…</p>}><PrivateSyncSettings desktop={Boolean(boot.localAccount)} record={record} restored={restored} /></Suspense>}<div hidden={tab!=='models'&&tab!=='vocabulary'}>{boot.canConfigure?<ProviderSettings section={tab==='vocabulary'?'translation':'models'} saved={saved} actionsTarget={tab==='models'||tab==='vocabulary'?actions:null} beforeSave={savePendingSettings} initialProvider={boot.providers.asrProvider==='doubao-audio-only'?undefined:boot.providers.asrProvider} initialMinutesMode={boot.providers.minutesMode}/>:<p className="muted">当前账户无权修改模型配置。</p>}</div>
+      {boot.privateSync && (accountVisible || visitedAccount) && <div hidden={!accountVisible}><Suspense fallback={<p role="status">正在加载账号…</p>}><PrivateSyncSettings desktop={Boolean(boot.localAccount)} record={record} restored={restored} accountChanged={accountChanged}/></Suspense></div>}<div hidden={tab!=='models'&&tab!=='vocabulary'}>{boot.canConfigure?<ProviderSettings section={tab==='vocabulary'?'translation':'models'} saved={saved} actionsTarget={tab==='models'||tab==='vocabulary'?actions:null} beforeSave={savePendingSettings} initialProvider={boot.providers.asrProvider==='doubao-audio-only'?undefined:boot.providers.asrProvider} initialMinutesMode={boot.providers.minutesMode}/>:<p className="muted">当前账户无权修改模型配置。</p>}</div>
       <div hidden={tab!=='models'}>{boot.canConfigure&&<NetworkSettings registerSave={registerNetwork}/>}</div>
     <div hidden={tab!=='audio'}><DeviceSettings disabled={recording}/>{boot.canConfigure&&<Suspense fallback={<p role="status">正在加载音频设置…</p>}><AudioBackupSettings registerSave={registerBackup} actionsTarget={tab==='audio'?actions:null}/></Suspense>}{record&&<Button onClick={backup} disabled={busy}>备份待传音频</Button>}</div>
       <div hidden={tab!=='vocabulary'}><VocabularySettings registerSave={registerVocabulary} actionsTarget={!boot.canConfigure&&tab==='vocabulary'?actions:null}/>{record&&<><section className="settings-section settings-inline"><div className="section-title"><Translate size={19}/><h3>识别语言</h3></div><Select label="当前记录识别语言" readOnly={boot.providers.asrProvider==='sensevoice-local'||busy||['recording','sealed'].includes(record.capture)||record.pendingChunks>0} value={boot.providers.asrProvider==='sensevoice-local'?'auto':record.language} onChange={value=>void language(value)} options={boot.providers.asrProvider==='sensevoice-local'?[{value:'auto',label:'自动识别 · 中英日韩粤'}]:[{value:'auto',label:'自动识别'},{value:'zh',label:'中文'},{value:'en',label:'English'},{value:'ja',label:'日本語'},{value:'ko',label:'한국어'},{value:'yue',label:'粤语'}]}/></section><TranslationSettings key={record.id} recordId={record.id} value={record.translationTarget||''} saved={translated}/></>}</div>

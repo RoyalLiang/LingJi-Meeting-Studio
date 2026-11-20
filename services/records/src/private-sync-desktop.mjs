@@ -47,8 +47,10 @@ export function createDesktopPrivateSync({ origin = PRIVATE_SYNC_COMPANION, fetc
       limit('private-sync-login', 10);
       const current = ++generation;
       session = undefined;
-      const { email, password } = await readBody(req, 4000);
-      const upstream = await remote('/api/auth/login', 'POST', { email, password });
+      const { email, password, register, inviteCode } = await readBody(req, 4000);
+      const upstream = register === true
+        ? await remote('/api/auth/register', 'POST', { email, password, inviteCode })
+        : await remote('/api/auth/login', 'POST', { email, password });
       const data = await jsonResponse(upstream);
       if (!upstream.ok) return send(res, upstream.status, { error: data.error || 'sync_sign_in_failed' });
       const cookie = upstream.headers.getSetCookie().map(value => value.split(';')[0]).find(value => value.startsWith('record_session='));

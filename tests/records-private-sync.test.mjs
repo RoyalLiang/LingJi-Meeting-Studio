@@ -9,6 +9,7 @@ import * as opaque from '@serenity-kit/opaque';
 import { encodeCBOR } from '@levischuck/tiny-cbor';
 import { createRecordServer } from '../services/records/src/server.mjs';
 import { createPrivateSyncStore } from '../services/records/src/private-sync-store.mjs';
+import { createDesktopPrivateSync } from '../services/records/src/private-sync-desktop.mjs';
 import { createVault, newPairSecret, recoverVault, seal, unseal, decodeBytes } from '../apps/web/src/sync/vault.ts';
 
 const stamp = '合成会议正文，仅在端上解密';
@@ -44,6 +45,45 @@ async function cloud(t) {
   }
   return { request, account };
 }
+
+test('desktop account registration authenticates once and logout clears the sync session', async t => {
+  const { request } = await cloud(t);
+  const previousInvite = process.env.RECORD_INVITE_CODE;
+  const inviteCode = 'synthetic-desktop-invite';
+  process.env.RECORD_INVITE_CODE = inviteCode;
+  t.after(() => {
+    if (previousInvite === undefined) delete process.env.RECORD_INVITE_CODE;
+    else process.env.RECORD_INVITE_CODE = previousInvite;
+  });
+  const desktop = createDesktopPrivateSync({
+    origin: fixtureOrigin,
+    fetcher: async (url, options) => {
+      const response = await request(url.pathname.slice('/api'.length) + url.search, options.method,
+        options.body ? JSON.parse(options.body) : undefined, options.headers);
+      const headers = new Headers();
+      for (const cookie of response.cookies) headers.append('Set-Cookie', cookie);
+      return new Response(JSON.stringify(response.data), { status: response.status, headers });
+    },
+  });
+  async function call(route, method, body) {
+    const path = '/api/private-sync/' + route;
+    let result;
+    await desktop({
+      path, url: new URL(path, fixtureOrigin), req: { method, headers: { origin: fixtureOrigin } },
+      readBody: async () => body, send: (_res, status, data) => { result = { status, data }; }, limit: () => {},
+    });
+    return result;
+  }
+  const email = 'desktop-account@example.test', password = 'synthetic-backend-phrase';
+  assert.equal((await call('session', 'POST', { email, password, register: true })).status, 403);
+  assert.deepEqual(await call('session', 'POST', { email, password, register: true, inviteCode }),
+    { status: 200, data: { email, companion: fixtureOrigin } });
+  assert.deepEqual((await call('vault', 'GET')).data, { vault: null });
+  await call('session', 'DELETE');
+  assert.equal((await call('session', 'GET')).data.email, null);
+  await assert.rejects(call('vault', 'GET'), { code: 'sync_sign_in_required' });
+  assert.equal((await call('session', 'POST', { email, password })).data.email, email);
+});
 
 test('encrypted delta across authenticated accounts preserves ordering and idempotent retry', async t => {
   const { account, request } = await cloud(t);

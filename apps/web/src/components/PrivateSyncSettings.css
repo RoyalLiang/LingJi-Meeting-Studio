@@ -1,11 +1,20 @@
 .sync-settings { display: grid; gap: 16px; max-width: 720px; }
 .sync-settings > .button, .sync-form > .button, .sync-stack > .button { justify-self: start; }
-.sync-settings h3, .sync-settings p { margin: 0; }
+.sync-settings h2, .sync-settings h3, .sync-settings p { margin: 0; }
+.sync-settings h2 { font-size: 1.125rem; font-weight: 600; }
+.sync-intro { display: grid; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+.sync-account { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+.sync-account p { color: var(--ink-2); }
 .sync-settings a { color: var(--accent); width: fit-content; }
 .sync-form, .sync-stack { display: grid; gap: 12px; }
 .sync-form label, .sync-invitation label { display: grid; gap: 5px; min-width: 0; }
 .sync-form input:not([type="file"]), .sync-invitation input { min-width: 0; width: 100%; max-width: 420px; }
-.sync-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.sync-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.sync-options { border-top: 1px solid var(--border); }
+.sync-options > summary { padding: 12px 0; color: var(--ink-1); font-weight: 550; cursor: pointer; }
+.sync-options > summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.sync-options > :last-child:not(summary) { margin-bottom: 8px; }
+.sync-options > .sync-invitation { margin-top: 16px; }
 .sync-invitation { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
 .sync-invitation img { background: white; border-radius: 8px; }
 .sync-invitation > div { flex: 1 1 230px; min-width: 0; }

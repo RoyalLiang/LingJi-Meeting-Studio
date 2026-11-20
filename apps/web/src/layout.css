@@ -80,6 +80,9 @@ html:not(.recording-capsule-mode) body{background:var(--page)}
 .v10-sidebar .rail-footer{position:static;z-index:auto;background:transparent;box-shadow:none;backdrop-filter:none;border-radius:0;padding:7px 0 0;margin:0;border:0}.v10-sidebar .rail-utilities>.button{min-height:32px;font-size:.75rem}
 .v10-sidebar .account{display:flex;align-items:center;gap:8px;border:0;padding:12px 8px 2px;min-width:0}.v10-sidebar .account>span:not(.avatar){flex:1;min-width:0}.v10-sidebar .account b{font-size:.75rem;font-weight:500}.v10-sidebar .account small{display:block;font-size:.75rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink-3)}
 .v10-sidebar .account .button{width:30px;height:30px;min-height:30px;padding:0;border:1px solid var(--border);border-radius:50%;background:var(--bg)}.v10-sidebar .avatar{width:29px;height:29px;font-size:12px;background:var(--accent-soft);color:var(--ink-3)}
+.v10-sidebar .sidebar-account{width:100%;min-height:44px;padding:6px 8px;border-radius:var(--control-radius);background:transparent;color:var(--ink-1);text-align:left;cursor:pointer}
+.v10-sidebar .sidebar-account:hover,.v10-sidebar .sidebar-account[aria-current=page]{background:var(--accent-soft)}
+.v10-sidebar .sidebar-account:focus-visible{outline:2px solid var(--focus-ring);outline-offset:2px}
 .rail-system-tools{display:flex;align-items:center;justify-content:flex-end;gap:3px;padding:3px 7px}.rail-system-tools .button{width:25px;min-height:24px;padding:3px;border-radius:50%;background:transparent}.rail-system-tools .client-update-version{margin-right:auto;font-size:.75rem}
 .mobile-navigation,.sidebar-close,.sidebar-backdrop{display:none!important}
 .directory-gallery .surface-heading{padding-inline:0}.directory-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px;margin-top:20px}
@@ -466,3 +469,5 @@ html:not(.recording-capsule-mode) body{background:var(--page)}
 .settings-page .settings-dependent-fields>label{grid-template-rows:minmax(var(--badge-height),1fr) auto;align-content:stretch;align-items:center}
 
 .settings-page :is(input:not([type=checkbox]):not([type=radio]):not([type=hidden]),.select-trigger){min-height:max(var(--control-height),var(--touch-target));padding:.625rem .75rem;font-size:var(--control-font-size);line-height:var(--control-line-height)}
+
+@media(min-width:801px){.app-shell.showing-account{grid-template-columns:minmax(195px,min(20vw,256px)) minmax(0,1fr)}}
