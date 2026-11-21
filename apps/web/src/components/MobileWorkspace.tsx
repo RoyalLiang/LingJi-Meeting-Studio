@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ArrowLeft, ArrowClockwise, FileText, Headphones, Link, Microphone, Moon, ShieldCheck, User, WifiSlash, HardDrives, DeviceMobile, Pause, Play, CaretRight } from '@phosphor-icons/react';
+import { ArrowLeft, ArrowClockwise, FileText, Headphones, Keyhole, Link, Microphone, Moon, ShieldCheck, User, WifiSlash, DeviceMobile, Pause, Play, CaretRight } from '@phosphor-icons/react';
 import type { Minutes } from '../model';
 import type { CopySummary, MeetingAnnotations, MeetingCopy } from '../sync/journal';
 import { api } from '../api';
@@ -299,7 +299,7 @@ export function MobileWorkspace({
   }
   return <div className="mobile-workspace" data-page={page}>
     {(!detail || page !== 'meetings') && <header className="mobile-page-heading">
-      {page === 'record' ? <div className="mobile-space"><Brand markOnly/><span>个人空间</span></div> :
+      {page === 'record' ? <div className="mobile-space"><Brand markOnly/><h1>记录</h1></div> :
         <h1>{page === 'meetings' ? '会议记录' : '个人中心'}</h1>}
       <span className="mobile-sync-pill" data-offline={!online}>
         {!online ? <WifiSlash size={14} aria-hidden="true"/> : <i aria-hidden="true"/>}
@@ -318,7 +318,7 @@ export function MobileWorkspace({
         <input type="search" aria-label="搜索会议" placeholder="搜索标题、纪要或原文" value={query} onChange={event => setQuery(event.target.value)}/>
         <Button variant="ghost" disabled={!online || !unlocked} aria-label="同步会议" onClick={refresh}><ArrowClockwise size={19}/></Button>
       </div>
-              <div className="mobile-space-filters" role="group" aria-label="筛选工作空间">
+      <div className="mobile-space-filters" role="group" aria-label="筛选工作空间">
           {[{ id: '', name: '全部' }, { id: 'personal', name: '个人空间' }, ...workspaces].map(item =>
             <button type="button" key={item.id} aria-pressed={space === item.id} onClick={() => setSpace(item.id)}>{item.name}</button>)}
         </div>
@@ -327,7 +327,7 @@ export function MobileWorkspace({
     {page === 'account' && <>
       {account}
       <section className="mobile-account-card mobile-quota" aria-label="同步存储">
-        <header><h2><HardDrives size={18} aria-hidden="true"/>同步存储</h2>
+        <header><h2>同步存储</h2>
           <Button variant="ghost" onClick={() => setSheet('plans')}>分级方案</Button>
         </header>
         {usage && usage.quota > 0 ? <div className="mobile-quota-list">
@@ -337,25 +337,29 @@ export function MobileWorkspace({
             <meter min={0} max={usage.quota} value={usage.audio}/></label>
         </div> : <p className="mobile-empty">{!online ? '联网后查看用量' : usageError ? '暂时无法查询用量' : unlocked ? '正在查询用量…' : '解锁后可查看用量'}</p>}
       </section>
-      <div className="mobile-account-group">
-        <label><ArrowClockwise size={17}/><span>自动同步会议与纪要</span><MobileSwitch disabled={!unlocked} checked={automatic} change={setAutomatic}/></label>
-        <label><Moon size={17}/><span>深色外观</span><MobileSwitch checked={dark} change={checked => {
+      <section className="mobile-account-section" aria-labelledby="mobile-preferences">
+        <h2 id="mobile-preferences">偏好</h2>
+        <div className="mobile-account-group">
+        <label><ArrowClockwise size={17} aria-hidden="true"/><span>自动同步会议与纪要</span><MobileSwitch disabled={!unlocked} checked={automatic} change={setAutomatic}/></label>
+        <label><Moon size={17} aria-hidden="true"/><span>深色外观</span><MobileSwitch checked={dark} change={checked => {
           const value = checked ? 'dark' : 'light';
           document.documentElement.dataset.theme = value;
           setDark(checked);
           try { localStorage.setItem('meeting-theme', value); } catch {}
           document.dispatchEvent(new Event('meeting:theme'));
         }}/></label>
-      </div>
-      <div className="mobile-account-group">
-        <div><ShieldCheck size={17}/><span>端到端加密</span><small>{unlocked ? '已解锁' : '等待解锁'}</small></div>
-        <button type="button" onClick={() => setSheet('factor')}><ShieldCheck size={17}/><span>双重验证</span>
+        </div>
+      </section>
+      <section className="mobile-account-section" aria-labelledby="mobile-security">
+        <h2 id="mobile-security">账号安全</h2>
+        <div className="mobile-account-group">
+        <div><ShieldCheck size={17} aria-hidden="true"/><span>端到端加密</span><small>{unlocked ? '已解锁' : '等待解锁'}</small></div>
+        <button type="button" onClick={() => setSheet('factor')}><Keyhole size={17} aria-hidden="true"/><span>双重验证</span>
           <CaretRight size={14} aria-hidden="true"/></button>
-        <button type="button" aria-label="设备"  onClick={() => setSheet('devices')}><DeviceMobile size={17}/><span>设备</span>
+        <button type="button" aria-label="设备"  onClick={() => setSheet('devices')}><DeviceMobile size={17} aria-hidden="true"/><span>设备</span>
           <small>当前设备 <CaretRight size={14} aria-hidden="true"/></small></button>
-        <div><FileText size={17}/><span>已同步会议</span><small>{copies.length} 条</small></div>
-        <div><Headphones size={17}/><span>本机回听</span><small>{saved.length} 条</small></div>
-      </div>
+        </div>
+      </section>
       <dialog ref={accountSheet} className="mobile-source-sheet" onClose={() => setSheet(null)}>
         {sheet === 'plans' && <MobileBillingPlans/>}
         {sheet === 'devices' && <MobileAccountDevices/>}
@@ -364,9 +368,8 @@ export function MobileWorkspace({
       </dialog>
     </>}
     <nav className="mobile-nav" aria-label="底部菜单" data-page={page}>
-      <span className="mobile-nav-lens" aria-hidden="true"/>
       {pages.map(([id, label, Icon]) => <button type="button" key={id} aria-current={page === id ? 'page' : undefined} onClick={() => navigate(id)}>
-        <Icon size={20} aria-hidden="true"/>{label}</button>)}
+        <Icon size={20} aria-hidden="true"/><span>{label}</span></button>)}
     </nav>
   </div>;
 }

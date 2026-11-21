@@ -1,6 +1,6 @@
-export function initializeTheme(){
+export function initializeTheme(defaultTheme: 'dark' | 'light' = 'light'){
   const apply=(value:string|null)=>{
-    document.documentElement.dataset.theme=value==='dark'?'dark':'light';
+    document.documentElement.dataset.theme=value==='dark'||value==='light'?value:defaultTheme;
     document.dispatchEvent(new Event('meeting:theme'));
   };
   try{apply(localStorage.getItem('meeting-theme'));}catch{apply(null);}

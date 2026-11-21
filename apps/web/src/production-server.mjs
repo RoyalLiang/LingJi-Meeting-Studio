@@ -25,7 +25,7 @@ const server = http.createServer(async (req, res) => {
     req.pipe(upstream); res.on('close', () => upstream.destroy()); return;
   }
   try {
-    const pathname = decodeURIComponent(new URL(req.url, 'http://local').pathname); let file = resolve(root, `.${pathname}`);
+    const pathname = decodeURIComponent(new URL(req.url, 'http://local').pathname); let file = resolve(root, pathname === '/quick-record' ? 'quick-record.html' : `.${pathname}`);
     if (!file.startsWith(resolve(root) + '/') && file !== resolve(root)) { res.writeHead(403); res.end(); return; }
     if (!(await stat(file).catch(() => null))?.isFile()) {
       if (extname(pathname)) { res.writeHead(404); res.end(); return; } file = resolve(root, 'index.html');

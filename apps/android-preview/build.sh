@@ -13,6 +13,7 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
 mkdir -p "$work/res/drawable-nodpi" "$work/classes" "$work/dex"
+cp -R "$base/res/." "$work/res/"
 cp "$root/apps/web/public/brand/quick-record-192.png" "$work/res/drawable-nodpi/lingji.png"
 "$tools/aapt2" compile --dir "$work/res" -o "$work/resources.zip"
 "$tools/aapt2" link -I "$android" --manifest "$base/AndroidManifest.xml" -o "$work/raw.apk" "$work/resources.zip"

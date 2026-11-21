@@ -98,6 +98,11 @@ test('encrypted delta across authenticated accounts preserves ordering and idemp
   const { vault, root, kit } = await createVault();
   assert.equal((await request('/private-sync/vault')).status, 401);
   assert.equal((await request('/private-sync/usage')).status, 401);
+  assert.equal((await request('/private-sync/mobile-session')).status, 401);
+  const mobile = await first('/private-sync/mobile-session');
+  assert.equal(mobile.data.email, 'sync-first@example.test');
+  assert.match(mobile.data.csrf, /^[a-f0-9]{64}$/);
+  assert.deepEqual(Object.keys(mobile.data).sort(), ['csrf', 'email']);
   assert.equal((await first('/private-sync/vault', 'PUT', vault, { Origin: 'https://other.example.test' })).status, 403);
   assert.equal((await first('/private-sync/vault', 'PUT', vault, { 'X-CSRF-Token': '' })).status, 403);
   assert.equal((await first('/private-sync/vault', 'PUT', vault)).status, 201);

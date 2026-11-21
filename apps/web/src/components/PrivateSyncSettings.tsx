@@ -108,6 +108,7 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
   const [backup, setBackup] = useState<string>();
   const [unlocked, setUnlocked] = useState(false);
   const [copies, setCopies] = useState<CopySummary[]>([]);
+  const profileEditor = useRef<HTMLDialogElement>(null);
   const [mobilePage, setMobilePage] = useState<MobilePage>('record');
   const [phoneCopies, setPhoneCopies] = useState<MobileRecording[]>([]);
   const [phoneMeetingSync, setPhoneMeetingSync] = useState(true);
@@ -711,9 +712,14 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
 
   function saveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const sheet = event.currentTarget.closest('dialog');
     run(async signal => {
       const data = await api<{ name: string }>('/private-sync/profile', 'PATCH', { name }, signal);
-      signal.throwIfAborted(); setName(data.name); setProfile(data.name); setNotice('个人设置已保存');
+      signal.throwIfAborted();
+      setName(data.name);
+      setProfile(data.name);
+      sheet?.close();
+      setNotice('个人设置已保存');
     });
   }
   if (mobile) {
@@ -721,13 +727,21 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
       <div className="mobile-account-identity">
         <span className="account-avatar" aria-hidden="true">{(profile || accountEmail || '聆').slice(0, 1).toUpperCase()}</span>
         <div><strong>{profile || '个人账号'}</strong><small>{accountEmail}</small></div>
-        {signOut && <Button variant="ghost" disabled={!online || busy || recording} aria-label="退出账号" onClick={signOut}>退出</Button>}
+        <Button variant="ghost" onClick={() => profileEditor.current?.showModal()}>编辑资料</Button>
       </div>
-      <form className="mobile-profile-form" onSubmit={saveProfile}>
-        <label htmlFor="phone-profile-name">显示名称</label>
-        <input id="phone-profile-name" aria-label="显示名称" placeholder="输入显示名称" autoComplete="nickname" maxLength={60} value={name} disabled={!online || busy} onChange={event => setName(event.target.value)}/>
-        <Button variant="primary" type="submit" disabled={!online || busy || name.trim() === profile}>保存</Button>
-      </form>
+      <dialog ref={profileEditor} className="mobile-source-sheet" aria-labelledby="mobile-profile-heading">
+        <h2 id="mobile-profile-heading">编辑资料</h2>
+        <form className="mobile-profile-form" onSubmit={saveProfile}>
+          <label htmlFor="phone-profile-name">显示名称</label>
+          <input id="phone-profile-name" placeholder="输入显示名称" autoComplete="nickname" maxLength={60}
+            value={name} disabled={!online || busy} onChange={event => setName(event.target.value)}/>
+          <Button variant="primary" type="submit" disabled={!online || busy || name.trim() === profile}>保存</Button>
+        </form>
+        <div className="mobile-sheet-actions mobile-profile-actions">
+          {signOut && <Button variant="ghost" disabled={!online || busy || recording} onClick={signOut}>退出账号</Button>}
+          <Button variant="ghost" onClick={() => profileEditor.current?.close()}>关闭</Button>
+        </div>
+      </dialog>
     </section>;
     const recorder = vault && unlocked && !legacyAccount ? <QuickMobileRecording
       visible={mobilePage === 'record'}

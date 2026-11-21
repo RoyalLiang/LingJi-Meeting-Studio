@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { BookmarkSimple, Pause, Play } from '@phosphor-icons/react';
+import { BookmarkSimple, Microphone, Pause, Play } from '@phosphor-icons/react';
 import { MOBILE_RECORDING_BYTES, type MobileFrame } from '../sync/mobile';
 import { encodeBytes } from '../sync/vault';
 import type { MobileRecording } from '../sync/mobile-library';
@@ -221,7 +221,7 @@ export function QuickMobileRecording({ save, archive, status, visible, showRecor
         else if (draft.current) void persist(draft.current);
         else void start();
       }}>
-        {phase === 'recording' ? <Pause size={28} weight="fill"/> : <Play size={28} weight="fill"/>}
+        {phase === 'recording' ? <Pause size={28} weight="fill"/> : phase === 'paused' ? <Play size={27} weight="fill"/> : <Microphone size={31} weight="fill"/>}
       </Button>
     </div>
     <div className="quick-mobile-details">

@@ -4,8 +4,16 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { transform } from 'esbuild';
 
-const source = await readFile(new URL('../apps/web/src/App.tsx', import.meta.url), 'utf8');
-const compiled = (await transform(`${source}\nexport const authTestComponents = { Auth, Workspace };`, { loader: 'tsx', jsx: 'automatic', format: 'cjs', define: { 'import.meta.env.DEV': 'false' } })).code;
+async function compile(path, extra = '') {
+  const source = await readFile(new URL(path, import.meta.url), 'utf8');
+  return (await transform(source + extra, {
+    loader: 'tsx', jsx: 'automatic', format: 'cjs', define: { 'import.meta.env.DEV': 'false' },
+  })).code;
+}
+const [compiledApp, compiledLogin] = await Promise.all([
+  compile('../apps/web/src/App.tsx', '\nexport { Workspace };'),
+  compile('../apps/web/src/components/AccountLogin.tsx'),
+]);
 const tick = () => new Promise(resolve => setImmediate(resolve));
 function deferred() { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
 
@@ -30,13 +38,18 @@ function harness(api, {search='',modules={}} = {}) {
     module: { exports }, exports,
     require: name => name === 'react' ? { memo:component=>component, useState, useRef, useEffect, useLayoutEffect:useEffect, useCallback, lazy: () => component } : name === 'react/jsx-runtime' ? {
       jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }), Fragment: Symbol('fragment')
-    } : name === './components/RecordingProgress' ? {createCaptureSignals:()=>({update(){}}),RecordingProgress:component,RecordingRuntime:component,LiveMeetingControls:component,LiveCaptureSetup:component} : name === './useClientUpdates' ? { useClientUpdates: () => ({native:false,status:{phase:'idle',currentVersion:'0.1.47',downloaded:0}}) } : name === './audio/native-runtime' ? {setNativeAudioTransport(){},nativeCaptureSessions:async()=>[]} : name === './api' ? { api, ApiError: class ApiError extends Error { constructor(message, status) { super(message); this.status = status; } }, setCsrf() {}, setAudioTransport() {}, messageOf: error => error.message } : modules[name] || generic,
+    } : name === './components/RecordingProgress' ? {createCaptureSignals:()=>({update(){}}),RecordingProgress:component,RecordingRuntime:component,LiveMeetingControls:component,LiveCaptureSetup:component} : name === './useClientUpdates' ? { useClientUpdates: () => ({native:false,status:{phase:'idle',currentVersion:'0.1.47',downloaded:0}}) } : name === './audio/native-runtime' ? {setNativeAudioTransport(){},nativeCaptureSessions:async()=>[]} : ['./api', '../api'].includes(name) ? { api, ApiError: class ApiError extends Error { constructor(message, status) { super(message); this.status = status; } }, setCsrf() {}, setAudioTransport() {}, messageOf: error => error.message } : modules[name] || generic,
     location: { pathname: '/', search }, localStorage: { getItem: () => null }, navigator: { onLine: true },
     URLSearchParams, AbortController, document: { documentElement: { dataset: {} } },
     FormData: class { constructor(form) { this.form = form; } get(name) { return this.form[name] ?? null; } },
   };
-  vm.runInNewContext(compiled, sandbox);
-  return { render(name, props = {}) { cursor = 0; return sandbox.module.exports.authTestComponents[name](props); }, effects };
+  function run(compiled) {
+    const exports = {}, module = { exports };
+    vm.runInNewContext(compiled, { ...sandbox, exports, module });
+    return module.exports;
+  }
+  const components = { Workspace: run(compiledApp).Workspace, Auth: run(compiledLogin).Auth };
+  return { render(name, props = {}) { cursor = 0; return components[name](props); }, effects };
 }
 function find(node, predicate) {
   if (!node || typeof node !== 'object') return undefined;

@@ -44,7 +44,9 @@ export function createPrivateSyncRoutes({ store, origin, repo, auth }) {
     else limit('private-sync:' + user.id, 160);
     const audioStream = route === 'audio' || liveStream;
     if (route.startsWith('passkey/')) limit('sync-passkey:' + owner, 24);
-    if (route === 'profile' && method === 'GET') {
+    if (route === 'mobile-session' && method === 'GET') {
+      send(res, 200, { email: user.email, csrf: auth.csrf(user) });
+    } else if (route === 'profile' && method === 'GET') {
       send(res, 200, { name: user.profile?.name || '' });
     } else if (route === 'profile' && method === 'PATCH') {
       const { name } = await readBody(req, 1024);

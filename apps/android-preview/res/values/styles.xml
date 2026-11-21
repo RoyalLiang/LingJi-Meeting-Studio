@@ -1,0 +1,10 @@
+<resources>
+    <color name="browser_background">#f5f7f4</color>
+    <style name="PreviewTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/browser_background</item>
+        <item name="android:statusBarColor">@color/browser_background</item>
+        <item name="android:navigationBarColor">@color/browser_background</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+</resources>
