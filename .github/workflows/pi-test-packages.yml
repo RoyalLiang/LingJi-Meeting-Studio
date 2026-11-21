@@ -58,6 +58,18 @@ jobs:
       - run: rustup toolchain install 1.92.0 --profile minimal && rustup default 1.92.0
       - run: npm ci
       - run: npm run lint && npm run typecheck && npm run build:web && npm test
+      - run: node scripts/asr-test-fixtures.mjs
+      - id: vocabulary
+        run: |
+          node -e 'const m=require("./services/records/src/data/builtin-vocabulary.manifest.json"); if(!["20261105.2","20261105.3","20261106.4"].includes(m.version))process.exit(1); console.log("version="+m.version)' >> "$GITHUB_OUTPUT"
+      - name: Materialize private built-in vocabulary
+        env:
+          TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART1: ${{ (steps.vocabulary.outputs.version == '20261105.2' && secrets.TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART1) || (steps.vocabulary.outputs.version == '20261105.3' && secrets.TTS_BUILTIN_VOCABULARY_20261105_3_PART1) || (steps.vocabulary.outputs.version == '20261106.4' && secrets.TTS_BUILTIN_VOCABULARY_20261106_4_PART1) }}
+          TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART2: ${{ (steps.vocabulary.outputs.version == '20261105.2' && secrets.TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART2) || (steps.vocabulary.outputs.version == '20261105.3' && secrets.TTS_BUILTIN_VOCABULARY_20261105_3_PART2) || (steps.vocabulary.outputs.version == '20261106.4' && secrets.TTS_BUILTIN_VOCABULARY_20261106_4_PART2) }}
+        run: node scripts/materialize-builtin-vocabulary.mjs
+      - name: Keep vocabulary payload outside Git
+        run: git check-ignore --quiet services/records/src/data/builtin-vocabulary.private.json
+      - run: npm run test:smoke
       - run: node scripts/prepare-client-backend.mjs
       - run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --features smoke-test -- --test-threads=1
       - name: Build and verify Mac test DMG
