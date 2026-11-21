@@ -59,7 +59,11 @@ export async function prepareLocalAsr({ destination, cacheRoot, platform = proce
       assert.equal(JSON.parse(await readFile(join(extracted, 'package.json'), 'utf8')).version, pkg.version);
     }
     for (const resource of lock.files) {
-      const cached = await downloadPinned(resource.url, join(cacheRoot, resource.sha256), 'sha256', resource.sha256);
+      const vendored = resource.path.startsWith('licenses/ONNXRUNTIME-');
+      const cached = vendored
+        ? fileURLToPath(new URL(`./local-asr-${resource.path}`, import.meta.url))
+        : await downloadPinned(resource.url, join(cacheRoot, resource.sha256), 'sha256', resource.sha256);
+      if (vendored) assert.equal(await digest(cached), resource.sha256, `Vendored license checksum mismatch: ${resource.path}`);
       assert.equal((await stat(cached)).size, resource.bytes);
       await mkdir(dirname(join(stage, resource.path)), { recursive: true });
       await cp(cached, join(stage, resource.path));
