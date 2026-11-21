@@ -53,24 +53,21 @@ fn run(selected:Target,sender:SyncSender<Vec<f32>>,error:Arc<Mutex<Option<String
  if !process.active(){return Err("所选应用已退出，请重新选择应用。".into());}
  unsafe{client.0.Start()}.map_err(|_|"无法启动所选应用声音，请重试。")?;
  ready.send(Ok(format!("应用声音 · {label}"))).map_err(|_|"应用音频接入已取消。")?;
- let mut checked=Instant::now();let mut last_packet=Instant::now();let mut received=false;
+ let mut checked=Instant::now();
  while !stop.load(Ordering::Acquire){
   if checked.elapsed()>=Duration::from_millis(500){if !process.active(){return Err("所选应用已退出，请重新接入声音来源。".into());}checked=Instant::now();}
   let frames=unsafe{capture.GetNextPacketSize()}.map_err(|_|"应用声音读取中断，请重新接入此音源。")?;
-  if !armed.load(Ordering::Acquire){last_packet=Instant::now();}
-  if frames==0 {if last_packet.elapsed()>Duration::from_secs(3){return Err("所选应用未提供音频数据，请播放会议声音后重新接入。".into());}std::thread::sleep(Duration::from_millis(5));continue;}
+  if frames==0 {std::thread::sleep(Duration::from_millis(5));continue;}
   let mut data=std::ptr::null_mut();let mut count=0;let mut flags=0;
   unsafe{capture.GetBuffer(&mut data,&mut count,&mut flags,None,None)}.map_err(|_|"应用声音读取中断，请重新接入此音源。")?;
   if !process.active(){let _=unsafe{capture.ReleaseBuffer(count)};return Err("所选应用已退出，请重新接入声音来源。".into());}
   if count==0 {let _=unsafe{capture.ReleaseBuffer(0)};std::thread::sleep(Duration::from_millis(5));continue;}
-  last_packet=Instant::now();
   if count>96_000 {let _=unsafe{capture.ReleaseBuffer(count)};return Err("应用声音缓冲异常，请重新接入此音源。".into());}
-  if flags&AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY.0 as u32!=0&&received {let _=unsafe{capture.ReleaseBuffer(count)};return Err("所选应用声音发生中断，请重新接入此音源。".into());}
   let silent=flags&AUDCLNT_BUFFERFLAGS_SILENT.0 as u32!=0;
   if data.is_null()&&!silent&&count>0 {let _=unsafe{capture.ReleaseBuffer(count)};return Err("应用声音数据不可用，请重新接入此音源。".into());}
   if armed.load(Ordering::Acquire)&&count>0{
    let input=if silent{vec![0.0;count as usize*2]}else{unsafe{std::slice::from_raw_parts(data.cast::<i16>(),count as usize*2)}.iter().map(|sample|*sample as f32/32768.0).collect()};
-   super::super::queue_input(&sender,&input,&error,&stop);received=true;
+   super::super::queue_input(&sender,&input,&error,&stop);
   }
   unsafe{capture.ReleaseBuffer(count)}.map_err(|_|"应用声音缓冲已失效，请重新接入此音源。")?;
  }

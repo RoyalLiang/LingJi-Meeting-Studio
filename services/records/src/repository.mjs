@@ -104,8 +104,9 @@ export async function createRepository(options = {}) {
   if (pool) {
     await pool.query('CREATE TABLE IF NOT EXISTS record_list_projection(id text PRIMARY KEY,data jsonb NOT NULL)');
     await pool.query('CREATE TABLE IF NOT EXISTS record_feed_meta(id text PRIMARY KEY, data jsonb NOT NULL)');
+    await pool.query("CREATE INDEX IF NOT EXISTS record_feed_meta_owner ON record_feed_meta ((data->>'owner'))");
     await pool.query('CREATE TABLE IF NOT EXISTS record_feed_events(record_id text NOT NULL, cursor text NOT NULL, data jsonb NOT NULL, PRIMARY KEY(record_id,cursor))');
-  } else db.exec('CREATE TABLE IF NOT EXISTS record_list_projection(id TEXT PRIMARY KEY,data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS record_feed_meta(id TEXT PRIMARY KEY,data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS record_feed_events(record_id TEXT NOT NULL,cursor TEXT NOT NULL,data TEXT NOT NULL,PRIMARY KEY(record_id,cursor))');
+  } else db.exec("CREATE TABLE IF NOT EXISTS record_list_projection(id TEXT PRIMARY KEY,data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS record_feed_meta(id TEXT PRIMARY KEY,data TEXT NOT NULL); CREATE INDEX IF NOT EXISTS record_feed_meta_owner ON record_feed_meta(json_extract(data,'$.owner')); CREATE TABLE IF NOT EXISTS record_feed_events(record_id TEXT NOT NULL,cursor TEXT NOT NULL,data TEXT NOT NULL,PRIMARY KEY(record_id,cursor))");
   const recordSearch = await createRecordSearch({ db, pool });
   const shareSchema = 'CREATE TABLE IF NOT EXISTS record_share_index(hash TEXT PRIMARY KEY, record_id TEXT NOT NULL, expires BIGINT NOT NULL); CREATE INDEX IF NOT EXISTS record_share_record ON record_share_index(record_id); CREATE TABLE IF NOT EXISTS record_share_schema(version INTEGER PRIMARY KEY)';
   if (pool) for (const statement of shareSchema.split(';').map(s => s.trim()).filter(Boolean)) await pool.query(statement);

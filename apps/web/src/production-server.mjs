@@ -25,14 +25,14 @@ const server = http.createServer(async (req, res) => {
     req.pipe(upstream); res.on('close', () => upstream.destroy()); return;
   }
   try {
-    const pathname = decodeURIComponent(new URL(req.url, 'http://local').pathname); let file = resolve(root, pathname === '/quick-record' ? 'quick-record.html' : `.${pathname}`);
+    const pathname = decodeURIComponent(new URL(req.url, 'http://local').pathname); let file = resolve(root, `.${pathname}`);
     if (!file.startsWith(resolve(root) + '/') && file !== resolve(root)) { res.writeHead(403); res.end(); return; }
     if (!(await stat(file).catch(() => null))?.isFile()) {
       if (extname(pathname)) { res.writeHead(404); res.end(); return; } file = resolve(root, 'index.html');
     }
     await sendHttpPayload(res,200,await content(file), { 'Content-Type': mime[extname(file)] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff',
       'Referrer-Policy': 'no-referrer', 'Cache-Control': file.includes('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache',
-      'Content-Security-Policy': `default-src 'self'; script-src 'self'${req.headers.host === syncHost ? " 'wasm-unsafe-eval'" : ''}; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'`,
+      'Content-Security-Policy': `default-src 'self'; script-src 'self'${syncHost && (!req.headers.host || req.headers.host === syncHost) ? " 'wasm-unsafe-eval'" : ''}; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'`,
       'Permissions-Policy': 'microphone=(self), display-capture=(self), camera=()' });
   } catch { res.writeHead(500); res.end('Unable to load application'); }
 });

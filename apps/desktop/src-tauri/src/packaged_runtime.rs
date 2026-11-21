@@ -128,7 +128,7 @@ fn inventory(
     root: &Path,
     path: &Path,
     expected: &BTreeMap<String, (u64, String)>,
-    files: &mut BTreeMap<String, (u64, String)>,
+    pending: &mut Vec<(String, PathBuf, u64)>,
 ) -> Result<(), String> {
     let info = fs::symlink_metadata(path).map_err(|e| e.to_string())?;
     if !plain(&info) {
@@ -154,7 +154,7 @@ fn inventory(
                 root,
                 &entry.map_err(|e| e.to_string())?.path(),
                 expected,
-                files,
+                pending,
             )?;
         }
     } else if info.is_file() {
@@ -162,7 +162,7 @@ fn inventory(
         if info.len() != *size {
             return Err("Runtime cache file size changed".into());
         }
-        files.insert(name, (info.len(), hash_file(path, *size)?));
+        pending.push((name, path.to_path_buf(), *size));
     } else {
         return Err("Runtime cache contains a special file".into());
     }
@@ -170,10 +170,52 @@ fn inventory(
 }
 
 fn verify(path: &Path, expected: &BTreeMap<String, (u64, String)>) -> Result<(), String> {
-    let mut actual = BTreeMap::new();
-    inventory(path, path, expected, &mut actual)?;
-    if &actual != expected {
+    use std::sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Mutex,
+    };
+    let mut pending = Vec::with_capacity(expected.len());
+    inventory(path, path, expected, &mut pending)?;
+    if pending.len() != expected.len() {
         return Err("Runtime cache integrity check failed".into());
+    }
+    let workers = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .clamp(1, 8)
+        .min(pending.len().max(1));
+    let next = AtomicUsize::new(0);
+    let failed = AtomicBool::new(false);
+    let first_error: Mutex<Option<String>> = Mutex::new(None);
+    std::thread::scope(|scope| {
+        for _ in 0..workers {
+            scope.spawn(|| {
+                while !failed.load(Ordering::Acquire) {
+                    let index = next.fetch_add(1, Ordering::Relaxed);
+                    let Some((name, file_path, size)) = pending.get(index) else {
+                        break;
+                    };
+                    let check = hash_file(file_path, *size).and_then(|digest| {
+                        if expected.get(name).is_some_and(|(_, want)| want == &digest) {
+                            Ok(())
+                        } else {
+                            Err("Runtime cache integrity check failed".into())
+                        }
+                    });
+                    if let Err(err) = check {
+                        failed.store(true, Ordering::Release);
+                        let mut slot = first_error.lock().unwrap();
+                        if slot.is_none() {
+                            *slot = Some(err);
+                        }
+                        break;
+                    }
+                }
+            });
+        }
+    });
+    if let Some(err) = first_error.into_inner().unwrap() {
+        return Err(err);
     }
     Ok(())
 }

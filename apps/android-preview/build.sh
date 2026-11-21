@@ -12,11 +12,18 @@ android="$sdk/platforms/android-35/android.jar"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
-mkdir -p "$work/res/drawable-nodpi" "$work/classes" "$work/dex"
+# Build and embed the offline mobile web bundle inside APK assets/mobile/ for zero-RTT startup.
+mobile_dist="$root/apps/web/dist-mobile"
+if [[ "${SKIP_MOBILE_WEB_BUILD:-0}" != "1" || ! -f "$mobile_dist/mobile-app.html" ]]; then
+  (cd "$root" && npm run build:mobile)
+fi
+
+mkdir -p "$work/res/drawable-nodpi" "$work/assets/mobile" "$work/classes" "$work/dex"
 cp -R "$base/res/." "$work/res/"
+cp -R "$mobile_dist/." "$work/assets/mobile/"
 cp "$root/apps/web/public/brand/quick-record-192.png" "$work/res/drawable-nodpi/lingji.png"
 "$tools/aapt2" compile --dir "$work/res" -o "$work/resources.zip"
-"$tools/aapt2" link -I "$android" --manifest "$base/AndroidManifest.xml" -o "$work/raw.apk" "$work/resources.zip"
+"$tools/aapt2" link -I "$android" --manifest "$base/AndroidManifest.xml" -A "$work/assets" -o "$work/raw.apk" "$work/resources.zip"
 "$jdk/bin/javac" --release 8 -classpath "$android" -d "$work/classes" "$base"/src/com/rookiehouse/lingji/preview/*.java
 "$jdk/bin/jar" cf "$work/classes.jar" -C "$work/classes" .
 JAVA_HOME="$jdk" "$tools/d8" --release --min-api 28 --lib "$android" --output "$work/dex" "$work/classes.jar"

@@ -34,7 +34,7 @@ export function VirtualSegments({ segments, children, className = '', selector =
     }
     measure();
     return()=>{cancelAnimationFrame(frame);resize.disconnect();};
-  },[selector,resetKey]);
+  },[active,selector,resetKey]);
   const lastHighlight = useRef('');
   useLayoutEffect(() => {
     if (!highlighted) { lastHighlight.current = ''; return; }

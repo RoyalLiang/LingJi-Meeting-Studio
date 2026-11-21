@@ -13,7 +13,6 @@ import android.os.Build;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
-import android.view.ViewTreeObserver;
 import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -30,10 +29,17 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.HashMap;
+import java.util.Map;
 
 public final class MainActivity extends Activity {
     private static final String HOST = "lingji.rookiehouse.com";
-    private static final String PAGE = "https://" + HOST + "/quick-record";
+    private static final String APP_PATH = "/mobile-app";
+    private static final String PAGE = "https://" + HOST + APP_PATH;
+    private static final String ASSET_ROOT = "mobile/";
+    private static final String CSP = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; font-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'";
     private static final int LIGHT = 0xfff5f7f4;
     private static final int DARK = 0xff171b19;
     private static final int MIC = 10;
@@ -45,6 +51,8 @@ public final class MainActivity extends Activity {
     private Button retry;
     private int pageAttempt;
     private boolean dark;
+    private boolean resumed;
+    private boolean pendingRecordingStart;
     private final Runnable timeout = () -> retry.setVisibility(View.VISIBLE);
     private WebMessagePort recordingPort;
     private boolean recordingBridgeReady;
@@ -54,6 +62,59 @@ public final class MainActivity extends Activity {
     private static boolean trusted(Uri url) {
         return "https".equals(url.getScheme()) && HOST.equals(url.getHost())
             && url.getUserInfo() == null && (url.getPort() == -1 || url.getPort() == 443);
+    }
+
+    private static String safeAssetPath(String rawPath) {
+        if (rawPath == null || rawPath.isEmpty() || APP_PATH.equals(rawPath)) {
+            return ASSET_ROOT + "mobile-app.html";
+        }
+        if (rawPath.startsWith("/api/") || rawPath.contains("\\") || rawPath.contains("\0")) {
+            return null;
+        }
+        String trimmed = rawPath.startsWith("/") ? rawPath.substring(1) : rawPath;
+        if (trimmed.isEmpty()) return null;
+        String[] parts = trimmed.split("/");
+        for (String part : parts) {
+            if (part.isEmpty() || ".".equals(part) || "..".equals(part)) return null;
+        }
+        return ASSET_ROOT + trimmed;
+    }
+
+    private static String mimeFor(String assetPath) {
+        if (assetPath.endsWith(".html")) return "text/html";
+        if (assetPath.endsWith(".js") || assetPath.endsWith(".mjs")) return "text/javascript";
+        if (assetPath.endsWith(".css")) return "text/css";
+        if (assetPath.endsWith(".wasm")) return "application/wasm";
+        if (assetPath.endsWith(".svg")) return "image/svg+xml";
+        if (assetPath.endsWith(".png")) return "image/png";
+        if (assetPath.endsWith(".json")) return "application/json";
+        if (assetPath.endsWith(".woff2")) return "font/woff2";
+        return "application/octet-stream";
+    }
+
+    private WebResourceResponse serveLocalAsset(WebResourceRequest request) {
+        if (!"GET".equalsIgnoreCase(request.getMethod())) return null;
+        Uri url = request.getUrl();
+        if (!trusted(url)) return null;
+        String assetPath = safeAssetPath(url.getPath());
+        if (assetPath == null) return null;
+        try {
+            InputStream stream = getAssets().open(assetPath);
+            String mime = mimeFor(assetPath);
+            String encoding = (mime.startsWith("text/") || "application/json".equals(mime) || "image/svg+xml".equals(mime)) ? "utf-8" : null;
+            Map<String, String> headers = new HashMap<>();
+            headers.put("X-Content-Type-Options", "nosniff");
+            headers.put("Referrer-Policy", "no-referrer");
+            if (assetPath.endsWith(".html")) {
+                headers.put("Content-Security-Policy", CSP);
+                headers.put("Cache-Control", "no-cache");
+            } else {
+                headers.put("Cache-Control", "public, max-age=31536000, immutable");
+            }
+            return new WebResourceResponse(mime, encoding, 200, "OK", headers, stream);
+        } catch (IOException ignored) {
+            return null;
+        }
     }
 
     @Override public void onCreate(Bundle saved) {
@@ -66,17 +127,35 @@ public final class MainActivity extends Activity {
         paintChrome(dark);
         setContentView(frame);
         showLaunch(null, false);
-        frame.getViewTreeObserver().addOnDrawListener(new ViewTreeObserver.OnDrawListener() {
-            private boolean scheduled;
-            @Override public void onDraw() {
-                if (scheduled) return;
-                scheduled = true;
-                frame.post(() -> {
-                    frame.getViewTreeObserver().removeOnDrawListener(this);
-                    if (!isFinishing() && !isDestroyed()) openWeb(saved);
-                });
-            }
-        });
+        // Start WebView creation immediately in onCreate so local APK assets load on the first frame.
+        openWeb(saved);
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        resumed = true;
+        flushPendingRecordingStart();
+    }
+
+    @Override protected void onPause() {
+        resumed = false;
+        super.onPause();
+    }
+
+    @Override public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) flushPendingRecordingStart();
+    }
+
+    private void flushPendingRecordingStart() {
+        if (!pendingRecordingStart || !recordingBridgeReady || !(resumed || hasWindowFocus())) return;
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
+        pendingRecordingStart = false;
+        try {
+            startForegroundService(new Intent(MainActivity.this, RecordingService.class));
+        } catch (IllegalStateException | SecurityException ignored) {
+            // A system transition can end while-in-use permission before dispatch.
+        }
     }
 
     private int dp(int value) {
@@ -155,11 +234,17 @@ public final class MainActivity extends Activity {
         WebSettings settings = web.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
+        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(false);
         WebView.setWebContentsDebuggingEnabled(false);
         web.setWebViewClient(new WebViewClient() {
+            @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                WebResourceResponse local = serveLocalAsset(request);
+                return local != null ? local : super.shouldInterceptRequest(view, request);
+            }
+
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 return !trusted(request.getUrl());
             }
@@ -172,7 +257,7 @@ public final class MainActivity extends Activity {
 
             @Override public void onPageFinished(WebView view, String url) {
                 if (!trusted(Uri.parse(url))) return;
-                if ("/quick-record".equals(Uri.parse(url).getPath())) connectRecordingPort(view);
+                if (APP_PATH.equals(Uri.parse(url).getPath())) connectRecordingPort(view);
                 int attempt = pageAttempt;
                 view.evaluateJavascript(
                     "document.querySelector('#root')?.childElementCount ? document.documentElement.dataset.theme || 'light' : ''",
@@ -203,7 +288,7 @@ public final class MainActivity extends Activity {
                 for (String resource : request.getResources()) {
                     if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource)) audio = true;
                 }
-                if (!trusted(request.getOrigin()) || !audio || microphone != null || !hasWindowFocus()) {
+                if (!trusted(request.getOrigin()) || !audio || microphone != null || !(resumed || hasWindowFocus())) {
                     request.deny();
                 } else if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
                     grantMicrophone(request);
@@ -254,18 +339,14 @@ public final class MainActivity extends Activity {
                 switch (message.getData()) {
                     case "ready":
                         recordingBridgeReady = true;
+                        flushPendingRecordingStart();
                         break;
                     case "start":
-                        if (recordingBridgeReady && hasWindowFocus()
-                            && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                            try {
-                                startForegroundService(new Intent(MainActivity.this, RecordingService.class));
-                            } catch (IllegalStateException | SecurityException ignored) {
-                                // A system transition can end while-in-use permission before dispatch.
-                            }
-                        }
+                        pendingRecordingStart = true;
+                        flushPendingRecordingStart();
                         break;
                     case "stop":
+                        pendingRecordingStart = false;
                         stopService(new Intent(MainActivity.this, RecordingService.class));
                         break;
                 }
@@ -277,6 +358,7 @@ public final class MainActivity extends Activity {
 
     private void closeRecordingPort() {
         recordingBridgeReady = false;
+        pendingRecordingStart = false;
         if (recordingPort != null) {
             recordingPort.close();
             recordingPort = null;

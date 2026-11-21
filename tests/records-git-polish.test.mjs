@@ -12,7 +12,7 @@ async function component(file,name,request,statusFeed=async()=>({enabled:true,re
   const code=(await transform(source,{loader:'tsx',jsx:'automatic',format:'cjs'})).code;
   const slots=[],effects=[];let cursor=0,initial=true;
   const jsx=(type,props)=>({type,props}),exports={};
-  const react={useId:()=>`field-${cursor++}`,useState:value=>{const i=cursor++;if(!(i in slots))slots[i]=typeof value==='function'?value():value;return [slots[i],value=>{slots[i]=typeof value==='function'?value(slots[i]):value;}];},useRef:value=>{const i=cursor++;return slots[i]??=( {current:value});},useCallback:fn=>fn,useMemo:fn=>fn(),useEffect:fn=>{if(initial)effects.push(fn);}};
+  const react={memo:fn=>fn,useId:()=>`field-${cursor++}`,useState:value=>{const i=cursor++;if(!(i in slots))slots[i]=typeof value==='function'?value():value;return [slots[i],value=>{slots[i]=typeof value==='function'?value(slots[i]):value;}];},useRef:value=>{const i=cursor++;return slots[i]??=( {current:value});},useCallback:fn=>fn,useMemo:fn=>fn(),useEffect:fn=>{if(initial)effects.push(fn);}};
   const sandbox={exports,module:{exports},Intl,Date,Event,document:{visibilityState:'visible'},window:{dispatchEvent(){}},AbortController,setInterval:()=>1,clearInterval(){},require:id=>id==='react'?react:id==='react-dom'?{createPortal:node=>node}:id==='react/jsx-runtime'?{jsx,jsxs:jsx}:id==='../api'?{api:request,messageOf:error=>error.message,ApiError:Error,getAuthGeneration:()=>1}:id==='../git-sync-feed'?{invalidateGitSyncStatus(){},gitSyncStatus:statusFeed}:new Proxy({},{get:(_target,key)=>String(key)})};
   vm.runInNewContext(code,sandbox);
   const render=props=>{cursor=0;const tree=sandbox.module.exports[name](props);if(initial){initial=false;effects.splice(0).forEach(fn=>fn());}return tree;};

@@ -208,7 +208,7 @@ html:not(.recording-capsule-mode) body{background:var(--page)}
 :root:not([data-theme=dark]) .workbench-context{--ink-1:#344054;--ink-2:#596b63;--ink-3:#6b776f}
 :root:not([data-theme=dark]) .settings-page{--ink-3:#6b776f}
 :root:not([data-theme=dark]) .app-shell>.workspace{box-shadow:0 20px 48px -22px #2e3a4d27,0 3px 12px #2e3a4d05}
-:root[data-theme=dark] .button.primary{background:#9cb5d3;border-color:#9cb5d3;color:#253344}
+:root[data-theme=dark] .button.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
 .toast.feedback-toast{position:fixed;height:64px;min-height:64px;max-height:64px;border:1px solid var(--border);border-radius:16px;background:var(--bg);color:var(--ink-1)}
 
 :root:not([data-theme=dark]) .app-shell .meeting-project-identity .brand-mark.app-icon,:root:not([data-theme=dark]) .app-shell .settings-page .surface-heading>.settings-back,:root:not([data-theme=dark]) .app-shell .v10-sidebar .workspace-picker-card .brand-mark.app-icon,:root:not([data-theme=dark]) .workbench-page-identity .brand-mark.app-icon{background:#edf4ea}
@@ -464,7 +464,7 @@ html:not(.recording-capsule-mode) body{background:var(--page)}
 @media(min-width:801px) and (max-width:1000px){.app-shell .v10-sidebar .rail-brand .brand b{display:none}}
 @media(pointer:coarse){.app-shell .v10-sidebar .rail-top-actions{overflow-x:auto}.app-shell .v10-sidebar .rail-top-actions .button{flex-basis:44px;min-width:44px;width:44px;min-height:44px;height:44px}}
 
-.minutes-reading,.minutes-reading *,.segments,.segments *,.translation-segments,.translation-segments *,.knowledge-entries,.knowledge-entries *,.ma-result,.ma-result *{user-select:text;-webkit-user-select:text}
+.minutes-reading,.minutes-reading *,.minutes-view,.minutes-view *,.segments,.segments *,.translation-segments,.translation-segments *,.knowledge-entries,.knowledge-entries *,.ma-result,.ma-result *{user-select:text;-webkit-user-select:text}
 
 .settings-page .settings-dependent-fields>label{grid-template-rows:minmax(var(--badge-height),1fr) auto;align-content:stretch;align-items:center}
 

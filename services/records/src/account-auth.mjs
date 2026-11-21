@@ -7,7 +7,6 @@ import { accountId, normalizeAccountEmail, validAccountEmail, validAccountEnvelo
 import { DomainError, requireThat } from '../../../packages/records/src/record.mjs';
 
 const lifetime = 3 * 60_000;
-const maxChallenges = 2048;
 const frame = value => typeof value === 'string' && value.length > 0 && value.length <= 4096 && /^[\w-]+$/.test(value);
 
 async function openSetup(root) {
@@ -27,25 +26,20 @@ export async function createAccountAuth({ repo, auth, store, origin }) {
   await opaque.ready;
   const serverSetup = await openSetup(repo.root);
   opaque.server.getPublicKey(serverSetup);
-  // shortcut: challenges live in one process; use shared single-use storage before running multiple instances.
-  const pending = new Map();
+  const maxChallenges = 2048;
 
-  function remember(state) {
+  async function remember(state) {
     const now = Date.now();
-    for (const [id, entry] of pending) {
-      if (entry.expires <= now) pending.delete(id);
-      else break;
-    }
-    requireThat(pending.size < maxChallenges, 'authentication_busy', 429);
     const challenge = randomUUID();
-    pending.set(challenge, { ...state, expires: now + lifetime });
+    await store.saveAuthChallenge(challenge, JSON.stringify(state), now, lifetime, maxChallenges);
     return challenge;
   }
 
-  function claim(challenge, phase, owner) {
-    const state = pending.get(challenge);
-    requireThat(state && state.phase === phase && state.upgrade?.id === owner && state.expires > Date.now(), 'account_challenge_expired', 409);
-    pending.delete(challenge);
+  async function claim(challenge, phase, owner) {
+    requireThat(typeof challenge === 'string' && challenge.length > 0 && challenge.length <= 64, 'account_challenge_expired', 409);
+    const raw = await store.takeAuthChallenge(challenge, Date.now());
+    const state = raw && JSON.parse(raw);
+    requireThat(state && state.phase === phase && state.upgrade?.id === owner, 'account_challenge_expired', 409);
     return state;
   }
 
@@ -80,7 +74,7 @@ export async function createAccountAuth({ repo, auth, store, origin }) {
         const { registrationResponse } = protocol('account_message_invalid', () => opaque.server.createRegistrationResponse({
           serverSetup, userIdentifier: id, registrationRequest: message,
         }));
-        send(res, 200, { challenge: remember({ phase: 'prove', email, id, upgrade }), message: registrationResponse });
+        send(res, 200, { challenge: await remember({ phase: 'prove', email, id, upgrade }), message: registrationResponse });
         return;
       }
       requireThat(!user, 'account_message_invalid', 400);
@@ -89,13 +83,13 @@ export async function createAccountAuth({ repo, auth, store, origin }) {
       const { serverLoginState, loginResponse } = protocol('account_message_invalid', () => opaque.server.startLogin({
         serverSetup, userIdentifier: id, registrationRecord: account?.opaqueRecord, startLoginRequest: message,
       }));
-      const token = remember({ phase: 'finish', id, version: account?.authVersion, serverLoginState });
+      const token = await remember({ phase: 'finish', id, version: account?.authVersion, serverLoginState });
       send(res, 200, { challenge: token, message: loginResponse });
       return;
     }
 
     if (step === 'prove') {
-      const state = claim(challenge, 'prove', user?.id);
+      const state = await claim(challenge, 'prove', user?.id);
       requireThat(frame(registrationRecord), 'account_message_invalid', 400);
       const replacement = user && replacementVault ? parseVault(replacementVault) : undefined;
       if (user) requireThat(validAccountEnvelope(envelope) && envelope.vault === (replacement?.id ?? state.upgrade.vault) &&
@@ -103,7 +97,7 @@ export async function createAccountAuth({ repo, auth, store, origin }) {
       const { serverLoginState, loginResponse } = protocol('account_message_invalid', () => opaque.server.startLogin({
         serverSetup, userIdentifier: state.id, registrationRecord, startLoginRequest: message,
       }));
-      const token = remember({
+      const token = await remember({
         ...state, phase: 'finish', serverLoginState, registrationRecord, replacement,
         envelope: state.upgrade ? { vault: envelope.vault, nonce: envelope.nonce, body: envelope.body } : undefined,
       });
@@ -112,7 +106,7 @@ export async function createAccountAuth({ repo, auth, store, origin }) {
     }
 
     requireThat(step === 'finish', 'account_message_invalid', 400);
-    const state = claim(challenge, 'finish', user?.id);
+    const state = await claim(challenge, 'finish', user?.id);
     protocol('invalid_credentials', () => opaque.server.finishLogin({ serverLoginState: state.serverLoginState, finishLoginRequest: message }), 401);
     let account;
     if (!state.registrationRecord) {

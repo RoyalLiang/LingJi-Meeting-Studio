@@ -1,7 +1,6 @@
 import type { AccountOverview } from './components/PrivateSyncSettings';
 import {useMeetingScreenshots} from './audio/meeting-screenshots';
 import { Auth, type AccountLogin } from './components/AccountLogin';
-import { MobileEntry, MobileEntryBoundary } from './components/MobileEntry';
 const loadPrivateSyncSettings = () => import('./components/PrivateSyncSettings').then(module => ({ default: module.PrivateSyncSettings }));
 const PrivateSyncSettings = lazy(loadPrivateSyncSettings);
 import type { SettingsTab } from './components/SettingsPage';
@@ -102,13 +101,6 @@ const ExportDialog = lazy(() => import('./components/ExportDialog').then(module=
 const MeetingAgentCenter = lazy(() => import('./components/MeetingAgentCenter'));
 
 function Workspace() {
-  const mobile = location.pathname === '/quick-record' ||
-    (location.pathname === '/' && Boolean(globalThis.matchMedia?.('(max-width: 640px) and (pointer: coarse)').matches));
-  const [mobileRecording, setMobileRecording] = useState(false);
-  const [mobileEmail, setMobileEmail] = useState<string | null>(() => {
-    try { return mobile ? localStorage.getItem('lingji:mobile-email') : null; }
-    catch { return null; }
-  });
   const [workspacePage,setWorkspacePage]=useState<WorkspacePage>('overview'),[sidebarOpen,setSidebarOpen]=useState(false),[voiceOpen,setVoiceOpen]=useState(false);
   const closeSidebar=useCallback(()=>setSidebarOpen(false),[]);
   const [contextOpen,setContextOpen]=useState(false),[workspaceOverview,setWorkspaceOverview]=useState<WorkspaceOverview|null>(null);
@@ -218,10 +210,6 @@ function Workspace() {
     const request = (async () => {
     cacheEpoch.current++; recordCache.current.clear(); bootListReady.current=false; setError(''); try { const b = await api<Bootstrap>('/bootstrap'); setCsrf(b.csrf);
         if (b.privateSync && !b.localAccount) {
-          if (mobile) {
-            try { localStorage.setItem('lingji:mobile-email', b.email); } catch {}
-            setMobileEmail(b.email);
-          }
           setBoot(b); setAuthReady(true); return true;
         }
         setAudioTransport(b.audioTransport); setNativeAudioTransport(b.nativeAudioTransport); setLocalQueueBackend(Boolean(b.localAccount)); const [list, folders] = await Promise.all([api<{records: RecordListItem[]}>('/records'), api<{workspaces:WorkspaceDirectory[]}>('/workspaces')]);
@@ -242,32 +230,18 @@ function Workspace() {
           }
         }
         return true; }
-    catch (e) { if (e instanceof ApiError && e.status === 401 && mobile) {
-          try { localStorage.removeItem('lingji:mobile-email'); } catch {}
-          setMobileEmail(null);
-        } else if (!(e instanceof ApiError && e.status === 401) && navigator.onLine) setError(messageOf(e));
+    catch (e) { if (!(e instanceof ApiError && e.status === 401) && navigator.onLine) setError(messageOf(e));
         setAuthReady(false);
         return false; } finally { setLoading(false); }
     })();
     bootRequest.current = request;
     void request.then(() => { if (bootRequest.current === request) bootRequest.current = null; });
     return request;
-  }, [mobile]);
+  }, []);
   const refreshProviders = useCallback((state: Pick<Bootstrap,'providers'|'meetingAutomation'|'audioMinutesDefault'>) => {
     setBoot(current => current ? {...current,...state} : current);
   }, []);
   useEffect(() => { void loadBoot(); mounted.current = true; return () => { mounted.current = false; importRequest.current?.abort(); void capture.current?.stop(); }; }, [loadBoot]);
-  useEffect(() => {
-    if (!mobile) return;
-    const update = () => {
-      setOnline(navigator.onLine);
-      if (navigator.onLine && !authReady && !mobileRecording) void loadBoot();
-    };
-    addEventListener('online', update);
-    addEventListener('offline', update);
-    update();
-    return () => { removeEventListener('online', update); removeEventListener('offline', update); };
-  }, [mobile, loadBoot, authReady, mobileRecording]);
   const loadList = useCallback(async (signal?: AbortSignal) => {
     if (listView.current.query !== query || listView.current.scope !== scope) return;
     const version = ++listRequest.current, epoch = cacheEpoch.current;
@@ -513,31 +487,21 @@ function Workspace() {
     }catch(e){throw new Error(messageOf(e));}
   }
   useEffect(()=>{const open=()=>{setModal(null);setSidebarOpen(false);setTranslationOpen(false);setAgentOpen(true);};window.addEventListener('lingji:git-configure',open);return()=>window.removeEventListener('lingji:git-configure',open);},[]);
-  if (loading && mobile) return <main className="quick-mobile-app"><MobileEntry/></main>;
   if (loading) return <main className="loading-page" role="status"><Brand markOnly/><p>正在打开会议空间…</p></main>;
   function logoutCompanion() {
     void api('/auth/logout', 'POST').then(() => {
       storeAccountLogin();
-      if (mobile) {
-        try { localStorage.removeItem('lingji:mobile-email'); } catch {}
-        setMobileEmail(null);
-      }
       setAuthReady(false); setBoot(null);
     }).catch(failure => setError(messageOf(failure)));
   }
-  if ((authReady && syncCompanion) || (mobile && mobileEmail)) return <main className={mobile ? 'sync-companion quick-mobile-app' : 'sync-companion'}>
-    {!mobile && <header className="surface-heading"><Brand /><h1>个人中心</h1>{online && <Button onClick={logoutCompanion}>退出账号</Button>}</header>}
+  if (authReady && syncCompanion) return <main className="sync-companion">
+    <header className="surface-heading"><Brand /><h1>个人中心</h1>{online && <Button onClick={logoutCompanion}>退出账号</Button>}</header>
     {error && <FeedbackNotice key={error} message={error} error />}
-    {mobile ? <MobileEntryBoundary>
-      <Suspense fallback={<MobileEntry/>}>
-        <PrivateSyncSettings desktop={false} email={boot?.email || mobileEmail || undefined} accountLogin={accountLogin} mobile
-          mobileActive={setMobileRecording} recording={mobileRecording} signOut={logoutCompanion} online={online}/>
-      </Suspense>
-    </MobileEntryBoundary> : <Suspense fallback={<p role="status">正在加载个人中心…</p>}>
+    <Suspense fallback={<p role="status">正在加载个人中心…</p>}>
       <PrivateSyncSettings desktop={false} email={boot?.email} accountLogin={accountLogin} online={online}/>
-    </Suspense>}
+    </Suspense>
   </main>;
-  if (!authReady || !boot) return <Auth ready={loadBoot} accountLogin={storeAccountLogin} mobile={mobile} prepare={mobile ? loadPrivateSyncSettings : undefined}/>;
+  if (!authReady || !boot) return <Auth ready={() => loadBoot()} accountLogin={storeAccountLogin} prepare={loadPrivateSyncSettings}/>;
   const sourceReady = boot.providers.asr || boot.providers.fixture;
   return <div className="app-shell"><a className="skip-link" href="#workspace">跳到会议内容</a>
     <RecordingRuntime record={record} recording={recording} busy={busy||stopping.current} signals={signals} manifests={localAudio.recordId===record?.id?localAudio.manifests:[]} onError={setError}/><AppSidebar directories={directories} scope={scope} records={records} recordId={id} page={workspacePage} extensionOpen={agentOpen} settingsOpen={modal==='settings'} voiceOpen={voiceOpen} open={sidebarOpen} disabled={recording||busy} canRecord={sourceReady} name={desktopAccount ? (online ? accountOverview?.displayName || syncEmail || '' : '') : localBackend ? '我的会议空间' : boot.email.split('@')[0]} account={desktopAccount ? (online ? syncEmail || '' : '') : localBackend ? '本机账户' : boot.email} openAccount={desktopAccount ? () => openSettings('account') : undefined} accountOpen={accountOpen} version={<ClientVersion updates={updates} compact/>} notice={boot.providers.fixture&&<span className="fixture-badge">开发测试模式 · 测试数据</span>} tools={<>{!boot.localAccount&&<Button aria-label="退出登录" disabled={recording} onClick={async()=>{try{await api('/auth/logout','POST');setCsrf('');setQueueRecords([]);setAuthReady(false);selectRecord('');}catch(e){setError(messageOf(e));}}}><SignOut size={16}/></Button>}</>} chooseScope={chooseScope} navigate={page=>{chooseScope(scope);setWorkspacePage(page);}} selectRecord={next=>{setModal(null);setSidebarOpen(false);selectRecord(next);}} create={newDirectory} prepare={()=>{setSidebarOpen(false);setModal('new');}} quick={()=>{setSidebarOpen(false);void quickRecord();}} extensions={()=>{setModal(null);setSidebarOpen(false);setTranslationOpen(false);setAgentOpen(true);}} settings={()=>openSettings()} voices={()=>{setSidebarOpen(false);setVoiceOpen(true);}} search={()=>{chooseScope(scope);setWorkspacePage('meetings');requestAnimationFrame(()=>document.getElementById('record-search')?.focus());}} close={closeSidebar}/>

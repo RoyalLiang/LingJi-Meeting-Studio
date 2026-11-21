@@ -286,9 +286,29 @@ body:has(.quick-mobile-app) { background: #f5f7f4; }
 .phone-unlock-state p { color: var(--phone-muted); margin-top: 6px; }
 .phone-unlock-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .quick-mobile-setup .account-section { margin-inline: 0; grid-template-columns: 1fr; gap: 8px; }
+.quick-record-document .toast.feedback-toast {
+  inset: calc(64px + env(safe-area-inset-top, 0px)) 12px auto;
+  background: var(--phone-field);
+  color: var(--phone-ink);
+  border: 1px solid var(--phone-line);
+}
+.mobile-connecting-state {
+  grid-row: 2; display: grid; justify-items: center; gap: 10px;
+  color: var(--phone-muted); font-size: .85rem; pointer-events: auto;
+}
+.mobile-connecting-dot {
+  width: 84px; height: 84px; border-radius: 50%;
+  background: var(--phone-panel); border: 1px solid var(--phone-line);
+  animation: mobile-pulse 1.4s ease-in-out infinite;
+}
+@keyframes mobile-pulse { 0%, 100% { opacity: .55; transform: scale(.96); } 50% { opacity: 1; transform: scale(1); } }
+.mobile-transcript-virtual { position: relative; width: 100%; }
+.mobile-transcript-row { position: absolute; top: 0; left: 0; width: 100%; padding-bottom: 7px; }
+.mobile-transcript-row .mobile-card { margin-block: 0; }
+.mobile-detail-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
 @media (prefers-reduced-motion: reduce) {
   .mobile-switch-track::before, .quick-mobile-control, .mobile-nav-lens { transition: none; }
-  .quick-mobile-symbol, .quick-mobile-choices { animation: none; }
+  .quick-mobile-symbol, .quick-mobile-choices, .mobile-connecting-dot { animation: none; }
 }
 @media (prefers-reduced-transparency: reduce) {
   .mobile-nav, .quick-mobile-mini { background: var(--phone-field); -webkit-backdrop-filter: none; backdrop-filter: none; }

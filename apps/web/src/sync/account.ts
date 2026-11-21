@@ -4,6 +4,17 @@ import { decodeBytes, seal, unseal, type Envelope, type Vault } from './vault';
 type Session = { email: string; csrf?: string; companion?: string };
 type Exchange = { message: string; challenge: string };
 const purpose = 'account-wrap/1';
+let opaqueModule: Promise<typeof import('@serenity-kit/opaque')> | undefined;
+
+export function preloadAccountAuth() {
+  return opaqueModule ??= import('@serenity-kit/opaque').then(async opaque => {
+    await opaque.ready;
+    return opaque;
+  }).catch(error => {
+    opaqueModule = undefined;
+    throw error;
+  });
+}
 
 export function wrapAccountVault(material: Uint8Array<ArrayBuffer>, vault: Vault, root: Uint8Array<ArrayBuffer>) {
   return seal(material, vault, purpose, vault.id, root);
@@ -20,8 +31,7 @@ export async function authenticateAccount(input: {
   const { email, password, signal, upgrade, register, desktop } = input;
   if (password.length < 10 || password.length > 128) throw new ApiError('password_length_10_128', 400);
   if (upgrade?.currentPassword === password) throw new Error('请设置与当前密码不同的新密码');
-  const opaque = await import('@serenity-kit/opaque');
-  await opaque.ready;
+  const opaque = await preloadAccountAuth();
   signal?.throwIfAborted();
   const path = upgrade ? '/private-sync/account-upgrade' : desktop ? '/private-sync/session' : '/auth/account';
   const begin = opaque.client.startLogin({ password });

@@ -96,7 +96,7 @@ export function QuickMobileRecording({ save, archive, status, visible, showRecor
       await resumed;
       await context.audioWorklet.addModule('/audio-worklet.js?v=2');
       if (!mounted.current) { close(); return; }
-      const node = new AudioWorkletNode(context, 'meeting-pcm');
+      const node = new AudioWorkletNode(context, 'meeting-pcm', { processorOptions: { meter: false } });
       const mute = context.createGain();
       mute.gain.value = 0;
       context.createMediaStreamSource(stream).connect(node).connect(mute).connect(context.destination);
@@ -138,17 +138,19 @@ export function QuickMobileRecording({ save, archive, status, visible, showRecor
         onLiveRecording?.('');
         if (!size) { setError('没有录到音频'); setPhase('idle'); onActive?.(false); return; }
         let sent = false;
+        const wavBlob = new Blob([wavHeader(size), ...chunks], { type: 'audio/wav' });
+        if (!live) chunks.length = 0;
         void persist(async () => {
-          const blob = new Blob([wavHeader(size), ...chunks], { type: 'audio/wav' });
           if (!sent && !live) {
-            await save(id, blob, name);
+            await save(id, wavBlob, name);
           } else if (!sent && live) {
             await drain();
+            chunks.length = 0;
             await live(id, name, { kind: 'finish', sequence: queued });
           }
           sent = true;
           try {
-            await archive({ id, title: name, at: Date.now(), seconds: Math.floor(size / 32000), marks: currentMarks.current.slice() }, blob);
+            await archive({ id, title: name, at: Date.now(), seconds: Math.floor(size / 32000), marks: currentMarks.current.slice() }, wavBlob);
           } catch {
             setError('录音已进入同步队列，手机未能保存回听副本');
           }
@@ -189,6 +191,9 @@ export function QuickMobileRecording({ save, archive, status, visible, showRecor
     }
   }
 
+  const maxSeconds = Math.floor(MOBILE_RECORDING_BYTES / 32000);
+  const remaining = Math.max(0, maxSeconds - elapsed);
+  const limitNotice = phase === 'recording' && remaining <= 30 ? `剩余 ${remaining} 秒将自动保存` : '';
   const time = String(Math.floor(elapsed / 60)).padStart(2, '0') + ':' + String(elapsed % 60).padStart(2, '0');
   const label = phase === 'recording' ? '暂停录音' : phase === 'paused' ? '录音已暂停，继续或结束' : phase === 'saving' ? '正在保存' : phase === 'starting' ? '正在启动' : draft.current ? '重试保存' : '开始录音';
   const capturing = phase === 'recording' || phase === 'paused';
@@ -237,7 +242,7 @@ export function QuickMobileRecording({ save, archive, status, visible, showRecor
           }}><BookmarkSimple size={17} weight={lastMark === elapsed ? 'fill' : 'regular'}/></button>}
       </div>}
       <div className="quick-mobile-feedback">
-        {error ? <p className="quick-mobile-issue" role="alert">{error}</p> : capturing && status && <p role="status">{status}</p>}
+        {error ? <p className="quick-mobile-issue" role="alert">{error}</p> : limitNotice ? <p role="status">{limitNotice}</p> : capturing && status && <p role="status">{status}</p>}
       </div>
     </div>
   </section>;

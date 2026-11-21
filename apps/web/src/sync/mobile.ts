@@ -13,7 +13,8 @@ const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{1
 type Recording = { id: string; title: string; mime: string; total: number };
 type AudioPart = Recording & { index: number; data: string };
 type Outbox = { id: string; operations: EncryptedOperation[]; next: number };
-type Delta = { cursor: number; more: boolean; operations: (EncryptedOperation & { seq: number })[] };
+type Delta = { cursor: number; more: boolean; trimmed?: boolean; operations: (EncryptedOperation & { seq: number })[] };
+const pendingDesktopReceipts = new Set<string>();
 
 let opening: Promise<IDBDatabase> | undefined;
 function request<T>(operation: IDBRequest<T>) {
@@ -114,6 +115,13 @@ export async function pushMobileRecordings(vault: Vault, signal: AbortSignal) {
   return { sent: next === recording.operations.length, pending: await request(db.transaction('outbox').objectStore('outbox').count(groups(vault))) };
 }
 
+async function pruneRemoteStream(path: string, vault: Vault, before: number, signal?: AbortSignal) {
+  if (before <= 0) return;
+  try {
+    await api(`${path}?vault=${encodeURIComponent(vault.id)}&before=${before}`, 'DELETE', undefined, signal);
+  } catch { /* Quota pruning is best-effort after durable desktop ingestion. */ }
+}
+
 export async function receiveMobileRecordings(vault: Vault, root: Uint8Array<ArrayBuffer>, signal: AbortSignal) {
   const db = await database();
   for (let page = 0; page < 8; page++) {
@@ -121,12 +129,16 @@ export async function receiveMobileRecordings(vault: Vault, root: Uint8Array<Arr
     const batch = await api<Delta>(endpoint + '?vault=' + vault.id + '&after=' + after, 'GET', undefined, signal);
     let cursor = after;
     const verified: { operation: EncryptedOperation; part: AudioPart }[] = [];
-    for (const { seq, ...operation } of batch.operations) {
-      if (seq !== ++cursor || !uuid.test(operation.id)) throw new Error('录音同步游标不连续');
+    for (let i = 0; i < batch.operations.length; i++) {
+      const { seq, ...operation } = batch.operations[i];
+      const allowedJump = i === 0 && batch.trimmed && seq > cursor;
+      if ((!allowedJump && seq !== ++cursor) || !uuid.test(operation.id)) throw new Error('录音同步游标不连续');
+      cursor = seq;
       verified.push({ operation, part: await decode(operation, vault, root) });
     }
+    if (!batch.operations.length && batch.trimmed && batch.cursor > cursor) cursor = batch.cursor;
     if (cursor !== batch.cursor || (cursor === after && batch.more)) throw new Error('录音同步游标无效');
-    if (verified.length) await change(['cursor', 'inbox', 'parts'], tx => {
+    if (verified.length || cursor > after) await change(['cursor', 'inbox', 'parts'], tx => {
       const cursors = tx.objectStore('cursor');
       const saved = cursors.get(vault.id);
       saved.onsuccess = () => {
@@ -164,11 +176,17 @@ export async function nextMobileRecording(vault: Vault, root: Uint8Array<ArrayBu
   return { ...recording, file };
 }
 
-export async function acknowledgeMobileRecording(vault: Vault, id: string) {
+export async function acknowledgeMobileRecording(vault: Vault, id: string, signal?: AbortSignal) {
   await change(['inbox', 'parts'], tx => {
     tx.objectStore('inbox').delete(group(vault, id));
     tx.objectStore('parts').delete(parts(vault, id));
   });
+  const db = await database();
+  const remaining = await request(db.transaction('inbox').objectStore('inbox').count(groups(vault)));
+  if (remaining === 0) {
+    const cursor = await request<number | undefined>(db.transaction('cursor').objectStore('cursor').get(vault.id)) ?? 0;
+    await pruneRemoteStream(endpoint, vault, cursor, signal);
+  }
 }
 
 const livePurpose = 'mobile-live-audio/1';
@@ -201,7 +219,8 @@ async function pushLive(path: string, vault: Vault, operations: EncryptedOperati
   )) throw new Error('实时录音同步回执无效');
 }
 
-export async function pushLiveAudio(vault: Vault, receiver: 'phone' | 'desktop', signal: AbortSignal) {
+export async function pushLiveAudio(vault: Vault, receiver: 'phone' | 'desktop', signal: AbortSignal, force = false) {
+  if (receiver === 'desktop' && !force && !pendingDesktopReceipts.has(vault.id)) return [];
   const db = await database();
   const store = db.transaction('live-outbox').objectStore('live-outbox');
   const range = IDBKeyRange.bound([vault.id, receiver], [vault.id, receiver, []]);
@@ -209,11 +228,15 @@ export async function pushLiveAudio(vault: Vault, receiver: 'phone' | 'desktop',
     request(store.getAllKeys(range, 8)),
     request<EncryptedOperation[]>(store.getAll(range, 8))
   ]);
-  if (!operations.length) return [];
+  if (!operations.length) {
+    if (receiver === 'desktop') pendingDesktopReceipts.delete(vault.id);
+    return [];
+  }
   await pushLive(receiver === 'phone' ? liveEndpoint : receiptEndpoint, vault, operations, signal);
   await change(['live-outbox'], tx => {
     for (const key of keys) tx.objectStore('live-outbox').delete(key);
   });
+  if (receiver === 'desktop' && operations.length < 8) pendingDesktopReceipts.delete(vault.id);
   return keys;
 }
 
@@ -225,6 +248,7 @@ export async function acknowledgeLiveAudio(vault: Vault, root: Uint8Array<ArrayB
     const pending = store.getKey(key);
     pending.onsuccess = () => { if (pending.result === undefined) store.add(operation, key); };
   });
+  pendingDesktopReceipts.add(vault.id);
 }
 
 function decodeLiveFrame(plain: Uint8Array): LiveFrame {
@@ -252,9 +276,12 @@ export async function pullLiveAudio(
   const after = await request<number | undefined>(db.transaction('live-cursor').objectStore('live-cursor').get(key)) ?? 0;
   const delta = await api<Delta>(path + '?vault=' + encodeURIComponent(vault.id) + '&after=' + after, 'GET', undefined, signal);
   let cursor = after;
-  for (const { seq, ...operation } of delta.operations) {
+  for (let i = 0; i < delta.operations.length; i++) {
+    const { seq, ...operation } = delta.operations[i];
     signal.throwIfAborted();
-    if (seq !== ++cursor || !uuid.test(operation.id)) throw new Error('实时录音同步游标不连续');
+    const allowedJump = i === 0 && delta.trimmed && seq > cursor;
+    if ((!allowedJump && seq !== ++cursor) || !uuid.test(operation.id)) throw new Error('实时录音同步游标不连续');
+    cursor = seq;
     const plain = await unseal(root, vault, livePurpose, operation.id, operation);
     let frame: LiveFrame;
     try { frame = decodeLiveFrame(plain); }
@@ -262,6 +289,7 @@ export async function pullLiveAudio(
     if ((frame.kind === 'received') !== (receiver === 'phone')) throw new Error('实时录音事件类型无效');
     await consume(frame);
   }
+  if (!delta.operations.length && delta.trimmed && delta.cursor > cursor) cursor = delta.cursor;
   if (cursor !== delta.cursor || (cursor === after && delta.more)) throw new Error('实时录音同步游标无效');
   if (cursor === after) return false;
   await change(['live-cursor'], tx => {
@@ -271,5 +299,8 @@ export async function pullLiveAudio(
       if (cursor > (saved.result ?? 0)) store.put(cursor, key);
     };
   });
+  if (receiver === 'desktop' && delta.operations.length > 0) {
+    await pruneRemoteStream(liveEndpoint, vault, cursor, signal);
+  }
   return delta.more;
 }

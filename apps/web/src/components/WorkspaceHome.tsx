@@ -3,7 +3,7 @@ import { Brand } from './Brand';
 import { SearchHighlights } from './SearchHighlights';
 import { KnowledgeLibrary } from './KnowledgeLibrary';
 import {FeedbackNotice} from './FeedbackNotice';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowUpRight, ChartBar, CheckCircle, Clock, FileText, Folder, FolderPlus, PencilSimple, Plus, Sparkle, Stop } from '@phosphor-icons/react';
 import { api, messageOf } from '../api';
 import type { RecordListItem,KnowledgeReference } from '../model';
@@ -19,7 +19,7 @@ function Sources({sources,open}:{sources:MeetingReference[];open:(id:string)=>vo
 function AnalysisItems({items,open}:{items:WorkspaceAnalysisItem[];open:(id:string)=>void}) {return <div className="analysis-items">{items.map((item,i)=><article key={i}>{item.title&&<h4>{item.title}</h4>}<p>{item.text}</p><Sources sources={item.evidence} open={open}/></article>)}</div>;}
 // JSON is still incomplete while streaming. Only extract the summary text; validated results replace it.
 function draftSummary(preview:string) {const match=preview.match(/"summary"\s*:\s*\{\s*"(?:title|text)"\s*:\s*"((?:[^"\\]|\\.)*)/);return match?.[1]?.replace(/\\n/g,'\n').replace(/\\"/g,'"').replace(/\\\\/g,'\\')||'';}
-export function WorkspaceHome({active=true,overviewChanged,scope,section='overview',records,query,modelReady,disabled,open,archive,create,edit,quick,browseAll}:{active?:boolean;overviewChanged?:(view:WorkspaceOverview)=>void;browseAll?:()=>void;scope:string;section?:'overview'|'meetings'|'knowledge';records:RecordListItem[];query:string;modelReady:boolean;disabled:boolean;open:(id:string,reference?:KnowledgeReference)=>void;archive:(ids:string[])=>void;create:()=>void;edit:()=>void;quick:()=>void}) {
+export const WorkspaceHome = memo(function WorkspaceHome({active=true,overviewChanged,scope,section='overview',records,query,modelReady,disabled,open,archive,create,edit,quick,browseAll}:{active?:boolean;overviewChanged?:(view:WorkspaceOverview)=>void;browseAll?:()=>void;scope:string;section?:'overview'|'meetings'|'knowledge';records:RecordListItem[];query:string;modelReady:boolean;disabled:boolean;open:(id:string,reference?:KnowledgeReference)=>void;archive:(ids:string[])=>void;create:()=>void;edit:()=>void;quick:()=>void}) {
   const [analyticsOpen,setAnalyticsOpen]=useState(false);
   const [view,setView]=useState<WorkspaceOverview|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[selected,setSelected]=useState<string[]>([]),[tab,setTab]=useState<'themes'|'decisions'|'actions'|'questions'>('themes');
   const mounted=useRef(true), request=useRef<AbortController|null>(null);
@@ -54,4 +54,4 @@ export function WorkspaceHome({active=true,overviewChanged,scope,section='overvi
     </>}
     {records.length>0&&<section className="directory-records"><div className="section-heading"><div><h2>{query?'匹配的会议':'目录中的会议'} <span>{records.length}</span></h2>{selected.length>0&&<p>已选 {selected.length} 场会议</p>}</div><Button disabled={disabled||!selected.length} onClick={()=>archive(selected)}><Folder size={17}/>归档{selected.length?` ${selected.length} 场`:''}</Button></div><div className="meeting-table"><div className="meeting-table-head"><label className="checkbox-label"><input type="checkbox" aria-label="选择所有可归档会议" checked={allSelected} disabled={!selectable.length||disabled} onChange={e=>setSelected(e.target.checked?selectable.map(r=>r.id):[])}/><span>会议</span></label><span>创建时间</span><span>状态 / 时长</span></div>{records.map(r=><div className="meeting-table-row" key={r.id}><label className="checkbox-label"><input type="checkbox" aria-label={`选择会议 ${r.title}`} checked={selected.includes(r.id)} disabled={disabled||r.capture==='recording'} onChange={e=>setSelected(ids=>e.target.checked?[...ids,r.id]:ids.filter(id=>id!==r.id))}/></label><button className="meeting-title" onClick={()=>open(r.id)} disabled={disabled}><FileText size={17}/><span className="meeting-title-text"><span><SearchHighlights text={r.title} ranges={r.search?.titleHighlights}/></span>{r.search&&<small className="record-search-snippet"><SearchHighlights text={r.search.snippet} ranges={r.search.highlights}/></small>}</span><ArrowUpRight size={14}/></button><time>{new Date(r.createdAt).toLocaleDateString('zh-CN',{month:'short',day:'numeric'})}</time><span className="meeting-table-meta">{labels[r.capture]||r.capture}<small>{duration(r.seconds)}</small></span></div>)}</div></section>}
   </section>;
-}
+});

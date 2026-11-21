@@ -31,7 +31,7 @@ export function KnowledgeQuestion({scope,open,modelReady,refreshKey}:{scope:stri
  useEffect(()=>{
   if(!task?.id)return;
   const controller=new AbortController();let timer:ReturnType<typeof setTimeout>|undefined;
-  async function refresh(){try{const value=await api<KnowledgeAnswerTask>(`/agent/tasks/${task!.id}`,'GET',undefined,controller.signal);if(!controller.signal.aborted){setTask(value);timer=setTimeout(()=>void refresh(),working(value)?1000:4000);}}catch(cause){if(!controller.signal.aborted){setError(messageOf(cause));timer=setTimeout(()=>void refresh(),4000);}}}
+  async function refresh(){try{const value=await api<KnowledgeAnswerTask>(`/agent/tasks/${task!.id}`,'GET',undefined,controller.signal);if(!controller.signal.aborted){setTask(value);if(working(value))timer=setTimeout(()=>void refresh(),1000);}}catch(cause){if(!controller.signal.aborted){setError(messageOf(cause));timer=setTimeout(()=>void refresh(),4000);}}}
   void refresh();return()=>{controller.abort();clearTimeout(timer);};
  },[task?.id,refreshKey]);
  async function submit(){

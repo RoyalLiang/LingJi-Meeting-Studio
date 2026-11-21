@@ -1,7 +1,7 @@
 import { api } from '../api';
 import { createPublishedContent, normalizePublishedContent, type PublishedContent } from '../../../../packages/records/src/published-content.mjs';
 import type { Minutes, RecordDetail } from '../model';
-import { seal, unseal, type EncryptedOperation, type Vault } from './vault';
+import { derivePurposeKey, seal, unsealWithKey, type EncryptedOperation, type Vault } from './vault';
 
 type MeetingMetadata = { workspace?: { id: string; name: string }; durationMs?: number; fromPhone?: boolean };
 export type MeetingAnnotations = { notes: string; completed?: number[] };
@@ -10,10 +10,40 @@ type Revision = MeetingCopy & { id: string; parents: string[]; at: number };
 export type CopySummary = MeetingMetadata & { id: string; sourceId: string; title: string; at: number; pending?: boolean };
 type Row = { key: string; vault: string; pending: 0 | 1; operation: EncryptedOperation; seq: number };
 type Delta = { cursor: number; more: boolean; operations: (EncryptedOperation & { seq: number })[] };
+type CachedRow = { parents: string[]; summary: CopySummary; searchText: string };
 const encoder = new TextEncoder();
 const decoder = new TextDecoder('utf-8', { fatal: true });
 const LIMIT = 1024 * 1024;
+const UPLOAD_BATCH_BYTES = 384 * 1024;
 const identifier = /^[a-f0-9-]{36}$/;
+const decodedCache = new Map<string, Map<string, CachedRow>>();
+
+export function clearJournalCache(vaultId?: string) {
+  if (vaultId) decodedCache.delete(vaultId);
+  else decodedCache.clear();
+}
+
+function vaultCache(vaultId: string) {
+  let map = decodedCache.get(vaultId);
+  if (!map) {
+    map = new Map();
+    decodedCache.set(vaultId, map);
+  }
+  return map;
+}
+
+function cacheRevision(vaultId: string, key: string, revision: Revision, pending: boolean): CachedRow {
+  const entry: CachedRow = {
+    parents: revision.parents,
+    summary: {
+      id: revision.id, sourceId: revision.content.sourceRecordId, at: revision.at, title: revision.content.title,
+      workspace: revision.workspace, durationMs: revision.durationMs, fromPhone: revision.fromPhone, pending,
+    },
+    searchText: [revision.content.title, revision.notes, JSON.stringify(revision.content.minutes), JSON.stringify(revision.content.segments || [])].join('\n').toLowerCase(),
+  };
+  vaultCache(vaultId).set(key, entry);
+  return entry;
+}
 
 function dbRequest<T>(request: IDBRequest<T>) {
   return new Promise<T>((resolve, reject) => {
@@ -77,9 +107,9 @@ async function streamBytes(stream: ReadableStream<Uint8Array>, bound: number) {
   return result;
 }
 
-async function decodeRow(row: Row, vault: Vault, root: Uint8Array<ArrayBuffer>): Promise<Revision> {
+async function decodeRow(row: Row, vault: Vault, cryptoKey: CryptoKey): Promise<Revision> {
   const { operation } = row;
-  const clear = await unseal(root, vault, 'revision', operation.id, operation);
+  const clear = await unsealWithKey(cryptoKey, vault, 'revision', operation.id, operation);
   const plain = await streamBytes(new Blob([clear]).stream().pipeThrough(new DecompressionStream('gzip')), LIMIT);
   const value = JSON.parse(decoder.decode(plain));
   if (value.id !== operation.id || !Array.isArray(value.parents) || value.parents.length > 64
@@ -105,21 +135,27 @@ async function decodeRow(row: Row, vault: Vault, root: Uint8Array<ArrayBuffer>):
 
 export async function meetingCopies(vault: Vault, root: Uint8Array<ArrayBuffer>, query = ''): Promise<CopySummary[]> {
   const db = await database();
+  const cache = vaultCache(vault.id);
+  const term = query.toLowerCase();
   const revisions: CopySummary[] = [];
   const superseded = new Set<string>();
   const prefix = vault.id + ':';
+  let cryptoKey: CryptoKey | undefined;
   let lower = prefix;
   for (;;) {
     const range = IDBKeyRange.bound(lower, prefix + '\uffff', true);
     const rows = await dbRequest<Row[]>(db.transaction('operations').objectStore('operations').getAll(range, 64));
     for (const row of rows) {
-      const revision = await decodeRow(row, vault, root);
-      for (const parent of revision.parents) superseded.add(parent);
-      if (!query || [revision.content.title, revision.notes, JSON.stringify(revision.content.minutes), JSON.stringify(revision.content.segments || [])]
-        .some(value => value.toLowerCase().includes(query))) {
-        revisions.push({ id: revision.id, sourceId: revision.content.sourceRecordId, at: revision.at, title: revision.content.title,
-        workspace: revision.workspace, durationMs: revision.durationMs, fromPhone: revision.fromPhone, pending: row.pending === 1 });
+      let cached = cache.get(row.key);
+      if (!cached) {
+        cryptoKey ??= await derivePurposeKey(root, vault, 'revision');
+        cached = cacheRevision(vault.id, row.key, await decodeRow(row, vault, cryptoKey), row.pending === 1);
+      } else if (cached.summary.pending !== (row.pending === 1)) {
+        cached = { ...cached, summary: { ...cached.summary, pending: row.pending === 1 } };
+        cache.set(row.key, cached);
       }
+      for (const parent of cached.parents) superseded.add(parent);
+      if (!term || cached.searchText.includes(term)) revisions.push(cached.summary);
     }
     if (rows.length < 64) break;
     lower = rows.at(-1)!.key;
@@ -131,7 +167,7 @@ export async function loadMeetingCopy(vault: Vault, root: Uint8Array<ArrayBuffer
   const db = await database();
   const row = await dbRequest<Row | undefined>(db.transaction('operations').objectStore('operations').get(vault.id + ':' + id));
   if (!row) throw new Error('此副本尚未同步到本机');
-  return decodeRow(row, vault, root);
+  return decodeRow(row, vault, await derivePurposeKey(root, vault, 'revision'));
 }
 
 export async function queueMeeting(vault: Vault, root: Uint8Array<ArrayBuffer>, record: RecordDetail, workspace?: MeetingMetadata['workspace']) {
@@ -145,7 +181,7 @@ export async function queueMeeting(vault: Vault, root: Uint8Array<ArrayBuffer>, 
   const metadata = { workspace: workspace && { id: workspace.id, name: workspace.name }, durationMs: record.durationMs, fromPhone: Boolean(record.syncSourceId && record.syncRecording) };
   let completed: number[] | undefined;
   if (prior) {
-    const earlier = await decodeRow(prior, vault, root);
+    const earlier = await decodeRow(prior, vault, await derivePurposeKey(root, vault, 'revision'));
     const sameContent = JSON.stringify(earlier.content) === JSON.stringify(content);
     if (earlier.notes === notes && sameContent && earlier.durationMs === metadata.durationMs
         && earlier.fromPhone === metadata.fromPhone && earlier.workspace?.id === workspace?.id
@@ -168,10 +204,12 @@ async function appendRevision(vault: Vault, root: Uint8Array<ArrayBuffer>, copy:
   if (bytes.length > LIMIT || copy.notes.length > 100_000) throw new Error('会议超过同步大小上限');
   const zipped = await streamBytes(new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip')), 190 * 1024);
   const operation = { id, ...await seal(root, vault, 'revision', id, zipped) };
+  const rowKey = vault.id + ':' + id;
   await transaction('readwrite', tx => {
-    tx.objectStore('operations').add({ key: vault.id + ':' + id, vault: vault.id, pending: 1, operation, seq: 0 } satisfies Row);
+    tx.objectStore('operations').add({ key: rowKey, vault: vault.id, pending: 1, operation, seq: 0 } satisfies Row);
     if (headKey) tx.objectStore('heads').put(id, headKey);
   });
+  cacheRevision(vault.id, rowKey, revision, true);
   return id;
 }
 
@@ -179,24 +217,44 @@ export async function syncMeetings(vault: Vault, root: Uint8Array<ArrayBuffer>, 
   const db = await database();
   let received = false;
   const pending = await dbRequest<Row[]>(db.transaction('operations').objectStore('operations').index('pending').getAll([vault.id, 1], 32));
-  for (const row of pending) {
+  for (let i = 0; i < pending.length;) {
+    const chunk: Row[] = [];
+    let chunkBytes = 0;
+    while (i < pending.length && chunk.length < 16) {
+      const size = pending[i].operation.body.length + 128;
+      if (chunk.length > 0 && chunkBytes + size > UPLOAD_BATCH_BYTES) break;
+      chunk.push(pending[i++]);
+      chunkBytes += size;
+    }
     const { acknowledgements } = await api<{ acknowledgements: { id: string; seq: number }[] }>('/private-sync/delta', 'POST', {
-      vault: vault.id, operations: [row.operation],
+      vault: vault.id, operations: chunk.map(row => row.operation),
     }, signal);
-    const ack = acknowledgements[0];
-    if (ack?.id !== row.operation.id || !Number.isSafeInteger(ack.seq) || ack.seq <= 0) throw new Error('同步确认无效，可以重试');
-    await transaction('readwrite', tx => tx.objectStore('operations').put({ ...row, pending: 0, seq: ack.seq }));
+    if (acknowledgements.length !== chunk.length || acknowledgements.some((ack, idx) => ack?.id !== chunk[idx].operation.id || !Number.isSafeInteger(ack.seq) || ack.seq <= 0)) {
+      throw new Error('同步确认无效，可以重试');
+    }
+    await transaction('readwrite', tx => {
+      const store = tx.objectStore('operations');
+      for (let idx = 0; idx < chunk.length; idx++) store.put({ ...chunk[idx], pending: 0, seq: acknowledgements[idx].seq });
+    });
+    const cache = vaultCache(vault.id);
+    for (const row of chunk) {
+      const cached = cache.get(row.key);
+      if (cached) cache.set(row.key, { ...cached, summary: { ...cached.summary, pending: false } });
+    }
   }
 
+  let cryptoKey: CryptoKey | undefined;
   for (let page = 0; page < 32; page++) {
     const after = await readCursor(vault);
     const batch = await api<Delta>('/private-sync/delta?vault=' + vault.id + '&after=' + after, 'GET', undefined, signal);
     let cursor = after;
     const verified: Row[] = [];
+    const decoded: { key: string; revision: Revision }[] = [];
+    if (batch.operations.length) cryptoKey ??= await derivePurposeKey(root, vault, 'revision');
     for (const { seq, ...operation } of batch.operations) {
       if (seq !== ++cursor || !identifier.test(operation.id)) throw new Error('同步日志不连续');
       const row = { key: vault.id + ':' + operation.id, vault: vault.id, operation, pending: 0, seq } satisfies Row;
-      await decodeRow(row, vault, root);
+      decoded.push({ key: row.key, revision: await decodeRow(row, vault, cryptoKey!) });
       verified.push(row);
     }
     if (batch.cursor !== cursor || (cursor === after && batch.more)) throw new Error('同步游标无效');
@@ -209,6 +267,7 @@ export async function syncMeetings(vault: Vault, root: Uint8Array<ArrayBuffer>, 
         tx.objectStore('cursor').put(cursor, vault.id);
       };
     });
+    for (const item of decoded) cacheRevision(vault.id, item.key, item.revision, false);
     if (!batch.more) break;
   }
   const morePending = await dbRequest(db.transaction('operations').objectStore('operations').index('pending').count([vault.id, 1]));

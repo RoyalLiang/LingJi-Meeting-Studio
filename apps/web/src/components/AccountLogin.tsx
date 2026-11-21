@@ -7,29 +7,40 @@ import { Button, Status } from './ui';
 import './MobileEntry.css';
 
 export type AccountLogin = { email: string; material: Uint8Array<ArrayBuffer> };
-export function Auth({ ready, accountLogin, mobile = false, prepare }: { ready: () => Promise<boolean>; accountLogin: (login?: AccountLogin) => void; mobile?: boolean; prepare?: () => Promise<unknown> }) {
+export type AuthSession = { email?: string; csrf?: string };
+export function Auth({ ready, accountLogin, mobile = false, prepare }: { ready: (session?: AuthSession) => Promise<boolean>; accountLogin: (login?: AccountLogin) => void; mobile?: boolean; prepare?: () => Promise<unknown> }) {
   const [register, setRegister] = useState(false), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const [legacy, setLegacy] = useState(false);
   const [factorRequired, setFactorRequired] = useState(false);
   const [development, setDevelopment] = useState<{email:string;password:string|null}|null>(null);
   const submitting = useRef(false);
   useEffect(() => { if (!mobile) void api<{email:string;password:string|null}>('/development-account').then(setDevelopment).catch(() => {}); }, [mobile]);
-  useEffect(() => { if (prepare) void prepare().catch(() => {}); }, [prepare]);
+  useEffect(() => {
+    if (prepare) void prepare().catch(() => {});
+    // Pre-warm OPAQUE WASM while user types credentials so clicking login does not stall.
+    const timer = window.setTimeout(() => {
+      void import('../sync/account').then(({ preloadAccountAuth }) => preloadAccountAuth()).catch(() => {});
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [prepare]);
   async function authenticate(path: string, body: { email: string; password: string; factor?: string }, developmentLogin = false) {
     if (submitting.current) return;
     submitting.current = true; setBusy(true); setError('');
     try {
       const mode = developmentLogin ? { opaque: false } : await api<{ opaque: boolean }>('/auth/account');
+      let session: AuthSession | undefined;
       if (mode.opaque && !legacy) {
         const { authenticateAccount } = await import('../sync/account');
         const { user, material } = await authenticateAccount({ ...body, register: path.endsWith('register') });
         accountLogin({ email: user.email, material });
+        session = { email: user.email, csrf: user.csrf };
       } else {
-        const response = await api<{ csrf: string }>(path, 'POST', body);
+        const response = await api<{ csrf: string; email?: string }>(path, 'POST', body);
         setCsrf(response.csrf);
         accountLogin();
+        session = { email: response.email || body.email, csrf: response.csrf };
       }
-      if (!await ready()) { accountLogin(); setError('会议空间暂未加载，请重试。'); }
+      if (!await ready(session)) { accountLogin(); setError('会议空间暂未加载，请重试。'); }
     } catch (e) {
       if (e instanceof ApiError && e.code === 'account_legacy') setLegacy(true);
       if (e instanceof ApiError && e.code === 'account_factor_required') setFactorRequired(true);

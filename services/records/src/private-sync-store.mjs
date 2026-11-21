@@ -16,13 +16,15 @@ const schema = [
 ];
 
 export async function createPrivateSyncStore({ root, pool }) {
-  const db = pool ? null : new DatabaseSync(join(root, 'private-sync.sqlite'));
+  const dbPath = pool ? null : join(root, 'private-sync.sqlite');
+  const db = pool ? null : new DatabaseSync(dbPath);
   if (db) db.exec('PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL');
+  let readDb = null;
   let sqliteTail = Promise.resolve();
   const run = (connection, sql, params = []) => {
     if (pool) return connection.query(sql, params).then(result => result.rows);
     const values = [];
-    const statement = db.prepare(sql.replace(/\$(\d+)/g, (_match, index) => {
+    const statement = connection.prepare(sql.replace(/\$(\d+)/g, (_match, index) => {
       values.push(params[Number(index) - 1]);
       return '?';
     }));
@@ -33,7 +35,8 @@ export async function createPrivateSyncStore({ root, pool }) {
     sqliteTail = pending.catch(() => {});
     return pending;
   }
-  const read = pool ? task => task(pool) : task => serialized(() => task(db));
+  // Dedicated read-only WAL connection reads committed snapshots without queueing behind writes.
+  const read = pool ? task => task(pool) : task => Promise.resolve().then(() => task(readDb || db));
   const write = pool ? async task => {
     const client = await pool.connect();
     try {
@@ -62,7 +65,12 @@ export async function createPrivateSyncStore({ root, pool }) {
     await write(async conn => {
       for (const sql of schema) await run(conn, sql);
     });
+    if (dbPath) {
+      readDb = new DatabaseSync(dbPath, { readOnly: true });
+      readDb.exec('PRAGMA busy_timeout=5000; PRAGMA query_only=ON');
+    }
   } catch (error) {
+    readDb?.close();
     db?.close();
     throw error;
   }
@@ -120,7 +128,7 @@ export async function createPrivateSyncStore({ root, pool }) {
   push(owner, vaultId, operations, parentOwner) {
       return write(async conn => {
         if (parentOwner) {
-          const [parent] = await run(conn, 'SELECT head FROM sync_vaults WHERE owner=$1' + (pool ? ' FOR UPDATE' : ''), [parentOwner]);
+          const [parent] = await run(conn, 'SELECT head FROM sync_vaults WHERE owner=$1' + (pool ? ' FOR SHARE' : ''), [parentOwner]);
           requireThat(parent && !reserved(parent), 'sync_legacy_history', 409);
         }
         const [row] = await run(conn, 'SELECT data,head,bytes FROM sync_vaults WHERE owner=$1' + (pool ? ' FOR UPDATE' : ''), [owner]);
@@ -168,8 +176,73 @@ export async function createPrivateSyncStore({ root, pool }) {
           if (bytes > SYNC_PAGE_BYTES) break;
           operations.push({ ...decode(next), seq: Number(next.seq) });
         }
-        const cursor = operations.at(-1)?.seq ?? after;
-        return { operations, cursor, more: cursor < head };
+        const trimmed = rows.length ? Number(rows[0].seq) > after + 1 : after < head;
+        const cursor = operations.at(-1)?.seq ?? (trimmed ? head : after);
+        return { operations, cursor, more: cursor < head, ...(trimmed ? { trimmed: true } : {}) };
+      });
+    },
+    pullSubstream(parentOwner, owner, vaultId, after) {
+      return read(async conn => {
+        const rows = await run(conn, 'SELECT owner,data,head FROM sync_vaults WHERE owner IN ($1,$2)', [parentOwner, owner]);
+        const parent = rows.find(item => item.owner === parentOwner);
+        requireThat(decode(parent)?.id === vaultId, 'sync_vault_unavailable', 404);
+        const stream = rows.find(item => item.owner === owner);
+        if (!stream) {
+          requireThat(after === 0, 'sync_cursor_ahead', 409);
+          return { operations: [], cursor: 0, more: false };
+        }
+        requireThat(decode(stream)?.id === vaultId, 'sync_vault_unavailable', 404);
+        const head = Math.max(0, Number(stream.head));
+        requireThat(after <= head, 'sync_invalid_cursor', 409);
+        const deltaRows = await run(conn,
+          'SELECT seq,data FROM sync_delta WHERE owner=$1 AND seq>$2 AND seq<=$3 ORDER BY seq LIMIT $4',
+          [owner, after, head, PAGE_OPERATIONS]);
+        const operations = [];
+        let bytes = 0;
+        for (const next of deltaRows) {
+          bytes += Buffer.byteLength(next.data) + 32;
+          if (bytes > SYNC_PAGE_BYTES) break;
+          operations.push({ ...decode(next), seq: Number(next.seq) });
+        }
+        const trimmed = deltaRows.length ? Number(deltaRows[0].seq) > after + 1 : after < head;
+        const cursor = operations.at(-1)?.seq ?? (trimmed ? head : after);
+        return { operations, cursor, more: cursor < head, ...(trimmed ? { trimmed: true } : {}) };
+      });
+    },
+    prune(owner, vaultId, beforeSeq, parentOwner) {
+      return write(async conn => {
+        if (parentOwner) {
+          const [parent] = await run(conn, 'SELECT data,head FROM sync_vaults WHERE owner=$1' + (pool ? ' FOR SHARE' : ''), [parentOwner]);
+          requireThat(decode(parent)?.id === vaultId && !reserved(parent), 'sync_vault_unavailable', 404);
+        }
+        const [row] = await run(conn, 'SELECT data,head,bytes FROM sync_vaults WHERE owner=$1' + (pool ? ' FOR UPDATE' : ''), [owner]);
+        if (!row) return { pruned: 0, bytes: 0 };
+        requireThat(decode(row)?.id === vaultId, 'sync_vault_unavailable', 404);
+        const head = Math.max(0, Number(row.head));
+        const upto = Math.min(Math.max(0, beforeSeq), head);
+        if (upto <= 0) return { pruned: 0, bytes: Number(row.bytes) };
+        const deleted = await run(conn, 'DELETE FROM sync_delta WHERE owner=$1 AND seq<=$2 RETURNING seq', [owner, upto]);
+        if (!deleted.length) return { pruned: 0, bytes: Number(row.bytes) };
+        const sizeExpr = pool ? 'COALESCE(SUM(octet_length(data)),0)' : 'COALESCE(SUM(length(CAST(data AS BLOB))),0)';
+        const [total] = await run(conn, `SELECT ${sizeExpr} AS bytes FROM sync_delta WHERE owner=$1`, [owner]);
+        const bytes = Number(total?.bytes || 0);
+        await run(conn, 'UPDATE sync_vaults SET bytes=$2 WHERE owner=$1', [owner, bytes]);
+        return { pruned: deleted.length, bytes };
+      });
+    },
+    saveAuthChallenge(id, payload, now, ttlMs, limit) {
+      return write(async conn => {
+        await run(conn, "DELETE FROM sync_challenges WHERE purpose='opaque-auth' AND expires<=$1", [now]);
+        const [count] = await run(conn, "SELECT COUNT(*) AS n FROM sync_challenges WHERE purpose='opaque-auth'", []);
+        requireThat(Number(count?.n || 0) < limit, 'authentication_busy', 429);
+        await run(conn, "INSERT INTO sync_challenges(owner,purpose,challenge,expires) VALUES($1,'opaque-auth',$2,$3)",
+          ['auth:' + id, payload, now + ttlMs]);
+      });
+    },
+    takeAuthChallenge(id, now) {
+      return write(async conn => {
+        const [row] = await run(conn, "DELETE FROM sync_challenges WHERE owner=$1 AND purpose='opaque-auth' RETURNING challenge,expires", ['auth:' + id]);
+        return row && Number(row.expires) > now ? row.challenge : null;
       });
     },
     challenge(owner, purpose, challenge, now) {
@@ -243,6 +316,6 @@ export async function createPrivateSyncStore({ root, pool }) {
         return { frames, expires: Number(row.expires) };
       });
     },
-    close: () => serialized(() => db?.close()),
+    close: () => serialized(() => { readDb?.close(); readDb = null; db?.close(); }),
   };
 }

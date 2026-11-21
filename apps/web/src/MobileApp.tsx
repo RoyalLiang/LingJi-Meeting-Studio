@@ -1,18 +1,16 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError, messageOf, setCsrf } from './api';
-import { Auth, type AccountLogin } from './components/AccountLogin';
-import { MobileEntry, MobileEntryBoundary } from './components/MobileEntry';
+import { Auth, type AccountLogin, type AuthSession } from './components/AccountLogin';
+import { MobileEntryBoundary } from './components/MobileEntry';
 import { FeedbackNotice } from './components/FeedbackNotice';
+import { MobileSyncWorkspace } from './components/MobileSyncWorkspace';
 
-const loadWorkspace = () => import('./components/PrivateSyncSettings').then(module => ({ default: module.PrivateSyncSettings }));
-const Workspace = lazy(loadWorkspace);
 const savedEmailKey = 'lingji:mobile-email';
 
 export function MobileApp() {
   const [email, setEmail] = useState<string | null>(() => {
     try { return localStorage.getItem(savedEmailKey); } catch { return null; }
   });
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [online, setOnline] = useState(() => navigator.onLine);
   const [recording, setRecording] = useState(false);
@@ -30,15 +28,22 @@ export function MobileApp() {
     setLogin(previous => { previous?.material.fill(0); return value; });
   }, []);
 
-  const open = useCallback(() => {
+  const open = useCallback((direct?: AuthSession) => {
+    // Skip redundant /mobile-session round-trip when login already returned email + csrf.
+    if (direct?.email && direct.csrf) {
+      setCsrf(direct.csrf);
+      rememberEmail(direct.email);
+      setError('');
+      return Promise.resolve(true);
+    }
     if (boot.current) return boot.current;
     const request = (async () => {
       try {
         if (!navigator.onLine) return false;
         type Session = { email: string; csrf: string };
-        const session = await api<Session>('/private-sync/mobile-session').catch(error => {
-          if (error instanceof ApiError && error.status === 404) return api<Session>('/bootstrap');
-          throw error;
+        const session = await api<Session>('/private-sync/mobile-session').catch(failure => {
+          if (failure instanceof ApiError && failure.status === 404) return api<Session>('/bootstrap');
+          throw failure;
         });
         setCsrf(session.csrf);
         rememberEmail(session.email);
@@ -52,19 +57,14 @@ export function MobileApp() {
           setError(messageOf(failure));
         }
         return false;
-      } finally { setLoading(false); }
+      }
     })();
     boot.current = request;
     void request.then(() => { if (boot.current === request) boot.current = null; });
     return request;
   }, [rememberEmail, storeLogin]);
 
-  useEffect(() => {
-    try {
-      if (localStorage.getItem(savedEmailKey)) void loadWorkspace().catch(() => {});
-    } catch {}
-    void open();
-  }, [open]);
+  useEffect(() => { void open(); }, [open]);
   useEffect(() => {
     const reconnect = () => {
       setOnline(navigator.onLine);
@@ -89,22 +89,19 @@ export function MobileApp() {
     return () => document.removeEventListener('meeting:theme', updateChrome);
   }, []);
 
-  function signOut() {
-    void api('/auth/logout', 'POST').then(() => {
+  const signOut = useCallback(() => {
+    void api('/auth/logout', 'POST').catch(() => {}).finally(() => {
       rememberEmail(null);
       storeLogin();
-    }).catch(failure => setError(messageOf(failure)));
-  }
+    });
+  }, [rememberEmail, storeLogin]);
 
-  if (loading && email) return <MobileEntry/>;
-  if (!email) return <Auth mobile ready={() => boot.current?.then(open) ?? open()} accountLogin={storeLogin} prepare={loadWorkspace}/>;
+  if (!email) return <Auth mobile ready={session => open(session)} accountLogin={storeLogin}/>;
   return <main className="sync-companion quick-mobile-app">
     {error && <FeedbackNotice message={error} error/>}
     <MobileEntryBoundary>
-      <Suspense fallback={<MobileEntry/>}>
-        <Workspace desktop={false} mobile email={email} accountLogin={login} signOut={signOut}
-          mobileActive={setRecording} recording={recording} online={online}/>
-      </Suspense>
+      <MobileSyncWorkspace email={email} accountLogin={login} signOut={signOut}
+        mobileActive={setRecording} recording={recording} online={online}/>
     </MobileEntryBoundary>
   </main>;
 }

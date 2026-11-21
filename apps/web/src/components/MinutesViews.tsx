@@ -39,10 +39,11 @@ export const MinutesTree=memo(function MinutesTree({ minutes, cite, speakerMap, 
   const speakers=useMemo(()=>speakerMap || speakerLabels(minutes.evidenceSnapshot || []),[minutes,speakerMap]);
   const branches = useMemo(() => {
     const layout = topicTableLayout(minutes);
-    return layout.unassigned.length ? [...layout.branches, { title: '补充表格', summary: '', evidence: [], items: [], tables: layout.unassigned }] : layout.branches;
-  }, [minutes]).filter(branch=>Boolean(branch.summary?.trim() || branch.items.length || branch.tables.length || (minutes.visuals||[]).some(visual=>branch.id&&visual.topicId===branch.id)));
+    const list = layout.unassigned.length ? [...layout.branches, { title: '补充表格', summary: '', evidence: [], items: [], tables: layout.unassigned }] : layout.branches;
+    return list.filter(branch=>Boolean(branch.summary?.trim() || branch.items.length || branch.tables.length || (minutes.visuals||[]).some(visual=>branch.id&&visual.topicId===branch.id)));
+  }, [minutes]);
   const {placed,other}=useMemo(()=>placeMeetingImages(minutes,branches,frames || []),[minutes,branches,frames]);
-  const unassignedVisuals = (minutes.visuals || []).filter(visual => !visual.topicId || !branches.some(branch => branch.id === visual.topicId));
+  const unassignedVisuals = useMemo(() => (minutes.visuals || []).filter(visual => !visual.topicId || !branches.some(branch => branch.id === visual.topicId)), [minutes.visuals, branches]);
   return branches.length || minutes.highlights?.length || unassignedVisuals.length || other.length ? <div className="minutes-reading">
     {Boolean(showHighlights && minutes.highlights?.length) && <section className="minutes-highlights" aria-label="重点速览"><h4>重点速览</h4><ul>{minutes.highlights!.map((item, index) => <li key={index}><MinuteSpeakers evidence={item.evidence} speakers={speakers}/><p>{item.text}</p></li>)}</ul></section>}
     <div className="minutes-tree is-compact" aria-label="按主题整理的纪要">{branches.map((branch, index) => <Branch key={branch.id || `${index}:${branch.title}`} branch={branch} index={index} minutes={minutes} cite={cite} speakers={speakers} frames={placed[index]}/>)}</div>
@@ -51,13 +52,15 @@ export const MinutesTree=memo(function MinutesTree({ minutes, cite, speakerMap, 
   </div> : <Empty icon={<TreeStructure size={28}/>} title="尚无可展示的主题">整理完成后将在这里显示。</Empty>;
 });
 
-export function SpeakerMinutes({ minutes, cite, speakerMap }: Props) {
-  const speakers = speakerViews(minutes),labels=speakerMap||speakerLabels(minutes.evidenceSnapshot||[]);
+export const SpeakerMinutes = memo(function SpeakerMinutes({ minutes, cite, speakerMap }: Props) {
+  const speakers = useMemo(() => speakerViews(minutes), [minutes]);
+  const labels = useMemo(() => speakerMap || speakerLabels(minutes.evidenceSnapshot || []), [minutes.evidenceSnapshot, speakerMap]);
   return speakers.length ? <div className="speaker-summaries">{speakers.map((speaker, index) => <section className="speaker-summary" key={speaker.speakerId || speaker.speaker}><header><span className="avatar">{speaker.speaker.match(/\d+$/)?.[0] || index + 1}</span><h4>{labels.get(`${speaker.evidence[0]?.segmentId}:${speaker.evidence[0]?.revision}`)||speaker.speaker}</h4><small>{speaker.method === 'summary' ? 'AI 发言总结' : '原文摘录'}</small></header>{speaker.method === 'extract' && <p className="fine-print">当前版本未提供发言总结，以下为已确认归属的原文。</p>}<p className="speaker-summary-text">{speaker.summary}</p></section>)}</div>
     : <Empty icon={<UsersThree size={28}/>} title="等待说话人信息">有可靠归属的发言后，再生成发言人总结。</Empty>;
-}
-export function DecisionMinutes({ minutes, cite, speakerMap }: Props) {
-  const decisions = decisionItems(minutes), speakers=speakerMap || speakerLabels(minutes.evidenceSnapshot || []);
+});
+export const DecisionMinutes = memo(function DecisionMinutes({ minutes, cite, speakerMap }: Props) {
+  const decisions = useMemo(() => decisionItems(minutes), [minutes]);
+  const speakers = useMemo(() => speakerMap || speakerLabels(minutes.evidenceSnapshot || []), [minutes.evidenceSnapshot, speakerMap]);
   return decisions.length ? <ol className="decision-list">{decisions.map((decision, index) => <li key={index}><span className="decision-number">{String(index + 1).padStart(2, '0')}</span><div><MinuteSpeakers evidence={decision.evidence} speakers={speakers}/><p>{decision.text}</p></div></li>)}</ol>
     : <Empty icon={<CheckCircle size={28}/>} title="尚无明确决策">提议与待确认事项保留在主题纪要中。</Empty>;
-}
+});

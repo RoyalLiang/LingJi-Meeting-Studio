@@ -1,21 +1,18 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { memo, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { FileText, Phone, SignOut, User } from '@phosphor-icons/react';
 import { api, ApiError, messageOf } from '../api';
 import type { RecordDetail, RecordListItem } from '../model';
 import { createVault, recoverVault, type Envelope, type Vault } from '../sync/vault';
 import { authenticateAccount, openAccountVault, wrapAccountVault } from '../sync/account';
 import { readDeviceVault, rememberDeviceVault, type DeviceVault } from '../sync/device';
-import { annotateMeeting, loadMeetingCopy, meetingCopies, queueMeeting, syncMeetings, type CopySummary, type MeetingAnnotations } from '../sync/journal';
+import { clearJournalCache, loadMeetingCopy, meetingCopies, queueMeeting, syncMeetings, type CopySummary } from '../sync/journal';
 import type { WorkspaceDirectory } from '../workspace-model';
 import { enrollPasskey, unlockPasskey } from '../sync/passkey';
-import { acknowledgeMobileRecording, nextMobileRecording, pullLiveAudio, pushLiveAudio, pushMobileRecordings, queueLiveAudio, queueMobileRecording, receiveMobileRecordings } from '../sync/mobile';
+import { acknowledgeMobileRecording, nextMobileRecording, pushLiveAudio, receiveMobileRecordings } from '../sync/mobile';
 import { receiveLiveAudio } from '../sync/mobile-desktop';
 import { Button } from './ui';
 import { ExternalLink } from './ExternalLink';
 import { FeedbackNotice } from './FeedbackNotice';
-import { MobileWorkspace, type MobilePage } from './MobileWorkspace';
-import { mobilePlayback, mobileRecordings, rememberMobileRecording, type MobileRecording } from '../sync/mobile-library';
-import { QuickMobileRecording } from './QuickMobileRecording';
 import './PrivateSyncSettings.css';
 
 type Session = { email: string | null; companion: string };
@@ -72,7 +69,32 @@ function syncError(error: unknown) {
   return messageOf(error);
 }
 
-export function PrivateSyncSettings({ desktop, email, accountLogin, accountChanged, record, restored, imported, mobileActive, signOut, overviewChanged, localRecords, directories, online = true, visible = true, recording = false, mobile = false }: {
+function readSeenMap(storageKey?: string) {
+  const map = new Map<string, string>();
+  if (!storageKey) return map;
+  try {
+    const raw = localStorage.getItem(storageKey);
+    if (!raw) return map;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (parsed && typeof parsed === 'object') {
+      for (const [key, value] of Object.entries(parsed)) {
+        if (typeof value === 'string') map.set(key, value);
+      }
+    }
+  } catch {}
+  return map;
+}
+
+function writeSeenMap(storageKey: string | undefined, map: Map<string, string>) {
+  if (!storageKey) return;
+  try {
+    const obj: Record<string, string> = {};
+    for (const [key, value] of map) obj[key] = value;
+    localStorage.setItem(storageKey, JSON.stringify(obj));
+  } catch {}
+}
+
+export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, email, accountLogin, accountChanged, record, restored, imported, overviewChanged, localRecords, directories, online = true, visible = true, recording = false }: {
   desktop: boolean;
   email?: string;
   accountLogin?: { email: string; material: Uint8Array<ArrayBuffer> };
@@ -83,12 +105,9 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
   record?: RecordDetail | null;
   restored?: (id: string) => void;
   imported?: () => void;
-  mobileActive?: (active: boolean) => void;
   online?: boolean;
   visible?: boolean;
   recording?: boolean;
-  mobile?: boolean;
-  signOut?: () => void;
 }) {
   const [tab, setTab] = useState<typeof accountTabs[number][0]>('account');
   const [session, setSession] = useState<Session | null>(null);
@@ -102,16 +121,9 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
   const [showLogin, setShowLogin] = useState(false);
   const [vault, setVault] = useState<Vault>();
   const [liveAudio, setLiveAudio] = useState(false);
-  const [liveIssue, setLiveIssue] = useState('');
-  const activeLive = useRef({ id: '', uploaded: false, received: false });
-  const [liveStatus, setLiveStatus] = useState('');
   const [backup, setBackup] = useState<string>();
   const [unlocked, setUnlocked] = useState(false);
   const [copies, setCopies] = useState<CopySummary[]>([]);
-  const profileEditor = useRef<HTMLDialogElement>(null);
-  const [mobilePage, setMobilePage] = useState<MobilePage>('record');
-  const [phoneCopies, setPhoneCopies] = useState<MobileRecording[]>([]);
-  const [phoneMeetingSync, setPhoneMeetingSync] = useState(true);
   const [busy, setBusy] = useState(false), [ready, setReady] = useState(false);
   const [notice, setNotice] = useState(''), [error, setError] = useState('');
   const [profile, setProfile] = useState(''), [name, setName] = useState('');
@@ -119,7 +131,6 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
   const seen = useRef(new Map<string, string>());
   const importedCallback = useRef(imported);
   importedCallback.current = imported;
-  const [mobileStatus, setMobileStatus] = useState('');
   const [backgroundIssue, setBackgroundIssue] = useState('');
   const [invitation, setInvitation] = useState<Invitation | null>(null), [qr, setQr] = useState('');
   const [pairCode, setPairCode] = useState('');
@@ -130,50 +141,8 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
   const workspaceDirectories = useRef(directories);
   workspaceDirectories.current = directories;
   const accountEmail = desktop ? session?.email : email;
-  useEffect(() => {
-    if (mobile && unlocked && liveAudio && vault) {
-      try { localStorage.setItem('lingji:live-audio', vault.id); } catch {}
-    }
-  }, [mobile, unlocked, liveAudio, vault]);
-  useEffect(() => {
-    if (!mobile || !vault || !unlocked || !secret.current) return;
-    const root = secret.current.slice();
-    let mounted = true;
-    void mobileRecordings(vault, root).then(items => {
-      if (mounted) setPhoneCopies(items);
-    }).catch(() => {}).finally(() => root.fill(0));
-    try { setPhoneMeetingSync(localStorage.getItem('lingji:phone-meetings:' + vault.id) !== '0'); } catch {}
-    return () => { mounted = false; };
-  }, [mobile, vault, unlocked]);
-  const readMobileMeeting = useCallback(async (id: string) => {
-    if (!vault || !secret.current) return null;
-    const root = secret.current.slice();
-    try { return await loadMeetingCopy(vault, root, id); }
-    finally { root.fill(0); }
-  }, [vault]);
-  const saveMobileAnnotations = useCallback(async (parent: string, changes: MeetingAnnotations) => {
-    if (!vault || !secret.current) throw new Error('请先解锁资料库');
-    const root = secret.current.slice();
-    try {
-      const id = await annotateMeeting(vault, root, parent, changes);
-      setCopies(await meetingCopies(vault, root));
-      window.dispatchEvent(new Event('lingji:sync-wakeup'));
-      return id;
-    } finally { root.fill(0); }
-  }, [vault]);
-  const playMobileRecording = useCallback(async (id: string) => {
-    if (!vault || !secret.current) return null;
-    const root = secret.current.slice();
-    try { return await mobilePlayback(vault, root, id); }
-    finally { root.fill(0); }
-  }, [vault]);
-  const searchMobileMeetings = useCallback(async (query: string) => {
-    if (!vault || !secret.current) return [];
-    const root = secret.current.slice();
-    try { return await meetingCopies(vault, root, query); }
-    finally { root.fill(0); }
-  }, [vault]);
   const automationKey = vault ? 'lingji:auto-sync:' + vault.id : undefined;
+  const seenStorageKey = vault ? 'lingji:seen-records:' + vault.id : undefined;
 
   useEffect(() => {
     if (!visible) return;
@@ -183,40 +152,32 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
   }, [overviewChanged, visible, online, accountEmail, unlocked, vault, automatic, copies.length, backgroundIssue, newLoginNeeded, profile]);
 
   useEffect(() => {
-    seen.current.clear();
+    seen.current = readSeenMap(seenStorageKey);
     try { setAutomatic(Boolean(automationKey && localStorage.getItem(automationKey) === '1')); }
     catch { setAutomatic(false); }
-  }, [automationKey]);
+  }, [automationKey, seenStorageKey]);
 
   useEffect(() => {
     if (!visible || !online || !accountEmail) return;
     const controller = new AbortController();
     void api<{ name: string }>('/private-sync/profile', 'GET', undefined, controller.signal)
-      .then(({ name }) => { if (!controller.signal.aborted) { setProfile(name); setName(name); } })
+      .then(({ name: nextName }) => { if (!controller.signal.aborted) { setProfile(nextName); setName(nextName); } })
       .catch(() => {});
     return () => controller.abort();
   }, [visible, online, accountEmail]);
+
   function forget() {
     pending.current?.abort();
     pending.current = null;
     secret.current?.fill(0);
     secret.current = null;
+    clearJournalCache();
   }
 
   async function connectAccount(account: string, signal: AbortSignal, material?: Uint8Array<ArrayBuffer>) {
     let local: DeviceVault | null = null;
     setLiveAudio(false);
-    setLiveIssue('');
     try {
-      if (mobile && !navigator.onLine) {
-        local = await readDeviceVault(account);
-        signal.throwIfAborted();
-        if (local) {
-          try { setLiveAudio(localStorage.getItem('lingji:live-audio') === local.vault.id); } catch {}
-          await enter(local, signal);
-        }
-        return;
-      }
       const getVault = () => api<{ vault: Vault | null; account?: Envelope; legacy: boolean; hasPasskey?: boolean; emptyUpgrade?: boolean; liveAudio?: boolean }>('/private-sync/vault', 'GET', undefined, signal);
       let remote = await getVault();
       let cloud = remote.vault;
@@ -229,7 +190,6 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
         local = await createVault();
         if (material) local.vault.account = await wrapAccountVault(material, local.vault, local.root);
         signal.throwIfAborted();
-        // Save before publishing so a lost response cannot strand the initial vault.
         if (!await rememberDeviceVault(account, local, true)) {
           local.root.fill(0);
           local = await readDeviceVault(account);
@@ -250,9 +210,6 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
       if (!cloud) return;
       signal.throwIfAborted();
       setLiveAudio(remote.liveAudio === true);
-      if (mobile) {
-        try { localStorage.setItem('lingji:live-audio', remote.liveAudio && cloud ? cloud.id : ''); } catch {}
-      }
       setLegacyAccount(remote.legacy);
       setHasPasskey(remote.hasPasskey === true);
       setEmptyUpgrade(remote.emptyUpgrade === true);
@@ -321,9 +278,8 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
   }
 
   useEffect(() => {
-    if (!ready || !online || !unlocked || !vault || !accountEmail || (desktop && recording)) return;
-    if (!desktop && !mobile) return;
-    const localVault = vault, owner = accountEmail;
+    if (!ready || !online || !unlocked || !vault || !accountEmail || !desktop || recording) return;
+    const localVault = vault, owner = accountEmail, seenKey = seenStorageKey;
     const controller = new AbortController(), signal = controller.signal;
     let active = false, failures = 0, retryAt = 0;
     async function cycle() {
@@ -331,60 +287,55 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
       active = true;
       const key = secret.current.slice();
       try {
-        if (mobile) {
-          const result = await pushMobileRecordings(localVault, signal);
-          signal.throwIfAborted();
-          if (result.sent || result.pending) setMobileStatus(result.pending ? '正在同步到电脑…' : '已同步到云端');
-          if (phoneMeetingSync) await update(localVault, key, signal, false);
-        } else {
-          if (automatic) {
-            const { records } = await api<{ records: RecordListItem[] }>('/records', 'GET', undefined, signal);
-            const liveIds = new Set(records.map(item => item.id));
-            for (const id of seen.current.keys()) if (!liveIds.has(id)) seen.current.delete(id);
-            const changed = records.filter(item => item.capture === 'completed' && seen.current.get(item.id) !== item.updatedAt).slice(0, 6);
-            for (const item of changed) {
-              const detail = await api<RecordDetail>('/records/' + item.id, 'GET', undefined, signal);
-              signal.throwIfAborted();
-              await queueMeeting(localVault, key, detail, workspaceDirectories.current?.find(item => item.id === detail.workspaceId)).catch(error => {
-                if (!(error instanceof Error) || error.message !== '会议超过同步大小上限') throw error;
-                setNotice('有会议超过同步大小上限');
-              });
-              seen.current.set(item.id, item.updatedAt);
-            }
-          }
-          await update(localVault, key, signal, false);
-          await receiveMobileRecordings(localVault, key, signal);
-          const next = await nextMobileRecording(localVault, key);
-          if (next) {
+        if (automatic) {
+          const { records } = await api<{ records: RecordListItem[] }>('/records', 'GET', undefined, signal);
+          const liveIds = new Set(records.map(item => item.id));
+          let seenDirty = false;
+          for (const id of seen.current.keys()) if (!liveIds.has(id)) { seen.current.delete(id); seenDirty = true; }
+          const changed = records.filter(item => item.capture === 'completed' && seen.current.get(item.id) !== item.updatedAt).slice(0, 6);
+          for (const item of changed) {
+            const detail = await api<RecordDetail>('/records/' + item.id, 'GET', undefined, signal);
             signal.throwIfAborted();
-            const record = await api<RecordDetail>('/private-sync/recording', 'POST', { vault: localVault.id, id: next.id, title: next.title }, signal);
-            if (!record.deleted && !['sealed', 'completed'].includes(record.capture)) {
-              const { permitQueueRecord, localManifests } = await import('../audio/queue');
-              permitQueueRecord(record.id);
-              const { importAudio } = await import('../audio/capture');
-              await importAudio(next.file, record, () => {}, signal, record.sources.find(source => source.kind === 'import'));
-              const [item, manifests] = await Promise.all([api<RecordDetail>('/records/' + record.id, 'GET', undefined, signal), localManifests(record.id)]);
-              await api('/records/' + record.id + '/seal', 'POST', {
-                sources: item.sources.map(source => ({ sourceId: source.id, sessionId: source.sessionId, epoch: source.epoch,
-                  lastSequence: source.lastSequence ?? manifests.find(manifest => manifest.sourceId === source.id && manifest.epoch === source.epoch)?.lastSequence ?? source.watermark })),
-              }, signal);
-            }
-            await acknowledgeMobileRecording(localVault, next.id);
-            if (!signal.aborted) importedCallback.current?.();
+            await queueMeeting(localVault, key, detail, workspaceDirectories.current?.find(dir => dir.id === detail.workspaceId)).catch(failure => {
+              if (!(failure instanceof Error) || failure.message !== '会议超过同步大小上限') throw failure;
+              setNotice('有会议超过同步大小上限');
+            });
+            seen.current.set(item.id, item.updatedAt);
+            seenDirty = true;
           }
+          if (seenDirty) writeSeenMap(seenKey, seen.current);
+        }
+        await update(localVault, key, signal, false);
+        await receiveMobileRecordings(localVault, key, signal);
+        const next = await nextMobileRecording(localVault, key);
+        if (next) {
+          signal.throwIfAborted();
+          const created = await api<RecordDetail>('/private-sync/recording', 'POST', { vault: localVault.id, id: next.id, title: next.title }, signal);
+          if (!created.deleted && !['sealed', 'completed'].includes(created.capture)) {
+            const { permitQueueRecord, localManifests } = await import('../audio/queue');
+            permitQueueRecord(created.id);
+            const { importAudio } = await import('../audio/capture');
+            await importAudio(next.file, created, () => {}, signal, created.sources.find(source => source.kind === 'import'));
+            const [item, manifests] = await Promise.all([api<RecordDetail>('/records/' + created.id, 'GET', undefined, signal), localManifests(created.id)]);
+            await api('/records/' + created.id + '/seal', 'POST', {
+              sources: item.sources.map(source => ({ sourceId: source.id, sessionId: source.sessionId, epoch: source.epoch,
+                lastSequence: source.lastSequence ?? manifests.find(manifest => manifest.sourceId === source.id && manifest.epoch === source.epoch)?.lastSequence ?? source.watermark })),
+            }, signal);
+          }
+          await acknowledgeMobileRecording(localVault, next.id, signal);
+          if (!signal.aborted) importedCallback.current?.();
         }
         if (!signal.aborted) setBackgroundIssue('');
         failures = 0;
       } catch (failure) {
         if (signal.aborted) return;
-        if (desktop && failure instanceof ApiError && failure.status === 401) {
+        if (failure instanceof ApiError && failure.status === 401) {
           lock();
           setSession(current => current?.email === owner ? { ...current, email: null } : current);
           accountChanged?.(null);
         } else {
           retryAt = Date.now() + Math.min(120_000, 8_000 * 2 ** Math.min(++failures, 4));
-          if (mobile) setMobileStatus('同步暂缓，将自动重试');
-          else setBackgroundIssue(syncError(failure));
+          setBackgroundIssue(syncError(failure));
         }
       } finally {
         key.fill(0);
@@ -397,30 +348,28 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
       background.current = work;
       void work.finally(() => { if (background.current === work) background.current = null; });
     };
-    const timer = setInterval(runCycle, mobile ? 5000 : 15000);
+    const timer = setInterval(runCycle, 15000);
     addEventListener('lingji:sync-wakeup', runCycle);
-    const onVisible = () => { if (!document.hidden) runCycle(); };
-    if (mobile) document.addEventListener('visibilitychange', onVisible);
     runCycle();
     return () => {
       clearInterval(timer);
       removeEventListener('lingji:sync-wakeup', runCycle);
-      if (mobile) document.removeEventListener('visibilitychange', onVisible);
       controller.abort();
     };
-  }, [ready, online, accountEmail, unlocked, vault, desktop, mobile, automatic, recording && desktop, accountChanged, phoneMeetingSync]);
+  }, [ready, online, accountEmail, unlocked, vault, desktop, automatic, recording, accountChanged, seenStorageKey]);
 
   useEffect(() => {
-    if (!ready || !online || !unlocked || !accountEmail || !vault || !liveAudio || (!desktop && !mobile)) return;
+    if (!ready || !online || !unlocked || !accountEmail || !vault || !liveAudio || !desktop) return;
     const controller = new AbortController();
     const { signal } = controller;
     const localVault = vault;
-    let timer = 0, running = false, woken = false, failures = 0, retryAt = 0;
+    let timer = 0, running = false, woken = false, failures = 0, retryAt = 0, idlePolls = 0, firstRun = true;
     function schedule(delay: number) {
       window.clearTimeout(timer);
       if (!signal.aborted) timer = window.setTimeout(() => void cycle(), Math.max(delay, retryAt - Date.now()));
     }
     function wakeup() {
+      idlePolls = 0;
       if (running) woken = true;
       else schedule(0);
     }
@@ -429,67 +378,45 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
       running = true;
       woken = false;
       let more = false;
+      let receivedAny = false;
       const key = secret.current.slice();
       try {
-        if (mobile) {
-          const capture = activeLive.current;
-          const [pushed, pulled] = await Promise.allSettled([
-            pushLiveAudio(localVault, 'phone', signal),
-            capture.id && !capture.received
-              ? pullLiveAudio(localVault, key, 'phone', signal, frame => {
-                if (frame.id === activeLive.current.id && !signal.aborted) {
-                  activeLive.current.received = true;
-                  setLiveStatus('电脑已接收');
-                }
-              })
-              : false,
-          ]);
-          signal.throwIfAborted();
-          if (pushed.status === 'rejected') throw pushed.reason;
-          more = pushed.value.length === 8;
-          if (activeLive.current === capture && !capture.received && !capture.uploaded &&
-            pushed.value.some(key => Array.isArray(key) && key[2] === capture.id)) {
-            capture.uploaded = true;
-            setLiveStatus('音频已上传');
-          }
-          if (pulled.status === 'rejected') throw pulled.reason;
-          more ||= pulled.value;
-          setLiveIssue('');
-        } else {
-          try {
-            more = await receiveLiveAudio(localVault, key, signal, () => {
-              if (!signal.aborted) importedCallback.current?.();
-            });
-          } finally {
-            await pushLiveAudio(localVault, 'desktop', signal);
-          }
+        try {
+          more = await receiveLiveAudio(localVault, key, signal, () => {
+            receivedAny = true;
+            if (!signal.aborted) importedCallback.current?.();
+          });
+        } finally {
+          await pushLiveAudio(localVault, 'desktop', signal, firstRun);
+          firstRun = false;
         }
         failures = 0;
         retryAt = 0;
+        idlePolls = (more || receivedAny) ? 0 : Math.min(idlePolls + 1, 4);
       } catch (failure) {
         if (signal.aborted) return;
         retryAt = Date.now() + (failure instanceof ApiError && failure.status === 429
-          ? 15_000 : Math.min(8000, 1000 * 2 ** Math.min(failures++, 3)));
-        if (mobile) setLiveIssue(failure instanceof ApiError && failure.status === 413
-          ? '云空间已满，录音将保存在手机'
-          : failure instanceof ApiError && failure.status === 401 ? '登录已过期，录音将保存在手机' : '音频待同步 · 自动重试');
-        else setBackgroundIssue(syncError(failure));
+          ? 15_000 : Math.min(12_000, 1500 * 2 ** Math.min(failures++, 3)));
+        setBackgroundIssue(syncError(failure));
       } finally {
         key.fill(0);
         running = false;
-        schedule(woken || more ? 0 : mobile ? (activeLive.current.id && !activeLive.current.received ? 1400 : 4000) : 1200);
+        // Fast 1.5s polling while actively receiving phone live audio; back off to 12s (or 30s hidden) when idle.
+        const idleDelay = document.hidden ? 30_000 : [1500, 3000, 6000, 10_000, 12_000][idlePolls];
+        schedule(woken || more ? 0 : idleDelay);
       }
     }
     addEventListener('lingji:live-audio-ready', wakeup);
-    document.addEventListener('visibilitychange', wakeup);
+    const onVisible = () => { if (!document.hidden) wakeup(); };
+    document.addEventListener('visibilitychange', onVisible);
     wakeup();
     return () => {
       controller.abort();
       window.clearTimeout(timer);
       removeEventListener('lingji:live-audio-ready', wakeup);
-      document.removeEventListener('visibilitychange', wakeup);
+      document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [ready, online, unlocked, accountEmail, vault, liveAudio, desktop, mobile]);
+  }, [ready, online, unlocked, accountEmail, vault, liveAudio, desktop]);
 
   async function enter(device: DeviceVault, signal: AbortSignal, remember = false) {
     const { vault: localVault, root: key } = device;
@@ -512,10 +439,19 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
       setVault(localVault);
       setBackup(kit);
       setPairCode('');
-      const local = await meetingCopies(localVault, key);
-      signal.throwIfAborted();
-      setCopies(local);
-      if (navigator.onLine && !mobile) await update(localVault, key, signal);
+      setReady(true);
+      const copyKey = key.slice();
+      void (async () => {
+        try {
+          const local = await meetingCopies(localVault, copyKey);
+          if (!signal.aborted) setCopies(local);
+          if (navigator.onLine) await update(localVault, copyKey, signal, false);
+        } catch (failure) {
+          if (!signal.aborted) setBackgroundIssue(syncError(failure));
+        } finally {
+          copyKey.fill(0);
+        }
+      })();
     } finally {
       if (secret.current !== key) key.fill(0);
     }
@@ -525,13 +461,13 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
     event.preventDefault();
     const form = event.currentTarget;
     const fields = new FormData(form);
-    const email = String(fields.get('email')), password = String(fields.get('password'));
+    const inputEmail = String(fields.get('email')), password = String(fields.get('password'));
     run(async signal => {
       const result = legacyPrompt
-        ? { user: await api<Session>('/private-sync/session', 'POST', { email, password }, signal), material: undefined }
-        : await authenticateAccount({ email, password, register, desktop: true, factor: String(fields.get('factor') || ''), signal }).catch(failure => {
+        ? { user: await api<Session>('/private-sync/session', 'POST', { email: inputEmail, password }, signal), material: undefined }
+        : await authenticateAccount({ email: inputEmail, password, register, desktop: true, factor: String(fields.get('factor') || ''), signal }).catch(failure => {
             if (failure instanceof ApiError && failure.code === 'account_legacy') setLegacyPrompt(true);
-        if (failure instanceof ApiError && failure.code === 'account_factor_required') setFactorRequired(true);
+            if (failure instanceof ApiError && failure.code === 'account_factor_required') setFactorRequired(true);
             throw failure;
           });
       const { user, material } = result;
@@ -604,20 +540,11 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
   function lock() {
     forget();
     setNewLoginNeeded(!legacyAccount);
-    setUnlocked(false); setBackup(undefined); setInvitation(null); setApprove(null); setCopies([]); setPhoneCopies([]); setQr(''); setPairCode(''); setBusy(false);
+    setUnlocked(false); setBackup(undefined); setInvitation(null); setApprove(null); setCopies([]); setQr(''); setPairCode(''); setBusy(false);
     setBackgroundIssue(''); setNotice('当前会话已锁定');
   }
 
   const relay = desktop ? session?.companion || 'https://lingji.rookiehouse.com' : location.origin;
-  const quickRecordUrl = relay + '/quick-record';
-  const [quickRecordQr, setQuickRecordQr] = useState('');
-  useEffect(() => {
-    if (!visible || mobile || tab !== 'phone') return;
-    let current = true;
-    void import('qrcode').then(({ toDataURL }) => toDataURL(quickRecordUrl, { width: 184, margin: 2 }))
-      .then(url => { if (current) setQuickRecordQr(url); }).catch(() => { if (current) setQuickRecordQr(''); });
-    return () => { current = false; };
-  }, [visible, mobile, tab, quickRecordUrl]);
 
   function pair() {
     if (!vault || !secret.current) return;
@@ -697,7 +624,7 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
     <div><dt>已完成会议的转录、纪要和手记</dt><dd>加密同步</dd></div>
     <div><dt>桌面会议原音、声纹、截图和模型密钥</dt><dd>仅在本机</dd></div>
   </dl>;
-  if (!ready) return <p role="status">正在加载账号…</p>;
+  if (!ready) return <div className="sync-settings"><p role="status" className="account-muted">正在加载账号…</p></div>;
   if (desktop && (!online || !session?.email)) return <div className="sync-settings account-access" aria-label="本地空间">
     <AccountSection title={online && showLogin ? (register ? '注册账号' : '账号登录') : '本地空间'}>
       {online && showLogin ?
@@ -712,7 +639,7 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
           </div>
         {feedback}
       </form> : <>
-        <p>{online ? '登录后可同步会议和接收手机录音。' : '当前离线，可以继续在本机记录和查看会议。'}</p>
+        <p>{online ? '登录后可同步会议和接收手机 App 录音。' : '当前离线，可以继续在本机记录和查看会议。'}</p>
         {online && <div className="sync-actions"><Button variant="primary" onClick={() => setShowLogin(true)}>登录在线账号</Button></div>}
       </>}
     </AccountSection>
@@ -755,96 +682,13 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
 
   function saveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const sheet = event.currentTarget.closest('dialog');
     run(async signal => {
       const data = await api<{ name: string }>('/private-sync/profile', 'PATCH', { name }, signal);
       signal.throwIfAborted();
       setName(data.name);
       setProfile(data.name);
-      sheet?.close();
       setNotice('个人设置已保存');
     });
-  }
-  if (mobile) {
-    const account = <section className="mobile-account-card" aria-label="账号资料">
-      <div className="mobile-account-identity">
-        <span className="account-avatar" aria-hidden="true">{(profile || accountEmail || '聆').slice(0, 1).toUpperCase()}</span>
-        <div><strong>{profile || '个人账号'}</strong><small title={accountEmail ?? undefined}>{accountEmail}</small></div>
-        <Button variant="ghost" onClick={() => profileEditor.current?.showModal()}>编辑资料</Button>
-      </div>
-      <dialog ref={profileEditor} className="mobile-source-sheet" aria-labelledby="mobile-profile-heading">
-        <h2 id="mobile-profile-heading">编辑资料</h2>
-        <form className="mobile-profile-form" onSubmit={saveProfile}>
-          <label htmlFor="phone-profile-name">显示名称</label>
-          <input id="phone-profile-name" placeholder="输入显示名称" autoComplete="nickname" maxLength={60}
-            value={name} disabled={!online || busy} onChange={event => setName(event.target.value)}/>
-          <Button variant="primary" type="submit" disabled={!online || busy || name.trim() === profile}>保存</Button>
-        </form>
-        <div className="mobile-sheet-actions mobile-profile-actions">
-          {signOut && <Button variant="ghost" disabled={!online || busy || recording} onClick={signOut}>退出账号</Button>}
-          <Button variant="ghost" onClick={() => profileEditor.current?.close()}>关闭</Button>
-        </div>
-      </dialog>
-    </section>;
-    const recorder = vault && unlocked && !legacyAccount ? <QuickMobileRecording
-      visible={mobilePage === 'record'}
-      showRecorder={() => { setMobilePage('record'); window.scrollTo(0, 0); }}
-      status={!online ? '离线保存，回网自动同步' : liveIssue || liveStatus || mobileStatus}
-      live={liveAudio ? async (id, title, frame) => {
-        if (!secret.current) throw new Error('资料库未解锁');
-        const key = secret.current.slice();
-        try {
-          await queueLiveAudio(vault, key, id, title, frame);
-          dispatchEvent(new Event('lingji:live-audio-ready'));
-        } finally { key.fill(0); }
-      } : undefined}
-      onLiveRecording={id => {
-        activeLive.current = { id, uploaded: false, received: false };
-        setLiveStatus(id ? '正在上传音频' : '');
-        if (id) dispatchEvent(new Event('lingji:live-audio-ready'));
-      }}
-      onActive={mobileActive}
-      archive={async (entry, blob) => {
-        if (!secret.current) throw new Error('资料库未解锁');
-        const key = secret.current.slice();
-        try {
-          await rememberMobileRecording(vault, key, entry, blob);
-          setPhoneCopies(items => [entry, ...items.filter(item => item.id !== entry.id)]);
-        } finally { key.fill(0); }
-      }}
-      save={async (id, blob, title) => {
-        if (!secret.current) throw new Error('请先解锁会议同步');
-        const key = secret.current.slice();
-        try {
-          await queueMobileRecording(vault, key, blob, title, id);
-          setMobileStatus(online ? '已在本机保存，正在同步…' : '已在本机保存，联网后自动同步');
-          dispatchEvent(new Event('lingji:sync-wakeup'));
-        } finally { key.fill(0); }
-      }}/> : mobilePage === 'record' && <div className="quick-mobile-setup sync-settings">
-        {upgradeForm}
-        {!upgradingHere && recoverAccess}
-        {!vault && (!online || newLoginNeeded || error) && <div className="phone-unlock-state">
-          <h2>{!online ? '等待网络连接' : newLoginNeeded ? '请重新登录' : '同步暂未连接'}</h2>
-          {error && <p role="alert">{error}</p>}
-          {online && (newLoginNeeded || error) && <div className="phone-unlock-actions">
-            {!newLoginNeeded && accountEmail && <Button variant="primary" disabled={busy} onClick={() => run(signal => connectAccount(accountEmail, signal))}>重试</Button>}
-            {signOut && <Button variant={newLoginNeeded ? 'primary' : 'ghost'} disabled={busy} onClick={signOut}>重新登录</Button>}
-          </div>}
-        </div>}
-      </div>;
-    return <>
-      <MobileWorkspace page={mobilePage} setPage={setMobilePage} online={online} unlocked={unlocked}
-        automatic={phoneMeetingSync} setAutomatic={enabled => {
-          if (!vault) return;
-          try { localStorage.setItem('lingji:phone-meetings:' + vault.id, enabled ? '1' : '0'); }
-          catch { setError('无法在本机保存同步设置'); return; }
-          setPhoneMeetingSync(enabled);
-        }}
-        copies={copies} saved={phoneCopies} recorder={recorder} account={account}
-          read={readMobileMeeting} saveAnnotations={saveMobileAnnotations} play={playMobileRecording} search={searchMobileMeetings}/>
-      {feedback}
-      {backgroundIssue && <p className="account-feedback" role="status">{backgroundIssue}。将自动重试。</p>}
-    </>;
   }
 
   return <div className="sync-settings" aria-label="个人中心">
@@ -885,6 +729,7 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
             try {
               localStorage.setItem(automationKey, enabled ? '1' : '0');
               seen.current.clear();
+              writeSeenMap(seenStorageKey, seen.current);
               setAutomatic(enabled);
             } catch { setError('无法在本机保存同步设置'); }
           }}/>
@@ -943,13 +788,12 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
       </AccountSection>}
     </div>
     <div hidden={tab !== 'phone'}>
-      <AccountSection title="手机快速记录">
+      <AccountSection title="手机 App 记录">
         <div className="account-entry">
-          {quickRecordQr ? <img src={quickRecordQr} className="account-mobile-qr" width={92} height={92} alt="手机快速记录入口二维码"/> : <span className="account-row-icon"><Phone size={18}/></span>}
+          <span className="account-row-icon"><Phone size={18}/></span>
           <div>
-            <strong>用手机记录</strong>
-            <p className="account-muted">在手机上登录同一账号，录音会加密同步到电脑。</p>
-            <ExternalLink href={quickRecordUrl}>打开快速记录</ExternalLink>
+            <strong>通过手机 App 快速记录</strong>
+            <p className="account-muted">在聆记手机 App 中登录同一账号，录音会端侧加密并自动同步到此电脑。</p>
           </div>
         </div>
       </AccountSection>
@@ -959,4 +803,4 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
       <AccountSection title="同步范围">{protection}</AccountSection>
     </div>
   </div>;
-}
+});

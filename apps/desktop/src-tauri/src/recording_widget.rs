@@ -138,11 +138,6 @@ pub async fn recording_widget_update(
     if open {
         show_when_ready(&app).await?;
     }
-    if let Some(floating) = app.get_webview_window("recording-widget") {
-        if floating.is_visible().map_err(|e| e.to_string())? {
-            dock(&floating, &floating)?;
-        }
-    }
     if !report.recording && !report.paused && !report.busy {
         if let Some(floating) = app.get_webview_window("recording-widget") {
             if floating.is_visible().unwrap_or(false) {

@@ -1,4 +1,3 @@
-import {createPortal} from 'react-dom';
 import { useCallback, useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { X } from '@phosphor-icons/react';
 import { fetchDownload } from '../downloads';
@@ -8,12 +7,20 @@ import './CloseButton.css';
 import { isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 export function Button({ children, variant = 'secondary', className = '', title, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'ghost' | 'danger' }) {
-  const button=useRef<HTMLButtonElement>(null),tip=useRef<HTMLSpanElement>(null),id=useId();
+  const button=useRef<HTMLButtonElement>(null),id=useId();
   const label=title || props['aria-label'];
   useEffect(()=>{
-    const anchor=button.current,popup=tip.current;if(!anchor||!popup)return;
-    let timer:number|undefined;
-    const hide=()=>{clearTimeout(timer);if(popup.matches(':popover-open'))popup.hidePopover();removeEventListener('scroll',hide,true);removeEventListener('resize',hide);document.removeEventListener('keydown',key,true);};
+    const anchor=button.current;if(!anchor||!label||typeof document==='undefined')return;
+    let timer:number|undefined,popup:HTMLSpanElement|null=null;
+    const hide=()=>{clearTimeout(timer);if(popup?.matches(':popover-open'))popup.hidePopover();removeEventListener('scroll',hide,true);removeEventListener('resize',hide);document.removeEventListener('keydown',key,true);};
+    const ensurePopup=()=>{
+      if(popup)return popup;
+      popup=document.createElement('span');popup.id=id;popup.setAttribute('role','tooltip');popup.setAttribute('popover','manual');popup.className='button-tooltip';popup.textContent=label;
+      popup.addEventListener('toggle',toggled);document.body.appendChild(popup);
+      const described=anchor.getAttribute('aria-describedby');
+      if(!described?.split(/\s+/).includes(id))anchor.setAttribute('aria-describedby',[described,id].filter(Boolean).join(' '));
+      return popup;
+    };
     const show=()=>{
       clearTimeout(timer);
       if (!anchor.isConnected) return;
@@ -22,22 +29,22 @@ export function Button({ children, variant = 'secondary', className = '', title,
         const node = text.currentNode;
         if (node.textContent?.trim() && !node.parentElement?.closest('svg,.sr-only,[hidden]')) return;
       }
-      document.querySelectorAll<HTMLElement>('.button-tooltip:popover-open').forEach(other=>{if(other!==popup)other.hidePopover();});
-      if(!popup.matches(':popover-open'))popup.showPopover();const a=anchor.getBoundingClientRect(),p=popup.getBoundingClientRect();
+      const el=ensurePopup();el.textContent=label;
+      document.querySelectorAll<HTMLElement>('.button-tooltip:popover-open').forEach(other=>{if(other!==el)other.hidePopover();});
+      if(!el.matches(':popover-open'))el.showPopover();const a=anchor.getBoundingClientRect(),p=el.getBoundingClientRect();
       const top=a.top-p.height-8;
-      popup.style.left=`${Math.max(8,Math.min(innerWidth-p.width-8,a.left+(a.width-p.width)/2))}px`;
-      popup.style.top=`${Math.max(8,Math.min(innerHeight-p.height-8,top>=8?top:a.bottom+8))}px`;
+      el.style.left=`${Math.max(8,Math.min(innerWidth-p.width-8,a.left+(a.width-p.width)/2))}px`;
+      el.style.top=`${Math.max(8,Math.min(innerHeight-p.height-8,top>=8?top:a.bottom+8))}px`;
       addEventListener('scroll',hide,true);addEventListener('resize',hide);document.addEventListener('keydown',key,true);
-      };
-    const enter=()=>{timer=window.setTimeout(show,300);},key=(e:KeyboardEvent)=>{if(e.key==='Escape'&&popup.matches(':popover-open')){hide();if(anchor.closest('[role=menu]'))return;e.preventDefault();e.stopPropagation();}};
+    };
+    const enter=()=>{timer=window.setTimeout(show,300);},key=(e:KeyboardEvent)=>{if(e.key==='Escape'&&popup?.matches(':popover-open')){hide();if(anchor.closest('[role=menu]'))return;e.preventDefault();e.stopPropagation();}};
     const focus=()=>{if(anchor.matches(':focus-visible'))show();};
-    const toggled=()=>{if(!popup.matches(':popover-open'))hide();};
-    popup.addEventListener('toggle',toggled);
+    const toggled=()=>{if(popup&&!popup.matches(':popover-open'))hide();};
     anchor.addEventListener('pointerenter',enter);anchor.addEventListener('pointerleave',hide);
     anchor.addEventListener('focus',focus);anchor.addEventListener('blur',hide);anchor.addEventListener('click',hide);
-    return()=>{hide();popup.removeEventListener('toggle',toggled);anchor.removeEventListener('pointerenter',enter);anchor.removeEventListener('pointerleave',hide);anchor.removeEventListener('focus',focus);anchor.removeEventListener('blur',hide);anchor.removeEventListener('click',hide);};
-  },[label]);
-  return <><button className={`button ${variant} ${className}`} data-tooltip={label} {...props} ref={button} aria-describedby={[props['aria-describedby'],label?id:undefined].filter(Boolean).join(' ')||undefined}>{children}</button>{label&&typeof document!=='undefined'&&createPortal(<span ref={tip} id={id} role="tooltip" popover="manual" className="button-tooltip">{label}</span>,document.body)}</>;
+    return()=>{hide();if(popup){popup.removeEventListener('toggle',toggled);popup.remove();popup=null;}anchor.removeEventListener('pointerenter',enter);anchor.removeEventListener('pointerleave',hide);anchor.removeEventListener('focus',focus);anchor.removeEventListener('blur',hide);anchor.removeEventListener('click',hide);};
+  },[id,label]);
+  return <button className={`button ${variant} ${className}`} data-tooltip={label} {...props} ref={button}>{children}</button>;
 }
 export function CloseButton({ label = '关闭', className = '', ...props }: Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> & { label?: string }) {
   return <Button type="button" variant="ghost" className={`close-button ${className}`} aria-label={label} title={label} {...props}>

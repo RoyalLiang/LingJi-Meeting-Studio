@@ -128,7 +128,8 @@ export function MinutesPanel({ contextVisible = false, viewTarget, record, busy,
       {job?.status === 'stale' && <FeedbackNotice key={`superseded:${job.id}`} dismissalKey={`minutes-stale:${record.id}:${job.id}`} message="转录或人工内容已变化，本次旧结果已隔离，请重新整理。"/>}
       {minutes && (historical || formal) && minutes.transcriptRevision !== record.transcriptRevision && <FeedbackNotice key={`stale:${minutes.revision}`} message={`此纪要引用转录 v${minutes.transcriptRevision}，当前为 v${record.transcriptRevision}。请重新核对。`}/>}
       {!minutes ? (showPreview ? null : <Empty icon={<Sparkle size={32}/>} title={running ? '正在梳理讨论脉络' : '从讨论，到共识'}>{record.capture === 'completed' ? null : record.autoMinutes?.enabled ? 'AI 纪要随讨论更新；新内容会先显示为生成中的 AI 纪要。' : audioOnly ? '可在整理设置中允许本场原音处理，开启豆包转录与音频纪要。' : realtimeMode ? '可在整理设置中允许发送本场原音，开启音频 AI 纪要。' : '可在整理设置中开启会中 AI 纪要；也可以会后本地提取。'}</Empty>)
-        : <><div className="minutes-title"><div><h3>{minutes.title}</h3><span className="minutes-refresh-state" role="status">{running && <><ArrowClockwise size={14} aria-hidden="true"/>正在整理新版本</>}</span></div>{inline&&viewTarget?createPortal(documentActions,viewTarget):documentActions}</div>
+        : <><div className="minutes-title"><div><h3>{minutes.title}</h3></div>{inline&&viewTarget?createPortal(documentActions,viewTarget):documentActions}</div>
+          {running && <div className="minutes-refresh-state" role="status"><ArrowClockwise size={14} aria-hidden="true"/>正在整理新版本</div>}
           {viewTarget?createPortal(viewSwitch,viewTarget):viewSwitch}
           <div id="minutes-view" className="minutes-view" role="tabpanel" aria-labelledby={`minutes-tab-${view==='topics'?'ai':view}`}>
           {view==='ai' && <MinutesTree speakerMap={speakers} minutes={minutes} cite={citeMinutes} frames={frames} showHighlights={false}/>}

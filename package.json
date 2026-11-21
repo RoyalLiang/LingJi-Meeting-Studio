@@ -30,6 +30,7 @@
     "dev:record-worker": "node services/records/src/worker.mjs",
     "dev": "node scripts/dev.mjs",
     "build:web": "npm run build -w apps/web",
+    "build:mobile": "npm run build:mobile -w apps/web",
     "test:records": "node --test --test-concurrency=1 tests/records.test.mjs tests/records-resilience.test.mjs tests/records-providers.test.mjs",
     "start": "node scripts/dev.mjs --production",
     "test:records:postgres": "node --test tests/records-postgres.test.mjs",

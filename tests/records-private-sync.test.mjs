@@ -586,3 +586,35 @@ test('a full live audio journal still accepts an independent desktop receipt', a
   assert.equal(written.acknowledgements[0]?.seq, 1);
   assert.equal((await store.usage(owner)).audio, 64 * 1024 * 1024);
 });
+
+test('pruning consumed live audio frees quota while preserving monotonic cursors', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'lingji-private-sync-prune-'));
+  const store = await createPrivateSyncStore({ root });
+  t.after(async () => { await store.close(); await rm(root, { recursive: true, force: true }); });
+  const owner = 'prune-owner';
+  const { vault } = await createVault();
+  await store.initialize(owner, vault);
+  await store.initialize(owner + ':live-audio', vault);
+  const firstBatch = Array.from({ length: 4 }, () => ({ id: randomUUID(), nonce: 'n'.repeat(16), body: 'a'.repeat(1024) }));
+  await store.push(owner + ':live-audio', vault.id, firstBatch, owner);
+  const beforePrune = (await store.usage(owner)).audio;
+  assert.ok(beforePrune > 4096);
+  const pruned = await store.prune(owner + ':live-audio', vault.id, 3, owner);
+  assert.equal(pruned.pruned, 3);
+  assert.ok((await store.usage(owner)).audio < beforePrune / 2);
+  const pulled = await store.pullSubstream(owner, owner + ':live-audio', vault.id, 0);
+  assert.equal(pulled.trimmed, true);
+  assert.equal(pulled.operations.length, 1);
+  assert.equal(pulled.operations[0].seq, 4);
+  assert.equal(pulled.cursor, 4);
+  const prunedAll = await store.prune(owner + ':live-audio', vault.id, 4, owner);
+  assert.equal(prunedAll.pruned, 1);
+  assert.equal((await store.usage(owner)).audio, 0);
+  const emptyPull = await store.pullSubstream(owner, owner + ':live-audio', vault.id, 0);
+  assert.equal(emptyPull.trimmed, true);
+  assert.equal(emptyPull.operations.length, 0);
+  assert.equal(emptyPull.cursor, 4);
+  const nextOp = { id: randomUUID(), nonce: 'n'.repeat(16), body: 'b'.repeat(512) };
+  const appended = await store.push(owner + ':live-audio', vault.id, [nextOp], owner);
+  assert.equal(appended.acknowledgements[0]?.seq, 5);
+});

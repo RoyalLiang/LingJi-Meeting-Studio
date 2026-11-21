@@ -16,16 +16,15 @@ test('production static cache serves compressed HTML and notices edited files',a
  await writeFile(join(root,'index.html'),'<main>更新后的配置页面</main>'.repeat(1000));const changed=await raw(server);assert.match(gunzipSync(changed.body).toString(),/更新后的配置页面/);assert.notDeepEqual(changed.body,first.body);
 });
 
-test('quick record uses its own HTML entry before any script runs', async t => {
+test('web production server serves the desktop workbench SPA without a separate web quick-record entry', async t => {
  const root = await mkdtemp(join(tmpdir(),'lingji-phone-html-'));
  t.after(() => rm(root,{recursive:true,force:true}));
  await writeFile(join(root,'index.html'),'<main>Desktop workbench</main>');
- await writeFile(join(root,'quick-record.html'),'<main role="status">正在打开录音工作台</main>');
  const server = createProductionServer({root});
  await listen(server);
  t.after(() => server.close());
- const mobile = await raw(server,'identity','GET','/quick-record?install=1');
- assert.match(mobile.headers['content-type'],/text\/html/);
- assert.match(mobile.body.toString(),/role="status">正在打开录音工作台/);
+ const fallback = await raw(server,'identity','GET','/quick-record?install=1');
+ assert.match(fallback.headers['content-type'],/text\/html/);
+ assert.match(fallback.body.toString(),/Desktop workbench/);
  assert.match((await raw(server,'identity')).body.toString(),/Desktop workbench/);
 });

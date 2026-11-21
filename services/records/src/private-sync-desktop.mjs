@@ -8,8 +8,8 @@ const routes = new Map([
   ['factor/enroll', new Set(['POST'])],
   ['usage', new Set(['GET'])],
   ['profile', new Set(['GET', 'PATCH'])],
-  ['audio', new Set(['GET', 'POST'])],
-  ['live-audio', new Set(['GET', 'POST'])],
+  ['audio', new Set(['GET', 'POST', 'DELETE'])],
+  ['live-audio', new Set(['GET', 'POST', 'DELETE'])],
   ['live-receipts', new Set(['GET', 'POST'])],
   ['vault', new Set(['GET', 'PUT'])],
   ['delta', new Set(['GET', 'POST'])],
@@ -78,7 +78,8 @@ export function createDesktopPrivateSync({ origin = PRIVATE_SYNC_COMPANION, fetc
       requireThat(upgrade || routes.get(route)?.has(req.method), 'not_found', 404);
       const auth = session;
       requireThat(auth, 'sync_sign_in_required', 401);
-      const body = req.method === 'GET' ? null : await readBody(req, upgrade ? 8192 : SYNC_PAGE_BYTES);
+      const body = req.method === 'GET' || (req.method === 'DELETE' && (route === 'audio' || route === 'live-audio'))
+        ? null : await readBody(req, upgrade ? 8192 : SYNC_PAGE_BYTES);
       const current = generation;
       const upstream = await remote(path + url.search, req.method, body, auth);
       if (session !== auth) throw new DomainError('sync_account_changed', 409);

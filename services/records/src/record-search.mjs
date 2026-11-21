@@ -52,6 +52,7 @@ export async function createRecordSearch({ db, pool }) {
     await client.query('ALTER TABLE record_list_projection ADD COLUMN IF NOT EXISTS grams TEXT[], ADD COLUMN IF NOT EXISTS search_digest TEXT');
     await client.query(`CREATE OR REPLACE FUNCTION lingji_record_search_grams_v1(body TEXT) RETURNS TEXT[] LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE AS $$ SELECT COALESCE(array_agg(DISTINCT substring(body FROM i FOR n)),ARRAY[]::TEXT[]) FROM generate_series(2,3) AS n CROSS JOIN LATERAL generate_series(1,length(body)-n+1) AS i $$`);
     await client.query('CREATE INDEX IF NOT EXISTS record_list_search_grams ON record_list_projection USING GIN(grams)');
+    await client.query("CREATE INDEX IF NOT EXISTS record_list_live_owner_created ON record_list_projection ((data->>'owner'), (data->'summary'->>'createdAt') DESC, id DESC) WHERE data->>'deleted'='false'");
       await client.query('COMMIT');
     } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
     for (;;) {

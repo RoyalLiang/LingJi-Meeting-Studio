@@ -104,17 +104,15 @@ export function createPrivateSyncRoutes({ store, origin, repo, auth }) {
       const after = url.searchParams.get('after') ?? '0';
       const id = url.searchParams.get('vault');
       requireThat(validId(id) && /^\d{1,15}$/.test(after), 'sync_invalid_cursor', 400);
-      let stream = owner;
-      if (audioStream) {
-        requireThat((await store.vault(owner))?.id === id, 'sync_vault_unavailable', 404);
-        stream += ':' + route;
-        if (!await store.vault(stream)) {
-          requireThat(Number(after) === 0, 'sync_cursor_ahead', 409);
-          send(res, 200, { operations: [], cursor: 0, more: false });
-          return true;
-        }
-      }
-      send(res, 200, await store.pull(stream, id, Number(after)));
+      const result = audioStream
+        ? await store.pullSubstream(owner, owner + ':' + route, id, Number(after))
+        : await store.pull(owner, id, Number(after));
+      send(res, 200, result);
+    } else if ((route === 'audio' || route === 'live-audio') && method === 'DELETE') {
+      const before = url.searchParams.get('before') ?? '';
+      const id = url.searchParams.get('vault');
+      requireThat(validId(id) && /^\d{1,15}$/.test(before) && Number(before) > 0, 'sync_invalid_cursor', 400);
+      send(res, 200, await store.prune(owner + ':' + route, id, Number(before), owner));
     } else if ((route === 'delta' || audioStream) && method === 'POST') {
       const { vault, operations } = await readBody(req, SYNC_PAGE_BYTES);
       requireThat(validId(vault) && Array.isArray(operations) && operations.length >= 1 && operations.length <= 64, 'sync_invalid_operations', 400);

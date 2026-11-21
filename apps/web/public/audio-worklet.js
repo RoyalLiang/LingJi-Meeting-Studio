@@ -1,8 +1,9 @@
 /* PCM16 capture: never encodes or uploads screen video. */
 class MeetingPcm extends AudioWorkletProcessor {
-  constructor() {
+  constructor(options) {
     super();
     this.capturing = true;
+    this.emitMeter = options?.processorOptions?.meter !== false;
     this.packet = new DataView(new ArrayBuffer(6400 * 2));
     this.used = 0;
     this.packetEnergy = 0;
@@ -51,7 +52,7 @@ class MeetingPcm extends AudioWorkletProcessor {
         if (this.used === this.packet.byteLength) this.flush();
       }
     }
-    if (++this.meterFrames % 32 === 0) this.port.postMessage({ type: 'meter', value: Math.sqrt(energy / channels[0].length) });
+    if (this.emitMeter && ++this.meterFrames % 32 === 0) this.port.postMessage({ type: 'meter', value: Math.sqrt(energy / channels[0].length) });
     return true;
   }
 }

@@ -18,7 +18,9 @@ export function decodeBytes(value: string) {
   return Uint8Array.from(data, character => character.charCodeAt(0));
 }
 
-async function key(material: Uint8Array<ArrayBuffer>, vault: Pick<Vault, 'salt'>, purpose: string) {
+export type BinaryEnvelope = { nonce: Uint8Array<ArrayBuffer>; body: ArrayBuffer };
+
+export async function derivePurposeKey(material: Uint8Array<ArrayBuffer>, vault: Pick<Vault, 'salt'>, purpose: string) {
   if (material.byteLength < 32) throw new Error('密钥长度不正确');
   const input = await crypto.subtle.importKey('raw', material, 'HKDF', false, ['deriveKey']);
   return crypto.subtle.deriveKey({
@@ -30,14 +32,35 @@ export async function seal(material: Uint8Array<ArrayBuffer>, vault: Pick<Vault,
   const nonce = random(12);
   const body = await crypto.subtle.encrypt({
     name: 'AES-GCM', iv: nonce, additionalData: encoder.encode(JSON.stringify([version, vault.id, purpose, id])),
-  }, await key(material, vault, purpose), value);
+  }, await derivePurposeKey(material, vault, purpose), value);
   return { nonce: encodeBytes(nonce), body: encodeBytes(new Uint8Array(body)) };
 }
 
-export async function unseal(material: Uint8Array<ArrayBuffer>, vault: Pick<Vault, 'id' | 'salt'>, purpose: string, id: string, envelope: Envelope) {
+export async function unsealWithKey(cryptoKey: CryptoKey, vault: Pick<Vault, 'id'>, purpose: string, id: string, envelope: Envelope) {
   const plain = await crypto.subtle.decrypt({
     name: 'AES-GCM', iv: decodeBytes(envelope.nonce), additionalData: encoder.encode(JSON.stringify([version, vault.id, purpose, id])),
-  }, await key(material, vault, purpose), decodeBytes(envelope.body));
+  }, cryptoKey, decodeBytes(envelope.body));
+  return new Uint8Array(plain);
+}
+
+export async function unseal(material: Uint8Array<ArrayBuffer>, vault: Pick<Vault, 'id' | 'salt'>, purpose: string, id: string, envelope: Envelope) {
+  return unsealWithKey(await derivePurposeKey(material, vault, purpose), vault, purpose, id, envelope);
+}
+
+export async function sealBinary(material: Uint8Array<ArrayBuffer>, vault: Pick<Vault, 'id' | 'salt'>, purpose: string, id: string, value: Uint8Array<ArrayBuffer>): Promise<BinaryEnvelope> {
+  const nonce = random(12);
+  const body = await crypto.subtle.encrypt({
+    name: 'AES-GCM', iv: nonce, additionalData: encoder.encode(JSON.stringify([version, vault.id, purpose, id])),
+  }, await derivePurposeKey(material, vault, purpose), value);
+  return { nonce, body };
+}
+
+export async function unsealBinary(material: Uint8Array<ArrayBuffer>, vault: Pick<Vault, 'id' | 'salt'>, purpose: string, id: string, envelope: Envelope | BinaryEnvelope) {
+  const iv = typeof envelope.nonce === 'string' ? decodeBytes(envelope.nonce) : envelope.nonce;
+  const ciphertext = typeof envelope.body === 'string' ? decodeBytes(envelope.body) : envelope.body;
+  const plain = await crypto.subtle.decrypt({
+    name: 'AES-GCM', iv, additionalData: encoder.encode(JSON.stringify([version, vault.id, purpose, id])),
+  }, await derivePurposeKey(material, vault, purpose), ciphertext);
   return new Uint8Array(plain);
 }
 

@@ -22,7 +22,7 @@ test('native recording reports stay independent from the visible clock and retur
 });
 
 test('virtual segments track preceding layout while visible and disconnect when hidden', async () => {
-  const effects = [], values = [], observers = [], options = [];
+  const effects = [], effectDeps = [], values = [], observers = [], options = [];
   let refs = 0, top = 100;
   const previous = {};
   const container = { scrollTop: 0, clientTop: 0, getBoundingClientRect: () => ({ top: 0 }), parentElement: null };
@@ -31,7 +31,7 @@ test('virtual segments track preceding layout while visible and disconnect when 
     react: {
       useRef: initial => ({ current: refs++ === 0 ? root : initial }),
       useState: initial => [initial, update => values.push(update(values.at(-1) ?? initial))],
-      useLayoutEffect: effect => effects.push(effect),
+      useLayoutEffect: (effect, deps) => { effects.push(effect); effectDeps.push(deps); },
       useCallback: callback => callback
     },
     'react/jsx-runtime': jsx,
@@ -51,6 +51,7 @@ test('virtual segments track preceding layout while visible and disconnect when 
   });
   const props = { segments: [{ id: 'segment' }], children: () => null };
   module.VirtualSegments(props);
+  assert.equal(effectDeps[0][0], true, 'margin ResizeObserver effect must depend on active');
   const cleanup = effects[0]();
   assert.equal(values.at(-1), 100);
   assert.ok(observers[0].targets.includes(previous));
@@ -62,7 +63,9 @@ test('virtual segments track preceding layout while visible and disconnect when 
 
   refs = 0;
   effects.length = 0;
+  effectDeps.length = 0;
   module.VirtualSegments({ ...props, active: false });
+  assert.equal(effectDeps[0][0], false, 'margin ResizeObserver effect must re-run when active toggles');
   effects[0]();
   assert.equal(options.at(-1).enabled, false);
   assert.equal(observers.length, 1);

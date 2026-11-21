@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ArrowLeft, ArrowClockwise, FileText, Headphones, Keyhole, Link, Microphone, Moon, ShieldCheck, User, WifiSlash, DeviceMobile, Pause, Play, CaretRight } from '@phosphor-icons/react';
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
+import { ArrowLeft, ArrowClockwise, FileText, Headphones, Keyhole, Link, Microphone, Moon, ShieldCheck, Trash, User, WifiSlash, DeviceMobile, Pause, Play, CaretRight } from '@phosphor-icons/react';
+import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import type { Minutes } from '../model';
 import type { CopySummary, MeetingAnnotations, MeetingCopy } from '../sync/journal';
 import { api } from '../api';
@@ -19,15 +20,20 @@ const date = new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric'
 const clock = (seconds: number) => [Math.floor(seconds / 60), seconds % 60].map(value => String(value).padStart(2, '0')).join(':');
 
 function combined(copies: CopySummary[], saved: MobileRecording[]): Entry[] {
-  const entries: Entry[] = copies.map(cloud => ({
-    ...cloud, cloud, saved: saved.find(entry => entry.id === cloud.sourceId)
-  }));
-  return [...entries, ...saved.filter(entry => !entries.some(item => item.saved?.id === entry.id)).map(entry => ({
-    ...entry, saved: entry
-  }))].sort((a, b) => b.at - a.at);
+  const savedById = new Map(saved.map(item => [item.id, item]));
+  const matchedSaved = new Set<string>();
+  const entries: Entry[] = copies.map(cloud => {
+    const local = savedById.get(cloud.sourceId);
+    if (local) matchedSaved.add(local.id);
+    return { ...cloud, cloud, saved: local };
+  });
+  for (const item of saved) {
+    if (!matchedSaved.has(item.id)) entries.push({ ...item, saved: item });
+  }
+  return entries.sort((a, b) => b.at - a.at);
 }
 
-function RecordCards({ entries, select, empty }: { entries: Entry[]; select: (entry: Entry) => void; empty: string }) {
+const RecordCards = memo(function RecordCards({ entries, select, empty }: { entries: Entry[]; select: (entry: Entry) => void; empty: string }) {
   if (!entries.length) return <p className="mobile-empty">{empty}</p>;
   return <ul className="mobile-record-list">{entries.map(entry => {
     const seconds = entry.saved?.seconds ?? (entry.cloud?.durationMs === undefined ? null : Math.floor(entry.cloud.durationMs / 1000));
@@ -38,21 +44,21 @@ function RecordCards({ entries, select, empty }: { entries: Entry[]; select: (en
         <span className="mobile-record-meta">
           <time dateTime={new Date(entry.at).toISOString()}>{date.format(entry.at)}</time>
           <span>{entry.cloud?.workspace?.name || '个人空间'}</span>
-        {seconds !== null && <span>{clock(seconds)}</span>}
-        {entry.saved ? <span><Headphones size={14} aria-hidden="true"/> 回听</span>
-          : entry.cloud?.fromPhone !== undefined && <span>{entry.cloud.fromPhone ? '手机录音' : '电脑记录'}</span>}
+          {seconds !== null && <span>{clock(seconds)}</span>}
+          {entry.saved ? <span><Headphones size={14} aria-hidden="true"/> 回听</span>
+            : entry.cloud?.fromPhone !== undefined && <span>{entry.cloud.fromPhone ? '手机录音' : '电脑记录'}</span>}
         </span>
       </button>
     </li>;
   })}</ul>;
-}
+});
 
-function MobileMeeting({ entry, back, read, play, saveAnnotations }: {
-  entry: Entry; back: () => void; read: (id: string) => Promise<MeetingCopy | null>; play: (id: string) => Promise<Blob | null>;
-  saveAnnotations: (parent: string, changes: MeetingAnnotations) => Promise<void>;
-}) {
-  const [tab, setTab] = useState<(typeof detailTabs)[number][0]>('minutes');
-  const [copy, setCopy] = useState<MeetingCopy | null>();
+type PlayerHandle = { playAt: (seconds: number) => void };
+const MobileAudioPlayer = memo(forwardRef<PlayerHandle, {
+  saved: MobileRecording;
+  play: (id: string) => Promise<Blob | null>;
+  onError: (message: string) => void;
+}>(function MobileAudioPlayer({ saved, play, onError }, ref) {
   const [audio, setAudio] = useState('');
   const player = useRef<HTMLAudioElement>(null);
   const requestedTime = useRef(0);
@@ -60,11 +66,122 @@ function MobileMeeting({ entry, back, read, play, saveAnnotations }: {
   const [duration, setDuration] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
+  const [audioLoading, setAudioLoading] = useState(false);
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  useEffect(() => () => { if (audio) URL.revokeObjectURL(audio); }, [audio]);
+
+  const seek = useCallback((seconds: number) => {
+    const element = player.current;
+    if (!element || !Number.isFinite(element.duration)) return;
+    element.currentTime = Math.min(Math.max(0, seconds), element.duration);
+    setPosition(element.currentTime);
+  }, []);
+
+  const playLocal = useCallback(async (seconds = 0) => {
+    if (audioLoading) return;
+    onError('');
+    if (player.current) {
+      seek(seconds);
+      void player.current.play().catch(() => onError('无法播放录音，请重试'));
+      return;
+    }
+    requestedTime.current = seconds;
+    setAudioLoading(true);
+    try {
+      const blob = await play(saved.id);
+      if (!mounted.current) return;
+      if (!blob) throw new Error('本机没有保存这段音频');
+      setAudio(URL.createObjectURL(blob));
+    } catch (failure) { if (mounted.current) onError((failure as Error).message); }
+    finally { if (mounted.current) setAudioLoading(false); }
+  }, [audioLoading, onError, play, saved.id, seek]);
+
+  useImperativeHandle(ref, () => ({ playAt: seconds => { void playLocal(seconds); } }), [playLocal]);
+
+  return <div className="mobile-playback">
+    {audio && <audio ref={player} src={audio} autoPlay preload="metadata"
+      onLoadedMetadata={event => {
+        const element = event.currentTarget;
+        if (Number.isFinite(element.duration)) setDuration(element.duration);
+        element.playbackRate = speed;
+        seek(requestedTime.current);
+      }}
+      onTimeUpdate={event => setPosition(event.currentTarget.currentTime)}
+      onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)}
+      onError={() => { setAudio(''); onError('无法播放录音，请重试'); }}/>}
+    <div className="mobile-player" aria-label="录音回听">
+      <Button variant="primary" className="mobile-player-play" aria-busy={audioLoading}
+        aria-label={playing ? '暂停回听' : '播放录音'} disabled={audioLoading} onClick={() => {
+          const element = player.current;
+          if (!element) void playLocal();
+          else if (!element.paused) element.pause();
+          else void element.play().catch(() => onError('无法播放录音，请重试'));
+        }}>{playing ? <Pause size={19} weight="fill"/> : <Play size={19} weight="fill"/>}</Button>
+      <div className="mobile-player-track">
+        <input type="range" aria-label="回听进度" min={0} max={duration || saved.seconds} step={0.1} value={position}
+          style={{ backgroundSize: `${duration ? Math.min(100, position / duration * 100) : 0}% 4px, 100% 4px` }}
+          disabled={!audio || !duration} onChange={event => seek(event.currentTarget.valueAsNumber)}/>
+        <div className="mobile-player-times">
+          <span>{clock(Math.floor(position))}</span>
+          <span>{clock(Math.floor(duration || saved.seconds))}</span>
+        </div>
+      </div>
+      <select aria-label="播放速度" value={speed} onChange={event => {
+        const next = Number(event.target.value);
+        if (player.current) player.current.playbackRate = next;
+        setSpeed(next);
+      }}>{[1, 1.25, 1.5, 2].map(value => <option key={value} value={value}>{value}×</option>)}</select>
+    </div>
+  </div>;
+}));
+
+const MobileTranscriptList = memo(function MobileTranscriptList({ lines, highlight, hasLocal, onPlayAt }: {
+  lines: TranscriptLine[]; highlight: string; hasLocal: boolean; onPlayAt: (seconds: number) => void;
+}) {
+  const listRef = useRef<HTMLDivElement>(null);
+  const virtualizer = useWindowVirtualizer({
+    count: lines.length,
+    estimateSize: () => 96,
+    overscan: 6,
+    scrollMargin: listRef.current?.offsetTop ?? 0,
+  });
+  useEffect(() => {
+    if (!highlight) return;
+    const index = lines.findIndex(line => line.id === highlight);
+    if (index >= 0) virtualizer.scrollToIndex(index, { align: 'center' });
+  }, [highlight, lines, virtualizer]);
+  return <div ref={listRef} className="mobile-transcript-virtual" style={{ height: virtualizer.getTotalSize() }}>
+    {virtualizer.getVirtualItems().map(item => {
+      const line = lines[item.index];
+      return <div key={line.id} data-index={item.index} ref={virtualizer.measureElement} className="mobile-transcript-row"
+        style={{ transform: `translateY(${item.start - virtualizer.options.scrollMargin}px)` }}>
+        <article className="mobile-card mobile-line" id={'mobile-line-' + line.id} data-highlight={highlight === line.id}>
+          <header><strong>{line.speaker}</strong>{hasLocal
+            ? <button className="mobile-time-link" type="button" onClick={() => onPlayAt(line.startMs / 1000)}
+                aria-label={`从 ${clock(Math.floor(line.startMs / 1000))} 回听`}>{clock(Math.floor(line.startMs / 1000))}</button>
+            : <time>{clock(Math.floor(line.startMs / 1000))}</time>}</header><p>{line.text}</p>
+        </article>
+      </div>;
+    })}
+  </div>;
+});
+
+function MobileMeeting({ entry, back, read, play, saveAnnotations, deleteLocal }: {
+  entry: Entry; back: () => void; read: (id: string) => Promise<MeetingCopy | null>; play: (id: string) => Promise<Blob | null>;
+  saveAnnotations: (parent: string, changes: MeetingAnnotations) => Promise<void>;
+  deleteLocal?: (id: string) => Promise<void>;
+}) {
+  const [tab, setTab] = useState<(typeof detailTabs)[number][0]>('minutes');
+  const [copy, setCopy] = useState<MeetingCopy | null>();
+  const playerRef = useRef<PlayerHandle>(null);
   const [draft, setDraft] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedNotice, setSavedNotice] = useState('');
   const [error, setError] = useState('');
-  const [audioLoading, setAudioLoading] = useState(false);
   const [citation, setCitation] = useState<TranscriptLine>();
   const [highlight, setHighlight] = useState('');
   const mounted = useRef(false);
@@ -81,37 +198,12 @@ function MobileMeeting({ entry, back, read, play, saveAnnotations }: {
     }).catch(() => { if (active) { setError('无法读取此会议'); setCopy(null); } });
     return () => { active = false; };
   }, [entry.cloud?.id, read]);
-  useEffect(() => () => { if (audio) URL.revokeObjectURL(audio); }, [audio]);
   useEffect(() => {
     if (citation && !dialog.current?.open) dialog.current?.showModal();
   }, [citation]);
-  useEffect(() => {
-    if (tab === 'transcript' && highlight) document.getElementById('mobile-line-' + highlight)?.scrollIntoView({ block: 'center' });
-  }, [highlight, tab]);
-  function seek(seconds: number) {
-    const element = player.current;
-    if (!element || !Number.isFinite(element.duration)) return;
-    element.currentTime = Math.min(Math.max(0, seconds), element.duration);
-    setPosition(element.currentTime);
-  }
-  async function playLocal(seconds = 0) {
-    if (!entry.saved || audioLoading) return;
-    setError('');
-    if (player.current) {
-      seek(seconds);
-      void player.current.play().catch(() => setError('无法播放录音，请重试'));
-      return;
-    }
-    requestedTime.current = seconds;
-    setAudioLoading(true);
-    try {
-      const blob = await play(entry.saved.id);
-      if (!mounted.current) return;
-      if (!blob) throw new Error('本机没有保存这段音频');
-      setAudio(URL.createObjectURL(blob));
-    } catch (failure) { if (mounted.current) setError((failure as Error).message); }
-    finally { if (mounted.current) setAudioLoading(false); }
-  }
+  const playAt = useCallback((seconds: number) => {
+    playerRef.current?.playAt(seconds);
+  }, []);
   async function save(changes: MeetingAnnotations, notesChanged = false) {
     if (!entry.cloud || saving) return;
     setSaving(true);
@@ -132,7 +224,8 @@ function MobileMeeting({ entry, back, read, play, saveAnnotations }: {
   }
 
   const content = copy?.content;
-  const lines = (content?.segments || []) as TranscriptLine[];
+  const lines = useMemo(() => (content?.segments || []) as TranscriptLine[], [content?.segments]);
+  const linesById = useMemo(() => new Map(lines.map(line => [line.id, line])), [lines]);
   const minutes = content?.minutes as Minutes | null | undefined;
   return <section aria-label="会议详情">
     <header className="mobile-detail-header">
@@ -140,41 +233,7 @@ function MobileMeeting({ entry, back, read, play, saveAnnotations }: {
       <h1>{entry.title}</h1>
       <span className="mobile-record-badge">{entry.cloud?.pending ? '待同步' : entry.cloud ? '已同步' : '本机录音'}</span>
     </header>
-    {entry.saved && <div className="mobile-playback">
-      {audio && <audio ref={player} src={audio} autoPlay preload="metadata"
-        onLoadedMetadata={event => {
-          const element = event.currentTarget;
-          if (Number.isFinite(element.duration)) setDuration(element.duration);
-          element.playbackRate = speed;
-          seek(requestedTime.current);
-        }}
-        onTimeUpdate={event => setPosition(event.currentTarget.currentTime)}
-        onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)}
-        onError={() => { setAudio(''); setError('无法播放录音，请重试'); }}/>}
-      <div className="mobile-player" aria-label="录音回听">
-        <Button variant="primary" className="mobile-player-play" aria-busy={audioLoading}
-          aria-label={playing ? '暂停回听' : '播放录音'} disabled={audioLoading} onClick={() => {
-            const element = player.current;
-            if (!element) void playLocal();
-            else if (!element.paused) element.pause();
-            else void element.play().catch(() => setError('无法播放录音，请重试'));
-          }}>{playing ? <Pause size={19} weight="fill"/> : <Play size={19} weight="fill"/>}</Button>
-        <div className="mobile-player-track">
-          <input type="range" aria-label="回听进度" min={0} max={duration || entry.saved.seconds} step={0.1} value={position}
-            style={{ backgroundSize: `${duration ? Math.min(100, position / duration * 100) : 0}% 4px, 100% 4px` }}
-            disabled={!audio || !duration} onChange={event => seek(event.currentTarget.valueAsNumber)}/>
-          <div className="mobile-player-times">
-            <span>{clock(Math.floor(position))}</span>
-            <span>{clock(Math.floor(duration || entry.saved.seconds))}</span>
-          </div>
-        </div>
-        <select aria-label="播放速度" value={speed} onChange={event => {
-          const next = Number(event.target.value);
-          if (player.current) player.current.playbackRate = next;
-          setSpeed(next);
-        }}>{[1, 1.25, 1.5, 2].map(value => <option key={value} value={value}>{value}×</option>)}</select>
-      </div>
-    </div>}
+    {entry.saved && <MobileAudioPlayer ref={playerRef} saved={entry.saved} play={play} onError={setError}/>}
 
     <nav className="mobile-detail-tabs" aria-label="会议内容">
       {detailTabs.map(([id, label]) => <button key={id} type="button" aria-current={id === tab ? 'page' : undefined} onClick={() => setTab(id)}>{label}</button>)}
@@ -187,7 +246,7 @@ function MobileMeeting({ entry, back, read, play, saveAnnotations }: {
         {minutes.sections.map((part, i) => <section className="mobile-detail-group" key={i}><h2>{part.heading}</h2>
           {part.items.map((item, j) => <article className="mobile-card" key={j}><p>{item.text}</p>
             {item.evidence.map((evidence, k) => {
-              const line = lines.find(value => value.id === evidence.segmentId);
+              const line = linesById.get(evidence.segmentId);
               return line && <button className="mobile-citation" type="button" key={k} onClick={() => setCitation(line)}><Link size={13}/>原文 {k + 1}</button>;
             })}
           </article>)}
@@ -205,12 +264,9 @@ function MobileMeeting({ entry, back, read, play, saveAnnotations }: {
         </section>}
       </> : (!entry.cloud || copy !== undefined) && <p className="mobile-empty">暂无纪要</p>}
     </>}
-    {tab === 'transcript' && (lines.length ? lines.map(line => <article className="mobile-card mobile-line" id={'mobile-line-' + line.id} data-highlight={highlight === line.id} key={line.id}>
-      <header><strong>{line.speaker}</strong>{entry.saved
-        ? <button className="mobile-time-link" type="button" disabled={audioLoading} onClick={() => void playLocal(line.startMs / 1000)}
-            aria-label={`从 ${clock(Math.floor(line.startMs / 1000))} 回听`}>{clock(Math.floor(line.startMs / 1000))}</button>
-        : <time>{clock(Math.floor(line.startMs / 1000))}</time>}</header><p>{line.text}</p>
-    </article>) : (!entry.cloud || copy !== undefined) && <p className="mobile-empty">等待电脑同步转录</p>)}
+    {tab === 'transcript' && (lines.length
+      ? <MobileTranscriptList lines={lines} highlight={highlight} hasLocal={Boolean(entry.saved)} onPlayAt={playAt}/>
+      : (!entry.cloud || copy !== undefined) && <p className="mobile-empty">等待电脑同步转录</p>)}
     {tab === 'notes' && <>
       {copy && <form className="mobile-card mobile-notes-editor" onSubmit={event => {
         event.preventDefault();
@@ -222,9 +278,14 @@ function MobileMeeting({ entry, back, read, play, saveAnnotations }: {
         <Button type="submit" variant="primary" disabled={saving || draft === null || draft === copy.notes}>保存手记</Button>
       </form>}
       {entry.saved?.marks.length ? <section className="mobile-detail-group"><h2>录音重点</h2>
-        <ul className="mobile-record-list">{entry.saved.marks.map(mark => <li className="mobile-card" key={mark}><button className="mobile-time-link" type="button" disabled={audioLoading}
-          onClick={() => void playLocal(mark)} aria-label={`回听重点 ${clock(mark)}`}>{clock(mark)}</button></li>)}</ul>
+        <ul className="mobile-record-list">{entry.saved.marks.map(mark => <li className="mobile-card" key={mark}><button className="mobile-time-link" type="button"
+          onClick={() => playAt(mark)} aria-label={`回听重点 ${clock(mark)}`}>{clock(mark)}</button></li>)}</ul>
       </section> : !copy && <p className="mobile-empty">暂无手记</p>}
+      {entry.saved && deleteLocal && <div className="mobile-detail-actions">
+        <Button variant="ghost" disabled={saving} onClick={() => void deleteLocal(entry.saved!.id).then(() => { if (!entry.cloud) back(); }).catch(failure => setError((failure as Error).message))}>
+          <Trash size={15}/>清理本机回听副本
+        </Button>
+      </div>}
     </>}
     <dialog ref={dialog} className="mobile-source-sheet" onClose={() => setCitation(undefined)}>
       {citation && <><h2>来源原文</h2><p className="mobile-sheet-note">{citation.speaker} · {clock(Math.floor(citation.startMs / 1000))}</p>
@@ -246,7 +307,7 @@ function MobileSwitch({ checked, disabled, change }: { checked: boolean; disable
 }
 
 export function MobileWorkspace({
-  page, setPage, online, unlocked, automatic, setAutomatic, copies, saved, recorder, account, read, play, search, saveAnnotations,
+  page, setPage, online, unlocked, automatic, setAutomatic, copies, saved, recorder, account, read, play, search, saveAnnotations, deleteLocal,
 }: {
   page: MobilePage; setPage: (page: MobilePage) => void; online: boolean; unlocked: boolean;
   automatic: boolean; setAutomatic: (enabled: boolean) => void;
@@ -255,6 +316,7 @@ export function MobileWorkspace({
   play: (id: string) => Promise<Blob | null>;
   search: (query: string) => Promise<CopySummary[]>;
   saveAnnotations: (parent: string, changes: MeetingAnnotations) => Promise<string>;
+  deleteLocal?: (id: string) => Promise<void>;
 }) {
   const [detail, setDetail] = useState<Entry | null>(null);
   const [query, setQuery] = useState('');
@@ -288,21 +350,28 @@ export function MobileWorkspace({
     }).catch(() => { if (active) setMatches(copies.filter(item => item.title.toLowerCase().includes(searchTerm))); }), 170);
     return () => { active = false; clearTimeout(timer); };
   }, [searchTerm, copies, page, unlocked, search]);
-  const entries = combined(copies, saved);
+  const entries = useMemo(() => combined(copies, saved), [copies, saved]);
   const opened = detail && (entries.find(item => detail.cloud ? item.id === detail.id : item.saved?.id === detail.saved?.id) || detail);
-  const workspaces = [...new Map(copies.flatMap(copy => copy.workspace ? [[copy.workspace.id, copy.workspace] as const] : [])).values()]
-    .sort((left, right) => left.name.localeCompare(right.name, 'zh-CN'));
-  const filtered = searchTerm ? combined(matches || copies.filter(item => item.title.toLowerCase().includes(searchTerm)),
-    saved.filter(item => item.title.toLowerCase().includes(searchTerm) || matches?.some(copy => copy.sourceId === item.id))) : entries;
-  const visibleEntries = filtered.filter(entry => !space || (entry.cloud?.workspace?.id || 'personal') === space);
+  const workspaces = useMemo(() => [...new Map(copies.flatMap(copy => copy.workspace ? [[copy.workspace.id, copy.workspace] as const] : [])).values()]
+    .sort((left, right) => left.name.localeCompare(right.name, 'zh-CN')), [copies]);
+  const filtered = useMemo(() => {
+    if (!searchTerm) return entries;
+    const matchedIds = matches ? new Set(matches.map(copy => copy.sourceId)) : null;
+    return combined(
+      matches || copies.filter(item => item.title.toLowerCase().includes(searchTerm)),
+      saved.filter(item => item.title.toLowerCase().includes(searchTerm) || Boolean(matchedIds?.has(item.id)))
+    );
+  }, [searchTerm, entries, matches, copies, saved]);
+  const visibleEntries = useMemo(() => filtered.filter(entry => !space || (entry.cloud?.workspace?.id || 'personal') === space), [filtered, space]);
   const formatSize = (value: number) => (value / 1048576).toLocaleString('zh-CN', { maximumFractionDigits: 2 }) + ' MiB';
-  function navigate(next: MobilePage) {
+  const navigate = useCallback((next: MobilePage) => {
     setPage(next); setDetail(null);
     window.scrollTo(0, 0);
-  }
-  function select(entry: Entry) {
-    navigate('meetings'); setDetail(entry);
-  }
+  }, [setPage]);
+  const select = useCallback((entry: Entry) => {
+    setPage('meetings'); setDetail(entry);
+    window.scrollTo(0, 0);
+  }, [setPage]);
   return <div className="mobile-workspace" data-page={page}>
     {(!detail || page !== 'meetings') && <header className="mobile-page-heading">
       {page === 'record' ? <div className="mobile-space"><Brand markOnly/><h1>记录</h1></div> :
@@ -314,7 +383,7 @@ export function MobileWorkspace({
     </header>}
     {recorder}
     {page === 'meetings' && (opened ? <MobileMeeting key={opened.saved?.id || opened.cloud?.sourceId || opened.id} entry={opened}
-          back={() => setDetail(null)} read={read} play={play} saveAnnotations={async (parent, changes) => {
+          back={() => setDetail(null)} read={read} play={play} deleteLocal={deleteLocal} saveAnnotations={async (parent, changes) => {
             const id = await saveAnnotations(parent, changes);
             setDetail(current => current === detail && opened.cloud
               ? { ...opened, id, cloud: { ...opened.cloud, id } }
