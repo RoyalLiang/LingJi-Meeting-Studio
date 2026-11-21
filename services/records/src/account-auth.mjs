@@ -56,7 +56,7 @@ export async function createAccountAuth({ repo, auth, store, origin }) {
 
   return async function accountAuth({ req, res, user, readBody, send, limit }) {
     requireThat(req.method === 'POST' && req.headers.origin === origin.origin, 'origin_rejected', 403);
-    const { step, email: input, message, challenge, registrationRecord, currentPassword, envelope, replacementVault } = await readBody(req, 8192);
+    const { step, email: input, message, challenge, registrationRecord, currentPassword, envelope, replacementVault, factor } = await readBody(req, 8192);
     requireThat(frame(message), 'account_message_invalid', 400);
 
     if (step === 'login' || step === 'register') {
@@ -138,6 +138,8 @@ export async function createAccountAuth({ repo, auth, store, origin }) {
       account = { id: state.id, kind: 'user', email: state.email, opaqueRecord: state.registrationRecord, authVersion: 1 };
       await repo.insert(account);
     }
-    send(res, 200, { email: account.email, csrf: auth.csrf(account) }, { 'Set-Cookie': auth.issue(account) });
+    if (account.totp && factor) limit('account-factor:' + account.id, 5, 'login_rate_limited');
+    const cookie = await auth.issue(account, req, factor);
+    send(res, 200, { email: account.email, csrf: auth.csrf(account) }, { 'Set-Cookie': cookie });
   };
 }

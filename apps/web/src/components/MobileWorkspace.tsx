@@ -4,6 +4,7 @@ import type { Minutes } from '../model';
 import type { CopySummary, MeetingAnnotations, MeetingCopy } from '../sync/journal';
 import { api } from '../api';
 import type { MobileRecording } from '../sync/mobile-library';
+import { MobileAccountDevices, MobileAccountFactor, MobileBillingPlans } from './MobileAccountPanels';
 import { Brand } from './Brand';
 import { Button } from './ui';
 import './MobileWorkspace.css';
@@ -255,7 +256,7 @@ export function MobileWorkspace({
   const [usage, setUsage] = useState<Usage | null>(null);
   const [usageError, setUsageError] = useState(false);
   const accountSheet = useRef<HTMLDialogElement>(null);
-  const [sheet, setSheet] = useState<'plans' | 'devices' | null>(null);
+  const [sheet, setSheet] = useState<'plans' | 'devices' | 'factor' | null>(null);
   useEffect(() => {
     if (sheet && !accountSheet.current?.open) accountSheet.current?.showModal();
   }, [sheet]);
@@ -296,7 +297,7 @@ export function MobileWorkspace({
   function select(entry: Entry) {
     navigate('meetings'); setDetail(entry);
   }
-  return <div className="mobile-workspace">
+  return <div className="mobile-workspace" data-page={page}>
     {(!detail || page !== 'meetings') && <header className="mobile-page-heading">
       {page === 'record' ? <div className="mobile-space"><Brand markOnly/><span>个人空间</span></div> :
         <h1>{page === 'meetings' ? '会议记录' : '个人中心'}</h1>}
@@ -306,10 +307,6 @@ export function MobileWorkspace({
       </span>
     </header>}
     {recorder}
-    {page === 'record' && <section className="mobile-recent" aria-label="最近记录">
-      <header><h2>最近记录</h2>{entries.length > 0 && <button type="button" onClick={() => navigate('meetings')}>全部</button>}</header>
-      <RecordCards entries={entries.slice(0, 4)} select={select} empty="暂无记录"/>
-    </section>}
     {page === 'meetings' && (opened ? <MobileMeeting key={opened.saved?.id || opened.cloud?.sourceId || opened.id} entry={opened}
           back={() => setDetail(null)} read={read} play={play} saveAnnotations={async (parent, changes) => {
             const id = await saveAnnotations(parent, changes);
@@ -352,22 +349,17 @@ export function MobileWorkspace({
       </div>
       <div className="mobile-account-group">
         <div><ShieldCheck size={17}/><span>端到端加密</span><small>{unlocked ? '已解锁' : '等待解锁'}</small></div>
-        <button type="button" aria-label="设备" onClick={() => setSheet('devices')}><DeviceMobile size={17}/><span>设备</span>
+        <button type="button" onClick={() => setSheet('factor')}><ShieldCheck size={17}/><span>双重验证</span>
+          <CaretRight size={14} aria-hidden="true"/></button>
+        <button type="button" aria-label="设备"  onClick={() => setSheet('devices')}><DeviceMobile size={17}/><span>设备</span>
           <small>当前设备 <CaretRight size={14} aria-hidden="true"/></small></button>
         <div><FileText size={17}/><span>已同步会议</span><small>{copies.length} 条</small></div>
         <div><Headphones size={17}/><span>本机回听</span><small>{saved.length} 条</small></div>
       </div>
       <dialog ref={accountSheet} className="mobile-source-sheet" onClose={() => setSheet(null)}>
-        {sheet === 'plans' ? <>
-          <h2>分级方案</h2><p className="mobile-sheet-note">容量规划预览，购买暂未开放</p>
-          <ul className="mobile-record-list">
-            {['本机免费', '5 GB 标准空间', '20 GB 进阶空间', '100 GB 归档空间'].map(plan =>
-              <li className="mobile-card" key={plan}>{plan}</li>)}
-          </ul>
-        </> : <>
-          <h2>设备</h2>
-          <div className="mobile-card"><strong>当前设备</strong><small>{unlocked ? '已登录 · 已解锁' : '已登录'}</small></div>
-        </>}
+        {sheet === 'plans' && <MobileBillingPlans/>}
+        {sheet === 'devices' && <MobileAccountDevices/>}
+        {sheet === 'factor' && <MobileAccountFactor/>}
         <div className="mobile-sheet-actions"><Button onClick={() => accountSheet.current?.close()}>关闭</Button></div>
       </dialog>
     </>}

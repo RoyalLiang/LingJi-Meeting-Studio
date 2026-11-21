@@ -1,3 +1,4 @@
+import { totpCode, totpStep } from '../services/records/src/account-totp.mjs';
 import assert from 'node:assert/strict';
 import { createHash, generateKeyPairSync, randomBytes, randomUUID, sign } from 'node:crypto';
 import { request as httpRequest } from 'node:http';
@@ -18,17 +19,18 @@ const stamp = '合成会议正文，仅在端上解密';
 const encoder = new TextEncoder();
 const fixtureOrigin = 'http://localhost:32141';
 
-async function cloud(t, databaseUrl = '') {
+async function cloud(t, databaseUrl = '', options = {}) {
   if (databaseUrl) assert.match(new URL(databaseUrl).pathname, /test/i);
   const root = await mkdtemp(join(tmpdir(), 'lingji-private-sync-cloud-'));
-  const start = () => createRecordServer({ root, databaseUrl, port: 0, syncOrigin: fixtureOrigin });
+  const start = () => createRecordServer({ ...options, root, databaseUrl, port: 0, syncOrigin: fixtureOrigin });
   let app = await start();
   let { port } = await app.start();
   t.after(async () => { await app.stop(); await rm(root, { recursive: true, force: true }); });
   async function request(path, method = 'GET', body, headers = {}) {
+    const payload = body === undefined ? undefined : JSON.stringify(body);
     return new Promise((resolve, reject) => {
       const req = httpRequest('http://127.0.0.1:' + port + '/api' + path, {
-        method, headers: { Host: new URL(fixtureOrigin).host, Origin: fixtureOrigin, 'Content-Type': 'application/json', ...headers },
+        method, headers: { Host: new URL(fixtureOrigin).host, Origin: fixtureOrigin, 'Content-Type': 'application/json', ...(payload ? { 'Content-Length': Buffer.byteLength(payload) } : {}), ...headers },
       }, async response => {
         try {
           const chunks = [];
@@ -37,7 +39,7 @@ async function cloud(t, databaseUrl = '') {
         } catch (error) { reject(error); }
       });
       req.on('error', reject);
-      req.end(body === undefined ? undefined : JSON.stringify(body));
+      req.end(payload);
     });
   }
   async function account(email) {
@@ -384,7 +386,7 @@ test('live audio is visible before sealing and has an isolated durable receipt j
   assert.deepEqual(await append('/private-sync/live-receipts', receipt), receipt);
 });
 
-async function accountExchange(call, email, password, { register = false, currentPassword, vault, root, replaceEmpty = false } = {}) {
+async function accountExchange(call, email, password, { register = false, currentPassword, vault, root, replaceEmpty = false, factor } = {}) {
   await opaque.ready;
   const begin = opaque.client.startLogin({ password });
   let response;
@@ -406,10 +408,63 @@ async function accountExchange(call, email, password, { register = false, curren
   if (response.status !== 200) return response;
   const proof = opaque.client.finishLogin({ password, clientLoginState: begin.clientLoginState, loginResponse: response.data.message });
   if (!proof) return { status: 401 };
-  const finish = { step: 'finish', challenge: response.data.challenge, message: proof.finishLoginRequest };
+  const finish = { step: 'finish', challenge: response.data.challenge, message: proof.finishLoginRequest, ...(factor ? { factor } : {}) };
   const result = await call(finish);
   return { ...result, key: decodeBytes(proof.exportKey), finish };
 }
+
+test('per-device revocation and TOTP recovery protect OPAQUE login after restart', async t => {
+  const { request, restart } = await cloud(t, process.env.RECORD_TEST_DATABASE_URL, { accountFactorKey: randomBytes(32).toString('hex') });
+  assert.equal(totpCode(Buffer.from('12345678901234567890'), 1, 8), '94287082');
+  const email = 'factor@example.test', password = 'synthetic-account-factor-password';
+  const login = (body, platform = 'iPhone') => request('/auth/account', 'POST', body, { 'User-Agent': platform });
+  const primary = await accountExchange(login, email, password, { register: true });
+  const guest = await accountExchange(body => login(body, 'Android'), email, password);
+  assert.equal(primary.status, 200);
+  assert.equal(guest.status, 200);
+  function signed(session) {
+    const authorization = { Cookie: session.cookies[0].split(';')[0], 'X-CSRF-Token': session.data.csrf };
+    return (path, method, body) => request(path, method, body, authorization);
+  }
+  const owner = signed(primary);
+  const second = signed(guest);
+  const devices = (await owner('/private-sync/devices')).data;
+  assert.equal(devices.items.length, 2);
+  const remote = devices.items.find(device => !device.current);
+  assert.equal(remote.name, 'Android');
+  assert.equal((await owner('/private-sync/devices', 'DELETE', { id: remote.id })).status, 200);
+  assert.equal((await second('/private-sync/devices')).status, 401);
+  assert.equal((await owner('/private-sync/devices')).data.items.length, 1);
+
+  const plans = await owner('/private-sync/billing/plans');
+  assert.equal(plans.data.checkout, false);
+  assert.equal(plans.data.plans.length, 4);
+  const quote = await owner('/private-sync/billing/quote', 'POST', { planId: 'storage-20g', period: 'yearly', amount: 1 });
+  assert.deepEqual(quote.data, { planId: 'storage-20g', period: 'yearly', amount: 36500, currency: 'CNY', payable: false });
+  assert.equal((await request('/private-sync/billing/plans')).status, 401);
+
+  const configured = await owner('/private-sync/factor/enroll', 'POST', {});
+  assert.equal(configured.status, 200);
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  const base32 = new URL(configured.data.uri).searchParams.get('secret');
+  const bits = [...base32].map(character => alphabet.indexOf(character).toString(2).padStart(5, '0')).join('');
+  const seed = Buffer.from(bits.match(/.{8}/g).map(byte => parseInt(byte, 2)));
+  const code = totpCode(seed, totpStep());
+  const enrolled = await owner('/private-sync/factor', 'POST', { code });
+  assert.equal(enrolled.status, 200);
+  const backup = enrolled.data.recovery[0];
+  assert.equal((await owner('/private-sync/factor')).data.enabled, true);
+  await restart();
+  const blocked = await accountExchange(login, email, password);
+  assert.equal(blocked.status, 403);
+  assert.equal(blocked.data.error, 'account_factor_required');
+  assert.equal(blocked.cookies.length, 0);
+  assert.equal((await accountExchange(login, email, password, { factor: code })).status, 401);
+  const recovered = await accountExchange(login, email, password, { factor: backup });
+  assert.equal(recovered.status, 200);
+  assert.equal((await accountExchange(login, email, password, { factor: backup })).status, 401);
+  assert.equal((await signed(recovered)('/private-sync/factor')).data.enabled, true);
+});
 
 test('one account login unlocks across clients after restart without transferring raw meeting keys', async t => {
   const { request, restart } = await cloud(t, process.env.RECORD_TEST_DATABASE_URL);

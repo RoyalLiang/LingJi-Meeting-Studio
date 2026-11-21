@@ -94,6 +94,7 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
   const [session, setSession] = useState<Session | null>(null);
   const [register, setRegister] = useState(false);
   const [legacyPrompt, setLegacyPrompt] = useState(false);
+  const [factorRequired, setFactorRequired] = useState(false);
   const [legacyAccount, setLegacyAccount] = useState(false);
   const [newLoginNeeded, setNewLoginNeeded] = useState(false);
   const [emptyUpgrade, setEmptyUpgrade] = useState(false);
@@ -484,8 +485,9 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
     run(async signal => {
       const result = legacyPrompt
         ? { user: await api<Session>('/private-sync/session', 'POST', { email, password }, signal), material: undefined }
-        : await authenticateAccount({ email, password, register, desktop: true, signal }).catch(failure => {
+        : await authenticateAccount({ email, password, register, desktop: true, factor: String(fields.get('factor') || ''), signal }).catch(failure => {
             if (failure instanceof ApiError && failure.code === 'account_legacy') setLegacyPrompt(true);
+        if (failure instanceof ApiError && failure.code === 'account_factor_required') setFactorRequired(true);
             throw failure;
           });
       const { user, material } = result;
@@ -656,8 +658,9 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
     <AccountSection title={online && showLogin ? (register ? '注册账号' : '账号登录') : '本地空间'}>
       {online && showLogin ?
         <form onSubmit={signIn} className="sync-form">
-          <label>邮箱<input type="email" name="email" autoComplete="username" required onChange={()=>{if(legacyPrompt){setLegacyPrompt(false);setError('');}}}/></label>
+          <label>邮箱<input type="email" name="email" autoComplete="username" required onChange={()=>{setFactorRequired(false);if(legacyPrompt){setLegacyPrompt(false);setError('');}}}/></label>
           <label>密码<input key={register ? 'new' : 'existing'} type="password" name="password" autoComplete={register ? 'new-password' : 'current-password'} required minLength={10} maxLength={128}/></label>
+        {factorRequired && !register && <label>验证器代码或备用码<input name="factor" autoComplete="one-time-code" maxLength={24} required autoFocus spellCheck={false}/></label>}
           <div className="sync-actions">
             <Button variant="primary" type="submit" disabled={busy}>{busy ? '请稍候…' : register ? '注册并登录' : legacyPrompt ? '使用旧账号登录' : '登录'}</Button>
             <Button type="button" variant="ghost" disabled={busy} onClick={() => { setRegister(!register); setLegacyPrompt(false); setError(''); setNotice(''); }}>{register ? '返回登录' : '注册账号'}</Button>

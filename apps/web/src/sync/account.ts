@@ -14,7 +14,7 @@ export function openAccountVault(material: Uint8Array<ArrayBuffer>, vault: Vault
 }
 
 export async function authenticateAccount(input: {
-  email: string; password: string; register?: boolean; desktop?: boolean; signal?: AbortSignal;
+  email: string; password: string; factor?: string; register?: boolean; desktop?: boolean; signal?: AbortSignal;
   upgrade?: { currentPassword: string; vault: Vault; root: Uint8Array<ArrayBuffer>; replaceEmpty?: boolean };
 }) {
   const { email, password, signal, upgrade, register, desktop } = input;
@@ -49,7 +49,7 @@ export async function authenticateAccount(input: {
   }
   const login = opaque.client.finishLogin({ clientLoginState: begin.clientLoginState, password, loginResponse: response.message });
   if (!login) throw new ApiError('invalid_credentials', 401);
-  const user = await api<Session>(path, 'POST', { step: 'finish', challenge: response.challenge, message: login.finishLoginRequest }, signal);
+  const user = await api<Session>(path, 'POST', { step: 'finish', challenge: response.challenge, message: login.finishLoginRequest, ...(input.factor ? { factor: input.factor } : {}) }, signal);
   if (user.csrf) setCsrf(user.csrf);
   return { user, material: decodeBytes(login.exportKey) };
 }

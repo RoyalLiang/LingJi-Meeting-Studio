@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { DomainError, requireThat } from '../../../packages/records/src/record.mjs';
 import { SYNC_PAGE_BYTES } from './private-sync-store.mjs';
+import { billingCatalog, billingQuote } from './account-billing.mjs';
 import { validAccountEnvelope } from './auth.mjs';
 
 const idPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
@@ -24,7 +25,7 @@ export function privateSyncOrigin(value) {
   return url;
 }
 
-export function createPrivateSyncRoutes({ store, origin, repo }) {
+export function createPrivateSyncRoutes({ store, origin, repo, auth }) {
   const rpID = origin.hostname;
   const webauthn = () => import('@simplewebauthn/server');
   const time = () => Date.now();
@@ -51,6 +52,32 @@ export function createPrivateSyncRoutes({ store, origin, repo }) {
       const profile = { name: name.trim() };
       await repo.change(user.id, account => { account.profile = profile; });
       send(res, 200, profile);
+    } else if (route === 'billing/plans' && method === 'GET') {
+      send(res, 200, billingCatalog());
+    } else if (route === 'billing/quote' && method === 'POST') {
+      const { planId, period } = await readBody(req, 1024);
+      send(res, 200, billingQuote(planId, period));
+    } else if (route === 'devices' && method === 'GET') {
+      send(res, 200, auth.devices(user, req));
+    } else if (route === 'devices' && method === 'DELETE') {
+      const { id } = await readBody(req, 1024);
+      requireThat(validId(id), 'account_device_unavailable', 400);
+      await auth.revoke(user, req, id);
+      send(res, 200, { ok: true });
+    } else if (route === 'factor' && method === 'GET') {
+      send(res, 200, auth.factorStatus(user, req));
+    } else if (route === 'factor/enroll' && method === 'POST') {
+      limit('account-factor:' + user.id, 5, 'login_rate_limited');
+      send(res, 200, await auth.beginTotp(user, req));
+    } else if (route === 'factor' && ['POST', 'DELETE'].includes(method)) {
+      limit('account-factor:' + user.id, 5, 'login_rate_limited');
+      const { code } = await readBody(req, 1024);
+      requireThat(typeof code === 'string' && code.length <= 24, 'account_factor_invalid', 400);
+      if (method === 'POST') send(res, 200, await auth.confirmTotp(user, req, code));
+      else {
+        await auth.disableTotp(user, req, code);
+        send(res, 200, { ok: true });
+      }
     } else if (route === 'usage' && method === 'GET') {
       send(res, 200, await store.usage(owner));
     } else if (route === 'vault' && method === 'GET') {

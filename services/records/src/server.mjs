@@ -89,13 +89,13 @@ export function exportRecord(record, format = 'markdown') {
 export async function createRecordServer(options = {}) {
   const repo = options.repo || await createRepository(options); const nativeAudio = options.localAccount && options.nativeInstance ? await createNativeAudio(repo, { instanceId: options.nativeInstance }) : null;
   await nativeAudio?.idle();
-  const auth = await createAuth(repo, { seedDevelopment: !options.repo, ...options });
   const syncOrigin = options.localAccount ? null : privateSyncOrigin(options.syncOrigin ?? process.env.RECORD_SYNC_ORIGIN);
+  const auth = await createAuth(repo, { seedDevelopment: !options.repo, ...options, trackDevices: Boolean(syncOrigin) });
   if (syncOrigin && process.env.NODE_ENV === 'production') {
     requireThat(repo.backend === 'postgres', 'private_sync_postgres_required', 500);
   }
   const syncStore = syncOrigin && await repo.privateSync();
-  const syncRoutes = syncOrigin && createPrivateSyncRoutes({ store: syncStore, origin: syncOrigin, repo });
+  const syncRoutes = syncOrigin && createPrivateSyncRoutes({ store: syncStore, origin: syncOrigin, repo, auth });
   const accountAuth = syncOrigin && await (await import('./account-auth.mjs')).createAccountAuth({ repo, auth, store: syncStore, origin: syncOrigin });
   const desktopSync = options.localAccount && createDesktopPrivateSync(options.desktopSync);
 
@@ -195,7 +195,7 @@ export async function createRecordServer(options = {}) {
       if (/^\/api\/auth\/(register|login)$/.test(path) && req.method === 'POST') {
         limitRequest(`auth:${clientAddress(req)}`, 20, 'login_rate_limited');
         const body = await readBody(req, 4000); const user = path.endsWith('register') ? await auth.register(body) : await auth.login(body);
-        send(res, 200, { email: user.email, csrf: auth.csrf(user) }, { 'Set-Cookie': auth.issue(user) }); return;
+        send(res, 200, { email: user.email, csrf: auth.csrf(user) }, { 'Set-Cookie': await auth.issue(user, req) }); return;
       }
       const shared = path.match(/^\/api\/shared\/([A-Za-z0-9_-]{40,100})$/);
       if (shared && req.method === 'GET') {
@@ -252,7 +252,7 @@ export async function createRecordServer(options = {}) {
       if (await extensionRoutes({req,res,path,user,extensions,readBody,send})) return;
     if (await gitSyncRoutes({req,res,path,user,gitSync,connectors,readBody,send})) return;
       if (path === '/api/auth/logout' && req.method === 'POST') {
-        await repo.change(user.id, u => { u.authVersion++; }); send(res, 200, { ok: true }, { 'Set-Cookie': auth.clear() }); return;
+        await auth.logout(user, req); send(res, 200, { ok: true }, { 'Set-Cookie': auth.clear() }); return;
       }
       if (path === '/api/diagnostics/traces' && req.method === 'GET') { requireThat(canConfigure(user), 'configuration_admin_required', 403); send(res,200,telemetry.snapshot()); return; }
       if (path === '/api/learning/status' && req.method === 'GET') {
