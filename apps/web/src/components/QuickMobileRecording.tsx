@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { BookmarkSimple, Microphone, Pause, Play } from '@phosphor-icons/react';
+import { BookmarkSimple, CaretDown, Microphone, Pause, Play, Stop } from '@phosphor-icons/react';
 import { MOBILE_RECORDING_BYTES, type MobileFrame } from '../sync/mobile';
 import { encodeBytes } from '../sync/vault';
 import type { MobileRecording } from '../sync/mobile-library';
@@ -32,14 +32,14 @@ export function QuickMobileRecording({ save, archive, status, visible, showRecor
   onActive?: (active: boolean) => void;
   onLiveRecording?: (id: string) => void;
 }) {
-  const [marks, setMarks] = useState<number[]>([]);
+  const [lastMark, setLastMark] = useState(-1);
+  const [showChoices, setShowChoices] = useState(false);
+  const control = useRef<HTMLButtonElement>(null);
   const currentMarks = useRef<number[]>([]);
   const [phase, setPhase] = useState<'idle' | 'starting' | 'recording' | 'paused' | 'saving'>('idle');
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState('');
   const draft = useRef<(() => Promise<void>) | null>(null);
-  const waveform = useRef<SVGGElement>(null);
-  const meter = useRef<HTMLOutputElement>(null);
   const closeCapture = useRef<(() => void) | null>(null);
   const finishCapture = useRef<(() => void) | null>(null);
   const setCapturePaused = useRef<((paused: boolean) => void) | null>(null);
@@ -51,9 +51,6 @@ export function QuickMobileRecording({ save, archive, status, visible, showRecor
   }, [onActive]);
 
   useEffect(() => {
-    if (phase === 'idle' && waveform.current) {
-      for (const bar of waveform.current.children) bar.setAttribute('y2', '38');
-    }
     if (phase === 'idle' && !draft.current) return;
     const keepOpen = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
     addEventListener('beforeunload', keepOpen);
@@ -78,12 +75,13 @@ export function QuickMobileRecording({ save, archive, status, visible, showRecor
     setPhase('starting');
     onActive?.(true);
     setElapsed(0);
-    setMarks([]);
+    setLastMark(-1);
     currentMarks.current = [];
     setError('');
     let context: AudioContext | undefined, stream: MediaStream | undefined;
     const close = () => {
       stream?.getTracks().forEach(track => track.stop());
+      dispatchEvent(new Event('lingji:recording-closed'));
       if (context && context.state !== 'closed') void context.close().catch(() => {});
     };
     closeCapture.current = close;
@@ -93,6 +91,7 @@ export function QuickMobileRecording({ save, archive, status, visible, showRecor
       const resumed = context.resume();
       void resumed.catch(() => {});
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      dispatchEvent(new Event('lingji:recording-opened'));
       if (!mounted.current) { close(); return; }
       await resumed;
       await context.audioWorklet.addModule('/audio-worklet.js?v=2');
@@ -105,8 +104,7 @@ export function QuickMobileRecording({ save, archive, status, visible, showRecor
       const limit = MOBILE_RECORDING_BYTES;
       const id = crypto.randomUUID();
       const name = '手机录音 · ' + new Date().toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-      const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-      let queued = 0, offset = 0, beats = 0;
+      let queued = 0, offset = 0;
       let writing: Promise<void> | null = null;
       function drain() {
         if (!live) return Promise.resolve();
@@ -125,6 +123,7 @@ export function QuickMobileRecording({ save, archive, status, visible, showRecor
         if (ending) return;
         node.port.postMessage({ type: paused ? 'pause' : 'resume' });
         for (const track of stream?.getAudioTracks() ?? []) track.enabled = !paused;
+        setShowChoices(paused);
         setPhase(paused ? 'paused' : 'recording');
       };
       const finish = () => {
@@ -136,6 +135,7 @@ export function QuickMobileRecording({ save, archive, status, visible, showRecor
         node.port.onmessage = null;
         close();
         if (!mounted.current) return;
+        onLiveRecording?.('');
         if (!size) { setError('没有录到音频'); setPhase('idle'); onActive?.(false); return; }
         let sent = false;
         void persist(async () => {
@@ -163,17 +163,6 @@ export function QuickMobileRecording({ save, archive, status, visible, showRecor
       };
       node.port.onmessage = ({ data }) => {
         if (data.type === 'flushed') { if (ending && data.reason === 'finish') finish(); return; }
-        if (data.type === 'meter' && !ending && !reduceMotion) {
-          const rms = Math.sqrt(Math.max(0, Number(data.value) || 0));
-          const db = Math.min(0, Math.round(20 * Math.log10(Math.max(0.0001, rms))));
-          if (meter.current) meter.current.textContent = db + ' dBFS';
-          const peak = Math.min(28, rms * 36);
-          Array.from(waveform.current?.children || []).forEach((bar, i) => {
-            bar.setAttribute('y2', String(38 - peak * (.5 + .5 * Math.sin(i * .65 + beats))));
-          });
-          beats += .5;
-          return;
-        }
         if (data.type !== 'pcm') return;
         const pcm = data.buffer as ArrayBuffer;
         const available = Math.min(pcm.byteLength, limit - size);
@@ -201,50 +190,54 @@ export function QuickMobileRecording({ save, archive, status, visible, showRecor
   }
 
   const time = String(Math.floor(elapsed / 60)).padStart(2, '0') + ':' + String(elapsed % 60).padStart(2, '0');
-  const label = phase === 'recording' ? '暂停' : phase === 'paused' ? '继续' : phase === 'saving' ? '正在保存' : phase === 'starting' ? '正在启动' : draft.current ? '重试保存' : '开始';
+  const label = phase === 'recording' ? '暂停录音' : phase === 'paused' ? '录音已暂停，继续或结束' : phase === 'saving' ? '正在保存' : phase === 'starting' ? '正在启动' : draft.current ? '重试保存' : '开始录音';
   const capturing = phase === 'recording' || phase === 'paused';
   if (!visible) return (capturing || phase === 'saving' || draft.current) && <aside className="quick-mobile-mini" aria-label="录音状态">
     <span><i aria-hidden="true"/>{capturing ? time : label}</span>
-    {capturing && <Button variant="ghost" onClick={() => setCapturePaused.current?.(phase === 'recording')}>{label}</Button>}
     <Button variant="ghost" onClick={showRecorder}>返回记录</Button>
   </aside>;
+  const choicesOpen = phase === 'paused' && showChoices;
   return <section className="quick-mobile-recording" data-phase={phase} aria-label="快速记录">
-    <div className="quick-mobile-orb">
-      <svg className="quick-mobile-wave" data-capturing={capturing} viewBox="0 0 196 196" aria-hidden="true">
-        <circle cx="98" cy="98" r="81" />
-        <g ref={waveform}>
-          {Array.from({ length: 36 }, (_, i) => <line key={i} x1="98" x2="98" y1="47" y2="38" transform={`rotate(${i * 10} 98 98)`} />)}
-        </g>
-      </svg>
-      <Button className="quick-mobile-control" aria-label={label} disabled={phase === 'starting' || phase === 'saving'} onClick={() => {
-        if (capturing) setCapturePaused.current?.(phase === 'recording');
-        else if (draft.current) void persist(draft.current);
-        else void start();
-      }}>
-        {phase === 'recording' ? <Pause size={28} weight="fill"/> : phase === 'paused' ? <Play size={27} weight="fill"/> : <Microphone size={31} weight="fill"/>}
-      </Button>
+    <div className="quick-mobile-controls" onKeyDown={event => {
+      if (event.key === 'Escape' && choicesOpen) { setShowChoices(false); control.current?.focus(); }
+    }}>
+      <button type="button" ref={control} className="button quick-mobile-control" aria-label={label}
+        aria-expanded={phase === 'paused' ? choicesOpen : undefined}
+        disabled={phase === 'starting' || phase === 'saving'} onClick={() => {
+          if (phase === 'recording') setCapturePaused.current?.(true);
+          else if (phase === 'paused') setShowChoices(open => !open);
+          else if (draft.current) void persist(draft.current);
+          else void start();
+        }}>
+        <span key={phase} className="quick-mobile-symbol" aria-hidden="true">
+          {phase === 'recording' ? <Pause size={29} weight="fill"/> : phase === 'paused'
+            ? <><Play size={25} weight="fill"/><CaretDown size={12} weight="bold"/></> : phase === 'saving'
+              ? <Stop size={25} weight="fill"/> : <Microphone size={31} weight="fill"/>}
+        </span>
+      </button>
+      {choicesOpen && <div className="quick-mobile-choices" aria-label="已暂停的录音">
+        <Button variant="ghost" onClick={() => {
+          setShowChoices(false);
+          setCapturePaused.current?.(false);
+          control.current?.focus();
+        }}><Play size={16} weight="fill"/>继续</Button>
+        <Button variant="ghost" onClick={() => { setShowChoices(false); finishCapture.current?.(); }}>
+          <Stop size={16} weight="fill"/>结束
+        </Button>
+      </div>}
     </div>
     <div className="quick-mobile-details">
-      {(capturing || phase === 'saving') && <div className="quick-mobile-time" aria-label="录音用时">{time}</div>}
-      {capturing && <div className="mobile-capture-state">
-          <span>{phase === 'paused' ? '已暂停' : '录音中'}</span>
-          {phase === 'recording' && <output ref={meter} aria-live="off" aria-label="录音电平">−80 dBFS</output>}
-        </div>}
-        {marks.length > 0 && <ul className="mobile-mark-times" aria-label="重点时间">
-          {marks.map(mark => <li key={mark}>{new Date(mark * 1000).toISOString().slice(14, 19)}</li>)}
-        </ul>}
-      <div className="quick-mobile-feedback">
-        {error ? <p className="quick-mobile-issue" role="alert">{error}</p> : (capturing || phase === 'saving') && status && <p role="status">{status}</p>}
-      </div>
-      <div className="quick-mobile-actions">
-        {capturing && <>
-          <Button variant="ghost" onClick={() => {
+      {(capturing || phase === 'saving') && <div className="quick-mobile-clock">
+        <time className="quick-mobile-time" aria-label={`录音用时 ${time}`}>{time}</time>
+        {phase === 'recording' && <button type="button" className="button quick-mobile-mark" aria-label="标重点"
+          aria-pressed={lastMark === elapsed} onClick={() => {
             if (currentMarks.current.includes(elapsed)) return;
             currentMarks.current = [...currentMarks.current, elapsed];
-            setMarks(currentMarks.current);
-          }}><BookmarkSimple size={16}/>标重点</Button>
-          <Button variant="primary" onClick={() => finishCapture.current?.()}>结束并保存</Button>
-        </>}
+            setLastMark(elapsed);
+          }}><BookmarkSimple size={17} weight={lastMark === elapsed ? 'fill' : 'regular'}/></button>}
+      </div>}
+      <div className="quick-mobile-feedback">
+        {error ? <p className="quick-mobile-issue" role="alert">{error}</p> : capturing && status && <p role="status">{status}</p>}
       </div>
     </div>
   </section>;

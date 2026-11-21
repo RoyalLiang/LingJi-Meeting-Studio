@@ -6,7 +6,10 @@ self.addEventListener('install', event => {
   event.waitUntil(caches.open(name).then(cache => cache.addAll([shell, '/audio-worklet.js', '/audio-worklet.js?v=2'])).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', event => {
-  event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key.startsWith('lingji-quick-record-') && key !== name).map(key => caches.delete(key)))).then(() => self.clients.claim()));
+  event.waitUntil(Promise.all([
+    self.registration.navigationPreload?.enable(),
+    caches.keys().then(keys => Promise.all(keys.filter(key => key.startsWith('lingji-quick-record-') && key !== name).map(key => caches.delete(key))))
+  ]).then(() => self.clients.claim()));
 });
 self.addEventListener('message', event => {
   if (!Array.isArray(event.data?.assets)) return;
@@ -19,7 +22,7 @@ self.addEventListener('fetch', event => {
   if (event.request.mode === 'navigate' && url.pathname === shell) {
     event.respondWith(caches.open(name).then(async cache => {
       try {
-        const response = await fetch(event.request);
+        const response = await event.preloadResponse || await fetch(event.request);
         if (response.ok) await cache.put(shell, response.clone());
         return response;
       } catch {

@@ -529,7 +529,7 @@ function Workspace() {
     {!mobile && <header className="surface-heading"><Brand /><h1>个人中心</h1>{online && <Button onClick={logoutCompanion}>退出账号</Button>}</header>}
     {error && <FeedbackNotice key={error} message={error} error />}
     {mobile ? <MobileEntryBoundary>
-      <Suspense fallback={<MobileEntry title="正在打开录音工作台"/>}>
+      <Suspense fallback={<MobileEntry/>}>
         <PrivateSyncSettings desktop={false} email={boot?.email || mobileEmail || undefined} accountLogin={accountLogin} mobile
           mobileActive={setMobileRecording} recording={mobileRecording} signOut={logoutCompanion} online={online}/>
       </Suspense>

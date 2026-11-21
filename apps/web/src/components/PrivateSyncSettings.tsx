@@ -103,8 +103,8 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
   const [vault, setVault] = useState<Vault>();
   const [liveAudio, setLiveAudio] = useState(false);
   const [liveIssue, setLiveIssue] = useState('');
-  const [liveRecording, setLiveRecording] = useState('');
-  const [receivedRecording, setReceivedRecording] = useState('');
+  const activeLive = useRef({ id: '', uploaded: false, received: false });
+  const [liveStatus, setLiveStatus] = useState('');
   const [backup, setBackup] = useState<string>();
   const [unlocked, setUnlocked] = useState(false);
   const [copies, setCopies] = useState<CopySummary[]>([]);
@@ -399,10 +399,13 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
     };
     const timer = setInterval(runCycle, mobile ? 5000 : 15000);
     addEventListener('lingji:sync-wakeup', runCycle);
+    const onVisible = () => { if (!document.hidden) runCycle(); };
+    if (mobile) document.addEventListener('visibilitychange', onVisible);
     runCycle();
     return () => {
       clearInterval(timer);
       removeEventListener('lingji:sync-wakeup', runCycle);
+      if (mobile) document.removeEventListener('visibilitychange', onVisible);
       controller.abort();
     };
   }, [ready, online, accountEmail, unlocked, vault, desktop, mobile, automatic, recording && desktop, accountChanged, phoneMeetingSync]);
@@ -412,41 +415,81 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
     const controller = new AbortController();
     const { signal } = controller;
     const localVault = vault;
-    let running = false, retryAt = 0;
+    let timer = 0, running = false, woken = false, failures = 0, retryAt = 0;
+    function schedule(delay: number) {
+      window.clearTimeout(timer);
+      if (!signal.aborted) timer = window.setTimeout(() => void cycle(), Math.max(delay, retryAt - Date.now()));
+    }
+    function wakeup() {
+      if (running) woken = true;
+      else schedule(0);
+    }
     async function cycle() {
-      if (running || signal.aborted || !secret.current || Date.now() < retryAt) return;
+      if (signal.aborted || !secret.current) return;
       running = true;
+      woken = false;
+      let more = false;
       const key = secret.current.slice();
       try {
         if (mobile) {
-          await pushLiveAudio(localVault, 'phone', signal);
-          if (liveRecording && receivedRecording !== liveRecording) {
-            await pullLiveAudio(localVault, key, 'phone', signal, frame => {
-              if (frame.id === liveRecording && !signal.aborted) setReceivedRecording(frame.id);
-            });
+          const capture = activeLive.current;
+          const [pushed, pulled] = await Promise.allSettled([
+            pushLiveAudio(localVault, 'phone', signal),
+            capture.id && !capture.received
+              ? pullLiveAudio(localVault, key, 'phone', signal, frame => {
+                if (frame.id === activeLive.current.id && !signal.aborted) {
+                  activeLive.current.received = true;
+                  setLiveStatus('电脑已接收');
+                }
+              })
+              : false,
+          ]);
+          signal.throwIfAborted();
+          if (pushed.status === 'rejected') throw pushed.reason;
+          more = pushed.value.length === 8;
+          if (activeLive.current === capture && !capture.received && !capture.uploaded &&
+            pushed.value.some(key => Array.isArray(key) && key[2] === capture.id)) {
+            capture.uploaded = true;
+            setLiveStatus('音频已上传');
           }
+          if (pulled.status === 'rejected') throw pulled.reason;
+          more ||= pulled.value;
+          setLiveIssue('');
         } else {
-          await receiveLiveAudio(localVault, key, signal, () => {
-            if (!signal.aborted) importedCallback.current?.();
-          });
-          await pushLiveAudio(localVault, 'desktop', signal);
+          try {
+            more = await receiveLiveAudio(localVault, key, signal, () => {
+              if (!signal.aborted) importedCallback.current?.();
+            });
+          } finally {
+            await pushLiveAudio(localVault, 'desktop', signal);
+          }
         }
-        if (!signal.aborted && mobile) setLiveIssue('');
+        failures = 0;
+        retryAt = 0;
       } catch (failure) {
         if (signal.aborted) return;
-        retryAt = Date.now() + 8000;
+        retryAt = Date.now() + (failure instanceof ApiError && failure.status === 429
+          ? 15_000 : Math.min(8000, 1000 * 2 ** Math.min(failures++, 3)));
         if (mobile) setLiveIssue(failure instanceof ApiError && failure.status === 413
-          ? '云空间已满，音频保存在手机上' : '同步暂缓，音频保存在手机上');
+          ? '云空间已满，录音将保存在手机'
+          : failure instanceof ApiError && failure.status === 401 ? '登录已过期，录音将保存在手机' : '音频待同步 · 自动重试');
         else setBackgroundIssue(syncError(failure));
       } finally {
         key.fill(0);
         running = false;
+        schedule(woken || more ? 0 : mobile ? (activeLive.current.id && !activeLive.current.received ? 1400 : 4000) : 1200);
       }
     }
-    const timer = window.setInterval(() => void cycle(), 1800);
-    void cycle();
-    return () => { clearInterval(timer); controller.abort(); };
-  }, [ready, online, unlocked, accountEmail, vault, liveAudio, liveRecording, receivedRecording, desktop, mobile]);
+    addEventListener('lingji:live-audio-ready', wakeup);
+    document.addEventListener('visibilitychange', wakeup);
+    wakeup();
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+      removeEventListener('lingji:live-audio-ready', wakeup);
+      document.removeEventListener('visibilitychange', wakeup);
+    };
+  }, [ready, online, unlocked, accountEmail, vault, liveAudio, desktop, mobile]);
 
   async function enter(device: DeviceVault, signal: AbortSignal, remember = false) {
     const { vault: localVault, root: key } = device;
@@ -746,16 +789,20 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
     const recorder = vault && unlocked && !legacyAccount ? <QuickMobileRecording
       visible={mobilePage === 'record'}
       showRecorder={() => { setMobilePage('record'); window.scrollTo(0, 0); }}
-      status={!online ? '离线保存，回网自动同步' : liveIssue || (liveRecording
-        ? receivedRecording === liveRecording ? '电脑已接收' : '等待电脑接收'
-        : mobileStatus || '最长 5 分钟 · 端侧加密')}
+      status={!online ? '离线保存，回网自动同步' : liveIssue || liveStatus || mobileStatus}
       live={liveAudio ? async (id, title, frame) => {
         if (!secret.current) throw new Error('资料库未解锁');
         const key = secret.current.slice();
-        try { await queueLiveAudio(vault, key, id, title, frame); }
-        finally { key.fill(0); }
+        try {
+          await queueLiveAudio(vault, key, id, title, frame);
+          dispatchEvent(new Event('lingji:live-audio-ready'));
+        } finally { key.fill(0); }
       } : undefined}
-      onLiveRecording={setLiveRecording}
+      onLiveRecording={id => {
+        activeLive.current = { id, uploaded: false, received: false };
+        setLiveStatus(id ? '正在上传音频' : '');
+        if (id) dispatchEvent(new Event('lingji:live-audio-ready'));
+      }}
       onActive={mobileActive}
       archive={async (entry, blob) => {
         if (!secret.current) throw new Error('资料库未解锁');
@@ -776,8 +823,8 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
       }}/> : mobilePage === 'record' && <div className="quick-mobile-setup sync-settings">
         {upgradeForm}
         {!upgradingHere && recoverAccess}
-        {!vault && <div className="phone-unlock-state">
-          <h2>{!online ? '等待网络连接' : newLoginNeeded ? '请重新登录' : error ? '同步暂未连接' : '正在连接加密资料库'}</h2>
+        {!vault && (!online || newLoginNeeded || error) && <div className="phone-unlock-state">
+          <h2>{!online ? '等待网络连接' : newLoginNeeded ? '请重新登录' : '同步暂未连接'}</h2>
           {error && <p role="alert">{error}</p>}
           {online && (newLoginNeeded || error) && <div className="phone-unlock-actions">
             {!newLoginNeeded && accountEmail && <Button variant="primary" disabled={busy} onClick={() => run(signal => connectAccount(accountEmail, signal))}>重试</Button>}
@@ -794,8 +841,7 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
           setPhoneMeetingSync(enabled);
         }}
         copies={copies} saved={phoneCopies} recorder={recorder} account={account}
-        refresh={() => { if (vault && secret.current) run(signal => update(vault, secret.current!, signal)); }}
-        read={readMobileMeeting} saveAnnotations={saveMobileAnnotations} play={playMobileRecording} search={searchMobileMeetings}/>
+          read={readMobileMeeting} saveAnnotations={saveMobileAnnotations} play={playMobileRecording} search={searchMobileMeetings}/>
       {feedback}
       {backgroundIssue && <p className="account-feedback" role="status">{backgroundIssue}。将自动重试。</p>}
     </>;

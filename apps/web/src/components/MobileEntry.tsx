@@ -4,7 +4,7 @@ import { Brand } from './Brand';
 import { Button } from './ui';
 import './MobileEntry.css';
 
-export function MobileEntry({ failed = false, title = '正在打开聆记' }: { failed?: boolean; title?: string }) {
+export function MobileEntry({ failed = false }: { failed?: boolean }) {
   const [takingLong, setTakingLong] = useState(false);
   useEffect(() => {
     if (failed) return;
@@ -12,13 +12,10 @@ export function MobileEntry({ failed = false, title = '正在打开聆记' }: { 
     return () => clearTimeout(timer);
   }, [failed]);
   return <section className={failed ? 'phone-entry phone-entry-failure' : 'phone-entry'}
-    role={failed ? 'alert' : 'status'}>
+    role={failed ? 'alert' : 'status'} aria-label={failed ? undefined : '聆记'} aria-busy={!failed}>
     <Brand markOnly/>
-    {failed ? <WarningCircle className="phone-entry-indicator" size={24} aria-hidden="true"/> :
-      <span className="phone-entry-progress" aria-hidden="true"/>}
-    <h1>{failed ? '页面暂时无法打开' : title}</h1>
-    {failed || takingLong ?
-      <Button variant="ghost" onClick={() => location.reload()}><ArrowClockwise size={16}/>重新加载</Button> : null}
+    {failed && <><WarningCircle className="phone-entry-indicator" size={24} aria-hidden="true"/><h1>页面暂时无法打开</h1></>}
+    {failed || takingLong ? <Button variant="ghost" onClick={() => location.reload()}><ArrowClockwise size={16}/>重新加载</Button> : null}
   </section>;
 }
 

@@ -7,17 +7,18 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.content.res.ColorStateList;
-import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewTreeObserver;
-import android.view.WindowManager;
 import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
+import android.webkit.WebMessage;
+import android.webkit.WebMessagePort;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -40,15 +41,13 @@ public final class MainActivity extends Activity {
     private WebView web;
     private FrameLayout frame;
     private LinearLayout launch;
-    private TextView product;
     private TextView status;
     private Button retry;
     private int pageAttempt;
     private boolean dark;
-    private final Runnable timeout = () -> {
-        status.setText("连接较慢");
-        retry.setVisibility(View.VISIBLE);
-    };
+    private final Runnable timeout = () -> retry.setVisibility(View.VISIBLE);
+    private WebMessagePort recordingPort;
+    private boolean recordingBridgeReady;
     private PermissionRequest microphone;
     private ValueCallback<Uri[]> files;
 
@@ -59,8 +58,6 @@ public final class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
-        // Keep foreground test recordings running while the user reads another tab.
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         final boolean systemDark = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
             == Configuration.UI_MODE_NIGHT_YES;
         dark = getPreferences(MODE_PRIVATE).getBoolean("dark", systemDark);
@@ -68,7 +65,7 @@ public final class MainActivity extends Activity {
         buildLaunch();
         paintChrome(dark);
         setContentView(frame);
-        showLaunch("正在打开录音工作台", false);
+        showLaunch(null, false);
         frame.getViewTreeObserver().addOnDrawListener(new ViewTreeObserver.OnDrawListener() {
             private boolean scheduled;
             @Override public void onDraw() {
@@ -94,13 +91,6 @@ public final class MainActivity extends Activity {
         ImageView logo = new ImageView(this);
         logo.setImageResource(getResources().getIdentifier("lingji", "drawable", getPackageName()));
         launch.addView(logo, new LinearLayout.LayoutParams(dp(52), dp(52)));
-        product = new TextView(this);
-        product.setText("聆记");
-        product.setTextSize(20);
-        product.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        LinearLayout.LayoutParams title = new LinearLayout.LayoutParams(-2, -2);
-        title.topMargin = dp(14);
-        launch.addView(product, title);
         status = new TextView(this);
         status.setTextSize(14);
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
@@ -129,7 +119,6 @@ public final class MainActivity extends Activity {
         decor.setSystemUiVisibility((decor.getSystemUiVisibility() & ~mask) | (dark ? 0 : mask));
         frame.setBackgroundColor(background);
         launch.setBackgroundColor(background);
-        product.setTextColor(dark ? 0xffecf2ed : 0xff19231e);
         status.setTextColor(dark ? 0xffafbbb2 : 0xff53635a);
         retry.setTextColor(dark ? 0xffecf2ed : 0xff19231e);
         retry.setBackgroundTintList(ColorStateList.valueOf(dark ? 0xff29352e : 0xffe4ebe3));
@@ -140,6 +129,7 @@ public final class MainActivity extends Activity {
         frame.removeCallbacks(timeout);
         launch.setVisibility(View.VISIBLE);
         status.setText(message);
+        status.setVisibility(message == null ? View.INVISIBLE : View.VISIBLE);
         retry.setVisibility(allowRetry ? View.VISIBLE : View.INVISIBLE);
         if (!allowRetry) frame.postDelayed(timeout, 8000);
     }
@@ -176,11 +166,13 @@ public final class MainActivity extends Activity {
 
             @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap icon) {
                 pageAttempt++;
-                showLaunch("正在打开录音工作台", false);
+                closeRecordingPort();
+                showLaunch(null, false);
             }
 
             @Override public void onPageFinished(WebView view, String url) {
                 if (!trusted(Uri.parse(url))) return;
+                if ("/quick-record".equals(Uri.parse(url).getPath())) connectRecordingPort(view);
                 int attempt = pageAttempt;
                 view.evaluateJavascript(
                     "document.querySelector('#root')?.childElementCount ? document.documentElement.dataset.theme || 'light' : ''",
@@ -211,13 +203,17 @@ public final class MainActivity extends Activity {
                 for (String resource : request.getResources()) {
                     if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource)) audio = true;
                 }
-                if (!trusted(request.getOrigin()) || !audio || microphone != null) {
+                if (!trusted(request.getOrigin()) || !audio || microphone != null || !hasWindowFocus()) {
                     request.deny();
                 } else if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                    request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
+                    grantMicrophone(request);
                 } else {
                     microphone = request;
-                    requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, MIC);
+                    String[] permissions = Build.VERSION.SDK_INT >= 33
+                        && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                        ? new String[]{Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS}
+                        : new String[]{Manifest.permission.RECORD_AUDIO};
+                    requestPermissions(permissions, MIC);
                 }
             }
 
@@ -239,11 +235,60 @@ public final class MainActivity extends Activity {
         if (saved == null || web.restoreState(saved) == null) web.loadUrl(PAGE);
     }
 
+    private void grantMicrophone(PermissionRequest request) {
+        try {
+            if (recordingBridgeReady) startForegroundService(new Intent(this, RecordingService.class));
+            request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
+        } catch (IllegalStateException | SecurityException error) {
+            request.deny();
+        }
+    }
+
+    private void connectRecordingPort(WebView view) {
+        if (recordingPort != null) return;
+        WebMessagePort[] ports = view.createWebMessageChannel();
+        recordingPort = ports[0];
+        recordingPort.setWebMessageCallback(new WebMessagePort.WebMessageCallback() {
+            @Override public void onMessage(WebMessagePort port, WebMessage message) {
+                if (port != recordingPort) return;
+                switch (message.getData()) {
+                    case "ready":
+                        recordingBridgeReady = true;
+                        break;
+                    case "start":
+                        if (recordingBridgeReady && hasWindowFocus()
+                            && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                            try {
+                                startForegroundService(new Intent(MainActivity.this, RecordingService.class));
+                            } catch (IllegalStateException | SecurityException ignored) {
+                                // A system transition can end while-in-use permission before dispatch.
+                            }
+                        }
+                        break;
+                    case "stop":
+                        stopService(new Intent(MainActivity.this, RecordingService.class));
+                        break;
+                }
+            }
+        });
+        view.postWebMessage(new WebMessage("lingji-recording", new WebMessagePort[]{ports[1]}),
+            Uri.parse("https://" + HOST));
+    }
+
+    private void closeRecordingPort() {
+        recordingBridgeReady = false;
+        if (recordingPort != null) {
+            recordingPort.close();
+            recordingPort = null;
+        }
+        stopService(new Intent(this, RecordingService.class));
+    }
+
     @Override public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(code, permissions, results);
         if (code != MIC || microphone == null) return;
-        if (results.length == 1 && results[0] == PackageManager.PERMISSION_GRANTED) {
-            microphone.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
+        if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
+            grantMicrophone(microphone);
         } else {
             microphone.deny();
         }
@@ -264,10 +309,11 @@ public final class MainActivity extends Activity {
 
     @Override public void onBackPressed() {
         if (web != null && web.canGoBack()) web.goBack();
-        else super.onBackPressed();
+        else moveTaskToBack(true);
     }
 
     @Override protected void onDestroy() {
+        closeRecordingPort();
         if (microphone != null) microphone.deny();
         if (files != null) files.onReceiveValue(null);
         if (frame != null) frame.removeCallbacks(timeout);

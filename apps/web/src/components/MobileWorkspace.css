@@ -42,44 +42,49 @@ body:has(.quick-mobile-app) { background: #f5f7f4; }
   --phone-orb: var(--phone-accent); --phone-orb-ink: var(--phone-accent-ink);
 }
 .quick-mobile-recording[data-phase=recording] { --phone-orb: var(--phone-live); }
-.quick-mobile-orb { grid-row: 2; position: relative; width: 158px; aspect-ratio: 1; display: grid; place-items: center; }
-.quick-mobile-wave[data-capturing=false] { visibility: hidden; }
-.quick-mobile-wave { position: absolute; inset: 0; width: 100%; pointer-events: none; }
-.quick-mobile-wave circle { fill: transparent; stroke: var(--phone-line); stroke-width: 1px; }
-.quick-mobile-wave line { stroke: var(--phone-line); stroke-width: 2.6px; stroke-linecap: round; }
-.quick-mobile-recording[data-phase=recording] .quick-mobile-wave circle { fill: var(--phone-wave-fill); stroke: none; }
-.quick-mobile-recording[data-phase=recording] .quick-mobile-wave line { stroke: var(--phone-wave); }
+.quick-mobile-controls { grid-row: 2; position: relative; pointer-events: auto; z-index: 2; }
 .mobile-workspace .quick-mobile-control {
   width: 84px; height: 84px; padding: 0; border-radius: 50%;
   color: var(--phone-orb-ink); background: var(--phone-orb);
-  pointer-events: auto; z-index: 1; transition: transform 160ms ease;
+  transition: background-color 240ms ease, transform 220ms cubic-bezier(.2,.75,.25,1);
 }
 .mobile-workspace .quick-mobile-control:active { transform: scale(.94); }
-.quick-mobile-details { grid-row: 3; align-self: start; width: min(calc(100% - 24px), 312px); display: grid; gap: 6px; }
-.quick-mobile-time { font-size: 2rem; line-height: 1.2; font-weight: 580; font-variant-numeric: tabular-nums; }
-.quick-mobile-feedback { color: var(--phone-muted); font-size: .8rem; line-height: 1.5; overflow-wrap: anywhere; }
-.quick-mobile-issue { color: var(--phone-live); }
-.quick-mobile-actions { display: grid; grid-template-columns: 1fr 1.3fr; gap: 8px; }
-.quick-mobile-actions:empty, .quick-mobile-feedback:empty { display: none; }
-.quick-mobile-actions .button { pointer-events: auto; }
-.quick-mobile-actions .button.ghost { background: var(--phone-panel); }
-.mobile-capture-state, .mobile-mark-times {
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px;
-  margin: 0; padding: 0; list-style: none; color: var(--phone-muted); font-size: .75rem; font-variant-numeric: tabular-nums;
+.quick-mobile-symbol { display: inline-flex; align-items: center; gap: 2px; animation: quick-mobile-symbol-in 210ms ease both; }
+@keyframes quick-mobile-symbol-in {
+  from { opacity: .2; transform: scale(.76); }
+  to { opacity: 1; transform: scale(1); }
 }
-.mobile-mark-times { max-height: 52px; overflow: auto; pointer-events: auto; }
-.mobile-capture-state output, .mobile-mark-times li { padding: 3px 7px; border-radius: 6px; background: var(--phone-panel); }
+.quick-mobile-choices {
+  position: absolute; left: 50%; bottom: calc(100% + 12px); transform: translateX(-50%);
+  display: flex; padding: 4px; gap: 4px; white-space: nowrap;
+  border: 1px solid var(--phone-line); border-radius: 14px; background: var(--phone-field);
+  box-shadow: 0 3px 10px var(--phone-dock-shadow);
+  animation: quick-mobile-choices-in 180ms ease both;
+}
+@keyframes quick-mobile-choices-in {
+  from { opacity: 0; translate: 0 5px; }
+  to { opacity: 1; translate: 0 0; }
+}
+.quick-mobile-choices .button { padding-inline: 12px; }
+.quick-mobile-choices .button:last-child { color: var(--phone-live); }
+.quick-mobile-details { grid-row: 3; align-self: start; display: grid; gap: 4px; width: min(calc(100% - 40px), 280px); padding-top: 15px; }
+.quick-mobile-clock { position: relative; width: max-content; justify-self: center; }
+.quick-mobile-time { font-size: 1.95rem; line-height: 1.35; font-weight: 560; font-variant-numeric: tabular-nums; }
+.mobile-workspace .quick-mobile-mark {
+  position: absolute; left: calc(100% + 2px); top: 50%; transform: translateY(-50%);
+  width: 44px; padding: 0; background: transparent; color: var(--phone-muted); pointer-events: auto;
+}
+.mobile-workspace .quick-mobile-mark[aria-pressed=true] { color: var(--phone-accent); }
+.quick-mobile-feedback { color: var(--phone-muted); font-size: .76rem; line-height: 1.5; overflow-wrap: anywhere; }
+.quick-mobile-issue { color: var(--phone-live); }
 @media (max-height: 670px) {
-  .quick-mobile-orb { width: 126px; }
   .mobile-workspace .quick-mobile-control { width: 72px; height: 72px; }
   .quick-mobile-time { font-size: 1.65rem; }
 }
 @media (max-height: 475px) {
   .mobile-workspace[data-page=record]:has(.quick-mobile-recording) { min-height: 480px; }
 }
-
-.mobile-list-tools { display: grid; grid-template-columns: minmax(0, 1fr) 44px; align-items: center; gap: 7px; margin-bottom: 10px; }
-.mobile-list-tools .button { width: 44px; height: 44px; padding: 0; background: var(--phone-panel); }
+.mobile-list-tools { margin-bottom: 10px; }
 .mobile-space-filters { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 14px; }
 .mobile-space-filters button {
   flex: 0 0 auto; max-width: 80%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -122,17 +127,28 @@ body:has(.quick-mobile-app) { background: #f5f7f4; }
 .mobile-card[data-highlight=true] { outline: 1px solid var(--phone-accent); }
 .mobile-line header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
 .mobile-line time { color: var(--phone-muted); font-size: .76rem; font-variant-numeric: tabular-nums; }
-.mobile-playback { margin-bottom: 13px; }
-.mobile-playback > .button { width: 100%; justify-content: flex-start; }
-.mobile-playback > .button span { margin-left: auto; color: var(--phone-muted); }
-.mobile-player { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 4px 8px; padding: 7px; }
-.mobile-player .button { width: 44px; padding: 0; }
-.mobile-player select, .mobile-time-link {
-  min-height: 44px; border: 0; border-radius: 7px; background: var(--phone-panel);
-  color: var(--phone-ink); font: inherit; font-size: .8rem;
+.mobile-playback { margin: 0 0 12px; }
+.mobile-player { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 12px; }
+.mobile-player .mobile-player-play { width: 44px; padding: 0; border-radius: 50%; }
+.mobile-player-track { display: grid; min-width: 0; }
+.mobile-player input {
+  width: 100%; margin: 0; height: 30px; appearance: none; cursor: pointer;
+  background: linear-gradient(var(--phone-accent), var(--phone-accent)) left center no-repeat,
+              linear-gradient(var(--phone-line), var(--phone-line)) left center / 100% 4px no-repeat;
 }
-.mobile-player input { width: 100%; margin: 0; min-height: 44px; accent-color: var(--phone-accent); }
-.mobile-player small { grid-column: 2; color: var(--phone-muted); font-variant-numeric: tabular-nums; }
+.mobile-player input::-webkit-slider-thumb {
+  appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--phone-accent);
+}
+.mobile-player input::-moz-range-thumb {
+  width: 14px; height: 14px; border: 0; border-radius: 50%; background: var(--phone-accent);
+}
+.mobile-player input:disabled { cursor: default; }
+.mobile-player-times { display: flex; justify-content: space-between; color: var(--phone-muted); font-size: .7rem; font-variant-numeric: tabular-nums; }
+.mobile-player select, .mobile-time-link {
+  min-height: 44px; border: 0; border-radius: 8px;
+  background: var(--phone-panel); color: var(--phone-ink); font: inherit; font-size: .8rem;
+}
+.mobile-player select { padding-inline: 8px 4px; }
 .mobile-time-link { display: inline-flex; align-items: center; padding-inline: 8px; cursor: pointer; }
 .mobile-action { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 10px; align-items: start; min-height: 44px; cursor: pointer; }
 .mobile-action input { margin: 4px 0 0; width: 18px; height: 18px; accent-color: var(--phone-accent); }
@@ -226,7 +242,7 @@ body:has(.quick-mobile-app) { background: #f5f7f4; }
   bottom: var(--phone-dock-offset); min-height: var(--phone-dock);
   padding: var(--phone-nav-inset); border-radius: 32px; isolation: isolate;
   display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
-  box-shadow: inset 0 1px 0 var(--phone-dock-rim), 0 7px 17px -7px var(--phone-dock-shadow);
+  box-shadow: inset 0 1px 0 var(--phone-dock-rim), 0 3px 9px var(--phone-dock-shadow);
   background: var(--phone-dock-tint);
 }
 .mobile-nav[data-page=meetings] { --phone-tab: 1; }
@@ -235,7 +251,7 @@ body:has(.quick-mobile-app) { background: #f5f7f4; }
   position: absolute; inset: var(--phone-nav-inset) auto var(--phone-nav-inset) var(--phone-nav-inset);
   width: calc((100% - 2 * var(--phone-nav-inset)) / 3);
   transform: translateX(calc(var(--phone-tab) * 100%));
-  transition: transform 340ms cubic-bezier(.22,.8,.28,1.06);
+  transition: transform 340ms cubic-bezier(.2,.75,.25,1);
   border-radius: 27px; border: 1px solid var(--phone-lens-line);
   background: var(--phone-selection); pointer-events: none;
   box-shadow: inset 0 1px 0 var(--phone-dock-rim);
@@ -243,12 +259,12 @@ body:has(.quick-mobile-app) { background: #f5f7f4; }
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
   .mobile-nav, .quick-mobile-mini {
     background: var(--phone-dock-glass);
-    -webkit-backdrop-filter: blur(18px) saturate(1.55);
-    backdrop-filter: blur(18px) saturate(1.55);
+    -webkit-backdrop-filter: blur(16px) saturate(1.35);
+    backdrop-filter: blur(16px) saturate(1.35);
   }
   .mobile-nav-lens {
     background: var(--phone-lens-glass);
-    box-shadow: inset 0 1px 1px var(--phone-dock-rim), 0 2px 7px -3px var(--phone-dock-shadow);
+    box-shadow: inset 0 1px 1px var(--phone-dock-rim), 0 1px 3px var(--phone-dock-shadow);
   }
 }
 .mobile-nav button {
@@ -272,6 +288,7 @@ body:has(.quick-mobile-app) { background: #f5f7f4; }
 .quick-mobile-setup .account-section { margin-inline: 0; grid-template-columns: 1fr; gap: 8px; }
 @media (prefers-reduced-motion: reduce) {
   .mobile-switch-track::before, .quick-mobile-control, .mobile-nav-lens { transition: none; }
+  .quick-mobile-symbol, .quick-mobile-choices { animation: none; }
 }
 @media (prefers-reduced-transparency: reduce) {
   .mobile-nav, .quick-mobile-mini { background: var(--phone-field); -webkit-backdrop-filter: none; backdrop-filter: none; }

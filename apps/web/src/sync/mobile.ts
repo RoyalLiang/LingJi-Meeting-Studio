@@ -200,11 +200,12 @@ export async function pushLiveAudio(vault: Vault, receiver: 'phone' | 'desktop',
     request(store.getAllKeys(range, 8)),
     request<EncryptedOperation[]>(store.getAll(range, 8))
   ]);
-  if (!operations.length) return;
+  if (!operations.length) return [];
   await pushLive(receiver === 'phone' ? liveEndpoint : receiptEndpoint, vault, operations, signal);
   await change(['live-outbox'], tx => {
     for (const key of keys) tx.objectStore('live-outbox').delete(key);
   });
+  return keys;
 }
 
 export async function acknowledgeLiveAudio(vault: Vault, root: Uint8Array<ArrayBuffer>, id: string, title: string) {
@@ -253,7 +254,7 @@ export async function pullLiveAudio(
     await consume(frame);
   }
   if (cursor !== delta.cursor || (cursor === after && delta.more)) throw new Error('实时录音同步游标无效');
-  if (cursor === after) return;
+  if (cursor === after) return false;
   await change(['live-cursor'], tx => {
     const store = tx.objectStore('live-cursor');
     const saved = store.get(key);
@@ -261,4 +262,5 @@ export async function pullLiveAudio(
       if (cursor > (saved.result ?? 0)) store.put(cursor, key);
     };
   });
+  return delta.more;
 }

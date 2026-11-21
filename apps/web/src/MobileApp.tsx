@@ -59,7 +59,12 @@ export function MobileApp() {
     return request;
   }, [rememberEmail, storeLogin]);
 
-  useEffect(() => { void open(); }, [open]);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(savedEmailKey)) void loadWorkspace().catch(() => {});
+    } catch {}
+    void open();
+  }, [open]);
   useEffect(() => {
     const reconnect = () => {
       setOnline(navigator.onLine);
@@ -91,12 +96,12 @@ export function MobileApp() {
     }).catch(failure => setError(messageOf(failure)));
   }
 
-  if (loading) return <MobileEntry/>;
-  if (!email) return <Auth mobile ready={open} accountLogin={storeLogin} prepare={loadWorkspace}/>;
+  if (loading && email) return <MobileEntry/>;
+  if (!email) return <Auth mobile ready={() => boot.current?.then(open) ?? open()} accountLogin={storeLogin} prepare={loadWorkspace}/>;
   return <main className="sync-companion quick-mobile-app">
     {error && <FeedbackNotice message={error} error/>}
     <MobileEntryBoundary>
-      <Suspense fallback={<MobileEntry title="正在打开录音工作台"/>}>
+      <Suspense fallback={<MobileEntry/>}>
         <Workspace desktop={false} mobile email={email} accountLogin={login} signOut={signOut}
           mobileActive={setRecording} recording={recording} online={online}/>
       </Suspense>

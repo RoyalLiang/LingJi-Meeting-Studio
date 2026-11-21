@@ -140,39 +140,45 @@ function MobileMeeting({ entry, back, read, play, saveAnnotations }: {
       <h1>{entry.title}</h1>
       <span className="mobile-record-badge">{entry.cloud?.pending ? '待同步' : entry.cloud ? '已同步' : '本机录音'}</span>
     </header>
+    {entry.saved && <div className="mobile-playback">
+      {audio && <audio ref={player} src={audio} autoPlay preload="metadata"
+        onLoadedMetadata={event => {
+          const element = event.currentTarget;
+          if (Number.isFinite(element.duration)) setDuration(element.duration);
+          element.playbackRate = speed;
+          seek(requestedTime.current);
+        }}
+        onTimeUpdate={event => setPosition(event.currentTarget.currentTime)}
+        onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)}
+        onError={() => { setAudio(''); setError('无法播放录音，请重试'); }}/>}
+      <div className="mobile-player" aria-label="录音回听">
+        <Button variant="primary" className="mobile-player-play" aria-busy={audioLoading}
+          aria-label={playing ? '暂停回听' : '播放录音'} disabled={audioLoading} onClick={() => {
+            const element = player.current;
+            if (!element) void playLocal();
+            else if (!element.paused) element.pause();
+            else void element.play().catch(() => setError('无法播放录音，请重试'));
+          }}>{playing ? <Pause size={19} weight="fill"/> : <Play size={19} weight="fill"/>}</Button>
+        <div className="mobile-player-track">
+          <input type="range" aria-label="回听进度" min={0} max={duration || entry.saved.seconds} step={0.1} value={position}
+            style={{ backgroundSize: `${duration ? Math.min(100, position / duration * 100) : 0}% 4px, 100% 4px` }}
+            disabled={!audio || !duration} onChange={event => seek(event.currentTarget.valueAsNumber)}/>
+          <div className="mobile-player-times">
+            <span>{clock(Math.floor(position))}</span>
+            <span>{clock(Math.floor(duration || entry.saved.seconds))}</span>
+          </div>
+        </div>
+        <select aria-label="播放速度" value={speed} onChange={event => {
+          const next = Number(event.target.value);
+          if (player.current) player.current.playbackRate = next;
+          setSpeed(next);
+        }}>{[1, 1.25, 1.5, 2].map(value => <option key={value} value={value}>{value}×</option>)}</select>
+      </div>
+    </div>}
+
     <nav className="mobile-detail-tabs" aria-label="会议内容">
       {detailTabs.map(([id, label]) => <button key={id} type="button" aria-current={id === tab ? 'page' : undefined} onClick={() => setTab(id)}>{label}</button>)}
     </nav>
-    {entry.saved && <div className="mobile-playback">
-      {audio ? <>
-        <audio ref={player} src={audio} autoPlay preload="auto"
-          onLoadedMetadata={event => {
-            const element = event.currentTarget;
-            if (Number.isFinite(element.duration)) setDuration(element.duration);
-            element.playbackRate = speed;
-            seek(requestedTime.current);
-          }}
-          onTimeUpdate={event => setPosition(event.currentTarget.currentTime)}
-          onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)}
-          onError={() => setError('无法播放录音，请重试')}/>
-        <div className="mobile-player">
-          <Button variant="ghost" aria-label={playing ? '暂停回听' : '播放录音'} onClick={() => {
-            const element = player.current;
-            if (!element) return;
-            if (!element.paused) element.pause();
-            else void element.play().catch(() => setError('无法播放录音，请重试'));
-          }}>{playing ? <Pause size={20} weight="fill"/> : <Play size={20} weight="fill"/>}</Button>
-          <input type="range" aria-label="回听进度" min={0} max={duration} step={0.1} value={position}
-            disabled={!duration} onChange={event => seek(event.currentTarget.valueAsNumber)}/>
-          <select aria-label="播放速度" value={speed} onChange={event => {
-            const next = Number(event.target.value);
-            if (player.current) player.current.playbackRate = next;
-            setSpeed(next);
-          }}>{[1, 1.25, 1.5, 2].map(value => <option key={value} value={value}>{value}×</option>)}</select>
-          <small>{clock(Math.floor(position))} / {clock(Math.floor(duration))}</small>
-        </div>
-      </> : <Button variant="ghost" disabled={audioLoading} onClick={() => void playLocal()}><Headphones size={17}/>{audioLoading ? '正在打开…' : '回听录音'}<span>{clock(entry.saved.seconds)}</span></Button>}
-    </div>}
     {error && <p role="alert" className="mobile-empty">{error}</p>}
     {savedNotice && !error && <p role="status" className="mobile-save-status">{savedNotice}</p>}
     {entry.cloud && copy === undefined && <p role="status" className="mobile-empty">正在打开会议…</p>}
@@ -240,12 +246,12 @@ function MobileSwitch({ checked, disabled, change }: { checked: boolean; disable
 }
 
 export function MobileWorkspace({
-  page, setPage, online, unlocked, automatic, setAutomatic, copies, saved, recorder, account, refresh, read, play, search, saveAnnotations,
+  page, setPage, online, unlocked, automatic, setAutomatic, copies, saved, recorder, account, read, play, search, saveAnnotations,
 }: {
   page: MobilePage; setPage: (page: MobilePage) => void; online: boolean; unlocked: boolean;
   automatic: boolean; setAutomatic: (enabled: boolean) => void;
   copies: CopySummary[]; saved: MobileRecording[]; recorder: ReactNode; account: ReactNode;
-  refresh: () => void; read: (id: string) => Promise<MeetingCopy | null>;
+  read: (id: string) => Promise<MeetingCopy | null>;
   play: (id: string) => Promise<Blob | null>;
   search: (query: string) => Promise<CopySummary[]>;
   saveAnnotations: (parent: string, changes: MeetingAnnotations) => Promise<string>;
@@ -316,7 +322,6 @@ export function MobileWorkspace({
           }}/> : <section aria-label="会议列表">
       <div className="mobile-list-tools">
         <input type="search" aria-label="搜索会议" placeholder="搜索标题、纪要或原文" value={query} onChange={event => setQuery(event.target.value)}/>
-        <Button variant="ghost" disabled={!online || !unlocked} aria-label="同步会议" onClick={refresh}><ArrowClockwise size={19}/></Button>
       </div>
       <div className="mobile-space-filters" role="group" aria-label="筛选工作空间">
           {[{ id: '', name: '全部' }, { id: 'personal', name: '个人空间' }, ...workspaces].map(item =>

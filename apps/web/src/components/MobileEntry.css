@@ -9,13 +9,11 @@
   --phone-accent-ink: #fff;
   --phone-selection: #e2ebe5;
   --phone-live: #9c4739;
-  --phone-wave: #ab7469;
-  --phone-wave-fill: #f0e0dc;
   --phone-dock-tint: #edf6eee0;
   --phone-dock-glass: linear-gradient(150deg, #ffffffc4 0%, #e1eae051 58%, #fcfdfbb8 100%);
   --phone-dock-rim: #ffffffdf;
   --phone-dock-edge: #5385694d;
-  --phone-dock-shadow: #163f2b30;
+  --phone-dock-shadow: #163f2b14;
   --phone-lens-glass: linear-gradient(162deg, #ffffffed 6%, #eaf5ed94 52%, #dcece39c);
   --phone-lens-line: #6f9c8170;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
@@ -32,13 +30,11 @@
   --phone-accent-ink: #14281e;
   --phone-selection: #2d4136;
   --phone-live: #f09b8d;
-  --phone-wave: #cb8b7e;
-  --phone-wave-fill: #422d27;
   --phone-dock-tint: #232e27e0;
   --phone-dock-glass: linear-gradient(150deg, #5e897676 0%, #25372f69 58%, #4a736183 100%);
   --phone-dock-rim: #cbeedd69;
   --phone-dock-edge: #8fb8a050;
-  --phone-dock-shadow: #040d087a;
+  --phone-dock-shadow: #040d0833;
   --phone-lens-glass: linear-gradient(162deg, #779e8b90 6%, #426756ab 55%, #375a4a90);
   --phone-lens-line: #a0cbb17d;
 }
@@ -46,6 +42,7 @@
 [data-theme=dark].quick-record-document { color-scheme: dark; }
 .quick-record-document, .quick-record-document body { margin: 0; background: var(--phone-paper); color: var(--phone-ink); }
 .quick-record-document *, .quick-record-document *::before, .quick-record-document *::after { box-sizing: border-box; }
+.quick-record-document, :is(.phone-auth,.mobile-workspace) { -webkit-tap-highlight-color: transparent; }
 .quick-record-document button, .quick-record-document :is(input,textarea,select) { font: inherit; }
 :is(.phone-entry,.phone-auth,.mobile-workspace) .button {
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
@@ -58,7 +55,7 @@
 }
 :is(.phone-entry,.phone-auth,.mobile-workspace) .button.ghost { background: transparent; color: var(--phone-accent); }
 :is(.phone-entry,.phone-auth,.mobile-workspace) .button:disabled { opacity: .5; cursor: default; }
-:is(.phone-auth,.mobile-workspace) :is(button,input,textarea,select):focus-visible {
+:is(.phone-entry,.phone-auth,.mobile-workspace) :is(button,input,textarea,select):focus-visible {
   outline: 2px solid var(--phone-accent); outline-offset: 2px;
 }
 :is(.phone-auth,.mobile-workspace) input:not([type=checkbox],[type=range]) {
@@ -71,7 +68,8 @@
   padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
   background: var(--phone-paper);
 }
-.phone-entry { gap: 13px; text-align: center; }
+.phone-entry { position: relative; gap: 12px; text-align: center; }
+.phone-entry:not(.phone-entry-failure) > .button { position: absolute; justify-self: center; top: calc(50% + 48px); }
 .phone-entry h1 { margin: 0; font-size: 1rem; font-weight: 600; }
 :is(.phone-entry,.phone-auth) .brand .brand-mark.app-icon {
   display: inline-flex; align-items: center; justify-content: center;
@@ -79,9 +77,6 @@
   background: var(--phone-panel); border-radius: 14px;
 }
 .phone-entry-indicator { color: var(--phone-muted); }
-.phone-entry-progress { width: 18px; height: 18px; border: 2px solid var(--phone-line); border-top-color: var(--phone-accent); border-radius: 50%; animation: phone-entry-turn 1s linear infinite; }
-@keyframes phone-entry-turn { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .phone-entry-progress { animation: none; } }
 .phone-auth { grid-template-columns: minmax(0, 360px); }
 .phone-auth .phone-auth-card {
   width: 100%; max-width: none; padding: 0; margin: 0; color: var(--phone-ink);

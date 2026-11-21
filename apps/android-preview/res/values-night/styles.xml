@@ -1,6 +1,7 @@
 <resources>
     <color name="browser_background">#171b19</color>
     <style name="PreviewTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:colorAccent">#8fd1b6</item>
         <item name="android:windowBackground">@color/browser_background</item>
         <item name="android:statusBarColor">@color/browser_background</item>
         <item name="android:navigationBarColor">@color/browser_background</item>
