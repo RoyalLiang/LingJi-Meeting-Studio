@@ -1,3 +1,4 @@
+import { createPrivateSyncStore } from './private-sync-store.mjs';
 import {createAudioArchive} from './audio-archive.mjs';
 import { createRecordSearch } from './record-search.mjs';
 import {createIndexedAudioStore} from './indexed-audio-store.mjs';
@@ -140,11 +141,13 @@ export async function createRepository(options = {}) {
     const stale=invalidation(value,previousInput?JSON.parse(previousInput):null,projection.meta.analysisInput);
     if(stale)db.prepare("UPDATE aggregates SET data=json_set(data,'$.status','stale','$.snapshot',json('[]'),'$.preview','','$.result',NULL,'$.fence',NULL,'$.updatedAt',json_extract(?,'$.updatedAt')) WHERE json_extract(data,'$.kind')='workspace-analysis' AND json_extract(data,'$.owner')=? AND json_extract(data,'$.scope') IN (SELECT value FROM json_each(?)) AND json_extract(data,'$.status') IN ('queued','running','completed')").run(stale[2],stale[0],JSON.stringify(stale[1]));
     projection.meta.writeVersion=randomUUID();
-    const previousSearch=db.prepare("SELECT rowid,json_extract(data,'$.search') AS search FROM record_list_projection WHERE id=?").get(value.id);
+    const previousSearch=db.prepare("SELECT rowid,json_extract(data,'$.search') AS search,json_extract(data,'$.deleted') AS deleted FROM record_list_projection WHERE id=?").get(value.id);
     db.prepare('INSERT INTO record_list_projection(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(value.id,JSON.stringify(projection.list));
-    recordSearch.writeSqlite(value.id,projection.list.search,value.deleted);
+    const searchChanged = !previousSearch || previousSearch.search !== projection.list.search
+      || Boolean(previousSearch.deleted) !== Boolean(value.deleted);
+    if (searchChanged) recordSearch.writeSqlite(value.id,projection.list.search,value.deleted);
     if(value.deleted)db.prepare('DELETE FROM record_search WHERE rowid=?').run(previousSearch?.rowid??-1);
-    else if(!previousSearch||previousSearch.search!==projection.list.search)db.prepare('INSERT OR REPLACE INTO record_search(rowid,search) VALUES((SELECT rowid FROM record_list_projection WHERE id=?),?)').run(value.id,projection.list.search);
+    else if(searchChanged)db.prepare('INSERT OR REPLACE INTO record_search(rowid,search) VALUES((SELECT rowid FROM record_list_projection WHERE id=?),?)').run(value.id,projection.list.search);
     db.prepare('INSERT INTO record_feed_meta(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(value.id,JSON.stringify(projection.meta));
     if(value.deleted)db.prepare('DELETE FROM record_feed_events WHERE record_id=?').run(value.id);
     for(const event of projection.events) db.prepare('INSERT INTO record_feed_events(record_id,cursor,data) VALUES(?,?,?) ON CONFLICT(record_id,cursor) DO UPDATE SET data=excluded.data').run(value.id,cursorKey(event.cursor),JSON.stringify(event));
@@ -186,7 +189,9 @@ export async function createRepository(options = {}) {
     else db.exec(`CREATE INDEX IF NOT EXISTS ${name} ON aggregates((${workExpression(lane,false)})) WHERE json_extract(data,'$.kind')='${kind}'`);
   }
   const notifications=await createRepositoryNotifications({root,db,pool}).catch(async error=>{if(pool)await pool.end();else db.close();throw error;});
+  let privateSync;
   const repository = {
+    privateSync() { return privateSync ??= createPrivateSyncStore({ root, pool }); },
     ingestAudio: audioStore.ingest,
     async changeMinutesPreview(id, jobId, fence, text, runtime) {
       const outcome = await audioStore.changeMinutesPreview(id, jobId, fence, text, runtime);
@@ -271,8 +276,8 @@ export async function createRepository(options = {}) {
       const unique=[...new Set(ids)], rows=[];
       for(let offset=0;offset<unique.length;offset+=500){
         const batch=unique.slice(offset,offset+500);
-        rows.push(...(pool ? (await pool.query(`SELECT id, COALESCE(data->'analysisInput'->>'kind','record') AS kind, data->>'owner' AS owner, (data->>'deleted')::boolean AS deleted, data->>'deleteAt' AS "deleteAt", data->>'capture' AS capture, COALESCE(data->>'writeVersion',data->>'cursor') AS version FROM record_feed_meta WHERE id=ANY($1::text[])`,[batch])).rows
-          : db.prepare(`SELECT id, COALESCE(json_extract(data,'$.analysisInput.kind'),'record') AS kind, json_extract(data,'$.owner') AS owner, json_extract(data,'$.deleted') AS deleted, json_extract(data,'$.deleteAt') AS deleteAt, json_extract(data,'$.capture') AS capture, COALESCE(json_extract(data,'$.writeVersion'),json_extract(data,'$.cursor')) AS version FROM record_feed_meta WHERE id IN (${batch.map(()=>'?').join(',')})`).all(...batch)));
+        rows.push(...(pool ? (await pool.query(`SELECT id, COALESCE(data->'analysisInput'->>'kind','record') AS kind, data->>'owner' AS owner, (data->>'deleted')::boolean AS deleted, data->>'deleteAt' AS "deleteAt", data->>'capture' AS capture, data->>'cursor' AS cursor, COALESCE(data->>'writeVersion',data->>'cursor') AS version FROM record_feed_meta WHERE id=ANY($1::text[])`,[batch])).rows
+          : db.prepare(`SELECT id, COALESCE(json_extract(data,'$.analysisInput.kind'),'record') AS kind, json_extract(data,'$.owner') AS owner, json_extract(data,'$.deleted') AS deleted, json_extract(data,'$.deleteAt') AS deleteAt, json_extract(data,'$.capture') AS capture, json_extract(data,'$.cursor') AS cursor, COALESCE(json_extract(data,'$.writeVersion'),json_extract(data,'$.cursor')) AS version FROM record_feed_meta WHERE id IN (${batch.map(()=>'?').join(',')})`).all(...batch)));
       }
       return rows.map(row=>({...row,deleted:!!row.deleted}));
     },
@@ -488,7 +493,7 @@ export async function createRepository(options = {}) {
       for(const file of entries)if(/^archive-[a-f0-9-]{36}\.pcm(?:\.pack)?$/.test(file)&&!archives.keep.has(`${recordId}/${file}`)&&(await stat(join(directory,file))).mtimeMs<olderThan){await archives.remove(`${recordId}/${file}`);await rm(join(directory,file),{force:true});}
       for (const file of entries) if (/^[a-f0-9]{64}$/.test(file) && !liveObjects.has(`${recordId}/${file}`) && (await stat(join(directory, file))).mtimeMs < olderThan) await rm(join(directory, file));
     },
-    async close() { await audioArchive?.close();notifications.close(); objects?.close(); if (pool) await pool.end(); else db.close(); }
+    async close() { await (await privateSync?.catch(() => null))?.close(); await audioArchive?.close();notifications.close(); objects?.close(); if (pool) await pool.end(); else db.close(); }
   };
   const shareVersion = pool ? (await pool.query('SELECT version FROM record_share_schema WHERE version=1')).rows[0] : db.prepare('SELECT version FROM record_share_schema WHERE version=1').get();
   if (!shareVersion) {

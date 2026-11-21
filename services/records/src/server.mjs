@@ -1,3 +1,6 @@
+import { restorePrivateMeeting, preparePrivateRecording } from './private-sync-restore.mjs';
+import { createDesktopPrivateSync } from './private-sync-desktop.mjs';
+import { createPrivateSyncRoutes, privateSyncOrigin } from './private-sync-routes.mjs';
 import {meetingScreenshotFrames,saveMeetingScreenshot} from './meeting-screenshots.mjs';
 import { installNetworkProxy, proxySettings, saveProxySettings } from './network-proxy.mjs';
 import {voiceprintRoutes} from './voiceprint-routes.mjs';
@@ -86,7 +89,16 @@ export function exportRecord(record, format = 'markdown') {
 export async function createRecordServer(options = {}) {
   const repo = options.repo || await createRepository(options); const nativeAudio = options.localAccount && options.nativeInstance ? await createNativeAudio(repo, { instanceId: options.nativeInstance }) : null;
   await nativeAudio?.idle();
-  const auth = await createAuth(repo, { seedDevelopment: !options.repo, ...options });
+  const syncOrigin = options.localAccount ? null : privateSyncOrigin(options.syncOrigin ?? process.env.RECORD_SYNC_ORIGIN);
+  const auth = await createAuth(repo, { seedDevelopment: !options.repo, ...options, trackDevices: Boolean(syncOrigin) });
+  if (syncOrigin && process.env.NODE_ENV === 'production') {
+    requireThat(repo.backend === 'postgres', 'private_sync_postgres_required', 500);
+  }
+  const syncStore = syncOrigin && await repo.privateSync();
+  const syncRoutes = syncOrigin && createPrivateSyncRoutes({ store: syncStore, origin: syncOrigin, repo, auth });
+  const accountAuth = syncOrigin && await (await import('./account-auth.mjs')).createAccountAuth({ repo, auth, store: syncStore, origin: syncOrigin });
+  const desktopSync = options.localAccount && createDesktopPrivateSync(options.desktopSync);
+
   const encryptedSharing = createEncryptedSharing(repo, options.encryptedSharing);
   const feishu = await createFeishu(repo, options.feishuOptions);
   const extensions = await createExtensions(repo, {localAccount:Boolean(options.localAccount),...options.extensionOptions});
@@ -134,10 +146,14 @@ export async function createRecordServer(options = {}) {
   const send = (res,status,data,headers) => sendPayload(res,status,JSON.stringify(data),headers);
   const recordResponses=new Map();let responseBytes=0;
   const forgetResponse=id=>{const cached=recordResponses.get(id);if(cached){responseBytes-=cached.payload.length;recordResponses.delete(id);}};
-  async function readRecordResponse(id,user){
+  async function readableRecordAccess(id,user){
     const [access]=await repo.getRecordAccess([id]);
     requireThat(access?.kind==='record'&&access.owner===user.id,'not_found',404);
     requireThat(!access.deleted&&Date.parse(access.deleteAt)>Date.now(),'record_deleted',410);
+    return access;
+  }
+  async function readRecordResponse(id,user){
+    const access=await readableRecordAccess(id,user);
     const cached=recordResponses.get(id);
     if(cached?.version===access.version){recordResponses.delete(id);recordResponses.set(id,cached);return cached.payload;}
     forgetResponse(id);
@@ -162,16 +178,24 @@ export async function createRecordServer(options = {}) {
       const url = new URL(req.url, 'http://localhost'), path = url.pathname;
       if (path === '/api/health') { await repo.list('health-probe'); send(res, 200, { ok: true, service: 'records', storage: repo.backend, audioStorage: repo.audioBackend }); return; }
       requireThat(path.startsWith('/api/'), 'not_found', 404);
+      if (syncOrigin) requireThat(req.headers.host === syncOrigin.host, 'origin_rejected', 403);
       requireThat(!options.localAccount || !/^\/api\/auth\/(register|login|logout)$/.test(path), 'not_found', 404);
       if (!['GET', 'HEAD'].includes(req.method) && req.headers.origin) {
-        const allowed = options.origin || process.env.RECORD_PUBLIC_ORIGIN;
+        const allowed = syncOrigin?.origin || options.origin || process.env.RECORD_PUBLIC_ORIGIN;
         const host = req.headers.host;
         requireThat(allowed ? req.headers.origin === allowed : new URL(req.headers.origin).host === host, 'origin_rejected', 403);
+      }
+      if (path === '/api/auth/account') {
+        if (req.method === 'GET') { send(res, 200, { opaque: Boolean(accountAuth) }); return; }
+        requireThat(accountAuth, 'not_found', 404);
+        limitRequest('account-ip:' + clientAddress(req), 60, 'login_rate_limited');
+        await accountAuth({ req, res, readBody, send, limit: limitRequest });
+        return;
       }
       if (/^\/api\/auth\/(register|login)$/.test(path) && req.method === 'POST') {
         limitRequest(`auth:${clientAddress(req)}`, 20, 'login_rate_limited');
         const body = await readBody(req, 4000); const user = path.endsWith('register') ? await auth.register(body) : await auth.login(body);
-        send(res, 200, { email: user.email, csrf: auth.csrf(user) }, { 'Set-Cookie': auth.issue(user) }); return;
+        send(res, 200, { email: user.email, csrf: auth.csrf(user) }, { 'Set-Cookie': await auth.issue(user, req) }); return;
       }
       const shared = path.match(/^\/api\/shared\/([A-Za-z0-9_-]{40,100})$/);
       if (shared && req.method === 'GET') {
@@ -193,6 +217,31 @@ export async function createRecordServer(options = {}) {
       enterModelUsage({repo,owner:user.id,kind:path.includes('automation')?'automation':'assistant'});
       if (path === '/api/client/update-barrier' && req.method === 'GET') { send(res, 200, await clientUpdateBarrier(repo, user.id)); return; }
       if (!['GET', 'HEAD'].includes(req.method)) auth.checkCsrf(req, user);
+      if (path.startsWith('/api/private-sync/')) {
+        if (path === '/api/private-sync/account-upgrade' && accountAuth) {
+          limitRequest('account-upgrade:' + user.id, 18, 'login_rate_limited');
+          await accountAuth({ req, res, user, readBody, send, limit: limitRequest });
+          return;
+        }
+        if (path === '/api/private-sync/recording' && req.method === 'POST') {
+          requireThat(options.localAccount, 'not_found', 404);
+          send(res, 200, publicRecord(await preparePrivateRecording(repo, user.id, await readBody(req, 1024))));
+          return;
+        }
+        if (path === '/api/private-sync/restore' && req.method === 'POST') {
+          requireThat(options.localAccount, 'not_found', 404);
+          send(res, 200, await restorePrivateMeeting(repo, user.id, await readBody(req, 1024 * 1024)));
+          return;
+        }
+        const routeSync = desktopSync || syncRoutes;
+        requireThat(routeSync, 'not_found', 404);
+        await routeSync({ req, res, path, url, user, readBody, send, limit: limitRequest });
+        return;
+      }
+
+      if (syncOrigin) {
+        requireThat(['/api/bootstrap', '/api/auth/logout'].includes(path), 'not_found', 404);
+      }
       if (path === '/api/client/native-captures' && req.method === 'POST') {
       requireThat(nativeAudio && req.headers['x-native-instance'] === options.nativeInstance, 'not_found', 404);
       const body = await readBody(req, 2048); send(res, 200, await (body.action === 'cancel' ? nativeAudio.cancel(user, body) : nativeAudio.bind(user, body))); return;
@@ -203,7 +252,7 @@ export async function createRecordServer(options = {}) {
       if (await extensionRoutes({req,res,path,user,extensions,readBody,send})) return;
     if (await gitSyncRoutes({req,res,path,user,gitSync,connectors,readBody,send})) return;
       if (path === '/api/auth/logout' && req.method === 'POST') {
-        await repo.change(user.id, u => { u.authVersion++; }); send(res, 200, { ok: true }, { 'Set-Cookie': auth.clear() }); return;
+        await auth.logout(user, req); send(res, 200, { ok: true }, { 'Set-Cookie': auth.clear() }); return;
       }
       if (path === '/api/diagnostics/traces' && req.method === 'GET') { requireThat(canConfigure(user), 'configuration_admin_required', 403); send(res,200,telemetry.snapshot()); return; }
       if (path === '/api/learning/status' && req.method === 'GET') {
@@ -211,7 +260,7 @@ export async function createRecordServer(options = {}) {
         send(res, 200, { enabled, ...(enabled && supported ? learningService.read() : { available:false, status:'disabled', checkedAt:null }) }); return;
       }
       if (path === '/api/bootstrap' && req.method === 'GET') {
-        send(res, 200, { email: user.email, csrf: auth.csrf(user), audioTransport: 'pcm-v1', nativeAudioTransport: nativeAudio ? 'native-file-v1' : null, audioMinutesDefault:user.autoAudioMinutes===true, localAccount: Boolean(options.localAccount), learning:{enabled:await learningEnabled(),...learningService.snapshot()}, meetingAutomation:meetingAutomationConfig(await readConfig(repo.root)), providers: providerStatus(await readConfig(repo.root)), limits: { maxMinutes: null, maxRecords: 200, maxChunkSeconds: 15 }, storage: repo.backend, canConfigure: canConfigure(user) }); return;
+        send(res, 200, { email: user.email, csrf: auth.csrf(user), audioTransport: 'pcm-v1', nativeAudioTransport: nativeAudio ? 'native-file-v1' : null, audioMinutesDefault:user.autoAudioMinutes===true, localAccount: Boolean(options.localAccount), learning:{enabled:await learningEnabled(),...learningService.snapshot()}, meetingAutomation:meetingAutomationConfig(await readConfig(repo.root)), providers: providerStatus(await readConfig(repo.root)), limits: { maxMinutes: null, maxRecords: 200, maxChunkSeconds: 15 }, storage: repo.backend, canConfigure: canConfigure(user), ...(desktopSync || syncOrigin?.host === req.headers.host ? { privateSync: true } : {}) }); return;
       }
       if(path==='/api/settings/audio-backup'){
         requireThat(canConfigure(user),'configuration_admin_required',403);
@@ -312,6 +361,59 @@ export async function createRecordServer(options = {}) {
         const ack=await repo.ingestAudio(user.id,id,{...body,traceId},bytes);
         telemetry.event('audio.ack',{traceId,recordId:id,sourceId:body.sourceId,sequence:body.sequence,bytes:bytes.length,durationMs:performance.now()-started});
         send(res,200,ack);return;
+      }
+      if (action === 'events' && req.method === 'GET') {
+        const record = deltaEnabled ? await readableRecordAccess(id, user) : await owned(id, user);
+        let cursor = String(req.headers['last-event-id'] || url.searchParams.get('after') || record.cursor);
+        requireThat(/^\d{1,20}$/.test(cursor), 'invalid_cursor', 400);
+        res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+        let busy = false, closed = false, draining = false, timer, unsubscribe, lastHeartbeat = Date.now();
+        const cleanup = () => { closed = true; clearInterval(timer); unsubscribe?.(); res.off('drain', drained); streams.delete(res); };
+        const ended = () => closed || res.destroyed || res.writableEnded;
+        const finish = () => { cleanup(); if (!res.destroyed && !res.writableEnded) res.end(); };
+        const write = frame => {
+          if (ended()) return false;
+          try { draining = !res.write(frame); return true; } catch { /* The response can close during an asynchronous poll. */ }
+          finish(); return false;
+        };
+        res.once('close', cleanup);
+        res.once('error', () => { cleanup(); res.destroy(); });
+        req.once('close', cleanup);
+        streams.add(res);
+        const flush = async () => {
+          if (busy || draining || ended()) return; busy = true;
+          try {
+            await auth.user(req); if (ended()) return;
+            const r = deltaEnabled ? await feedAfter(id, cursor) : await owned(id, user);
+            if (ended()) return;
+            requireThat(r && r.owner === user.id && !r.deleted && Date.parse(r.deleteAt) > Date.now(), 'record_deleted', 410);
+            const first = BigInt(r.first || r.events[0]?.cursor || r.cursor);
+            if (BigInt(cursor) < first - 1n || BigInt(cursor) > BigInt(r.cursor)) {
+              if (!write(`event: reset\ndata: ${JSON.stringify({ cursor: r.cursor })}\n\n`)) return;
+              cursor = r.cursor;
+            }
+            for (const event of r.events.filter(e => BigInt(e.cursor) > BigInt(cursor))) {
+              if (!write(`id: ${event.cursor}\ndata: ${JSON.stringify(event)}\n\n`)) return;
+              cursor = event.cursor; if (draining) break;
+            }
+            if (!draining && Date.now() - lastHeartbeat >= 15000) { lastHeartbeat = Date.now(); write(': heartbeat\n\n'); }
+          } catch {
+            if (!ended()) { write('event: revoked\ndata: {}\n\n'); finish(); }
+          } finally { busy = false; }
+        };
+        const drained = () => {
+          draining = false;
+          void flush();
+        };
+        res.on('drain', drained);
+        if (!write(': connected\n\n')) return;
+        unsubscribe = repo.subscribeChanges(ids => {
+          if (!ids.length || ids.includes(id)) void flush();
+        }, { all: true });
+        // Separate API/worker processes retain a bounded cross-process fallback.
+        timer = setInterval(flush, 1000);
+        void flush();
+        return;
       }
       const record = await owned(id, user);
       enterModelUsage({repo,owner:user.id,recordId:record.id,workspaceId:record.workspaceId||'inbox',kind:'record'});
@@ -432,53 +534,6 @@ export async function createRecordServer(options = {}) {
           offset += size; if (offset > end) break;
         }
         if (!res.destroyed && !res.writableEnded) res.end(); return;
-      }
-      if (action === 'events' && req.method === 'GET') {
-        let cursor = String(req.headers['last-event-id'] || url.searchParams.get('after') || record.cursor);
-        requireThat(/^\d{1,20}$/.test(cursor), 'invalid_cursor', 400);
-        res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
-        let busy = false, closed = false, draining = false, timer, unsubscribe, lastHeartbeat = Date.now();
-        const drained = () => { draining = false; };
-        const cleanup = () => { closed = true; clearInterval(timer); unsubscribe?.(); res.off('drain', drained); streams.delete(res); };
-        const ended = () => closed || res.destroyed || res.writableEnded;
-        const finish = () => { cleanup(); if (!res.destroyed && !res.writableEnded) res.end(); };
-        const write = frame => {
-          if (ended()) return false;
-          try { draining = !res.write(frame); return true; } catch { /* The response can close during an asynchronous poll. */ }
-          finish(); return false;
-        };
-        res.on('drain', drained);
-        res.once('close', cleanup);
-        res.once('error', () => { cleanup(); res.destroy(); });
-        req.once('close', cleanup);
-        streams.add(res);
-        if (!write(': connected\n\n')) return;
-        const flush = async () => {
-          if (busy || draining || ended()) return; busy = true;
-          try {
-            await auth.user(req); if (ended()) return;
-            const r = deltaEnabled ? await feedAfter(id, cursor) : await owned(id, user);
-            if (ended()) return;
-            requireThat(r && r.owner === user.id && !r.deleted && Date.parse(r.deleteAt) > Date.now(), 'record_deleted', 410);
-            const first = BigInt(r.first || r.events[0]?.cursor || r.cursor);
-            if (BigInt(cursor) < first - 1n || BigInt(cursor) > BigInt(r.cursor)) {
-              if (!write(`event: reset\ndata: ${JSON.stringify({ cursor: r.cursor })}\n\n`)) return;
-              cursor = r.cursor;
-            }
-            for (const event of r.events.filter(e => BigInt(e.cursor) > BigInt(cursor))) {
-              if (!write(`id: ${event.cursor}\ndata: ${JSON.stringify(event)}\n\n`)) return;
-              cursor = event.cursor; if (draining) break;
-            }
-            if (!draining && Date.now() - lastHeartbeat >= 15000) { lastHeartbeat = Date.now(); write(': heartbeat\n\n'); }
-          } catch {
-            if (!ended()) { write('event: revoked\ndata: {}\n\n'); finish(); }
-          } finally { busy = false; }
-        };
-      unsubscribe=repo.subscribeChanges(ids=>{if(ids.includes(id))void flush();},{all:true});
-      // Separate API/worker processes retain a bounded cross-process fallback.
-      timer=setInterval(flush,1000);
-      void flush();
-        return;
       }
       if (action === 'export' && req.method === 'GET') {
         const format = url.searchParams.get('format') || 'markdown'; requireThat(['markdown', 'json', 'ics', 'issues'].includes(format), 'invalid_format', 400);

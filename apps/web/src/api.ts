@@ -178,8 +178,20 @@ const messages: Record<string, string> = {
   share_content_changed: '会议内容已变化，请核对完整预览后重新确认。旧的未完成分享可先撤销，再创建新链接。',
   invalid_asr_hotwords: '术语总长最多 100 字，每词最多 50 字，请精简后重试。',
 
+  account_factor_unavailable: '双重验证暂不可用。',
+  account_factor_required: '请输入验证器代码或备用码。',
+  account_factor_invalid: '代码有误、已使用或已过期，请重试。',
+  account_factor_setup_expired: '设置已过期，请重新扫码。',
+  account_recent_login_required: '请重新登录后再修改双重验证。',
+  account_device_unavailable: '无法移除当前设备，请使用退出账号。',
   login_required: '请先登录。', invalid_credentials: '邮箱或密码不正确。', password_length_10_128: '密码需要 10 至 128 个字符。',
-  already_exists: '该邮箱已注册，请登录。', invite_required: '请输入有效的邀请码。', invalid_email: '请输入有效的邮箱。',
+  already_exists: '该邮箱已注册，请登录。', invalid_email: '请输入有效的邮箱。',
+  sync_legacy_history: '资料库有历史数据或正在连接。请先从恢复入口解锁，再升级账号。',
+  account_legacy: '这是旧账号，可继续登录并在个人中心升级。',
+  account_challenge_expired: '本次验证已过期，请重试。',
+  account_changed: '账号状态已变化，请重新登录。',
+  account_already_upgraded: '账号已经升级，请用新密码登录。',
+  account_message_invalid: '账号验证没有完成，请重试。',
   asr_not_configured: '尚未配置语音识别服务。', minutes_not_configured: '尚未配置纪要模型，请联系服务维护者。',
   record_not_finalized: '音频仍在补传或转录，请等待处理完成。', empty_transcript: '还没有可总结的转录。',
   notes_revision_conflict: '笔记已有更新，请保留当前内容并重新载入后合并。', minutes_revision_conflict: '纪要已有更新，请重新载入后合并。',
@@ -219,12 +231,28 @@ async function request<T>(path: string, method: string, body: BodyInit | undefin
 }
 export const messageOf = (error: unknown) => error instanceof Error ? error.message : '操作失败，请重试。';
 
+function serviceSignal(source: AbortSignal | null | undefined, timeoutMs: number) {
+  if (timeoutMs <= 0 || source?.aborted) return source ?? undefined;
+  if (typeof AbortSignal.timeout === 'function' && (!source || typeof AbortSignal.any === 'function')) {
+    const deadline = AbortSignal.timeout(timeoutMs);
+    return source ? AbortSignal.any([source, deadline]) : deadline;
+  }
+  const controller = new AbortController();
+  const abort = () => controller.abort(source?.reason);
+  const timer = setTimeout(() => controller.abort(new DOMException('请求超时', 'TimeoutError')), timeoutMs);
+  source?.addEventListener('abort', abort, { once: true });
+  controller.signal.addEventListener('abort', () => {
+    clearTimeout(timer);
+    source?.removeEventListener('abort', abort);
+  }, { once: true });
+  return controller.signal;
+}
+
 export async function serviceFetch(input: RequestInfo | URL, init?: RequestInit, timeoutMs = 30000): Promise<Response> {
-  const deadline = timeoutMs > 0 ? AbortSignal.timeout(timeoutMs) : undefined;
-  const signal = deadline && init?.signal ? AbortSignal.any([init.signal, deadline]) : deadline || init?.signal;
+  const signal = serviceSignal(init?.signal, timeoutMs);
   try { return await fetch(input, { ...init, signal }); }
   catch (error) {
-    if (init?.signal?.aborted || ((error as Error)?.name === 'AbortError' && !deadline?.aborted)) throw error;
+    if (init?.signal?.aborted || ((error as Error)?.name === 'AbortError' && !signal?.aborted)) throw error;
     throw new ApiError('service_unavailable', 0);
   }
 }

@@ -130,7 +130,7 @@ async function captureHarness({ noDisplayAudio = false, micFailure = false, disp
     } },
     ensureAudioCapacity: async () => { if(capacityFailure) throw new Error('本机录音缓存空间不足，尚未开始录音'); }, preferredDevice: () => 'default', inputDevices: async () => [], microphoneConstraints: () => ({}),
     api: async (_url, _method, input) => ({ id: `source-${input.kind}-${++sourceNumber}`, sessionId: 'session', epoch: 'epoch', ...input }),
-    makeChunk: async (...args) => { await chunkWait; return { sourceId: args[0], sequence: args[2], sampleOffset: args[3], buffer: args[4] }; }, enqueue: async (_id, chunk) => { if(enqueueFailure) throw new Error("本机存储空间不足"); uploads.push(chunk); }, drainQueue: async () => {},
+    makeChunk: async (...args) => { await (typeof chunkWait === "function" ? chunkWait(args[2]) : chunkWait); return { sourceId: args[0], sequence: args[2], sampleOffset: args[3], buffer: args[4] }; }, enqueue: async (_id, chunk) => { if(enqueueFailure) throw new Error("本机存储空间不足"); uploads.push(chunk); }, drainQueue: async () => {},
   };
   sandbox.openMicrophone = () => sandbox.navigator.mediaDevices.getUserMedia({ audio: true });
   vm.runInNewContext(signalSource + '\n' + source + '\nexports.CaptureController = CaptureController;', sandbox);
@@ -544,4 +544,23 @@ test('new automatic capture defaults to text AI even when the configured audio m
 test('explicit future audio authorization enables AI on new automatic audio-only meetings',async()=>{
  const h=await quickRecordHarness({active:true,issues:[],minutesMode:'doubao-audio-only',audioMinutesDefault:true});
  assert.equal(h.state.created.autoMinutes,true);assert.equal(h.state.created.realtimeAudioConsent,true);
+});
+
+test('stop waits for earlier PCM writes even after 100 later packets', async () => {
+  let release;
+  const firstWrite = new Promise(resolve => { release = resolve; });
+  const h = await captureHarness({chunkWait: sequence => sequence === 0 ? firstWrite : undefined});
+  await h.controller.start('microphone');
+  for (let i = 0; i < 102; i++) {
+    h.nodes[0].port.onmessage({data:{type:'pcm',buffer:new ArrayBuffer(320),rms:0}});
+  }
+  let stopped = false;
+  const stopping = h.controller.stop().then(() => { stopped = true; });
+  await new Promise(resolve => setImmediate(resolve));
+  const stoppedBeforeFirstWrite = stopped;
+  release();
+  await stopping;
+  assert.equal(stoppedBeforeFirstWrite, false);
+  assert.equal(h.uploads.length, 102);
+  assert.ok(h.uploads.some(chunk => chunk.sequence === 0));
 });

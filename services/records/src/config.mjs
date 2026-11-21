@@ -137,6 +137,7 @@ export const meetingAutomationConfig=config=>({enabled:config.AUTO_MEETING_ENABL
 
 // Automatic text minutes remain available without granting permission to send raw audio.
 export function recordMinutesConfig(record,config){
+  if (record.syncRecording) return { ...config, ASR_PROVIDER: 'sensevoice-local', MINUTES_MODE: 'asr-llm' };
   return audioMinutesEnabled(config) && config.MINUTES_MODE!=='doubao-audio-only' && !record.realtimeAudioConsent && configured(config.LLM_API_KEY) && config.LLM_MODEL && config.LLM_API_URL
     ? {...config,MINUTES_MODE:'asr-llm'} : config;
 }

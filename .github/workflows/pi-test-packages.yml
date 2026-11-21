@@ -3,7 +3,7 @@ run-name: Pi test packages · ${{ github.sha }}
 
 on:
   push:
-    branches: [dev_pi-chain-regression-20261031]
+    branches: [dev_pi-chain-regression-20261031, dev_v04-sync-audit]
     paths-ignore: ['docs/**', 'README.md']
   workflow_dispatch:
 
@@ -24,6 +24,7 @@ env:
 
 jobs:
   installer_hashes:
+    if: github.ref_name != 'dev_v04-sync-audit'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -57,6 +58,22 @@ jobs:
       - run: rustup toolchain install 1.92.0 --profile minimal && rustup default 1.92.0
       - run: npm ci
       - run: npm run lint && npm run typecheck && npm run build:web && npm test
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: .agent-runtime/runtimes
+          key: lingji-public-runtimes-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/prepare-client-backend.mjs', 'services/records/src/local-asr-resources.json', 'scripts/asr-test-fixtures.mjs') }}
+      - run: node scripts/asr-test-fixtures.mjs
+      - id: vocabulary
+        run: |
+          node -e 'const m=require("./services/records/src/data/builtin-vocabulary.manifest.json"); if(!["20261105.2","20261105.3","20261106.4"].includes(m.version))process.exit(1); console.log("version="+m.version)' >> "$GITHUB_OUTPUT"
+      - name: Materialize private built-in vocabulary
+        env:
+          TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART1: ${{ (steps.vocabulary.outputs.version == '20261105.2' && secrets.TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART1) || (steps.vocabulary.outputs.version == '20261105.3' && secrets.TTS_BUILTIN_VOCABULARY_20261105_3_PART1) || (steps.vocabulary.outputs.version == '20261106.4' && secrets.TTS_BUILTIN_VOCABULARY_20261106_4_PART1) }}
+          TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART2: ${{ (steps.vocabulary.outputs.version == '20261105.2' && secrets.TTS_BUILTIN_VOCABULARY_GZIP_BASE64_PART2) || (steps.vocabulary.outputs.version == '20261105.3' && secrets.TTS_BUILTIN_VOCABULARY_20261105_3_PART2) || (steps.vocabulary.outputs.version == '20261106.4' && secrets.TTS_BUILTIN_VOCABULARY_20261106_4_PART2) }}
+        run: node scripts/materialize-builtin-vocabulary.mjs
+      - name: Keep vocabulary payload outside Git
+        run: git check-ignore --quiet services/records/src/data/builtin-vocabulary.private.json
+      - run: npm run test:smoke
       - run: node scripts/prepare-client-backend.mjs
       - run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --features smoke-test -- --test-threads=1
       - name: Build and verify Mac test DMG
@@ -66,16 +83,17 @@ jobs:
         run: node scripts/release-macos-alpha.mjs
       - name: Collect source and package evidence
         run: |
-          echo "RELEASE_VERSION=$(node -p 'require("./package.json").version')" >> "$GITHUB_ENV"
+          echo "RELEASE_VERSION=$(node -p '((m)=>m.releaseVersion||m.version)(require("./package.json"))')" >> "$GITHUB_ENV"
       - run: node scripts/collect-preview-artifacts.mjs macos
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
-          name: pi-test-macos-arm64-${{ github.sha }}
+          name: ${{ format('{0}-macos-arm64-{1}', github.ref_name == 'dev_v04-sync-audit' && 'mobile-sync-test' || 'pi-test', github.sha) }}
           path: preview-artifacts/*
           if-no-files-found: error
           retention-days: 14
 
   windows:
+    if: github.ref_name != 'dev_v04-sync-audit'
     needs: installer_hashes
     runs-on: windows-2025
     timeout-minutes: 90

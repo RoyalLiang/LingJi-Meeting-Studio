@@ -1,9 +1,10 @@
 import { watch } from 'node:fs';
+import { join } from 'node:path';
 import { telemetry } from './telemetry.mjs';
 
 export async function createRepositoryNotifications({ root, db, pool }) {
   const listeners = new Set();
-  let closed = false, client, reconnect, watcher, fallback, observed;
+  let closed = false, client, reconnect, watcher, walWatcher, fallback, observed;
   const deliver = (ids, completed = []) => {
     for (const entry of listeners) {
       const selected = entry.all ? ids : completed;
@@ -21,6 +22,24 @@ export async function createRepositoryNotifications({ root, db, pool }) {
       if (current !== observed) { observed = current; deliver([]); }
     } catch (error) { report(error); }
   };
+  function watchWal() {
+    if (walWatcher) return;
+    try {
+      const handle = watch(join(root, 'records.sqlite-wal'), { persistent: false }, event => {
+        check();
+        if (event === 'rename' && walWatcher === handle) {
+          handle.close();
+          walWatcher = undefined;
+        }
+      });
+      walWatcher = handle;
+      handle.on('error', error => {
+        handle.close();
+        if (walWatcher === handle) walWatcher = undefined;
+        report(error);
+      });
+    } catch (error) { if (error.code !== 'ENOENT') report(error); }
+  }
   async function listen(initial = false) {
     const connection = await pool.connect();
     if (closed) { connection.release(true); return; }
@@ -83,9 +102,10 @@ export async function createRepositoryNotifications({ root, db, pool }) {
       const entry = { listener, all }; listeners.add(entry);
       if (db && all && !fallback) {
         observed = revision();
+        watchWal();
         try { watcher = watch(root, { persistent: false }, (_event, name) => {
           const file = String(name || '');
-          if (file.startsWith('records.sqlite')) check();
+          if (file.startsWith('records.sqlite')) { watchWal(); check(); }
           else if (file === 'providers.json' || file === 'model-facts.json') deliver([]);
         }); watcher.on('error', report); } catch (error) { report(error); }
         // One scalar recovery check replaces per-lane scans when a filesystem event is lost.
@@ -94,7 +114,7 @@ export async function createRepositoryNotifications({ root, db, pool }) {
       return () => {
         listeners.delete(entry);
         if (db && ![...listeners].some(entry => entry.all)) {
-          watcher?.close(); watcher = undefined; clearInterval(fallback); fallback = undefined;
+          watcher?.close(); watcher = undefined; walWatcher?.close(); walWatcher = undefined; clearInterval(fallback); fallback = undefined;
         }
       };
     },
@@ -108,7 +128,7 @@ export async function createRepositoryNotifications({ root, db, pool }) {
     },
     close() {
       if (closed) return;
-      closed = true; listeners.clear(); watcher?.close(); clearInterval(fallback); clearTimeout(reconnect);
+      closed = true; listeners.clear(); watcher?.close(); walWatcher?.close(); clearInterval(fallback); clearTimeout(reconnect);
       if (client) { client.release(true); client = undefined; }
     },
   };

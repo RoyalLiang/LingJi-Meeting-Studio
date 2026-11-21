@@ -101,7 +101,7 @@ export async function startDesktopBackend({ root, port = 0, workers = true } = {
   process.env.RECORD_DEV_ACCOUNT = 'off';
   process.env.RECORD_CONFIG_ADMIN = 'local@device.invalid';
   // A generated persistent session key stays under the client root, not in env.
-  for (const key of ['RECORD_DATABASE_URL', 'RECORD_S3_BUCKET', 'RECORD_SESSION_SECRET', 'RECORD_INVITE_CODE', 'RECORD_PUBLIC_ORIGIN']) delete process.env[key];
+  for (const key of ['RECORD_DATABASE_URL', 'RECORD_S3_BUCKET', 'RECORD_SESSION_SECRET', 'RECORD_PUBLIC_ORIGIN']) delete process.env[key];
   await mkdir(root, { recursive: true, mode: 0o700 });
   // Native has acquired the client lock; no previous owner is still writing.
   await recoverTemporaryAudio(root);

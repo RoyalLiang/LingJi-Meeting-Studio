@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN" class="quick-record-document">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f5f7f4">
+  <link rel="icon" href="/brand/quick-record-192.png">
+  <link rel="manifest" href="/quick-record.webmanifest">
+  <link rel="apple-touch-icon" href="/brand/quick-record-192.png">
+  <title>聆记快记</title>
+  <style>
+    body { margin:0; background:#f5f7f4; color:#19231e; font:15px system-ui,sans-serif }
+    .phone-first-paint { display:grid; min-height:100svh; box-sizing:border-box; align-content:center; justify-items:center; gap:13px; padding:24px; text-align:center }
+    .phone-first-paint a { position:absolute; top:calc(50% + 48px); visibility:hidden; color:inherit; padding:8px; animation:phone-retry 0s 8s forwards }
+    @keyframes phone-retry { to { visibility:visible } }
+    @media (prefers-color-scheme:dark) { body { background:#171b19; color:#ecf2ed } }
+  </style>
+</head>
+<body>
+  <div id="root"><div class="phone-first-paint">
+    <img src="../desktop/assets/lingji-brand-mark.svg?inline" width="48" height="48" alt="聆记">
+    <a href="/quick-record">重新加载</a>
+  </div></div>
+  <script type="module" src="/src/mobile-main.tsx"></script>
+</body>
+</html>

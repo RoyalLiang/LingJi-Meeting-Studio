@@ -168,7 +168,7 @@ impl NativeSpool {
             .and_then(|_| temporary.write_all(&Sha256::digest(packet)))
             .and_then(|_| temporary.as_file().sync_all())
             .map_err(failure)?;
-        let published = temporary
+        let _published = temporary
             .persist_noclobber(self.directory.join(format!("{sequence:06}.pcm")))
             .map_err(failure)?;
         // A published packet can already be ingested; its stop fence must include it even if directory sync fails.
@@ -190,7 +190,8 @@ impl NativeSpool {
         } else {
             0.0
         };
-        published.sync_all().map_err(failure)?;
+        #[cfg(not(unix))]
+        _published.sync_all().map_err(failure)?;
         sync_directory(&self.directory)
     }
     fn receipt(&self, manifest: &Manifest) -> Result<Receipt, String> {

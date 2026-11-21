@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';import http from 'node:http';import{gunzipSync}from'node:zlib';import{mkdtemp,writeFile,rm}from'node:fs/promises';import{tmpdir}from'node:os';import{join}from'node:path';
 import{sendHttpPayload}from'../services/records/src/http-response.mjs';import{createProductionServer}from'../apps/web/src/production-server.mjs';
-const raw=(server,encoding='gzip',method='GET')=>new Promise((resolve,reject)=>{http.get({host:'127.0.0.1',port:server.address().port,path:'/',method,headers:{'Accept-Encoding':encoding}},res=>{const chunks=[];res.on('data',c=>chunks.push(c));res.on('end',()=>resolve({headers:res.headers,body:Buffer.concat(chunks)}));}).on('error',reject);});
+const raw=(server,encoding='gzip',method='GET',path='/')=>new Promise((resolve,reject)=>{http.get({host:'127.0.0.1',port:server.address().port,path,method,headers:{'Accept-Encoding':encoding}},res=>{const chunks=[];res.on('data',c=>chunks.push(c));res.on('end',()=>resolve({headers:res.headers,body:Buffer.concat(chunks)}));}).on('error',reject);});
 const listen=server=>new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 test('JSON transport compresses losslessly, respects opt-out and coalesces concurrent reads',async t=>{
  const payload=Buffer.from(JSON.stringify({segments:Array.from({length:3000},(_,i)=>({id:i,text:'会议纪要保留人工修订和原文引用。',revision:1}))}));
@@ -14,4 +14,18 @@ test('production static cache serves compressed HTML and notices edited files',a
  const root=await mkdtemp(join(tmpdir(),'lingji-http-'));t.after(()=>rm(root,{recursive:true,force:true}));await writeFile(join(root,'index.html'),'<main>原始页面</main>'.repeat(1000));
  const server=createProductionServer({root});await listen(server);t.after(()=>server.close());const first=await raw(server);assert.equal(first.headers['content-encoding'],'gzip');assert.match(gunzipSync(first.body).toString(),/原始页面/);assert.match(first.headers.vary,/Accept-Encoding/);
  await writeFile(join(root,'index.html'),'<main>更新后的配置页面</main>'.repeat(1000));const changed=await raw(server);assert.match(gunzipSync(changed.body).toString(),/更新后的配置页面/);assert.notDeepEqual(changed.body,first.body);
+});
+
+test('quick record uses its own HTML entry before any script runs', async t => {
+ const root = await mkdtemp(join(tmpdir(),'lingji-phone-html-'));
+ t.after(() => rm(root,{recursive:true,force:true}));
+ await writeFile(join(root,'index.html'),'<main>Desktop workbench</main>');
+ await writeFile(join(root,'quick-record.html'),'<main role="status">正在打开录音工作台</main>');
+ const server = createProductionServer({root});
+ await listen(server);
+ t.after(() => server.close());
+ const mobile = await raw(server,'identity','GET','/quick-record?install=1');
+ assert.match(mobile.headers['content-type'],/text\/html/);
+ assert.match(mobile.body.toString(),/role="status">正在打开录音工作台/);
+ assert.match((await raw(server,'identity')).body.toString(),/Desktop workbench/);
 });

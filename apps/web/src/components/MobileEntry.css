@@ -1,0 +1,91 @@
+.quick-record-document, .quick-mobile-app, .phone-auth, .phone-entry {
+  --phone-paper: #f5f7f4;
+  --phone-field: #fff;
+  --phone-panel: #eaf0eb;
+  --phone-line: #dce4dd;
+  --phone-ink: #19231e;
+  --phone-muted: #53635a;
+  --phone-accent: #1d6650;
+  --phone-accent-ink: #fff;
+  --phone-selection: #e2ebe5;
+  --phone-live: #9c4739;
+  --phone-dock-tint: #edf6eee0;
+  --phone-dock-glass: linear-gradient(150deg, #ffffffc4 0%, #e1eae051 58%, #fcfdfbb8 100%);
+  --phone-dock-rim: #ffffffdf;
+  --phone-dock-edge: #5385694d;
+  --phone-dock-shadow: #163f2b14;
+  --phone-lens-glass: linear-gradient(162deg, #ffffffed 6%, #eaf5ed94 52%, #dcece39c);
+  --phone-lens-line: #6f9c8170;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  color: var(--phone-ink);
+}
+[data-theme=dark].quick-record-document, [data-theme=dark] :is(.quick-mobile-app,.phone-auth,.phone-entry) {
+  --phone-paper: #171b19;
+  --phone-field: #222923;
+  --phone-panel: #252f29;
+  --phone-line: #3b493f;
+  --phone-ink: #ecf2ed;
+  --phone-muted: #aebdb2;
+  --phone-accent: #8fd1b6;
+  --phone-accent-ink: #14281e;
+  --phone-selection: #2d4136;
+  --phone-live: #f09b8d;
+  --phone-dock-tint: #232e27e0;
+  --phone-dock-glass: linear-gradient(150deg, #5e897676 0%, #25372f69 58%, #4a736183 100%);
+  --phone-dock-rim: #cbeedd69;
+  --phone-dock-edge: #8fb8a050;
+  --phone-dock-shadow: #040d0833;
+  --phone-lens-glass: linear-gradient(162deg, #779e8b90 6%, #426756ab 55%, #375a4a90);
+  --phone-lens-line: #a0cbb17d;
+}
+[data-theme=light].quick-record-document { color-scheme: light; }
+[data-theme=dark].quick-record-document { color-scheme: dark; }
+.quick-record-document, .quick-record-document body { margin: 0; background: var(--phone-paper); color: var(--phone-ink); }
+.quick-record-document *, .quick-record-document *::before, .quick-record-document *::after { box-sizing: border-box; }
+.quick-record-document, :is(.phone-auth,.mobile-workspace) { -webkit-tap-highlight-color: transparent; }
+.quick-record-document button, .quick-record-document :is(input,textarea,select) { font: inherit; }
+:is(.phone-entry,.phone-auth,.mobile-workspace) .button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  min-height: 44px; padding: 8px 15px; border: 1px solid transparent; border-radius: 10px;
+  font: inherit; font-size: .875rem; font-weight: 620; line-height: 1.4;
+  background: var(--phone-panel); color: var(--phone-ink); cursor: pointer; touch-action: manipulation;
+}
+:is(.phone-entry,.phone-auth,.mobile-workspace) .button.primary {
+  background: var(--phone-accent); color: var(--phone-accent-ink);
+}
+:is(.phone-entry,.phone-auth,.mobile-workspace) .button.ghost { background: transparent; color: var(--phone-accent); }
+:is(.phone-entry,.phone-auth,.mobile-workspace) .button:disabled { opacity: .5; cursor: default; }
+:is(.phone-entry,.phone-auth,.mobile-workspace) :is(button,input,textarea,select):focus-visible {
+  outline: 2px solid var(--phone-accent); outline-offset: 2px;
+}
+:is(.phone-auth,.mobile-workspace) input:not([type=checkbox],[type=range]) {
+  min-width: 0; width: 100%; min-height: 46px; border: 1px solid var(--phone-line); border-radius: 10px;
+  padding: 9px 12px; background: var(--phone-field); color: var(--phone-ink); font-size: 16px; font-weight: 400;
+}
+:is(.phone-auth,.mobile-workspace) input::placeholder { color: var(--phone-muted); opacity: 1; }
+.phone-entry, .phone-auth {
+  min-height: 100svh; display: grid; place-content: center; justify-items: center;
+  padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
+  background: var(--phone-paper);
+}
+.phone-entry { position: relative; gap: 12px; text-align: center; }
+.phone-entry:not(.phone-entry-failure) > .button { position: absolute; justify-self: center; top: calc(50% + 48px); }
+.phone-entry h1 { margin: 0; font-size: 1rem; font-weight: 600; }
+:is(.phone-entry,.phone-auth) .brand .brand-mark.app-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 50px; height: 50px; padding: 8px;
+  background: var(--phone-panel); border-radius: 14px;
+}
+.phone-entry-indicator { color: var(--phone-muted); }
+.phone-auth { grid-template-columns: minmax(0, 360px); }
+.phone-auth .phone-auth-card {
+  width: 100%; max-width: none; padding: 0; margin: 0; color: var(--phone-ink);
+  border: 0; background: transparent; box-shadow: none;
+}
+.phone-auth-card h1 { margin: 16px 0 21px; font-size: 1.58rem; font-weight: 650; line-height: 1.3; }
+.phone-auth-card form, .phone-auth-card form label { display: grid; gap: 7px; }
+.phone-auth-card form { gap: 14px; margin-bottom: 10px; }
+.phone-auth-card label { font-size: .86rem; font-weight: 600; }
+.phone-auth-card .button.primary { width: 100%; margin-top: 4px; }
+.phone-auth-card > .button { display: flex; margin-inline: auto; }
+.phone-auth-card .feedback-notice { max-width: 100%; }

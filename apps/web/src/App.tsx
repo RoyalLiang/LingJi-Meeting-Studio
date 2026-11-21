@@ -1,4 +1,10 @@
+import type { AccountOverview } from './components/PrivateSyncSettings';
 import {useMeetingScreenshots} from './audio/meeting-screenshots';
+import { Auth, type AccountLogin } from './components/AccountLogin';
+import { MobileEntry, MobileEntryBoundary } from './components/MobileEntry';
+const loadPrivateSyncSettings = () => import('./components/PrivateSyncSettings').then(module => ({ default: module.PrivateSyncSettings }));
+const PrivateSyncSettings = lazy(loadPrivateSyncSettings);
+import type { SettingsTab } from './components/SettingsPage';
 const SettingsPage=lazy(()=>import('./components/SettingsPage').then(module=>({default:module.SettingsPage})));
 import {RecordingProgress,RecordingRuntime,createCaptureSignals} from './components/RecordingProgress';
 import { WorkbenchContext } from './components/WorkbenchContext';
@@ -26,7 +32,7 @@ import { useNativeMenuBar } from './useNativeMenuBar';
 import { trace, traceCommit } from './telemetry';
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { Archive, ArrowDown, ArrowSquareOut, Folder, FolderPlus, House, Check, FileText, GearSix, Microphone, Moon,
-  Plus, Translate, MagnifyingGlass, ShareNetwork, SignOut, Sparkle, Sun, Trash, WarningCircle, X, CaretRight } from '@phosphor-icons/react';
+  Plus, Translate, MagnifyingGlass, ShareNetwork, SignOut, Sparkle, Sun, Trash, WarningCircle, X } from '@phosphor-icons/react';
 import { api, messageOf, setCsrf, setAudioTransport, ApiError } from './api';
 import { applyRecordDelta, subscribeToRecord, type ConnectionState } from './record-subscription';
 import type { Bootstrap, RecordDetail, RecordListItem, Segment, Evidence } from './model';
@@ -52,14 +58,14 @@ import { LiveMeetingControls as MeetingControls } from './components/RecordingPr
 import { MeetingFinish } from './components/MeetingFinish';
 import { RecordTitle } from './components/RecordTitle';
 import { LiveCaptureSetup as CaptureSetup } from './components/RecordingProgress';
-import { Button, Modal, Status, Empty } from './components/ui';
+import { Button, Modal, Empty, Status } from './components/ui';
 
 
 
 import { Notes } from './components/Notes';
 import { CaptureController, capabilities, importAudio, type CaptureIssue } from './audio/controller';
 import type { CaptureSignal } from './audio/signal';
-import { clearRecordAudio, setLocalQueueBackend, drainQueue, localManifests, pendingCount, setQueueRecords, downloadPendingAudio } from './audio/queue';
+import { clearRecordAudio, setLocalQueueBackend, drainQueue, resetAudioUploadBackoff, localManifests, pendingCount, setQueueRecords, downloadPendingAudio } from './audio/queue';
 
 const SharedMeeting=lazy(()=>import('./components/SharedMeeting').then(module=>({default:module.SharedMeeting})));
 const TranscriptHistory=lazy(()=>import('./components/Transcript').then(module=>({default:module.TranscriptHistory})));
@@ -72,33 +78,7 @@ const VocabularySettings = memo(VocabularySettingsForm);
 const DeviceSettings = memo(DeviceSettingsForm);
 const AudioBackupSettings=lazy(()=>import('./components/AudioBackupSettings').then(module=>({default:module.AudioBackupSettings})));
 
-function Auth({ ready }: { ready: () => Promise<boolean> }) {
-  const [register, setRegister] = useState(false), [error, setError] = useState(''), [busy, setBusy] = useState(false);
-  const [development, setDevelopment] = useState<{email:string;password:string|null}|null>(null);
-  const submitting = useRef(false);
-  useEffect(() => { api<{email:string;password:string|null}>('/development-account').then(setDevelopment).catch(() => {}); }, []);
-  async function authenticate(path: string, body: unknown) {
-    if (submitting.current) return;
-    submitting.current = true; setBusy(true); setError('');
-    try {
-      const response = await api<{csrf:string}>(path, 'POST', body); setCsrf(response.csrf);
-      if (!await ready()) setError('会议空间暂未加载，请重试。');
-    } catch (e) { setError(messageOf(e)); }
-    finally { submitting.current = false; setBusy(false); }
-  }
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    return authenticate(`/auth/${register ? 'register' : 'login'}`, Object.fromEntries(new FormData(event.currentTarget)));
-  }
-  return <main className="auth-page"><section className="auth-story"><Brand/>
-    <div><p className="kicker">让注意力，回到对话</p><h1>好好听。<br/>值得记住的，<br/><em>交给聆记。</em></h1><p>实时转录，梳理共识。<br/>从一句话，追溯每一个决定。</p></div><span className="auth-foot">浏览器打开即用 · 数据按账户隔离</span></section>
-    <section className="auth-card glass"><p className="kicker">你的会议空间</p><h2>{register ? '创建账户' : '欢迎回来'}</h2><p className="muted">{register ? '记录、回看与整理，从这里开始。' : '继续上次的讨论，或开始一场新对话。'}</p>
-      <form onSubmit={submit}><label>用户名 / 邮箱<input name="email" type="email" autoComplete="email" required placeholder="you@example.com"/></label><label>密码<input name="password" type="password" autoComplete={register ? 'new-password' : 'current-password'} minLength={10} maxLength={128} required placeholder="至少 10 个字符"/></label>
-        {register && <label>邀请码 <span className="muted">如服务要求</span><input name="inviteCode" autoComplete="off"/></label>}
-        {error && <FeedbackNotice key={error} message={error} error/>}<Button variant="primary" disabled={busy} type="submit">{busy ? '请稍候…' : register ? '创建账户并进入' : '进入会议空间'}<CaretRight size={18}/></Button></form>
-      <Button variant="ghost" disabled={busy} onClick={() => { setRegister(!register); setError(''); }}>{register ? '已有账户？登录' : '还没有账户？创建一个'}</Button>{development && <div className="development-account"><Status>本地开发账户</Status><p>用户名 <b>{development.email}</b></p><p>密码 <code>{development.password || '使用本机自定义密码'}</code></p>{development.password && <Button disabled={busy} onClick={() => authenticate('/auth/login', development)}>使用开发账户进入</Button>}</div>}<p className="fine-print">录制前请告知参会者并取得适用的许可。登录不会自动启用麦克风或屏幕共享。</p>
-    </section></main>;
-}
+
 function SharedView({ token }: { token: string }) {
   const [data, setData] = useState<SharedMeetingData>(), [error, setError] = useState('');
   useEffect(() => {
@@ -122,6 +102,13 @@ const ExportDialog = lazy(() => import('./components/ExportDialog').then(module=
 const MeetingAgentCenter = lazy(() => import('./components/MeetingAgentCenter'));
 
 function Workspace() {
+  const mobile = location.pathname === '/quick-record' ||
+    (location.pathname === '/' && Boolean(globalThis.matchMedia?.('(max-width: 640px) and (pointer: coarse)').matches));
+  const [mobileRecording, setMobileRecording] = useState(false);
+  const [mobileEmail, setMobileEmail] = useState<string | null>(() => {
+    try { return mobile ? localStorage.getItem('lingji:mobile-email') : null; }
+    catch { return null; }
+  });
   const [workspacePage,setWorkspacePage]=useState<WorkspacePage>('overview'),[sidebarOpen,setSidebarOpen]=useState(false),[voiceOpen,setVoiceOpen]=useState(false);
   const closeSidebar=useCallback(()=>setSidebarOpen(false),[]);
   const [contextOpen,setContextOpen]=useState(false),[workspaceOverview,setWorkspaceOverview]=useState<WorkspaceOverview|null>(null);
@@ -130,9 +117,21 @@ function Workspace() {
   const [meetingViewsTarget,setMeetingViewsTarget]=useState<HTMLDivElement|null>(null);
   const [agentTitle,setAgentTitle]=useState('Skills'),[automationVisible,setAutomationVisible]=useState(false),[automationTasksTarget,setAutomationTasksTarget]=useState<HTMLDivElement|null>(null);
   const [agentOpen,setAgentOpen] = useState(() => new URLSearchParams(location.search).get('agent') === '1');
+  const [accountLogin, setAccountLogin] = useState<AccountLogin>();
+  const storeAccountLogin = useCallback((login?: AccountLogin) => {
+    setAccountLogin(previous => { previous?.material.fill(0); return login; });
+  }, []);
   const [boot, setBoot] = useState<Bootstrap | null>(null), [authReady, setAuthReady] = useState(false), [loading, setLoading] = useState(true);
+  const syncCompanion = Boolean(boot?.privateSync && !boot.localAccount);
+  const desktopAccount = Boolean(boot?.localAccount && boot.privateSync);
+  const [syncEmail, setSyncEmail] = useState<string | null>();
+  const [accountOverview, setAccountOverview] = useState<AccountOverview>();
   const [records, setRecords] = useState<RecordListItem[]>([]), [query, setQuery] = useState(''), [id, setId] = useState(new URLSearchParams(location.search).get('record') || ''), [record, setRecord] = useState<RecordDetail | null>(null);
   useEffect(()=>{setMeetingPage('minutes');},[id]);
+  const receivingMobile = record?.id === id && record.syncRecording === true && record.capture === 'recording';
+  useEffect(() => {
+    if (receivingMobile) setMeetingPage('transcript');
+  }, [id, receivingMobile]);
   const learningService=useLearningService(Boolean(authReady && boot?.learning?.enabled));
   const [uploadIssue, setUploadIssue] = useState('');
   const [localAudio, setLocalAudio] = useState<{recordId:string;manifests:Awaited<ReturnType<typeof localManifests>>}>({recordId:'',manifests:[]});
@@ -168,12 +167,19 @@ function Workspace() {
   const [focusTarget,setFocusTarget]=useState<HTMLDivElement|null>(null);
   const [gitActions,setGitActions]=useState<HTMLDivElement|null>(null);
   const [modal, setModal] = useState<'new' | 'settings' | 'share' | 'export' | 'delete' | 'import-text' | 'capture' | 'meeting-visual' | 'finish' | 'directory' | 'archive' | 'learning' | null>(null);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('models');
+  const accountOpen = modal === 'settings' && settingsTab === 'account';
+  function openSettings(tab?: SettingsTab) {
+    setSidebarOpen(false);
+    setSettingsTab(current => tab ?? (current === 'account' ? 'models' : current));
+    setModal('settings');
+  }
   const [visited,setVisited]=useState({home:false,agent:false,settings:false});
   const homeActive=!id&&!agentOpen&&workspacePage!=='workspaces'&&modal!=='settings';
   useEffect(()=>{setVisited(current=>{
-    const next={home:current.home||homeActive,agent:current.agent||agentOpen,settings:current.settings||modal==='settings'};
+    const next={home:current.home||homeActive,agent:current.agent||agentOpen,settings:current.settings||(modal==='settings'&&!accountOpen)};
     return next.home===current.home&&next.agent===current.agent&&next.settings===current.settings?current:next;
-  });},[homeActive,agentOpen,modal]);
+  });},[homeActive,agentOpen,modal,accountOpen]);
 
   const [signals]=useState(createCaptureSignals);
   const [connectedKinds,setConnectedKinds]=useState<CaptureSignal['kind'][]>([]);
@@ -202,7 +208,7 @@ function Workspace() {
     pause: () => { if (!stopping.current) void stopCapture('pause'); },
     resume: () => { void startCapture('meeting'); },
     finish: () => { setError(''); setModal('finish'); },
-    settings: () => { setModal('settings'); },
+    settings: () => openSettings(),
     microphone: () => { void toggleMicrophone(); }
   });
   const updates = useClientUpdates({ authenticated: authReady, recording, paused: record?.capture === 'paused', busy: busy || stopping.current });
@@ -210,7 +216,15 @@ function Workspace() {
   const loadBoot = useCallback(() => {
     if (bootRequest.current) return bootRequest.current;
     const request = (async () => {
-    cacheEpoch.current++; recordCache.current.clear(); bootListReady.current=false; setError(''); try { const b = await api<Bootstrap>('/bootstrap'); setCsrf(b.csrf); setAudioTransport(b.audioTransport); setNativeAudioTransport(b.nativeAudioTransport); setLocalQueueBackend(Boolean(b.localAccount)); const [list, folders] = await Promise.all([api<{records: RecordListItem[]}>('/records'), api<{workspaces:WorkspaceDirectory[]}>('/workspaces')]);
+    cacheEpoch.current++; recordCache.current.clear(); bootListReady.current=false; setError(''); try { const b = await api<Bootstrap>('/bootstrap'); setCsrf(b.csrf);
+        if (b.privateSync && !b.localAccount) {
+          if (mobile) {
+            try { localStorage.setItem('lingji:mobile-email', b.email); } catch {}
+            setMobileEmail(b.email);
+          }
+          setBoot(b); setAuthReady(true); return true;
+        }
+        setAudioTransport(b.audioTransport); setNativeAudioTransport(b.nativeAudioTransport); setLocalQueueBackend(Boolean(b.localAccount)); const [list, folders] = await Promise.all([api<{records: RecordListItem[]}>('/records'), api<{workspaces:WorkspaceDirectory[]}>('/workspaces')]);
         setQueueRecords(list.records.map(r => r.id)); setDirectories(folders.workspaces);
         bootListReady.current = !listView.current.query && listView.current.scope === 'all';
         if (bootListReady.current) setRecords(list.records);
@@ -228,16 +242,32 @@ function Workspace() {
           }
         }
         return true; }
-    catch (e) { if (!(e instanceof ApiError && e.status === 401)) setError(messageOf(e)); setAuthReady(false); return false; } finally { setLoading(false); }
+    catch (e) { if (e instanceof ApiError && e.status === 401 && mobile) {
+          try { localStorage.removeItem('lingji:mobile-email'); } catch {}
+          setMobileEmail(null);
+        } else if (!(e instanceof ApiError && e.status === 401) && navigator.onLine) setError(messageOf(e));
+        setAuthReady(false);
+        return false; } finally { setLoading(false); }
     })();
     bootRequest.current = request;
     void request.then(() => { if (bootRequest.current === request) bootRequest.current = null; });
     return request;
-  }, []);
+  }, [mobile]);
   const refreshProviders = useCallback((state: Pick<Bootstrap,'providers'|'meetingAutomation'|'audioMinutesDefault'>) => {
     setBoot(current => current ? {...current,...state} : current);
   }, []);
   useEffect(() => { void loadBoot(); mounted.current = true; return () => { mounted.current = false; importRequest.current?.abort(); void capture.current?.stop(); }; }, [loadBoot]);
+  useEffect(() => {
+    if (!mobile) return;
+    const update = () => {
+      setOnline(navigator.onLine);
+      if (navigator.onLine && !authReady && !mobileRecording) void loadBoot();
+    };
+    addEventListener('online', update);
+    addEventListener('offline', update);
+    update();
+    return () => { removeEventListener('online', update); removeEventListener('offline', update); };
+  }, [mobile, loadBoot, authReady, mobileRecording]);
   const loadList = useCallback(async (signal?: AbortSignal) => {
     if (listView.current.query !== query || listView.current.scope !== scope) return;
     const version = ++listRequest.current, epoch = cacheEpoch.current;
@@ -249,21 +279,21 @@ function Workspace() {
     const epoch = cacheEpoch.current; const detail = await api<RecordDetail>(`/records/${current}`); if (epoch === cacheEpoch.current) rememberRecord(detail);
   }, [rememberRecord]);
   useEffect(() => {
-    if (!authReady) return;
+    if (!authReady || syncCompanion) return;
     if (bootListReady.current) {
       bootListReady.current = false;
       if (!query && scope === 'all') return;
     }
     const controller = new AbortController(); const timer = setTimeout(() => { loadList(controller.signal).catch(e => { if (e.name !== 'AbortError') setError(messageOf(e)); }); }, 180);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [loadList, authReady]);
+  }, [loadList, authReady, syncCompanion]);
   useEffect(() => {
     if (activeId.current !== id || !authReady) { void capture.current?.stop(); capture.current = null; setSignals([]); }
     activeId.current = id; if (!authReady) { cacheEpoch.current++; recordCache.current.clear(); } setRecord(recordCache.current.get(id) || null); setTranslationOpen(false); setEvidence(null);
   }, [id, authReady]);
   useEffect(() => { const params=new URLSearchParams({workspace:scope});if(id)params.set('record',id); history.replaceState(null,'',`?${params}`); }, [id,scope]);
   useEffect(() => {
-    if (!id || !authReady) { setConnectionState('idle'); return; }
+    if (!id || !authReady || syncCompanion) { setConnectionState('idle'); return; }
     const epoch = cacheEpoch.current;
     return subscribeToRecord<RecordDetail>({
       recordId: id, localBackend,
@@ -273,9 +303,9 @@ function Workspace() {
       onState: setConnectionState,
       onFatal: error => { recordCache.current.delete(id); setRecord(null); setError(messageOf(error)); if (error instanceof ApiError && error.status === 401) setAuthReady(false); }
     });
-  }, [id, authReady, online, localBackend, retryVersion, rememberRecord]);
+  }, [id, authReady, online, localBackend, retryVersion, rememberRecord, syncCompanion]);
   useEffect(() => {
-    if (!authReady || id) return;
+    if (!authReady || id || syncCompanion) return;
     const controller = new AbortController();
     const probe = async () => {
       try { await api('/health', 'GET', undefined, controller.signal); if (!controller.signal.aborted) setConnectionState('connected'); }
@@ -283,7 +313,7 @@ function Workspace() {
     };
     void probe(); const timer = setInterval(() => void probe(), 15000);
     return () => { controller.abort(); clearInterval(timer); };
-  }, [authReady, id, online, retryVersion]);
+  }, [authReady, id, online, retryVersion, syncCompanion]);
   const refreshLocalAudio = useCallback(async () => {
     const recordId=activeId.current;
     const [count,manifests]=await Promise.all([pendingCount(recordId),recordId ? localManifests(recordId) : Promise.resolve([])]);
@@ -300,7 +330,7 @@ function Workspace() {
   },[localBackend,refreshLocalAudio]);
   useEffect(()=>{if(authReady&&id)void refreshLocalAudio().catch(e=>setError(messageOf(e)));},[id,authReady,refreshLocalAudio]);
   useEffect(() => {
-    if (!authReady) return; const network = () => { setOnline(navigator.onLine); if (navigator.onLine || localBackend) void upload(); };
+    if (!authReady) return; const network = () => { setOnline(navigator.onLine); if (navigator.onLine) resetAudioUploadBackoff(); if (navigator.onLine || localBackend) void upload(); };
     addEventListener('online', network); addEventListener('offline', network); const timer = setInterval(upload, recording || pending ? 2500 : 15000);
     const visible = () => { if (document.visibilityState === 'visible') void upload(); };
     document.addEventListener('visibilitychange', visible); void upload();
@@ -483,40 +513,66 @@ function Workspace() {
     }catch(e){throw new Error(messageOf(e));}
   }
   useEffect(()=>{const open=()=>{setModal(null);setSidebarOpen(false);setTranslationOpen(false);setAgentOpen(true);};window.addEventListener('lingji:git-configure',open);return()=>window.removeEventListener('lingji:git-configure',open);},[]);
+  if (loading && mobile) return <main className="quick-mobile-app"><MobileEntry/></main>;
   if (loading) return <main className="loading-page" role="status"><Brand markOnly/><p>正在打开会议空间…</p></main>;
-  if (!authReady || !boot) return <Auth ready={loadBoot}/>;
+  function logoutCompanion() {
+    void api('/auth/logout', 'POST').then(() => {
+      storeAccountLogin();
+      if (mobile) {
+        try { localStorage.removeItem('lingji:mobile-email'); } catch {}
+        setMobileEmail(null);
+      }
+      setAuthReady(false); setBoot(null);
+    }).catch(failure => setError(messageOf(failure)));
+  }
+  if ((authReady && syncCompanion) || (mobile && mobileEmail)) return <main className={mobile ? 'sync-companion quick-mobile-app' : 'sync-companion'}>
+    {!mobile && <header className="surface-heading"><Brand /><h1>个人中心</h1>{online && <Button onClick={logoutCompanion}>退出账号</Button>}</header>}
+    {error && <FeedbackNotice key={error} message={error} error />}
+    {mobile ? <MobileEntryBoundary>
+      <Suspense fallback={<MobileEntry/>}>
+        <PrivateSyncSettings desktop={false} email={boot?.email || mobileEmail || undefined} accountLogin={accountLogin} mobile
+          mobileActive={setMobileRecording} recording={mobileRecording} signOut={logoutCompanion} online={online}/>
+      </Suspense>
+    </MobileEntryBoundary> : <Suspense fallback={<p role="status">正在加载个人中心…</p>}>
+      <PrivateSyncSettings desktop={false} email={boot?.email} accountLogin={accountLogin} online={online}/>
+    </Suspense>}
+  </main>;
+  if (!authReady || !boot) return <Auth ready={loadBoot} accountLogin={storeAccountLogin} mobile={mobile} prepare={mobile ? loadPrivateSyncSettings : undefined}/>;
   const sourceReady = boot.providers.asr || boot.providers.fixture;
   return <div className="app-shell"><a className="skip-link" href="#workspace">跳到会议内容</a>
-    <RecordingRuntime record={record} recording={recording} busy={busy||stopping.current} signals={signals} manifests={localAudio.recordId===record?.id?localAudio.manifests:[]} onError={setError}/><AppSidebar directories={directories} scope={scope} records={records} recordId={id} page={workspacePage} extensionOpen={agentOpen} settingsOpen={modal==='settings'} voiceOpen={voiceOpen} open={sidebarOpen} disabled={recording||busy} canRecord={sourceReady} name={localBackend?'我的会议空间':boot.email.split('@')[0]} account={localBackend?'本机账户':boot.email} version={<ClientVersion updates={updates}/>} notice={boot.providers.fixture&&<span className="fixture-badge">开发测试模式 · 测试数据</span>} tools={<>{!boot.localAccount&&<Button aria-label="退出登录" disabled={recording} onClick={async()=>{try{await api('/auth/logout','POST');setCsrf('');setQueueRecords([]);setAuthReady(false);selectRecord('');}catch(e){setError(messageOf(e));}}}><SignOut size={16}/></Button>}</>} chooseScope={chooseScope} navigate={page=>{chooseScope(scope);setWorkspacePage(page);}} selectRecord={next=>{setModal(null);setSidebarOpen(false);selectRecord(next);}} create={newDirectory} prepare={()=>{setSidebarOpen(false);setModal('new');}} quick={()=>{setSidebarOpen(false);void quickRecord();}} extensions={()=>{setModal(null);setSidebarOpen(false);setTranslationOpen(false);setAgentOpen(true);}} settings={()=>{setSidebarOpen(false);setModal('settings');}} voices={()=>{setSidebarOpen(false);setVoiceOpen(true);}} search={()=>{chooseScope(scope);setWorkspacePage('meetings');requestAnimationFrame(()=>document.getElementById('record-search')?.focus());}} close={closeSidebar}/>
+    <RecordingRuntime record={record} recording={recording} busy={busy||stopping.current} signals={signals} manifests={localAudio.recordId===record?.id?localAudio.manifests:[]} onError={setError}/><AppSidebar directories={directories} scope={scope} records={records} recordId={id} page={workspacePage} extensionOpen={agentOpen} settingsOpen={modal==='settings'} voiceOpen={voiceOpen} open={sidebarOpen} disabled={recording||busy} canRecord={sourceReady} name={desktopAccount ? (online ? accountOverview?.displayName || syncEmail || '' : '') : localBackend ? '我的会议空间' : boot.email.split('@')[0]} account={desktopAccount ? (online ? syncEmail || '' : '') : localBackend ? '本机账户' : boot.email} openAccount={desktopAccount ? () => openSettings('account') : undefined} accountOpen={accountOpen} version={<ClientVersion updates={updates} compact/>} notice={boot.providers.fixture&&<span className="fixture-badge">开发测试模式 · 测试数据</span>} tools={<>{!boot.localAccount&&<Button aria-label="退出登录" disabled={recording} onClick={async()=>{try{await api('/auth/logout','POST');setCsrf('');setQueueRecords([]);setAuthReady(false);selectRecord('');}catch(e){setError(messageOf(e));}}}><SignOut size={16}/></Button>}</>} chooseScope={chooseScope} navigate={page=>{chooseScope(scope);setWorkspacePage(page);}} selectRecord={next=>{setModal(null);setSidebarOpen(false);selectRecord(next);}} create={newDirectory} prepare={()=>{setSidebarOpen(false);setModal('new');}} quick={()=>{setSidebarOpen(false);void quickRecord();}} extensions={()=>{setModal(null);setSidebarOpen(false);setTranslationOpen(false);setAgentOpen(true);}} settings={()=>openSettings()} voices={()=>{setSidebarOpen(false);setVoiceOpen(true);}} search={()=>{chooseScope(scope);setWorkspacePage('meetings');requestAnimationFrame(()=>document.getElementById('record-search')?.focus());}} close={closeSidebar}/>
     <main id="workspace" className={`workspace ${translationOpen ? 'with-translation' : ''} ${modal==='settings'?'showing-settings':''} ${id&&!agentOpen?'showing-record':''} ${agentOpen?'showing-extensions':''} ${!id&&!agentOpen&&workspacePage==='meetings'?'is-meeting-list':''}`}><header className="topbar glass"><Button variant="ghost" className="mobile-navigation" aria-label="打开项目导航" aria-controls="project-sidebar" aria-expanded={sidebarOpen} onClick={()=>setSidebarOpen(true)}><House size={18}/></Button><div className="workbench-page-identity"><Brand markOnly/><div><button disabled={recording||busy} onClick={()=>chooseScope(scope)}>{agentOpen?agentTitle:workspacePage==='workspaces'?'所有项目空间':directoryName}</button></div></div><div className="search-box topbar-search"><MagnifyingGlass size={18}/><input id="record-search" type="search" aria-label="搜索当前目录会议内容" placeholder="搜索当前目录的会议、纪要与内容" value={query} onChange={e => setQuery(e.target.value)}/></div><Button className="context-toggle" onClick={()=>{setSidebarOpen(false);setContextOpen(true);}}>项目动态</Button><div className="workspace-automation-actions" ref={setGitActions}/><div className="sync-state" title="页面与记录服务的连接状态；与语音、AI 模型服务连接无关" data-connection-state={connectionState}><ConnectionStatus state={connectionState} localBackend={localBackend} online={online} pending={pending}/><ScrollToTop root={scrollRoot}/></div></header>
-      <div className="record-header-host" ref={setRecordHeaderTarget} hidden={!record||agentOpen||modal==='settings'}/><GitSyncNotifier/><div className="workspace-body">{(visited.settings||modal==='settings')&&<div className="settings-route" hidden={modal!=='settings'}><Suspense fallback={null}><SettingsPage voices={()=>setVoiceOpen(true)} openContext={()=>{setSidebarOpen(false);setContextOpen(true);}} close={()=>setModal(null)} boot={boot} record={record} recording={recording} busy={busy} updates={updates} saved={refreshProviders} language={async language=>{await mutate(`/records/${id}`,'PATCH',{language});}} translated={target=>setRecord(current=>current&&record&&current.id===record.id?{...current,translationTarget:target}:current)} diagnostics={()=>{const blob=new Blob([JSON.stringify({capabilities:capabilities(),storage:boot.storage,providers:boot.providers,pending,capture:record?.capture,transcription:record?.transcription},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='meeting-diagnostics.json';link.click();URL.revokeObjectURL(url);}} backup={()=>void (record?downloadPendingAudio(record.id):Promise.resolve(false)).then(downloaded=>{if(!downloaded)showToast('当前没有待传音频。');}).catch(e=>setError(messageOf(e)))}/></Suspense></div>}<div className="workspace-reading-row" inert={modal==='settings'}><div className="meeting-highlights-slot" ref={setFocusTarget}/><div ref={scrollRoot} className={`workspace-scroll ${!agentOpen && record ? 'record-reading' : ''}`} tabIndex={0} aria-label="会议内容滚动区">
-      {uploadIssue && !error && <FeedbackNotice key="audio-upload-retry" message={uploadIssue} action={{label:'立即重试',run:()=>void upload()}}/>}
+      <div className="record-header-host" ref={setRecordHeaderTarget} hidden={!record||agentOpen||modal==='settings'}/><GitSyncNotifier/><div className="workspace-body">{desktopAccount&&<div className="settings-route" hidden={!accountOpen}><section className="settings-page account-surface" onKeyDown={event=>{if(event.key==='Escape'&&!document.querySelector('dialog[open]'))setModal(null);}} aria-label={online&&syncEmail?'个人中心':'本地空间'}>
+        <header className="surface-heading"><Button variant="ghost" className="mobile-navigation" aria-label="打开项目导航" aria-controls="project-sidebar" aria-expanded={sidebarOpen} onClick={()=>{setContextOpen(false);setSidebarOpen(true);}}><House size={18}/></Button><Button variant="ghost" className="settings-back" aria-label="返回工作台" onClick={()=>setModal(null)}><Brand markOnly/></Button><div><h1>{online&&syncEmail?'个人中心':'本地空间'}</h1><p>{online&&syncEmail?'端侧加密':'会议保存在本机'}</p></div><Button className="context-toggle account-context-toggle" onClick={()=>setContextOpen(true)}>同步概览</Button></header>
+        <div className="settings-pages account-page"><div><Suspense fallback={<p role="status">正在加载账号…</p>}><PrivateSyncSettings desktop online={online} visible={accountOpen} record={record} recording={recording||busy} imported={()=>{void loadList().catch(()=>{});setHomeVersion(value=>value+1);}} restored={id=>{setModal(null);selectRecord(id);void loadList().catch(failure=>setError(messageOf(failure)));}} accountChanged={setSyncEmail} overviewChanged={setAccountOverview} localRecords={records} directories={directories}/></Suspense></div></div>
+      </section></div>}{(visited.settings||(modal==='settings'&&!accountOpen))&&<div className="settings-route" hidden={modal!=='settings'||accountOpen}><Suspense fallback={null}><SettingsPage tab={settingsTab} setTab={setSettingsTab} voices={()=>setVoiceOpen(true)} openContext={()=>{setSidebarOpen(false);setContextOpen(true);}} close={()=>setModal(null)} boot={boot} record={record} recording={recording} busy={busy} updates={updates} saved={refreshProviders} language={async language=>{await mutate(`/records/${id}`,'PATCH',{language});}} translated={target=>setRecord(current=>current&&record&&current.id===record.id?{...current,translationTarget:target}:current)} diagnostics={()=>{const blob=new Blob([JSON.stringify({capabilities:capabilities(),storage:boot.storage,providers:boot.providers,pending,capture:record?.capture,transcription:record?.transcription},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='meeting-diagnostics.json';link.click();URL.revokeObjectURL(url);}} backup={()=>void (record?downloadPendingAudio(record.id):Promise.resolve(false)).then(downloaded=>{if(!downloaded)showToast('当前没有待传音频。');}).catch(e=>setError(messageOf(e)))}/></Suspense></div>}<div className="workspace-reading-row" inert={modal==='settings'}><div className="meeting-highlights-slot" ref={setFocusTarget}/><div ref={scrollRoot} className={`workspace-scroll ${!agentOpen && record ? 'record-reading' : ''}`} tabIndex={0} aria-label="会议内容滚动区">
+      {uploadIssue && !error && <FeedbackNotice key="audio-upload-retry" message={uploadIssue} action={{label:'立即重试',run:()=>{resetAudioUploadBackoff();void upload();}}}/>}
       {id && !uploadIssue && connectionState==='reconnecting' && <FeedbackNotice key="connection-retry" message="实时更新暂时中断，正在重连记录服务。"/>}
       {id && record && connectionState==='unavailable' && <FeedbackNotice key="connection-unavailable" message="记录服务暂时不可用，正在自动重试。" action={{label: '重新连接', run: () => setRetryVersion(v=>v+1)}}/>}
 
       {(visited.home||homeActive)&&<div className="workspace-surface" hidden={!homeActive}><WorkspaceHome active={homeActive} browseAll={()=>{chooseScope('all');setWorkspacePage('meetings');}} overviewChanged={setWorkspaceOverview} key={`${scope}:${homeVersion}`} scope={scope} section={workspacePage==='workspaces'?'overview':workspacePage} records={records} query={query} modelReady={boot.providers.textMinutes ?? minutesAvailable(boot.providers)} disabled={recording||busy} open={selectRecord} archive={openArchive} create={newDirectory} edit={()=>{setEditingDirectory(directories.find(w=>w.id===scope));setModal('directory');}} quick={()=>void quickRecord()}/></div>}{(visited.agent||agentOpen)&&<div className="workspace-surface" hidden={!agentOpen}><Suspense fallback={<p role="status">正在打开扩展中心…</p>}><MeetingAgentCenter isVisible={agentOpen&&modal!=='settings'} titleChanged={setAgentTitle} automationChanged={setAutomationVisible} tasksTarget={agentOpen?automationTasksTarget:null} openContext={()=>{setSidebarOpen(false);setContextOpen(true);}} records={records} openRecord={selectRecord} footerTarget={agentOpen?gitActions:null}/></Suspense></div>}
       {agentOpen ? null : !id&&workspacePage==='workspaces' ? <section className="directory-gallery"><header className="surface-heading"><div><h1>所有项目空间</h1></div><Button disabled={recording||busy} onClick={newDirectory}><FolderPlus size={17}/>新建工作空间</Button></header><div className="directory-grid"><button onClick={()=>chooseScope('all')}><Folder size={23}/><strong>所有会议</strong></button>{directories.map(directory=><button key={directory.id} onClick={()=>chooseScope(directory.id)}><Folder size={23}/><strong>{directory.name}</strong>{directory.description&&<span>{directory.description}</span>}</button>)}</div></section> : !id ? null : !record ? <div className="empty" role="status">{connectionState==='unavailable' ? <><p>记录服务暂时不可用，正在自动重试。</p><Button onClick={()=>setRetryVersion(v=>v+1)}>重新连接</Button></> : connectionState==='inaccessible' ? '当前记录不可访问，请选择其他记录。' : '正在读取记录…'}</div> : <>{recordHeaderTarget&&createPortal(<section className="meeting-header glass" data-capture={record.capture} aria-label="会议头部"><div className="meeting-heading-row"><div className="meeting-heading-title"><div className="meeting-project-identity" title={directories.find(w=>w.id===record.workspaceId)?.name||directoryName}><Brand markOnly/><span><strong>{directories.find(w=>w.id===record.workspaceId)?.name||directoryName}</strong></span></div><Button variant="ghost" className="mobile-navigation" aria-label="打开项目导航" onClick={()=>setSidebarOpen(true)}><House size={18}/></Button>
-          <RecordTitle key={record.id} title={record.title} save={async title => { const saved = await mutate(`/records/${id}`, 'PATCH', {title}); if (saved) { await loadList(); showToast('会议标题已保存。'); } return saved; }}/></div><div className="record-meta" title={`${new Date(records.find(r=>r.id===id)?.createdAt || Date.now()).toLocaleDateString('zh-CN')} · 转录 v${record.transcriptRevision} · ${record.retentionDays} 天留存 · ${new Date(record.deleteAt).toLocaleDateString('zh-CN')} 到期 · ${directories.find(w=>w.id===record.workspaceId)?.name || '未归档'}`}><Status tone={recording ? 'live' : ''}>{recording ? '正在记录' : record.capture === 'completed' ? '已完成' : record.capture === 'sealed' ? '整理中' : record.capture === 'paused' ? '已暂停' : '待开始'}</Status>{['blocked','failed'].includes(record.transcription) && <Button className="record-warning" variant="ghost" aria-label="查看语音处理提示" title="查看语音处理提示" onClick={()=>setNoticeVersion(value=>value+1)}><WarningCircle size={15}/></Button>}<span className="record-start" title={new Date(records.find(item=>item.id===id)?.createdAt||Date.now()).toLocaleString('zh-CN')}>开始 {new Date(records.find(item=>item.id===id)?.createdAt||Date.now()).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}</span><RecordingProgress record={record} recording={recording} signals={signals} manifests={localAudio.recordId===record.id?localAudio.manifests:[]}/></div>
+          <RecordTitle key={record.id} title={record.title} save={async title => { const saved = await mutate(`/records/${id}`, 'PATCH', {title}); if (saved) { await loadList(); showToast('会议标题已保存。'); } return saved; }}/></div><div className="record-meta" title={`${new Date(records.find(r=>r.id===id)?.createdAt || Date.now()).toLocaleDateString('zh-CN')} · 转录 v${record.transcriptRevision} · ${record.retentionDays} 天留存 · ${new Date(record.deleteAt).toLocaleDateString('zh-CN')} 到期 · ${directories.find(w=>w.id===record.workspaceId)?.name || '未归档'}`}><Status tone={record.capture === 'recording' ? 'live' : ''}>{recording ? '正在记录' : record.capture === 'recording' ? receivingMobile ? '手机录音同步中' : '正在记录' : record.capture === 'completed' ? '已完成' : record.capture === 'sealed' ? '整理中' : record.capture === 'paused' ? '已暂停' : '待开始'}</Status>{['blocked','failed'].includes(record.transcription) && <Button className="record-warning" variant="ghost" aria-label="查看语音处理提示" title="查看语音处理提示" onClick={()=>setNoticeVersion(value=>value+1)}><WarningCircle size={15}/></Button>}<span className="record-start" title={new Date(records.find(item=>item.id===id)?.createdAt||Date.now()).toLocaleString('zh-CN')}>开始 {new Date(records.find(item=>item.id===id)?.createdAt||Date.now()).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}</span><RecordingProgress record={record} recording={recording} signals={signals} manifests={localAudio.recordId===record.id?localAudio.manifests:[]}/></div>
           <div className="actions meeting-actions"><Button className="meeting-icon context-toggle" aria-label="本场会议" onClick={()=>{setSidebarOpen(false);setContextOpen(true);}}><FileText size={17}/></Button><Button className="meeting-icon" aria-label="分享" title="分享" disabled={busy} onClick={()=>setModal('share')}><ShareNetwork size={17}/></Button><Button className="meeting-icon" aria-label="导出" title="导出" disabled={busy} onClick={()=>setModal('export')}><ArrowDown size={17}/></Button><div className="meeting-action-icons">{boot.learning?.enabled && <Button className="meeting-icon" aria-label="学习评审" title={!learningService.available ? learningService.status==='checking' ? '正在检测学习评审服务' : '学习评审服务未连接，恢复后自动启用' : record.learning?.status==='ready' ? `学习评审 · ${record.learning.groups}` : record.learning?.status==='running' || record.learning?.status==='queued' ? '待标注准备中' : '学习评审'} disabled={busy || !learningService.available || record.capture!=='completed'} onClick={()=>setModal('learning')}><Sparkle size={17}/></Button>}<Button className="meeting-icon" aria-label="实时翻译" title="实时翻译" aria-expanded={translationOpen} onClick={()=>setTranslationOpen(!translationOpen)}><Translate size={17}/>{record.translationTarget && <span className="live-dot"/>}</Button><Button className="meeting-icon" aria-label="归档" title={recording ? '录音结束后可归档' : '归档'} disabled={recording||busy} onClick={()=>openArchive([id])}><Archive size={17}/></Button><Button className="meeting-icon" aria-label="整理设置" title="整理设置" aria-expanded={minutesSettingsOpen} aria-controls="minutes-settings" onClick={()=>setMinutesSettingsOpen(!minutesSettingsOpen)}><GearSix size={17}/></Button><Button className="meeting-icon" variant="danger" aria-label="删除本次记录" disabled={recording||busy} onClick={() => setModal('delete')}><Trash size={18}/></Button></div></div></div>
         <RecordingPlayback key={record.id} record={record}/>
-        <MeetingControls record={record} recording={recording} busy={busy} phase={capturePhase} ready={sourceReady} signals={signals} cancelImport={importProgress !== null ? () => importRequest.current?.abort() : undefined} progress={importProgress === 1 ? '音频已读取，正在完成上传…' : importProgress !== null ? `正在导入音频 ${Math.round(importProgress * 100)}%` : undefined}
+        {!receivingMobile && <MeetingControls record={record} recording={recording} busy={busy} phase={capturePhase} ready={sourceReady} signals={signals} cancelImport={importProgress !== null ? () => importRequest.current?.abort() : undefined} progress={importProgress === 1 ? '音频已读取，正在完成上传…' : importProgress !== null ? `正在导入音频 ${Math.round(importProgress * 100)}%` : undefined}
       start={kind => void startCapture(kind)} quick={() => void quickRecord()} sources={() => setModal('capture')}
         screenshots={screenshots.supported&&screenshotSession?{active:screenshots.active,picking:screenshots.picking,toggle:()=>{if(screenshots.active)void screenshots.stop();else setModal('meeting-visual');}}:undefined}
         microphone={() => void toggleMicrophone()}
-        finish={() => { setError(''); setModal('finish'); }} importAudio={() => fileInput.current?.click()}/>{(screenshots.issue||record.visualRevision)?<p className="meeting-screenshot-status" role="status">{screenshots.issue||(record.minutes?.screenshotInput||record.liveMinutes?.screenshotInput
+        finish={() => { setError(''); setModal('finish'); }} importAudio={() => fileInput.current?.click()}/>}{(screenshots.issue||record.visualRevision)?<p className="meeting-screenshot-status" role="status">{screenshots.issue||(record.minutes?.screenshotInput||record.liveMinutes?.screenshotInput
           ? ((record.minutes?.screenshotInput||record.liveMinutes?.screenshotInput)?.used ? '纪要已参考会议截图' : '本次纪要未使用截图')
           : `已保存 ${record.visualRevision} 张会议截图`)}</p>:null}</section>,recordHeaderTarget)}
-      {!sourceReady && <FeedbackNotice key={`provider:${id}`} message="语音服务尚未配置。可先导入已有转录；录音前请在设置与诊断中配置服务。" action={{label: boot.canConfigure ? '检查配置' : '导入转录', run: () => setModal(boot.canConfigure ? 'settings' : 'import-text')}}/>}
-        {record.capture === 'recording' && !recording && <FeedbackNotice key={`recovery:${id}`} message="检测到上次未结束的采集。可继续录音，或封存本机已保存的片段。" action={{label: '整理本场记录', disabled: busy, run: () => setModal('finish')}}/>}
+      {!sourceReady && !receivingMobile && <FeedbackNotice key={`provider:${id}`} message="语音服务尚未配置。可先导入已有转录；录音前请在设置与诊断中配置服务。" action={{label: boot.canConfigure ? '检查配置' : '导入转录', run: () => setModal(boot.canConfigure ? 'settings' : 'import-text')}}/>}
+        {record.capture === 'recording' && !recording && !receivingMobile && <FeedbackNotice key={`recovery:${id}`} message="检测到上次未结束的采集。可继续录音，或封存本机已保存的片段。" action={{label: '整理本场记录', disabled: busy, run: () => setModal('finish')}}/>}
           <TranscriptionNotice active={['blocked', 'failed'].includes(record.transcription)} key={`transcription:${record.id}`} recordId={record.id} issue={record.transcriptionIssue} reopenVersion={noticeVersion} audioOnly={boot.providers.minutesMode === 'doubao-audio-only'} busy={busy} retained={record.retainAudio && !record.audioPurged && record.usage.samples > 0} retry={() => mutate(`/records/${id}/retry`, 'POST')} configure={boot.canConfigure ? () => setModal('settings') : undefined}/>
-    {!recording&&!['sealed','completed'].includes(record.capture)&&<div className="record-processing"><Button variant="ghost" onClick={()=>setModal('import-text')}><FileText size={16}/>导入文字</Button></div>}
+    {!recording&&!receivingMobile&&!['sealed','completed'].includes(record.capture)&&<div className="record-processing"><Button variant="ghost" onClick={()=>setModal('import-text')}><FileText size={16}/>导入文字</Button></div>}
         {record.capture === 'completed' && record.usage.samples > 0 && record.pendingChunks === 0 && record.segments.length === 0 && <FeedbackNotice key={`empty:${id}:${record.transcriptRevision}`} message="音频已处理完成，但未识别出可用语音。请检查麦克风输入、系统权限或共享音轨，再开始一段试录。"/>}<nav className="meeting-document-tabs" aria-label="会议内容"><div>{([['minutes','纪要'],['transcript','转录'],['notes','手记']] as const).map(([page,label])=><button key={page} aria-current={meetingPage===page?'page':undefined} onClick={()=>switchMeetingPage(page)}>{label}</button>)}</div><div className="meeting-views-slot" ref={setMeetingViewsTarget} aria-hidden={meetingPage!=='minutes'}/></nav><div className="meeting-page-panels"><div hidden={meetingPage!=='minutes'}><Suspense fallback={<p className="meeting-loading" role="status">正在加载纪要…</p>}><MinutesPanel contextVisible viewTarget={meetingViewsTarget} visible={meetingPage==='minutes'&&modal!=='settings'} focusTarget={focusTarget} focusSuspended={translationOpen||modal==='settings'} historyActionsRef={setMinutesActions} key={`minutes:${record.id}`} audioOnly={boot.providers.minutesMode === 'doubao-audio-only'} inline settingsOpen={minutesSettingsOpen} closeSettings={() => setMinutesSettingsOpen(false)} modelReady={minutesAvailable(boot.providers,record.realtimeAudioConsent)} realtimeMode={['openai-realtime', 'doubao-audio', 'doubao-audio-only'].includes(boot.providers.minutesMode || '') && (record.realtimeAudioConsent || !boot.providers.textMinutes || boot.providers.minutesMode==='doubao-audio-only')} automate={async (enabled, intervalSeconds) => { await mutate(`/records/${id}/automation`, 'PATCH', {enabled,intervalSeconds,realtimeAudioConsent: enabled && (record.realtimeAudioConsent || !boot.providers.textMinutes || boot.providers.minutesMode==='doubao-audio-only') && ['openai-realtime', 'doubao-audio', 'doubao-audio-only'].includes(boot.providers.minutesMode || '')}); }} record={record} busy={busy} onClose={()=>{}} cite={cite} generate={async (template,mode) => { await mutate(`/records/${id}/minutes`, 'POST', { template,mode,scope: record.capture === 'completed' ? 'final' : 'live',retry:true,realtimeAudioConsent: mode === 'model' && ['openai-realtime', 'doubao-audio', 'doubao-audio-only'].includes(boot.providers.minutesMode || '') }, false); }} edit={async minutes => { return mutate(`/records/${id}/minutes`, 'PATCH', { revision: minutes.revision, minutes:manualMinutesContent(minutes) }); }}/>
         </Suspense></div><div hidden={meetingPage!=='transcript'}><Suspense fallback={<p role="status">正在加载转录…</p>}><TranscriptHistory visible={meetingPage==='transcript'&&modal!=='settings'} expanded={meetingPage==='transcript'} actionsTarget={null} key={`transcript:${record.id}`} record={record} changed={refreshTranscript} save={saveTranscript}/></Suspense>
           </div><div hidden={meetingPage!=='notes'}><Notes key={`notes:${record.id}`} active={meetingPage==='notes'} record={record} save={async (notes, notesRevision) => { return mutate(`/records/${id}`, 'PATCH', { notes, notesRevision }); }}/>
 
       </div></div></>}
       </div>{record&&!agentOpen&&modal!=='settings'&&<MinutesUsage record={record} job={currentMinutesJob(record)}/>}</div><div className="content-follow-actions" data-content-follow-actions/></div>
-    </main><WorkbenchContext tasksRef={setAutomationTasksTarget} record={record} records={records} overview={workspaceOverview} name={record?directories.find(w=>w.id===record.workspaceId)?.name||directoryName:directoryName} mode={modal==='settings'?'settings':agentOpen?automationVisible?'automation':'extensions':record?'meeting':'workspace'} open={contextOpen} close={closeContext} cite={cite} selectRecord={selectRecord} translation={translationOpen&&modal!=='settings'&&!agentOpen}>{modal!=='settings'&&!agentOpen&&<>      {!translationOpen && !agentOpen && id && record && !['sealed','completed'].includes(record.capture) && <Suspense fallback={<p role="status">正在加载讨论…</p>}><CurrentDiscussion audioOnly={boot.providers.minutesMode === 'doubao-audio-only'} key={`discussion:${record.id}`} record={record} minutes={(record.liveMinutes || record.minutes) || null} job={currentMinutesJob(record)} modelReady={minutesAvailable(boot.providers,record.realtimeAudioConsent)}/></Suspense>}
+    </main><WorkbenchContext account={accountOverview} tasksRef={setAutomationTasksTarget} record={record} records={records} overview={workspaceOverview} name={record?directories.find(w=>w.id===record.workspaceId)?.name||directoryName:directoryName} mode={accountOpen?'account':modal==='settings'?'settings':agentOpen?automationVisible?'automation':'extensions':record?'meeting':'workspace'} open={contextOpen} close={closeContext} cite={cite} selectRecord={selectRecord} translation={translationOpen&&modal!=='settings'&&!agentOpen}>{modal!=='settings'&&!agentOpen&&<>      {!translationOpen && !agentOpen && id && record && !['sealed','completed'].includes(record.capture) && <Suspense fallback={<p role="status">正在加载讨论…</p>}><CurrentDiscussion audioOnly={boot.providers.minutesMode === 'doubao-audio-only'} key={`discussion:${record.id}`} record={record} minutes={(record.liveMinutes || record.minutes) || null} job={currentMinutesJob(record)} modelReady={minutesAvailable(boot.providers,record.realtimeAudioConsent)}/></Suspense>}
       {!agentOpen && record && translationOpen && <Suspense fallback={<p role="status">正在加载翻译…</p>}><TranslationPanel key={`translation:${record.id}`} record={record} ready={boot.providers.translation ?? minutesAvailable(boot.providers)} close={()=>setTranslationOpen(false)} configure={()=>{setTranslationOpen(false);setModal('settings');}} save={async target=>{const recordId=record.id;const saved=await api<RecordDetail>(`/records/${recordId}`,'PATCH',{translationTarget:target});setRecord(current=>current?.id===recordId && (current.translationRevision||0)<=(saved.translationRevision||0)?{...current,translationTarget:saved.translationTarget,translationRevision:saved.translationRevision}:current);}} inspect={segment=>cite({segmentId:segment.id,revision:segment.revision},record.segments,record.transcriptRevision)}/></Suspense>}
 </>}</WorkbenchContext><input ref={fileInput} className="sr-only" type="file" accept="audio/*" aria-label="导入音频文件" onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void onImport(file); }}/>
       {meetingAutomation && <Toast key={meetingAutomation.key} message={meetingAutomation.message} persistent warning dismiss={meetingAutomation.cancel} action={{label:'取消联动',run:meetingAutomation.cancel}}/>}

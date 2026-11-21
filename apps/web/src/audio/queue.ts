@@ -28,7 +28,11 @@ export async function ensureAudioCapacity() {
 let permittedRecords = new Set<string>(), uploading = false;
 let draining: Promise<void> | undefined;
 let wakeDrain: (() => void) | undefined;
-export const setQueueRecords = (ids: string[]) => { permittedRecords = new Set(ids); };
+const retryLanes = new Map<string, { recordId: string; attempts: number; nextAt: number; error: unknown }>();
+export function resetAudioUploadBackoff() { retryLanes.clear(); }
+export const setQueueRecords = (ids: string[]) => { permittedRecords = new Set(ids);
+  for (const [key, retry] of retryLanes) if (!permittedRecords.has(retry.recordId)) retryLanes.delete(key); };
+export const permitQueueRecord = (id: string) => { permittedRecords.add(id); };
 function db() {
   return database ||= new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open('meeting-studio-audio', 2);
@@ -159,7 +163,9 @@ export function drainQueue(onChange?:()=>void): Promise<void>{
     while(canUpload()){
       const notification=new Promise<void>(resolve=>{wakeDrain=resolve;});
       const generation=completed;
-      const entries=await heads(new Set([...blocked,...active.keys()]),parallelism()-active.size);
+      const excluded = new Set([...blocked,...active.keys()]);
+        for (const [key, retry] of retryLanes) if (Date.now() < retry.nextAt) excluded.add(key);
+        const entries=await heads(excluded,parallelism()-active.size);
       // ACKs can finish while IndexedDB is selecting heads. Re-read instead of
       // waiting on another source with an otherwise unused upload slot.
       if(completed!==generation)continue;
@@ -172,10 +178,18 @@ export function drainQueue(onChange?:()=>void): Promise<void>{
           trace('audio.queue-age',{recordId:entry.recordId,sourceId:entry.chunk.sourceId,queueMs:Date.now()-entry.createdAt,durationMs:Date.now()-entry.createdAt});
           try{
             await uploadAudio(`/records/${entry.recordId}/audio`,entry.chunk);
-            await remove(entry);trace('audio.ack',{recordId:entry.recordId,sourceId:entry.chunk.sourceId,sequence:entry.chunk.sequence,bytes:entry.bytes,durationMs:performance.now()-started});onChange?.();
+            await remove(entry);retryLanes.delete(key);trace('audio.ack',{recordId:entry.recordId,sourceId:entry.chunk.sourceId,sequence:entry.chunk.sequence,bytes:entry.bytes,durationMs:performance.now()-started});onChange?.();
           }catch(error){
-            if(error instanceof ApiError&&error.status===410){await remove(entry);onChange?.();}
-            else{blocked.add(key);if(!(error instanceof ApiError&&error.status===404))failure ||= error;}
+            if(error instanceof ApiError&&error.status===410){await remove(entry);retryLanes.delete(key);onChange?.();}
+            else {
+              blocked.add(key);
+              if (!(error instanceof ApiError && error.status===404)) {
+                const attempts = (retryLanes.get(key)?.attempts ?? 0) + 1;
+                const delay = Math.min(30_000, 1000 * 2 ** Math.min(attempts, 5) * (.8 + Math.random() * .4));
+                retryLanes.set(key, { recordId: entry.recordId, attempts, nextAt: Date.now() + delay, error });
+                failure ||= error;
+              }
+            }
           }
         })().catch(error=>{blocked.add(key);failure ||= error;}).finally(()=>{active.delete(key);completed++;});
         active.set(key,request);
@@ -187,11 +201,13 @@ export function drainQueue(onChange?:()=>void): Promise<void>{
       // Network, storage and account changes must never detach an in-flight ACK.
       await Promise.allSettled(active.values());
     }
+    failure ||= retryLanes.values().next().value?.error;
     if(failure)throw failure;
   }
 }
 
 export async function clearRecordAudio(recordId:string){
+  for (const [key, retry] of retryLanes) if (retry.recordId===recordId) retryLanes.delete(key);
   const connection=await db();
   // Cursor reads one payload at a time; aggregate byte accounting stays in the same transaction.
   await new Promise<void>((resolve,reject)=>{
