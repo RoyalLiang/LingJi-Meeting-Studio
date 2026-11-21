@@ -63,7 +63,7 @@
 }
 :is(.phone-auth,.mobile-workspace) input:not([type=checkbox],[type=range]) {
   min-width: 0; width: 100%; min-height: 46px; border: 1px solid var(--phone-line); border-radius: 10px;
-  padding: 9px 12px; background: var(--phone-field); color: var(--phone-ink); font-size: 16px;
+  padding: 9px 12px; background: var(--phone-field); color: var(--phone-ink); font-size: 16px; font-weight: 400;
 }
 :is(.phone-auth,.mobile-workspace) input::placeholder { color: var(--phone-muted); opacity: 1; }
 .phone-entry, .phone-auth {
@@ -73,7 +73,11 @@
 }
 .phone-entry { gap: 13px; text-align: center; }
 .phone-entry h1 { margin: 0; font-size: 1rem; font-weight: 600; }
-:is(.phone-entry,.phone-auth) .brand-mark { background: var(--phone-panel); border-radius: 14px; width: 50px; height: 50px; }
+:is(.phone-entry,.phone-auth) .brand .brand-mark.app-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 50px; height: 50px; padding: 8px;
+  background: var(--phone-panel); border-radius: 14px;
+}
 .phone-entry-indicator { color: var(--phone-muted); }
 .phone-entry-progress { width: 18px; height: 18px; border: 2px solid var(--phone-line); border-top-color: var(--phone-accent); border-radius: 50%; animation: phone-entry-turn 1s linear infinite; }
 @keyframes phone-entry-turn { to { transform: rotate(360deg); } }
