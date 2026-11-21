@@ -13,7 +13,7 @@ const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{1
 type Recording = { id: string; title: string; mime: string; total: number };
 type AudioPart = Recording & { index: number; data: string };
 type Outbox = { id: string; operations: EncryptedOperation[]; next: number };
-type Delta = { cursor: number; more: boolean; trimmed?: boolean; operations: (EncryptedOperation & { seq: number })[] };
+type Delta = { cursor: number; more: boolean; trimmed?: boolean; acknowledged?: number; operations: (EncryptedOperation & { seq: number })[] };
 const pendingDesktopReceipts = new Set<string>();
 
 let opening: Promise<IDBDatabase> | undefined;
@@ -115,11 +115,10 @@ export async function pushMobileRecordings(vault: Vault, signal: AbortSignal) {
   return { sent: next === recording.operations.length, pending: await request(db.transaction('outbox').objectStore('outbox').count(groups(vault))) };
 }
 
-async function pruneRemoteStream(path: string, vault: Vault, before: number, signal?: AbortSignal) {
-  if (before <= 0) return;
-  try {
-    await api(`${path}?vault=${encodeURIComponent(vault.id)}&before=${before}`, 'DELETE', undefined, signal);
-  } catch { /* Quota pruning is best-effort after durable desktop ingestion. */ }
+async function acknowledgeRemoteAudio(path: string, vault: Vault, cursor: number, acknowledged: number | undefined, signal: AbortSignal) {
+  // Older servers delete immediately, so only acknowledge when deferred reclamation is advertised.
+  if (acknowledged === undefined || !Number.isSafeInteger(acknowledged) || acknowledged < 0 || cursor <= acknowledged) return;
+  await api(`${path}?vault=${encodeURIComponent(vault.id)}&before=${cursor}`, 'DELETE', undefined, signal);
 }
 
 export async function receiveMobileRecordings(vault: Vault, root: Uint8Array<ArrayBuffer>, signal: AbortSignal) {
@@ -132,7 +131,7 @@ export async function receiveMobileRecordings(vault: Vault, root: Uint8Array<Arr
     for (let i = 0; i < batch.operations.length; i++) {
       const { seq, ...operation } = batch.operations[i];
       const allowedJump = i === 0 && batch.trimmed && seq > cursor;
-      if ((!allowedJump && seq !== ++cursor) || !uuid.test(operation.id)) throw new Error('录音同步游标不连续');
+      if (!Number.isSafeInteger(seq) || (!allowedJump && seq !== cursor + 1) || !uuid.test(operation.id)) throw new Error('录音同步游标不连续');
       cursor = seq;
       verified.push({ operation, part: await decode(operation, vault, root) });
     }
@@ -146,12 +145,25 @@ export async function receiveMobileRecordings(vault: Vault, root: Uint8Array<Arr
         const inbox = tx.objectStore('inbox'), pieces = tx.objectStore('parts');
         for (const { operation, part: { id, title, mime, total, index } } of verified) {
           pieces.put(operation, [...group(vault, id), index]);
-          if (index === total - 1) inbox.put({ id, title, mime, total } satisfies Recording, group(vault, id));
+          if (index === total - 1) {
+            const available = pieces.count(parts(vault, id));
+            available.onsuccess = () => {
+              if (available.result === total) inbox.put({ id, title, mime, total } satisfies Recording, group(vault, id));
+            };
+          }
         }
         cursors.put(cursor, vault.id);
       };
     });
-    if (!batch.more) break;
+    if (!batch.more) {
+      const snapshot = db.transaction(['cursor', 'parts'], 'readonly');
+      const [saved, remaining] = await Promise.all([
+        request<number | undefined>(snapshot.objectStore('cursor').get(vault.id)),
+        request(snapshot.objectStore('parts').count(IDBKeyRange.bound([vault.id], [vault.id, []]))),
+      ]);
+      if (remaining === 0) await acknowledgeRemoteAudio(endpoint, vault, Math.min(saved ?? 0, cursor), batch.acknowledged, signal);
+      break;
+    }
   }
 }
 
@@ -176,17 +188,11 @@ export async function nextMobileRecording(vault: Vault, root: Uint8Array<ArrayBu
   return { ...recording, file };
 }
 
-export async function acknowledgeMobileRecording(vault: Vault, id: string, signal?: AbortSignal) {
+export async function acknowledgeMobileRecording(vault: Vault, id: string) {
   await change(['inbox', 'parts'], tx => {
     tx.objectStore('inbox').delete(group(vault, id));
     tx.objectStore('parts').delete(parts(vault, id));
   });
-  const db = await database();
-  const remaining = await request(db.transaction('inbox').objectStore('inbox').count(groups(vault)));
-  if (remaining === 0) {
-    const cursor = await request<number | undefined>(db.transaction('cursor').objectStore('cursor').get(vault.id)) ?? 0;
-    await pruneRemoteStream(endpoint, vault, cursor, signal);
-  }
 }
 
 const livePurpose = 'mobile-live-audio/1';
@@ -268,39 +274,52 @@ function decodeLiveFrame(plain: Uint8Array): LiveFrame {
 
 export async function pullLiveAudio(
   vault: Vault, root: Uint8Array<ArrayBuffer>, receiver: 'phone' | 'desktop', signal: AbortSignal,
-  consume: (frame: LiveFrame) => void | Promise<void>
+  consume: (frame: LiveFrame) => void | boolean | Promise<void | boolean>
 ) {
   const db = await database();
   const key = [vault.id, receiver];
   const path = receiver === 'phone' ? receiptEndpoint : liveEndpoint;
-  const after = await request<number | undefined>(db.transaction('live-cursor').objectStore('live-cursor').get(key)) ?? 0;
+  const confirmedKey = [...key, 'confirmed'];
+  const stored = db.transaction('live-cursor').objectStore('live-cursor');
+  const [saved, savedConfirmation] = await Promise.all([
+    request<number | undefined>(stored.get(key)),
+    receiver === 'desktop' ? request<number | undefined>(stored.get(confirmedKey)) : undefined,
+  ]);
+  const after = saved ?? 0;
   const delta = await api<Delta>(path + '?vault=' + encodeURIComponent(vault.id) + '&after=' + after, 'GET', undefined, signal);
   let cursor = after;
+  const acknowledged = delta.acknowledged;
+  // Older clients only advanced their live cursor after the local consumer completed.
+  let confirmed = Math.max(savedConfirmation ?? after, acknowledged !== undefined && Number.isSafeInteger(acknowledged) ? acknowledged : 0);
   for (let i = 0; i < delta.operations.length; i++) {
     const { seq, ...operation } = delta.operations[i];
     signal.throwIfAborted();
     const allowedJump = i === 0 && delta.trimmed && seq > cursor;
-    if ((!allowedJump && seq !== ++cursor) || !uuid.test(operation.id)) throw new Error('实时录音同步游标不连续');
+    if (!Number.isSafeInteger(seq) || (!allowedJump && seq !== cursor + 1) || !uuid.test(operation.id)) throw new Error('实时录音同步游标不连续');
     cursor = seq;
     const plain = await unseal(root, vault, livePurpose, operation.id, operation);
     let frame: LiveFrame;
     try { frame = decodeLiveFrame(plain); }
     finally { plain.fill(0); }
     if ((frame.kind === 'received') !== (receiver === 'phone')) throw new Error('实时录音事件类型无效');
-    await consume(frame);
+    const durable = await consume(frame);
+    if (durable !== false && seq === confirmed + 1) confirmed = seq;
   }
   if (!delta.operations.length && delta.trimmed && delta.cursor > cursor) cursor = delta.cursor;
   if (cursor !== delta.cursor || (cursor === after && delta.more)) throw new Error('实时录音同步游标无效');
-  if (cursor === after) return false;
-  await change(['live-cursor'], tx => {
+  if (cursor > after || (receiver === 'desktop' && savedConfirmation === undefined && after > 0)) await change(['live-cursor'], tx => {
     const store = tx.objectStore('live-cursor');
-    const saved = store.get(key);
-    saved.onsuccess = () => {
-      if (cursor > (saved.result ?? 0)) store.put(cursor, key);
+    const advance = (storageKey: string[], value: number) => {
+      const prior = store.get(storageKey);
+      prior.onsuccess = () => {
+        if (prior.result === undefined || value > prior.result) store.put(value, storageKey);
+      };
     };
+    advance(key, cursor);
+    if (receiver === 'desktop') advance(confirmedKey, Math.min(confirmed, cursor));
   });
-  if (receiver === 'desktop' && delta.operations.length > 0) {
-    await pruneRemoteStream(liveEndpoint, vault, cursor, signal);
+  if (receiver === 'desktop') {
+    await acknowledgeRemoteAudio(liveEndpoint, vault, Math.min(confirmed, cursor), delta.acknowledged, signal);
   }
   return delta.more;
 }

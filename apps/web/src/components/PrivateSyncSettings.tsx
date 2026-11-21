@@ -322,7 +322,7 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
                 lastSequence: source.lastSequence ?? manifests.find(manifest => manifest.sourceId === source.id && manifest.epoch === source.epoch)?.lastSequence ?? source.watermark })),
             }, signal);
           }
-          await acknowledgeMobileRecording(localVault, next.id, signal);
+          await acknowledgeMobileRecording(localVault, next.id);
           if (!signal.aborted) importedCallback.current?.();
         }
         if (!signal.aborted) setBackgroundIssue('');

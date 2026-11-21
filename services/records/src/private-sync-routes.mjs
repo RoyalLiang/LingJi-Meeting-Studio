@@ -112,7 +112,7 @@ export function createPrivateSyncRoutes({ store, origin, repo, auth }) {
       const before = url.searchParams.get('before') ?? '';
       const id = url.searchParams.get('vault');
       requireThat(validId(id) && /^\d{1,15}$/.test(before) && Number(before) > 0, 'sync_invalid_cursor', 400);
-      send(res, 200, await store.prune(owner + ':' + route, id, Number(before), owner));
+      send(res, 200, await store.acknowledgeAudio(owner + ':' + route, id, Number(before), owner));
     } else if ((route === 'delta' || audioStream) && method === 'POST') {
       const { vault, operations } = await readBody(req, SYNC_PAGE_BYTES);
       requireThat(validId(vault) && Array.isArray(operations) && operations.length >= 1 && operations.length <= 64, 'sync_invalid_operations', 400);

@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';import http from 'node:http';import{gunzipSync}from'node:zlib';import{mkdtemp,writeFile,rm}from'node:fs/promises';import{tmpdir}from'node:os';import{join}from'node:path';
 import{sendHttpPayload}from'../services/records/src/http-response.mjs';import{createProductionServer}from'../apps/web/src/production-server.mjs';
-const raw=(server,encoding='gzip',method='GET',path='/')=>new Promise((resolve,reject)=>{http.get({host:'127.0.0.1',port:server.address().port,path,method,headers:{'Accept-Encoding':encoding}},res=>{const chunks=[];res.on('data',c=>chunks.push(c));res.on('end',()=>resolve({headers:res.headers,body:Buffer.concat(chunks)}));}).on('error',reject);});
+const raw=(server,encoding='gzip',method='GET',path='/')=>new Promise((resolve,reject)=>{http.get({host:'127.0.0.1',port:server.address().port,path,method,headers:{'Accept-Encoding':encoding}},res=>{const chunks=[];res.on('data',c=>chunks.push(c));res.on('end',()=>resolve({status:res.statusCode,headers:res.headers,body:Buffer.concat(chunks)}));}).on('error',reject);});
 const listen=server=>new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 test('JSON transport compresses losslessly, respects opt-out and coalesces concurrent reads',async t=>{
  const payload=Buffer.from(JSON.stringify({segments:Array.from({length:3000},(_,i)=>({id:i,text:'会议纪要保留人工修订和原文引用。',revision:1}))}));
@@ -16,15 +16,25 @@ test('production static cache serves compressed HTML and notices edited files',a
  await writeFile(join(root,'index.html'),'<main>更新后的配置页面</main>'.repeat(1000));const changed=await raw(server);assert.match(gunzipSync(changed.body).toString(),/更新后的配置页面/);assert.notDeepEqual(changed.body,first.body);
 });
 
-test('web production server serves the desktop workbench SPA without a separate web quick-record entry', async t => {
+test('legacy APK sees an upgrade page without restoring the web recorder or its cache', async t => {
  const root = await mkdtemp(join(tmpdir(),'lingji-phone-html-'));
  t.after(() => rm(root,{recursive:true,force:true}));
  await writeFile(join(root,'index.html'),'<main>Desktop workbench</main>');
  const server = createProductionServer({root});
  await listen(server);
  t.after(() => server.close());
- const fallback = await raw(server,'identity','GET','/quick-record?install=1');
- assert.match(fallback.headers['content-type'],/text\/html/);
- assert.match(fallback.body.toString(),/Desktop workbench/);
+ for (const path of ['/quick-record?install=1', '/quick-record/', '/mobile-app']) {
+  const page = await raw(server,'identity','GET',path);
+  assert.equal(page.status,200);
+  assert.equal(page.headers['cache-control'],'no-store');
+  assert.match(page.body.toString(),/<main id="root">\s*<h1>请更新聆记 App<\/h1>/);
+  assert.doesNotMatch(page.body.toString(),/Desktop workbench|<script/);
+ }
+ const worker = await raw(server,'identity','GET','/quick-record-sw.js');
+ assert.equal(worker.status,200);
+ assert.equal(worker.headers['cache-control'],'no-store');
+ assert.match(worker.body.toString(),/registration\.unregister/);
+ assert.match(worker.body.toString(),/lingji-quick-record-/);
  assert.match((await raw(server,'identity')).body.toString(),/Desktop workbench/);
+ assert.match((await raw(server,'identity','GET','/shared/meeting')).body.toString(),/Desktop workbench/);
 });

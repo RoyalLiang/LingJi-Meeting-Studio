@@ -42,9 +42,15 @@ npm run build:web
 
 Web 端不再提供独立的手机浏览器快速记录入口，手机快速记录统一通过 Android App（`apps/android-preview`）提供。构建 APK 时通过 `npm run build:mobile` 生成独立的手机端静态资源并直接打入 APK `assets/mobile/`，打开 App 时由 `MainActivity` 通过 `shouldInterceptRequest` 在本机离线加载界面与音频脚本（零网络等待），仅将 `/api/*` 同步请求发往同步服务。
 
+旧 APK 联网访问 `/quick-record` 时会显示更新说明。使用同一签名的新版 APK 覆盖安装，可继续访问旧版保存的本机录音。
+
 在手机 App 登录后点中央麦克风开始录音。再点一次暂停，按钮上方可选择**继续**或**结束**。单次最多录 5 分钟，最后 30 秒会提示即将自动保存。保存后到**会议**查看已同步纪要、原文与手记，并可清理本机回听副本。
 
-手机和电脑登录同一账号。手机按片加密保存音频并立即上传；桌面端在落盘确认后自动清理云端已消费的实时音频密文以释放 64 MiB 试点空间。Android 测试 APK 支持 Android 9 及以上，使用 `apps/android-preview/build.sh` 和 Android SDK 35、Build Tools 35.0.0 构建。配置 `JAVA_HOME`、`ANDROID_SDK_ROOT` 和专用测试签名文件路径 `ANDROID_PREVIEW_KEYSTORE` 后，传入 APK 的绝对输出路径。
+手机和电脑登录同一账号。手机按片加密保存音频并立即上传。桌面落盘后确认连续游标，云端继续保留这些密文供其他设备读取。两类手机音频共享 64 MiB 空间，新上传遇到配额时从最早已确认的片段回收所需空间。回收后保留操作序号和密文指纹，重试会返回原始回执。如果可回收的已确认片段不足，手机保留待传内容，等桌面完成接收后继续补传。
+
+较晚连接的电脑可能遇到已经回收的音频。它会跳过缺少开头的录音片段，继续接收后续完整录音。已生成的原文、纪要和手记可从加密会议同步获取，需在持有完整会议的电脑开启自动同步或手动同步该会议。
+
+Android 测试 APK 支持 Android 9 及以上，使用 `apps/android-preview/build.sh` 和 Android SDK 35、Build Tools 35.0.0 构建。配置 `JAVA_HOME`、`ANDROID_SDK_ROOT` 和专用测试签名文件路径 `ANDROID_PREVIEW_KEYSTORE` 后，传入 APK 的绝对输出路径。
 
 
 ## 设备和双重验证

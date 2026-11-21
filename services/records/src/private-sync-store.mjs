@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { requireThat } from '../../../packages/records/src/record.mjs';
 
@@ -9,6 +10,8 @@ const LIVE_RECEIPT_QUOTA = 1024 * 1024;
 const schema = [
   'CREATE TABLE IF NOT EXISTS sync_vaults (owner TEXT PRIMARY KEY, data TEXT NOT NULL, head BIGINT NOT NULL, bytes BIGINT NOT NULL)',
   'CREATE TABLE IF NOT EXISTS sync_delta (owner TEXT NOT NULL, seq BIGINT NOT NULL, op TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(owner,seq), UNIQUE(owner,op))',
+  'CREATE TABLE IF NOT EXISTS sync_audio_retention (owner TEXT PRIMARY KEY, acknowledged BIGINT NOT NULL)',
+  'CREATE TABLE IF NOT EXISTS sync_audio_retired_ops (owner TEXT NOT NULL, op TEXT NOT NULL, seq BIGINT NOT NULL, fingerprint TEXT NOT NULL, PRIMARY KEY(owner,op))',
   'CREATE TABLE IF NOT EXISTS sync_credentials (owner TEXT NOT NULL, id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(owner,id))',
   'CREATE TABLE IF NOT EXISTS sync_pairs (owner TEXT NOT NULL, id TEXT NOT NULL, expires BIGINT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(owner,id))',
   'CREATE INDEX IF NOT EXISTS sync_pair_expiry ON sync_pairs(owner,expires)',
@@ -75,7 +78,39 @@ export async function createPrivateSyncStore({ root, pool }) {
     throw error;
   }
   const decode = row => row && JSON.parse(row.data);
+  const fingerprint = data => createHash('sha256').update(data).digest('hex');
+  const operationBytes = pool ? 'octet_length(data)' : 'length(CAST(data AS BLOB))';
 
+  async function reclaimAudio(conn, owner, needed) {
+    if (needed <= 0) return 0;
+    const [checkpoint] = await run(conn, 'SELECT acknowledged FROM sync_audio_retention WHERE owner=$1', [owner]);
+    if (!checkpoint) return 0;
+    let reclaimed = 0;
+    while (reclaimed < needed) {
+      const rows = await run(conn, `WITH page AS (
+        SELECT seq, ${operationBytes} AS bytes FROM sync_delta WHERE owner=$1 AND seq<=$2 ORDER BY seq LIMIT $3
+      ), eligible AS (
+        SELECT seq, COALESCE(SUM(bytes) OVER (ORDER BY seq ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),0) AS earlier_bytes FROM page
+      )
+        SELECT delta.seq,delta.op,delta.data FROM eligible JOIN sync_delta AS delta ON delta.owner=$1 AND delta.seq=eligible.seq
+        WHERE eligible.earlier_bytes<$4 ORDER BY delta.seq`, [owner, checkpoint.acknowledged, PAGE_OPERATIONS, needed - reclaimed]);
+      if (!rows.length) break;
+      const params = [owner];
+      const values = [];
+      let retired = 0;
+      for (const row of rows) {
+        retired = Number(row.seq);
+        reclaimed += Buffer.byteLength(row.data);
+        params.push(row.op, row.seq, fingerprint(row.data));
+        values.push(`($1,$${params.length - 2},$${params.length - 1},$${params.length})`);
+      }
+      // Retain only each operation's fingerprint so a lost response can be retried after reclamation.
+      await run(conn, `INSERT INTO sync_audio_retired_ops(owner,op,seq,fingerprint) VALUES ${values.join(',')}`, params);
+      await run(conn, 'DELETE FROM sync_delta WHERE owner=$1 AND seq<=$2', [owner, retired]);
+    }
+    if (reclaimed > 0) await run(conn, 'UPDATE sync_vaults SET bytes=bytes-$2 WHERE owner=$1', [owner, reclaimed]);
+    return reclaimed;
+  }
 
   const reserved = row => Number(row.head) < -Date.now();
   async function canReplaceEmpty(conn, owner, row) {
@@ -127,34 +162,48 @@ export async function createPrivateSyncStore({ root, pool }) {
   },
   push(owner, vaultId, operations, parentOwner) {
       return write(async conn => {
+        // The two audio streams share one quota, so their writes and cleanup share the parent lock.
+        const receipts = parentOwner && owner === parentOwner + ':live-receipts';
+        const sibling = !parentOwner || receipts ? null
+          : parentOwner + (owner === parentOwner + ':audio' ? ':live-audio' : ':audio');
         if (parentOwner) {
-          const [parent] = await run(conn, 'SELECT head FROM sync_vaults WHERE owner=$1' + (pool ? ' FOR SHARE' : ''), [parentOwner]);
+          const [parent] = await run(conn, 'SELECT data,head FROM sync_vaults WHERE owner=$1' + (pool ? (sibling ? ' FOR UPDATE' : ' FOR SHARE') : ''), [parentOwner]);
           requireThat(parent && !reserved(parent), 'sync_legacy_history', 409);
+          requireThat(decode(parent)?.id === vaultId, 'sync_vault_unavailable', 404);
         }
         const [row] = await run(conn, 'SELECT data,head,bytes FROM sync_vaults WHERE owner=$1' + (pool ? ' FOR UPDATE' : ''), [owner]);
         requireThat(decode(row)?.id === vaultId, 'sync_vault_unavailable', 404);
         requireThat(!reserved(row), 'sync_legacy_history', 409);
         const acknowledgements = [];
         let head = Math.max(0, Number(row.head)), bytes = Number(row.bytes);
-      // A full audio journal must still accept receipts for durable desktop audio.
-      const receipts = parentOwner && owner === parentOwner + ':live-receipts';
-      const sibling = !parentOwner || receipts ? null
-        : parentOwner + (owner === parentOwner + ':audio' ? ':live-audio' : ':audio');
-      const [other] = sibling ? await run(conn, 'SELECT bytes FROM sync_vaults WHERE owner=$1', [sibling]) : [];
-      const quota = receipts ? LIVE_RECEIPT_QUOTA : VAULT_QUOTA - Number(other?.bytes || 0);
+        // A full audio journal must still accept receipts for durable desktop audio.
+        const [other] = sibling ? await run(conn, 'SELECT bytes FROM sync_vaults WHERE owner=$1', [sibling]) : [];
+        let quota = receipts ? LIVE_RECEIPT_QUOTA : VAULT_QUOTA - Number(other?.bytes || 0);
+        const pending = new Map();
         for (const operation of operations) {
           const data = JSON.stringify(operation);
-          const [prior] = await run(conn, 'SELECT seq,data FROM sync_delta WHERE owner=$1 AND op=$2', [owner, operation.id]);
+          const prior = pending.get(operation.id) ?? (await run(conn,
+            'SELECT seq,data,NULL AS fingerprint FROM sync_delta WHERE owner=$1 AND op=$2'
+            + (sibling ? ' UNION ALL SELECT seq,NULL,fingerprint FROM sync_audio_retired_ops WHERE owner=$1 AND op=$2' : ''),
+            [owner, operation.id]))[0];
           if (prior) {
-            requireThat(prior.data === data, 'sync_operation_conflict', 409);
+            requireThat(prior.data === data || (prior.fingerprint && prior.fingerprint === fingerprint(data)), 'sync_operation_conflict', 409);
             acknowledgements.push({ id: operation.id, seq: Number(prior.seq) });
             continue;
           }
           bytes += Buffer.byteLength(data);
-          requireThat(bytes <= quota, 'sync_quota_exceeded', 413);
           head++;
-          await run(conn, 'INSERT INTO sync_delta(owner,seq,op,data) VALUES($1,$2,$3,$4)', [owner, head, operation.id, data]);
+          pending.set(operation.id, { seq: head, data });
           acknowledgements.push({ id: operation.id, seq: head });
+        }
+        if (pending.size === 0) return { acknowledgements };
+        if (sibling && bytes > quota) {
+          bytes -= await reclaimAudio(conn, owner, bytes - quota);
+          quota += await reclaimAudio(conn, sibling, bytes - quota);
+        }
+        requireThat(bytes <= quota, 'sync_quota_exceeded', 413);
+        for (const [id, operation] of pending) {
+          await run(conn, 'INSERT INTO sync_delta(owner,seq,op,data) VALUES($1,$2,$3,$4)', [owner, operation.seq, id, operation.data]);
         }
         await run(conn, 'UPDATE sync_vaults SET head=$2,bytes=$3 WHERE owner=$1', [owner, head, bytes]);
         return { acknowledgements };
@@ -183,17 +232,19 @@ export async function createPrivateSyncStore({ root, pool }) {
     },
     pullSubstream(parentOwner, owner, vaultId, after) {
       return read(async conn => {
+        const audio = owner !== parentOwner + ':live-receipts';
         const rows = await run(conn, 'SELECT owner,data,head FROM sync_vaults WHERE owner IN ($1,$2)', [parentOwner, owner]);
         const parent = rows.find(item => item.owner === parentOwner);
         requireThat(decode(parent)?.id === vaultId, 'sync_vault_unavailable', 404);
         const stream = rows.find(item => item.owner === owner);
         if (!stream) {
           requireThat(after === 0, 'sync_cursor_ahead', 409);
-          return { operations: [], cursor: 0, more: false };
+          return { operations: [], cursor: 0, more: false, ...(audio ? { acknowledged: 0 } : {}) };
         }
         requireThat(decode(stream)?.id === vaultId, 'sync_vault_unavailable', 404);
         const head = Math.max(0, Number(stream.head));
         requireThat(after <= head, 'sync_invalid_cursor', 409);
+        const [checkpoint] = audio ? await run(conn, 'SELECT acknowledged FROM sync_audio_retention WHERE owner=$1', [owner]) : [];
         const deltaRows = await run(conn,
           'SELECT seq,data FROM sync_delta WHERE owner=$1 AND seq>$2 AND seq<=$3 ORDER BY seq LIMIT $4',
           [owner, after, head, PAGE_OPERATIONS]);
@@ -206,28 +257,22 @@ export async function createPrivateSyncStore({ root, pool }) {
         }
         const trimmed = deltaRows.length ? Number(deltaRows[0].seq) > after + 1 : after < head;
         const cursor = operations.at(-1)?.seq ?? (trimmed ? head : after);
-        return { operations, cursor, more: cursor < head, ...(trimmed ? { trimmed: true } : {}) };
+        return { operations, cursor, more: cursor < head, ...(trimmed ? { trimmed: true } : {}),
+          ...(audio ? { acknowledged: Math.min(head, Number(checkpoint?.acknowledged || 0)) } : {}) };
       });
     },
-    prune(owner, vaultId, beforeSeq, parentOwner) {
+    acknowledgeAudio(owner, vaultId, beforeSeq, parentOwner) {
       return write(async conn => {
-        if (parentOwner) {
-          const [parent] = await run(conn, 'SELECT data,head FROM sync_vaults WHERE owner=$1' + (pool ? ' FOR SHARE' : ''), [parentOwner]);
-          requireThat(decode(parent)?.id === vaultId && !reserved(parent), 'sync_vault_unavailable', 404);
-        }
-        const [row] = await run(conn, 'SELECT data,head,bytes FROM sync_vaults WHERE owner=$1' + (pool ? ' FOR UPDATE' : ''), [owner]);
-        if (!row) return { pruned: 0, bytes: 0 };
-        requireThat(decode(row)?.id === vaultId, 'sync_vault_unavailable', 404);
-        const head = Math.max(0, Number(row.head));
-        const upto = Math.min(Math.max(0, beforeSeq), head);
-        if (upto <= 0) return { pruned: 0, bytes: Number(row.bytes) };
-        const deleted = await run(conn, 'DELETE FROM sync_delta WHERE owner=$1 AND seq<=$2 RETURNING seq', [owner, upto]);
-        if (!deleted.length) return { pruned: 0, bytes: Number(row.bytes) };
-        const sizeExpr = pool ? 'COALESCE(SUM(octet_length(data)),0)' : 'COALESCE(SUM(length(CAST(data AS BLOB))),0)';
-        const [total] = await run(conn, `SELECT ${sizeExpr} AS bytes FROM sync_delta WHERE owner=$1`, [owner]);
-        const bytes = Number(total?.bytes || 0);
-        await run(conn, 'UPDATE sync_vaults SET bytes=$2 WHERE owner=$1', [owner, bytes]);
-        return { pruned: deleted.length, bytes };
+        const [parent] = await run(conn, 'SELECT data,head FROM sync_vaults WHERE owner=$1' + (pool ? ' FOR UPDATE' : ''), [parentOwner]);
+        requireThat(decode(parent)?.id === vaultId && !reserved(parent), 'sync_vault_unavailable', 404);
+        const [row] = await run(conn, 'SELECT data,head,bytes FROM sync_vaults WHERE owner=$1', [owner]);
+        requireThat(row && decode(row)?.id === vaultId, 'sync_vault_unavailable', 404);
+        requireThat(beforeSeq <= Number(row.head), 'sync_cursor_ahead', 409);
+        const [updated] = await run(conn, `INSERT INTO sync_audio_retention(owner,acknowledged) VALUES($1,$2)
+          ON CONFLICT(owner) DO UPDATE SET acknowledged=excluded.acknowledged
+          WHERE sync_audio_retention.acknowledged<excluded.acknowledged RETURNING acknowledged`, [owner, beforeSeq]);
+        const [existing] = updated ? [] : await run(conn, 'SELECT acknowledged FROM sync_audio_retention WHERE owner=$1', [owner]);
+        return { acknowledged: Number((updated || existing).acknowledged), bytes: Number(row.bytes) };
       });
     },
     saveAuthChallenge(id, payload, now, ttlMs, limit) {

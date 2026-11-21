@@ -6,6 +6,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { build } from 'esbuild';
 import * as opaque from '@serenity-kit/opaque';
 import { encodeCBOR } from '@levischuck/tiny-cbor';
 import 'fake-indexeddb/auto';
@@ -295,7 +296,7 @@ test('encrypted mobile audio has its own idempotent cursor and imports only once
   const { vault, root } = await createVault();
   assert.equal((await phone('/private-sync/vault', 'PUT', vault)).status, 201);
   const after = '?vault=' + vault.id;
-  assert.deepEqual((await phone('/private-sync/audio' + after)).data, { cursor: 0, more: false, operations: [] });
+  assert.deepEqual((await phone('/private-sync/audio' + after)).data, { cursor: 0, more: false, operations: [], acknowledged: 0 });
   const partId = randomUUID();
   const operation = { id: partId, ...await seal(root, vault, 'mobile-audio/1', partId, encoder.encode(stamp)) };
   const payload = { vault: vault.id, operations: [operation] };
@@ -371,6 +372,12 @@ test('live audio is visible before sealing and has an isolated durable receipt j
   }
   const received = await append('/private-sync/live-audio', frame);
   assert.deepEqual(received, frame);
+  const confirmed = await phone('/private-sync/live-audio' + query + '&before=1', 'DELETE');
+  assert.equal(confirmed.status, 200);
+  assert.equal(confirmed.data.acknowledged, 1);
+  const later = (await phone('/private-sync/live-audio' + query)).data;
+  assert.equal(later.acknowledged, 1);
+  assert.equal(later.operations[0]?.seq, 1, 'an independent reader at cursor zero still gets the audio');
   assert.equal((await phone('/private-sync/audio' + query)).data.cursor, 0);
   assert.equal((await phone('/private-sync/live-receipts' + query)).data.cursor, 0);
   assert.equal((await phone('/private-sync/vault')).data.emptyUpgrade, undefined);
@@ -587,7 +594,8 @@ test('a full live audio journal still accepts an independent desktop receipt', a
   assert.equal((await store.usage(owner)).audio, 64 * 1024 * 1024);
 });
 
-test('pruning consumed live audio frees quota while preserving monotonic cursors', async t => {
+test('lagging desktops retain audio until quota pressure reclaims acknowledged ciphertext', async t => {
+  const { DatabaseSync } = await import('node:sqlite');
   const root = await mkdtemp(join(tmpdir(), 'lingji-private-sync-prune-'));
   const store = await createPrivateSyncStore({ root });
   t.after(async () => { await store.close(); await rm(root, { recursive: true, force: true }); });
@@ -599,22 +607,106 @@ test('pruning consumed live audio frees quota while preserving monotonic cursors
   await store.push(owner + ':live-audio', vault.id, firstBatch, owner);
   const beforePrune = (await store.usage(owner)).audio;
   assert.ok(beforePrune > 4096);
-  const pruned = await store.prune(owner + ':live-audio', vault.id, 3, owner);
-  assert.equal(pruned.pruned, 3);
-  assert.ok((await store.usage(owner)).audio < beforePrune / 2);
+  await store.acknowledgeAudio(owner + ':live-audio', vault.id, 3, owner);
   const pulled = await store.pullSubstream(owner, owner + ':live-audio', vault.id, 0);
-  assert.equal(pulled.trimmed, true);
-  assert.equal(pulled.operations.length, 1);
-  assert.equal(pulled.operations[0].seq, 4);
-  assert.equal(pulled.cursor, 4);
-  const prunedAll = await store.prune(owner + ':live-audio', vault.id, 4, owner);
-  assert.equal(prunedAll.pruned, 1);
-  assert.equal((await store.usage(owner)).audio, 0);
-  const emptyPull = await store.pullSubstream(owner, owner + ':live-audio', vault.id, 0);
-  assert.equal(emptyPull.trimmed, true);
-  assert.equal(emptyPull.operations.length, 0);
-  assert.equal(emptyPull.cursor, 4);
+  assert.equal(pulled.acknowledged, 3);
+  assert.equal(pulled.trimmed, undefined);
+  assert.deepEqual(pulled.operations.map(operation => operation.seq), [1, 2, 3, 4]);
+  assert.equal((await store.usage(owner)).audio, beforePrune);
+  await assert.rejects(store.acknowledgeAudio(owner + ':live-audio', vault.id, 99, owner), { code: 'sync_cursor_ahead' });
+  const db = new DatabaseSync(join(root, 'private-sync.sqlite'));
+  const quota = 64 * 1024 * 1024;
+  try { db.prepare('UPDATE sync_vaults SET bytes=? WHERE owner=?').run(quota, owner + ':live-audio'); }
+  finally { db.close(); }
   const nextOp = { id: randomUUID(), nonce: 'n'.repeat(16), body: 'b'.repeat(512) };
   const appended = await store.push(owner + ':live-audio', vault.id, [nextOp], owner);
   assert.equal(appended.acknowledgements[0]?.seq, 5);
+  assert.ok((await store.usage(owner)).audio < quota);
+  const late = await store.pullSubstream(owner, owner + ':live-audio', vault.id, 0);
+  assert.equal(late.trimmed, true);
+  assert.deepEqual(late.operations.map(operation => operation.seq), [2, 3, 4, 5]);
+  assert.equal(late.cursor, 5);
+  const replay = await store.push(owner + ':live-audio', vault.id, [firstBatch[0]], owner);
+  assert.deepEqual(replay.acknowledgements, [{ id: firstBatch[0].id, seq: 1 }]);
+  await assert.rejects(store.push(owner + ':live-audio', vault.id, [{ ...firstBatch[0], body: 'changed' }], owner), { code: 'sync_operation_conflict' });
+  assert.equal((await store.pullSubstream(owner, owner + ':live-audio', vault.id, 5)).cursor, 5);
+  await store.initialize(owner + ':audio', vault);
+  const refill = new DatabaseSync(join(root, 'private-sync.sqlite'));
+  try { refill.prepare('UPDATE sync_vaults SET bytes=? WHERE owner=?').run(quota, owner + ':live-audio'); }
+  finally { refill.close(); }
+  const archive = await store.push(owner + ':audio', vault.id, [{ ...nextOp, id: randomUUID() }], owner);
+  assert.equal(archive.acknowledgements[0].seq, 1);
+  assert.deepEqual((await store.pullSubstream(owner, owner + ':live-audio', vault.id, 0)).operations.map(operation => operation.seq), [3, 4, 5]);
+  await assert.rejects(store.push(owner + ':audio', vault.id, [{ ...nextOp, id: randomUUID(), body: 'u'.repeat(6000) }], owner), { code: 'sync_quota_exceeded' });
+  assert.deepEqual((await store.pullSubstream(owner, owner + ':live-audio', vault.id, 0)).operations.map(operation => operation.seq), [3, 4, 5], 'quota failure rolls back reclamation');
+});
+
+test('desktop skips a trimmed recording suffix and resends a lost durable acknowledgement', async t => {
+  const bundled = await build({ entryPoints: ['apps/web/src/sync/mobile-desktop.ts'], bundle: true, write: false, format: 'esm' });
+  const { receiveLiveAudio } = await import('data:text/javascript;base64,' + Buffer.from(bundled.outputFiles[0].text).toString('base64'));
+  const { vault, root } = await createVault();
+  const incomplete = randomUUID(), complete = randomUUID(), signal = new AbortController().signal;
+  const frame = (id, sequence, kind = 'pcm') => ({ id, title: '手机录音', sequence, kind,
+    ...(kind === 'pcm' ? { offset: sequence, data: 'AAA' } : {}) });
+  const events = [frame(incomplete, 1), frame(incomplete, 2, 'finish'), frame(complete, 0), frame(complete, 1, 'finish')];
+  const encryptedEvents = (key, target) => Promise.all(events.map(async (event, i) => {
+    const id = randomUUID();
+    return { id, seq: i + 2, ...await seal(key, target, 'mobile-live-audio/1', id, encoder.encode(JSON.stringify(event))) };
+  }));
+  let operations = await encryptedEvents(root, vault);
+  const requests = [], sourceId = randomUUID(), sessionId = randomUUID(), epoch = randomUUID(), recordId = randomUUID();
+  let acknowledged = 1, failAck = true;
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    const target = new URL(url, fixtureOrigin);
+    const { method } = options;
+    requests.push([method, target.pathname, target.searchParams.get('before')]);
+    if (target.pathname.endsWith('/live-audio')) {
+      if (method === 'GET') {
+        const after = Number(target.searchParams.get('after'));
+        return Response.json({ acknowledged, cursor: 5, more: false,
+          ...(after === 0 ? { trimmed: true, operations } : { operations: [] }) });
+      }
+      if (failAck) return Response.json({ error: 'service_unavailable' }, { status: 503 });
+      acknowledged = Number(target.searchParams.get('before'));
+      return Response.json({ acknowledged });
+    }
+    if (target.pathname.endsWith('/recording')) {
+      const input = JSON.parse(options.body);
+      assert.equal(input.existingOnly, input.id === incomplete);
+      if (input.existingOnly) return Response.json({ error: 'sync_recording_prefix_unavailable' }, { status: 404 });
+      return Response.json({ id: recordId, capture: 'recording', sources: [{ kind: 'import', id: sourceId, sessionId, epoch, watermark: -1 }] });
+    }
+    if (target.pathname.endsWith('/audio')) return Response.json({ durable: true, watermark: 0 });
+    assert.equal(target.pathname, '/api/records/' + recordId + '/seal');
+    assert.equal(JSON.parse(options.body).sources[0].lastSequence, 0);
+    return Response.json({ ok: true });
+  });
+  // The first two retained frames already belong to the other desktop's durable recording.
+  acknowledged = 3;
+  await assert.rejects(receiveLiveAudio(vault, root, signal, () => {}), { status: 503 });
+  assert.equal(requests.filter(([, path]) => path.endsWith('/recording')).length, 2);
+  assert.equal(requests.filter(([, path]) => path.endsWith('/audio')).length, 1);
+  failAck = false;
+  assert.equal(await receiveLiveAudio(vault, root, signal, () => {}), false);
+  assert.deepEqual(requests.filter(([method]) => method === 'DELETE').map(([, , cursor]) => cursor), ['5', '5']);
+  assert.equal(requests.filter(([, path]) => path.endsWith('/audio')).length, 1);
+
+  const slow = await createVault();
+  operations = await encryptedEvents(slow.root, slow.vault);
+  acknowledged = 0;
+  assert.equal(await receiveLiveAudio(slow.vault, slow.root, signal, () => {}), false);
+  assert.equal(await receiveLiveAudio(slow.vault, slow.root, signal, () => {}), false);
+  assert.equal(requests.filter(([method]) => method === 'DELETE').length, 2, 'skipped frames do not become acknowledged on the next poll');
+
+  const legacy = await createVault();
+  const open = indexedDB.open('lingji-mobile-audio', 2);
+  const db = await new Promise((resolve, reject) => { open.onsuccess = () => resolve(open.result); open.onerror = () => reject(open.error); });
+  try {
+    const tx = db.transaction('live-cursor', 'readwrite');
+    tx.objectStore('live-cursor').put(5, [legacy.vault.id, 'desktop']);
+    await new Promise((resolve, reject) => { tx.oncomplete = resolve; tx.onabort = () => reject(tx.error); });
+  } finally { db.close(); }
+  assert.equal(await receiveLiveAudio(legacy.vault, legacy.root, signal, () => {}), false);
+  assert.deepEqual(requests.filter(([method]) => method === 'DELETE').map(([, , cursor]) => cursor), ['5', '5', '5'],
+    'an upgraded desktop confirms its previously consumed cursor even when the page is empty');
 });

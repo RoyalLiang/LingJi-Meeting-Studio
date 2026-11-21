@@ -54,8 +54,8 @@ export async function restorePrivateMeeting(repo, owner, input) {
 }
 
 export async function preparePrivateRecording(repo, owner, input) {
-  const { id: recording, vault, title, live = false } = input || {};
-  requireThat(typeof live === 'boolean', 'sync_invalid_recording', 400);
+  const { id: recording, vault, title, live = false, existingOnly = false } = input || {};
+  requireThat(typeof live === 'boolean' && typeof existingOnly === 'boolean' && (!existingOnly || live), 'sync_invalid_recording', 400);
   requireThat(typeof recording === 'string' && recordingId.test(recording) && typeof vault === 'string' && recordingId.test(vault), 'sync_invalid_recording', 400);
   const id = localId('private-sync/recording/v1', owner, vault, recording);
   requireThat(typeof title === 'string' && title.trim().length > 0 && title.length <= 160, 'sync_invalid_recording', 400);
@@ -67,6 +67,7 @@ export async function preparePrivateRecording(repo, owner, input) {
   }
   const stored = await existing();
   if (stored) return stored;
+  requireThat(!existingOnly, 'sync_recording_prefix_unavailable', 404);
   const record = createRecord(owner, { title });
   record.id = id;
   record.syncRecording = true;
