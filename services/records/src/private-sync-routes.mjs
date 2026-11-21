@@ -51,6 +51,8 @@ export function createPrivateSyncRoutes({ store, origin, repo }) {
       const profile = { name: name.trim() };
       await repo.change(user.id, account => { account.profile = profile; });
       send(res, 200, profile);
+    } else if (route === 'usage' && method === 'GET') {
+      send(res, 200, await store.usage(owner));
     } else if (route === 'vault' && method === 'GET') {
       let vault = await store.vault(owner);
       if (!vault && user.replacementVault) {

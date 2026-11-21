@@ -95,6 +95,7 @@ test('encrypted delta across authenticated accounts preserves ordering and idemp
   const second = await account('sync-second@example.test');
   const { vault, root, kit } = await createVault();
   assert.equal((await request('/private-sync/vault')).status, 401);
+  assert.equal((await request('/private-sync/usage')).status, 401);
   assert.equal((await first('/private-sync/vault', 'PUT', vault, { Origin: 'https://other.example.test' })).status, 403);
   assert.equal((await first('/private-sync/vault', 'PUT', vault, { 'X-CSRF-Token': '' })).status, 403);
   assert.equal((await first('/private-sync/vault', 'PUT', vault)).status, 201);
@@ -109,6 +110,14 @@ test('encrypted delta across authenticated accounts preserves ordering and idemp
   assert.deepEqual((await first('/private-sync/delta', 'POST', payload)).data, sent.data);
   assert.equal((await first('/private-sync/delta', 'POST', {vault: vault.id, operations: [{...operation, nonce: randomBytes(12).toString('base64url')}]})).status, 409);
   assert.equal((await second('/private-sync/delta?vault=' + vault.id)).status, 404);
+  const quota = 64 * 1024 * 1024;
+  const audioId = randomUUID();
+  const audio = { id: audioId, ...await seal(root, vault, 'audio', audioId, encoder.encode(stamp)) };
+  assert.equal((await first('/private-sync/audio', 'POST', { vault: vault.id, operations: [audio] })).status, 200);
+  assert.deepEqual((await first('/private-sync/usage')).data, {
+    meetings: Buffer.byteLength(JSON.stringify(operation)), audio: Buffer.byteLength(JSON.stringify(audio)), quota,
+  });
+  assert.deepEqual((await second('/private-sync/usage')).data, { meetings: 0, audio: 0, quota });
   assert.equal((await first('/records')).status, 404, 'the companion does not expose plaintext meeting endpoints');
   const delta = (await first('/private-sync/delta?vault=' + vault.id)).data;
   assert.equal(delta.cursor, 1);

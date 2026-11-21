@@ -105,7 +105,18 @@ export async function createPrivateSyncStore({ root, pool }) {
     releaseEmptyUpgrade(owner, fence) {
       return write(conn => run(conn, 'UPDATE sync_vaults SET head=0 WHERE owner=$1 AND head=$2', [owner, fence]));
     },
-    push(owner, vaultId, operations, parentOwner) {
+    usage(owner) {
+    return read(async conn => {
+      const audio = [owner + ':audio', owner + ':live-audio', owner + ':live-receipts'];
+      const rows = await run(conn, 'SELECT owner,bytes FROM sync_vaults WHERE owner IN ($1,$2,$3,$4)', [owner, ...audio]);
+      return {
+        meetings: Number(rows.find(row => row.owner === owner)?.bytes || 0),
+        audio: rows.filter(row => row.owner !== owner).reduce((bytes, row) => bytes + Number(row.bytes), 0),
+        quota: VAULT_QUOTA,
+      };
+    });
+  },
+  push(owner, vaultId, operations, parentOwner) {
       return write(async conn => {
         if (parentOwner) {
           const [parent] = await run(conn, 'SELECT head FROM sync_vaults WHERE owner=$1' + (pool ? ' FOR UPDATE' : ''), [parentOwner]);

@@ -40,6 +40,7 @@ export function QuickMobileRecording({ save, archive, status, visible, showRecor
   const [error, setError] = useState('');
   const draft = useRef<(() => Promise<void>) | null>(null);
   const waveform = useRef<SVGGElement>(null);
+  const meter = useRef<HTMLOutputElement>(null);
   const closeCapture = useRef<(() => void) | null>(null);
   const finishCapture = useRef<(() => void) | null>(null);
   const setCapturePaused = useRef<((paused: boolean) => void) | null>(null);
@@ -164,9 +165,12 @@ export function QuickMobileRecording({ save, archive, status, visible, showRecor
       };
       node.port.onmessage = ({ data }) => {
         if (data.type === 'flushed') { if (ending && data.reason === 'finish') finish(); return; }
-        if (data.type === 'meter' && !ending && !reduceMotion && waveform.current) {
-          const peak = Math.min(28, Math.sqrt(Math.max(0, Number(data.value) || 0)) * 36);
-          Array.from(waveform.current.children).forEach((bar, i) => {
+        if (data.type === 'meter' && !ending && !reduceMotion) {
+          const rms = Math.sqrt(Math.max(0, Number(data.value) || 0));
+          const db = Math.min(0, Math.round(20 * Math.log10(Math.max(0.0001, rms))));
+          if (meter.current) meter.current.textContent = db + ' dBFS';
+          const peak = Math.min(28, rms * 36);
+          Array.from(waveform.current?.children || []).forEach((bar, i) => {
             bar.setAttribute('y2', String(38 - peak * (.5 + .5 * Math.sin(i * .65 + beats))));
           });
           beats += .5;
@@ -229,7 +233,13 @@ export function QuickMobileRecording({ save, archive, status, visible, showRecor
       </Button>
     </div>
     <div className="quick-mobile-time" aria-label="录音用时">{time}</div>
-    {marks.length > 0 && <p className="quick-mobile-mark-count">已标记 {marks.length} 处重点</p>}
+    {capturing && <div className="mobile-capture-state">
+        <span>{phase === 'paused' ? '已暂停' : '录音中'}</span>
+        {phase === 'recording' && <output ref={meter} aria-live="off" aria-label="录音电平">−80 dBFS</output>}
+      </div>}
+      {marks.length > 0 && <ul className="mobile-mark-times" aria-label="重点时间">
+        {marks.map(mark => <li key={mark}>{new Date(mark * 1000).toISOString().slice(14, 19)}</li>)}
+      </ul>}
     <div className="quick-mobile-feedback">
       {error ? <p className="quick-mobile-issue" role="alert">{error}</p> : status && <p role="status">{status}</p>}
     </div>

@@ -5,7 +5,8 @@ import type { RecordDetail, RecordListItem } from '../model';
 import { createVault, recoverVault, type Envelope, type Vault } from '../sync/vault';
 import { authenticateAccount, openAccountVault, wrapAccountVault } from '../sync/account';
 import { readDeviceVault, rememberDeviceVault, type DeviceVault } from '../sync/device';
-import { loadMeetingCopy, meetingCopies, queueMeeting, syncMeetings, type CopySummary } from '../sync/journal';
+import { annotateMeeting, loadMeetingCopy, meetingCopies, queueMeeting, syncMeetings, type CopySummary, type MeetingAnnotations } from '../sync/journal';
+import type { WorkspaceDirectory } from '../workspace-model';
 import { enrollPasskey, unlockPasskey } from '../sync/passkey';
 import { acknowledgeMobileRecording, nextMobileRecording, pullLiveAudio, pushLiveAudio, pushMobileRecordings, queueLiveAudio, queueMobileRecording, receiveMobileRecordings } from '../sync/mobile';
 import { receiveLiveAudio } from '../sync/mobile-desktop';
@@ -71,14 +72,14 @@ function syncError(error: unknown) {
   return messageOf(error);
 }
 
-export function PrivateSyncSettings({ desktop, email, accountLogin, accountChanged, record, restored, imported, mobileActive, signOut, overviewChanged, localRecords, workspaceCount, online = true, visible = true, recording = false, mobile = false }: {
+export function PrivateSyncSettings({ desktop, email, accountLogin, accountChanged, record, restored, imported, mobileActive, signOut, overviewChanged, localRecords, directories, online = true, visible = true, recording = false, mobile = false }: {
   desktop: boolean;
   email?: string;
   accountLogin?: { email: string; material: Uint8Array<ArrayBuffer> };
   accountChanged?: (email: string | null) => void;
   overviewChanged?: (overview: AccountOverview) => void;
   localRecords?: RecordListItem[];
-  workspaceCount?: number;
+  directories?: WorkspaceDirectory[];
   record?: RecordDetail | null;
   restored?: (id: string) => void;
   imported?: () => void;
@@ -124,6 +125,8 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
   const secret = useRef<Uint8Array<ArrayBuffer> | null>(null);
   const pending = useRef<AbortController | null>(null);
   const background = useRef<Promise<void> | null>(null);
+  const workspaceDirectories = useRef(directories);
+  workspaceDirectories.current = directories;
   const accountEmail = desktop ? session?.email : email;
   useEffect(() => {
     if (mobile && unlocked && liveAudio && vault) {
@@ -145,6 +148,16 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
     const root = secret.current.slice();
     try { return await loadMeetingCopy(vault, root, id); }
     finally { root.fill(0); }
+  }, [vault]);
+  const saveMobileAnnotations = useCallback(async (parent: string, changes: MeetingAnnotations) => {
+    if (!vault || !secret.current) throw new Error('请先解锁资料库');
+    const root = secret.current.slice();
+    try {
+      const id = await annotateMeeting(vault, root, parent, changes);
+      setCopies(await meetingCopies(vault, root));
+      window.dispatchEvent(new Event('lingji:sync-wakeup'));
+      return id;
+    } finally { root.fill(0); }
   }, [vault]);
   const playMobileRecording = useCallback(async (id: string) => {
     if (!vault || !secret.current) return null;
@@ -330,7 +343,7 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
             for (const item of changed) {
               const detail = await api<RecordDetail>('/records/' + item.id, 'GET', undefined, signal);
               signal.throwIfAborted();
-              await queueMeeting(localVault, key, detail).catch(error => {
+              await queueMeeting(localVault, key, detail, workspaceDirectories.current?.find(item => item.id === detail.workspaceId)).catch(error => {
                 if (!(error instanceof Error) || error.message !== '会议超过同步大小上限') throw error;
                 setNotice('有会议超过同步大小上限');
               });
@@ -630,7 +643,7 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
   const localSpace = localRecords && <AccountSection title="本机资料">
     <dl className="account-metrics">
       <div><dt>当前范围会议</dt><dd>{localRecords.length}</dd></div>
-      <div><dt>工作空间</dt><dd>{workspaceCount ?? 0}</dd></div>
+      <div><dt>工作空间</dt><dd>{directories?.length || 0}</dd></div>
       <div><dt>可同步的已完成会议</dt><dd>{localRecords.filter(item => item.capture === 'completed').length}</dd></div>
     </dl>
   </AccountSection>;
@@ -765,7 +778,7 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
         }}
         copies={copies} saved={phoneCopies} recorder={recorder} account={account}
         refresh={() => { if (vault && secret.current) run(signal => update(vault, secret.current!, signal)); }}
-        read={readMobileMeeting} play={playMobileRecording} search={searchMobileMeetings}/>
+        read={readMobileMeeting} saveAnnotations={saveMobileAnnotations} play={playMobileRecording} search={searchMobileMeetings}/>
       {feedback}
       {backgroundIssue && <p className="account-feedback" role="status">{backgroundIssue}。将自动重试。</p>}
     </>;
@@ -819,7 +832,7 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
         <div className="sync-actions">
           {record?.capture === 'completed' && <Button variant="primary" disabled={busy} onClick={() => run(async signal => {
             const key = secret.current!;
-            await queueMeeting(vault, key, record);
+            await queueMeeting(vault, key, record, directories?.find(item => item.id === record.workspaceId));
             setNotice('会议已存入本机待传队列');
             await update(vault, key, signal);
           })}>同步当前会议</Button>}

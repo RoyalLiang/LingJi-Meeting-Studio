@@ -1,11 +1,13 @@
 import { api } from '../api';
 import { createPublishedContent, normalizePublishedContent, type PublishedContent } from '../../../../packages/records/src/published-content.mjs';
-import type { RecordDetail } from '../model';
+import type { Minutes, RecordDetail } from '../model';
 import { seal, unseal, type EncryptedOperation, type Vault } from './vault';
 
-export type MeetingCopy = { content: PublishedContent; notes: string };
+type MeetingMetadata = { workspace?: { id: string; name: string }; durationMs?: number; fromPhone?: boolean };
+export type MeetingAnnotations = { notes: string; completed?: number[] };
+export type MeetingCopy = MeetingMetadata & MeetingAnnotations & { content: PublishedContent };
 type Revision = MeetingCopy & { id: string; parents: string[]; at: number };
-export type CopySummary = { id: string; sourceId: string; title: string; at: number };
+export type CopySummary = MeetingMetadata & { id: string; sourceId: string; title: string; at: number; pending?: boolean };
 type Row = { key: string; vault: string; pending: 0 | 1; operation: EncryptedOperation; seq: number };
 type Delta = { cursor: number; more: boolean; operations: (EncryptedOperation & { seq: number })[] };
 const encoder = new TextEncoder();
@@ -85,7 +87,20 @@ async function decodeRow(row: Row, vault: Vault, root: Uint8Array<ArrayBuffer>):
     || typeof value.notes !== 'string' || value.notes.length > 100_000 || !Number.isSafeInteger(value.at) || value.at < 0 || value.at > 8.64e15) {
     throw new Error('收到格式不受支持的会议修订');
   }
-  return { id: operation.id, parents: value.parents, at: value.at, notes: value.notes, content: normalizePublishedContent(value.content) };
+  const content = normalizePublishedContent(value.content);
+  const actions = (content.minutes as Minutes | null)?.actions;
+  const completed = Array.isArray(value.completed)
+    ? value.completed.filter((index: unknown) => typeof index === 'number' && Number.isInteger(index)
+      && index >= 0 && index < (actions?.length || 0))
+    : undefined;
+  const rawWorkspace = value.workspace;
+  const workspace = typeof rawWorkspace?.id === 'string' && identifier.test(rawWorkspace.id)
+    && typeof rawWorkspace.name === 'string' && rawWorkspace.name.length <= 120
+    ? { id: rawWorkspace.id as string, name: rawWorkspace.name as string }
+    : undefined;
+  const durationMs = Number.isSafeInteger(value.durationMs) && value.durationMs >= 0 ? value.durationMs as number : undefined;
+  return { id: operation.id, parents: value.parents, at: value.at, notes: value.notes, completed, workspace,
+    durationMs, fromPhone: typeof value.fromPhone === 'boolean' ? value.fromPhone : undefined, content };
 }
 
 export async function meetingCopies(vault: Vault, root: Uint8Array<ArrayBuffer>, query = ''): Promise<CopySummary[]> {
@@ -102,7 +117,8 @@ export async function meetingCopies(vault: Vault, root: Uint8Array<ArrayBuffer>,
       for (const parent of revision.parents) superseded.add(parent);
       if (!query || [revision.content.title, revision.notes, JSON.stringify(revision.content.minutes), JSON.stringify(revision.content.segments || [])]
         .some(value => value.toLowerCase().includes(query))) {
-        revisions.push({ id: revision.id, sourceId: revision.content.sourceRecordId, at: revision.at, title: revision.content.title });
+        revisions.push({ id: revision.id, sourceId: revision.content.sourceRecordId, at: revision.at, title: revision.content.title,
+        workspace: revision.workspace, durationMs: revision.durationMs, fromPhone: revision.fromPhone, pending: row.pending === 1 });
       }
     }
     if (rows.length < 64) break;
@@ -118,7 +134,7 @@ export async function loadMeetingCopy(vault: Vault, root: Uint8Array<ArrayBuffer
   return decodeRow(row, vault, root);
 }
 
-export async function queueMeeting(vault: Vault, root: Uint8Array<ArrayBuffer>, record: RecordDetail) {
+export async function queueMeeting(vault: Vault, root: Uint8Array<ArrayBuffer>, record: RecordDetail, workspace?: MeetingMetadata['workspace']) {
   if (record.capture !== 'completed') throw new Error('会议处理完成后可同步');
   const content = { ...createPublishedContent({ ...record, liveMinutes: null, id: record.syncSourceId || record.id }, 'full'), draft: false };
   const notes = record.notes ?? '';
@@ -126,20 +142,37 @@ export async function queueMeeting(vault: Vault, root: Uint8Array<ArrayBuffer>, 
   const dbKey = vault.id + ':' + record.id;
   const previous = await dbRequest<string | undefined>(db.transaction('heads').objectStore('heads').get(dbKey)) ?? record.syncParent;
   const prior = previous && await dbRequest<Row | undefined>(db.transaction('operations').objectStore('operations').get(vault.id + ':' + previous));
+  const metadata = { workspace: workspace && { id: workspace.id, name: workspace.name }, durationMs: record.durationMs, fromPhone: Boolean(record.syncSourceId && record.syncRecording) };
+  let completed: number[] | undefined;
   if (prior) {
     const earlier = await decodeRow(prior, vault, root);
-    if (earlier.notes === notes && JSON.stringify(earlier.content) === JSON.stringify(content)) return;
+    const sameContent = JSON.stringify(earlier.content) === JSON.stringify(content);
+    if (earlier.notes === notes && sameContent && earlier.durationMs === metadata.durationMs
+        && earlier.fromPhone === metadata.fromPhone && earlier.workspace?.id === workspace?.id
+        && earlier.workspace?.name === workspace?.name) return;
+    if (sameContent) completed = earlier.completed;
   }
+  await appendRevision(vault, root, { ...metadata, content, notes, completed }, previous, dbKey);
+}
+
+export async function annotateMeeting(vault: Vault, root: Uint8Array<ArrayBuffer>, parent: string, annotations: MeetingAnnotations) {
+  const copy = await loadMeetingCopy(vault, root, parent);
+  if (!copy) throw new Error('无法读取此会议');
+  return appendRevision(vault, root, { ...copy, ...annotations }, parent);
+}
+
+async function appendRevision(vault: Vault, root: Uint8Array<ArrayBuffer>, copy: MeetingCopy, parent?: string, headKey?: string) {
   const id = crypto.randomUUID();
-  const revision: Revision = { content, notes, id, parents: previous ? [previous] : [], at: Date.now() };
+  const revision: Revision = { ...copy, id, parents: parent ? [parent] : [], at: Date.now() };
   const bytes = encoder.encode(JSON.stringify(revision));
-  if (bytes.length > LIMIT || notes.length > 100_000) throw new Error('会议超过同步大小上限');
+  if (bytes.length > LIMIT || copy.notes.length > 100_000) throw new Error('会议超过同步大小上限');
   const zipped = await streamBytes(new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip')), 190 * 1024);
   const operation = { id, ...await seal(root, vault, 'revision', id, zipped) };
   await transaction('readwrite', tx => {
     tx.objectStore('operations').add({ key: vault.id + ':' + id, vault: vault.id, pending: 1, operation, seq: 0 } satisfies Row);
-    tx.objectStore('heads').put(id, dbKey);
+    if (headKey) tx.objectStore('heads').put(id, headKey);
   });
+  return id;
 }
 
 export async function syncMeetings(vault: Vault, root: Uint8Array<ArrayBuffer>, signal?: AbortSignal) {
