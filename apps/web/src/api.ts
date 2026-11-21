@@ -225,12 +225,28 @@ async function request<T>(path: string, method: string, body: BodyInit | undefin
 }
 export const messageOf = (error: unknown) => error instanceof Error ? error.message : '操作失败，请重试。';
 
+function serviceSignal(source: AbortSignal | null | undefined, timeoutMs: number) {
+  if (timeoutMs <= 0 || source?.aborted) return source ?? undefined;
+  if (typeof AbortSignal.timeout === 'function' && (!source || typeof AbortSignal.any === 'function')) {
+    const deadline = AbortSignal.timeout(timeoutMs);
+    return source ? AbortSignal.any([source, deadline]) : deadline;
+  }
+  const controller = new AbortController();
+  const abort = () => controller.abort(source?.reason);
+  const timer = setTimeout(() => controller.abort(new DOMException('请求超时', 'TimeoutError')), timeoutMs);
+  source?.addEventListener('abort', abort, { once: true });
+  controller.signal.addEventListener('abort', () => {
+    clearTimeout(timer);
+    source?.removeEventListener('abort', abort);
+  }, { once: true });
+  return controller.signal;
+}
+
 export async function serviceFetch(input: RequestInfo | URL, init?: RequestInit, timeoutMs = 30000): Promise<Response> {
-  const deadline = timeoutMs > 0 ? AbortSignal.timeout(timeoutMs) : undefined;
-  const signal = deadline && init?.signal ? AbortSignal.any([init.signal, deadline]) : deadline || init?.signal;
+  const signal = serviceSignal(init?.signal, timeoutMs);
   try { return await fetch(input, { ...init, signal }); }
   catch (error) {
-    if (init?.signal?.aborted || ((error as Error)?.name === 'AbortError' && !deadline?.aborted)) throw error;
+    if (init?.signal?.aborted || ((error as Error)?.name === 'AbortError' && !signal?.aborted)) throw error;
     throw new ApiError('service_unavailable', 0);
   }
 }

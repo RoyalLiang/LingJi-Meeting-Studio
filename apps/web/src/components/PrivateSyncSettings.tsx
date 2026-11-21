@@ -708,8 +708,9 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
         {signOut && <Button variant="ghost" disabled={!online || busy || recording} aria-label="退出账号" onClick={signOut}>退出</Button>}
       </div>
       <form className="mobile-profile-form" onSubmit={saveProfile}>
-        <input aria-label="显示名称" placeholder="显示名称" autoComplete="nickname" maxLength={60} value={name} disabled={!online || busy} onChange={event => setName(event.target.value)}/>
-        <Button type="submit" disabled={!online || busy || name.trim() === profile}>保存</Button>
+        <label htmlFor="phone-profile-name">显示名称</label>
+        <input id="phone-profile-name" aria-label="显示名称" placeholder="输入显示名称" autoComplete="nickname" maxLength={60} value={name} disabled={!online || busy} onChange={event => setName(event.target.value)}/>
+        <Button variant="primary" type="submit" disabled={!online || busy || name.trim() === profile}>保存</Button>
       </form>
     </section>;
     const recorder = vault && unlocked && !legacyAccount ? <QuickMobileRecording
@@ -745,8 +746,14 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
       }}/> : mobilePage === 'record' && <div className="quick-mobile-setup sync-settings">
         {upgradeForm}
         {!upgradingHere && recoverAccess}
-        {!vault && <p role="status">{online ? (newLoginNeeded ? '退出后重新登录以开始录音。' : '正在准备同步…') : '联网后登录以开始录音。'}</p>}
-        {error && !vault && accountEmail && <Button disabled={busy} onClick={() => run(signal => connectAccount(accountEmail, signal))}>重试</Button>}
+        {!vault && <div className="phone-unlock-state">
+          <h2>{!online ? '等待网络连接' : newLoginNeeded ? '请重新登录' : error ? '同步暂未连接' : '正在连接加密资料库'}</h2>
+          {error && <p role="alert">{error}</p>}
+          {online && (newLoginNeeded || error) && <div className="phone-unlock-actions">
+            {!newLoginNeeded && accountEmail && <Button variant="primary" disabled={busy} onClick={() => run(signal => connectAccount(accountEmail, signal))}>重试</Button>}
+            {signOut && <Button variant={newLoginNeeded ? 'primary' : 'ghost'} disabled={busy} onClick={signOut}>重新登录</Button>}
+          </div>}
+        </div>}
       </div>;
     return <>
       <MobileWorkspace page={mobilePage} setPage={setMobilePage} online={online} unlocked={unlocked}

@@ -5,7 +5,7 @@ import {readFile} from 'node:fs/promises';
 import {transformSync,buildSync} from 'esbuild';
 import vm from 'node:vm';
 const code=transformSync(await readFile(new URL('../apps/web/src/api.ts',import.meta.url),'utf8'),{loader:'ts',format:'cjs'}).code;
-function client(fetch){const module={exports:{}};vm.runInNewContext(code,{module,exports:module.exports,require:id=>id.includes('settings-cache')?{createSettingsCache}:{trace(){}},performance,crypto,AbortController,AbortSignal:{timeout:()=>AbortSignal.timeout(5),any:AbortSignal.any.bind(AbortSignal)},fetch,setTimeout,clearTimeout,Uint8Array});return module.exports;}
+function client(fetch, abortStatics = {timeout:()=>AbortSignal.timeout(5),any:AbortSignal.any.bind(AbortSignal)}){const module={exports:{}};vm.runInNewContext(code,{module,exports:module.exports,require:id=>id.includes('settings-cache')?{createSettingsCache}:{trace(){}},performance,crypto,AbortController,AbortSignal:abortStatics,DOMException,fetch,setTimeout,clearTimeout,Uint8Array});return module.exports;}
 test('stalled service request times out so a local audio lane can recover',async()=>{
   const h=client((_,init)=>new Promise((resolve,reject)=>init.signal.addEventListener('abort',()=>reject(init.signal.reason),{once:true})));
   const keepAlive=setTimeout(()=>{},100);try{await assert.rejects(h.serviceFetch('/api/health'),{code:'service_unavailable'});}finally{clearTimeout(keepAlive);}
@@ -24,6 +24,16 @@ test('long downloads keep caller cancellation without the JSON upload deadline',
   await new Promise(r=>setTimeout(r,15));assert.equal(signal.aborted,false);controller.abort();assert.equal(signal.aborted,true);
 });
 
+test('WebView without AbortSignal statics preserves request deadlines and user cancellation', async () => {
+  const h = client(async (_, init) => new Promise((_, reject) => {
+    init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true });
+  }), {});
+  await assert.rejects(h.serviceFetch('/api/private-sync/vault', undefined, 5), { code: 'service_unavailable' });
+  const controller = new AbortController();
+  const request = h.serviceFetch('/api/private-sync/vault', { signal: controller.signal });
+  controller.abort();
+  await assert.rejects(request, { name: 'AbortError' });
+});
 import {mkdtemp,mkdir,writeFile,readFile as read,rm,stat} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';

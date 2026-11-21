@@ -5,6 +5,7 @@ import type { CopySummary, MeetingCopy } from '../sync/journal';
 import type { MobileRecording } from '../sync/mobile-library';
 import { Brand } from './Brand';
 import { Button } from './ui';
+import './MobileWorkspace.css';
 
 export type MobilePage = 'record' | 'meetings' | 'account';
 type TranscriptLine = { id: string; speaker: string; startMs: number; text: string };
@@ -132,6 +133,13 @@ function MobileMeeting({ entry, back, read, play }: {
   </section>;
 }
 
+function MobileSwitch({ checked, disabled, change }: { checked: boolean; disabled?: boolean; change: (checked: boolean) => void }) {
+  return <span className="mobile-switch">
+    <input type="checkbox" role="switch" checked={checked} disabled={disabled} onChange={event => change(event.target.checked)}/>
+    <span className="mobile-switch-track" aria-hidden="true"/>
+  </span>;
+}
+
 export function MobileWorkspace({
   page, setPage, online, unlocked, automatic, setAutomatic, copies, saved, recorder, account, refresh, read, play, search
 }: {
@@ -190,11 +198,11 @@ export function MobileWorkspace({
     {page === 'account' && <>
       {account}
       <div className="mobile-account-group">
-        <label><ArrowClockwise size={17}/><span>自动同步会议与纪要</span><input type="checkbox" role="switch" disabled={!unlocked} checked={automatic} onChange={event => setAutomatic(event.target.checked)}/></label>
-        <label><Moon size={17}/><span>深色外观</span><input type="checkbox" role="switch" checked={dark} onChange={event => {
-          const value = event.target.checked ? 'dark' : 'light';
+        <label><ArrowClockwise size={17}/><span>自动同步会议与纪要</span><MobileSwitch disabled={!unlocked} checked={automatic} change={setAutomatic}/></label>
+        <label><Moon size={17}/><span>深色外观</span><MobileSwitch checked={dark} change={checked => {
+          const value = checked ? 'dark' : 'light';
           document.documentElement.dataset.theme = value;
-          setDark(event.target.checked);
+          setDark(checked);
           try { localStorage.setItem('meeting-theme', value); } catch {}
           document.dispatchEvent(new Event('meeting:theme'));
         }}/></label>
@@ -205,7 +213,8 @@ export function MobileWorkspace({
         <div><Headphones size={17}/><span>本机回听</span><small>{saved.length} 条</small></div>
       </div>
     </>}
-    <nav className="mobile-nav" aria-label="底部菜单">
+    <nav className="mobile-nav" aria-label="底部菜单" data-page={page}>
+      <span className="mobile-nav-lens" aria-hidden="true"/>
       {pages.map(([id, label, Icon]) => <button type="button" key={id} aria-current={page === id ? 'page' : undefined} onClick={() => navigate(id)}>
         <Icon size={20} aria-hidden="true"/>{label}</button>)}
     </nav>
