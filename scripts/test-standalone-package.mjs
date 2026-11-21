@@ -63,7 +63,7 @@ async function launch() {
   assert.equal(new URL(state.url).hostname, '127.0.0.1'); assert.notEqual(new URL(state.url).port, String(trap.address().port));
   const auth = await createAuth({ root: join(data, 'backend') });
   const user = { id: `user:${digest('local@device.invalid')}`, authVersion: 1 };
-  const headers = { Cookie: auth.issue(user).split(';')[0], 'X-CSRF-Token': auth.csrf(user), 'Content-Type': 'application/json' };
+  const headers = { Cookie: (await auth.issue(user)).split(';')[0], 'X-CSRF-Token': auth.csrf(user), 'Content-Type': 'application/json' };
   const result = await fetch(state.url + '/api/bootstrap', { headers });
   assert.equal(result.status, 200);
   const boot = await result.json(); assert.equal(boot.localAccount, true); assert.equal(boot.email, 'local@device.invalid');
