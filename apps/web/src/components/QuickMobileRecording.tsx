@@ -190,7 +190,9 @@ export function QuickMobileRecording({ save, archive, status, visible, showRecor
     } catch (failure) {
       close();
       if (!mounted.current) return;
-      setError(failure instanceof DOMException && failure.name === 'NotAllowedError' ? '请允许麦克风权限后重试' : failure instanceof Error ? failure.message : '无法启动录音');
+      if (failure instanceof DOMException && failure.name === 'NotAllowedError') setError('请允许麦克风权限后重试');
+      else if (failure instanceof DOMException && failure.name === 'NotReadableError') setError('麦克风暂时无法使用，请重试');
+      else setError(failure instanceof Error ? failure.message : '无法启动录音');
       setPhase('idle');
       onActive?.(false);
     }
