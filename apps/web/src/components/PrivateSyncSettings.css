@@ -102,8 +102,7 @@
 .account-scope > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 10px 0; }
 .account-scope > div + div { border-top: 1px solid var(--border); }
 .account-scope dd { margin: 0; color: var(--accent); white-space: nowrap; }
-.sync-companion { width: min(940px, calc(100% - 32px)); margin: 24px auto; container-type: inline-size; }
-.sync-companion:not(.quick-mobile-app) { border: 1px solid var(--border); background: var(--bg); border-radius: 25px; }
+.sync-companion:not(.quick-mobile-app) { width: min(940px, calc(100% - 32px)); margin: 24px auto; container-type: inline-size; border: 1px solid var(--border); background: var(--bg); border-radius: 25px; }
 @container (max-width: 590px) {
   .account-section { grid-template-columns: 1fr; gap: 10px; padding-block: 18px; }
   .account-section > header h2 { margin: 0; }
