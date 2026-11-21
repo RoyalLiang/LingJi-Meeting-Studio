@@ -368,6 +368,7 @@ export function MobileWorkspace({
       </dialog>
     </>}
     <nav className="mobile-nav" aria-label="底部菜单" data-page={page}>
+      <span className="mobile-nav-lens" aria-hidden="true"/>
       {pages.map(([id, label, Icon]) => <button type="button" key={id} aria-current={page === id ? 'page' : undefined} onClick={() => navigate(id)}>
         <Icon size={20} aria-hidden="true"/><span>{label}</span></button>)}
     </nav>

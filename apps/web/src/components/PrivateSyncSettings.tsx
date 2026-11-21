@@ -726,7 +726,7 @@ export function PrivateSyncSettings({ desktop, email, accountLogin, accountChang
     const account = <section className="mobile-account-card" aria-label="账号资料">
       <div className="mobile-account-identity">
         <span className="account-avatar" aria-hidden="true">{(profile || accountEmail || '聆').slice(0, 1).toUpperCase()}</span>
-        <div><strong>{profile || '个人账号'}</strong><small>{accountEmail}</small></div>
+        <div><strong>{profile || '个人账号'}</strong><small title={accountEmail ?? undefined}>{accountEmail}</small></div>
         <Button variant="ghost" onClick={() => profileEditor.current?.showModal()}>编辑资料</Button>
       </div>
       <dialog ref={profileEditor} className="mobile-source-sheet" aria-labelledby="mobile-profile-heading">

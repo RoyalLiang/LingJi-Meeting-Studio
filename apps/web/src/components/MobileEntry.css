@@ -11,7 +11,13 @@
   --phone-live: #9c4739;
   --phone-wave: #ab7469;
   --phone-wave-fill: #f0e0dc;
-  --phone-nav-bg: #f5f7f4e8;
+  --phone-dock-tint: #edf6eee0;
+  --phone-dock-glass: linear-gradient(150deg, #ffffffc4 0%, #e1eae051 58%, #fcfdfbb8 100%);
+  --phone-dock-rim: #ffffffdf;
+  --phone-dock-edge: #5385694d;
+  --phone-dock-shadow: #163f2b30;
+  --phone-lens-glass: linear-gradient(162deg, #ffffffed 6%, #eaf5ed94 52%, #dcece39c);
+  --phone-lens-line: #6f9c8170;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   color: var(--phone-ink);
 }
@@ -28,7 +34,13 @@
   --phone-live: #f09b8d;
   --phone-wave: #cb8b7e;
   --phone-wave-fill: #422d27;
-  --phone-nav-bg: #171b19ea;
+  --phone-dock-tint: #232e27e0;
+  --phone-dock-glass: linear-gradient(150deg, #5e897676 0%, #25372f69 58%, #4a736183 100%);
+  --phone-dock-rim: #cbeedd69;
+  --phone-dock-edge: #8fb8a050;
+  --phone-dock-shadow: #040d087a;
+  --phone-lens-glass: linear-gradient(162deg, #779e8b90 6%, #426756ab 55%, #375a4a90);
+  --phone-lens-line: #a0cbb17d;
 }
 [data-theme=light].quick-record-document { color-scheme: light; }
 [data-theme=dark].quick-record-document { color-scheme: dark; }
