@@ -3,7 +3,7 @@ run-name: Pi test packages · ${{ github.sha }}
 
 on:
   push:
-    branches: [dev_pi-chain-regression-20261031]
+    branches: [dev_pi-chain-regression-20261031, dev_v04-sync-audit]
     paths-ignore: ['docs/**', 'README.md']
   workflow_dispatch:
 
@@ -24,6 +24,7 @@ env:
 
 jobs:
   installer_hashes:
+    if: github.ref_name != 'dev_v04-sync-audit'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -66,16 +67,17 @@ jobs:
         run: node scripts/release-macos-alpha.mjs
       - name: Collect source and package evidence
         run: |
-          echo "RELEASE_VERSION=$(node -p 'require("./package.json").version')" >> "$GITHUB_ENV"
+          echo "RELEASE_VERSION=$(node -p '((m)=>m.releaseVersion||m.version)(require("./package.json"))')" >> "$GITHUB_ENV"
       - run: node scripts/collect-preview-artifacts.mjs macos
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
-          name: pi-test-macos-arm64-${{ github.sha }}
+          name: ${{ format('{0}-macos-arm64-{1}', github.ref_name == 'dev_v04-sync-audit' && 'mobile-sync-test' || 'pi-test', github.sha) }}
           path: preview-artifacts/*
           if-no-files-found: error
           retention-days: 14
 
   windows:
+    if: github.ref_name != 'dev_v04-sync-audit'
     needs: installer_hashes
     runs-on: windows-2025
     timeout-minutes: 90

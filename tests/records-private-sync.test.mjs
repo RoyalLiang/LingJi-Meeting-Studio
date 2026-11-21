@@ -566,3 +566,23 @@ test('a blank device can upgrade an empty legacy vault, but cannot replace meeti
     }
   }
 });
+
+test('a full live audio journal still accepts an independent desktop receipt', async t => {
+  const { DatabaseSync } = await import('node:sqlite');
+  const root = await mkdtemp(join(tmpdir(), 'lingji-private-sync-full-audio-'));
+  const store = await createPrivateSyncStore({ root });
+  t.after(async () => { await store.close(); await rm(root, { recursive: true, force: true }); });
+  const owner = 'receipt-reserve-owner';
+  const { vault } = await createVault();
+  await store.initialize(owner, vault);
+  await store.initialize(owner + ':live-audio', vault);
+  await store.initialize(owner + ':live-receipts', vault);
+  const db = new DatabaseSync(join(root, 'private-sync.sqlite'));
+  try { db.prepare('UPDATE sync_vaults SET bytes=? WHERE owner=?').run(64 * 1024 * 1024, owner + ':live-audio'); }
+  finally { db.close(); }
+  const operation = { id: randomUUID(), nonce: 'test', body: 'test' };
+  await assert.rejects(store.push(owner + ':live-audio', vault.id, [operation], owner), { code: 'sync_quota_exceeded' });
+  const written = await store.push(owner + ':live-receipts', vault.id, [operation], owner);
+  assert.equal(written.acknowledgements[0]?.seq, 1);
+  assert.equal((await store.usage(owner)).audio, 64 * 1024 * 1024);
+});

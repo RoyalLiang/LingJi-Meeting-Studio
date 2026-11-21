@@ -5,6 +5,7 @@ import { requireThat } from '../../../packages/records/src/record.mjs';
 export const SYNC_PAGE_BYTES = 512 * 1024;
 const PAGE_OPERATIONS = 64;
 const VAULT_QUOTA = 64 * 1024 * 1024;
+const LIVE_RECEIPT_QUOTA = 1024 * 1024;
 const schema = [
   'CREATE TABLE IF NOT EXISTS sync_vaults (owner TEXT PRIMARY KEY, data TEXT NOT NULL, head BIGINT NOT NULL, bytes BIGINT NOT NULL)',
   'CREATE TABLE IF NOT EXISTS sync_delta (owner TEXT NOT NULL, seq BIGINT NOT NULL, op TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(owner,seq), UNIQUE(owner,op))',
@@ -107,8 +108,8 @@ export async function createPrivateSyncStore({ root, pool }) {
     },
     usage(owner) {
     return read(async conn => {
-      const audio = [owner + ':audio', owner + ':live-audio', owner + ':live-receipts'];
-      const rows = await run(conn, 'SELECT owner,bytes FROM sync_vaults WHERE owner IN ($1,$2,$3,$4)', [owner, ...audio]);
+      const audio = [owner + ':audio', owner + ':live-audio'];
+      const rows = await run(conn, 'SELECT owner,bytes FROM sync_vaults WHERE owner IN ($1,$2,$3)', [owner, ...audio]);
       return {
         meetings: Number(rows.find(row => row.owner === owner)?.bytes || 0),
         audio: rows.filter(row => row.owner !== owner).reduce((bytes, row) => bytes + Number(row.bytes), 0),
@@ -127,11 +128,12 @@ export async function createPrivateSyncStore({ root, pool }) {
         requireThat(!reserved(row), 'sync_legacy_history', 409);
         const acknowledgements = [];
         let head = Math.max(0, Number(row.head)), bytes = Number(row.bytes);
-        // Keep the existing audio quota across both journals, serialized by the parent row lock.
-        const siblings = parentOwner ? ['audio', 'live-audio', 'live-receipts']
-          .map(stream => parentOwner + ':' + stream).filter(stream => stream !== owner) : [];
-        const others = siblings.length ? await run(conn, 'SELECT bytes FROM sync_vaults WHERE owner IN ($1,$2)', siblings) : [];
-        const quota = VAULT_QUOTA - others.reduce((total, entry) => total + Number(entry.bytes), 0);
+      // A full audio journal must still accept receipts for durable desktop audio.
+      const receipts = parentOwner && owner === parentOwner + ':live-receipts';
+      const sibling = !parentOwner || receipts ? null
+        : parentOwner + (owner === parentOwner + ':audio' ? ':live-audio' : ':audio');
+      const [other] = sibling ? await run(conn, 'SELECT bytes FROM sync_vaults WHERE owner=$1', [sibling]) : [];
+      const quota = receipts ? LIVE_RECEIPT_QUOTA : VAULT_QUOTA - Number(other?.bytes || 0);
         for (const operation of operations) {
           const data = JSON.stringify(operation);
           const [prior] = await run(conn, 'SELECT seq,data FROM sync_delta WHERE owner=$1 AND op=$2', [owner, operation.id]);

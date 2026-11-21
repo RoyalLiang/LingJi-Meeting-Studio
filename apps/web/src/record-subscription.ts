@@ -56,32 +56,44 @@ export function subscribeToRecord<T extends { cursor: string }>(options: Subscri
       // Revalidate a revoked stream: permanent access failures stop, transient API errors retry.
       stream.addEventListener('revoked', () => { if (current(version)) retry(); });
       let refreshing = false, dirty = false;
-      async function refresh() {
+      const queued: unknown[] = [];
+      async function refresh(delta?: unknown) {
         if (!current(version)) return;
-        dirty = true;
+        if (delta !== undefined) {
+          if (queued.length === 64) { queued.length = 0; dirty = true; }
+          queued.push(delta);
+        } else if (refreshing) dirty = true;
         if (refreshing) return;
         refreshing = true;
         try {
           do {
             dirty = false;
-            const latest = await options.loadRecord(signal);
+            record = await options.loadRecord(signal);
             if (!current(version)) return;
-            record = latest;
-              options.onRecord(latest);
+            for (const pending of queued.splice(0)) {
+              const next = options.applyDelta?.(record, pending);
+              if (!next) { dirty = true; break; }
+              record = next;
+            }
+            options.onRecord(record);
           } while (dirty);
         } catch (error) { failed(error, version); }
         finally { refreshing = false; }
       }
       stream.onmessage = event => {
-          try {
-            const message = JSON.parse(event.data);
-            if(message.delta && options.applyDelta && !refreshing){
-              const latest=options.applyDelta(record,message.delta);
-              if(latest){record=latest;options.onRecord(latest);return;}
-            } else if(message.projection && !message.delta) return;
-          } catch { /* Malformed or incompatible event requires a fresh snapshot. */ }
-          void refresh();
-        };
+        if (!current(version)) return;
+        try {
+          const message = JSON.parse(event.data);
+          if (message.delta && options.applyDelta) {
+            const next = refreshing ? null : options.applyDelta(record, message.delta);
+            if (next) { record = next; options.onRecord(record); }
+            else void refresh(message.delta);
+            return;
+          }
+          if (message.projection && !message.delta) return;
+        } catch { /* Malformed or incompatible event requires fresh snapshot. */ }
+        void refresh();
+      };
       stream.addEventListener('reset', () => { void refresh(); });
     } catch (error) { failed(error, version); }
   }

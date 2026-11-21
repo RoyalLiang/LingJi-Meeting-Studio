@@ -82,7 +82,9 @@ export async function pushMobileRecordings(vault: Vault, signal: AbortSignal) {
   const recording = outbox[0];
   if (!recording) return { sent: false, pending: 0 };
   const key = group(vault, recording.id);
-  let next = recording.next;
+  const progressKey = [...key, 'outbox-progress'];
+  const stored = await request<number | undefined>(db.transaction('cursor').objectStore('cursor').get(progressKey));
+  let next = Math.max(recording.next, stored ?? 0);
   for (let batch = 0; batch < 12 && next < recording.operations.length; batch++) {
     signal.throwIfAborted();
     const operations = recording.operations.slice(next, next + 2);
@@ -92,13 +94,20 @@ export async function pushMobileRecordings(vault: Vault, signal: AbortSignal) {
     }
     next += operations.length;
     const received = next;
-    await change(['outbox'], tx => {
-      const store = tx.objectStore('outbox');
-      const get = store.get(key);
-      get.onsuccess = () => {
-        if (!get.result || get.result.next >= received) return;
-        if (received === recording.operations.length) store.delete(key);
-        else store.put({ ...recording, next: received }, key);
+    await change(['outbox', 'cursor'], tx => {
+      const store = tx.objectStore('outbox'), progress = tx.objectStore('cursor');
+      const queued = store.getKey(key);
+      queued.onsuccess = () => {
+        if (queued.result === undefined) return;
+        if (next === recording.operations.length) {
+          store.delete(key);
+          progress.delete(progressKey);
+        } else {
+          const prior = progress.get(progressKey);
+          prior.onsuccess = () => {
+            if ((prior.result ?? 0) < next) progress.put(next, progressKey);
+          };
+        }
       };
     });
   }

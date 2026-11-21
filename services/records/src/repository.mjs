@@ -141,11 +141,13 @@ export async function createRepository(options = {}) {
     const stale=invalidation(value,previousInput?JSON.parse(previousInput):null,projection.meta.analysisInput);
     if(stale)db.prepare("UPDATE aggregates SET data=json_set(data,'$.status','stale','$.snapshot',json('[]'),'$.preview','','$.result',NULL,'$.fence',NULL,'$.updatedAt',json_extract(?,'$.updatedAt')) WHERE json_extract(data,'$.kind')='workspace-analysis' AND json_extract(data,'$.owner')=? AND json_extract(data,'$.scope') IN (SELECT value FROM json_each(?)) AND json_extract(data,'$.status') IN ('queued','running','completed')").run(stale[2],stale[0],JSON.stringify(stale[1]));
     projection.meta.writeVersion=randomUUID();
-    const previousSearch=db.prepare("SELECT rowid,json_extract(data,'$.search') AS search FROM record_list_projection WHERE id=?").get(value.id);
+    const previousSearch=db.prepare("SELECT rowid,json_extract(data,'$.search') AS search,json_extract(data,'$.deleted') AS deleted FROM record_list_projection WHERE id=?").get(value.id);
     db.prepare('INSERT INTO record_list_projection(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(value.id,JSON.stringify(projection.list));
-    recordSearch.writeSqlite(value.id,projection.list.search,value.deleted);
+    const searchChanged = !previousSearch || previousSearch.search !== projection.list.search
+      || Boolean(previousSearch.deleted) !== Boolean(value.deleted);
+    if (searchChanged) recordSearch.writeSqlite(value.id,projection.list.search,value.deleted);
     if(value.deleted)db.prepare('DELETE FROM record_search WHERE rowid=?').run(previousSearch?.rowid??-1);
-    else if(!previousSearch||previousSearch.search!==projection.list.search)db.prepare('INSERT OR REPLACE INTO record_search(rowid,search) VALUES((SELECT rowid FROM record_list_projection WHERE id=?),?)').run(value.id,projection.list.search);
+    else if(searchChanged)db.prepare('INSERT OR REPLACE INTO record_search(rowid,search) VALUES((SELECT rowid FROM record_list_projection WHERE id=?),?)').run(value.id,projection.list.search);
     db.prepare('INSERT INTO record_feed_meta(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(value.id,JSON.stringify(projection.meta));
     if(value.deleted)db.prepare('DELETE FROM record_feed_events WHERE record_id=?').run(value.id);
     for(const event of projection.events) db.prepare('INSERT INTO record_feed_events(record_id,cursor,data) VALUES(?,?,?) ON CONFLICT(record_id,cursor) DO UPDATE SET data=excluded.data').run(value.id,cursorKey(event.cursor),JSON.stringify(event));

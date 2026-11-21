@@ -301,12 +301,15 @@ pub async fn release_held_ready(app: &AppHandle) -> Result<(), String> {
 }
 
 pub async fn native_action(app: &AppHandle, action: &str) -> Result<bool, String> {
+    if matches!(action, "expand" | "restore") {
+        resident::show(app);
+        return Ok(true);
+    }
     let client = app.state::<Client>();
     if client.resident.renderer_ready() { return Ok(false); }
     let Some(status) = client.captures.native_status() else { return Ok(false); };
     match action {
-        "expand" => resident::show(app),
-        "toggle" if status.recording => {
+        "toggle" | "pause" if status.recording => {
             let captures = client.captures.clone(); let id = status.record_id;
             tauri::async_runtime::spawn_blocking(move || captures.stop_record(&id,"pause")).await.map_err(|error|error.to_string())??;
         }
@@ -318,7 +321,7 @@ pub async fn native_action(app: &AppHandle, action: &str) -> Result<bool, String
                 resident::show(app);
             }
         }
-        "toggle" if status.can_resume => { client.resident.queue_action("status-resume"); resident::show(app); }
+        "toggle" | "pause" if status.can_resume => { client.resident.queue_action("status-resume"); resident::show(app); }
         "microphone" if status.recording && status.microphone_on => {
             client.captures.set_native_kind(&status.record_id,"microphone",false)?;
             for source in client.captures.direct_sessions().iter().filter(|source|source["recordId"]==status.record_id && source["source"]["kind"]=="microphone" && source["stopped"]==false) {
@@ -393,10 +396,6 @@ pub async fn recording_widget_action(
         .map_err(|_| "recording status unavailable")?
         .report
         .clone();
-    if action == "restore" {
-        resident::show(&app);
-        return Ok(());
-    }
     if report.busy {
         return Err("recording operation in progress".into());
     }

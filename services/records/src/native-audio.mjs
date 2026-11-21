@@ -63,8 +63,17 @@ export async function createNativeAudio(repo, { instanceId, recoveryIntervalMs =
     const source = record.sources.find(source => source.id === lease.sourceId && source.epoch === lease.epoch && source.sessionId === lease.sessionId);
     requireThat(source, 'native_capture_unavailable', 409); return { record, source };
   }
+  const publishedReceipts = new Map();
   async function receipt(lease, finished = false, error = null, purged = false) {
-    await atomicNativeJson(directoryFor(lease), 'receipt.json', { schema: 1, leaseId: lease.token, watermark: lease.watermark ?? -1, sampleEnd: lease.acceptedSampleEnd || 0, finished, error, ...(purged ? {purged:true} : {}) });
+    const value = {
+      schema: 1, leaseId: lease.token, watermark: lease.watermark ?? -1,
+      sampleEnd: lease.acceptedSampleEnd || 0, finished, error, ...(purged ? {purged:true} : {})
+    };
+    const fingerprint = JSON.stringify(value);
+    if (publishedReceipts.get(lease.token) === fingerprint) return;
+    await atomicNativeJson(directoryFor(lease), 'receipt.json', value);
+    if (publishedReceipts.size >= 256) publishedReceipts.delete(publishedReceipts.keys().next().value);
+    publishedReceipts.set(lease.token, fingerprint);
   }
   async function finishSource(lease, stop) {
     requireThat(stop && stop.schema === 1 && Number.isSafeInteger(stop.lastSequence) && stop.lastSequence >= -1 && stop.lastSequence < 1000000 && Number.isSafeInteger(stop.sampleEnd) && stop.sampleEnd >= 0 && ['source','pause','seal'].includes(stop.action), 'invalid_manifest', 400);
@@ -180,14 +189,14 @@ export async function createNativeAudio(repo, { instanceId, recoveryIntervalMs =
           const { record } = await sourceRecord(lease), chunk = record.chunks.find(chunk => chunk.sourceId === lease.sourceId && chunk.epoch === lease.epoch && chunk.sequence === sequence);
           requireThat(chunk, 'native_packet_missing', 409);
           await repo.change(lease.id, current => { current.watermark = sequence; current.acceptedSampleEnd = chunk.sampleOffset + chunk.sampleCount; }, { returnRecord: false });
-          lease = await repo.get(lease.id); await receipt(lease); continue;
+          lease = await repo.get(lease.id); continue;
         }
         await actor(lease);
         const value = decodeNativeAudioPacket(bytes, sequence);
         const ack = await repo.ingestAudio(lease.owner, lease.recordId, { ...value.metadata, sourceId: lease.sourceId, sessionId: lease.sessionId, epoch: lease.epoch }, value.pcm);
         requireThat(ack.durable === true && ack.sourceId === lease.sourceId && ack.epoch === lease.epoch && ack.watermark >= sequence, 'native_ack_invalid', 409);
         await repo.change(lease.id, current => { current.watermark = sequence; current.acceptedSampleEnd = value.metadata.sampleOffset + value.metadata.sampleCount; current.error = null; current.warning = null; current.state = current.stop ? 'draining' : 'recording'; }, { returnRecord: false });
-        lease = await repo.get(lease.id); await unlink(path); await receipt(lease);
+        lease = await repo.get(lease.id); await unlink(path);
       }
       if (processed === 16) again.add(token);
       if (!await completeAction(lease) && ((lease.watermark ?? -1) >= 0 || lease.stop || lease.error)) await receipt(lease, false, lease.error || null);

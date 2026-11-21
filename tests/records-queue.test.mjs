@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import {readFile} from 'node:fs/promises';
 import {stripTypeScriptTypes} from 'node:module';
 import {IDBFactory,IDBKeyRange,IDBObjectStore,IDBIndex} from 'fake-indexeddb';
-const source=stripTypeScriptTypes(await readFile(new URL('../apps/web/src/audio/queue.ts',import.meta.url),'utf8')).replace(/^import .*;$/gm,'').replaceAll('export ','')+'\nObject.assign(exports,{persistNativeChunk,makeChunk,setLocalQueueBackend,ensureAudioCapacity,enqueue,drainQueue,setQueueRecords,pendingCount,localManifests,clearRecordAudio,queueStats,downloadPendingAudio,updateQueueState});';
+const source=stripTypeScriptTypes(await readFile(new URL('../apps/web/src/audio/queue.ts',import.meta.url),'utf8')).replace(/^import .*;$/gm,'').replaceAll('export ','')+'\nObject.assign(exports,{persistNativeChunk,makeChunk,setLocalQueueBackend,ensureAudioCapacity,enqueue,drainQueue,resetAudioUploadBackoff,setQueueRecords,pendingCount,localManifests,clearRecordAudio,queueStats,downloadPendingAudio,updateQueueState});';
 class ApiError extends Error{constructor(status){super('api');this.status=status;}}
 function harness(indexedDB=new IDBFactory(),api=async()=>{},sessionStorage){
   const exports={},downloads=[];const navigator={onLine:true};const document={createElement:()=>({click(){}})};const downloadURL={createObjectURL:blob=>{downloads.push(blob);return "blob:fixture";},revokeObjectURL(){}};vm.runInNewContext(source,{exports,pcmBase64,crypto,Uint8Array,btoa,AbortSignal,indexedDB,IDBKeyRange,ApiError,api,uploadAudio:(path,chunk)=>api(path,'POST',chunk),navigator,sessionStorage,performance,trace(){},traceEnabled:()=>false,setTimeout,Blob,URL:downloadURL,document,console});return{...exports,indexedDB,navigator,downloads};
@@ -277,4 +277,25 @@ test('native local receipt bypasses PCM queue, persists stop cursor and falls ba
   await h.persistNativeChunk('r',chunk('mic',0));assert.equal(calls,1);assert.equal(await h.pendingCount(),0);assert.equal((await h.localManifests('r'))[0].lastSequence,0);
   available=false;await h.persistNativeChunk('r',chunk('mic',1));assert.equal(await h.pendingCount(),1);assert.equal((await h.localManifests('r'))[0].lastSequence,1);
   available=true;await h.drainQueue();assert.equal(await h.pendingCount(),0);
+});
+
+
+test('transient failure cools down only the failed audio lane until explicit retry', async () => {
+  const uploaded = [];
+  let fail = true;
+  const h = harness(new IDBFactory(), async (_path, _method, packet) => {
+    uploaded.push(packet.sourceId);
+    if (packet.sourceId === 'mic' && fail) throw new ApiError(503);
+  });
+  h.setQueueRecords(['r']);
+  await h.enqueue('r', chunk('mic'));
+  await assert.rejects(h.drainQueue(), { status: 503 });
+  await h.enqueue('r', chunk('tab'));
+  await assert.rejects(h.drainQueue(), { status: 503 });
+  assert.deepEqual(uploaded, ['mic', 'tab']);
+  fail = false;
+  h.resetAudioUploadBackoff();
+  await h.drainQueue();
+  assert.deepEqual(uploaded, ['mic', 'tab', 'mic']);
+  assert.equal(await h.pendingCount(), 0);
 });

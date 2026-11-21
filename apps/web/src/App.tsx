@@ -65,7 +65,7 @@ import { Button, Modal, Empty, Status } from './components/ui';
 import { Notes } from './components/Notes';
 import { CaptureController, capabilities, importAudio, type CaptureIssue } from './audio/controller';
 import type { CaptureSignal } from './audio/signal';
-import { clearRecordAudio, setLocalQueueBackend, drainQueue, localManifests, pendingCount, setQueueRecords, downloadPendingAudio } from './audio/queue';
+import { clearRecordAudio, setLocalQueueBackend, drainQueue, resetAudioUploadBackoff, localManifests, pendingCount, setQueueRecords, downloadPendingAudio } from './audio/queue';
 
 const SharedMeeting=lazy(()=>import('./components/SharedMeeting').then(module=>({default:module.SharedMeeting})));
 const TranscriptHistory=lazy(()=>import('./components/Transcript').then(module=>({default:module.TranscriptHistory})));
@@ -330,7 +330,7 @@ function Workspace() {
   },[localBackend,refreshLocalAudio]);
   useEffect(()=>{if(authReady&&id)void refreshLocalAudio().catch(e=>setError(messageOf(e)));},[id,authReady,refreshLocalAudio]);
   useEffect(() => {
-    if (!authReady) return; const network = () => { setOnline(navigator.onLine); if (navigator.onLine || localBackend) void upload(); };
+    if (!authReady) return; const network = () => { setOnline(navigator.onLine); if (navigator.onLine) resetAudioUploadBackoff(); if (navigator.onLine || localBackend) void upload(); };
     addEventListener('online', network); addEventListener('offline', network); const timer = setInterval(upload, recording || pending ? 2500 : 15000);
     const visible = () => { if (document.visibilityState === 'visible') void upload(); };
     document.addEventListener('visibilitychange', visible); void upload();
@@ -546,7 +546,7 @@ function Workspace() {
         <header className="surface-heading"><Button variant="ghost" className="mobile-navigation" aria-label="打开项目导航" aria-controls="project-sidebar" aria-expanded={sidebarOpen} onClick={()=>{setContextOpen(false);setSidebarOpen(true);}}><House size={18}/></Button><Button variant="ghost" className="settings-back" aria-label="返回工作台" onClick={()=>setModal(null)}><Brand markOnly/></Button><div><h1>{online&&syncEmail?'个人中心':'本地空间'}</h1><p>{online&&syncEmail?'端侧加密':'会议保存在本机'}</p></div><Button className="context-toggle account-context-toggle" onClick={()=>setContextOpen(true)}>同步概览</Button></header>
         <div className="settings-pages account-page"><div><Suspense fallback={<p role="status">正在加载账号…</p>}><PrivateSyncSettings desktop online={online} visible={accountOpen} record={record} recording={recording||busy} imported={()=>{void loadList().catch(()=>{});setHomeVersion(value=>value+1);}} restored={id=>{setModal(null);selectRecord(id);void loadList().catch(failure=>setError(messageOf(failure)));}} accountChanged={setSyncEmail} overviewChanged={setAccountOverview} localRecords={records} directories={directories}/></Suspense></div></div>
       </section></div>}{(visited.settings||(modal==='settings'&&!accountOpen))&&<div className="settings-route" hidden={modal!=='settings'||accountOpen}><Suspense fallback={null}><SettingsPage tab={settingsTab} setTab={setSettingsTab} voices={()=>setVoiceOpen(true)} openContext={()=>{setSidebarOpen(false);setContextOpen(true);}} close={()=>setModal(null)} boot={boot} record={record} recording={recording} busy={busy} updates={updates} saved={refreshProviders} language={async language=>{await mutate(`/records/${id}`,'PATCH',{language});}} translated={target=>setRecord(current=>current&&record&&current.id===record.id?{...current,translationTarget:target}:current)} diagnostics={()=>{const blob=new Blob([JSON.stringify({capabilities:capabilities(),storage:boot.storage,providers:boot.providers,pending,capture:record?.capture,transcription:record?.transcription},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='meeting-diagnostics.json';link.click();URL.revokeObjectURL(url);}} backup={()=>void (record?downloadPendingAudio(record.id):Promise.resolve(false)).then(downloaded=>{if(!downloaded)showToast('当前没有待传音频。');}).catch(e=>setError(messageOf(e)))}/></Suspense></div>}<div className="workspace-reading-row" inert={modal==='settings'}><div className="meeting-highlights-slot" ref={setFocusTarget}/><div ref={scrollRoot} className={`workspace-scroll ${!agentOpen && record ? 'record-reading' : ''}`} tabIndex={0} aria-label="会议内容滚动区">
-      {uploadIssue && !error && <FeedbackNotice key="audio-upload-retry" message={uploadIssue} action={{label:'立即重试',run:()=>void upload()}}/>}
+      {uploadIssue && !error && <FeedbackNotice key="audio-upload-retry" message={uploadIssue} action={{label:'立即重试',run:()=>{resetAudioUploadBackoff();void upload();}}}/>}
       {id && !uploadIssue && connectionState==='reconnecting' && <FeedbackNotice key="connection-retry" message="实时更新暂时中断，正在重连记录服务。"/>}
       {id && record && connectionState==='unavailable' && <FeedbackNotice key="connection-unavailable" message="记录服务暂时不可用，正在自动重试。" action={{label: '重新连接', run: () => setRetryVersion(v=>v+1)}}/>}
 

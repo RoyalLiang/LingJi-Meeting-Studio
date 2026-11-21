@@ -112,3 +112,27 @@ test('local backend reconnects SSE without internet; Web stays offline',async()=
   assert.equal(local.states.at(-1),'reconnecting');assert.equal(local.timers.size,1);await local.tick();assert.equal(local.streams.length,2);local.stop();
   const web=harness();await settle();web.navigator.onLine=false;web.streams[0].onerror();assert.equal(web.states.at(-1),'offline');assert.equal(web.timers.size,0);web.stop();
 });
+
+test('deltas received during snapshot recovery replay from its cursor without another GET', async () => {
+  let reads = 0, release, apply;
+  const h = harness(async () => {
+    if (++reads === 1) return { cursor: '1', segments: [] };
+    if (reads === 2) return new Promise(resolve => { release = resolve; });
+    return { cursor: '8', segments: [] };
+  }, (record, delta) => apply(record, delta));
+  apply = h.apply;
+  await settle();
+  const stream = h.streams[0];
+  for (let n = 2; n < 8; n++) {
+    stream.onmessage({ data: JSON.stringify({ delta: {
+      baseCursor: String(n), cursor: String(n + 1), set: { title: String(n + 1) },
+      remove: [], segments: { upsert: [], remove: [] }
+    } }) });
+  }
+  release({ cursor: '2', segments: [] });
+  await settle();
+  assert.equal(reads, 2);
+  assert.equal(h.records.at(-1).cursor, '8');
+  assert.equal(h.records.at(-1).title, '8');
+  h.stop();
+});

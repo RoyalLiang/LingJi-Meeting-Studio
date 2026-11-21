@@ -265,7 +265,7 @@ export async function startWorker() {
         try {
           due = await repo.nextWorkAt(lane);
           if (first || lane === 'audio' || lane === 'realtime' || due <= Date.now()) {
-            await runCycle(repo, {}, { lane }); due = await repo.nextWorkAt(lane);
+            await runCycle(repo, {}, { lane, cacheConfig: true }); due = await repo.nextWorkAt(lane);
           }
           if(!['audio','realtime'].includes(lane)&&wakeup.cursor()===cursor&&due<=Date.now())due=Date.now()+30000;
           first = false;

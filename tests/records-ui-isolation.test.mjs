@@ -21,12 +21,49 @@ test('native recording reports stay independent from the visible clock and retur
   module.RecordingRuntime({...props,record:null});assert.equal(reports.at(-1).paused,false);assert.equal(reports.at(-1).canResume,false);assert.equal(reports.at(-1).recording,false);
 });
 
-test('virtual segments remeasure unchanged-length content after preceding layout changes',async()=>{
-  const effects=[],values=[],mutations=[],resizes=[];let refs=0,top=100;
-  const container={scrollTop:0,clientTop:0,getBoundingClientRect:()=>({top:0}),parentElement:null};
-  const root={closest:()=>container,getBoundingClientRect:()=>({top}),parentElement:container};
-  const module=await component('components/VirtualSegments.tsx',{'react':{useRef:initial=>({current:refs++===0?root:initial}),useState:initial=>[initial,update=>{const previous=values.at(-1)??initial;values.push(typeof update==='function'?update(previous):update);} ],useLayoutEffect:effect=>effects.push(effect)},'react/jsx-runtime':jsx,'@tanstack/react-virtual':{useVirtualizer:()=>({getTotalSize:()=>160,getVirtualItems:()=>[]})},'../virtual-segments':{segmentRange:()=>[]}}, {ResizeObserver:class{constructor(callback){resizes.push(callback);}observe(){}disconnect(){}},MutationObserver:class{constructor(callback){mutations.push(callback);}observe(){}disconnect(){}},requestAnimationFrame:callback=>{callback();return 1;},cancelAnimationFrame(){}});
-  module.VirtualSegments({segments:[{id:'segment'}],children:()=>null});const cleanup=effects[0]();assert.equal(values.at(-1),100);
-  top=200;mutations[0]();assert.equal(values.at(-1),200,'same segment count but taller preceding notice');
-  top=260;resizes[0]();assert.equal(values.at(-1),260,'width changes may wrap preceding text');cleanup();
+test('virtual segments track preceding layout while visible and disconnect when hidden', async () => {
+  const effects = [], values = [], observers = [], options = [];
+  let refs = 0, top = 100;
+  const previous = {};
+  const container = { scrollTop: 0, clientTop: 0, getBoundingClientRect: () => ({ top: 0 }), parentElement: null };
+  const root = { closest: () => container, getBoundingClientRect: () => ({ top }), parentElement: container, previousElementSibling: previous };
+  const module = await component('components/VirtualSegments.tsx', {
+    react: {
+      useRef: initial => ({ current: refs++ === 0 ? root : initial }),
+      useState: initial => [initial, update => values.push(update(values.at(-1) ?? initial))],
+      useLayoutEffect: effect => effects.push(effect),
+      useCallback: callback => callback
+    },
+    'react/jsx-runtime': jsx,
+    '@tanstack/react-virtual': { useVirtualizer: settings => {
+      options.push(settings);
+      return { getTotalSize: () => 160, getVirtualItems: () => [] };
+    } },
+    '../virtual-segments': { segmentRange: () => [] }
+  }, {
+    ResizeObserver: class {
+      constructor(callback) { this.callback = callback; this.targets = []; observers.push(this); }
+      observe(target) { this.targets.push(target); }
+      disconnect() { this.disconnected = true; }
+    },
+    requestAnimationFrame: callback => { callback(); return 1; },
+    cancelAnimationFrame() {}
+  });
+  const props = { segments: [{ id: 'segment' }], children: () => null };
+  module.VirtualSegments(props);
+  const cleanup = effects[0]();
+  assert.equal(values.at(-1), 100);
+  assert.ok(observers[0].targets.includes(previous));
+  top = 200;
+  observers[0].callback();
+  assert.equal(values.at(-1), 200);
+  cleanup();
+  assert.equal(observers[0].disconnected, true);
+
+  refs = 0;
+  effects.length = 0;
+  module.VirtualSegments({ ...props, active: false });
+  effects[0]();
+  assert.equal(options.at(-1).enabled, false);
+  assert.equal(observers.length, 1);
 });
