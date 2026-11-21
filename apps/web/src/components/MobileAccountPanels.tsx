@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { api, messageOf } from '../api';
+import { api, getAuthGeneration, messageOf } from '../api';
 import { Button } from './ui';
 
 type Device = { id: string; name: string; issuedAt: number; current: boolean };
@@ -9,16 +9,28 @@ type BillingPlan = { id: string; name: string; storageGb: number; monthly: numbe
 type Catalog = { plans: BillingPlan[] };
 type Period = 'monthly' | 'yearly';
 
+let deviceRequest: { generation: number; until: number; promise: Promise<DeviceList> } | undefined;
+export function loadMobileDevices() {
+  const generation = getAuthGeneration();
+  if (deviceRequest?.generation === generation && deviceRequest.until > Date.now()) return deviceRequest.promise;
+  const promise = api<DeviceList>('/private-sync/devices').catch(error => {
+    if (deviceRequest?.promise === promise) deviceRequest = undefined;
+    throw error;
+  });
+  deviceRequest = { generation, until: Date.now() + 30_000, promise };
+  return promise;
+}
+
 export function MobileAccountDevices() {
   const [devices, setDevices] = useState<DeviceList>();
   const [error, setError] = useState('');
   const [revoke, setRevoke] = useState<Device>();
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    const controller = new AbortController();
-    void api<DeviceList>('/private-sync/devices', 'GET', undefined, controller.signal)
-      .then(setDevices).catch(error => { if (!controller.signal.aborted) setError(messageOf(error)); });
-    return () => controller.abort();
+    let active = true;
+    void loadMobileDevices().then(value => { if (active) setDevices(value); })
+      .catch(error => { if (active) setError(messageOf(error)); });
+    return () => { active = false; };
   }, []);
   async function remove() {
     if (!revoke || busy) return;
@@ -26,18 +38,19 @@ export function MobileAccountDevices() {
     setError('');
     try {
       await api('/private-sync/devices', 'DELETE', { id: revoke.id });
+      deviceRequest = undefined;
       setDevices(items => items && { ...items, items: items.items.filter(item => item.id !== revoke.id) });
       setRevoke(undefined);
     } catch (failure) { setError(messageOf(failure)); }
     finally { setBusy(false); }
   }
   return <>
-    <h2>已连接设备</h2>
     {error && <p role="alert">{error}</p>}
     {!devices && !error && <p role="status">正在加载设备…</p>}
     {devices && !devices.current && <p className="mobile-sheet-note">重新登录可登记当前设备。</p>}
     <ul className="mobile-record-list">{devices?.items.map(device => <li className="mobile-card mobile-device" key={device.id}>
-      <div><strong>{device.name}</strong><small>{new Date(device.issuedAt).toLocaleString('zh-CN')}</small></div>
+      <div><strong>{device.current && /LingJi-Android/.test(navigator.userAgent) ? '聆记 Android' : device.name}</strong>
+        <small>{new Date(device.issuedAt).toLocaleString('zh-CN')}</small></div>
       {device.current ? <small>当前设备</small> : <Button variant="ghost" disabled={!devices.current || busy}
         aria-label={'移除 ' + device.name} onClick={() => setRevoke(device)}>移除</Button>}
     </li>)}</ul>
@@ -89,7 +102,6 @@ export function MobileAccountFactor() {
     });
   }
   return <>
-    <h2>双重验证</h2>
     {error && <p role="alert">{error}</p>}
     {!status && !error && <p role="status">正在加载双重验证…</p>}
     {status && !recovery && <p>{status.enabled ? '已开启' : '未开启'}</p>}
@@ -141,7 +153,6 @@ export function MobileBillingPlans() {
     finally { setBusy(false); }
   }
   return <>
-    <h2>分级方案</h2>
     <p className="mobile-sheet-note">测试报价，暂未开放购买。</p>
     {error && <p role="alert">{error}</p>}
     {!catalog && !error && <p role="status">正在加载套餐…</p>}

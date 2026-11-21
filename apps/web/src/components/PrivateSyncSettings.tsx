@@ -121,6 +121,7 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
   const [showLogin, setShowLogin] = useState(false);
   const [vault, setVault] = useState<Vault>();
   const [liveAudio, setLiveAudio] = useState(false);
+  const [liveAudioV2, setLiveAudioV2] = useState(false);
   const [backup, setBackup] = useState<string>();
   const [unlocked, setUnlocked] = useState(false);
   const [copies, setCopies] = useState<CopySummary[]>([]);
@@ -178,7 +179,7 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
     let local: DeviceVault | null = null;
     setLiveAudio(false);
     try {
-      const getVault = () => api<{ vault: Vault | null; account?: Envelope; legacy: boolean; hasPasskey?: boolean; emptyUpgrade?: boolean; liveAudio?: boolean }>('/private-sync/vault', 'GET', undefined, signal);
+      const getVault = () => api<{ vault: Vault | null; account?: Envelope; legacy: boolean; hasPasskey?: boolean; emptyUpgrade?: boolean; liveAudio?: boolean; liveAudioV2?: boolean }>('/private-sync/vault', 'GET', undefined, signal);
       let remote = await getVault();
       let cloud = remote.vault;
       signal.throwIfAborted();
@@ -210,6 +211,7 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
       if (!cloud) return;
       signal.throwIfAborted();
       setLiveAudio(remote.liveAudio === true);
+      setLiveAudioV2(remote.liveAudioV2 === true);
       setLegacyAccount(remote.legacy);
       setHasPasskey(remote.hasPasskey === true);
       setEmptyUpgrade(remote.emptyUpgrade === true);
@@ -382,10 +384,18 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
       const key = secret.current.slice();
       try {
         try {
-          more = await receiveLiveAudio(localVault, key, signal, () => {
+          const notify = () => {
             receivedAny = true;
             if (!signal.aborted) importedCallback.current?.();
-          });
+          };
+          const received = await Promise.allSettled([
+            receiveLiveAudio(localVault, key, signal, notify),
+            liveAudioV2 ? receiveLiveAudio(localVault, key, signal, notify, true) : false,
+          ]);
+          for (const result of received) {
+            if (result.status === 'rejected') throw result.reason;
+            more ||= result.value;
+          }
         } finally {
           await pushLiveAudio(localVault, 'desktop', signal, firstRun);
           firstRun = false;
@@ -416,7 +426,7 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
       removeEventListener('lingji:live-audio-ready', wakeup);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [ready, online, unlocked, accountEmail, vault, liveAudio, desktop]);
+  }, [ready, online, unlocked, accountEmail, vault, liveAudio, liveAudioV2, desktop]);
 
   async function enter(device: DeviceVault, signal: AbortSignal, remember = false) {
     const { vault: localVault, root: key } = device;

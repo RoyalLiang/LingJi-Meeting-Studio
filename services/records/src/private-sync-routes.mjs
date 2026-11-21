@@ -39,13 +39,19 @@ export function createPrivateSyncRoutes({ store, origin, repo, auth }) {
     if (!path.startsWith('/api/private-sync/')) return false;
     requireThat(req.headers.host === origin.host && (method === 'GET' || req.headers.origin === origin.origin), 'origin_rejected', 403);
     const route = path.slice('/api/private-sync/'.length);
-    const liveStream = route === 'live-audio' || route === 'live-receipts';
+    const liveStream = route === 'live-audio' || route === 'live-audio-v2' || route === 'live-receipts';
     if (liveStream) limit('private-sync-live:' + user.id, 360);
     else limit('private-sync:' + user.id, 160);
     const audioStream = route === 'audio' || liveStream;
     if (route.startsWith('passkey/')) limit('sync-passkey:' + owner, 24);
-    if (route === 'mobile-session' && method === 'GET') {
-      send(res, 200, { email: user.email, csrf: auth.csrf(user) });
+    if (route === 'mobile-session' && (method === 'GET' || method === 'POST')) {
+      let expiresAt = auth.sessionExpiry(req);
+      if (method === 'POST') {
+        const renewed = await auth.refreshSession(user, req);
+        res.setHeader('Set-Cookie', renewed.cookie);
+        expiresAt = renewed.expires;
+      }
+      send(res, 200, { email: user.email, csrf: auth.csrf(user), expiresAt });
     } else if (route === 'profile' && method === 'GET') {
       send(res, 200, { name: user.profile?.name || '' });
     } else if (route === 'profile' && method === 'PATCH') {
@@ -94,7 +100,7 @@ export function createPrivateSyncRoutes({ store, origin, repo, auth }) {
       const account = user.accountEnvelope?.vault === vault?.id ? user.accountEnvelope : vault?.account;
       const hasPasskey = vault && (await store.credentials(owner)).length > 0;
       const emptyUpgrade = !user.opaqueRecord && vault && await store.emptyUpgradeAvailable(owner);
-      send(res, 200, { vault, account, legacy: !user.opaqueRecord, ...(hasPasskey ? { hasPasskey } : {}), ...(emptyUpgrade ? { emptyUpgrade } : {}), liveAudio: true });
+      send(res, 200, { vault, account, legacy: !user.opaqueRecord, ...(hasPasskey ? { hasPasskey } : {}), ...(emptyUpgrade ? { emptyUpgrade } : {}), liveAudio: true, liveAudioV2: true });
     } else if (route === 'vault' && method === 'PUT') {
       requireThat(!user.replacementVault, 'sync_vault_exists', 409);
       const { account, ...descriptor } = await readBody(req, 1024);
@@ -108,7 +114,7 @@ export function createPrivateSyncRoutes({ store, origin, repo, auth }) {
         ? await store.pullSubstream(owner, owner + ':' + route, id, Number(after))
         : await store.pull(owner, id, Number(after));
       send(res, 200, result);
-    } else if ((route === 'audio' || route === 'live-audio') && method === 'DELETE') {
+    } else if (audioStream && route !== 'live-receipts' && method === 'DELETE') {
       const before = url.searchParams.get('before') ?? '';
       const id = url.searchParams.get('vault');
       requireThat(validId(id) && /^\d{1,15}$/.test(before) && Number(before) > 0, 'sync_invalid_cursor', 400);

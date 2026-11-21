@@ -85,7 +85,7 @@ test('desktop account registration authenticates once and logout clears the sync
   assert.deepEqual((await call('profile', 'PATCH', { name: '  设备验收  ' })).data, { name: '设备验收' });
   assert.deepEqual((await call('profile', 'GET')).data, { name: '设备验收' });
   assert.equal((await call('profile', 'PATCH', { name: 'x'.repeat(61) })).status, 400);
-  assert.deepEqual((await call('vault', 'GET')).data, { vault: null, legacy: true, liveAudio: true });
+  assert.deepEqual((await call('vault', 'GET')).data, { vault: null, legacy: true, liveAudio: true, liveAudioV2: true });
   await call('session', 'DELETE');
   assert.equal((await call('session', 'GET')).data.email, null);
   await assert.rejects(call('vault', 'GET'), { code: 'sync_sign_in_required' });
@@ -103,12 +103,22 @@ test('encrypted delta across authenticated accounts preserves ordering and idemp
   const mobile = await first('/private-sync/mobile-session');
   assert.equal(mobile.data.email, 'sync-first@example.test');
   assert.match(mobile.data.csrf, /^[a-f0-9]{64}$/);
-  assert.deepEqual(Object.keys(mobile.data).sort(), ['csrf', 'email']);
+  assert.deepEqual(Object.keys(mobile.data).sort(), ['csrf', 'email', 'expiresAt']);
+  assert.ok(mobile.data.expiresAt > Date.now());
+  const originalDevice = (await first('/private-sync/devices')).data.items[0];
+  assert.equal((await first('/private-sync/mobile-session', 'POST', undefined, { 'X-CSRF-Token': '' })).status, 403);
+  const renewed = await first('/private-sync/mobile-session', 'POST', undefined, { 'User-Agent': 'Mozilla/5.0 LingJi-Android' });
+  assert.equal(renewed.status, 200);
+  assert.ok(renewed.data.expiresAt >= mobile.data.expiresAt);
+  assert.equal(renewed.data.csrf, mobile.data.csrf);
+  assert.match(renewed.cookies[0], /HttpOnly; SameSite=Strict/);
+  const device = (await first('/private-sync/devices', 'GET', undefined, { Cookie: renewed.cookies[0].split(';')[0] })).data.items[0];
+  assert.deepEqual(device, { ...originalDevice, name: '聆记 Android' }, 'refresh preserves the device ID and original sign-in time');
   assert.equal((await first('/private-sync/vault', 'PUT', vault, { Origin: 'https://other.example.test' })).status, 403);
   assert.equal((await first('/private-sync/vault', 'PUT', vault, { 'X-CSRF-Token': '' })).status, 403);
   assert.equal((await first('/private-sync/vault', 'PUT', vault)).status, 201);
   assert.equal((await first('/private-sync/vault', 'PUT', vault)).status, 409);
-  assert.deepEqual((await second('/private-sync/vault')).data, { vault: null, legacy: true, liveAudio: true });
+  assert.deepEqual((await second('/private-sync/vault')).data, { vault: null, legacy: true, liveAudio: true, liveAudioV2: true });
   const id = randomUUID();
   const operation = { id, ...await seal(root, vault, 'revision', id, encoder.encode(stamp)) };
   const payload = { vault: vault.id, operations: [operation] };
@@ -118,7 +128,7 @@ test('encrypted delta across authenticated accounts preserves ordering and idemp
   assert.deepEqual((await first('/private-sync/delta', 'POST', payload)).data, sent.data);
   assert.equal((await first('/private-sync/delta', 'POST', {vault: vault.id, operations: [{...operation, nonce: randomBytes(12).toString('base64url')}]})).status, 409);
   assert.equal((await second('/private-sync/delta?vault=' + vault.id)).status, 404);
-  const quota = 64 * 1024 * 1024;
+  const quota = 1024 * 1024 * 1024;
   const audioId = randomUUID();
   const audio = { id: audioId, ...await seal(root, vault, 'audio', audioId, encoder.encode(stamp)) };
   assert.equal((await first('/private-sync/audio', 'POST', { vault: vault.id, operations: [audio] })).status, 200);
@@ -446,6 +456,7 @@ test('per-device revocation and TOTP recovery protect OPAQUE login after restart
   assert.equal(remote.name, 'Android');
   assert.equal((await owner('/private-sync/devices', 'DELETE', { id: remote.id })).status, 200);
   assert.equal((await second('/private-sync/devices')).status, 401);
+  assert.equal((await second('/private-sync/mobile-session', 'POST')).status, 401);
   assert.equal((await owner('/private-sync/devices')).data.items.length, 1);
 
   const plans = await owner('/private-sync/billing/plans');
@@ -585,13 +596,13 @@ test('a full live audio journal still accepts an independent desktop receipt', a
   await store.initialize(owner + ':live-audio', vault);
   await store.initialize(owner + ':live-receipts', vault);
   const db = new DatabaseSync(join(root, 'private-sync.sqlite'));
-  try { db.prepare('UPDATE sync_vaults SET bytes=? WHERE owner=?').run(64 * 1024 * 1024, owner + ':live-audio'); }
+  try { db.prepare('UPDATE sync_vaults SET bytes=? WHERE owner=?').run(1024 * 1024 * 1024, owner + ':live-audio'); }
   finally { db.close(); }
   const operation = { id: randomUUID(), nonce: 'test', body: 'test' };
   await assert.rejects(store.push(owner + ':live-audio', vault.id, [operation], owner), { code: 'sync_quota_exceeded' });
   const written = await store.push(owner + ':live-receipts', vault.id, [operation], owner);
   assert.equal(written.acknowledgements[0]?.seq, 1);
-  assert.equal((await store.usage(owner)).audio, 64 * 1024 * 1024);
+  assert.equal((await store.usage(owner)).audio, 1024 * 1024 * 1024);
 });
 
 test('lagging desktops retain audio until quota pressure reclaims acknowledged ciphertext', async t => {
@@ -615,7 +626,7 @@ test('lagging desktops retain audio until quota pressure reclaims acknowledged c
   assert.equal((await store.usage(owner)).audio, beforePrune);
   await assert.rejects(store.acknowledgeAudio(owner + ':live-audio', vault.id, 99, owner), { code: 'sync_cursor_ahead' });
   const db = new DatabaseSync(join(root, 'private-sync.sqlite'));
-  const quota = 64 * 1024 * 1024;
+  const quota = 1024 * 1024 * 1024;
   try { db.prepare('UPDATE sync_vaults SET bytes=? WHERE owner=?').run(quota, owner + ':live-audio'); }
   finally { db.close(); }
   const nextOp = { id: randomUUID(), nonce: 'n'.repeat(16), body: 'b'.repeat(512) };
@@ -709,4 +720,76 @@ test('desktop skips a trimmed recording suffix and resends a lost durable acknow
   assert.equal(await receiveLiveAudio(legacy.vault, legacy.root, signal, () => {}), false);
   assert.deepEqual(requests.filter(([method]) => method === 'DELETE').map(([, , cursor]) => cursor), ['5', '5', '5'],
     'an upgraded desktop confirms its previously consumed cursor even when the page is empty');
+});
+
+test('a compressed phone recording beyond five minutes plays locally and seals on a desktop', async t => {
+  const bundled = await build({
+    stdin: { contents: ['mobile', 'mobile-desktop', 'mobile-library', 'mobile-pcm']
+      .map(file => `export * from './apps/web/src/sync/${file}';`).join('\n'), resolveDir: process.cwd() },
+    bundle: true, write: false, format: 'esm',
+  });
+  const mobile = await import('data:text/javascript;base64,' + Buffer.from(bundled.outputFiles[0].text).toString('base64'));
+  const { account } = await cloud(t);
+  const signed = await account('mobile-long@example.test');
+  const { vault, root } = await createVault();
+  assert.equal((await signed('/private-sync/vault', 'PUT', vault)).status, 201);
+  const id = randomUUID(), signal = new AbortController().signal;
+  const directory = await mkdtemp(join(tmpdir(), 'lingji-long-desktop-'));
+  const { createRepository } = await import('../services/records/src/repository.mjs');
+  const { preparePrivateRecording } = await import('../services/records/src/private-sync-restore.mjs');
+  const { publicRecord, seal: sealCapture } = await import('../packages/records/src/record.mjs');
+  const desktop = await createRepository({ root: directory, databaseUrl: '' });
+  t.after(async () => { await desktop.close(); await rm(directory, { recursive: true, force: true }); });
+  const plain = new Uint8Array(32_000);
+  plain.fill(15, 200, 400);
+  const pcm = await mobile.packMobilePcm(plain);
+  assert.equal(pcm.codec, 'gzip');
+  assert.ok(pcm.bytes.length < plain.length / 10);
+  assert.deepEqual(await mobile.unpackMobilePcm(pcm), plain);
+  await assert.rejects(mobile.unpackMobilePcm({ ...pcm, length: 256 }), /超出标记大小/);
+  const entry = { id, title: '长录音', at: Date.now(), seconds: 302, marks: [] };
+  for (let sequence = 0; sequence < entry.seconds; sequence++) {
+    await mobile.appendMobileRecording(vault, root, { ...entry, seconds: sequence + 1 }, sequence, pcm);
+    await mobile.queueLiveAudio(vault, root, id, entry.title, { kind: 'pcm', sequence, offset: sequence * 16_000, pcm });
+  }
+  await mobile.finishMobileRecording(vault, root, entry);
+  await mobile.queueLiveAudio(vault, root, id, entry.title, { kind: 'finish', sequence: entry.seconds });
+  let recordId, received = 0;
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    const target = new URL(url, fixtureOrigin), input = options.body ? JSON.parse(options.body) : undefined;
+    if (target.pathname === '/api/private-sync/recording') {
+      const record = await preparePrivateRecording(desktop, 'local', input);
+      recordId = record.id;
+      return Response.json(publicRecord(record));
+    }
+    if (target.pathname === '/api/records/' + recordId + '/audio') {
+      const { pcm: encoded, ...chunk } = input;
+      assert.equal(chunk.sequence, received++);
+      assert.equal(chunk.sampleOffset, chunk.sequence * 16_000);
+      const bytes = Buffer.from(encoded, 'base64');
+      assert.deepEqual(bytes, Buffer.from(plain));
+      return Response.json(await desktop.ingestAudio('local', recordId, chunk, bytes));
+    }
+    if (target.pathname === '/api/records/' + recordId + '/seal') {
+      assert.equal(input.sources[0].lastSequence, 301);
+      await desktop.change(recordId, record => sealCapture(record, input.sources));
+      return Response.json({ ok: true });
+    }
+    const response = await signed(target.pathname.slice(4) + target.search, options.method, input);
+    return Response.json(response.data, { status: response.status });
+  });
+  while ((await mobile.pushLiveAudio(vault, 'phone-v2', signal)).length) { /* drain all durable batches */ }
+  assert.deepEqual((await signed('/private-sync/live-audio?vault=' + vault.id)).data.operations, [], 'older desktops never see v2 packets');
+  while (await mobile.receiveLiveAudio(vault, root, signal, () => {}, true)) { /* consume all pages */ }
+  const stored = await desktop.get(recordId);
+  assert.equal(stored.capture, 'sealed');
+  assert.equal(stored.chunks.length, 302);
+  assert.equal((await signed('/private-sync/live-audio-v2?vault=' + vault.id)).data.acknowledged, 303);
+  const data = await mobile.mobilePlayback(vault, root, id);
+  assert.equal(data.size, 44 + entry.seconds * 32_000);
+  assert.deepEqual(Buffer.from(await data.slice(-32_000).arrayBuffer()), Buffer.from(plain));
+  await mobile.deleteMobileRecording(vault, id);
+  assert.equal(await mobile.mobilePlayback(vault, root, id), null);
+  assert.ok((await mobile.hiddenMobileRecordings(vault)).has(id));
+  assert.deepEqual(await mobile.mobileRecordings(vault, root), []);
 });

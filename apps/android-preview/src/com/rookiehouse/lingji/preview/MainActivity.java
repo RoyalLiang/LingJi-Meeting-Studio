@@ -51,6 +51,7 @@ public final class MainActivity extends Activity {
     private Button retry;
     private int pageAttempt;
     private boolean dark;
+    private boolean sheetOpen;
     private boolean resumed;
     private boolean pendingRecordingStart;
     private final Runnable timeout = () -> retry.setVisibility(View.VISIBLE);
@@ -191,8 +192,7 @@ public final class MainActivity extends Activity {
         dark = darkMode;
         int background = dark ? DARK : LIGHT;
         getWindow().setBackgroundDrawable(new ColorDrawable(background));
-        getWindow().setStatusBarColor(background);
-        getWindow().setNavigationBarColor(background);
+        paintSystemBars();
         int mask = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
         View decor = getWindow().getDecorView();
         decor.setSystemUiVisibility((decor.getSystemUiVisibility() & ~mask) | (dark ? 0 : mask));
@@ -202,6 +202,12 @@ public final class MainActivity extends Activity {
         retry.setTextColor(dark ? 0xffecf2ed : 0xff19231e);
         retry.setBackgroundTintList(ColorStateList.valueOf(dark ? 0xff29352e : 0xffe4ebe3));
         if (web != null) web.setBackgroundColor(background);
+    }
+
+    private void paintSystemBars() {
+        int color = dark ? (sheetOpen ? 0xff111513 : DARK) : (sheetOpen ? 0xffbabcb9 : LIGHT);
+        getWindow().setStatusBarColor(color);
+        getWindow().setNavigationBarColor(color);
     }
 
     private void showLaunch(String message, boolean allowRetry) {
@@ -233,6 +239,7 @@ public final class MainActivity extends Activity {
         frame.addView(web, 0, new FrameLayout.LayoutParams(-1, -1));
         WebSettings settings = web.getSettings();
         settings.setJavaScriptEnabled(true);
+        settings.setUserAgentString(settings.getUserAgentString() + " LingJi-Android");
         settings.setDomStorageEnabled(true);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
@@ -341,6 +348,11 @@ public final class MainActivity extends Activity {
                         recordingBridgeReady = true;
                         flushPendingRecordingStart();
                         break;
+                    case "sheet-open":
+                    case "sheet-closed":
+                        sheetOpen = "sheet-open".equals(message.getData());
+                        paintSystemBars();
+                        break;
                     case "start":
                         pendingRecordingStart = true;
                         flushPendingRecordingStart();
@@ -358,6 +370,8 @@ public final class MainActivity extends Activity {
 
     private void closeRecordingPort() {
         recordingBridgeReady = false;
+        sheetOpen = false;
+        paintSystemBars();
         pendingRecordingStart = false;
         if (recordingPort != null) {
             recordingPort.close();
@@ -390,6 +404,10 @@ public final class MainActivity extends Activity {
     }
 
     @Override public void onBackPressed() {
+        if (sheetOpen && recordingPort != null) {
+            recordingPort.postMessage(new WebMessage("sheet-back"));
+            return;
+        }
         if (web != null && web.canGoBack()) web.goBack();
         else moveTaskToBack(true);
     }

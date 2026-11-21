@@ -5,8 +5,9 @@ import { requireThat } from '../../../packages/records/src/record.mjs';
 
 export const SYNC_PAGE_BYTES = 512 * 1024;
 const PAGE_OPERATIONS = 64;
-const VAULT_QUOTA = 64 * 1024 * 1024;
+const VAULT_QUOTA = 1024 * 1024 * 1024;
 const LIVE_RECEIPT_QUOTA = 1024 * 1024;
+const audioOwners = owner => [owner + ':audio', owner + ':live-audio', owner + ':live-audio-v2'];
 const schema = [
   'CREATE TABLE IF NOT EXISTS sync_vaults (owner TEXT PRIMARY KEY, data TEXT NOT NULL, head BIGINT NOT NULL, bytes BIGINT NOT NULL)',
   'CREATE TABLE IF NOT EXISTS sync_delta (owner TEXT NOT NULL, seq BIGINT NOT NULL, op TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(owner,seq), UNIQUE(owner,op))',
@@ -115,9 +116,9 @@ export async function createPrivateSyncStore({ root, pool }) {
   const reserved = row => Number(row.head) < -Date.now();
   async function canReplaceEmpty(conn, owner, row) {
     if (!row || Number(row.head) > 0 || reserved(row)) return false;
-    const associated = await run(conn, `SELECT 1 FROM sync_vaults WHERE owner IN ($2,$3,$4) AND head>0
+    const associated = await run(conn, `SELECT 1 FROM sync_vaults WHERE owner IN ($2,$3,$4,$5) AND head>0
       UNION ALL SELECT 1 FROM sync_credentials WHERE owner=$1
-      UNION ALL SELECT 1 FROM sync_pairs WHERE owner=$1 AND expires>$5 LIMIT 1`, [owner, owner + ':audio', owner + ':live-audio', owner + ':live-receipts', Date.now()]);
+      UNION ALL SELECT 1 FROM sync_pairs WHERE owner=$1 AND expires>$6 LIMIT 1`, [owner, ...audioOwners(owner), owner + ':live-receipts', Date.now()]);
     return associated.length === 0;
   }
 
@@ -151,8 +152,7 @@ export async function createPrivateSyncStore({ root, pool }) {
     },
     usage(owner) {
     return read(async conn => {
-      const audio = [owner + ':audio', owner + ':live-audio'];
-      const rows = await run(conn, 'SELECT owner,bytes FROM sync_vaults WHERE owner IN ($1,$2,$3)', [owner, ...audio]);
+      const rows = await run(conn, 'SELECT owner,bytes FROM sync_vaults WHERE owner IN ($1,$2,$3,$4)', [owner, ...audioOwners(owner)]);
       return {
         meetings: Number(rows.find(row => row.owner === owner)?.bytes || 0),
         audio: rows.filter(row => row.owner !== owner).reduce((bytes, row) => bytes + Number(row.bytes), 0),
@@ -162,12 +162,13 @@ export async function createPrivateSyncStore({ root, pool }) {
   },
   push(owner, vaultId, operations, parentOwner) {
       return write(async conn => {
-        // The two audio streams share one quota, so their writes and cleanup share the parent lock.
+        // Meeting and audio writes share the parent lock and one quota.
         const receipts = parentOwner && owner === parentOwner + ':live-receipts';
-        const sibling = !parentOwner || receipts ? null
-          : parentOwner + (owner === parentOwner + ':audio' ? ':live-audio' : ':audio');
+        const audio = parentOwner && !receipts;
+        const account = parentOwner ?? owner;
+        const audioStreams = audioOwners(account);
         if (parentOwner) {
-          const [parent] = await run(conn, 'SELECT data,head FROM sync_vaults WHERE owner=$1' + (pool ? (sibling ? ' FOR UPDATE' : ' FOR SHARE') : ''), [parentOwner]);
+          const [parent] = await run(conn, 'SELECT data,head FROM sync_vaults WHERE owner=$1' + (pool ? (audio ? ' FOR UPDATE' : ' FOR SHARE') : ''), [parentOwner]);
           requireThat(parent && !reserved(parent), 'sync_legacy_history', 409);
           requireThat(decode(parent)?.id === vaultId, 'sync_vault_unavailable', 404);
         }
@@ -177,14 +178,14 @@ export async function createPrivateSyncStore({ root, pool }) {
         const acknowledgements = [];
         let head = Math.max(0, Number(row.head)), bytes = Number(row.bytes);
         // A full audio journal must still accept receipts for durable desktop audio.
-        const [other] = sibling ? await run(conn, 'SELECT bytes FROM sync_vaults WHERE owner=$1', [sibling]) : [];
-        let quota = receipts ? LIVE_RECEIPT_QUOTA : VAULT_QUOTA - Number(other?.bytes || 0);
+        const other = receipts ? [] : await run(conn, 'SELECT bytes FROM sync_vaults WHERE owner IN ($1,$2,$3,$4) AND owner<>$5', [account, ...audioStreams, owner]);
+        let quota = receipts ? LIVE_RECEIPT_QUOTA : VAULT_QUOTA - other.reduce((total, entry) => total + Number(entry.bytes), 0);
         const pending = new Map();
         for (const operation of operations) {
           const data = JSON.stringify(operation);
           const prior = pending.get(operation.id) ?? (await run(conn,
             'SELECT seq,data,NULL AS fingerprint FROM sync_delta WHERE owner=$1 AND op=$2'
-            + (sibling ? ' UNION ALL SELECT seq,NULL,fingerprint FROM sync_audio_retired_ops WHERE owner=$1 AND op=$2' : ''),
+            + (audio ? ' UNION ALL SELECT seq,NULL,fingerprint FROM sync_audio_retired_ops WHERE owner=$1 AND op=$2' : ''),
             [owner, operation.id]))[0];
           if (prior) {
             requireThat(prior.data === data || (prior.fingerprint && prior.fingerprint === fingerprint(data)), 'sync_operation_conflict', 409);
@@ -197,9 +198,12 @@ export async function createPrivateSyncStore({ root, pool }) {
           acknowledgements.push({ id: operation.id, seq: head });
         }
         if (pending.size === 0) return { acknowledgements };
-        if (sibling && bytes > quota) {
-          bytes -= await reclaimAudio(conn, owner, bytes - quota);
-          quota += await reclaimAudio(conn, sibling, bytes - quota);
+        if (!receipts && bytes > quota) {
+          if (audio) bytes -= await reclaimAudio(conn, owner, bytes - quota);
+          for (const stream of audioStreams) {
+            if (bytes <= quota) break;
+            if (stream !== owner) quota += await reclaimAudio(conn, stream, bytes - quota);
+          }
         }
         requireThat(bytes <= quota, 'sync_quota_exceeded', 413);
         for (const [id, operation] of pending) {

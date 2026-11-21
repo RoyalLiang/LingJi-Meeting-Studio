@@ -10,6 +10,13 @@ window.addEventListener('message', event => {
   const port = event.ports[0];
   if (event.data !== 'lingji-recording' || !port || event.source) return;
   port.postMessage('ready');
+  const chrome = () => port.postMessage(document.querySelector('.mobile-source-sheet[open]') ? 'sheet-open' : 'sheet-closed');
+  document.addEventListener('meeting:chrome', chrome);
+  port.onmessage = message => {
+    if (message.data === 'sheet-back') document.querySelector('.mobile-source-sheet[open]')
+      ?.dispatchEvent(new Event('cancel', { cancelable: true }));
+  };
+  chrome();
   window.addEventListener('lingji:recording-opened', () => port.postMessage('start'));
   window.addEventListener('lingji:recording-closed', () => port.postMessage('stop'));
 });

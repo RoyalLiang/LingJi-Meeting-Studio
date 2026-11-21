@@ -10,6 +10,7 @@ const routes = new Map([
   ['profile', new Set(['GET', 'PATCH'])],
   ['audio', new Set(['GET', 'POST', 'DELETE'])],
   ['live-audio', new Set(['GET', 'POST', 'DELETE'])],
+  ['live-audio-v2', new Set(['GET', 'POST', 'DELETE'])],
   ['live-receipts', new Set(['GET', 'POST'])],
   ['vault', new Set(['GET', 'PUT'])],
   ['delta', new Set(['GET', 'POST'])],
@@ -78,7 +79,7 @@ export function createDesktopPrivateSync({ origin = PRIVATE_SYNC_COMPANION, fetc
       requireThat(upgrade || routes.get(route)?.has(req.method), 'not_found', 404);
       const auth = session;
       requireThat(auth, 'sync_sign_in_required', 401);
-      const body = req.method === 'GET' || (req.method === 'DELETE' && (route === 'audio' || route === 'live-audio'))
+      const body = req.method === 'GET' || (req.method === 'DELETE' && (route === 'audio' || route.startsWith('live-audio')))
         ? null : await readBody(req, upgrade ? 8192 : SYNC_PAGE_BYTES);
       const current = generation;
       const upstream = await remote(path + url.search, req.method, body, auth);

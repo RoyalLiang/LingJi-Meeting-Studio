@@ -1,40 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 import { BookmarkSimple, CaretDown, Microphone, Pause, Play, Stop } from '@phosphor-icons/react';
-import { MOBILE_RECORDING_BYTES, type MobileFrame } from '../sync/mobile';
-import { encodeBytes } from '../sync/vault';
+import { MOBILE_PCM_BYTES, WAV_PCM_LIMIT } from '../sync/mobile-pcm';
 import type { MobileRecording } from '../sync/mobile-library';
 import { Button } from './ui';
 
-function wavHeader(size: number) {
-  const bytes = new Uint8Array(44), view = new DataView(bytes.buffer), text = new TextEncoder();
-  bytes.set(text.encode('RIFF'), 0);
-  view.setUint32(4, size + 36, true);
-  bytes.set(text.encode('WAVEfmt '), 8);
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true);
-  view.setUint32(24, 16000, true);
-  view.setUint32(28, 32000, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  bytes.set(text.encode('data'), 36);
-  view.setUint32(40, size, true);
-  return bytes;
-}
-
-export function QuickMobileRecording({ save, archive, status, visible, showRecorder, live, onActive, onLiveRecording }: {
-  save: (id: string, blob: Blob, title: string) => Promise<void>;
-  archive: (entry: MobileRecording, blob: Blob) => Promise<void>;
+export function QuickMobileRecording({ append, commit, status, visible, showRecorder, onActive, onLiveRecording }: {
+  append: (entry: MobileRecording, sequence: number, offset: number, bytes: Uint8Array<ArrayBuffer>) => Promise<void>;
+  commit: (entry: MobileRecording, sequence: number) => Promise<void>;
   visible: boolean;
   showRecorder: () => void;
   status: string;
-  live?: (id: string, title: string, frame: MobileFrame) => Promise<void>;
   onActive?: (active: boolean) => void;
   onLiveRecording?: (id: string) => void;
 }) {
   const [lastMark, setLastMark] = useState(-1);
   const [showChoices, setShowChoices] = useState(false);
   const control = useRef<HTMLButtonElement>(null);
+  const wave = useRef<HTMLDivElement>(null);
   const currentMarks = useRef<number[]>([]);
   const [phase, setPhase] = useState<'idle' | 'starting' | 'recording' | 'paused' | 'saving'>('idle');
   const [elapsed, setElapsed] = useState(0);
@@ -96,28 +78,30 @@ export function QuickMobileRecording({ save, archive, status, visible, showRecor
       await resumed;
       await context.audioWorklet.addModule('/audio-worklet.js?v=2');
       if (!mounted.current) { close(); return; }
-      const node = new AudioWorkletNode(context, 'meeting-pcm', { processorOptions: { meter: false } });
+      const node = new AudioWorkletNode(context, 'meeting-pcm');
       const mute = context.createGain();
       mute.gain.value = 0;
       context.createMediaStreamSource(stream).connect(node).connect(mute).connect(context.destination);
-      const chunks: ArrayBuffer[] = [];
-      const limit = MOBILE_RECORDING_BYTES;
-      const id = crypto.randomUUID();
+      const pending: Uint8Array<ArrayBuffer>[] = [];
+      const id = crypto.randomUUID(), at = Date.now();
       const name = '手机录音 · ' + new Date().toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
       let queued = 0, offset = 0;
       let writing: Promise<void> | null = null;
       function drain() {
-        if (!live) return Promise.resolve();
         return writing ??= (async () => {
-          while (queued < chunks.length) {
-            const pcm = new Uint8Array(chunks[queued]);
-            await live(id, name, { kind: 'pcm', sequence: queued, offset, data: encodeBytes(pcm) });
+          while (pending.length) {
+            const pcm = pending[0];
+            await append({ id, title: name, at, seconds: Math.floor((offset * 2 + pcm.length) / MOBILE_PCM_BYTES),
+              marks: currentMarks.current.slice() }, queued, offset, pcm);
             queued++;
             offset += pcm.byteLength / 2;
+            pending.shift();
+            pcm.fill(0);
           }
         })().finally(() => { writing = null; });
       }
-      onLiveRecording?.(live ? id : '');
+      onLiveRecording?.(id);
+      const levels = Array.from({ length: 13 }, () => .13);
       let size = 0, ending = false, finished = false, deadline = 0;
       setCapturePaused.current = paused => {
         if (ending) return;
@@ -137,23 +121,9 @@ export function QuickMobileRecording({ save, archive, status, visible, showRecor
         if (!mounted.current) return;
         onLiveRecording?.('');
         if (!size) { setError('没有录到音频'); setPhase('idle'); onActive?.(false); return; }
-        let sent = false;
-        const wavBlob = new Blob([wavHeader(size), ...chunks], { type: 'audio/wav' });
-        if (!live) chunks.length = 0;
         void persist(async () => {
-          if (!sent && !live) {
-            await save(id, wavBlob, name);
-          } else if (!sent && live) {
-            await drain();
-            chunks.length = 0;
-            await live(id, name, { kind: 'finish', sequence: queued });
-          }
-          sent = true;
-          try {
-            await archive({ id, title: name, at: Date.now(), seconds: Math.floor(size / 32000), marks: currentMarks.current.slice() }, wavBlob);
-          } catch {
-            setError('录音已进入同步队列，手机未能保存回听副本');
-          }
+          await drain().catch(() => drain());
+          await commit({ id, title: name, at, seconds: Math.floor(size / MOBILE_PCM_BYTES), marks: currentMarks.current.slice() }, queued);
         });
       };
       finishCapture.current = () => {
@@ -165,18 +135,27 @@ export function QuickMobileRecording({ save, archive, status, visible, showRecor
       };
       node.port.onmessage = ({ data }) => {
         if (data.type === 'flushed') { if (ending && data.reason === 'finish') finish(); return; }
+        if (data.type === 'meter') {
+          levels.shift();
+          levels.push(Math.max(.13, Math.min(1, Math.sqrt(Math.max(0, data.value || 0)) * 2.5)));
+          for (let index = 0; index < levels.length; index++) {
+            const bar = wave.current?.children[index] as HTMLElement | undefined;
+            if (bar) bar.style.transform = `scaleY(${levels[index]})`;
+          }
+          return;
+        }
         if (data.type !== 'pcm') return;
         const pcm = data.buffer as ArrayBuffer;
-        const available = Math.min(pcm.byteLength, limit - size);
+        const available = Math.min(pcm.byteLength, WAV_PCM_LIMIT - size);
         if (available > 0) {
-          chunks.push(available === pcm.byteLength ? pcm : pcm.slice(0, available));
+          pending.push(new Uint8Array(available === pcm.byteLength ? pcm : pcm.slice(0, available)));
           size += available;
-          if (live) void drain().catch(() => {
-            if (mounted.current && !ending) setError('手机暂无法保存音频片段');
+          if (!writing) void drain().catch(() => {
+            if (mounted.current && !ending) finishCapture.current?.();
           });
-          setElapsed(Math.floor(size / 32000));
+          setElapsed(Math.floor(size / MOBILE_PCM_BYTES));
         }
-        if (size >= limit) finishCapture.current?.();
+        if (size >= WAV_PCM_LIMIT || pending.length >= 48) finishCapture.current?.();
       };
       stream.getAudioTracks()[0]?.addEventListener('ended', () => finishCapture.current?.(), { once: true });
       setPhase('recording');
@@ -191,9 +170,6 @@ export function QuickMobileRecording({ save, archive, status, visible, showRecor
     }
   }
 
-  const maxSeconds = Math.floor(MOBILE_RECORDING_BYTES / 32000);
-  const remaining = Math.max(0, maxSeconds - elapsed);
-  const limitNotice = phase === 'recording' && remaining <= 30 ? `剩余 ${remaining} 秒将自动保存` : '';
   const time = String(Math.floor(elapsed / 60)).padStart(2, '0') + ':' + String(elapsed % 60).padStart(2, '0');
   const label = phase === 'recording' ? '暂停录音' : phase === 'paused' ? '录音已暂停，继续或结束' : phase === 'saving' ? '正在保存' : phase === 'starting' ? '正在启动' : draft.current ? '重试保存' : '开始录音';
   const capturing = phase === 'recording' || phase === 'paused';
@@ -241,8 +217,11 @@ export function QuickMobileRecording({ save, archive, status, visible, showRecor
             setLastMark(elapsed);
           }}><BookmarkSimple size={17} weight={lastMark === elapsed ? 'fill' : 'regular'}/></button>}
       </div>}
+      {phase === 'recording' && <div className="quick-mobile-wave" ref={wave} aria-hidden="true">
+        {Array.from({ length: 13 }, (_, index) => <i key={index}/>)}
+      </div>}
       <div className="quick-mobile-feedback">
-        {error ? <p className="quick-mobile-issue" role="alert">{error}</p> : limitNotice ? <p role="status">{limitNotice}</p> : capturing && status && <p role="status">{status}</p>}
+        {error ? <p className="quick-mobile-issue" role="alert">{error}</p> : capturing && status && <p role="status">{status}</p>}
       </div>
     </div>
   </section>;

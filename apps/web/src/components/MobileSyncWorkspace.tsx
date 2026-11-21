@@ -4,12 +4,15 @@ import { createVault, recoverVault, type Envelope, type Vault } from '../sync/va
 import { authenticateAccount, openAccountVault, wrapAccountVault } from '../sync/account';
 import { readDeviceVault, rememberDeviceVault, type DeviceVault } from '../sync/device';
 import { annotateMeeting, clearJournalCache, loadMeetingCopy, meetingCopies, syncMeetings, type CopySummary, type MeetingAnnotations } from '../sync/journal';
-import { pullLiveAudio, pushLiveAudio, pushMobileRecordings, queueLiveAudio, queueMobileRecording } from '../sync/mobile';
-import { clearMobileLibraryCache, deleteMobileRecording, mobilePlayback, mobileRecordings, rememberMobileRecording, type MobileRecording } from '../sync/mobile-library';
+import { pullLiveAudio, pushLiveAudio, pushMobileRecordings, queueLiveAudio } from '../sync/mobile';
+import { appendMobileRecording, clearMobileLibraryCache, deleteMobileRecording, finishMobileRecording, hiddenMobileRecordings, mobilePlayback, mobileRecordings, type MobileRecording } from '../sync/mobile-library';
+import { packMobilePcm } from '../sync/mobile-pcm';
+import { ShieldCheck } from '@phosphor-icons/react';
 import { Button } from './ui';
 import { FeedbackNotice } from './FeedbackNotice';
 import { MobileWorkspace, type MobilePage } from './MobileWorkspace';
 import { QuickMobileRecording } from './QuickMobileRecording';
+import { MobileSheet } from './MobileSheet';
 import './PrivateSyncSettings.css';
 
 function syncError(error: unknown) {
@@ -45,21 +48,26 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
   const [emptyUpgrade, setEmptyUpgrade] = useState(false);
   const [vault, setVault] = useState<Vault>();
   const [liveAudio, setLiveAudio] = useState(false);
+  const [liveAudioV2, setLiveAudioV2] = useState(false);
   const [liveIssue, setLiveIssue] = useState('');
   const activeLive = useRef({ id: '', uploaded: false, received: false });
   const [liveStatus, setLiveStatus] = useState('');
   const [unlocked, setUnlocked] = useState(false);
   const [copies, setCopies] = useState<CopySummary[]>([]);
-  const profileEditor = useRef<HTMLDialogElement>(null);
+  const [profileEditor, setProfileEditor] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState('');
   const [mobilePage, setMobilePage] = useState<MobilePage>('record');
   const [phoneCopies, setPhoneCopies] = useState<MobileRecording[]>([]);
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set());
   const [phoneMeetingSync, setPhoneMeetingSync] = useState(true);
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
-  const [profile, setProfile] = useState('');
-  const [name, setName] = useState('');
+  const profileKey = 'lingji:phone-profile:' + email;
+  const [profile, setProfile] = useState(() => { try { return localStorage.getItem(profileKey) || ''; } catch { return ''; } });
+  const [name, setName] = useState<string | null>(null);
   const [mobileStatus, setMobileStatus] = useState('');
   const [backgroundIssue, setBackgroundIssue] = useState('');
   const [pairCode, setPairCode] = useState('');
@@ -69,16 +77,19 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
 
   useEffect(() => {
     if (unlocked && liveAudio && vault) {
-      try { localStorage.setItem('lingji:live-audio', vault.id); } catch {}
+      try {
+        localStorage.setItem('lingji:live-audio', vault.id);
+        localStorage.setItem('lingji:live-audio-v2', liveAudioV2 ? vault.id : '');
+      } catch {}
     }
-  }, [unlocked, liveAudio, vault]);
+  }, [unlocked, liveAudio, liveAudioV2, vault]);
 
   useEffect(() => {
     if (!vault || !unlocked || !secret.current) return;
     const root = secret.current.slice();
     let mounted = true;
-    void mobileRecordings(vault, root).then(items => {
-      if (mounted) setPhoneCopies(items);
+    void Promise.all([mobileRecordings(vault, root), hiddenMobileRecordings(vault)]).then(([items, removed]) => {
+      if (mounted) { setPhoneCopies(items); setHidden(removed); }
     }).catch(() => {}).finally(() => root.fill(0));
     try { setPhoneMeetingSync(localStorage.getItem('lingji:phone-meetings:' + vault.id) !== '0'); } catch {}
     return () => { mounted = false; };
@@ -88,10 +99,14 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
     if (!online || !email) return;
     const controller = new AbortController();
     void api<{ name: string }>('/private-sync/profile', 'GET', undefined, controller.signal)
-      .then(({ name: nextName }) => { if (!controller.signal.aborted) { setProfile(nextName); setName(nextName); } })
+      .then(({ name: nextName }) => {
+        if (controller.signal.aborted) return;
+        setProfile(nextName);
+        try { localStorage.setItem(profileKey, nextName); } catch {}
+      })
       .catch(() => {});
     return () => controller.abort();
-  }, [online, email]);
+  }, [online, email, profileKey]);
 
   const readMobileMeeting = useCallback(async (id: string) => {
     if (!vault || !secret.current) return null;
@@ -119,9 +134,10 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
   }, [vault]);
 
   const deleteLocalRecording = useCallback(async (id: string) => {
-    if (!vault) return;
+    if (!vault) throw new Error('资料库未解锁');
     await deleteMobileRecording(vault, id);
     setPhoneCopies(items => items.filter(item => item.id !== id));
+    setHidden(items => new Set([...items, id]));
   }, [vault]);
 
   const searchMobileMeetings = useCallback(async (query: string) => {
@@ -179,14 +195,17 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
       local = await readDeviceVault(account).catch(() => null);
       signal.throwIfAborted();
       if (local) {
-        try { setLiveAudio(localStorage.getItem('lingji:live-audio') === local.vault.id); } catch {}
+        try {
+          setLiveAudio(localStorage.getItem('lingji:live-audio') === local.vault.id);
+          setLiveAudioV2(localStorage.getItem('lingji:live-audio-v2') === local.vault.id);
+        } catch {}
         await enter({ vault: local.vault, root: local.root.slice(), kit: local.kit }, signal);
       }
       if (!navigator.onLine) {
         setReady(true);
         return;
       }
-      const getVault = () => api<{ vault: Vault | null; account?: Envelope; legacy: boolean; emptyUpgrade?: boolean; liveAudio?: boolean }>('/private-sync/vault', 'GET', undefined, signal);
+      const getVault = () => api<{ vault: Vault | null; account?: Envelope; legacy: boolean; emptyUpgrade?: boolean; liveAudio?: boolean; liveAudioV2?: boolean }>('/private-sync/vault', 'GET', undefined, signal);
       let remote = await getVault();
       let cloud = remote.vault;
       signal.throwIfAborted();
@@ -221,6 +240,7 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
       if (!cloud) return;
       signal.throwIfAborted();
       setLiveAudio(remote.liveAudio === true);
+      setLiveAudioV2(remote.liveAudioV2 === true);
       try { localStorage.setItem('lingji:live-audio', remote.liveAudio && cloud ? cloud.id : ''); } catch {}
       setLegacyAccount(remote.legacy);
       setEmptyUpgrade(remote.emptyUpgrade === true);
@@ -331,6 +351,20 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
   }, [ready, online, unlocked, vault, phoneMeetingSync, recording]);
 
   useEffect(() => {
+    if (!liveAudio || liveAudioV2 || !online || !vault || !unlocked) return;
+    const controller = new AbortController();
+    const probe = () => {
+      void api<{ vault: Vault | null; liveAudioV2?: boolean }>('/private-sync/vault', 'GET', undefined, controller.signal)
+        .then(remote => {
+          if (!controller.signal.aborted && remote.vault?.id === vault.id && remote.liveAudioV2) setLiveAudioV2(true);
+        }).catch(() => {});
+    };
+    const timer = window.setInterval(probe, 60_000);
+    if (recording) probe();
+    return () => { window.clearInterval(timer); controller.abort(); };
+  }, [liveAudio, liveAudioV2, online, vault, unlocked, recording]);
+
+  useEffect(() => {
     if (!ready || !online || !unlocked || !vault || !liveAudio) return;
     const controller = new AbortController();
     const { signal } = controller;
@@ -356,9 +390,10 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
       let more = false;
       const key = secret.current.slice();
       try {
-        const [pushed, pulled] = await Promise.allSettled([
+        const [legacy, pushed, pulled] = await Promise.allSettled([
           pushLiveAudio(localVault, 'phone', signal),
-          capture.id && !capture.received
+          liveAudioV2 ? pushLiveAudio(localVault, 'phone-v2', signal) : [],
+          liveAudioV2 && capture.id && !capture.received
             ? pullLiveAudio(localVault, key, 'phone', signal, frame => {
               if (frame.id === activeLive.current.id && !signal.aborted) {
                 activeLive.current.received = true;
@@ -369,7 +404,8 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
         ]);
         signal.throwIfAborted();
         if (pushed.status === 'rejected') throw pushed.reason;
-        more = pushed.value.length === 8;
+        if (legacy.status === 'rejected') throw legacy.reason;
+        more = pushed.value.length === 8 || legacy.value.length === 8;
         if (activeLive.current === capture && !capture.received && !capture.uploaded &&
           pushed.value.some(item => Array.isArray(item) && item[2] === capture.id)) {
           capture.uploaded = true;
@@ -403,7 +439,7 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
       removeEventListener('lingji:live-audio-ready', wakeup);
       document.removeEventListener('visibilitychange', wakeup);
     };
-  }, [ready, online, unlocked, vault, liveAudio, recording]);
+  }, [ready, online, unlocked, vault, liveAudio, liveAudioV2, recording]);
 
   function upgradeAccount(event: FormEvent<HTMLFormElement>, replaceEmpty = false) {
     event.preventDefault();
@@ -455,17 +491,19 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
     });
   }
 
-  function saveProfile(event: FormEvent<HTMLFormElement>) {
+  async function saveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const sheet = event.currentTarget.closest('dialog');
-    run(async signal => {
-      const data = await api<{ name: string }>('/private-sync/profile', 'PATCH', { name }, signal);
-      signal.throwIfAborted();
-      setName(data.name);
+    if (profileSaving || !online || name === null) return;
+    setProfileSaving(true);
+    setProfileError('');
+    try {
+      const data = await api<{ name: string }>('/private-sync/profile', 'PATCH', { name });
       setProfile(data.name);
-      sheet?.close();
+      try { localStorage.setItem(profileKey, data.name); } catch {}
+      setProfileEditor(false);
       setNotice('个人设置已保存');
-    });
+    } catch (failure) { setProfileError(syncError(failure)); }
+    finally { setProfileSaving(false); }
   }
 
   const upgradingHere = legacyAccount && (unlocked || emptyUpgrade);
@@ -477,57 +515,56 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
   const account = <section className="mobile-account-card" aria-label="账号资料">
     <div className="mobile-account-identity">
       <span className="account-avatar" aria-hidden="true">{(profile || email || '聆').slice(0, 1).toUpperCase()}</span>
-      <div><strong>{profile || '个人账号'}</strong><small title={email}>{email}</small></div>
-      <Button variant="ghost" onClick={() => profileEditor.current?.showModal()}>编辑资料</Button>
+      <div><strong>{profile || '个人账号'}</strong><small title={email}>{email}</small>
+        <span className="mobile-encryption-pill" data-unlocked={unlocked}>
+          <ShieldCheck size={13} aria-hidden="true"/>{unlocked ? '端到端加密' : '资料库未解锁'}
+        </span>
+      </div>
+      <Button variant="ghost" onClick={() => { setName(null); setProfileError(''); setProfileEditor(true); }}>编辑资料</Button>
     </div>
-    <dialog ref={profileEditor} className="mobile-source-sheet" aria-labelledby="mobile-profile-heading">
-      <h2 id="mobile-profile-heading">编辑资料</h2>
+    {profileEditor && <MobileSheet title="编辑资料" close={() => { if (!profileSaving) setProfileEditor(false); }}>
       <form className="mobile-profile-form" onSubmit={saveProfile}>
         <label htmlFor="phone-profile-name">显示名称</label>
         <input id="phone-profile-name" placeholder="输入显示名称" autoComplete="nickname" maxLength={60}
-          value={name} disabled={!online || busy} onChange={event => setName(event.target.value)}/>
-        <Button variant="primary" type="submit" disabled={!online || busy || name.trim() === profile}>保存</Button>
+          value={name ?? profile} disabled={profileSaving} onChange={event => setName(event.target.value)}/>
+        {profileError && <p role="alert">{profileError}</p>}
+        <Button variant="primary" type="submit" disabled={!online || profileSaving || (name ?? profile).trim() === profile}>{profileSaving ? '正在保存…' : '保存'}</Button>
       </form>
-      <div className="mobile-sheet-actions mobile-profile-actions">
-        <Button variant="ghost" disabled={!online || busy || recording} onClick={() => { forget(); signOut(); }}>退出账号</Button>
-        <Button variant="ghost" onClick={() => profileEditor.current?.close()}>关闭</Button>
-      </div>
-    </dialog>
+    </MobileSheet>}
   </section>;
 
   const recorder = vault && unlocked && !legacyAccount ? <QuickMobileRecording
     visible={mobilePage === 'record'}
     showRecorder={() => { setMobilePage('record'); window.scrollTo(0, 0); }}
-    status={!online ? '离线保存，回网自动同步' : liveIssue || liveStatus || mobileStatus}
-    live={liveAudio ? async (id, title, frame) => {
+    status={!online ? '离线保存，回网自动同步' : !liveAudioV2 ? '已在本机保存，服务更新后同步' : liveIssue || liveStatus || mobileStatus}
+    append={async (entry, sequence, offset, bytes) => {
       if (!secret.current) throw new Error('资料库未解锁');
       const key = secret.current.slice();
+      let pcm;
       try {
-        await queueLiveAudio(vault, key, id, title, frame);
+        pcm = await packMobilePcm(bytes);
+        await appendMobileRecording(vault, key, entry, sequence, pcm);
+        await queueLiveAudio(vault, key, entry.id, entry.title, { kind: 'pcm', sequence, offset, pcm });
         dispatchEvent(new Event('lingji:live-audio-ready'));
-      } finally { key.fill(0); }
-    } : undefined}
+      } finally {
+        key.fill(0);
+        if (pcm && pcm.bytes !== bytes) pcm.bytes.fill(0);
+      }
+    }}
     onLiveRecording={id => {
       activeLive.current = { id, uploaded: false, received: false };
       setLiveStatus(id ? '正在上传音频' : '');
       if (id) dispatchEvent(new Event('lingji:live-audio-ready'));
     }}
     onActive={mobileActive}
-    archive={async (entry, blob) => {
+    commit={async (entry, sequence) => {
       if (!secret.current) throw new Error('资料库未解锁');
       const key = secret.current.slice();
       try {
-        await rememberMobileRecording(vault, key, entry, blob);
+        await finishMobileRecording(vault, key, entry);
+        await queueLiveAudio(vault, key, entry.id, entry.title, { kind: 'finish', sequence });
         setPhoneCopies(items => [entry, ...items.filter(item => item.id !== entry.id)]);
-      } finally { key.fill(0); }
-    }}
-    save={async (id, blob, title) => {
-      if (!secret.current) throw new Error('请先解锁会议同步');
-      const key = secret.current.slice();
-      try {
-        await queueMobileRecording(vault, key, blob, title, id);
-        setMobileStatus(online ? '已在本机保存，正在同步…' : '已在本机保存，联网后自动同步');
-        dispatchEvent(new Event('lingji:sync-wakeup'));
+        dispatchEvent(new Event('lingji:live-audio-ready'));
       } finally { key.fill(0); }
     }}/> : mobilePage === 'record' && (!ready ? <section className="quick-mobile-recording" aria-label="正在连接">
       <div className="mobile-connecting-state" role="status"><span className="mobile-connecting-dot" aria-hidden="true"/><span>正在解锁资料库…</span></div>
@@ -541,7 +578,9 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
         </form>
       </div></section>}
       {!upgradingHere && vault && !unlocked && <section className="account-section"><header><h2>恢复访问</h2></header><div className="account-panel">
-        <p>{newLoginNeeded ? '退出账号再登录，即可解锁同步。' : '可使用恢复密钥或从已登录设备配对解锁。'}</p>
+        {newLoginNeeded
+          ? <Button variant="primary" disabled={busy || !online} onClick={() => { forget(); signOut(); }}>重新登录以解锁</Button>
+          : <p>可使用恢复密钥或从已登录设备配对解锁。</p>}
         <details className="sync-options">
           <summary>其他恢复方式</summary>
           <details className="sync-options">
@@ -578,7 +617,7 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
         catch { setError('无法在本机保存同步设置'); return; }
         setPhoneMeetingSync(enabled);
       }}
-      copies={copies} saved={phoneCopies} recorder={recorder} account={account}
+      copies={copies} saved={phoneCopies} hidden={hidden} recorder={recorder} account={account}
       read={readMobileMeeting} saveAnnotations={saveMobileAnnotations} play={playMobileRecording}
       search={searchMobileMeetings} deleteLocal={deleteLocalRecording}/>
     {feedback}

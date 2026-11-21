@@ -1,13 +1,14 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ArrowLeft, ArrowClockwise, FileText, Headphones, Keyhole, Link, Microphone, Moon, ShieldCheck, Trash, User, WifiSlash, DeviceMobile, Pause, Play, CaretRight } from '@phosphor-icons/react';
+import { ArrowLeft, ArrowClockwise, FileText, Headphones, Keyhole, Link, Microphone, Moon, Trash, User, WifiSlash, DeviceMobile, Pause, Play, CaretRight, DotsThree } from '@phosphor-icons/react';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import type { Minutes } from '../model';
 import type { CopySummary, MeetingAnnotations, MeetingCopy } from '../sync/journal';
 import { api } from '../api';
 import type { MobileRecording } from '../sync/mobile-library';
-import { MobileAccountDevices, MobileAccountFactor, MobileBillingPlans } from './MobileAccountPanels';
+import { MobileAccountDevices, MobileAccountFactor, MobileBillingPlans, loadMobileDevices } from './MobileAccountPanels';
 import { Brand } from './Brand';
 import { Button } from './ui';
+import { MobileSheet } from './MobileSheet';
 import './MobileWorkspace.css';
 
 export type MobilePage = 'record' | 'meetings' | 'account';
@@ -33,12 +34,48 @@ function combined(copies: CopySummary[], saved: MobileRecording[]): Entry[] {
   return entries.sort((a, b) => b.at - a.at);
 }
 
-const RecordCards = memo(function RecordCards({ entries, select, empty }: { entries: Entry[]; select: (entry: Entry) => void; empty: string }) {
-  if (!entries.length) return <p className="mobile-empty">{empty}</p>;
-  return <ul className="mobile-record-list">{entries.map(entry => {
+const RecordRow = memo(function RecordRow({ entry, opened, reveal, select, remove }: {
+  entry: Entry; opened: boolean; reveal: (id: string | null) => void;
+  select: (entry: Entry) => void; remove?: (entry: Entry) => void;
+}) {
+    const [drag, setDrag] = useState<number>();
+    const tracking = useRef<{ x: number; y: number; horizontal: boolean } | undefined>(undefined);
+    const suppressClick = useRef(false);
     const seconds = entry.saved?.seconds ?? (entry.cloud?.durationMs === undefined ? null : Math.floor(entry.cloud.durationMs / 1000));
-    return <li key={entry.id}>
-      <button type="button" className="mobile-record-card" onClick={() => select(entry)}>
+    return <li className="mobile-record-row" data-revealed={opened}>
+      {remove && <button type="button" className="mobile-row-delete" tabIndex={opened ? 0 : -1} aria-hidden={!opened}
+        onClick={() => { reveal(null); remove(entry); }}><Trash size={18}/>移除</button>}
+      <div className="mobile-record-slide" data-dragging={drag !== undefined} style={{ transform: `translateX(${drag ?? (opened ? -76 : 0)}px)` }}
+        onPointerDown={event => {
+          suppressClick.current = false;
+          if (remove && event.isPrimary && event.button === 0) tracking.current = { x: event.clientX, y: event.clientY, horizontal: false };
+        }}
+        onPointerMove={event => {
+          const start = tracking.current;
+          if (!start) return;
+          const dx = event.clientX - start.x, dy = event.clientY - start.y;
+          if (!start.horizontal) {
+            if (Math.abs(dy) > 9 && Math.abs(dy) >= Math.abs(dx)) { tracking.current = undefined; return; }
+            if (Math.abs(dx) < 10 || Math.abs(dx) <= Math.abs(dy)) return;
+            start.horizontal = true;
+            suppressClick.current = true;
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }
+          setDrag(Math.min(0, Math.max(-88, (opened ? -76 : 0) + dx)));
+        }}
+        onPointerUp={event => {
+          if (tracking.current?.horizontal) {
+            const dx = event.clientX - tracking.current.x;
+            reveal((opened ? dx < 26 : dx < -34) ? entry.id : null);
+          }
+          tracking.current = undefined;
+          setDrag(undefined);
+        }}
+        onPointerCancel={() => { tracking.current = undefined; setDrag(undefined); }}
+        onClickCapture={event => {
+          if (suppressClick.current && event.detail > 0) { event.stopPropagation(); suppressClick.current = false; }
+        }}>
+      <button type="button" className="mobile-record-card" onClick={() => { if (opened) reveal(null); else select(entry); }}>
         <strong>{entry.title}</strong>
         <span className="mobile-record-badge">{entry.cloud?.pending ? '待同步' : entry.cloud ? '已同步' : '本机录音'}</span>
         <span className="mobile-record-meta">
@@ -49,8 +86,19 @@ const RecordCards = memo(function RecordCards({ entries, select, empty }: { entr
             : entry.cloud?.fromPhone !== undefined && <span>{entry.cloud.fromPhone ? '手机录音' : '电脑记录'}</span>}
         </span>
       </button>
+      {remove && <button type="button" className="mobile-record-more" aria-label={`移除 ${entry.title}`}
+        onClick={() => { reveal(null); remove(entry); }}><DotsThree size={19} weight="bold"/></button>}
+      </div>
     </li>;
-  })}</ul>;
+});
+
+const RecordCards = memo(function RecordCards({ entries, select, empty, remove }: {
+  entries: Entry[]; select: (entry: Entry) => void; empty: string; remove?: (entry: Entry) => void;
+}) {
+  const [opened, reveal] = useState<string | null>(null);
+  if (!entries.length) return <p className="mobile-empty">{empty}</p>;
+  return <ul className="mobile-record-list">{entries.map(entry =>
+    <RecordRow key={entry.id} entry={entry} opened={opened === entry.id} reveal={reveal} select={select} remove={remove}/>)}</ul>;
 });
 
 type PlayerHandle = { playAt: (seconds: number) => void };
@@ -170,10 +218,10 @@ const MobileTranscriptList = memo(function MobileTranscriptList({ lines, highlig
   </div>;
 });
 
-function MobileMeeting({ entry, back, read, play, saveAnnotations, deleteLocal }: {
+function MobileMeeting({ entry, back, read, play, saveAnnotations, remove }: {
   entry: Entry; back: () => void; read: (id: string) => Promise<MeetingCopy | null>; play: (id: string) => Promise<Blob | null>;
   saveAnnotations: (parent: string, changes: MeetingAnnotations) => Promise<void>;
-  deleteLocal?: (id: string) => Promise<void>;
+  remove?: (entry: Entry) => void;
 }) {
   const [tab, setTab] = useState<(typeof detailTabs)[number][0]>('minutes');
   const [copy, setCopy] = useState<MeetingCopy | null>();
@@ -185,7 +233,6 @@ function MobileMeeting({ entry, back, read, play, saveAnnotations, deleteLocal }
   const [citation, setCitation] = useState<TranscriptLine>();
   const [highlight, setHighlight] = useState('');
   const mounted = useRef(false);
-  const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; };
@@ -198,9 +245,6 @@ function MobileMeeting({ entry, back, read, play, saveAnnotations, deleteLocal }
     }).catch(() => { if (active) { setError('无法读取此会议'); setCopy(null); } });
     return () => { active = false; };
   }, [entry.cloud?.id, read]);
-  useEffect(() => {
-    if (citation && !dialog.current?.open) dialog.current?.showModal();
-  }, [citation]);
   const playAt = useCallback((seconds: number) => {
     playerRef.current?.playAt(seconds);
   }, []);
@@ -230,7 +274,7 @@ function MobileMeeting({ entry, back, read, play, saveAnnotations, deleteLocal }
   return <section aria-label="会议详情">
     <header className="mobile-detail-header">
       <Button variant="ghost" aria-label="返回会议列表" onClick={back}><ArrowLeft size={20}/></Button>
-      <h1>{entry.title}</h1>
+      <h2>{entry.title}</h2>
       <span className="mobile-record-badge">{entry.cloud?.pending ? '待同步' : entry.cloud ? '已同步' : '本机录音'}</span>
     </header>
     {entry.saved && <MobileAudioPlayer ref={playerRef} saved={entry.saved} play={play} onError={setError}/>}
@@ -281,21 +325,18 @@ function MobileMeeting({ entry, back, read, play, saveAnnotations, deleteLocal }
         <ul className="mobile-record-list">{entry.saved.marks.map(mark => <li className="mobile-card" key={mark}><button className="mobile-time-link" type="button"
           onClick={() => playAt(mark)} aria-label={`回听重点 ${clock(mark)}`}>{clock(mark)}</button></li>)}</ul>
       </section> : !copy && <p className="mobile-empty">暂无手记</p>}
-      {entry.saved && deleteLocal && <div className="mobile-detail-actions">
-        <Button variant="ghost" disabled={saving} onClick={() => void deleteLocal(entry.saved!.id).then(() => { if (!entry.cloud) back(); }).catch(failure => setError((failure as Error).message))}>
-          <Trash size={15}/>清理本机回听副本
-        </Button>
-      </div>}
     </>}
-    <dialog ref={dialog} className="mobile-source-sheet" onClose={() => setCitation(undefined)}>
-      {citation && <><h2>来源原文</h2><p className="mobile-sheet-note">{citation.speaker} · {clock(Math.floor(citation.startMs / 1000))}</p>
+    {remove && <div className="mobile-detail-actions">
+      <Button variant="ghost" disabled={saving} onClick={() => remove(entry)}><Trash size={15}/>移除本机记录</Button>
+    </div>}
+    {citation && <MobileSheet title="来源原文" close={() => setCitation(undefined)}>
+      <p className="mobile-sheet-note">{citation.speaker} · {clock(Math.floor(citation.startMs / 1000))}</p>
       <p>{citation.text}</p><div className="mobile-sheet-actions">
-        <Button variant="ghost" onClick={() => dialog.current?.close()}>关闭</Button>
         <Button onClick={() => {
-          setTab('transcript'); setHighlight(citation.id); dialog.current?.close();
+          setTab('transcript'); setHighlight(citation.id); setCitation(undefined);
         }}>在原文中定位</Button>
-      </div></>}
-    </dialog>
+      </div>
+    </MobileSheet>}
   </section>;
 }
 
@@ -307,11 +348,11 @@ function MobileSwitch({ checked, disabled, change }: { checked: boolean; disable
 }
 
 export function MobileWorkspace({
-  page, setPage, online, unlocked, automatic, setAutomatic, copies, saved, recorder, account, read, play, search, saveAnnotations, deleteLocal,
+  page, setPage, online, unlocked, automatic, setAutomatic, copies, saved, hidden, recorder, account, read, play, search, saveAnnotations, deleteLocal,
 }: {
   page: MobilePage; setPage: (page: MobilePage) => void; online: boolean; unlocked: boolean;
   automatic: boolean; setAutomatic: (enabled: boolean) => void;
-  copies: CopySummary[]; saved: MobileRecording[]; recorder: ReactNode; account: ReactNode;
+  copies: CopySummary[]; saved: MobileRecording[]; hidden: ReadonlySet<string>; recorder: ReactNode; account: ReactNode;
   read: (id: string) => Promise<MeetingCopy | null>;
   play: (id: string) => Promise<Blob | null>;
   search: (query: string) => Promise<CopySummary[]>;
@@ -323,11 +364,14 @@ export function MobileWorkspace({
   const [space, setSpace] = useState('');
   const [usage, setUsage] = useState<Usage | null>(null);
   const [usageError, setUsageError] = useState(false);
-  const accountSheet = useRef<HTMLDialogElement>(null);
   const [sheet, setSheet] = useState<'plans' | 'devices' | 'factor' | null>(null);
+  const [removing, setRemoving] = useState<Entry>();
+  const [removeBusy, setRemoveBusy] = useState(false);
+  const [removeError, setRemoveError] = useState('');
+  const chooseRemoval = useCallback((entry: Entry) => { setRemoveError(''); setRemoving(entry); }, []);
   useEffect(() => {
-    if (sheet && !accountSheet.current?.open) accountSheet.current?.showModal();
-  }, [sheet]);
+    if (page === 'account' && online) void loadMobileDevices().catch(() => {});
+  }, [page, online]);
   useEffect(() => {
     if (page !== 'account' || !online || !unlocked) return;
     const controller = new AbortController();
@@ -362,8 +406,10 @@ export function MobileWorkspace({
       saved.filter(item => item.title.toLowerCase().includes(searchTerm) || Boolean(matchedIds?.has(item.id)))
     );
   }, [searchTerm, entries, matches, copies, saved]);
-  const visibleEntries = useMemo(() => filtered.filter(entry => !space || (entry.cloud?.workspace?.id || 'personal') === space), [filtered, space]);
-  const formatSize = (value: number) => (value / 1048576).toLocaleString('zh-CN', { maximumFractionDigits: 2 }) + ' MiB';
+  const visibleEntries = useMemo(() => filtered.filter(entry => !hidden.has(entry.cloud?.sourceId || entry.id) &&
+    (!space || (entry.cloud?.workspace?.id || 'personal') === space)), [filtered, hidden, space]);
+  const formatSize = (value: number) => (value / (value >= 1073741824 ? 1073741824 : 1048576)).toLocaleString('zh-CN',
+    { maximumFractionDigits: 2 }) + (value >= 1073741824 ? ' GiB' : ' MiB');
   const navigate = useCallback((next: MobilePage) => {
     setPage(next); setDetail(null);
     window.scrollTo(0, 0);
@@ -373,17 +419,17 @@ export function MobileWorkspace({
     window.scrollTo(0, 0);
   }, [setPage]);
   return <div className="mobile-workspace" data-page={page}>
-    {(!detail || page !== 'meetings') && <header className="mobile-page-heading">
-      {page === 'record' ? <div className="mobile-space"><Brand markOnly/><h1>记录</h1></div> :
-        <h1>{page === 'meetings' ? '会议记录' : '个人中心'}</h1>}
+    <header className="mobile-page-heading">
+      <div className="mobile-space"><Brand markOnly/>
+        <h1>{page === 'record' ? '记录' : page === 'meetings' ? '会议记录' : '个人中心'}</h1></div>
       <span className="mobile-sync-pill" data-offline={!online}>
         {!online ? <WifiSlash size={14} aria-hidden="true"/> : <i aria-hidden="true"/>}
         {!online ? '离线' : unlocked ? automatic ? '自动同步' : '手动同步' : '连接中'}
       </span>
-    </header>}
+    </header>
     {recorder}
     {page === 'meetings' && (opened ? <MobileMeeting key={opened.saved?.id || opened.cloud?.sourceId || opened.id} entry={opened}
-          back={() => setDetail(null)} read={read} play={play} deleteLocal={deleteLocal} saveAnnotations={async (parent, changes) => {
+          back={() => setDetail(null)} read={read} play={play} remove={deleteLocal && chooseRemoval} saveAnnotations={async (parent, changes) => {
             const id = await saveAnnotations(parent, changes);
             setDetail(current => current === detail && opened.cloud
               ? { ...opened, id, cloud: { ...opened.cloud, id } }
@@ -396,7 +442,8 @@ export function MobileWorkspace({
           {[{ id: '', name: '全部' }, { id: 'personal', name: '个人空间' }, ...workspaces].map(item =>
             <button type="button" key={item.id} aria-pressed={space === item.id} onClick={() => setSpace(item.id)}>{item.name}</button>)}
         </div>
-        <RecordCards entries={visibleEntries} select={select} empty={searchTerm || space ? '没有匹配的会议' : '暂无已同步会议'}/>
+        <RecordCards entries={visibleEntries} select={select} empty={searchTerm || space ? '没有匹配的会议' : '暂无已同步会议'}
+          remove={deleteLocal && chooseRemoval}/>
     </section>)}
     {page === 'account' && <>
       {account}
@@ -405,10 +452,10 @@ export function MobileWorkspace({
           <Button variant="ghost" onClick={() => setSheet('plans')}>分级方案</Button>
         </header>
         {usage && usage.quota > 0 ? <div className="mobile-quota-list">
-          <label><span>会议与纪要</span><small>{formatSize(usage.meetings)} / {formatSize(usage.quota)}</small>
-            <meter min={0} max={usage.quota} value={usage.meetings}/></label>
-          <label><span>手机录音</span><small>{formatSize(usage.audio)} / {formatSize(usage.quota)}</small>
-            <meter min={0} max={usage.quota} value={usage.audio}/></label>
+          <label><span>已使用</span><small>{formatSize(usage.meetings + usage.audio)} / {formatSize(usage.quota)}</small>
+            <meter min={0} max={usage.quota} value={usage.meetings + usage.audio}/></label>
+          <div><span>会议与纪要</span><small>{formatSize(usage.meetings)}</small></div>
+          <div><span>手机录音</span><small>{formatSize(usage.audio)}</small></div>
         </div> : <p className="mobile-empty">{!online ? '联网后查看用量' : usageError ? '暂时无法查询用量' : unlocked ? '正在查询用量…' : '解锁后可查看用量'}</p>}
       </section>
       <section className="mobile-account-section" aria-labelledby="mobile-preferences">
@@ -427,20 +474,34 @@ export function MobileWorkspace({
       <section className="mobile-account-section" aria-labelledby="mobile-security">
         <h2 id="mobile-security">账号安全</h2>
         <div className="mobile-account-group">
-        <div><ShieldCheck size={17} aria-hidden="true"/><span>端到端加密</span><small>{unlocked ? '已解锁' : '等待解锁'}</small></div>
         <button type="button" onClick={() => setSheet('factor')}><Keyhole size={17} aria-hidden="true"/><span>双重验证</span>
           <CaretRight size={14} aria-hidden="true"/></button>
         <button type="button" aria-label="设备"  onClick={() => setSheet('devices')}><DeviceMobile size={17} aria-hidden="true"/><span>设备</span>
           <small>当前设备 <CaretRight size={14} aria-hidden="true"/></small></button>
         </div>
       </section>
-      <dialog ref={accountSheet} className="mobile-source-sheet" onClose={() => setSheet(null)}>
+      {sheet && <MobileSheet title={{ plans: '分级方案', devices: '绑定设备', factor: '双重验证' }[sheet]} close={() => setSheet(null)}>
         {sheet === 'plans' && <MobileBillingPlans/>}
         {sheet === 'devices' && <MobileAccountDevices/>}
         {sheet === 'factor' && <MobileAccountFactor/>}
-        <div className="mobile-sheet-actions"><Button onClick={() => accountSheet.current?.close()}>关闭</Button></div>
-      </dialog>
+      </MobileSheet>}
     </>}
+    {removing && <MobileSheet title="移除本机记录" close={() => { if (!removeBusy) setRemoving(undefined); }}>
+      <p>{removing.title}</p>
+      <p className="mobile-sheet-note">移除此处的记录和回听副本。云端及待同步副本仍会保留。</p>
+      {removeError && <p role="alert">{removeError}</p>}
+      <div className="mobile-sheet-actions"><Button variant="danger" disabled={removeBusy} onClick={async () => {
+        if (!deleteLocal) return;
+        setRemoveBusy(true);
+        setRemoveError('');
+        try {
+          await deleteLocal(removing.cloud?.sourceId || removing.id);
+          setRemoving(undefined);
+          setDetail(null);
+        } catch (error) { setRemoveError(error instanceof Error ? error.message : '无法移除本机记录'); }
+        finally { setRemoveBusy(false); }
+      }}>{removeBusy ? '正在移除…' : '移除'}</Button></div>
+    </MobileSheet>}
     <nav className="mobile-nav" aria-label="底部菜单" data-page={page}>
       <span className="mobile-nav-lens" aria-hidden="true"/>
       {pages.map(([id, label, Icon]) => <button type="button" key={id} aria-current={page === id ? 'page' : undefined} onClick={() => navigate(id)}>

@@ -1,11 +1,12 @@
 import { api, ApiError, uploadAudio } from '../api';
 import { makeChunk } from '../audio/queue';
 import type { RecordDetail, Source } from '../model';
-import { acknowledgeLiveAudio, MOBILE_RECORDING_BYTES, pullLiveAudio } from './mobile';
-import { decodeBytes, type Vault } from './vault';
+import { acknowledgeLiveAudio, pullLiveAudio } from './mobile';
+import { unpackMobilePcm, WAV_PCM_LIMIT } from './mobile-pcm';
+import type { Vault } from './vault';
 
 export async function receiveLiveAudio(
-  vault: Vault, root: Uint8Array<ArrayBuffer>, signal: AbortSignal, changed: () => void
+  vault: Vault, root: Uint8Array<ArrayBuffer>, signal: AbortSignal, changed: () => void, v2 = false
 ) {
   const records = new Map<string, RecordDetail>();
   const incomplete = new Set<string>();
@@ -42,9 +43,8 @@ export async function receiveLiveAudio(
       changed();
       return;
     }
-    const pcm = decodeBytes(frame.data);
-    if (pcm.byteLength === 0 || pcm.byteLength % 2 !== 0 || pcm.byteLength > 32000 ||
-        frame.offset * 2 + pcm.byteLength > MOBILE_RECORDING_BYTES) throw new Error('手机录音 PCM 大小无效');
+    const pcm = await unpackMobilePcm(frame.pcm);
+    if (frame.offset * 2 + pcm.byteLength > WAV_PCM_LIMIT) throw new Error('手机录音 PCM 大小无效');
     try {
       const chunk = await makeChunk(source.id, source.epoch, frame.sequence, frame.offset, pcm.buffer, source.sessionId);
       const receipt = await uploadAudio<{ durable: boolean; watermark: number }>(`/records/${record.id}/audio`, chunk, signal);
@@ -55,5 +55,5 @@ export async function receiveLiveAudio(
       changed();
       await acknowledgeLiveAudio(vault, root, frame.id, frame.title);
     }
-  });
+  }, v2);
 }

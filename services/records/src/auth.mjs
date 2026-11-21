@@ -55,6 +55,7 @@ export async function createAuth(repo, options = {}) {
   const active = (account, now = Date.now()) =>
     (account.devices || []).filter(device => device.expires > now && device.version === account.authVersion);
   const label = agent => {
+    if (/\bLingJi-Android\b/.test(agent)) return '聆记 Android';
     if (/Android/i.test(agent)) return 'Android';
     if (/iPhone|iPad/i.test(agent)) return 'iPhone / iPad';
     if (/Windows/i.test(agent)) return 'Windows';
@@ -104,6 +105,26 @@ export async function createAuth(repo, options = {}) {
       return cookie(`${data}.${sign(data)}`);
     },
     clear() { return cookie('') + '; Max-Age=0'; },
+    sessionExpiry(request) {
+      const token = session(request);
+      return token.sid ? token.expires : null;
+    },
+    async refreshSession(user, request) {
+      const token = session(request);
+      requireThat(options.trackDevices && token.sid, 'login_required', 401);
+      const now = Date.now();
+      let expires;
+      await repo.change(user.id, current => {
+        requireThat(current.authVersion === token.version, 'session_expired', 401);
+        const device = active(current, now).find(entry => entry.id === token.sid);
+        requireThat(device && token.expires > now, 'session_expired', 401);
+        expires = Math.max(device.expires, now + ttl);
+        device.expires = expires;
+        if (label(request.headers['user-agent'] || '') === '聆记 Android') device.name = '聆记 Android';
+      });
+      const data = Buffer.from(JSON.stringify({ ...token, expires })).toString('base64url');
+      return { cookie: cookie(`${data}.${sign(data)}`), expires };
+    },
     async user(request) {
       const token = session(request);
       const user = await repo.get(token.id);

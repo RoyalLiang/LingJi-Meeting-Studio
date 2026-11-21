@@ -1,5 +1,6 @@
 import { api } from '../api';
 import { decodeBytes, encodeBytes, seal, unseal, type EncryptedOperation, type Vault } from './vault';
+import { MOBILE_PCM_BYTES, WAV_PCM_LIMIT, type PackedMobilePcm } from './mobile-pcm';
 
 const PART = 100 * 1024;
 export const MOBILE_AUDIO_LIMIT = 12 * 1024 * 1024;
@@ -197,10 +198,11 @@ export async function acknowledgeMobileRecording(vault: Vault, id: string) {
 
 const livePurpose = 'mobile-live-audio/1';
 const liveEndpoint = '/private-sync/live-audio';
+const liveV2Purpose = 'mobile-live-audio/2';
+const liveV2Endpoint = '/private-sync/live-audio-v2';
 const receiptEndpoint = '/private-sync/live-receipts';
-export const MOBILE_RECORDING_BYTES = 5 * 60 * 32000;
 export type MobileFrame =
-  | { kind: 'pcm'; sequence: number; offset: number; data: string }
+  | { kind: 'pcm'; sequence: number; offset: number; pcm: PackedMobilePcm }
   | { kind: 'finish'; sequence: number };
 type LiveFrame = { id: string; title: string } & (MobileFrame | { kind: 'received' });
 
@@ -212,8 +214,18 @@ async function sealFrame(vault: Vault, root: Uint8Array<ArrayBuffer>, frame: Liv
 }
 
 export async function queueLiveAudio(vault: Vault, root: Uint8Array<ArrayBuffer>, id: string, title: string, frame: MobileFrame) {
-  const operation = await sealFrame(vault, root, { ...frame, id, title });
-  await change(['live-outbox'], tx => tx.objectStore('live-outbox').add(operation, [vault.id, 'phone', id, frame.sequence]));
+  const metadata = frame.kind === 'pcm'
+    ? { id, title, kind: frame.kind, sequence: frame.sequence, offset: frame.offset, codec: frame.pcm.codec, length: frame.pcm.length }
+    : { ...frame, id, title };
+  const header = encoder.encode(JSON.stringify(metadata) + '\n');
+  const bytes = new Uint8Array(header.length + (frame.kind === 'pcm' ? frame.pcm.bytes.length : 0));
+  bytes.set(header);
+  if (frame.kind === 'pcm') bytes.set(frame.pcm.bytes, header.length);
+  const operationId = crypto.randomUUID();
+  let operation: EncryptedOperation;
+  try { operation = { id: operationId, ...await seal(root, vault, liveV2Purpose, operationId, bytes) }; }
+  finally { bytes.fill(0); }
+  await change(['live-outbox'], tx => tx.objectStore('live-outbox').add(operation, [vault.id, 'phone-v2', id, frame.sequence]));
 }
 
 async function pushLive(path: string, vault: Vault, operations: EncryptedOperation[], signal: AbortSignal) {
@@ -225,7 +237,7 @@ async function pushLive(path: string, vault: Vault, operations: EncryptedOperati
   )) throw new Error('实时录音同步回执无效');
 }
 
-export async function pushLiveAudio(vault: Vault, receiver: 'phone' | 'desktop', signal: AbortSignal, force = false) {
+export async function pushLiveAudio(vault: Vault, receiver: 'phone' | 'phone-v2' | 'desktop', signal: AbortSignal, force = false) {
   if (receiver === 'desktop' && !force && !pendingDesktopReceipts.has(vault.id)) return [];
   const db = await database();
   const store = db.transaction('live-outbox').objectStore('live-outbox');
@@ -238,7 +250,7 @@ export async function pushLiveAudio(vault: Vault, receiver: 'phone' | 'desktop',
     if (receiver === 'desktop') pendingDesktopReceipts.delete(vault.id);
     return [];
   }
-  await pushLive(receiver === 'phone' ? liveEndpoint : receiptEndpoint, vault, operations, signal);
+  await pushLive(receiver === 'desktop' ? receiptEndpoint : receiver === 'phone-v2' ? liveV2Endpoint : liveEndpoint, vault, operations, signal);
   await change(['live-outbox'], tx => {
     for (const key of keys) tx.objectStore('live-outbox').delete(key);
   });
@@ -257,28 +269,36 @@ export async function acknowledgeLiveAudio(vault: Vault, root: Uint8Array<ArrayB
   pendingDesktopReceipts.add(vault.id);
 }
 
-function decodeLiveFrame(plain: Uint8Array): LiveFrame {
-  const frame: LiveFrame = JSON.parse(decoder.decode(plain));
+function decodeLiveFrame(plain: Uint8Array<ArrayBuffer>, v2: boolean): LiveFrame {
+  const split = v2 ? plain.indexOf(10) : plain.length;
+  if (split < 0 || (v2 && split > 1024)) throw new Error('实时录音标头无效');
+  const frame = JSON.parse(decoder.decode(plain.subarray(0, split)));
   if (!uuid.test(frame?.id) || typeof frame.title !== 'string' || !frame.title.trim() || frame.title.length > 160) {
     throw new Error('实时录音标识无效');
   }
-  if (frame.kind === 'received') return frame;
+  if (!v2 && frame.kind === 'received') return frame;
   if (!('sequence' in frame) || !Number.isSafeInteger(frame.sequence) || frame.sequence < 0 ||
       frame.sequence >= 1000000) throw new Error('实时录音序号无效');
-  if (frame.kind === 'finish' && frame.sequence > 0) return frame;
+  if (frame.kind === 'finish' && frame.sequence > 0 && (!v2 || split + 1 === plain.length)) return frame;
   if (frame.kind === 'pcm' && Number.isSafeInteger(frame.offset) && frame.offset >= 0 &&
-      frame.offset < MOBILE_RECORDING_BYTES / 2 && typeof frame.data === 'string' &&
-      frame.data.length > 0 && frame.data.length <= Math.ceil(32000 * 4 / 3)) return frame;
+      frame.offset < WAV_PCM_LIMIT / 2) {
+    const pcm = v2 ? { codec: frame.codec, length: frame.length, bytes: plain.slice(split + 1) } : (() => {
+      if (typeof frame.data !== 'string' || frame.data.length > Math.ceil(MOBILE_PCM_BYTES * 4 / 3)) throw new Error('实时录音片段无效');
+      const bytes = decodeBytes(frame.data);
+      return { codec: 'pcm' as const, length: bytes.length, bytes };
+    })();
+    if (pcm.bytes.length && pcm.bytes.length <= MOBILE_PCM_BYTES) return { ...frame, pcm };
+  }
   throw new Error('实时录音片段无效');
 }
 
 export async function pullLiveAudio(
   vault: Vault, root: Uint8Array<ArrayBuffer>, receiver: 'phone' | 'desktop', signal: AbortSignal,
-  consume: (frame: LiveFrame) => void | boolean | Promise<void | boolean>
+  consume: (frame: LiveFrame) => void | boolean | Promise<void | boolean>, v2 = false
 ) {
   const db = await database();
-  const key = [vault.id, receiver];
-  const path = receiver === 'phone' ? receiptEndpoint : liveEndpoint;
+  const key = [vault.id, v2 ? 'desktop-v2' : receiver];
+  const path = receiver === 'phone' ? receiptEndpoint : v2 ? liveV2Endpoint : liveEndpoint;
   const confirmedKey = [...key, 'confirmed'];
   const stored = db.transaction('live-cursor').objectStore('live-cursor');
   const [saved, savedConfirmation] = await Promise.all([
@@ -297,12 +317,14 @@ export async function pullLiveAudio(
     const allowedJump = i === 0 && delta.trimmed && seq > cursor;
     if (!Number.isSafeInteger(seq) || (!allowedJump && seq !== cursor + 1) || !uuid.test(operation.id)) throw new Error('实时录音同步游标不连续');
     cursor = seq;
-    const plain = await unseal(root, vault, livePurpose, operation.id, operation);
+    const plain = await unseal(root, vault, v2 ? liveV2Purpose : livePurpose, operation.id, operation);
     let frame: LiveFrame;
-    try { frame = decodeLiveFrame(plain); }
+    try { frame = decodeLiveFrame(plain, v2); }
     finally { plain.fill(0); }
     if ((frame.kind === 'received') !== (receiver === 'phone')) throw new Error('实时录音事件类型无效');
-    const durable = await consume(frame);
+    let durable;
+    try { durable = await consume(frame); }
+    finally { if (frame.kind === 'pcm') frame.pcm.bytes.fill(0); }
     if (durable !== false && seq === confirmed + 1) confirmed = seq;
   }
   if (!delta.operations.length && delta.trimmed && delta.cursor > cursor) cursor = delta.cursor;
@@ -319,7 +341,7 @@ export async function pullLiveAudio(
     if (receiver === 'desktop') advance(confirmedKey, Math.min(confirmed, cursor));
   });
   if (receiver === 'desktop') {
-    await acknowledgeRemoteAudio(liveEndpoint, vault, Math.min(confirmed, cursor), delta.acknowledged, signal);
+    await acknowledgeRemoteAudio(path, vault, Math.min(confirmed, cursor), delta.acknowledged, signal);
   }
   return delta.more;
 }

@@ -1,4 +1,5 @@
 import { seal, sealBinary, unseal, unsealBinary, type BinaryEnvelope, type EncryptedOperation, type Envelope, type Vault } from './vault';
+import { unpackMobilePcm, wavHeader, WAV_PCM_LIMIT, type PackedMobilePcm } from './mobile-pcm';
 
 export type MobileRecording = {
   id: string;
@@ -8,8 +9,6 @@ export type MobileRecording = {
   marks: number[];
 };
 
-const MAX_LOCAL_RECORDINGS = 20;
-const MAX_LOCAL_BYTES = 120 * 1024 * 1024;
 const metadataCache = new Map<string, MobileRecording[]>();
 
 export function clearMobileLibraryCache(vaultId?: string) {
@@ -40,40 +39,33 @@ function database() {
   return opening;
 }
 
-export async function rememberMobileRecording(vault: Vault, root: Uint8Array<ArrayBuffer>, entry: MobileRecording, audio: Blob) {
-  const pcm = new Uint8Array(await audio.arrayBuffer());
-  try {
-    const [metadata, media] = await Promise.all([
-      seal(root, vault, 'phone-recording/1', entry.id, new TextEncoder().encode(JSON.stringify(entry))),
-      sealBinary(root, vault, 'phone-wav/1', entry.id, pcm),
-    ]);
-    const existing = await mobileRecordings(vault, root).catch(() => [] as MobileRecording[]);
-    const nextList = [entry, ...existing.filter(item => item.id !== entry.id)].sort((a, b) => b.at - a.at);
-    const keepIds = new Set<string>();
-    let totalBytes = 0;
-    for (const item of nextList) {
-      const approxBytes = Math.max(32000, item.seconds * 32000);
-      if (keepIds.size > 0 && (keepIds.size >= MAX_LOCAL_RECORDINGS || totalBytes + approxBytes > MAX_LOCAL_BYTES)) continue;
-      keepIds.add(item.id);
-      totalBytes += approxBytes;
-    }
-    const evictIds = existing.filter(item => !keepIds.has(item.id)).map(item => item.id);
-    const db = await database();
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(['recordings', 'audio'], 'readwrite');
-      tx.oncomplete = () => resolve();
-      tx.onabort = () => reject(tx.error || new Error('手机回听未保存'));
-      const recordingsStore = tx.objectStore('recordings');
-      const audioStore = tx.objectStore('audio');
-      for (const oldId of evictIds) {
-        recordingsStore.delete([vault.id, oldId]);
-        audioStore.delete([vault.id, oldId]);
-      }
-      recordingsStore.put({ id: entry.id, ...metadata }, [vault.id, entry.id]);
-      audioStore.put(media, [vault.id, entry.id]);
-    });
-    metadataCache.set(vault.id, nextList.filter(item => keepIds.has(item.id)));
-  } finally { pcm.fill(0); }
+async function writeRecording(vault: Vault, root: Uint8Array<ArrayBuffer>, entry: MobileRecording, sequence?: number, chunk?: BinaryEnvelope) {
+  const metadata = sequence === undefined || sequence % 16 === 0
+    ? await seal(root, vault, 'phone-recording/1', entry.id, new TextEncoder().encode(JSON.stringify(entry))) : null;
+  const db = await database();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(['recordings', 'audio'], 'readwrite', { durability: 'strict' });
+    tx.oncomplete = () => resolve();
+    tx.onabort = () => reject(tx.error || new Error('手机回听未保存'));
+    if (metadata) tx.objectStore('recordings').put({ id: entry.id, ...metadata }, [vault.id, entry.id]);
+    if (chunk && sequence !== undefined) tx.objectStore('audio').put(chunk, [vault.id, entry.id, sequence]);
+  });
+  if (metadata) clearMobileLibraryCache(vault.id);
+}
+
+export async function appendMobileRecording(vault: Vault, root: Uint8Array<ArrayBuffer>, entry: MobileRecording, sequence: number, pcm: PackedMobilePcm) {
+  const bytes = new Uint8Array(3 + pcm.bytes.length);
+  bytes[0] = pcm.codec === 'gzip' ? 1 : 0;
+  new DataView(bytes.buffer).setUint16(1, pcm.length);
+  bytes.set(pcm.bytes, 3);
+  let chunk;
+  try { chunk = await sealBinary(root, vault, 'phone-pcm/2', entry.id + ':' + sequence, bytes); }
+  finally { bytes.fill(0); }
+  await writeRecording(vault, root, entry, sequence, chunk);
+}
+
+export async function finishMobileRecording(vault: Vault, root: Uint8Array<ArrayBuffer>, entry: MobileRecording) {
+  await writeRecording(vault, root, entry);
 }
 
 export async function deleteMobileRecording(vault: Vault, id: string) {
@@ -83,10 +75,20 @@ export async function deleteMobileRecording(vault: Vault, id: string) {
     tx.oncomplete = () => resolve();
     tx.onabort = () => reject(tx.error || new Error('无法删除本机录音'));
     tx.objectStore('recordings').delete([vault.id, id]);
-    tx.objectStore('audio').delete([vault.id, id]);
+    const audio = tx.objectStore('audio');
+    audio.delete(IDBKeyRange.bound([vault.id, id], [vault.id, id, []]));
+    audio.put(true, ['hidden', vault.id, id]);
   });
   const cached = metadataCache.get(vault.id);
   if (cached) metadataCache.set(vault.id, cached.filter(item => item.id !== id));
+}
+
+export async function hiddenMobileRecordings(vault: Vault) {
+  const db = await database();
+  const keys = await request(db.transaction('audio').objectStore('audio').getAllKeys(
+    IDBKeyRange.bound(['hidden', vault.id], ['hidden', vault.id, []])
+  ));
+  return new Set(keys.map(key => (key as string[])[2]));
 }
 
 export async function mobileRecordings(vault: Vault, root: Uint8Array<ArrayBuffer>) {
@@ -107,8 +109,33 @@ export async function mobileRecordings(vault: Vault, root: Uint8Array<ArrayBuffe
 export async function mobilePlayback(vault: Vault, root: Uint8Array<ArrayBuffer>, id: string) {
   const db = await database();
   const operation = await request<Envelope | BinaryEnvelope | undefined>(db.transaction('audio').objectStore('audio').get([vault.id, id]));
-  if (!operation) return null;
-  const bytes = await unsealBinary(root, vault, 'phone-wav/1', id, operation);
-  try { return new Blob([bytes], { type: 'audio/wav' }); }
-  finally { bytes.fill(0); }
+  if (operation) {
+    const bytes = await unsealBinary(root, vault, 'phone-wav/1', id, operation);
+    try { return new Blob([bytes], { type: 'audio/wav' }); }
+    finally { bytes.fill(0); }
+  }
+  const pieces: Blob[] = [];
+  let size = 0;
+  for (;;) {
+    const snapshot = db.transaction('audio').objectStore('audio');
+    const range = IDBKeyRange.bound([vault.id, id, pieces.length], [vault.id, id, []]);
+    const [keys, chunks] = await Promise.all([request(snapshot.getAllKeys(range, 16)), request<BinaryEnvelope[]>(snapshot.getAll(range, 16))]);
+    if (!chunks.length) break;
+    for (let index = 0; index < chunks.length; index++) {
+      const sequence = (keys[index] as [string, string, number])[2];
+      if (sequence !== pieces.length) throw new Error('手机录音片段不连续');
+      const packet = await unsealBinary(root, vault, 'phone-pcm/2', id + ':' + sequence, chunks[index]);
+      try {
+        if (packet.length < 4 || packet[0] > 1) throw new Error('手机录音片段无效');
+        const length = new DataView(packet.buffer, packet.byteOffset).getUint16(1);
+        const pcm = await unpackMobilePcm({ codec: packet[0] ? 'gzip' : 'pcm', length, bytes: packet.subarray(3) });
+        try {
+          size += pcm.length;
+          if (size > WAV_PCM_LIMIT) throw new Error('录音超过 WAV 格式容量');
+          pieces.push(new Blob([pcm]));
+        } finally { pcm.fill(0); }
+      } finally { packet.fill(0); }
+    }
+  }
+  return pieces.length ? new Blob([wavHeader(size), ...pieces], { type: 'audio/wav' }) : null;
 }
