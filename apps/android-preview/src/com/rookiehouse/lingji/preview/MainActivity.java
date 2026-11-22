@@ -2,15 +2,15 @@ package com.rookiehouse.lingji.preview;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.NotificationManager;
 import android.content.ActivityNotFoundException;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageInfo;
 import android.content.res.Configuration;
 import android.content.res.ColorStateList;
 import android.graphics.drawable.ColorDrawable;
-import android.media.projection.MediaProjectionConfig;
-import android.media.projection.MediaProjectionManager;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
@@ -18,6 +18,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
 import android.webkit.PermissionRequest;
@@ -61,7 +62,7 @@ public final class MainActivity extends Activity {
     private static final int FILE = 11;
     private static final int NOTIFICATIONS = 12;
     private static final int SYSTEM_AUDIO_PERMISSION = 13;
-    private static final int SYSTEM_AUDIO_CONSENT = 14;
+    private static final int MEETING_NOTIFICATION_SETTINGS = 14;
     private WebView web;
     private FrameLayout frame;
     private FrameLayout launch;
@@ -72,6 +73,7 @@ public final class MainActivity extends Activity {
     private boolean sheetOpen;
     private boolean resumed;
     private boolean pendingRecordingStart;
+    private boolean pendingMeetingStart;
     private final Runnable timeout = () -> retry.setVisibility(View.VISIBLE);
     private WebMessagePort recordingPort;
     private final ConnectivityManager.NetworkCallback networkCallback = new ConnectivityManager.NetworkCallback() {
@@ -167,6 +169,7 @@ public final class MainActivity extends Activity {
         super.onResume();
         resumed = true;
         flushPendingRecordingStart();
+        flushPendingMeetingStart();
     }
 
     @Override protected void onPause() {
@@ -176,7 +179,10 @@ public final class MainActivity extends Activity {
 
     @Override public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
-        if (hasFocus) flushPendingRecordingStart();
+        if (hasFocus) {
+            flushPendingRecordingStart();
+            flushPendingMeetingStart();
+        }
     }
 
     private void flushPendingRecordingStart() {
@@ -401,7 +407,7 @@ public final class MainActivity extends Activity {
                     return;
                 }
                 if (data.matches("system-(?:pause|resume):[0-9]{1,7}")) {
-                    PlaybackCaptureService.changePause(data.startsWith("system-pause:"), Integer.parseInt(data.substring(data.indexOf(':') + 1)));
+                    MeetingCaptureService.changePause(data.startsWith("system-pause:"), Integer.parseInt(data.substring(data.indexOf(':') + 1)));
                     return;
                 }
                 switch (data) {
@@ -421,17 +427,18 @@ public final class MainActivity extends Activity {
                         break;
                     case "ready":
                         recordingBridgeReady = true;
-                        PlaybackCaptureService.messages = MainActivity.this::postToRecorder;
+                        MeetingCaptureService.messages = MainActivity.this::postToRecorder;
                         flushPendingRecordingStart();
                         break;
                     case "system-audio-arm":
                         requestSystemAudio();
                         break;
                     case "system-audio-disarm":
-                        stopService(new Intent(MainActivity.this, PlaybackCaptureService.class));
+                        pendingMeetingStart = false;
+                        stopService(new Intent(MainActivity.this, MeetingCaptureService.class));
                         break;
                     case "system-audio-ack":
-                        PlaybackCaptureService.acknowledge();
+                        MeetingCaptureService.acknowledge();
                         break;
                     case "sheet-open":
                     case "sheet-closed":
@@ -439,7 +446,7 @@ public final class MainActivity extends Activity {
                         paintSystemBars();
                         break;
                     case "start":
-                        stopService(new Intent(MainActivity.this, PlaybackCaptureService.class));
+                        stopService(new Intent(MainActivity.this, MeetingCaptureService.class));
                         pendingRecordingStart = true;
                         flushPendingRecordingStart();
                         break;
@@ -464,17 +471,42 @@ public final class MainActivity extends Activity {
             recordingPort = null;
         }
         stopService(new Intent(this, RecordingService.class));
-        PlaybackCaptureService.messages = null;
-        stopService(new Intent(this, PlaybackCaptureService.class));
+        pendingMeetingStart = false;
+        MeetingCaptureService.messages = null;
+        stopService(new Intent(this, MeetingCaptureService.class));
     }
 
     private void postToRecorder(String data) {
         if (recordingBridgeReady && recordingPort != null) recordingPort.postMessage(new WebMessage(data));
     }
 
+    private ComponentName callListener() { return new ComponentName(this, MeetingCallListener.class); }
+
+    private boolean hasCallAccess() {
+        return getSystemService(NotificationManager.class).isNotificationListenerAccessGranted(callListener());
+    }
+
+    private void flushPendingMeetingStart() {
+        if (!pendingMeetingStart || !recordingBridgeReady || !(resumed || hasWindowFocus())) return;
+        pendingMeetingStart = false;
+        requestSystemAudio();
+    }
+
     private void requestSystemAudio() {
-        if (Build.VERSION.SDK_INT < 29 || !resumed) {
+        if (Build.VERSION.SDK_INT < 29 || !(resumed || hasWindowFocus())) {
             postToRecorder("system-audio-error:自动记录需要 Android 10 或更新版本，请在聆记内授权");
+            return;
+        }
+        if (!hasCallAccess()) {
+            try {
+                Intent settings = Build.VERSION.SDK_INT >= 30
+                    ? new Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS)
+                        .putExtra(Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME, callListener().flattenToString())
+                    : new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS);
+                startActivityForResult(settings, MEETING_NOTIFICATION_SETTINGS);
+            } catch (ActivityNotFoundException failure) {
+                postToRecorder("system-audio-error:请在 Android 设置中允许聆记读取通话通知");
+            }
             return;
         }
         boolean microphonePermission = checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED;
@@ -484,17 +516,13 @@ public final class MainActivity extends Activity {
                 ? new String[]{Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS}
                 : new String[]{microphonePermission ? Manifest.permission.RECORD_AUDIO : Manifest.permission.POST_NOTIFICATIONS};
             requestPermissions(permissions, SYSTEM_AUDIO_PERMISSION);
-        } else {
-            showSystemAudioConsent();
+            return;
         }
-    }
-
-    private void showSystemAudioConsent() {
-        MediaProjectionManager manager = getSystemService(MediaProjectionManager.class);
-        Intent prompt = Build.VERSION.SDK_INT >= 34
-            ? manager.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
-            : manager.createScreenCaptureIntent();
-        startActivityForResult(prompt, SYSTEM_AUDIO_CONSENT);
+        try {
+            startForegroundService(new Intent(this, MeetingCaptureService.class));
+        } catch (IllegalStateException | SecurityException failure) {
+            postToRecorder("system-audio-error:请回到聆记后重新开始检测");
+        }
     }
 
     private String checkAndroidUpdate() {
@@ -539,7 +567,8 @@ public final class MainActivity extends Activity {
         super.onRequestPermissionsResult(code, permissions, results);
         if (code == SYSTEM_AUDIO_PERMISSION) {
             if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                showSystemAudioConsent();
+                pendingMeetingStart = true;
+                flushPendingMeetingStart();
             } else postToRecorder("system-audio-error:请先允许录音权限");
             return;
         }
@@ -554,16 +583,11 @@ public final class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int code, int result, Intent data) {
         super.onActivityResult(code, result, data);
-        if (code == SYSTEM_AUDIO_CONSENT) {
-            if (result != RESULT_OK || data == null || !recordingBridgeReady) {
-                postToRecorder("system-audio-error:已取消系统音频授权");
-                return;
-            }
-            try {
-                startForegroundService(new Intent(this, PlaybackCaptureService.class).putExtra("result", result).putExtra("consent", data));
-            } catch (IllegalStateException | SecurityException failure) {
-                postToRecorder("system-audio-error:系统音频无法启动，请重新授权");
-            }
+        if (code == MEETING_NOTIFICATION_SETTINGS) {
+            if (hasCallAccess()) {
+                pendingMeetingStart = true;
+                flushPendingMeetingStart();
+            } else postToRecorder("system-audio-error:需要允许聆记读取通话通知才能检测会议");
             return;
         }
         if (code != FILE || files == null) return;

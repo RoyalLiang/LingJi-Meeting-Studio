@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { ArrowSquareOut } from '@phosphor-icons/react';
-import { MobileAudioNotice } from './MobileAudioNotice';
+import { ArrowSquareOut, CaretRight } from '@phosphor-icons/react';
+import { audioNoticeTitle } from './MobileAudioNotice';
 import { Button } from './ui';
 
-export function MobileAbout() {
+export function MobileAbout({ openNotice }: { openNotice: () => void }) {
   const version = /\bLingJi-Android\/([\w.-]+)/.exec(navigator.userAgent)?.[1];
   const [checking, setChecking] = useState(false);
   const [update, setUpdate] = useState('');
@@ -25,9 +25,11 @@ export function MobileAbout() {
       }}>{checking ? '正在检查…' : '检查更新'}</Button>}
       {update && <p role="status" className="mobile-about-result">{update}</p>}
     </div>
+    <button type="button" className="mobile-about-row mobile-document-link" onClick={openNotice}>
+      <span>{audioNoticeTitle}</span><CaretRight size={16} aria-hidden="true"/>
+    </button>
     {version && <button type="button" className="mobile-about-row" onClick={() => dispatchEvent(new Event('lingji:open-releases'))}>
       <span>查看发布记录</span><ArrowSquareOut size={17} aria-hidden="true"/>
     </button>}
-    <MobileAudioNotice/>
   </div>;
 }

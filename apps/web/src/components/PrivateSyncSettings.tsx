@@ -289,27 +289,27 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
       active = true;
       const key = secret.current.slice();
       try {
-        if (automatic) {
-          const { records } = await api<{ records: RecordListItem[] }>('/records', 'GET', undefined, signal);
-          const liveIds = new Set(records.map(item => item.id));
-          let seenDirty = false;
-          for (const id of seen.current.keys()) if (!liveIds.has(id)) { seen.current.delete(id); seenDirty = true; }
-          const stamp = (item: RecordListItem) => JSON.stringify([item.updatedAt, item.transcriptRevision, item.minutesRevision]);
-          const changed = records.filter(item => item.capture === 'completed' && item.segments > 0
-            && seen.current.get(item.id) !== stamp(item)).slice(0, 6);
-          for (const item of changed) {
-            const detail = await api<RecordDetail>('/records/' + item.id, 'GET', undefined, signal);
-            signal.throwIfAborted();
-            if (!detail.segments.length) continue;
-            await queueMeeting(localVault, key, detail, workspaceDirectories.current?.find(dir => dir.id === detail.workspaceId)).catch(failure => {
-              if (!(failure instanceof Error) || failure.message !== '会议超过同步大小上限') throw failure;
-              setNotice('有会议超过同步大小上限');
-            });
-            seen.current.set(item.id, stamp(item));
-            seenDirty = true;
-          }
-          if (seenDirty) writeSeenMap(seenKey, seen.current);
+        const { records } = await api<{ records: RecordListItem[] }>('/private-sync/mobile-results', 'POST', {
+          vault: localVault.id, includeDesktop: automatic,
+        }, signal);
+        const liveIds = new Set(records.map(item => item.id));
+        let seenDirty = false;
+        for (const id of seen.current.keys()) if (!liveIds.has(id)) { seen.current.delete(id); seenDirty = true; }
+        const stamp = (item: RecordListItem) => JSON.stringify([item.updatedAt, item.transcriptRevision, item.minutesRevision]);
+        const changed = records.filter(item => item.capture === 'completed' && item.segments > 0
+          && seen.current.get(item.id) !== stamp(item)).slice(0, 6);
+        for (const item of changed) {
+          const detail = await api<RecordDetail>('/records/' + item.id, 'GET', undefined, signal);
+          signal.throwIfAborted();
+          if (!detail.segments.length) continue;
+          await queueMeeting(localVault, key, detail, workspaceDirectories.current?.find(dir => dir.id === detail.workspaceId)).catch(failure => {
+            if (!(failure instanceof Error) || failure.message !== '会议超过同步大小上限') throw failure;
+            setNotice('有会议超过同步大小上限');
+          });
+          seen.current.set(item.id, stamp(item));
+          seenDirty = true;
         }
+        if (seenDirty) writeSeenMap(seenKey, seen.current);
         await update(localVault, key, signal, false);
         await receiveMobileRecordings(localVault, key, signal);
         const next = await nextMobileRecording(localVault, key);
@@ -353,7 +353,7 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
       background.current = work;
       void work.finally(() => { if (background.current === work) background.current = null; });
     };
-    const timer = setInterval(runCycle, automatic ? 3000 : 15_000);
+    const timer = setInterval(runCycle, automatic ? 3000 : 5000);
     addEventListener('lingji:sync-wakeup', runCycle);
     runCycle();
     return () => {
@@ -806,7 +806,7 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
           <span className="account-row-icon"><Phone size={18}/></span>
           <div>
             <strong>通过手机 App 快速记录</strong>
-            <p className="account-muted">在聆记手机 App 中登录同一账号，录音会端侧加密并自动同步到此电脑。</p>
+            <p className="account-muted">手机录音会加密同步到登录同一账号的电脑。电脑转录并用已配置的模型生成纪要，结果自动回到手机。</p>
           </div>
         </div>
       </AccountSection>

@@ -97,7 +97,7 @@ export function QuickMobileRecording({ append, commit, status, visible, showReco
         const resumed = context.resume();
         void resumed.catch(() => {});
         stream = await navigator.mediaDevices.getUserMedia({
-          audio: { channelCount: { ideal: 1 }, sampleRate: { ideal: 48000 }, noiseSuppression: false, echoCancellation: false, autoGainControl: false },
+          audio: { channelCount: { ideal: 1 }, sampleRate: { ideal: 48000 }, noiseSuppression: true, echoCancellation: true, autoGainControl: false },
         });
         dispatchEvent(new Event('lingji:recording-opened'));
         if (!mounted.current) { close(); return; }
@@ -109,13 +109,17 @@ export function QuickMobileRecording({ append, commit, status, visible, showReco
         mute.gain.value = 0;
         const rumble = context.createBiquadFilter();
         rumble.type = 'highpass';
-        rumble.frequency.value = 55;
+        rumble.frequency.value = 70;
         rumble.Q.value = 0;
-        context.createMediaStreamSource(stream).connect(rumble).connect(node).connect(mute).connect(context.destination);
+        const hiss = context.createBiquadFilter();
+        hiss.type = 'lowpass';
+        hiss.frequency.value = 7000;
+        hiss.Q.value = 0;
+        context.createMediaStreamSource(stream).connect(rumble).connect(hiss).connect(node).connect(mute).connect(context.destination);
       }
       const pending: Uint8Array<ArrayBuffer>[] = [];
       const id = crypto.randomUUID(), at = Date.now();
-      const name = (system ? '系统音频' : '手机录音') + ' · ' + new Date().toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const name = (system ? '会议录音' : '手机录音') + ' · ' + new Date().toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
       let queued = 0, offset = 0;
       let writing: Promise<void> | null = null;
       function drain() {

@@ -374,11 +374,20 @@ body:has(.quick-mobile-app) { background: #f4f4f5; }
 }
 .mobile-about-row span { flex: 1; }
 .mobile-about-row svg { color: var(--phone-muted); flex-shrink: 0; }
-.mobile-about .mobile-document-link { border-top: 1px solid var(--phone-line); }
+.mobile-about .mobile-document-link { border-bottom: 1px solid var(--phone-line); }
 .mobile-document-link { color: #205cb5; }
 [data-theme=dark] .mobile-document-link { color: #a2c7ff; }
 .mobile-document-link svg { color: currentColor; }
+.mobile-document-inline {
+  display: block; min-height: 44px; padding: 0; margin: 0 0 8px;
+  border: 0; background: transparent; font: inherit; font-size: .86rem; cursor: pointer;
+}
 .mobile-audio-notice { color: var(--phone-muted); font-size: .9rem; }
+.mobile-audio-notice dl { margin: 16px 0 0; }
+.mobile-audio-notice dt { margin: 12px 0 4px; color: var(--phone-ink); font-weight: 650; }
+.mobile-audio-notice dd { margin: 0; line-height: 1.55; }
+.mobile-sheet-heading[data-back] { justify-content: flex-start; }
+.mobile-sheet-heading[data-back] button { order: -1; }
 .mobile-source-sheet[open] { overscroll-behavior: contain; }
 .mobile-source-sheet::backdrop { background: rgb(0 0 0 / .24); }
 .mobile-sheet-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: -6px; }
@@ -442,14 +451,10 @@ body:has(.quick-mobile-app) { background: #f4f4f5; }
     backdrop-filter: grayscale(1) blur(9px);
   }
   .mobile-nav {
-    background: linear-gradient(165deg, var(--phone-dock-sheen), transparent 48%), var(--phone-dock-glass);
-    -webkit-backdrop-filter: blur(14px) saturate(1.35);
-    backdrop-filter: blur(14px) saturate(1.35);
-    box-shadow: inset 0 1px 1px var(--phone-dock-rim), inset 0 -1px 2px var(--phone-dock-base);
-  }
-  .mobile-nav-lens {
-    background: linear-gradient(175deg, var(--phone-dock-sheen), transparent 75%), var(--phone-lens-glass);
-    box-shadow: inset 0 1px 1px var(--phone-dock-rim), inset 0 -1px 1px var(--phone-dock-base);
+    background: var(--phone-dock-glass);
+    -webkit-backdrop-filter: blur(18px) saturate(1.1);
+    backdrop-filter: blur(18px) saturate(1.1);
+    box-shadow: inset 0 0 0 1px var(--phone-dock-edge);
   }
 }
 .mobile-nav button {

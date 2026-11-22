@@ -1,8 +1,8 @@
 import { useId, useLayoutEffect, useRef, type ReactNode } from 'react';
-import { X } from '@phosphor-icons/react';
+import { ArrowLeft, X } from '@phosphor-icons/react';
 
-export function MobileSheet({ title, close, children, showClose = true, closeDisabled = false, placement = 'bottom' }: {
-  title: string; close: () => void; children: ReactNode; showClose?: boolean; closeDisabled?: boolean; placement?: 'bottom' | 'center';
+export function MobileSheet({ title, close, children, showClose = true, closeDisabled = false, placement = 'bottom', back = false }: {
+  title: string; close: () => void; children: ReactNode; showClose?: boolean; closeDisabled?: boolean; placement?: 'bottom' | 'center'; back?: boolean;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const heading = useId();
@@ -26,9 +26,9 @@ export function MobileSheet({ title, close, children, showClose = true, closeDis
       const bounds = event.currentTarget.getBoundingClientRect();
       if (event.clientY < bounds.top || event.clientY > bounds.bottom || event.clientX < bounds.left || event.clientX > bounds.right) close();
     }}>
-    <header className="mobile-sheet-heading">
+    <header className="mobile-sheet-heading" data-back={back || undefined}>
       <h2 id={heading}>{title}</h2>
-      {showClose && <button type="button" className="mobile-sheet-close" aria-label="关闭" disabled={closeDisabled} onClick={close}><X size={18}/></button>}
+      {showClose && <button type="button" className="mobile-sheet-close" aria-label={back ? '返回' : '关闭'} disabled={closeDisabled} onClick={close}>{back ? <ArrowLeft size={18}/> : <X size={18}/> }</button>}
     </header>
     {children}
   </dialog>;

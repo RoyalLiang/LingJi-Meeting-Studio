@@ -1,4 +1,4 @@
-import { restorePrivateMeeting, preparePrivateRecording } from './private-sync-restore.mjs';
+import { restorePrivateMeeting, preparePrivateRecording, privateRecordingResults } from './private-sync-restore.mjs';
 import { createDesktopPrivateSync } from './private-sync-desktop.mjs';
 import { createPrivateSyncRoutes, privateSyncOrigin } from './private-sync-routes.mjs';
 import {meetingScreenshotFrames,saveMeetingScreenshot} from './meeting-screenshots.mjs';
@@ -226,6 +226,11 @@ export async function createRecordServer(options = {}) {
         if (path === '/api/private-sync/recording' && req.method === 'POST') {
           requireThat(options.localAccount, 'not_found', 404);
           send(res, 200, publicRecord(await preparePrivateRecording(repo, user.id, await readBody(req, 1024))));
+          return;
+        }
+        if (path === '/api/private-sync/mobile-results' && req.method === 'POST') {
+          requireThat(options.localAccount, 'not_found', 404);
+          send(res, 200, { records: await privateRecordingResults(repo, user.id, await readBody(req, 1024)) });
           return;
         }
         if (path === '/api/private-sync/restore' && req.method === 'POST') {

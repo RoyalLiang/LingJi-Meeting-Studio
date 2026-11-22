@@ -851,3 +851,95 @@ test('a compressed phone recording beyond five minutes plays locally and seals o
   });
   assert.deepEqual(receivedLegacy, ['pcm', 'finish']);
 });
+
+test('phone audio becomes a source-linked transcript and final minutes in its original vault', async t => {
+  const { account } = await cloud(t);
+  const signed = await account('phone-roundtrip@example.test');
+  const { vault, root } = await createVault();
+  assert.equal((await signed('/private-sync/vault', 'PUT', vault)).status, 201);
+  const { build } = await import('esbuild');
+  const { IDBFactory } = await import('fake-indexeddb');
+  const browser = await build({
+    stdin: { contents: ['sync/mobile', 'sync/mobile-desktop', 'sync/journal']
+      .map(file => `export * from './apps/web/src/${file}';`).join('\n'), resolveDir: process.cwd(), loader: 'ts' },
+    bundle: true, write: false, format: 'esm', platform: 'node',
+  });
+  const moduleURL = 'data:text/javascript;base64,' + Buffer.from(browser.outputFiles[0].text).toString('base64');
+  const desktopJournal = await import(moduleURL + '#phone-roundtrip-desktop');
+  const phoneJournal = await import(moduleURL + '#phone-roundtrip-phone');
+  const desktopDb = new IDBFactory(), phoneDb = new IDBFactory();
+  const { createRepository } = await import('../services/records/src/repository.mjs');
+  const { preparePrivateRecording, privateRecordingResults } = await import('../services/records/src/private-sync-restore.mjs');
+  const { publicRecord, seal: sealCapture } = await import('../packages/records/src/record.mjs');
+  const { setAutomation, automaticMinutesAt } = await import('../packages/records/src/automation.mjs');
+  const { runCycle } = await import('../services/records/src/worker.mjs');
+  const { writeFile } = await import('node:fs/promises');
+  const folder = await mkdtemp(join(tmpdir(), 'lingji-phone-roundtrip-'));
+  const repo = await createRepository({ root: folder, databaseUrl: '' });
+  t.after(async () => { await repo.close(); await rm(folder, { recursive: true, force: true }); });
+  await writeFile(join(folder, 'providers.json'), JSON.stringify({
+    LLM_API_URL: 'https://llm.example.test/v1/chat/completions', LLM_API_KEY: 'fixture-key', LLM_MODEL: 'fixture-model',
+  }));
+  const signal = new AbortController().signal;
+  const sourceId = randomUUID(), title = '手机合成录音';
+  const otherVault = randomUUID();
+  let desktopId;
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    const target = new URL(url, fixtureOrigin);
+    const body = options.body ? JSON.parse(options.body) : undefined;
+    const path = target.pathname.slice(4);
+    if (path === '/private-sync/recording') {
+      const record = await preparePrivateRecording(repo, 'local', body);
+      desktopId = record.id;
+      return Response.json(publicRecord(record));
+    }
+    if (path === `/records/${desktopId}/audio`) {
+      const { pcm, ...chunk } = body;
+      return Response.json(await repo.ingestAudio('local', desktopId, chunk, Buffer.from(pcm, 'base64')));
+    }
+    if (path === `/records/${desktopId}/seal`) {
+      await repo.change(desktopId, record => sealCapture(record, body.sources));
+      return Response.json({});
+    }
+    const reply = await signed(path + target.search, options.method, body);
+    return Response.json(reply.data, { status: reply.status });
+  });
+  const originalIDB = Object.getOwnPropertyDescriptor(globalThis, 'indexedDB');
+  t.after(() => Object.defineProperty(globalThis, 'indexedDB', originalIDB));
+  Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: phoneDb });
+  await phoneJournal.queueLiveAudio(vault, root, sourceId, title, { kind: 'pcm', sequence: 0, offset: 0,
+    pcm: { codec: 'pcm', length: 32000, bytes: new Uint8Array(32000).fill(4) } });
+  await phoneJournal.queueLiveAudio(vault, root, sourceId, title, { kind: 'finish', sequence: 1 });
+  await phoneJournal.pushLiveAudio(vault, 'phone-v2', signal);
+  Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: desktopDb });
+  await desktopJournal.receiveLiveAudio(vault, root, signal, () => {}, true);
+  assert.equal((await repo.get(desktopId)).capture, 'sealed');
+  await runCycle(repo, { transcribe: async () => '决定周五进行发布评审' }, { lane: 'audio' });
+  const finished = await repo.get(desktopId);
+  assert.equal(finished.capture, 'completed');
+  assert.equal(finished.realtimeAudioConsent, false);
+  assert.equal(automaticMinutesAt(finished, 1234), 1234);
+  await runCycle(repo, { minutes: async job => ({ title: '发布评审', sections: [{ heading: '决定', items: [{
+    text: '周五进行发布评审', evidence: [{ segmentId: job.snapshot[0].id, revision: job.snapshot[0].revision }],
+  }] }], actions: [] }) }, { lane: 'minutes' });
+  const final = await repo.get(desktopId);
+  assert.equal(final.minutes.title, '发布评审');
+  assert.equal(final.minutes.transcriptRevision, final.transcriptRevision);
+  assert.deepEqual(await privateRecordingResults(repo, 'local', { vault: otherVault, includeDesktop: true }), []);
+  assert.deepEqual((await privateRecordingResults(repo, 'local', { vault: vault.id })).map(value => value.id), [desktopId]);
+  await desktopJournal.queueMeeting(vault, root, publicRecord(final));
+  await desktopJournal.syncMeetings(vault, root, signal);
+  Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: phoneDb });
+  assert.equal((await phoneJournal.syncMeetings(vault, root, signal)).received, true);
+  const [copy] = await phoneJournal.meetingCopies(vault, root);
+  assert.equal(copy.sourceId, sourceId);
+  const opened = await phoneJournal.loadMeetingCopy(vault, root, copy.id);
+  assert.equal(opened.content.segments[0].text, '决定周五进行发布评审');
+  assert.equal(opened.content.minutes.title, '发布评审');
+  await repo.change(desktopId, record => { record.autoMinutes = { enabled: false, intervalSeconds: 90 }; });
+  await privateRecordingResults(repo, 'local', { vault: vault.id });
+  assert.equal((await repo.get(desktopId)).autoMinutes.enabled, true);
+  await repo.change(desktopId, record => setAutomation(record, { enabled: false }));
+  await privateRecordingResults(repo, 'local', { vault: vault.id });
+  assert.equal((await repo.get(desktopId)).autoMinutes.enabled, false);
+});

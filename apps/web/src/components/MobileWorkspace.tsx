@@ -10,7 +10,7 @@ import { Brand } from './Brand';
 import { Button } from './ui';
 import { MobileSheet } from './MobileSheet';
 import { MobileAbout } from './MobileAbout';
-import { MobileAudioNotice } from './MobileAudioNotice';
+import { MobileAudioNotice, audioNoticeTitle } from './MobileAudioNotice';
 import './MobileWorkspace.css';
 
 export type MobilePage = 'record' | 'meetings' | 'account';
@@ -418,15 +418,16 @@ export function MobileWorkspace({
   const [space, setSpace] = useState('');
   const [usage, setUsage] = useState<Usage | null>(null);
   const [usageError, setUsageError] = useState(false);
-  const [sheet, setSheet] = useState<'devices' | 'factor' | 'logout' | 'about' | 'monitor' | null>(null);
+  const [sheet, setSheet] = useState<'devices' | 'factor' | 'logout' | 'about' | 'monitor' | 'about-notice' | 'monitor-notice' | null>(null);
   const [monitor, setMonitor] = useState<'idle' | 'authorizing' | 'waiting' | 'recording'>('idle');
   const [monitorError, setMonitorError] = useState('');
   useEffect(() => {
     const status = (event: Event) => {
       const value = (event as CustomEvent<string>).detail;
       if (value === 'system-audio-armed') setMonitor('waiting');
-      if (value === 'system-audio-detected') setMonitor('recording');
+      if (value === 'system-audio-detected') { setMonitor('recording'); setMonitorError(''); }
       if (value === 'system-audio-ended') setMonitor('idle');
+      if (value.startsWith('system-audio-warning:')) setMonitorError(value.slice('system-audio-warning:'.length));
       if (value.startsWith('system-audio-error:')) {
         setMonitor('idle');
         setMonitorError(value.slice('system-audio-error:'.length));
@@ -570,10 +571,11 @@ export function MobileWorkspace({
       <div className="mobile-account-group mobile-about-link">
         <button type="button" onClick={() => setSheet('about')}><FileText size={17} aria-hidden="true"/><span>关于聆记</span><CaretRight size={14} aria-hidden="true"/></button>
       </div>
-      {sheet === 'about' && <MobileSheet title="关于聆记" close={() => setSheet(null)}><MobileAbout/></MobileSheet>}
+      {sheet === 'about' && <MobileSheet title="关于聆记" close={() => setSheet(null)}><MobileAbout openNotice={() => setSheet('about-notice')}/></MobileSheet>}
+      {(sheet === 'about-notice' || sheet === 'monitor-notice') && <MobileAudioNotice close={() => setSheet(sheet === 'about-notice' ? 'about' : 'monitor')}/>}
       {sheet === 'monitor' && <MobileSheet title="会议音频自动记录" close={() => setSheet(null)}>
-        <p className="mobile-sheet-note">取得参会者同意后，授权聆记监听飞书、Teams、Zoom 或腾讯会议允许共享的音频。检测到声音后自动开始，持续静默 60 秒后保存。Android 保护的通话音频无法采集。</p>
-        <MobileAudioNotice/>
+        <p className="mobile-sheet-note">检测飞书、Teams、Zoom 和腾讯会议的通话状态。确认通话后开始麦克风录音，通话结束后保存。</p>
+        <button type="button" className="mobile-document-link mobile-document-inline" onClick={() => setSheet('monitor-notice')}>{audioNoticeTitle}</button>
         {monitorError && <p role="alert">{monitorError}</p>}
         <Button variant="primary" disabled={monitor === 'authorizing' || (recording && monitor !== 'recording')} onClick={() => {
           setMonitorError('');
@@ -581,7 +583,7 @@ export function MobileWorkspace({
             setMonitor('authorizing');
             dispatchEvent(new Event('lingji:system-audio-arm'));
           } else dispatchEvent(new Event('lingji:system-audio-disarm'));
-        }}>{monitor === 'idle' ? '授权并开始监听' : monitor === 'authorizing' ? '等待系统授权…' : '停止自动记录'}</Button>
+        }}>{monitor === 'idle' ? '授权并开始检测' : monitor === 'authorizing' ? '等待系统授权…' : '停止自动记录'}</Button>
       </MobileSheet>}
       {sheet === 'logout' && <MobileSheet title="退出登录？" placement="center" showClose={false}
         closeDisabled={logoutBusy} close={() => setSheet(null)}>

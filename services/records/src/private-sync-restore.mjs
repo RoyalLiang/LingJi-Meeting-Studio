@@ -68,7 +68,7 @@ export async function preparePrivateRecording(repo, owner, input) {
   const stored = await existing();
   if (stored) return stored;
   requireThat(!existingOnly, 'sync_recording_prefix_unavailable', 404);
-  const record = createRecord(owner, { title });
+  const record = createRecord(owner, { title, autoMinutes: true });
   record.id = id;
   record.syncRecording = true;
   record.syncSourceId = recording;
@@ -79,4 +79,37 @@ export async function preparePrivateRecording(repo, owner, input) {
     if (duplicate) return duplicate;
     throw error;
   }
+}
+
+export async function privateRecordingResults(repo, owner, input) {
+  const { vault, includeDesktop = false } = input || {};
+  requireThat(typeof vault === 'string' && recordingId.test(vault) && typeof includeDesktop === 'boolean', 'sync_invalid_recording', 400);
+  const phones = new Map();
+  let before;
+  for (;;) {
+    const page = await repo.listMetadata('record', owner, ['syncSourceId', 'autoMinutes', 'createdAt'], {
+      syncRecording: true, limit: 200, before,
+    });
+    for (const phone of page) phones.set(phone.id, phone);
+    if (page.length < 200) break;
+    const last = page.at(-1);
+    before = [last.createdAt, last.id];
+  }
+  if (!phones.size && !includeDesktop) return [];
+  const records = (await repo.listSummaries(owner, 'all', '')).filter(record => {
+    const phone = phones.get(record.id);
+    return phone ? recordingId.test(phone.syncSourceId) && record.id === localId('private-sync/recording/v1', owner, vault, phone.syncSourceId) : includeDesktop;
+  });
+  for (const record of records) {
+    const phone = phones.get(record.id);
+    if (phone && record.capture === 'completed' && record.segments > 0 && !phone.autoMinutes?.enabled && phone.autoMinutes?.enabledAt == null) {
+      await repo.change(record.id, value => {
+        if (!value.deleted && !value.autoMinutes?.enabled && value.autoMinutes?.enabledAt == null) {
+          value.autoMinutes = { intervalSeconds: 90, ...value.autoMinutes, enabled: true };
+          emit(value, 'minutes.automation', { enabled: true });
+        }
+      }, { returnRecord: false });
+    }
+  }
+  return records;
 }

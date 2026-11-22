@@ -246,13 +246,15 @@ export async function createRepository(options = {}) {
       return Boolean(db.prepare("SELECT 1 FROM record_list_projection WHERE COALESCE(json_extract(data,'$.deleted'),0)=0 AND json_extract(data,'$.summary.capture')='recording' AND json_extract(data,'$.deleteAt')>? LIMIT 1").get(new Date().toISOString()));
     },
     root, backend: pool ? 'postgres' : 'sqlite', audioBackend: objects ? 's3' : 'filesystem',
-    async listMetadata(kind, owner, fields, {recordId, status, automatic, limit=200, before}={}) {
+    async listMetadata(kind, owner, fields, {recordId, status, automatic, syncRecording, limit=200, before}={}) {
       requireThat(typeof kind==='string'&&typeof owner==='string'&&Array.isArray(fields)&&fields.length<=40&&fields.every(key=>/^[A-Za-z][A-Za-z0-9]*$/.test(key))&&Number.isSafeInteger(limit)&&limit>0&&limit<=1000,'invalid_metadata_query',500);
       requireThat(automatic===undefined||typeof automatic==='boolean','invalid_metadata_query',500);
+      requireThat(syncRecording===undefined||syncRecording===true,'invalid_metadata_query',500);
       requireThat(!before||(Array.isArray(before)&&before.length===2&&(typeof before[0]==='string'&&before[0].length<=200||Number.isSafeInteger(before[0]))&&typeof before[1]==='string'&&before[1].length<=200),'invalid_metadata_query',500);
       const keys=[...new Set(['id','kind','owner',...fields])];
       if(pool){
         const values=[kind,owner],where=["data->>'kind'=$1","data->>'owner'=$2"];
+        if(syncRecording)where.push("data->>'syncRecording'='true'");
         if(recordId){values.push(recordId);where.push(`data->>'recordId'=$${values.length}`);}
         if(status){values.push(status);where.push(`data->>'status'=$${values.length}`);}
         if(automatic!==undefined){values.push(String(automatic));where.push(`data->>'automatic'=$${values.length}`);}
@@ -262,6 +264,7 @@ export async function createRepository(options = {}) {
         return (await pool.query(`SELECT jsonb_build_object(${json}) AS data FROM record_aggregates WHERE ${where.join(' AND ')} ORDER BY data->>'createdAt' DESC,id DESC LIMIT $${values.length}`,values)).rows.map(row=>row.data);
       }
       const values=[kind,owner],where=["json_extract(data,'$.kind')=?","json_extract(data,'$.owner')=?"];
+      if(syncRecording)where.push("json_extract(data,'$.syncRecording')=1");
       if(recordId){values.push(recordId);where.push("json_extract(data,'$.recordId')=?");}
       if(status){values.push(status);where.push("json_extract(data,'$.status')=?");}
       if(automatic!==undefined){values.push(Number(automatic));where.push("json_extract(data,'$.automatic')=?");}

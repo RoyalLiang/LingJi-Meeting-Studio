@@ -20,6 +20,7 @@ function checkpointJob(record, scope) {
 export function automaticMinutesAt(record, now = Date.now()) {
   const auto = record.autoMinutes;
   if (!auto?.enabled || record.deleted || !record.segments.length || record.minutes?.edited) return Infinity;
+  if (record.syncRecording && record.capture !== 'completed') return Infinity;
   const scope = record.capture === 'completed' ? 'final' : 'live';
   const minutes = scope === 'final' ? record.minutes : record.liveMinutes;
   if (minutes?.transcriptRevision === record.transcriptRevision && (minutes.notesRevision ?? 0) === record.notesRevision) return Infinity;
