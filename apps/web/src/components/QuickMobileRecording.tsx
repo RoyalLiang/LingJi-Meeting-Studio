@@ -72,7 +72,9 @@ export function QuickMobileRecording({ append, commit, status, visible, showReco
       context = new AudioContext({ latencyHint: 'interactive' });
       const resumed = context.resume();
       void resumed.catch(() => {});
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: { ideal: 1 }, noiseSuppression: true, echoCancellation: true, autoGainControl: true },
+      });
       dispatchEvent(new Event('lingji:recording-opened'));
       if (!mounted.current) { close(); return; }
       await resumed;
@@ -81,7 +83,11 @@ export function QuickMobileRecording({ append, commit, status, visible, showReco
       const node = new AudioWorkletNode(context, 'meeting-pcm');
       const mute = context.createGain();
       mute.gain.value = 0;
-      context.createMediaStreamSource(stream).connect(node).connect(mute).connect(context.destination);
+      const rumble = context.createBiquadFilter();
+      rumble.type = 'highpass';
+      rumble.frequency.value = 75;
+      rumble.Q.value = 0;
+      context.createMediaStreamSource(stream).connect(rumble).connect(node).connect(mute).connect(context.destination);
       const pending: Uint8Array<ArrayBuffer>[] = [];
       const id = crypto.randomUUID(), at = Date.now();
       const name = '手机录音 · ' + new Date().toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });

@@ -54,8 +54,15 @@ export async function createAuth(repo, options = {}) {
   };
   const active = (account, now = Date.now()) =>
     (account.devices || []).filter(device => device.expires > now && device.version === account.authVersion);
-  const label = agent => {
-    if (/\bLingJi-Android\b/.test(agent)) return '聆记 Android';
+  const androidApp = request => request?.headers['x-lingji-client'] === 'android'
+    || /\bLingJi-Android\b/.test(request?.headers['user-agent'] || '');
+  const appLabel = request => {
+    if (androidApp(request)) return '聆记 Android';
+    const desktop = /^LingJi-Desktop-(macOS|Windows|Linux)$/.exec(request?.headers['user-agent'] || '');
+    return desktop ? '聆记 ' + desktop[1] : '';
+  };
+  const label = request => {
+    const agent = request?.headers['user-agent'] || '';
     if (/Android/i.test(agent)) return 'Android';
     if (/iPhone|iPad/i.test(agent)) return 'iPhone / iPad';
     if (/Windows/i.test(agent)) return 'Windows';
@@ -87,6 +94,15 @@ export async function createAuth(repo, options = {}) {
       const now = Date.now();
       const token = { id: user.id, version: user.authVersion, expires: options.localAccount ? null : now + ttl };
       if (options.trackDevices) {
+        let previousId;
+        if (request?.headers.cookie) {
+          try {
+            const previous = session(request);
+            if (previous.id === user.id && previous.version === user.authVersion) previousId = previous.sid;
+          } catch (error) {
+            if (!(error instanceof DomainError)) throw error;
+          }
+        }
         token.sid = randomUUID();
         token.issuedAt = now;
         await repo.change(user.id, current => {
@@ -95,9 +111,8 @@ export async function createAuth(repo, options = {}) {
             requireThat(totp, 'account_factor_unavailable', 503);
             totp.consume(current, factor);
           }
-          const entries = active(current, now);
-          const name = /^LingJi-Desktop-(macOS|Windows|Linux)$/.exec(request?.headers['user-agent'] || '')?.[1]
-            || label(request?.headers['user-agent'] || '');
+          const entries = active(current, now).filter(device => device.id !== previousId);
+          const name = appLabel(request) || label(request);
           current.devices = [{ id: token.sid, name, issuedAt: now, expires: token.expires, version: token.version }, ...entries].slice(0, 32);
         });
       }
@@ -108,6 +123,17 @@ export async function createAuth(repo, options = {}) {
     sessionExpiry(request) {
       const token = session(request);
       return token.sid ? token.expires : null;
+    },
+    async identifyDevice(user, request) {
+      const name = appLabel(request);
+      if (!name) return;
+      const token = session(request);
+      const device = active(user).find(entry => entry.id === token.sid);
+      if (!device || device.name === name) return;
+      await repo.change(user.id, current => {
+        const currentDevice = active(current).find(entry => entry.id === token.sid);
+        if (currentDevice) currentDevice.name = name;
+      });
     },
     async refreshSession(user, request) {
       const token = session(request);
@@ -120,7 +146,7 @@ export async function createAuth(repo, options = {}) {
         requireThat(device && token.expires > now, 'session_expired', 401);
         expires = Math.max(device.expires, now + ttl);
         device.expires = expires;
-        if (label(request.headers['user-agent'] || '') === '聆记 Android') device.name = '聆记 Android';
+        if (androidApp(request)) device.name = '聆记 Android';
       });
       const data = Buffer.from(JSON.stringify({ ...token, expires })).toString('base64url');
       return { cookie: cookie(`${data}.${sign(data)}`), expires };
@@ -137,7 +163,7 @@ export async function createAuth(repo, options = {}) {
     devices(user, request) {
       const token = session(request);
       return { current: Boolean(token.sid), items: active(user).map(({ id, name, issuedAt }) => ({
-        id, name, issuedAt, current: id === token.sid,
+        id, name: id === token.sid ? appLabel(request) || name : name, issuedAt, current: id === token.sid,
       })) };
     },
     async revoke(user, request, id) {

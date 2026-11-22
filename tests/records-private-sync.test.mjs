@@ -82,6 +82,11 @@ test('desktop account registration authenticates once and logout clears the sync
   assert.deepEqual(await call('session', 'POST', { email, password, register: true }),
     { status: 200, data: { email, companion: fixtureOrigin } });
   assert.deepEqual((await call('profile', 'GET')).data, { name: '' });
+  const platform = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' }[process.platform];
+  if (platform) {
+    const { items } = (await call('devices', 'GET')).data;
+    assert.equal(items.find(device => device.current)?.name, '聆记 ' + platform);
+  }
   assert.deepEqual((await call('profile', 'PATCH', { name: '  设备验收  ' })).data, { name: '设备验收' });
   assert.deepEqual((await call('profile', 'GET')).data, { name: '设备验收' });
   assert.equal((await call('profile', 'PATCH', { name: 'x'.repeat(61) })).status, 400);
@@ -106,6 +111,12 @@ test('encrypted delta across authenticated accounts preserves ordering and idemp
   assert.deepEqual(Object.keys(mobile.data).sort(), ['csrf', 'email', 'expiresAt']);
   assert.ok(mobile.data.expiresAt > Date.now());
   const originalDevice = (await first('/private-sync/devices')).data.items[0];
+  const identified = await first('/private-sync/mobile-session', 'GET', undefined, {
+    'User-Agent': 'Mozilla/5.0', 'X-LingJi-Client': 'android',
+  });
+  assert.equal(identified.status, 200);
+  assert.deepEqual((await first('/private-sync/devices')).data.items[0],
+    { ...originalDevice, name: '聆记 Android' }, 'legacy sessions learn the App label even after a proxy rewrites User-Agent');
   assert.equal((await first('/private-sync/mobile-session', 'POST', undefined, { 'X-CSRF-Token': '' })).status, 403);
   const renewed = await first('/private-sync/mobile-session', 'POST', undefined, { 'User-Agent': 'Mozilla/5.0 LingJi-Android' });
   assert.equal(renewed.status, 200);
@@ -448,7 +459,7 @@ test('per-device revocation and TOTP recovery protect OPAQUE login after restart
     const authorization = { Cookie: session.cookies[0].split(';')[0], 'X-CSRF-Token': session.data.csrf };
     return (path, method, body) => request(path, method, body, authorization);
   }
-  const owner = signed(primary);
+  let owner = signed(primary);
   const second = signed(guest);
   const devices = (await owner('/private-sync/devices')).data;
   assert.equal(devices.items.length, 2);
@@ -465,6 +476,19 @@ test('per-device revocation and TOTP recovery protect OPAQUE login after restart
   const quote = await owner('/private-sync/billing/quote', 'POST', { planId: 'storage-20g', period: 'yearly', amount: 1 });
   assert.deepEqual(quote.data, { planId: 'storage-20g', period: 'yearly', amount: 36500, currency: 'CNY', payable: false });
   assert.equal((await request('/private-sync/billing/plans')).status, 401);
+
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() + 11 * 60_000 });
+  assert.equal((await owner('/private-sync/factor')).data.recent, false);
+  const renewed = await accountExchange(body => request('/auth/account', 'POST', body, {
+    Cookie: primary.cookies[0].split(';')[0], 'X-LingJi-Client': 'android',
+  }), email, password);
+  assert.equal(renewed.status, 200);
+  assert.equal((await owner('/private-sync/devices')).status, 401);
+  owner = signed(renewed);
+  assert.equal((await owner('/private-sync/factor')).data.recent, true);
+  const renewedDevices = (await owner('/private-sync/devices')).data.items;
+  assert.equal(renewedDevices.length, 1);
+  assert.equal(renewedDevices[0].name, '聆记 Android');
 
   const configured = await owner('/private-sync/factor/enroll', 'POST', {});
   assert.equal(configured.status, 200);

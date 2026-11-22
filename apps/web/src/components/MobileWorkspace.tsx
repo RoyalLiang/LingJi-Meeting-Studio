@@ -1,11 +1,11 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ArrowLeft, ArrowClockwise, FileText, Headphones, Keyhole, Link, Microphone, Moon, Trash, User, WifiSlash, DeviceMobile, Pause, Play, CaretRight, DotsThree } from '@phosphor-icons/react';
+import { ArrowLeft, ArrowClockwise, FileText, Headphones, Keyhole, Link, Microphone, Moon, Trash, User, WifiSlash, DeviceMobile, Pause, Play, CaretRight } from '@phosphor-icons/react';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import type { Minutes } from '../model';
 import type { CopySummary, MeetingAnnotations, MeetingCopy } from '../sync/journal';
 import { api } from '../api';
 import type { MobileRecording } from '../sync/mobile-library';
-import { MobileAccountDevices, MobileAccountFactor, MobileBillingPlans, loadMobileDevices } from './MobileAccountPanels';
+import { MobileAccountDevices, MobileAccountFactor, MobileBillingPlans, loadMobileDevices, loadMobileFactor } from './MobileAccountPanels';
 import { Brand } from './Brand';
 import { Button } from './ui';
 import { MobileSheet } from './MobileSheet';
@@ -42,6 +42,8 @@ const RecordRow = memo(function RecordRow({ entry, opened, reveal, select, remov
     const tracking = useRef<{ x: number; y: number; horizontal: boolean } | undefined>(undefined);
     const suppressClick = useRef(false);
     const seconds = entry.saved?.seconds ?? (entry.cloud?.durationMs === undefined ? null : Math.floor(entry.cloud.durationMs / 1000));
+  const recordedAt = entry.saved?.at ?? entry.at;
+  const recordedDate = date.format(recordedAt);
     return <li className="mobile-record-row" data-revealed={opened}>
       {remove && <button type="button" className="mobile-row-delete" tabIndex={opened ? 0 : -1} aria-hidden={!opened}
         onClick={() => { reveal(null); remove(entry); }}><Trash size={18}/>移除</button>}
@@ -76,18 +78,17 @@ const RecordRow = memo(function RecordRow({ entry, opened, reveal, select, remov
           if (suppressClick.current && event.detail > 0) { event.stopPropagation(); suppressClick.current = false; }
         }}>
       <button type="button" className="mobile-record-card" onClick={() => { if (opened) reveal(null); else select(entry); }}>
-        <strong>{entry.title}</strong>
-        <span className="mobile-record-badge">{entry.cloud?.pending ? '待同步' : entry.cloud ? '已同步' : '本机录音'}</span>
+        <strong>{entry.title === '手机录音 · ' + recordedDate ? '手机录音' : entry.title}</strong>
         <span className="mobile-record-meta">
-          <time dateTime={new Date(entry.at).toISOString()}>{date.format(entry.at)}</time>
-          <span>{entry.cloud?.workspace?.name || '个人空间'}</span>
-          {seconds !== null && <span>{clock(seconds)}</span>}
-          {entry.saved ? <span><Headphones size={14} aria-hidden="true"/> 回听</span>
-            : entry.cloud?.fromPhone !== undefined && <span>{entry.cloud.fromPhone ? '手机录音' : '电脑记录'}</span>}
+          <time dateTime={new Date(recordedAt).toISOString()}>{recordedDate}</time>
+          {entry.cloud?.workspace && <span>{entry.cloud.workspace.name}</span>}
+          {entry.cloud?.pending && <span>待同步</span>}
+        </span>
+        <span className="mobile-record-duration">
+          {entry.saved && <Headphones size={15} aria-label="可回听"/>}
+          {seconds !== null && clock(seconds)}
         </span>
       </button>
-      {remove && <button type="button" className="mobile-record-more" aria-label={`移除 ${entry.title}`}
-        onClick={() => { reveal(null); remove(entry); }}><DotsThree size={19} weight="bold"/></button>}
       </div>
     </li>;
 });
@@ -162,6 +163,15 @@ const MobileAudioPlayer = memo(forwardRef<PlayerHandle, {
       onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)}
       onError={() => { setAudio(''); onError('无法播放录音，请重试'); }}/>}
     <div className="mobile-player" aria-label="录音回听">
+      <div className="mobile-player-track">
+        <input type="range" aria-label="回听进度" min={0} max={duration || saved.seconds} step={0.1} value={position}
+          style={{ backgroundSize: `${duration ? Math.min(100, position / duration * 100) : 0}% 4px, 100% 4px` }}
+          disabled={!audio || !duration} onChange={event => seek(event.currentTarget.valueAsNumber)}/>
+      </div>
+      <div className="mobile-player-times">
+        <span>{clock(Math.floor(position))}</span>
+        <span>{clock(Math.floor(duration || saved.seconds))}</span>
+      </div>
       <Button variant="primary" className="mobile-player-play" aria-busy={audioLoading}
         aria-label={playing ? '暂停回听' : '播放录音'} disabled={audioLoading} onClick={() => {
           const element = player.current;
@@ -169,15 +179,6 @@ const MobileAudioPlayer = memo(forwardRef<PlayerHandle, {
           else if (!element.paused) element.pause();
           else void element.play().catch(() => onError('无法播放录音，请重试'));
         }}>{playing ? <Pause size={19} weight="fill"/> : <Play size={19} weight="fill"/>}</Button>
-      <div className="mobile-player-track">
-        <input type="range" aria-label="回听进度" min={0} max={duration || saved.seconds} step={0.1} value={position}
-          style={{ backgroundSize: `${duration ? Math.min(100, position / duration * 100) : 0}% 4px, 100% 4px` }}
-          disabled={!audio || !duration} onChange={event => seek(event.currentTarget.valueAsNumber)}/>
-        <div className="mobile-player-times">
-          <span>{clock(Math.floor(position))}</span>
-          <span>{clock(Math.floor(duration || saved.seconds))}</span>
-        </div>
-      </div>
       <select aria-label="播放速度" value={speed} onChange={event => {
         const next = Number(event.target.value);
         if (player.current) player.current.playbackRate = next;
@@ -327,7 +328,7 @@ function MobileMeeting({ entry, back, read, play, saveAnnotations, remove }: {
       </section> : !copy && <p className="mobile-empty">暂无手记</p>}
     </>}
     {remove && <div className="mobile-detail-actions">
-      <Button variant="ghost" disabled={saving} onClick={() => remove(entry)}><Trash size={15}/>移除本机记录</Button>
+      <Button className="mobile-remove-link" variant="ghost" onClick={() => remove(entry)}>移除本机记录</Button>
     </div>}
     {citation && <MobileSheet title="来源原文" close={() => setCitation(undefined)}>
       <p className="mobile-sheet-note">{citation.speaker} · {clock(Math.floor(citation.startMs / 1000))}</p>
@@ -348,8 +349,9 @@ function MobileSwitch({ checked, disabled, change }: { checked: boolean; disable
 }
 
 export function MobileWorkspace({
-  page, setPage, online, unlocked, automatic, setAutomatic, copies, saved, hidden, recorder, account, read, play, search, saveAnnotations, deleteLocal,
+  page, setPage, online, unlocked, automatic, setAutomatic, copies, saved, hidden, recorder, account, read, play, search, saveAnnotations, deleteLocal, email, legacyAccount,
 }: {
+  email: string; legacyAccount: boolean;
   page: MobilePage; setPage: (page: MobilePage) => void; online: boolean; unlocked: boolean;
   automatic: boolean; setAutomatic: (enabled: boolean) => void;
   copies: CopySummary[]; saved: MobileRecording[]; hidden: ReadonlySet<string>; recorder: ReactNode; account: ReactNode;
@@ -365,12 +367,13 @@ export function MobileWorkspace({
   const [usage, setUsage] = useState<Usage | null>(null);
   const [usageError, setUsageError] = useState(false);
   const [sheet, setSheet] = useState<'plans' | 'devices' | 'factor' | null>(null);
+  const [factorBusy, setFactorBusy] = useState(false);
   const [removing, setRemoving] = useState<Entry>();
   const [removeBusy, setRemoveBusy] = useState(false);
   const [removeError, setRemoveError] = useState('');
   const chooseRemoval = useCallback((entry: Entry) => { setRemoveError(''); setRemoving(entry); }, []);
   useEffect(() => {
-    if (page === 'account' && online) void loadMobileDevices().catch(() => {});
+    if (page === 'account' && online) void Promise.allSettled([loadMobileDevices(), loadMobileFactor()]);
   }, [page, online]);
   useEffect(() => {
     if (page !== 'account' || !online || !unlocked) return;
@@ -437,12 +440,12 @@ export function MobileWorkspace({
               : current);
           }}/> : <section aria-label="会议列表">
       <div className="mobile-list-tools">
-        <input type="search" aria-label="搜索会议" placeholder="搜索标题、纪要或原文" value={query} onChange={event => setQuery(event.target.value)}/>
+        <input type="search" aria-label="搜索会议" placeholder="搜索会议" value={query} onChange={event => setQuery(event.target.value)}/>
       </div>
-      <div className="mobile-space-filters" role="group" aria-label="筛选工作空间">
+      {(workspaces.length > 0 || space) && <div className="mobile-space-filters" role="group" aria-label="筛选工作空间">
           {[{ id: '', name: '全部' }, { id: 'personal', name: '个人空间' }, ...workspaces].map(item =>
             <button type="button" key={item.id} aria-pressed={space === item.id} onClick={() => setSpace(item.id)}>{item.name}</button>)}
-        </div>
+        </div>}
         <RecordCards entries={visibleEntries} select={select} empty={searchTerm || space ? '没有匹配的会议' : '暂无已同步会议'}
           remove={deleteLocal && chooseRemoval}/>
     </section>)}
@@ -481,27 +484,30 @@ export function MobileWorkspace({
           <small>当前设备 <CaretRight size={14} aria-hidden="true"/></small></button>
         </div>
       </section>
-      {sheet && <MobileSheet title={{ plans: '分级方案', devices: '绑定设备', factor: '双重验证' }[sheet]} close={() => setSheet(null)}>
+      {sheet && <MobileSheet title={{ plans: '分级方案', devices: '绑定设备', factor: '双重验证' }[sheet]} closeDisabled={sheet === 'factor' && factorBusy} close={() => setSheet(null)}>
         {sheet === 'plans' && <MobileBillingPlans/>}
         {sheet === 'devices' && <MobileAccountDevices/>}
-        {sheet === 'factor' && <MobileAccountFactor/>}
+        {sheet === 'factor' && <MobileAccountFactor email={email} legacy={legacyAccount} onBusy={setFactorBusy} done={() => setSheet(null)}/>}
       </MobileSheet>}
     </>}
-    {removing && <MobileSheet title="移除本机记录" close={() => { if (!removeBusy) setRemoving(undefined); }}>
-      <p>{removing.title}</p>
-      <p className="mobile-sheet-note">移除此处的记录和回听副本。云端及待同步副本仍会保留。</p>
+    {removing && <MobileSheet title="移除本机记录？" showClose={false} closeDisabled={removeBusy} close={() => setRemoving(undefined)}>
+      <p className="mobile-remove-title">{removing.title}</p>
+      <p className="mobile-sheet-note">此设备上的回听副本将被移除。云端及待同步副本会保留。</p>
       {removeError && <p role="alert">{removeError}</p>}
-      <div className="mobile-sheet-actions"><Button variant="danger" disabled={removeBusy} onClick={async () => {
-        if (!deleteLocal) return;
-        setRemoveBusy(true);
-        setRemoveError('');
-        try {
-          await deleteLocal(removing.cloud?.sourceId || removing.id);
-          setRemoving(undefined);
-          setDetail(null);
-        } catch (error) { setRemoveError(error instanceof Error ? error.message : '无法移除本机记录'); }
-        finally { setRemoveBusy(false); }
-      }}>{removeBusy ? '正在移除…' : '移除'}</Button></div>
+      <div className="mobile-sheet-actions mobile-sheet-paired">
+        <Button autoFocus disabled={removeBusy} onClick={() => setRemoving(undefined)}>取消</Button>
+        <Button variant="danger" disabled={removeBusy} onClick={async () => {
+          if (!deleteLocal) return;
+          setRemoveBusy(true);
+          setRemoveError('');
+          try {
+            await deleteLocal(removing.cloud?.sourceId || removing.id);
+            setRemoving(undefined);
+            setDetail(null);
+          } catch (error) { setRemoveError(error instanceof Error ? error.message : '无法移除本机记录'); }
+          finally { setRemoveBusy(false); }
+        }}>{removeBusy ? '正在移除…' : '移除'}</Button>
+      </div>
     </MobileSheet>}
     <nav className="mobile-nav" aria-label="底部菜单" data-page={page}>
       <span className="mobile-nav-lens" aria-hidden="true"/>

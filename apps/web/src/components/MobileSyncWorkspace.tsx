@@ -647,7 +647,7 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
     </div>);
 
   return <>
-    <MobileWorkspace page={mobilePage} setPage={setMobilePage} online={online} unlocked={unlocked}
+    <MobileWorkspace email={email} legacyAccount={legacyAccount} page={mobilePage} setPage={setMobilePage} online={online} unlocked={unlocked}
       automatic={phoneMeetingSync} setAutomatic={enabled => {
         if (!vault) return;
         try { localStorage.setItem('lingji:phone-meetings:' + vault.id, enabled ? '1' : '0'); }

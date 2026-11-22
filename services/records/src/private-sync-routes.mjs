@@ -50,7 +50,7 @@ export function createPrivateSyncRoutes({ store, origin, repo, auth }) {
         const renewed = await auth.refreshSession(user, req);
         res.setHeader('Set-Cookie', renewed.cookie);
         expiresAt = renewed.expires;
-      }
+      } else await auth.identifyDevice(user, req);
       send(res, 200, { email: user.email, csrf: auth.csrf(user), expiresAt });
     } else if (route === 'profile' && method === 'GET') {
       send(res, 200, { name: user.profile?.name || '' });
@@ -66,6 +66,7 @@ export function createPrivateSyncRoutes({ store, origin, repo, auth }) {
       const { planId, period } = await readBody(req, 1024);
       send(res, 200, billingQuote(planId, period));
     } else if (route === 'devices' && method === 'GET') {
+      await auth.identifyDevice(user, req);
       send(res, 200, auth.devices(user, req));
     } else if (route === 'devices' && method === 'DELETE') {
       const { id } = await readBody(req, 1024);

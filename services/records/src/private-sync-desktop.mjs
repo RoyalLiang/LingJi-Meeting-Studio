@@ -31,6 +31,7 @@ async function jsonResponse(response) {
 }
 
 export function createDesktopPrivateSync({ origin = PRIVATE_SYNC_COMPANION, fetcher = fetch } = {}) {
+  const platform = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' }[process.platform];
   let session, generation = 0;
   function startSession(upstream, data, current) {
     const cookie = upstream.headers.getSetCookie().map(value => value.split(';')[0]).find(value => value.startsWith('record_session='));
@@ -45,6 +46,7 @@ export function createDesktopPrivateSync({ origin = PRIVATE_SYNC_COMPANION, fetc
         method, redirect: 'error', signal: AbortSignal.timeout(15000),
         headers: {
           Origin: origin,
+          ...(platform ? { 'User-Agent': 'LingJi-Desktop-' + platform } : {}),
           ...(body ? { 'Content-Type': 'application/json' } : {}),
           ...(auth ? { Cookie: auth.cookie, 'X-CSRF-Token': auth.csrf } : {}),
         },

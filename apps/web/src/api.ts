@@ -224,7 +224,10 @@ export async function uploadAudio<T>(path: string, chunk: AudioChunk, signal?:Ab
 async function request<T>(path: string, method: string, body: BodyInit | undefined, headers: Record<string, string>, signal?: AbortSignal): Promise<T> {
   const started = performance.now(), traceId = globalThis.crypto?.randomUUID?.() || `${Date.now().toString(16)}-${Math.random().toString(16).slice(2).padEnd(16,'0')}`;
   const response = await serviceFetch(`/api${path}`, { method, credentials: 'same-origin', signal,
-    headers: { ...headers, 'X-Record-Trace': traceId, ...(method === 'GET' ? {} : { 'X-CSRF-Token': csrf }) },
+    headers: {
+      ...headers, 'X-Record-Trace': traceId, ...(method === 'GET' ? {} : { 'X-CSRF-Token': csrf }),
+      ...(typeof navigator !== 'undefined' && /\bLingJi-Android\b/.test(navigator.userAgent) ? { 'X-LingJi-Client': 'android' } : {}),
+    },
     ...(body === undefined ? {} : { body }) });
   trace('http.received', {traceId, durationMs:performance.now()-started});
   const data = await readServiceJson<T & { error?: string }>(response); if (!response.ok) throw new ApiError(typeof data.error === 'string' ? data.error : 'request_failed', response.status); return data;
