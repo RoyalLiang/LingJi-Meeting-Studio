@@ -180,35 +180,55 @@ body:has(.quick-mobile-app) { background: #f4f4f5; }
 .mobile-line header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
 .mobile-line time { color: var(--phone-muted); font-size: .76rem; font-variant-numeric: tabular-nums; }
 .mobile-playback {
-  margin: 0 0 12px; padding: 12px 14px 0; border: 1px solid var(--phone-meeting-rule);
-  border-radius: 16px; background: var(--phone-meeting-surface);
+  margin: 0 0 12px; padding: 16px 18px 14px; border: 1px solid var(--phone-meeting-rule);
+  border-radius: 18px; background: var(--phone-meeting-surface);
 }
 .mobile-player {
-  display: grid; grid-template-columns: 44px minmax(0, 1fr) auto;
-  align-items: center; gap: 0 12px;
+  display: grid; grid-template-columns: minmax(0, 1fr) 52px minmax(0, 1fr);
+  align-items: center; row-gap: 2px;
 }
-.mobile-workspace .mobile-player-play { width: 44px; height: 44px; padding: 0; border-radius: 50%; }
-.mobile-player-track { position: relative; grid-column: 1 / -1; min-width: 0; }
+.mobile-workspace .mobile-player-play {
+  grid-area: 1 / 2; width: 52px; height: 52px; padding: 0; border-radius: 50%;
+}
+.mobile-player-play:active:not(:disabled) { transform: scale(.96); }
+.mobile-player-spinner { animation: mobile-player-spin 900ms linear infinite; }
+@keyframes mobile-player-spin { to { transform: rotate(360deg); } }
+.mobile-player-track { grid-column: 1 / -1; min-width: 0; }
+.mobile-player-scrubber { position: relative; }
 .mobile-player-rail {
-  position: absolute; inset: calc(50% - 2px) 5px auto; height: 4px;
-  border-radius: 4px; background: var(--phone-meeting-track); overflow: hidden; pointer-events: none;
+  position: absolute; inset: calc(50% - 2px) 6px auto; height: 4px;
+  border-radius: 999px; background: var(--phone-meeting-track); overflow: hidden; pointer-events: none;
 }
 .mobile-player-rail span { display: block; height: 100%; background: var(--phone-accent); }
 .mobile-player input {
   position: relative; display: block; width: 100%; margin: 0; height: 44px;
   appearance: none; cursor: pointer; background: transparent; color: var(--phone-accent);
 }
-.mobile-player input::-webkit-slider-thumb { appearance: none; width: 10px; height: 10px; border-radius: 50%; background: currentColor; }
-.mobile-player input::-moz-range-thumb { width: 10px; height: 10px; border: 0; border-radius: 50%; background: currentColor; }
+.mobile-player input::-webkit-slider-thumb { appearance: none; width: 12px; height: 12px; border-radius: 50%; background: currentColor; }
+.mobile-player input::-moz-range-thumb { width: 12px; height: 12px; border: 0; border-radius: 50%; background: currentColor; }
 .mobile-player input:disabled { cursor: default; }
-.mobile-player-times { font-size: .92rem; font-weight: 650; font-variant-numeric: tabular-nums; }
-.mobile-player-duration { color: var(--phone-muted); font-weight: 450; font-size: .76rem; }
-.mobile-player-rate { position: relative; color: var(--phone-muted); }
-.mobile-player-rate svg { position: absolute; right: 0; top: 50%; transform: translateY(-50%); pointer-events: none; }
-.mobile-player-rate select {
-  appearance: none; min-width: 48px; min-height: 44px; padding: 0 16px 0 3px;
-  border: 0; background: transparent; color: inherit; font: inherit; font-size: .78rem; cursor: pointer;
+.mobile-player-times {
+  display: flex; justify-content: space-between; padding-inline: 6px;
+  margin-top: -5px; font-size: .78rem; line-height: 1.35; font-variant-numeric: tabular-nums;
+  color: var(--phone-muted);
 }
+.mobile-player-times span:first-child { color: var(--phone-ink); font-weight: 650; }
+.mobile-player-rate { grid-area: 1 / 3; justify-self: end; position: relative; color: var(--phone-ink); }
+.mobile-player-rate::before {
+  content: ''; position: absolute; inset: 6px 0; border-radius: 999px;
+  background: var(--phone-meeting-rule); pointer-events: none;
+}
+.mobile-player-rate svg { position: absolute; right: 9px; top: 50%; transform: translateY(-50%); pointer-events: none; }
+.mobile-player-rate select {
+  position: relative; appearance: none; min-width: 58px; min-height: 44px;
+  padding: 0 24px 0 10px; border: 0; border-radius: 999px; background: transparent;
+  color: inherit; font: inherit; font-size: .78rem; font-weight: 580; cursor: pointer;
+}
+@media (hover: hover) {
+  .mobile-player-rate:hover::before { background: var(--phone-meeting-track); }
+  .mobile-player-play:hover:not(:disabled) { filter: brightness(1.08); }
+}
+@media (prefers-reduced-motion: reduce) { .mobile-player-spinner { animation: none; } }
 .mobile-time-link {
   display: inline-flex; align-items: center; min-height: 44px; padding-inline: 8px; border: 0;
   border-radius: 8px; background: var(--phone-panel); color: var(--phone-ink);

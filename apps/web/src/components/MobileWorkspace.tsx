@@ -1,5 +1,5 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ArrowLeft, ArrowClockwise, CaretDown, DeviceMobile, FileText, Headphones, Keyhole, Link, MagnifyingGlass, Microphone, Moon, Pause, Play, Trash, User, WifiSlash, CaretRight } from '@phosphor-icons/react';
+import { ArrowLeft, ArrowClockwise, CaretDown, CircleNotch, DeviceMobile, FileText, Headphones, Keyhole, Link, MagnifyingGlass, Microphone, Moon, Pause, Play, Trash, User, WifiSlash, CaretRight } from '@phosphor-icons/react';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import type { Minutes } from '../model';
 import type { CopySummary, MeetingAnnotations, MeetingCopy } from '../sync/journal';
@@ -180,16 +180,13 @@ const MobileAudioPlayer = memo(forwardRef<PlayerHandle, {
       onError={() => { setAudio(''); onError('无法播放录音，请重试'); }}/>}
     <div className="mobile-player" role="group" aria-label="录音回听">
       <Button variant="primary" className="mobile-player-play" aria-busy={audioLoading}
-        aria-label={playing ? '暂停回听' : '播放录音'} disabled={audioLoading} onClick={() => {
+        aria-label={audioLoading ? '正在打开录音' : playing ? '暂停回听' : '播放录音'} disabled={audioLoading} onClick={() => {
           const element = player.current;
           if (!element) void playLocal();
           else if (!element.paused) element.pause();
           else void element.play().catch(() => onError('无法播放录音，请重试'));
-        }}>{playing ? <Pause size={20} weight="fill"/> : <Play size={20} weight="fill"/>}</Button>
-      <div className="mobile-player-times">
-        <span>{clock(Math.floor(position))}</span>
-        <span className="mobile-player-duration"> / {clock(Math.floor(duration || saved.seconds))}</span>
-      </div>
+        }}>{audioLoading ? <CircleNotch className="mobile-player-spinner" size={20} aria-hidden="true"/>
+          : playing ? <Pause size={20} weight="fill" aria-hidden="true"/> : <Play size={20} weight="fill" aria-hidden="true"/>}</Button>
       <div className="mobile-player-rate">
         <select aria-label="播放速度" value={speed} onChange={event => {
           const next = Number(event.target.value);
@@ -199,11 +196,17 @@ const MobileAudioPlayer = memo(forwardRef<PlayerHandle, {
         <CaretDown size={12} aria-hidden="true"/>
       </div>
       <div className="mobile-player-track">
-        <div aria-hidden="true" className="mobile-player-rail">
-          <span style={{ width: `${duration ? Math.min(100, position / duration * 100) : 0}%` }}/>
+        <div className="mobile-player-scrubber">
+          <div aria-hidden="true" className="mobile-player-rail">
+            <span style={{ width: `${duration ? Math.min(100, position / duration * 100) : 0}%` }}/>
+          </div>
+          <input type="range" aria-label="回听进度" min={0} max={duration || saved.seconds} step={0.1} value={position}
+            aria-valuetext={clock(Math.floor(position))} disabled={!audio || !duration} onChange={event => seek(event.currentTarget.valueAsNumber)}/>
         </div>
-        <input type="range" aria-label="回听进度" min={0} max={duration || saved.seconds} step={0.1} value={position}
-          aria-valuetext={clock(Math.floor(position))} disabled={!audio || !duration} onChange={event => seek(event.currentTarget.valueAsNumber)}/>
+        <div className="mobile-player-times">
+          <span>{clock(Math.floor(position))}</span>
+          <span>{clock(Math.floor(duration || saved.seconds))}</span>
+        </div>
       </div>
     </div>
   </div>;
