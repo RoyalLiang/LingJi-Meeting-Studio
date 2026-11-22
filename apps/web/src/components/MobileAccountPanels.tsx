@@ -6,9 +6,6 @@ import { Button } from './ui';
 type Device = { id: string; name: string; issuedAt: number; current: boolean };
 type DeviceList = { current: boolean; items: Device[] };
 type FactorStatus = { available: boolean; enabled: boolean; recent: boolean };
-type BillingPlan = { id: string; name: string; storageGb: number; monthly: number; yearly: number };
-type Catalog = { plans: BillingPlan[] };
-type Period = 'monthly' | 'yearly';
 
 let deviceRequest: { generation: number; until: number; promise: Promise<DeviceList> } | undefined;
 export function loadMobileDevices() {
@@ -217,42 +214,4 @@ export function MobileAccountFactor({ email, legacy, onBusy, done }: {
       <Button variant="primary" onClick={done}>已保存备用码</Button>
     </>}
   </div>;
-}
-
-export function MobileBillingPlans() {
-  const [catalog, setCatalog] = useState<Catalog>();
-  const [period, setPeriod] = useState<Period>('monthly');
-  const [quote, setQuote] = useState<{ planId: string; amount: number }>();
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    const controller = new AbortController();
-    void api<Catalog>('/private-sync/billing/plans', 'GET', undefined, controller.signal)
-      .then(setCatalog).catch(error => { if (!controller.signal.aborted) setError(messageOf(error)); });
-    return () => controller.abort();
-  }, []);
-  const price = (amount: number) => new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY', maximumFractionDigits: 2 }).format(amount / 100);
-  async function select(planId: string) {
-    setBusy(true);
-    setError('');
-    try { setQuote(await api('/private-sync/billing/quote', 'POST', { planId, period })); }
-    catch (failure) { setError(messageOf(failure)); }
-    finally { setBusy(false); }
-  }
-  return <>
-    <p className="mobile-sheet-note">测试报价，暂未开放购买。</p>
-    {error && <p role="alert">{error}</p>}
-    {!catalog && !error && <p role="status">正在加载套餐…</p>}
-    {catalog && <>
-      <div className="mobile-detail-tabs mobile-billing-period">
-        {(['monthly', 'yearly'] as const).map(item => <button type="button" key={item} disabled={busy}
-          aria-pressed={period === item} onClick={() => { setPeriod(item); setQuote(undefined); }}>{item === 'monthly' ? '按月' : '按年'}</button>)}
-      </div>
-      <ul className="mobile-record-list">{catalog.plans.map(plan => <li key={plan.id} className="mobile-card mobile-device">
-        <div><strong>{plan.name}</strong><small>{price(plan[period])}{plan.storageGb ? (period === 'monthly' ? ' / 月' : ' / 年') : ''}</small></div>
-        {!!plan.storageGb && <Button variant="ghost" disabled={busy} onClick={() => void select(plan.id)}>查看报价</Button>}
-      </li>)}</ul>
-    </>}
-    {quote && <p className="mobile-save-status" role="status">{catalog?.plans.find(plan => plan.id === quote.planId)?.name} · {price(quote.amount)}</p>}
-  </>;
 }

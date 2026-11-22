@@ -619,11 +619,19 @@ test('a full live audio journal still accepts an independent desktop receipt', a
   await store.initialize(owner, vault);
   await store.initialize(owner + ':live-audio', vault);
   await store.initialize(owner + ':live-receipts', vault);
-  const db = new DatabaseSync(join(root, 'private-sync.sqlite'));
-  try { db.prepare('UPDATE sync_vaults SET bytes=? WHERE owner=?').run(1024 * 1024 * 1024, owner + ':live-audio'); }
-  finally { db.close(); }
+  const previousQuota = 64 * 1024 * 1024;
   const operation = { id: randomUUID(), nonce: 'test', body: 'test' };
-  await assert.rejects(store.push(owner + ':live-audio', vault.id, [operation], owner), { code: 'sync_quota_exceeded' });
+  const db = new DatabaseSync(join(root, 'private-sync.sqlite'));
+  try {
+    const setBytes = db.prepare('UPDATE sync_vaults SET bytes=? WHERE owner=?');
+    setBytes.run(previousQuota - 1, owner + ':live-audio');
+    const crossing = await store.push(owner + ':live-audio', vault.id, [operation], owner);
+    assert.equal(crossing.acknowledgements[0]?.seq, 1);
+    assert.ok((await store.usage(owner)).audio > previousQuota);
+    setBytes.run(1024 ** 3, owner + ':live-audio');
+  }
+  finally { db.close(); }
+  await assert.rejects(store.push(owner + ':live-audio', vault.id, [{ ...operation, id: randomUUID() }], owner), { code: 'sync_quota_exceeded' });
   const written = await store.push(owner + ':live-receipts', vault.id, [operation], owner);
   assert.equal(written.acknowledgements[0]?.seq, 1);
   assert.equal((await store.usage(owner)).audio, 1024 * 1024 * 1024);

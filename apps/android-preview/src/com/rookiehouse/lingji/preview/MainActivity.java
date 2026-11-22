@@ -27,7 +27,6 @@ import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
-import android.widget.LinearLayout;
 import android.widget.TextView;
 import java.io.IOException;
 import java.io.InputStream;
@@ -42,11 +41,13 @@ public final class MainActivity extends Activity {
     private static final String CSP = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; font-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'";
     private static final int LIGHT = 0xfff4f4f5;
     private static final int DARK = 0xff1a1a1c;
+    private static final String LIGHT_TITLE = "聆记 · 快记";
+    private static final String DARK_TITLE = "聆记 · 快记（深色）";
     private static final int MIC = 10;
     private static final int FILE = 11;
     private WebView web;
     private FrameLayout frame;
-    private LinearLayout launch;
+    private FrameLayout launch;
     private TextView status;
     private Button retry;
     private int pageAttempt;
@@ -164,27 +165,23 @@ public final class MainActivity extends Activity {
     }
 
     private void buildLaunch() {
-        launch = new LinearLayout(this);
-        launch.setOrientation(LinearLayout.VERTICAL);
-        launch.setGravity(Gravity.CENTER);
+        launch = new FrameLayout(this);
         launch.setPadding(dp(24), dp(24), dp(24), dp(24));
         ImageView logo = new ImageView(this);
         logo.setImageResource(getResources().getIdentifier("lingji", "drawable", getPackageName()));
-        launch.addView(logo, new LinearLayout.LayoutParams(dp(52), dp(52)));
+        launch.addView(logo, new FrameLayout.LayoutParams(dp(52), dp(52), Gravity.CENTER));
         status = new TextView(this);
         status.setTextSize(14);
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         status.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams label = new LinearLayout.LayoutParams(-2, -2);
-        label.topMargin = dp(8);
-        launch.addView(status, label);
+        status.setTranslationY(dp(52));
+        launch.addView(status, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
         retry = new Button(this);
         retry.setText("重新加载");
         retry.setVisibility(View.INVISIBLE);
         retry.setOnClickListener(view -> { if (web != null) web.loadUrl(PAGE); });
-        LinearLayout.LayoutParams action = new LinearLayout.LayoutParams(-2, dp(48));
-        action.topMargin = dp(12);
-        launch.addView(retry, action);
+        retry.setTranslationY(dp(102));
+        launch.addView(retry, new FrameLayout.LayoutParams(-2, dp(48), Gravity.CENTER));
         frame.addView(launch, new FrameLayout.LayoutParams(-1, -1));
     }
 
@@ -220,7 +217,8 @@ public final class MainActivity extends Activity {
     }
 
     private void reveal(WebView view, boolean darkMode) {
-        paintChrome(darkMode);
+        if (dark != darkMode) paintChrome(darkMode);
+        else if (launch.getVisibility() != View.VISIBLE) return;
         getPreferences(MODE_PRIVATE).edit().putBoolean("dark", darkMode).apply();
         int attempt = pageAttempt;
         view.postVisualStateCallback(attempt, new WebView.VisualStateCallback() {
@@ -241,6 +239,8 @@ public final class MainActivity extends Activity {
         settings.setJavaScriptEnabled(true);
         settings.setUserAgentString(settings.getUserAgentString() + " LingJi-Android");
         settings.setDomStorageEnabled(true);
+        // Playback of the tapped recording starts after its local audio is decrypted.
+        settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         settings.setAllowFileAccess(false);
@@ -266,12 +266,11 @@ public final class MainActivity extends Activity {
                 if (!trusted(Uri.parse(url))) return;
                 if (APP_PATH.equals(Uri.parse(url).getPath())) connectRecordingPort(view);
                 int attempt = pageAttempt;
-                view.evaluateJavascript(
-                    "document.querySelector('#root')?.childElementCount ? document.documentElement.dataset.theme || 'light' : ''",
+                view.evaluateJavascript("document.title",
                     value -> {
                         if (attempt != pageAttempt || isDestroyed()) return;
-                        if (value.equals("\"dark\"")) reveal(view, true);
-                        else if (value.equals("\"light\"")) reveal(view, false);
+                        if (value.equals("\"" + DARK_TITLE + "\"")) reveal(view, true);
+                        else if (value.equals("\"" + LIGHT_TITLE + "\"")) reveal(view, false);
                     });
             }
 
@@ -286,8 +285,8 @@ public final class MainActivity extends Activity {
         web.setWebChromeClient(new WebChromeClient() {
             @Override public void onReceivedTitle(WebView view, String title) {
                 if (view.getUrl() == null || !trusted(Uri.parse(view.getUrl()))) return;
-                if ("聆记 · 快记".equals(title)) reveal(view, false);
-                else if ("聆记 · 快记（深色）".equals(title)) reveal(view, true);
+                if (LIGHT_TITLE.equals(title)) reveal(view, false);
+                else if (DARK_TITLE.equals(title)) reveal(view, true);
             }
 
             @Override public void onPermissionRequest(PermissionRequest request) {

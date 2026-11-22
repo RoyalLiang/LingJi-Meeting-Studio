@@ -1,11 +1,11 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ArrowLeft, ArrowClockwise, CaretDown, CircleNotch, DeviceMobile, FileText, Headphones, Keyhole, Link, MagnifyingGlass, Microphone, Moon, Pause, Play, Trash, User, WifiSlash, CaretRight } from '@phosphor-icons/react';
+import { ArrowLeft, ArrowClockwise, CircleNotch, DeviceMobile, FileText, Headphones, Keyhole, Link, MagnifyingGlass, Microphone, Moon, Pause, Play, Trash, User, WifiSlash, CaretRight } from '@phosphor-icons/react';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import type { Minutes } from '../model';
 import type { CopySummary, MeetingAnnotations, MeetingCopy } from '../sync/journal';
 import { api } from '../api';
 import type { MobileRecording } from '../sync/mobile-library';
-import { MobileAccountDevices, MobileAccountFactor, MobileBillingPlans, loadMobileDevices, loadMobileFactor } from './MobileAccountPanels';
+import { MobileAccountDevices, MobileAccountFactor, loadMobileDevices, loadMobileFactor } from './MobileAccountPanels';
 import { Brand } from './Brand';
 import { Button } from './ui';
 import { MobileSheet } from './MobileSheet';
@@ -16,6 +16,8 @@ type TranscriptLine = { id: string; speaker: string; startMs: number; text: stri
 type Usage = { meetings: number; audio: number; quota: number };
 type Entry = { id: string; title: string; at: number; saved?: MobileRecording; cloud?: CopySummary };
 const pages = [['record', '记录', Microphone], ['meetings', '会议', FileText], ['account', '我的', User]] as const;
+const playbackRates = [1, 1.25, 1.5, 2];
+const oneGiB = 1024 ** 3;
 const detailTabs = [['minutes', '纪要'], ['transcript', '原文'], ['notes', '手记']] as const;
 const date = new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 const day = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -130,14 +132,28 @@ const MobileAudioPlayer = memo(forwardRef<PlayerHandle, {
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
   const [playing, setPlaying] = useState(false);
-  const [speed, setSpeed] = useState(1);
+  const [rateIndex, setRateIndex] = useState(0);
+  const speed = playbackRates[rateIndex];
   const [audioLoading, setAudioLoading] = useState(false);
   const mounted = useRef(false);
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; };
   }, []);
-  useEffect(() => () => { if (audio) URL.revokeObjectURL(audio); }, [audio]);
+  useEffect(() => {
+    const element = player.current;
+    if (!audio || !element) return;
+    let active = true;
+    void element.play().catch(() => {
+      if (active) onError('无法播放录音，请重试');
+    }).finally(() => {
+      if (active) setAudioLoading(false);
+    });
+    return () => {
+      active = false;
+      URL.revokeObjectURL(audio);
+    };
+  }, [audio, onError]);
 
   const seek = useCallback((seconds: number) => {
     const element = player.current;
@@ -161,14 +177,18 @@ const MobileAudioPlayer = memo(forwardRef<PlayerHandle, {
       if (!mounted.current) return;
       if (!blob) throw new Error('本机没有保存这段音频');
       setAudio(URL.createObjectURL(blob));
-    } catch (failure) { if (mounted.current) onError((failure as Error).message); }
-    finally { if (mounted.current) setAudioLoading(false); }
+    } catch (failure) {
+      if (mounted.current) {
+        onError(failure instanceof Error ? failure.message : '无法播放录音');
+        setAudioLoading(false);
+      }
+    }
   }, [audioLoading, onError, play, saved.id, seek]);
 
   useImperativeHandle(ref, () => ({ playAt: seconds => { void playLocal(seconds); } }), [playLocal]);
 
   return <div className="mobile-playback">
-    {audio && <audio ref={player} src={audio} autoPlay preload="metadata"
+    {audio && <audio ref={player} src={audio} preload="metadata"
       onLoadedMetadata={event => {
         const element = event.currentTarget;
         if (Number.isFinite(element.duration)) setDuration(element.duration);
@@ -177,14 +197,24 @@ const MobileAudioPlayer = memo(forwardRef<PlayerHandle, {
       }}
       onTimeUpdate={event => setPosition(event.currentTarget.currentTime)}
       onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)}
-      onError={() => { setAudio(''); onError('无法播放录音，请重试'); }}/>}
+      onError={() => {
+        setAudio('');
+        setDuration(0);
+        setPosition(0);
+        setPlaying(false);
+        setAudioLoading(false);
+        onError('无法播放录音，请重试');
+      }}/>}
     <div className="mobile-player" role="group" aria-label="录音回听">
       <Button variant="secondary" className="mobile-player-play" aria-busy={audioLoading}
         aria-label={audioLoading ? '正在打开录音' : playing ? '暂停回听' : '播放录音'} disabled={audioLoading} onClick={() => {
           const element = player.current;
           if (!element) void playLocal();
           else if (!element.paused) element.pause();
-          else void element.play().catch(() => onError('无法播放录音，请重试'));
+          else {
+            onError('');
+            void element.play().catch(() => onError('无法播放录音，请重试'));
+          }
         }}>{audioLoading ? <CircleNotch className="mobile-player-spinner" size={20} aria-hidden="true"/>
           : playing ? <Pause size={20} weight="fill" aria-hidden="true"/> : <Play size={20} weight="fill" aria-hidden="true"/>}</Button>
       <div className="mobile-player-times">
@@ -198,14 +228,11 @@ const MobileAudioPlayer = memo(forwardRef<PlayerHandle, {
         <input type="range" aria-label="回听进度" min={0} max={duration || saved.seconds} step={0.1} value={position}
           aria-valuetext={clock(Math.floor(position))} disabled={!audio || !duration} onChange={event => seek(event.currentTarget.valueAsNumber)}/>
       </div>
-      <div className="mobile-player-rate">
-        <select aria-label="播放速度" value={speed} onChange={event => {
-          const next = Number(event.target.value);
-          if (player.current) player.current.playbackRate = next;
-          setSpeed(next);
-        }}>{[1, 1.25, 1.5, 2].map(value => <option key={value} value={value}>{value}×</option>)}</select>
-        <CaretDown size={12} aria-hidden="true"/>
-      </div>
+      <button type="button" className="mobile-player-rate" aria-label={`播放速度 ${speed} 倍，点按切换`} onClick={() => {
+        const next = (rateIndex + 1) % playbackRates.length;
+        setRateIndex(next);
+        if (player.current) player.current.playbackRate = playbackRates[next];
+      }}><span>{speed}×</span></button>
     </div>
   </div>;
 }));
@@ -297,12 +324,12 @@ function MobileMeeting({ entry, back, read, play, saveAnnotations, remove }: {
   return <section aria-label="会议详情">
     <header className="mobile-detail-header">
       <Button variant="ghost" aria-label="返回会议列表" onClick={back}><ArrowLeft size={18}/></Button>
-      <div>
-        <h2>{recordTitle(entry)}</h2>
-        <p className="mobile-detail-meta">
+      <div className="mobile-detail-title">
+        <h2 title={recordTitle(entry)}>{recordTitle(entry)}</h2>
+        <span className="mobile-detail-meta">
           <time dateTime={new Date(recordedAt(entry)).toISOString()}>{date.format(recordedAt(entry))}</time>
           <span>{entry.cloud?.pending ? '待同步' : entry.cloud ? '已同步' : '本机录音'}</span>
-        </p>
+        </span>
       </div>
     </header>
     {entry.saved && <MobileAudioPlayer ref={playerRef} saved={entry.saved} play={play} onError={setError}/>}
@@ -368,9 +395,9 @@ function MobileMeeting({ entry, back, read, play, saveAnnotations, remove }: {
   </section>;
 }
 
-function MobileSwitch({ checked, disabled, change }: { checked: boolean; disabled?: boolean; change: (checked: boolean) => void }) {
+function MobileSwitch({ labelId, checked, disabled, change }: { labelId: string; checked: boolean; disabled?: boolean; change: (checked: boolean) => void }) {
   return <span className="mobile-switch">
-    <input type="checkbox" role="switch" checked={checked} disabled={disabled} onChange={event => change(event.target.checked)}/>
+    <input type="checkbox" role="switch" aria-labelledby={labelId} checked={checked} disabled={disabled} onChange={event => change(event.target.checked)}/>
     <span className="mobile-switch-track" aria-hidden="true"/>
   </span>;
 }
@@ -393,7 +420,7 @@ export function MobileWorkspace({
   const [space, setSpace] = useState('');
   const [usage, setUsage] = useState<Usage | null>(null);
   const [usageError, setUsageError] = useState(false);
-  const [sheet, setSheet] = useState<'plans' | 'devices' | 'factor' | null>(null);
+  const [sheet, setSheet] = useState<'devices' | 'factor' | null>(null);
   const [factorBusy, setFactorBusy] = useState(false);
   const [removing, setRemoving] = useState<Entry>();
   const [removeBusy, setRemoveBusy] = useState(false);
@@ -439,8 +466,8 @@ export function MobileWorkspace({
   }, [searchTerm, entries, matches, copies, saved]);
   const visibleEntries = useMemo(() => filtered.filter(entry => !hidden.has(entry.cloud?.sourceId || entry.id) &&
     (!space || (entry.cloud?.workspace?.id || 'personal') === space)), [filtered, hidden, space]);
-  const formatSize = (value: number) => (value / (value >= 1073741824 ? 1073741824 : 1048576)).toLocaleString('zh-CN',
-    { maximumFractionDigits: 2 }) + (value >= 1073741824 ? ' GiB' : ' MiB');
+  const formatSize = (value: number) => (value / (value >= oneGiB ? oneGiB : 1024 ** 2)).toLocaleString('zh-CN',
+    { maximumFractionDigits: 2 }) + (value >= oneGiB ? ' GiB' : ' MiB');
   const navigate = useCallback((next: MobilePage) => {
     setPage(next); setDetail(null);
     window.scrollTo(0, 0);
@@ -480,27 +507,29 @@ export function MobileWorkspace({
     {page === 'account' && <>
       {account}
       <section className="mobile-account-card mobile-quota" aria-label="同步存储">
-        <header><h2>同步存储</h2>
-          <Button variant="ghost" onClick={() => setSheet('plans')}>分级方案</Button>
-        </header>
-        {usage && usage.quota > 0 ? <div className="mobile-quota-list">
+        <h2>同步存储</h2>
+        {usage && usage.quota > 0 ? <><div className="mobile-quota-list">
           <label><span>已使用</span><small>{formatSize(usage.meetings + usage.audio)} / {formatSize(usage.quota)}</small>
             <meter min={0} max={usage.quota} value={usage.meetings + usage.audio}/></label>
           <div><span>会议与纪要</span><small>{formatSize(usage.meetings)}</small></div>
           <div><span>手机录音</span><small>{formatSize(usage.audio)}</small></div>
-        </div> : <p className="mobile-empty">{!online ? '联网后查看用量' : usageError ? '暂时无法查询用量' : unlocked ? '正在查询用量…' : '解锁后可查看用量'}</p>}
+        </div>
+        {usage.quota < oneGiB && <p className="mobile-quota-note">同步服务更新后可使用 1 GiB</p>}
+        </> : <p className="mobile-empty">{!online ? '联网后查看用量' : usageError ? '暂时无法查询用量' : unlocked ? '正在查询用量…' : '解锁后可查看用量'}</p>}
       </section>
       <section className="mobile-account-section" aria-labelledby="mobile-preferences">
         <h2 id="mobile-preferences">偏好</h2>
         <div className="mobile-account-group">
-        <label><ArrowClockwise size={17} aria-hidden="true"/><span>自动同步会议与纪要</span><MobileSwitch disabled={!unlocked} checked={automatic} change={setAutomatic}/></label>
-        <label><Moon size={17} aria-hidden="true"/><span>深色外观</span><MobileSwitch checked={dark} change={checked => {
+        <div><ArrowClockwise size={17} aria-hidden="true"/><span id="mobile-sync-preference">自动同步会议与纪要</span>
+          <MobileSwitch labelId="mobile-sync-preference" disabled={!unlocked} checked={automatic} change={setAutomatic}/></div>
+        <div><Moon size={17} aria-hidden="true"/><span id="mobile-theme-preference">深色外观</span>
+          <MobileSwitch labelId="mobile-theme-preference" checked={dark} change={checked => {
           const value = checked ? 'dark' : 'light';
           document.documentElement.dataset.theme = value;
           setDark(checked);
           try { localStorage.setItem('meeting-theme', value); } catch {}
           document.dispatchEvent(new Event('meeting:theme'));
-        }}/></label>
+        }}/></div>
         </div>
       </section>
       <section className="mobile-account-section" aria-labelledby="mobile-security">
@@ -512,8 +541,7 @@ export function MobileWorkspace({
           <small>当前设备 <CaretRight size={14} aria-hidden="true"/></small></button>
         </div>
       </section>
-      {sheet && <MobileSheet title={{ plans: '分级方案', devices: '绑定设备', factor: '双重验证' }[sheet]} closeDisabled={sheet === 'factor' && factorBusy} close={() => setSheet(null)}>
-        {sheet === 'plans' && <MobileBillingPlans/>}
+      {sheet && <MobileSheet title={sheet === 'devices' ? '绑定设备' : '双重验证'} closeDisabled={sheet === 'factor' && factorBusy} close={() => setSheet(null)}>
         {sheet === 'devices' && <MobileAccountDevices/>}
         {sheet === 'factor' && <MobileAccountFactor email={email} legacy={legacyAccount} onBusy={setFactorBusy} done={() => setSheet(null)}/>}
       </MobileSheet>}
