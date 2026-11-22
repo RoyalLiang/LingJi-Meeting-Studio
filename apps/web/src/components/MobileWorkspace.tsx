@@ -179,7 +179,7 @@ const MobileAudioPlayer = memo(forwardRef<PlayerHandle, {
       onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)}
       onError={() => { setAudio(''); onError('无法播放录音，请重试'); }}/>}
     <div className="mobile-player" role="group" aria-label="录音回听">
-      <Button variant="primary" className="mobile-player-play" aria-busy={audioLoading}
+      <Button variant="secondary" className="mobile-player-play" aria-busy={audioLoading}
         aria-label={audioLoading ? '正在打开录音' : playing ? '暂停回听' : '播放录音'} disabled={audioLoading} onClick={() => {
           const element = player.current;
           if (!element) void playLocal();
@@ -187,6 +187,17 @@ const MobileAudioPlayer = memo(forwardRef<PlayerHandle, {
           else void element.play().catch(() => onError('无法播放录音，请重试'));
         }}>{audioLoading ? <CircleNotch className="mobile-player-spinner" size={20} aria-hidden="true"/>
           : playing ? <Pause size={20} weight="fill" aria-hidden="true"/> : <Play size={20} weight="fill" aria-hidden="true"/>}</Button>
+      <div className="mobile-player-times">
+        <span>{clock(Math.floor(position))}</span>
+        <span><span className="mobile-player-time-separator" aria-hidden="true">/</span>{clock(Math.floor(duration || saved.seconds))}</span>
+      </div>
+      <div className="mobile-player-track">
+        <div aria-hidden="true" className="mobile-player-rail">
+          <span style={{ width: `${duration ? Math.min(100, position / duration * 100) : 0}%` }}/>
+        </div>
+        <input type="range" aria-label="回听进度" min={0} max={duration || saved.seconds} step={0.1} value={position}
+          aria-valuetext={clock(Math.floor(position))} disabled={!audio || !duration} onChange={event => seek(event.currentTarget.valueAsNumber)}/>
+      </div>
       <div className="mobile-player-rate">
         <select aria-label="播放速度" value={speed} onChange={event => {
           const next = Number(event.target.value);
@@ -194,19 +205,6 @@ const MobileAudioPlayer = memo(forwardRef<PlayerHandle, {
           setSpeed(next);
         }}>{[1, 1.25, 1.5, 2].map(value => <option key={value} value={value}>{value}×</option>)}</select>
         <CaretDown size={12} aria-hidden="true"/>
-      </div>
-      <div className="mobile-player-track">
-        <div className="mobile-player-scrubber">
-          <div aria-hidden="true" className="mobile-player-rail">
-            <span style={{ width: `${duration ? Math.min(100, position / duration * 100) : 0}%` }}/>
-          </div>
-          <input type="range" aria-label="回听进度" min={0} max={duration || saved.seconds} step={0.1} value={position}
-            aria-valuetext={clock(Math.floor(position))} disabled={!audio || !duration} onChange={event => seek(event.currentTarget.valueAsNumber)}/>
-        </div>
-        <div className="mobile-player-times">
-          <span>{clock(Math.floor(position))}</span>
-          <span>{clock(Math.floor(duration || saved.seconds))}</span>
-        </div>
       </div>
     </div>
   </div>;
