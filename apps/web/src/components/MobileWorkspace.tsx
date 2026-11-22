@@ -1,5 +1,5 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ArrowLeft, ArrowClockwise, FileText, Headphones, Keyhole, Link, Microphone, Moon, Trash, User, WifiSlash, DeviceMobile, Pause, Play, CaretRight } from '@phosphor-icons/react';
+import { ArrowLeft, ArrowClockwise, CaretDown, DeviceMobile, FileText, Headphones, Keyhole, Link, MagnifyingGlass, Microphone, Moon, Pause, Play, Trash, User, WifiSlash, CaretRight } from '@phosphor-icons/react';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import type { Minutes } from '../model';
 import type { CopySummary, MeetingAnnotations, MeetingCopy } from '../sync/journal';
@@ -18,7 +18,11 @@ type Entry = { id: string; title: string; at: number; saved?: MobileRecording; c
 const pages = [['record', '记录', Microphone], ['meetings', '会议', FileText], ['account', '我的', User]] as const;
 const detailTabs = [['minutes', '纪要'], ['transcript', '原文'], ['notes', '手记']] as const;
 const date = new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+const day = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
+const time = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 const clock = (seconds: number) => [Math.floor(seconds / 60), seconds % 60].map(value => String(value).padStart(2, '0')).join(':');
+const recordedAt = (entry: Entry) => entry.saved?.at ?? entry.at;
+const recordTitle = (entry: Entry) => entry.title === '手机录音 · ' + date.format(recordedAt(entry)) ? '手机录音' : entry.title;
 
 function combined(copies: CopySummary[], saved: MobileRecording[]): Entry[] {
   const savedById = new Map(saved.map(item => [item.id, item]));
@@ -42,8 +46,7 @@ const RecordRow = memo(function RecordRow({ entry, opened, reveal, select, remov
     const tracking = useRef<{ x: number; y: number; horizontal: boolean } | undefined>(undefined);
     const suppressClick = useRef(false);
     const seconds = entry.saved?.seconds ?? (entry.cloud?.durationMs === undefined ? null : Math.floor(entry.cloud.durationMs / 1000));
-  const recordedAt = entry.saved?.at ?? entry.at;
-  const recordedDate = date.format(recordedAt);
+    const at = recordedAt(entry);
     return <li className="mobile-record-row" data-revealed={opened}>
       {remove && <button type="button" className="mobile-row-delete" tabIndex={opened ? 0 : -1} aria-hidden={!opened}
         onClick={() => { reveal(null); remove(entry); }}><Trash size={18}/>移除</button>}
@@ -78,14 +81,14 @@ const RecordRow = memo(function RecordRow({ entry, opened, reveal, select, remov
           if (suppressClick.current && event.detail > 0) { event.stopPropagation(); suppressClick.current = false; }
         }}>
       <button type="button" className="mobile-record-card" onClick={() => { if (opened) reveal(null); else select(entry); }}>
-        <strong>{entry.title === '手机录音 · ' + recordedDate ? '手机录音' : entry.title}</strong>
+        <strong>{recordTitle(entry)}</strong>
         <span className="mobile-record-meta">
-          <time dateTime={new Date(recordedAt).toISOString()}>{recordedDate}</time>
+          <time dateTime={new Date(at).toISOString()}>{time.format(at)}</time>
           {entry.cloud?.workspace && <span>{entry.cloud.workspace.name}</span>}
           {entry.cloud?.pending && <span>待同步</span>}
         </span>
         <span className="mobile-record-duration">
-          {entry.saved && <Headphones size={15} aria-label="可回听"/>}
+          {entry.saved && <Headphones size={15} role="img" aria-label="可回听"/>}
           {seconds !== null && clock(seconds)}
         </span>
       </button>
@@ -97,9 +100,22 @@ const RecordCards = memo(function RecordCards({ entries, select, empty, remove }
   entries: Entry[]; select: (entry: Entry) => void; empty: string; remove?: (entry: Entry) => void;
 }) {
   const [opened, reveal] = useState<string | null>(null);
+  const groups = useMemo(() => {
+    const days = new Map<string, Entry[]>();
+    for (const entry of [...entries].sort((a, b) => recordedAt(b) - recordedAt(a))) {
+      const label = day.format(recordedAt(entry));
+      const group = days.get(label);
+      if (group) group.push(entry);
+      else days.set(label, [entry]);
+    }
+    return [...days];
+  }, [entries]);
   if (!entries.length) return <p className="mobile-empty">{empty}</p>;
-  return <ul className="mobile-record-list">{entries.map(entry =>
-    <RecordRow key={entry.id} entry={entry} opened={opened === entry.id} reveal={reveal} select={select} remove={remove}/>)}</ul>;
+  return <div className="mobile-record-groups">{groups.map(([label, items]) => <section key={label} aria-label={label}>
+    <h2>{label}</h2>
+    <ul className="mobile-record-list">{items.map(entry =>
+      <RecordRow key={entry.id} entry={entry} opened={opened === entry.id} reveal={reveal} select={select} remove={remove}/>)}</ul>
+  </section>)}</div>;
 });
 
 type PlayerHandle = { playAt: (seconds: number) => void };
@@ -162,28 +178,33 @@ const MobileAudioPlayer = memo(forwardRef<PlayerHandle, {
       onTimeUpdate={event => setPosition(event.currentTarget.currentTime)}
       onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)}
       onError={() => { setAudio(''); onError('无法播放录音，请重试'); }}/>}
-    <div className="mobile-player" aria-label="录音回听">
-      <div className="mobile-player-track">
-        <input type="range" aria-label="回听进度" min={0} max={duration || saved.seconds} step={0.1} value={position}
-          style={{ backgroundSize: `${duration ? Math.min(100, position / duration * 100) : 0}% 4px, 100% 4px` }}
-          disabled={!audio || !duration} onChange={event => seek(event.currentTarget.valueAsNumber)}/>
-      </div>
-      <div className="mobile-player-times">
-        <span>{clock(Math.floor(position))}</span>
-        <span>{clock(Math.floor(duration || saved.seconds))}</span>
-      </div>
+    <div className="mobile-player" role="group" aria-label="录音回听">
       <Button variant="primary" className="mobile-player-play" aria-busy={audioLoading}
         aria-label={playing ? '暂停回听' : '播放录音'} disabled={audioLoading} onClick={() => {
           const element = player.current;
           if (!element) void playLocal();
           else if (!element.paused) element.pause();
           else void element.play().catch(() => onError('无法播放录音，请重试'));
-        }}>{playing ? <Pause size={19} weight="fill"/> : <Play size={19} weight="fill"/>}</Button>
-      <select aria-label="播放速度" value={speed} onChange={event => {
-        const next = Number(event.target.value);
-        if (player.current) player.current.playbackRate = next;
-        setSpeed(next);
-      }}>{[1, 1.25, 1.5, 2].map(value => <option key={value} value={value}>{value}×</option>)}</select>
+        }}>{playing ? <Pause size={20} weight="fill"/> : <Play size={20} weight="fill"/>}</Button>
+      <div className="mobile-player-times">
+        <span>{clock(Math.floor(position))}</span>
+        <span className="mobile-player-duration"> / {clock(Math.floor(duration || saved.seconds))}</span>
+      </div>
+      <div className="mobile-player-rate">
+        <select aria-label="播放速度" value={speed} onChange={event => {
+          const next = Number(event.target.value);
+          if (player.current) player.current.playbackRate = next;
+          setSpeed(next);
+        }}>{[1, 1.25, 1.5, 2].map(value => <option key={value} value={value}>{value}×</option>)}</select>
+        <CaretDown size={12} aria-hidden="true"/>
+      </div>
+      <div className="mobile-player-track">
+        <div aria-hidden="true" className="mobile-player-rail">
+          <span style={{ width: `${duration ? Math.min(100, position / duration * 100) : 0}%` }}/>
+        </div>
+        <input type="range" aria-label="回听进度" min={0} max={duration || saved.seconds} step={0.1} value={position}
+          aria-valuetext={clock(Math.floor(position))} disabled={!audio || !duration} onChange={event => seek(event.currentTarget.valueAsNumber)}/>
+      </div>
     </div>
   </div>;
 }));
@@ -274,9 +295,14 @@ function MobileMeeting({ entry, back, read, play, saveAnnotations, remove }: {
   const minutes = content?.minutes as Minutes | null | undefined;
   return <section aria-label="会议详情">
     <header className="mobile-detail-header">
-      <Button variant="ghost" aria-label="返回会议列表" onClick={back}><ArrowLeft size={20}/></Button>
-      <h2>{entry.title}</h2>
-      <span className="mobile-record-badge">{entry.cloud?.pending ? '待同步' : entry.cloud ? '已同步' : '本机录音'}</span>
+      <Button variant="ghost" aria-label="返回会议列表" onClick={back}><ArrowLeft size={18}/></Button>
+      <div>
+        <h2>{recordTitle(entry)}</h2>
+        <p className="mobile-detail-meta">
+          <time dateTime={new Date(recordedAt(entry)).toISOString()}>{date.format(recordedAt(entry))}</time>
+          <span>{entry.cloud?.pending ? '待同步' : entry.cloud ? '已同步' : '本机录音'}</span>
+        </p>
+      </div>
     </header>
     {entry.saved && <MobileAudioPlayer ref={playerRef} saved={entry.saved} play={play} onError={setError}/>}
 
@@ -440,6 +466,7 @@ export function MobileWorkspace({
               : current);
           }}/> : <section aria-label="会议列表">
       <div className="mobile-list-tools">
+        <MagnifyingGlass size={17} aria-hidden="true"/>
         <input type="search" aria-label="搜索会议" placeholder="搜索会议" value={query} onChange={event => setQuery(event.target.value)}/>
       </div>
       {(workspaces.length > 0 || space) && <div className="mobile-space-filters" role="group" aria-label="筛选工作空间">

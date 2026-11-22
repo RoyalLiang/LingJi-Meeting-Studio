@@ -100,7 +100,7 @@ export function MobileApp() {
   useEffect(() => {
     const updateChrome = () => {
       const dark = document.documentElement.dataset.theme === 'dark';
-      document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#171b19' : '#f5f7f4');
+      document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#1a1a1c' : '#f4f4f5');
       document.title = dark ? '聆记 · 快记（深色）' : '聆记 · 快记';
     };
     updateChrome();

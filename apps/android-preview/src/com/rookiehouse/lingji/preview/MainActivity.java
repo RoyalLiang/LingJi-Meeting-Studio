@@ -40,8 +40,8 @@ public final class MainActivity extends Activity {
     private static final String PAGE = "https://" + HOST + APP_PATH;
     private static final String ASSET_ROOT = "mobile/";
     private static final String CSP = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; font-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'";
-    private static final int LIGHT = 0xfff5f7f4;
-    private static final int DARK = 0xff171b19;
+    private static final int LIGHT = 0xfff4f4f5;
+    private static final int DARK = 0xff1a1a1c;
     private static final int MIC = 10;
     private static final int FILE = 11;
     private WebView web;
@@ -205,7 +205,7 @@ public final class MainActivity extends Activity {
     }
 
     private void paintSystemBars() {
-        int color = dark ? (sheetOpen ? 0xff111513 : DARK) : (sheetOpen ? 0xffbabcb9 : LIGHT);
+        int color = dark ? (sheetOpen ? 0xff141415 : DARK) : (sheetOpen ? 0xffb9b9ba : LIGHT);
         getWindow().setStatusBarColor(color);
         getWindow().setNavigationBarColor(color);
     }
