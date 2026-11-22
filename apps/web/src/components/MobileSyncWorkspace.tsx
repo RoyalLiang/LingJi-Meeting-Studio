@@ -58,6 +58,7 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileError, setProfileError] = useState('');
   const [mobilePage, setMobilePage] = useState<MobilePage>('record');
+  const meetingPage = useRef(false);
   const [phoneCopies, setPhoneCopies] = useState<MobileRecording[]>([]);
   const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set());
   const [phoneMeetingSync, setPhoneMeetingSync] = useState(true);
@@ -74,6 +75,7 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
   const secret = useRef<Uint8Array<ArrayBuffer> | null>(null);
   const pending = useRef<AbortController | null>(null);
   const background = useRef<Promise<void> | null>(null);
+  const archivePush = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     if (unlocked && liveAudio && vault) {
@@ -287,7 +289,7 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
     pending.current = controller;
     setBusy(true); setError(''); setNotice('');
     const start = async () => {
-      await background.current;
+      await Promise.all([background.current, archivePush.current]);
       controller.signal.throwIfAborted();
       await action(controller.signal);
     };
@@ -299,56 +301,91 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
   }
 
   useEffect(() => {
-    if (!ready || !online || !unlocked || !vault) return;
+    if (!ready || !online || !unlocked || !vault || !phoneMeetingSync) return;
     const localVault = vault;
     const controller = new AbortController(), signal = controller.signal;
-    let active = false, failures = 0, retryAt = 0;
+    let failures = 0, retryAt = 0, timer: number;
     async function cycle() {
-      if (active || pending.current || !secret.current || signal.aborted || Date.now() < retryAt) return;
-      if (document.hidden && !recording) return;
-      active = true;
+      if (pending.current || !secret.current || signal.aborted || Date.now() < retryAt) return;
+      if (document.hidden) return;
       const key = secret.current.slice();
       try {
-        const result = await pushMobileRecordings(localVault, signal);
+        const synced = await syncMeetings(localVault, key, signal);
         signal.throwIfAborted();
-        if (result.sent || result.pending) setMobileStatus(result.pending ? '正在同步到电脑…' : '已同步到云端');
-        if (phoneMeetingSync) {
-          const synced = await syncMeetings(localVault, key, signal);
-          signal.throwIfAborted();
-          if (synced.received) {
-            const next = await meetingCopies(localVault, key);
-            if (!signal.aborted) setCopies(next);
-          }
+        if (synced.received) {
+          const next = await meetingCopies(localVault, key);
+          if (!signal.aborted) setCopies(next);
         }
         if (!signal.aborted) setBackgroundIssue('');
         failures = 0;
       } catch (failure) {
         if (signal.aborted) return;
         retryAt = Date.now() + Math.min(120_000, 8_000 * 2 ** Math.min(++failures, 4));
-        setMobileStatus('同步暂缓，将自动重试');
+        setBackgroundIssue(syncError(failure));
       } finally {
         key.fill(0);
-        active = false;
       }
     }
-    const runCycle = () => {
+    function runCycle() {
+      window.clearTimeout(timer);
+      if (signal.aborted) return;
+      timer = window.setTimeout(runCycle, meetingPage.current ? 3000 : 15_000);
       if (background.current) return;
       const work = cycle();
       background.current = work;
       void work.finally(() => { if (background.current === work) background.current = null; });
-    };
-    const timer = setInterval(runCycle, 10_000);
+    }
     addEventListener('lingji:sync-wakeup', runCycle);
     const onVisible = () => { if (!document.hidden) runCycle(); };
     document.addEventListener('visibilitychange', onVisible);
     runCycle();
     return () => {
-      clearInterval(timer);
+      window.clearTimeout(timer);
       removeEventListener('lingji:sync-wakeup', runCycle);
       document.removeEventListener('visibilitychange', onVisible);
       controller.abort();
     };
-  }, [ready, online, unlocked, vault, phoneMeetingSync, recording]);
+  }, [ready, online, unlocked, vault, phoneMeetingSync]);
+
+  useEffect(() => {
+    meetingPage.current = mobilePage === 'meetings';
+    if (meetingPage.current) dispatchEvent(new Event('lingji:sync-wakeup'));
+  }, [mobilePage]);
+  useEffect(() => {
+    if (!ready || !online || !unlocked || !vault) return;
+    const localVault = vault;
+    const controller = new AbortController(), signal = controller.signal;
+    let failures = 0, retryAt = 0;
+    async function cycle() {
+      if (pending.current || !secret.current || signal.aborted || Date.now() < retryAt) return;
+      if (document.hidden && !recording) return;
+      try {
+        const result = await pushMobileRecordings(localVault, signal);
+        signal.throwIfAborted();
+        if (result.sent || result.pending) setMobileStatus(result.pending ? '正在同步到电脑…' : '已同步到云端');
+        failures = 0;
+      } catch (failure) {
+        if (signal.aborted) return;
+        retryAt = Date.now() + Math.min(120_000, 8_000 * 2 ** Math.min(++failures, 4));
+        setMobileStatus('同步暂缓，将自动重试');
+      }
+    }
+    const runCycle = () => {
+      if (archivePush.current) return;
+      const work = cycle();
+      archivePush.current = work;
+      void work.finally(() => { if (archivePush.current === work) archivePush.current = null; });
+    };
+    const timer = setInterval(runCycle, 10_000);
+    const onVisible = () => { if (!document.hidden) runCycle(); };
+    document.addEventListener('visibilitychange', onVisible);
+    runCycle();
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+      controller.abort();
+    };
+  }, [ready, online, unlocked, vault, recording]);
 
   useEffect(() => {
     if (!liveAudio || liveAudioV2 || !online || !vault || !unlocked) return;
@@ -404,14 +441,14 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
         ]);
         signal.throwIfAborted();
         if (pushed.status === 'rejected') throw pushed.reason;
-        if (legacy.status === 'rejected') throw legacy.reason;
-        more = pushed.value.length === 8 || legacy.value.length === 8;
+        more = pushed.value.length === 8 || (legacy.status === 'fulfilled' && legacy.value.length === 8);
         if (activeLive.current === capture && !capture.received && !capture.uploaded &&
           pushed.value.some(item => Array.isArray(item) && item[2] === capture.id)) {
           capture.uploaded = true;
           setLiveStatus('音频已上传');
         }
         if (pulled.status === 'rejected') throw pulled.reason;
+        if (!liveAudioV2 && legacy.status === 'rejected') throw legacy.reason;
         more ||= pulled.value;
         setLiveIssue('');
         failures = 0;

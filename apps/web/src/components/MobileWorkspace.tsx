@@ -241,8 +241,8 @@ function MobileMeeting({ entry, back, read, play, saveAnnotations, remove }: {
     if (!entry.cloud) return;
     let active = true;
     void read(entry.cloud.id).then(value => {
-      if (active) setCopy(value);
-    }).catch(() => { if (active) { setError('无法读取此会议'); setCopy(null); } });
+      if (active) { setCopy(value); setError(''); }
+    }).catch(() => { if (active) setError('无法读取此会议'); });
     return () => { active = false; };
   }, [entry.cloud?.id, read]);
   const playAt = useCallback((seconds: number) => {
@@ -395,7 +395,8 @@ export function MobileWorkspace({
     return () => { active = false; clearTimeout(timer); };
   }, [searchTerm, copies, page, unlocked, search]);
   const entries = useMemo(() => combined(copies, saved), [copies, saved]);
-  const opened = detail && (entries.find(item => detail.cloud ? item.id === detail.id : item.saved?.id === detail.saved?.id) || detail);
+  const opened = detail && (entries.find(item => detail.cloud ? item.id === detail.id : item.saved?.id === detail.saved?.id)
+    || entries.find(item => item.cloud && item.cloud.sourceId === detail.cloud?.sourceId) || detail);
   const workspaces = useMemo(() => [...new Map(copies.flatMap(copy => copy.workspace ? [[copy.workspace.id, copy.workspace] as const] : [])).values()]
     .sort((left, right) => left.name.localeCompare(right.name, 'zh-CN')), [copies]);
   const filtered = useMemo(() => {

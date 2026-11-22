@@ -294,15 +294,18 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
           const liveIds = new Set(records.map(item => item.id));
           let seenDirty = false;
           for (const id of seen.current.keys()) if (!liveIds.has(id)) { seen.current.delete(id); seenDirty = true; }
-          const changed = records.filter(item => item.capture === 'completed' && seen.current.get(item.id) !== item.updatedAt).slice(0, 6);
+          const stamp = (item: RecordListItem) => JSON.stringify([item.updatedAt, item.transcriptRevision, item.minutesRevision]);
+          const changed = records.filter(item => item.capture === 'completed' && item.segments > 0
+            && seen.current.get(item.id) !== stamp(item)).slice(0, 6);
           for (const item of changed) {
             const detail = await api<RecordDetail>('/records/' + item.id, 'GET', undefined, signal);
             signal.throwIfAborted();
+            if (!detail.segments.length) continue;
             await queueMeeting(localVault, key, detail, workspaceDirectories.current?.find(dir => dir.id === detail.workspaceId)).catch(failure => {
               if (!(failure instanceof Error) || failure.message !== '会议超过同步大小上限') throw failure;
               setNotice('有会议超过同步大小上限');
             });
-            seen.current.set(item.id, item.updatedAt);
+            seen.current.set(item.id, stamp(item));
             seenDirty = true;
           }
           if (seenDirty) writeSeenMap(seenKey, seen.current);
@@ -350,7 +353,7 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
       background.current = work;
       void work.finally(() => { if (background.current === work) background.current = null; });
     };
-    const timer = setInterval(runCycle, 15000);
+    const timer = setInterval(runCycle, automatic ? 5000 : 15_000);
     addEventListener('lingji:sync-wakeup', runCycle);
     runCycle();
     return () => {
@@ -388,21 +391,22 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
             receivedAny = true;
             if (!signal.aborted) importedCallback.current?.();
           };
-          const received = await Promise.allSettled([
+          const [legacy, current] = await Promise.allSettled([
             receiveLiveAudio(localVault, key, signal, notify),
             liveAudioV2 ? receiveLiveAudio(localVault, key, signal, notify, true) : false,
           ]);
-          for (const result of received) {
-            if (result.status === 'rejected') throw result.reason;
-            more ||= result.value;
+          if (current.status === 'rejected') throw current.reason;
+          if (legacy.status === 'rejected' && (!liveAudioV2 || (legacy.reason instanceof ApiError && legacy.reason.status === 429))) {
+            throw legacy.reason;
           }
+          more = current.value || (legacy.status === 'fulfilled' && legacy.value);
         } finally {
           await pushLiveAudio(localVault, 'desktop', signal, firstRun);
           firstRun = false;
         }
         failures = 0;
         retryAt = 0;
-        idlePolls = (more || receivedAny) ? 0 : Math.min(idlePolls + 1, 4);
+        idlePolls = (more || receivedAny) ? 0 : Math.min(idlePolls + 1, 2);
       } catch (failure) {
         if (signal.aborted) return;
         retryAt = Date.now() + (failure instanceof ApiError && failure.status === 429
@@ -411,8 +415,7 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
       } finally {
         key.fill(0);
         running = false;
-        // Fast 1.5s polling while actively receiving phone live audio; back off to 12s (or 30s hidden) when idle.
-        const idleDelay = document.hidden ? 30_000 : [1500, 3000, 6000, 10_000, 12_000][idlePolls];
+        const idleDelay = idlePolls === 0 ? 1500 : document.hidden ? 8000 : idlePolls === 1 ? 2500 : 4000;
         schedule(woken || more ? 0 : idleDelay);
       }
     }
