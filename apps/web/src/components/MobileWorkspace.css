@@ -39,15 +39,48 @@ body:has(.quick-mobile-app) { background: #f4f4f5; }
   grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr);
   text-align: center; pointer-events: none;
   --phone-orb: var(--phone-accent); --phone-orb-ink: var(--phone-accent-ink);
+  --phone-stop-wash: #f2e6e3;
 }
-.quick-mobile-recording[data-phase=recording] { --phone-orb: var(--phone-live); }
-.quick-mobile-controls { grid-row: 2; position: relative; pointer-events: auto; z-index: 2; }
+[data-theme=dark] .quick-mobile-recording { --phone-stop-wash: #452c28; }
+.quick-mobile-recording:is([data-phase=recording], [data-phase=paused]) { --phone-orb: var(--phone-live); }
+.quick-mobile-controls {
+  --phone-control-size: 84px;
+  grid-row: 2; position: relative; z-index: 2;
+  display: grid; place-items: center; height: var(--phone-control-size);
+}
+.quick-mobile-primary {
+  grid-area: 1 / 1; position: relative; z-index: 1;
+  transition: opacity 150ms ease, transform 220ms cubic-bezier(.2,.75,.25,1);
+}
 .mobile-workspace .quick-mobile-control {
-  width: 84px; height: 84px; padding: 0; border-radius: 50%;
+  width: var(--phone-control-size); height: var(--phone-control-size);
+  padding: 0; border-radius: 50%; pointer-events: auto;
   color: var(--phone-orb-ink); background: var(--phone-orb);
   transition: background-color 240ms ease, transform 220ms cubic-bezier(.2,.75,.25,1);
 }
-.mobile-workspace .quick-mobile-control:active { transform: scale(.94); }
+.mobile-workspace .quick-mobile-control:active:not(:disabled) { transform: scale(.94); }
+.quick-mobile-recording[data-phase=paused] .quick-mobile-primary { opacity: 0; transform: scale(.72); }
+.quick-mobile-recording[data-phase=paused] .quick-mobile-control:disabled { opacity: 1; pointer-events: none; }
+.quick-mobile-paused-actions {
+  grid-area: 1 / 1; display: grid; grid-template-columns: repeat(2, 84px); gap: 28px;
+}
+.quick-mobile-action {
+  --phone-action-origin: 56px;
+  display: grid; justify-items: center; gap: 9px; padding: 0;
+  border: 0; border-radius: 18px; background: transparent; color: var(--phone-accent);
+  font: inherit; font-size: .81rem; font-weight: 650; cursor: pointer; touch-action: manipulation;
+  opacity: 0; transform: translateX(var(--phone-action-origin)) scale(.76);
+  transition: transform 260ms cubic-bezier(.2,.75,.25,1), opacity 180ms ease;
+}
+.quick-mobile-action-end { --phone-action-origin: -56px; color: var(--phone-live); }
+.quick-mobile-action-icon {
+  width: 58px; height: 58px; display: grid; place-items: center; border-radius: 50%;
+  background: var(--phone-accent); color: var(--phone-accent-ink);
+}
+.quick-mobile-action-end .quick-mobile-action-icon { background: var(--phone-stop-wash); color: var(--phone-live); }
+.quick-mobile-recording[data-phase=paused] .quick-mobile-action {
+  opacity: 1; transform: none; pointer-events: auto; transition-delay: 24ms;
+}
 .quick-mobile-symbol { display: inline-flex; align-items: center; gap: 2px; animation: quick-mobile-symbol-in 210ms ease both; }
 @keyframes quick-mobile-symbol-in {
   from { opacity: .2; transform: scale(.76); }
@@ -74,13 +107,10 @@ body:has(.quick-mobile-app) { background: #f4f4f5; }
   transform-origin: center bottom; transform: scaleY(var(--wave-level, .15));
   transition: transform 125ms ease-out;
 }
-.quick-mobile-recording[data-phase=paused] .quick-mobile-wave { opacity: .38; }
-.quick-mobile-recording[data-phase=paused] .quick-mobile-wave i::before { transform: scaleY(.2); }
-.mobile-workspace .quick-mobile-finish {
-  justify-self: center; pointer-events: auto; min-width: 74px; color: var(--phone-live);
-}
 @media (max-height: 670px) {
-  .mobile-workspace .quick-mobile-control { width: 72px; height: 72px; }
+  .quick-mobile-controls { --phone-control-size: 72px; }
+  .quick-mobile-action { gap: 5px; }
+  .quick-mobile-action-icon { width: 52px; height: 52px; }
   .quick-mobile-time { font-size: 1.65rem; }
 }
 @media (max-height: 475px) {
@@ -421,7 +451,8 @@ body:has(.quick-mobile-app) { background: #f4f4f5; }
 .mobile-transcript-row .mobile-card { margin-block: 0; }
 .mobile-detail-actions { display: flex; justify-content: flex-end; margin-top: 4px; }
 @media (prefers-reduced-motion: reduce) {
-  .mobile-switch-track::before, .quick-mobile-control, .mobile-nav-lens, .mobile-record-slide, .mobile-row-delete,
+  .mobile-switch-track::before, .quick-mobile-control, .quick-mobile-primary, .quick-mobile-action,
+  .mobile-nav-lens, .mobile-record-slide, .mobile-row-delete,
   .quick-mobile-wave, .quick-mobile-wave i::before { transition: none; }
   .quick-mobile-symbol, .mobile-connecting-dot { animation: none; }
 }

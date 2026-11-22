@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { BookmarkSimple, Microphone, Pause, Play, Stop } from '@phosphor-icons/react';
 import { MOBILE_PCM_BYTES, WAV_PCM_LIMIT } from '../sync/mobile-pcm';
 import type { MobileRecording } from '../sync/mobile-library';
@@ -21,11 +21,20 @@ export function QuickMobileRecording({ append, commit, status, visible, showReco
   const [phase, setPhase] = useState<'idle' | 'starting' | 'recording' | 'paused' | 'saving'>('idle');
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState('');
+  const mainControl = useRef<HTMLButtonElement>(null);
+  const resumeControl = useRef<HTMLButtonElement>(null);
+  const moveControlFocus = useRef(false);
   const draft = useRef<(() => Promise<void>) | null>(null);
   const closeCapture = useRef<(() => void) | null>(null);
   const finishCapture = useRef<(() => void) | null>(null);
   const setCapturePaused = useRef<((paused: boolean) => void) | null>(null);
   const mounted = useRef(false);
+  useLayoutEffect(() => {
+    if (!moveControlFocus.current) return;
+    moveControlFocus.current = false;
+    const control = phase === 'paused' ? resumeControl : mainControl;
+    if (visible) control.current?.focus({ preventScroll: true });
+  }, [phase, visible]);
 
   useEffect(() => {
     mounted.current = true;
@@ -177,30 +186,49 @@ export function QuickMobileRecording({ append, commit, status, visible, showReco
 
   const time = String(Math.floor(elapsed / 60)).padStart(2, '0') + ':' + String(elapsed % 60).padStart(2, '0');
   const label = phase === 'recording' ? '暂停录音' : phase === 'paused' ? '继续录音' : phase === 'saving' ? '正在保存' : phase === 'starting' ? '正在启动' : draft.current ? '重试保存' : '开始录音';
-  const capturing = phase === 'recording' || phase === 'paused';
+  const paused = phase === 'paused';
+  const capturing = phase === 'recording' || paused;
+  const feedback = paused ? '已暂停' : status;
   if (!visible) return (capturing || phase === 'saving' || draft.current) && <aside className="quick-mobile-mini" aria-label="录音状态">
     <span><i aria-hidden="true"/>{capturing ? time : label}</span>
     <Button variant="ghost" onClick={showRecorder}>返回记录</Button>
   </aside>;
   return <section className="quick-mobile-recording" data-phase={phase} aria-label="快速记录">
     <div className="quick-mobile-controls">
-      {capturing && <div className="quick-mobile-wave" ref={wave} aria-hidden="true">
-        {Array.from({ length: waveSize }, (_, index) => <i key={index} style={{ transform: `rotate(${index * 360 / waveSize}deg)` }}/>)}
-      </div>}
-      <button type="button" className="button quick-mobile-control" aria-label={label}
-
-        disabled={phase === 'starting' || phase === 'saving'} onClick={() => {
-          if (phase === 'recording') setCapturePaused.current?.(true);
-          else if (phase === 'paused') setCapturePaused.current?.(false);
-          else if (draft.current) void persist(draft.current);
-          else void start();
-        }}>
-        <span key={phase} className="quick-mobile-symbol" aria-hidden="true">
-          {phase === 'recording' ? <Pause size={29} weight="fill"/> : phase === 'paused'
-            ? <Play size={28} weight="fill"/> : phase === 'saving'
-              ? <Stop size={25} weight="fill"/> : <Microphone size={31} weight="fill"/>}
-        </span>
-      </button>
+      <div className="quick-mobile-primary" inert={paused}>
+        {capturing && <div className="quick-mobile-wave" ref={wave} aria-hidden="true">
+          {Array.from({ length: waveSize }, (_, index) => <i key={index} style={{ transform: `rotate(${index * 360 / waveSize}deg)` }}/>)}
+        </div>}
+        <button ref={mainControl} type="button" className="button quick-mobile-control" aria-label={paused ? '暂停录音' : label}
+          disabled={paused || phase === 'starting' || phase === 'saving'} onClick={event => {
+            if (phase === 'recording') {
+              moveControlFocus.current = event.detail === 0;
+              setCapturePaused.current?.(true);
+            } else if (draft.current) void persist(draft.current);
+            else void start();
+          }}>
+          <span key={capturing ? 'capture' : phase} className="quick-mobile-symbol" aria-hidden="true">
+            {capturing ? <Pause size={29} weight="fill"/>
+              : phase === 'saving' ? <Stop size={25} weight="fill"/>
+              : <Microphone size={31} weight="fill"/>}
+          </span>
+        </button>
+      </div>
+      <div className="quick-mobile-paused-actions" inert={!paused}>
+        <button ref={resumeControl} type="button" className="quick-mobile-action" aria-label="继续录音" disabled={!paused}
+          onClick={event => {
+            moveControlFocus.current = event.detail === 0;
+            setCapturePaused.current?.(false);
+          }}>
+          <span className="quick-mobile-action-icon"><Play size={24} weight="fill" aria-hidden="true"/></span>
+          <span>继续</span>
+        </button>
+        <button type="button" className="quick-mobile-action quick-mobile-action-end" aria-label="结束录音" disabled={!paused}
+          onClick={() => finishCapture.current?.()}>
+          <span className="quick-mobile-action-icon"><Stop size={23} weight="fill" aria-hidden="true"/></span>
+          <span>结束</span>
+        </button>
+      </div>
     </div>
     <div className="quick-mobile-details">
       {(capturing || phase === 'saving') && <div className="quick-mobile-clock">
@@ -213,10 +241,8 @@ export function QuickMobileRecording({ append, commit, status, visible, showReco
           }}><BookmarkSimple size={17} weight={lastMark === elapsed ? 'fill' : 'regular'}/></button>}
       </div>}
       <div className="quick-mobile-feedback">
-        {error ? <p className="quick-mobile-issue" role="alert">{error}</p> : capturing && status && <p role="status">{status}</p>}
+        {error ? <p className="quick-mobile-issue" role="alert">{error}</p> : capturing && feedback && <p role="status">{feedback}</p>}
       </div>
-      {phase === 'paused' && <Button className="quick-mobile-finish" variant="ghost" aria-label="结束录音"
-        onClick={() => finishCapture.current?.()}><Stop size={14} weight="fill"/>结束</Button>}
     </div>
   </section>;
 }
