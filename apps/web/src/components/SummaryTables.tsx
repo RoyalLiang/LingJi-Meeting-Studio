@@ -4,6 +4,7 @@ import type { Evidence, Minutes, SummaryTable } from '../model';
 import { summaryTables } from '../minutes-views';
 import { Button } from './ui';
 import { Toast } from './Toast';
+import './summary-tables.css';
 
 function Table({ table }: { table: SummaryTable }) {
   const [copied, setCopied] = useState(false), [error, setError] = useState('');

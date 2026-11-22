@@ -1,7 +1,7 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ArrowLeft, ArrowClockwise, CircleNotch, DeviceMobile, FileText, Headphones, Keyhole, Link, MagnifyingGlass, Microphone, Moon, Pause, Play, Trash, User, WifiSlash, CaretRight } from '@phosphor-icons/react';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
-import type { Minutes } from '../model';
+import type { Minutes, MinutesItem } from '../model';
 import type { CopySummary, MeetingAnnotations, MeetingCopy } from '../sync/journal';
 import { api } from '../api';
 import type { MobileRecording } from '../sync/mobile-library';
@@ -10,7 +10,9 @@ import { Brand } from './Brand';
 import { Button } from './ui';
 import { MobileSheet } from './MobileSheet';
 import { MobileAbout } from './MobileAbout';
-import { MobileAudioNotice, audioNoticeTitle } from './MobileAudioNotice';
+import { MobileAudioNotice } from './MobileAudioNotice';
+import { MinutesVisuals } from './MinutesVisuals';
+import { SummaryTables } from './SummaryTables';
 import './MobileWorkspace.css';
 
 export type MobilePage = 'record' | 'meetings' | 'account';
@@ -322,6 +324,16 @@ function MobileMeeting({ entry, back, read, play, saveAnnotations }: {
   const lines = useMemo(() => (content?.segments || []) as TranscriptLine[], [content?.segments]);
   const linesById = useMemo(() => new Map(lines.map(line => [line.id, line])), [lines]);
   const minutes = content?.minutes as Minutes | null | undefined;
+  const evidenceById = useMemo(() => new Map(minutes?.evidenceSnapshot.map(line => [`${line.id}:${line.revision}`, line])), [minutes]);
+  function minuteItems(items: MinutesItem[]) {
+    return <ul className="mobile-minutes-items">{items.map((item, index) => <li key={index}>
+      <p>{item.text}</p>
+      {item.evidence.map((evidence, i) => {
+        const line = evidenceById.get(`${evidence.segmentId}:${evidence.revision}`);
+        return line && <button type="button" className="mobile-citation" key={i} onClick={() => setCitation(line)}><Link size={13}/>原文 {i + 1}</button>;
+      })}
+    </li>)}</ul>;
+  }
   return <section aria-label="会议详情">
     <header className="mobile-detail-header">
       <Button variant="ghost" aria-label="返回会议列表" onClick={back}><ArrowLeft size={18}/></Button>
@@ -342,15 +354,10 @@ function MobileMeeting({ entry, back, read, play, saveAnnotations }: {
     {savedNotice && !error && <p role="status" className="mobile-save-status">{savedNotice}</p>}
     {entry.cloud && copy === undefined && <p role="status" className="mobile-empty">正在打开会议…</p>}
     {tab === 'minutes' && <>
-      {minutes ? <>
-        {minutes.sections.map((part, i) => <section className="mobile-detail-group" key={i}><h2>{part.heading}</h2>
-          {part.items.map((item, j) => <article className="mobile-card" key={j}><p>{item.text}</p>
-            {item.evidence.map((evidence, k) => {
-              const line = linesById.get(evidence.segmentId);
-              return line && <button className="mobile-citation" type="button" key={k} onClick={() => setCitation(line)}><Link size={13}/>原文 {k + 1}</button>;
-            })}
-          </article>)}
-        </section>)}
+      {minutes ? <div className="mobile-minutes">
+        {minutes.highlights && minutes.highlights.length > 0 && <section className="mobile-detail-group mobile-minutes-highlights">
+          <h2>重点速览</h2>{minuteItems(minutes.highlights)}
+        </section>}
         {minutes.actions.length > 0 && <section className="mobile-detail-group"><h2>待跟进</h2>
           {minutes.actions.map((item, i) => <label className="mobile-card mobile-action" key={i}>
           <input type="checkbox" checked={copy?.completed?.includes(i) ?? false} disabled={saving} onChange={event => {
@@ -362,7 +369,17 @@ function MobileMeeting({ entry, back, read, play, saveAnnotations }: {
           <span>{item.text}{(item.owner || item.due) && <small>{[item.owner, item.due].filter(Boolean).join(' · ')}</small>}</span>
         </label>)}
         </section>}
-      </> : (!entry.cloud || copy !== undefined) && <p className="mobile-empty">暂无纪要</p>}
+        <MinutesVisuals visuals={minutes.visuals ?? []}/>
+        {minutes.tables && minutes.tables.length > 0 && <SummaryTables minutes={minutes} tables={minutes.tables}/>}
+        {minutes.topics && minutes.topics.length > 0 && <section className="mobile-detail-group"><h2>会议主题</h2>
+          {minutes.topics.map((topic, index) => <section className="mobile-card mobile-minutes-topic" key={topic.id ?? index}>
+            <h3>{topic.title}</h3>{topic.summary && minuteItems([{text: topic.summary, evidence: topic.evidence}])}
+          </section>)}
+        </section>}
+        {minutes.sections.map((part, index) => <section className="mobile-detail-group mobile-minutes-section" key={index}>
+          <h2>{part.heading}</h2>{minuteItems(part.items)}
+        </section>)}
+      </div> : (!entry.cloud || copy !== undefined) && <p className="mobile-empty">暂无纪要</p>}
     </>}
     {tab === 'transcript' && (lines.length
       ? <MobileTranscriptList lines={lines} highlight={highlight} hasLocal={Boolean(entry.saved)} onPlayAt={playAt}/>
@@ -384,11 +401,11 @@ function MobileMeeting({ entry, back, read, play, saveAnnotations }: {
     </>}
     {citation && <MobileSheet title="来源原文" close={() => setCitation(undefined)}>
       <p className="mobile-sheet-note">{citation.speaker} · {clock(Math.floor(citation.startMs / 1000))}</p>
-      <p>{citation.text}</p><div className="mobile-sheet-actions">
+      <p>{citation.text}</p>{linesById.has(citation.id) && <div className="mobile-sheet-actions">
         <Button onClick={() => {
           setTab('transcript'); setHighlight(citation.id); setCitation(undefined);
         }}>在原文中定位</Button>
-      </div>
+      </div>}
     </MobileSheet>}
   </section>;
 }
@@ -418,27 +435,7 @@ export function MobileWorkspace({
   const [space, setSpace] = useState('');
   const [usage, setUsage] = useState<Usage | null>(null);
   const [usageError, setUsageError] = useState(false);
-  const [sheet, setSheet] = useState<'devices' | 'factor' | 'logout' | 'about' | 'monitor' | 'about-notice' | 'monitor-notice' | null>(null);
-  const [monitor, setMonitor] = useState<'idle' | 'authorizing' | 'waiting' | 'recording'>('idle');
-  const [monitorError, setMonitorError] = useState('');
-  useEffect(() => {
-    const status = (event: Event) => {
-      const value = (event as CustomEvent<string>).detail;
-      if (value === 'system-audio-armed') setMonitor('waiting');
-      if (value === 'system-audio-detected') { setMonitor('recording'); setMonitorError(''); }
-      if (value === 'system-audio-ended') setMonitor('idle');
-      if (value.startsWith('system-audio-warning:')) setMonitorError(value.slice('system-audio-warning:'.length));
-      if (value.startsWith('system-audio-error:')) {
-        setMonitor('idle');
-        setMonitorError(value.slice('system-audio-error:'.length));
-      }
-    };
-    addEventListener('lingji:system-audio', status);
-    return () => {
-      removeEventListener('lingji:system-audio', status);
-      dispatchEvent(new Event('lingji:system-audio-disarm'));
-    };
-  }, []);
+  const [sheet, setSheet] = useState<'devices' | 'factor' | 'logout' | 'about' | 'about-notice' | null>(null);
   const [logoutBusy, setLogoutBusy] = useState(false);
   const [logoutError, setLogoutError] = useState('');
   const [factorBusy, setFactorBusy] = useState(false);
@@ -544,11 +541,6 @@ export function MobileWorkspace({
         <div><ArrowClockwise size={17} aria-hidden="true"/><span id="mobile-sync-preference">自动同步会议与纪要</span>
           <MobileSwitch labelId="mobile-sync-preference" disabled={!unlocked} checked={automatic} change={setAutomatic}/></div>
 
-        {/\bLingJi-Android\//.test(navigator.userAgent) && !legacyAccount &&
-          <button type="button" disabled={!unlocked} onClick={() => setSheet('monitor')}>
-            <Microphone size={17} aria-hidden="true"/><span>会议音频自动记录</span>
-            <small>{monitor === 'waiting' && '待命'}{monitor === 'recording' && '记录中'} <CaretRight size={14} aria-hidden="true"/></small>
-          </button>}
         <div><Moon size={17} aria-hidden="true"/><span id="mobile-theme-preference">深色外观</span>
           <MobileSwitch labelId="mobile-theme-preference" checked={dark} change={checked => {
           const value = checked ? 'dark' : 'light';
@@ -572,19 +564,7 @@ export function MobileWorkspace({
         <button type="button" onClick={() => setSheet('about')}><FileText size={17} aria-hidden="true"/><span>关于聆记</span><CaretRight size={14} aria-hidden="true"/></button>
       </div>
       {sheet === 'about' && <MobileSheet title="关于聆记" close={() => setSheet(null)}><MobileAbout openNotice={() => setSheet('about-notice')}/></MobileSheet>}
-      {(sheet === 'about-notice' || sheet === 'monitor-notice') && <MobileAudioNotice close={() => setSheet(sheet === 'about-notice' ? 'about' : 'monitor')}/>}
-      {sheet === 'monitor' && <MobileSheet title="会议音频自动记录" close={() => setSheet(null)}>
-        <p className="mobile-sheet-note">检测飞书、Teams、Zoom 和腾讯会议的通话状态。确认通话后开始麦克风录音，通话结束后保存。</p>
-        <button type="button" className="mobile-document-link mobile-document-inline" onClick={() => setSheet('monitor-notice')}>{audioNoticeTitle}</button>
-        {monitorError && <p role="alert">{monitorError}</p>}
-        <Button variant="primary" disabled={monitor === 'authorizing' || (recording && monitor !== 'recording')} onClick={() => {
-          setMonitorError('');
-          if (monitor === 'idle') {
-            setMonitor('authorizing');
-            dispatchEvent(new Event('lingji:system-audio-arm'));
-          } else dispatchEvent(new Event('lingji:system-audio-disarm'));
-        }}>{monitor === 'idle' ? '授权并开始检测' : monitor === 'authorizing' ? '等待系统授权…' : '停止自动记录'}</Button>
-      </MobileSheet>}
+        {sheet === 'about-notice' && <MobileAudioNotice close={() => setSheet('about')}/>}
       {sheet === 'logout' && <MobileSheet title="退出登录？" placement="center" showClose={false}
         closeDisabled={logoutBusy} close={() => setSheet(null)}>
         <p className="mobile-sheet-note">本机录音会保留，再次登录同一账号后可继续使用。</p>

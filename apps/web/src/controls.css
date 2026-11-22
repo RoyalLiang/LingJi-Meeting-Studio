@@ -629,18 +629,6 @@ input.range { appearance:none; display:block; padding:0; border:0; height:4px; m
 .current-discussion li:last-child::before { background:var(--accent); }
 .discussion-draft { display:flex; align-items:baseline; flex-wrap:wrap; gap:8px; margin-top:18px; font-size:14px; line-height:1.9; overflow-wrap:anywhere; }
 .discussion-draft small { color:var(--ink-2); font-size:.75rem; }
-.summary-tables { display:grid; gap:24px; margin-top:26px; min-width:0; }
-.summary-table { margin:0; min-width:0; }
-.summary-table figcaption { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:0 0 12px; }
-.summary-table h4 { font-size:15px; }
-.summary-table-scroll { max-width:100%; overflow-x:auto; border:0; border-radius:12px; overscroll-behavior-inline:contain; scrollbar-width:thin; scrollbar-color:var(--border) transparent; }
-.summary-table table { width:100%; min-width:480px; border-collapse:collapse; text-align:left; table-layout:fixed; font-size:13px; line-height:1.8; }
-.summary-table th { background:var(--panel-2); font-weight:600; color:var(--ink-1); }
-.summary-table :is(th,td) { padding:14px 16px; border-right:1px solid var(--border); border-bottom:1px solid var(--border); vertical-align:top; overflow-wrap:anywhere; }
-.summary-table tr>:last-child { border-right:0; }
-.summary-table tbody tr:last-child td { border-bottom:0; }
-.summary-table tbody tr:hover { background:color-mix(in srgb,var(--panel-2) 55%,transparent); }
-.summary-table .citations { margin:0; }
 .summary-charts { margin-top:32px; }
 .summary-charts>h4 { font-size:15px; margin:24px 0 10px; }
 .summary-charts dl { display:grid; gap:18px; margin:22px 0 32px; }

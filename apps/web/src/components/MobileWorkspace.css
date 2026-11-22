@@ -216,6 +216,30 @@ body:has(.quick-mobile-app) { background: #f4f4f5; }
 .mobile-card { background: var(--phone-field); border-radius: 12px; }
 .mobile-card { padding: 13px 14px; margin-block: 7px; font-size: .9rem; line-height: 1.6; overflow-wrap: anywhere; }
 .mobile-card small { display: block; color: var(--phone-muted); }
+.mobile-minutes {
+  --bg: var(--phone-field); --bg-2: var(--phone-panel); --panel-2: var(--phone-panel);
+  --ink-1: var(--phone-ink); --ink-3: var(--phone-muted);
+  --border: var(--phone-line); --accent: var(--phone-accent);
+  display: grid; gap: 16px; min-width: 0;
+}
+.mobile-minutes :is(.mobile-detail-group, .summary-tables) { margin: 0; }
+.mobile-minutes-highlights, .mobile-minutes-section {
+  border-radius: 12px; background: var(--phone-field); padding: 13px 14px;
+}
+.mobile-minutes-highlights { background: var(--phone-selection); }
+.mobile-minutes-highlights h2 { color: var(--phone-accent); }
+.mobile-minutes-items {
+  display: grid; gap: 9px; margin: 9px 0 0; padding-inline-start: 1.1em;
+  font-size: .9rem; line-height: 1.6; overflow-wrap: anywhere;
+}
+.mobile-minutes-items > li::marker { color: var(--phone-accent); }
+.mobile-minutes-topic h3 { margin: 0; font-size: .9rem; }
+.mobile-minutes-topic .mobile-minutes-items { list-style: none; padding: 0; }
+.mobile-minutes .summary-table {
+  padding: 13px 14px; border-radius: 12px; background: var(--phone-field);
+}
+.mobile-minutes .summary-table th, .mobile-minutes .summary-table td { padding: 7px 9px; }
+.mobile-minutes .summary-table-hint { margin-bottom: 6px; color: var(--phone-muted); font-size: .75rem; }
 .mobile-card[data-highlight=true] { outline: 1px solid var(--phone-accent); }
 .mobile-line header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
 .mobile-line time { color: var(--phone-muted); font-size: .76rem; font-variant-numeric: tabular-nums; }
@@ -259,19 +283,19 @@ body:has(.quick-mobile-app) { background: #f4f4f5; }
 .mobile-player-rate {
   grid-area: 2 / 3; justify-self: end; width: 60px; height: 44px; padding: 0;
   display: grid; place-items: center end;
-  border: 0; border-radius: 999px; background: transparent; color: var(--phone-muted);
+  border: 0; border-radius: 999px; background: transparent; color: var(--phone-accent);
   font: inherit; font-size: .79rem; font-weight: 650; font-variant-numeric: tabular-nums;
   cursor: pointer; touch-action: manipulation;
 }
 .mobile-player-rate span {
   display: grid; place-items: center; min-width: 46px; height: 26px; padding-inline: 7px;
-  border-radius: inherit; background: var(--phone-meeting-rule);
+  border-radius: inherit; background: color-mix(in srgb, var(--phone-accent) 17%, var(--phone-field));
 }
-.mobile-player-rate[data-adjusted=true] { color: var(--phone-accent); }
-.mobile-player-rate[data-adjusted=true] span { background: var(--phone-selection); }
-.mobile-player-rate:active span { background: var(--phone-selection); }
+.mobile-player-rate[data-adjusted=true] { color: var(--phone-accent-ink); }
+.mobile-player-rate[data-adjusted=true] span { background: var(--phone-accent); }
+.mobile-player-rate:active span { filter: brightness(.9); }
 @media (hover: hover) {
-  .mobile-player-rate:hover span { background: var(--phone-selection); }
+  .mobile-player-rate:hover span { filter: brightness(.95); }
   .mobile-player-play:hover:not(:disabled) { filter: brightness(1.08); }
 }
 @media (prefers-reduced-motion: reduce) { .mobile-player-spinner { animation: none; } }
@@ -378,10 +402,6 @@ body:has(.quick-mobile-app) { background: #f4f4f5; }
 .mobile-document-link { color: #205cb5; }
 [data-theme=dark] .mobile-document-link { color: #a2c7ff; }
 .mobile-document-link svg { color: currentColor; }
-.mobile-document-inline {
-  display: block; min-height: 44px; padding: 0; margin: 0 0 8px;
-  border: 0; background: transparent; font: inherit; font-size: .86rem; cursor: pointer;
-}
 .mobile-audio-notice { color: var(--phone-muted); font-size: .9rem; }
 .mobile-audio-notice dl { margin: 16px 0 0; }
 .mobile-audio-notice dt { margin: 12px 0 4px; color: var(--phone-ink); font-weight: 650; }
@@ -452,8 +472,8 @@ body:has(.quick-mobile-app) { background: #f4f4f5; }
   }
   .mobile-nav {
     background: var(--phone-dock-glass);
-    -webkit-backdrop-filter: blur(18px) saturate(1.1);
-    backdrop-filter: blur(18px) saturate(1.1);
+    -webkit-backdrop-filter: blur(14px) saturate(1.1);
+    backdrop-filter: blur(14px) saturate(1.1);
     box-shadow: inset 0 0 0 1px var(--phone-dock-edge);
   }
 }

@@ -30,6 +30,5 @@ window.addEventListener('message', event => {
   window.addEventListener('lingji:recording-state', event => port.postMessage((event as CustomEvent<string>).detail));
   window.addEventListener('lingji:check-update', () => port.postMessage('check-update'));
   window.addEventListener('lingji:open-releases', () => port.postMessage('open-releases'));
-  window.addEventListener('lingji:system-audio-arm', () => port.postMessage('system-audio-arm'));
   window.addEventListener('lingji:system-audio-disarm', () => port.postMessage('system-audio-disarm'));
 });

@@ -3,7 +3,7 @@ run-name: Pi test packages · ${{ github.sha }}
 
 on:
   push:
-    branches: [dev_pi-chain-regression-20261031, dev_v04-sync-audit]
+    branches: [dev_pi-chain-regression-20261031, dev_v04-sync-audit, dev_legacy-audio-retention]
     paths-ignore: ['docs/**', 'README.md']
   workflow_dispatch:
 
@@ -24,7 +24,7 @@ env:
 
 jobs:
   installer_hashes:
-    if: github.ref_name != 'dev_v04-sync-audit'
+    if: github.ref_name != 'dev_v04-sync-audit' && github.ref_name != 'dev_legacy-audio-retention'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -87,13 +87,13 @@ jobs:
       - run: node scripts/collect-preview-artifacts.mjs macos
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
-          name: ${{ format('{0}-macos-arm64-{1}', github.ref_name == 'dev_v04-sync-audit' && 'mobile-sync-test' || 'pi-test', github.sha) }}
+          name: ${{ format('{0}-macos-arm64-{1}', (github.ref_name == 'dev_v04-sync-audit' || github.ref_name == 'dev_legacy-audio-retention') && 'mobile-sync-test' || 'pi-test', github.sha) }}
           path: preview-artifacts/*
           if-no-files-found: error
           retention-days: 14
 
   windows:
-    if: github.ref_name != 'dev_v04-sync-audit'
+    if: github.ref_name != 'dev_v04-sync-audit' && github.ref_name != 'dev_legacy-audio-retention'
     needs: installer_hashes
     runs-on: windows-2025
     timeout-minutes: 90

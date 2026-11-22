@@ -34,7 +34,6 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.FrameLayout;
-import android.widget.ImageView;
 import android.widget.TextView;
 import java.io.IOException;
 import java.io.InputStream;
@@ -68,13 +67,17 @@ public final class MainActivity extends Activity {
     private FrameLayout launch;
     private TextView status;
     private Button retry;
+    private Runnable removeStartupSplash;
     private int pageAttempt;
     private boolean dark;
     private boolean sheetOpen;
     private boolean resumed;
     private boolean pendingRecordingStart;
     private boolean pendingMeetingStart;
-    private final Runnable timeout = () -> retry.setVisibility(View.VISIBLE);
+    private final Runnable timeout = () -> {
+        retry.setVisibility(View.VISIBLE);
+        dismissStartupSplash();
+    };
     private WebMessagePort recordingPort;
     private final ConnectivityManager.NetworkCallback networkCallback = new ConnectivityManager.NetworkCallback() {
         private Network validatedNetwork;
@@ -160,6 +163,15 @@ public final class MainActivity extends Activity {
         paintChrome(dark);
         setContentView(frame);
         showLaunch(null, false);
+        if (Build.VERSION.SDK_INT >= 31) {
+            getSplashScreen().setOnExitAnimationListener(splash -> {
+                if (launch.getVisibility() == View.VISIBLE && retry.getVisibility() != View.VISIBLE) {
+                    removeStartupSplash = splash::remove;
+                } else {
+                    splash.remove();
+                }
+            });
+        }
         // Start WebView creation immediately in onCreate so local APK assets load on the first frame.
         openWeb(saved);
         getSystemService(ConnectivityManager.class).registerDefaultNetworkCallback(networkCallback, new Handler(getMainLooper()));
@@ -203,20 +215,16 @@ public final class MainActivity extends Activity {
     private void buildLaunch() {
         launch = new FrameLayout(this);
         launch.setPadding(dp(24), dp(24), dp(24), dp(24));
-        ImageView logo = new ImageView(this);
-        logo.setImageResource(getResources().getIdentifier("lingji", "drawable", getPackageName()));
-        launch.addView(logo, new FrameLayout.LayoutParams(dp(52), dp(52), Gravity.CENTER));
         status = new TextView(this);
         status.setTextSize(14);
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         status.setGravity(Gravity.CENTER);
-        status.setTranslationY(dp(52));
         launch.addView(status, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
         retry = new Button(this);
         retry.setText("重新加载");
         retry.setVisibility(View.INVISIBLE);
         retry.setOnClickListener(view -> { if (web != null) web.loadUrl(PAGE); });
-        retry.setTranslationY(dp(102));
+        retry.setTranslationY(dp(50));
         launch.addView(retry, new FrameLayout.LayoutParams(-2, dp(48), Gravity.CENTER));
         frame.addView(launch, new FrameLayout.LayoutParams(-1, -1));
     }
@@ -249,7 +257,14 @@ public final class MainActivity extends Activity {
         status.setText(message);
         status.setVisibility(message == null ? View.INVISIBLE : View.VISIBLE);
         retry.setVisibility(allowRetry ? View.VISIBLE : View.INVISIBLE);
-        if (!allowRetry) frame.postDelayed(timeout, 8000);
+        if (allowRetry) dismissStartupSplash();
+        else frame.postDelayed(timeout, 8000);
+    }
+
+    private void dismissStartupSplash() {
+        if (removeStartupSplash == null) return;
+        removeStartupSplash.run();
+        removeStartupSplash = null;
     }
 
     private void reveal(WebView view, boolean darkMode) {
@@ -262,6 +277,7 @@ public final class MainActivity extends Activity {
                 if (id == pageAttempt && !isDestroyed()) {
                     frame.removeCallbacks(timeout);
                     launch.setVisibility(View.GONE);
+                    dismissStartupSplash();
                 }
             }
         });
