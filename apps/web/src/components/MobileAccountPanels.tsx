@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Desktop, DeviceMobile, Globe } from '@phosphor-icons/react';
 import { api, ApiError, getAuthGeneration, messageOf } from '../api';
 import { Button } from './ui';
+import { MobileSheet } from './MobileSheet';
 
 type Device = { id: string; name: string; issuedAt: number; current: boolean };
 type DeviceList = { current: boolean; items: Device[] };
@@ -43,26 +44,30 @@ export function MobileAccountDevices() {
     finally { setBusy(false); }
   }
   return <>
-    {error && <p role="alert">{error}</p>}
+    {error && !revoke && <p role="alert">{error}</p>}
     {!devices && !error && <p role="status">正在加载设备…</p>}
     {devices && !devices.current && <p className="mobile-sheet-note">重新登录可登记当前设备。</p>}
     <ul className="mobile-record-list mobile-device-list">{devices?.items.map(device => {
       const name = device.current && /LingJi-Android/.test(navigator.userAgent) ? '聆记 Android' : device.name;
-      const Icon = /Android|iPhone|iPad/.test(name) ? DeviceMobile : name === '浏览器' ? Globe : Desktop;
+      const unknown = name === '浏览器';
+      const Icon = /Android|iPhone|iPad/.test(name) ? DeviceMobile : unknown ? Globe : Desktop;
+      const title = unknown ? '未识别设备' : name;
       return <li className="mobile-device" key={device.id}>
         <Icon size={20} aria-hidden="true"/>
-        <div><strong>{name}</strong><small>{new Date(device.issuedAt).toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' })}</small></div>
+        <div><strong>{title}</strong><small>{new Date(device.issuedAt).toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' })}</small></div>
         {device.current ? <small className="mobile-device-current">当前设备</small> :
-          <Button variant="ghost" disabled={!devices.current} aria-label={'移除 ' + name} onClick={() => setRevoke(device)}>移除</Button>}
+          <Button variant="ghost" disabled={!devices.current} aria-label={'移除 ' + title} onClick={() => { setError(''); setRevoke({ ...device, name: title }); }}>移除</Button>}
       </li>;
     })}</ul>
-    {revoke && <div className="mobile-card">
-      <p>{revoke.name} 将退出同步账号。</p>
-      <div className="mobile-sheet-actions">
-        <Button variant="ghost" disabled={busy} onClick={() => setRevoke(undefined)}>取消</Button>
-        <Button disabled={busy} onClick={() => void remove()}>确认移除</Button>
+    {revoke && <MobileSheet title="移除设备？" placement="center" showClose={false}
+      closeDisabled={busy} close={() => { setError(''); setRevoke(undefined); }}>
+      <p className="mobile-sheet-note">{revoke.name} 将退出同步账号。</p>
+      {error && <p role="alert">{error}</p>}
+      <div className="mobile-sheet-actions mobile-sheet-paired">
+        <Button autoFocus disabled={busy} onClick={() => { setError(''); setRevoke(undefined); }}>取消</Button>
+        <Button variant="danger" disabled={busy} onClick={() => void remove()}>{busy ? '正在移除…' : '移除设备'}</Button>
       </div>
-    </div>}
+    </MobileSheet>}
   </>;
 }
 
@@ -85,6 +90,7 @@ export function MobileAccountFactor({ email, legacy, onBusy, done }: {
   const [status, setStatus] = useState<FactorStatus>();
   const [setup, setSetup] = useState('');
   const [image, setImage] = useState('');
+  const [copiedKey, setCopiedKey] = useState(false);
   const [disable, setDisable] = useState(false);
   const [recovery, setRecovery] = useState<string[]>();
   const [error, setError] = useState('');
@@ -130,6 +136,7 @@ export function MobileAccountFactor({ email, legacy, onBusy, done }: {
   function restart() {
     setSetup('');
     setImage('');
+    setCopiedKey(false);
     setDisable(false);
     setError('');
   }
@@ -185,7 +192,7 @@ export function MobileAccountFactor({ email, legacy, onBusy, done }: {
         ? <Button variant={status.enabled ? 'secondary' : 'primary'} disabled={busy} onClick={() => {
           if (status.enabled) { setError(''); setDisable(true); }
           else void act(async () => setSetup((await api<{ uri: string }>('/private-sync/factor/enroll', 'POST', {})).uri));
-        }}>{status.enabled ? '关闭双重验证' : busy ? '正在准备…' : '设置验证器'}</Button>
+        }}>{status.enabled ? '关闭双重验证' : busy ? '正在准备…' : '设置 Microsoft Authenticator'}</Button>
         : <form className="mobile-security-form" onSubmit={verify}>
           <p className="mobile-sheet-note">修改设置前，请验证身份。</p>
           <label>当前密码<input name="password" type="password" autoComplete="current-password" minLength={10} maxLength={128} required/></label>
@@ -194,9 +201,19 @@ export function MobileAccountFactor({ email, legacy, onBusy, done }: {
         </form>)}
     </>}
     {setup && <div className="mobile-factor-setup">
-      <p className="mobile-sheet-note">扫描二维码或在验证器中输入设置密钥。开启后，其他设备需要重新登录。</p>
-      {image && <img src={image} alt="验证器登记二维码" width={152} height={152}/>}
-      <details><summary>查看设置密钥</summary><code>{new URL(setup).searchParams.get('secret')}</code></details>
+      <p className="mobile-sheet-note">在 Microsoft Authenticator 中选择「添加账户」→「其他账户」，扫描二维码。同一部手机可手动输入密钥。</p>
+      {image && <img src={image} alt="Microsoft Authenticator 登记二维码" width={152} height={152}/>}
+      <details>
+        <summary>在同一部手机上设置</summary>
+        <code>{new URL(setup).searchParams.get('secret')}</code>
+        <Button variant="ghost" onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(new URL(setup).searchParams.get('secret') || '');
+            setCopiedKey(true);
+          } catch { setError('无法复制密钥，请长按选中后复制'); }
+        }}>{copiedKey ? '已复制密钥' : '复制密钥'}</Button>
+      </details>
+      <p className="mobile-sheet-note">开启后，其他设备需要重新登录。</p>
     </div>}
     {(setup || disable) && <form className="mobile-security-form" onSubmit={submit}>
       {disable && <p className="mobile-sheet-note">请使用验证器新生成的代码。关闭后，其他设备需要重新登录。</p>}

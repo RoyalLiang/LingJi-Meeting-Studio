@@ -125,14 +125,16 @@ export async function createAuth(repo, options = {}) {
       return token.sid ? token.expires : null;
     },
     async identifyDevice(user, request) {
-      const name = appLabel(request);
-      if (!name) return;
+      if (!options.trackDevices) return;
+      const app = appLabel(request);
+      const name = app || label(request);
+      if (name === '浏览器') return;
       const token = session(request);
       const device = active(user).find(entry => entry.id === token.sid);
-      if (!device || device.name === name) return;
+      if (!device || device.name === name || (!app && device.name !== '浏览器')) return;
       await repo.change(user.id, current => {
         const currentDevice = active(current).find(entry => entry.id === token.sid);
-        if (currentDevice) currentDevice.name = name;
+        if (currentDevice && (app || currentDevice.name === '浏览器')) currentDevice.name = name;
       });
     },
     async refreshSession(user, request) {
@@ -163,7 +165,8 @@ export async function createAuth(repo, options = {}) {
     devices(user, request) {
       const token = session(request);
       return { current: Boolean(token.sid), items: active(user).map(({ id, name, issuedAt }) => ({
-        id, name: id === token.sid ? appLabel(request) || name : name, issuedAt, current: id === token.sid,
+        id, name: id === token.sid ? appLabel(request) || (name === '浏览器' ? label(request) : name) : name,
+          issuedAt, current: id === token.sid,
       })) };
     },
     async revoke(user, request, id) {

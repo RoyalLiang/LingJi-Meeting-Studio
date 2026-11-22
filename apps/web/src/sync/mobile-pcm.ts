@@ -1,6 +1,40 @@
 export const MOBILE_PCM_BYTES = 32_000;
 export const WAV_PCM_LIMIT = 0xffff_ffda;
 export type PackedMobilePcm = { codec: 'pcm' | 'gzip'; length: number; bytes: Uint8Array<ArrayBuffer> };
+export type PackedLocalMobilePcm = PackedMobilePcm | { codec: 'delta-gzip'; length: number; bytes: Uint8Array<ArrayBuffer> };
+
+export async function packLocalMobilePcm(bytes: Uint8Array<ArrayBuffer>, wire: PackedMobilePcm): Promise<PackedLocalMobilePcm> {
+  if (typeof CompressionStream === 'undefined' || bytes.length < 2048 || wire.bytes.length < 256) return wire;
+  const source = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const differences = new Uint8Array(bytes.length);
+  const target = new DataView(differences.buffer);
+  let previous = 0;
+  try {
+    for (let i = 0; i < bytes.length; i += 2) {
+      const sample = source.getUint16(i, true);
+      target.setUint16(i, sample - previous, true);
+      previous = sample;
+    }
+    const packed = await packMobilePcm(differences);
+    if (packed.codec === 'gzip' && packed.bytes.length + 64 < wire.bytes.length) {
+      return { ...packed, codec: 'delta-gzip' };
+    }
+    if (packed.bytes !== differences) packed.bytes.fill(0);
+    return wire;
+  } finally { differences.fill(0); }
+}
+
+export async function unpackLocalMobilePcm(packet: PackedLocalMobilePcm) {
+  if (packet.codec !== 'delta-gzip') return unpackMobilePcm(packet);
+  const bytes = await unpackMobilePcm({ ...packet, codec: 'gzip' });
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let previous = 0;
+  for (let i = 0; i < bytes.length; i += 2) {
+    previous = (previous + view.getUint16(i, true)) & 0xffff;
+    view.setUint16(i, previous, true);
+  }
+  return bytes;
+}
 
 export async function packMobilePcm(bytes: Uint8Array<ArrayBuffer>): Promise<PackedMobilePcm> {
   if (typeof CompressionStream !== 'undefined') {

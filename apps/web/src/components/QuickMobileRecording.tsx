@@ -82,7 +82,7 @@ export function QuickMobileRecording({ append, commit, status, visible, showReco
       const resumed = context.resume();
       void resumed.catch(() => {});
       stream = await navigator.mediaDevices.getUserMedia({
-        audio: { channelCount: { ideal: 1 }, noiseSuppression: true, echoCancellation: true, autoGainControl: true },
+        audio: { channelCount: { ideal: 1 }, sampleRate: { ideal: 48000 }, noiseSuppression: false, echoCancellation: false, autoGainControl: false },
       });
       dispatchEvent(new Event('lingji:recording-opened'));
       if (!mounted.current) { close(); return; }
@@ -94,7 +94,7 @@ export function QuickMobileRecording({ append, commit, status, visible, showReco
       mute.gain.value = 0;
       const rumble = context.createBiquadFilter();
       rumble.type = 'highpass';
-      rumble.frequency.value = 75;
+      rumble.frequency.value = 55;
       rumble.Q.value = 0;
       context.createMediaStreamSource(stream).connect(rumble).connect(node).connect(mute).connect(context.destination);
       const pending: Uint8Array<ArrayBuffer>[] = [];

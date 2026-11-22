@@ -1,8 +1,8 @@
 import { useId, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { X } from '@phosphor-icons/react';
 
-export function MobileSheet({ title, close, children, showClose = true, closeDisabled = false }: {
-  title: string; close: () => void; children: ReactNode; showClose?: boolean; closeDisabled?: boolean;
+export function MobileSheet({ title, close, children, showClose = true, closeDisabled = false, placement = 'bottom' }: {
+  title: string; close: () => void; children: ReactNode; showClose?: boolean; closeDisabled?: boolean; placement?: 'bottom' | 'center';
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const heading = useId();
@@ -15,12 +15,16 @@ export function MobileSheet({ title, close, children, showClose = true, closeDis
       document.dispatchEvent(new Event('meeting:chrome'));
     };
   }, []);
-  return <dialog ref={dialog} className="mobile-source-sheet" aria-labelledby={heading}
-    onCancel={event => { event.preventDefault(); if (!closeDisabled) close(); }}
+  return <dialog ref={dialog} className="mobile-source-sheet" data-placement={placement} aria-labelledby={heading}
+    onCancel={event => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!closeDisabled) close();
+    }}
     onClick={event => {
       if (closeDisabled || event.target !== event.currentTarget) return;
       const bounds = event.currentTarget.getBoundingClientRect();
-      if (event.clientY < bounds.top || event.clientX < bounds.left || event.clientX > bounds.right) close();
+      if (event.clientY < bounds.top || event.clientY > bounds.bottom || event.clientX < bounds.left || event.clientX > bounds.right) close();
     }}>
     <header className="mobile-sheet-heading">
       <h2 id={heading}>{title}</h2>

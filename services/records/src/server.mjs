@@ -260,6 +260,7 @@ export async function createRecordServer(options = {}) {
         send(res, 200, { enabled, ...(enabled && supported ? learningService.read() : { available:false, status:'disabled', checkedAt:null }) }); return;
       }
       if (path === '/api/bootstrap' && req.method === 'GET') {
+      if (syncOrigin) await auth.identifyDevice(user, req);
         send(res, 200, { email: user.email, csrf: auth.csrf(user), audioTransport: 'pcm-v1', nativeAudioTransport: nativeAudio ? 'native-file-v1' : null, audioMinutesDefault:user.autoAudioMinutes===true, localAccount: Boolean(options.localAccount), learning:{enabled:await learningEnabled(),...learningService.snapshot()}, meetingAutomation:meetingAutomationConfig(await readConfig(repo.root)), providers: providerStatus(await readConfig(repo.root)), limits: { maxMinutes: null, maxRecords: 200, maxChunkSeconds: 15 }, storage: repo.backend, canConfigure: canConfigure(user), ...(desktopSync || syncOrigin?.host === req.headers.host ? { privateSync: true } : {}) }); return;
       }
       if(path==='/api/settings/audio-backup'){

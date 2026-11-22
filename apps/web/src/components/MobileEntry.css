@@ -11,10 +11,7 @@
   --phone-live: #9c4739;
   --phone-dock-glass: #fafafa5c;
   --phone-dock-solid: #f5f5f5;
-  --phone-dock-rim: #ffffffdb;
-  --phone-dock-shadow: #17171717;
   --phone-lens-glass: #16161616;
-  --phone-lens-rim: #ffffff70;
   --phone-meeting-surface: #fff;
   --phone-meeting-rule: #24242416;
   --phone-meeting-track: #dedee0;
@@ -23,21 +20,18 @@
 }
 [data-theme=dark].quick-record-document, [data-theme=dark] :is(.quick-mobile-app,.phone-auth,.phone-entry) {
   --phone-paper: #1a1a1c;
-  --phone-field: #222923;
-  --phone-panel: #252f29;
-  --phone-line: #3b493f;
-  --phone-ink: #ecf2ed;
-  --phone-muted: #aebdb2;
+  --phone-field: #242426;
+  --phone-panel: #2b2b2e;
+  --phone-line: #3e3e42;
+  --phone-ink: #f0f0f2;
+  --phone-muted: #b3b3ba;
   --phone-accent: #8fd1b6;
   --phone-accent-ink: #14281e;
   --phone-selection: #2d4136;
   --phone-live: #f09b8d;
   --phone-dock-glass: #29292961;
   --phone-dock-solid: #2a2a2a;
-  --phone-dock-rim: #ffffff33;
-  --phone-dock-shadow: #00000032;
   --phone-lens-glass: #ffffff21;
-  --phone-lens-rim: #ffffff20;
   --phone-meeting-surface: #252527;
   --phone-meeting-rule: #ffffff16;
   --phone-meeting-track: #49494b;
@@ -81,7 +75,19 @@
   background: var(--phone-panel); border-radius: 14px;
 }
 .phone-entry-indicator { color: var(--phone-muted); }
-.phone-auth { grid-template-columns: minmax(0, 360px); }
+.phone-auth {
+  grid-template-columns: minmax(0, 360px);
+  align-content: start;
+  padding-top: max(env(safe-area-inset-top), clamp(36px, 16vw, 100px));
+}
+.phone-auth-card input { transition: none; }
+.phone-auth-card input:focus-visible {
+  border-color: var(--phone-accent); outline: 1px solid var(--phone-accent); outline-offset: 0; box-shadow: none;
+}
+.phone-auth-card input:-webkit-autofill {
+  -webkit-text-fill-color: var(--phone-ink);
+  box-shadow: 0 0 0 100px var(--phone-field) inset;
+}
 .phone-auth .phone-auth-card {
   width: 100%; max-width: none; padding: 0; margin: 0; color: var(--phone-ink);
   border: 0; background: transparent; box-shadow: none;

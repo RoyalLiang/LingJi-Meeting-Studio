@@ -13,7 +13,7 @@ window.addEventListener('message', event => {
   const chrome = () => port.postMessage(document.querySelector('.mobile-source-sheet[open]') ? 'sheet-open' : 'sheet-closed');
   document.addEventListener('meeting:chrome', chrome);
   port.onmessage = message => {
-    if (message.data === 'sheet-back') document.querySelector('.mobile-source-sheet[open]')
+    if (message.data === 'sheet-back') Array.from(document.querySelectorAll('.mobile-source-sheet[open]')).at(-1)
       ?.dispatchEvent(new Event('cancel', { cancelable: true }));
   };
   chrome();

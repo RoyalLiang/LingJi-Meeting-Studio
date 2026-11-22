@@ -1,5 +1,5 @@
 import { seal, sealBinary, unseal, unsealBinary, type BinaryEnvelope, type EncryptedOperation, type Envelope, type Vault } from './vault';
-import { unpackMobilePcm, wavHeader, WAV_PCM_LIMIT, type PackedMobilePcm } from './mobile-pcm';
+import { unpackLocalMobilePcm, wavHeader, WAV_PCM_LIMIT, type PackedLocalMobilePcm } from './mobile-pcm';
 
 export type MobileRecording = {
   id: string;
@@ -53,9 +53,9 @@ async function writeRecording(vault: Vault, root: Uint8Array<ArrayBuffer>, entry
   if (metadata) clearMobileLibraryCache(vault.id);
 }
 
-export async function appendMobileRecording(vault: Vault, root: Uint8Array<ArrayBuffer>, entry: MobileRecording, sequence: number, pcm: PackedMobilePcm) {
+export async function appendMobileRecording(vault: Vault, root: Uint8Array<ArrayBuffer>, entry: MobileRecording, sequence: number, pcm: PackedLocalMobilePcm) {
   const bytes = new Uint8Array(3 + pcm.bytes.length);
-  bytes[0] = pcm.codec === 'gzip' ? 1 : 0;
+  bytes[0] = pcm.codec === 'delta-gzip' ? 2 : pcm.codec === 'gzip' ? 1 : 0;
   new DataView(bytes.buffer).setUint16(1, pcm.length);
   bytes.set(pcm.bytes, 3);
   let chunk;
@@ -126,9 +126,9 @@ export async function mobilePlayback(vault: Vault, root: Uint8Array<ArrayBuffer>
       if (sequence !== pieces.length) throw new Error('手机录音片段不连续');
       const packet = await unsealBinary(root, vault, 'phone-pcm/2', id + ':' + sequence, chunks[index]);
       try {
-        if (packet.length < 4 || packet[0] > 1) throw new Error('手机录音片段无效');
+        if (packet.length < 4 || packet[0] > 2) throw new Error('手机录音片段无效');
         const length = new DataView(packet.buffer, packet.byteOffset).getUint16(1);
-        const pcm = await unpackMobilePcm({ codec: packet[0] ? 'gzip' : 'pcm', length, bytes: packet.subarray(3) });
+        const pcm = await unpackLocalMobilePcm({ codec: packet[0] === 2 ? 'delta-gzip' : packet[0] ? 'gzip' : 'pcm', length, bytes: packet.subarray(3) });
         try {
           size += pcm.length;
           if (size > WAV_PCM_LIMIT) throw new Error('录音超过 WAV 格式容量');

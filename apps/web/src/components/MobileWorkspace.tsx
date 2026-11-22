@@ -228,7 +228,7 @@ const MobileAudioPlayer = memo(forwardRef<PlayerHandle, {
         <input type="range" aria-label="回听进度" min={0} max={duration || saved.seconds} step={0.1} value={position}
           aria-valuetext={clock(Math.floor(position))} disabled={!audio || !duration} onChange={event => seek(event.currentTarget.valueAsNumber)}/>
       </div>
-      <button type="button" className="mobile-player-rate" aria-label={`播放速度 ${speed} 倍，点按切换`} onClick={() => {
+      <button type="button" className="mobile-player-rate" data-adjusted={rateIndex !== 0} aria-label={`播放速度 ${speed} 倍，点按切换`} onClick={() => {
         const next = (rateIndex + 1) % playbackRates.length;
         setRateIndex(next);
         if (player.current) player.current.playbackRate = playbackRates[next];
@@ -268,10 +268,9 @@ const MobileTranscriptList = memo(function MobileTranscriptList({ lines, highlig
   </div>;
 });
 
-function MobileMeeting({ entry, back, read, play, saveAnnotations, remove }: {
+function MobileMeeting({ entry, back, read, play, saveAnnotations }: {
   entry: Entry; back: () => void; read: (id: string) => Promise<MeetingCopy | null>; play: (id: string) => Promise<Blob | null>;
   saveAnnotations: (parent: string, changes: MeetingAnnotations) => Promise<void>;
-  remove?: (entry: Entry) => void;
 }) {
   const [tab, setTab] = useState<(typeof detailTabs)[number][0]>('minutes');
   const [copy, setCopy] = useState<MeetingCopy | null>();
@@ -381,9 +380,6 @@ function MobileMeeting({ entry, back, read, play, saveAnnotations, remove }: {
           onClick={() => playAt(mark)} aria-label={`回听重点 ${clock(mark)}`}>{clock(mark)}</button></li>)}</ul>
       </section> : !copy && <p className="mobile-empty">暂无手记</p>}
     </>}
-    {remove && <div className="mobile-detail-actions">
-      <Button className="mobile-remove-link" variant="ghost" onClick={() => remove(entry)}>移除本机记录</Button>
-    </div>}
     {citation && <MobileSheet title="来源原文" close={() => setCitation(undefined)}>
       <p className="mobile-sheet-note">{citation.speaker} · {clock(Math.floor(citation.startMs / 1000))}</p>
       <p>{citation.text}</p><div className="mobile-sheet-actions">
@@ -403,9 +399,9 @@ function MobileSwitch({ labelId, checked, disabled, change }: { labelId: string;
 }
 
 export function MobileWorkspace({
-  page, setPage, online, unlocked, automatic, setAutomatic, copies, saved, hidden, recorder, account, read, play, search, saveAnnotations, deleteLocal, email, legacyAccount,
+  page, setPage, online, unlocked, automatic, setAutomatic, copies, saved, hidden, recorder, account, read, play, search, saveAnnotations, deleteLocal, email, legacyAccount, signOut, recording,
 }: {
-  email: string; legacyAccount: boolean;
+  email: string; legacyAccount: boolean; signOut: () => Promise<void>; recording: boolean;
   page: MobilePage; setPage: (page: MobilePage) => void; online: boolean; unlocked: boolean;
   automatic: boolean; setAutomatic: (enabled: boolean) => void;
   copies: CopySummary[]; saved: MobileRecording[]; hidden: ReadonlySet<string>; recorder: ReactNode; account: ReactNode;
@@ -420,7 +416,9 @@ export function MobileWorkspace({
   const [space, setSpace] = useState('');
   const [usage, setUsage] = useState<Usage | null>(null);
   const [usageError, setUsageError] = useState(false);
-  const [sheet, setSheet] = useState<'devices' | 'factor' | null>(null);
+  const [sheet, setSheet] = useState<'devices' | 'factor' | 'logout' | null>(null);
+  const [logoutBusy, setLogoutBusy] = useState(false);
+  const [logoutError, setLogoutError] = useState('');
   const [factorBusy, setFactorBusy] = useState(false);
   const [removing, setRemoving] = useState<Entry>();
   const [removeBusy, setRemoveBusy] = useState(false);
@@ -487,7 +485,7 @@ export function MobileWorkspace({
     </header>
     {recorder}
     {page === 'meetings' && (opened ? <MobileMeeting key={opened.saved?.id || opened.cloud?.sourceId || opened.id} entry={opened}
-          back={() => setDetail(null)} read={read} play={play} remove={deleteLocal && chooseRemoval} saveAnnotations={async (parent, changes) => {
+          back={() => setDetail(null)} read={read} play={play} saveAnnotations={async (parent, changes) => {
             const id = await saveAnnotations(parent, changes);
             setDetail(current => current === detail && opened.cloud
               ? { ...opened, id, cloud: { ...opened.cloud, id } }
@@ -514,7 +512,6 @@ export function MobileWorkspace({
           <div><span>会议与纪要</span><small>{formatSize(usage.meetings)}</small></div>
           <div><span>手机录音</span><small>{formatSize(usage.audio)}</small></div>
         </div>
-        {usage.quota < oneGiB && <p className="mobile-quota-note">同步服务更新后可使用 1 GiB</p>}
         </> : <p className="mobile-empty">{!online ? '联网后查看用量' : usageError ? '暂时无法查询用量' : unlocked ? '正在查询用量…' : '解锁后可查看用量'}</p>}
       </section>
       <section className="mobile-account-section" aria-labelledby="mobile-preferences">
@@ -541,7 +538,24 @@ export function MobileWorkspace({
           <small>当前设备 <CaretRight size={14} aria-hidden="true"/></small></button>
         </div>
       </section>
-      {sheet && <MobileSheet title={sheet === 'devices' ? '绑定设备' : '双重验证'} closeDisabled={sheet === 'factor' && factorBusy} close={() => setSheet(null)}>
+      <Button className="mobile-sign-out" variant="ghost" disabled={recording || !online} onClick={() => {
+        setLogoutError(''); setSheet('logout');
+      }}>退出登录</Button>
+      {sheet === 'logout' && <MobileSheet title="退出登录？" placement="center" showClose={false}
+        closeDisabled={logoutBusy} close={() => setSheet(null)}>
+        <p className="mobile-sheet-note">本机录音会保留，再次登录同一账号后可继续使用。</p>
+        {logoutError && <p role="alert">{logoutError}</p>}
+        <div className="mobile-sheet-actions mobile-sheet-paired">
+          <Button autoFocus disabled={logoutBusy} onClick={() => setSheet(null)}>取消</Button>
+          <Button variant="danger" disabled={recording || logoutBusy || !online} onClick={async () => {
+            setLogoutBusy(true);
+            setLogoutError('');
+            try { await signOut(); }
+            catch { setLogoutError('暂时无法退出，请稍后重试'); setLogoutBusy(false); }
+          }}>{logoutBusy ? '正在退出…' : '退出登录'}</Button>
+        </div>
+      </MobileSheet>}
+      {(sheet === 'devices' || sheet === 'factor') && <MobileSheet title={sheet === 'devices' ? '绑定设备' : '双重验证'} closeDisabled={sheet === 'factor' && factorBusy} close={() => setSheet(null)}>
         {sheet === 'devices' && <MobileAccountDevices/>}
         {sheet === 'factor' && <MobileAccountFactor email={email} legacy={legacyAccount} onBusy={setFactorBusy} done={() => setSheet(null)}/>}
       </MobileSheet>}

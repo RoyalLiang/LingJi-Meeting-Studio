@@ -353,7 +353,7 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
       background.current = work;
       void work.finally(() => { if (background.current === work) background.current = null; });
     };
-    const timer = setInterval(runCycle, automatic ? 5000 : 15_000);
+    const timer = setInterval(runCycle, automatic ? 3000 : 15_000);
     addEventListener('lingji:sync-wakeup', runCycle);
     runCycle();
     return () => {
@@ -415,7 +415,7 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
       } finally {
         key.fill(0);
         running = false;
-        const idleDelay = idlePolls === 0 ? 1500 : document.hidden ? 8000 : idlePolls === 1 ? 2500 : 4000;
+        const idleDelay = idlePolls === 0 ? 1500 : document.hidden ? 8000 : idlePolls === 1 ? 1800 : 2500;
         schedule(woken || more ? 0 : idleDelay);
       }
     }

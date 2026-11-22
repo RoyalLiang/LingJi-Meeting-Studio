@@ -1,6 +1,6 @@
 import { api } from '../api';
 import { decodeBytes, encodeBytes, seal, unseal, type EncryptedOperation, type Vault } from './vault';
-import { MOBILE_PCM_BYTES, WAV_PCM_LIMIT, type PackedMobilePcm } from './mobile-pcm';
+import { MOBILE_PCM_BYTES, unpackMobilePcm, WAV_PCM_LIMIT, type PackedMobilePcm } from './mobile-pcm';
 
 const PART = 100 * 1024;
 export const MOBILE_AUDIO_LIMIT = 12 * 1024 * 1024;
@@ -206,14 +206,28 @@ export type MobileFrame =
   | { kind: 'finish'; sequence: number };
 type LiveFrame = { id: string; title: string } & (MobileFrame | { kind: 'received' });
 
-async function sealFrame(vault: Vault, root: Uint8Array<ArrayBuffer>, frame: LiveFrame) {
+type LegacyPcmFrame = { id: string; title: string; kind: 'pcm'; sequence: number; offset: number; data: string };
+async function sealFrame(vault: Vault, root: Uint8Array<ArrayBuffer>, frame: LiveFrame | LegacyPcmFrame) {
   const id = crypto.randomUUID();
   const bytes = encoder.encode(JSON.stringify(frame));
   try { return { id, ...await seal(root, vault, livePurpose, id, bytes) }; }
   finally { bytes.fill(0); }
 }
 
-export async function queueLiveAudio(vault: Vault, root: Uint8Array<ArrayBuffer>, id: string, title: string, frame: MobileFrame) {
+export async function queueLiveAudio(vault: Vault, root: Uint8Array<ArrayBuffer>, id: string, title: string, frame: MobileFrame, legacy = false) {
+  if (legacy) {
+    let operation;
+    if (frame.kind === 'pcm') {
+      const bytes = await unpackMobilePcm(frame.pcm);
+      try {
+        operation = await sealFrame(vault, root, {
+          id, title, kind: 'pcm', sequence: frame.sequence, offset: frame.offset, data: encodeBytes(bytes),
+        });
+      } finally { if (bytes !== frame.pcm.bytes) bytes.fill(0); }
+    } else operation = await sealFrame(vault, root, { ...frame, id, title });
+    await change(['live-outbox'], tx => tx.objectStore('live-outbox').add(operation, [vault.id, 'phone', id, frame.sequence]));
+    return;
+  }
   const metadata = frame.kind === 'pcm'
     ? { id, title, kind: frame.kind, sequence: frame.sequence, offset: frame.offset, codec: frame.pcm.codec, length: frame.pcm.length }
     : { ...frame, id, title };

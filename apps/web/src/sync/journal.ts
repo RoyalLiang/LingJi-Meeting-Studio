@@ -249,16 +249,23 @@ export async function syncMeetings(vault: Vault, root: Uint8Array<ArrayBuffer>, 
     const batch = await api<Delta>('/private-sync/delta?vault=' + vault.id + '&after=' + after, 'GET', undefined, signal);
     let cursor = after;
     const verified: Row[] = [];
-    const decoded: { key: string; revision: Revision }[] = [];
     if (batch.operations.length) cryptoKey ??= await derivePurposeKey(root, vault, 'revision');
     for (const { seq, ...operation } of batch.operations) {
       if (seq !== ++cursor || !identifier.test(operation.id)) throw new Error('同步日志不连续');
       const row = { key: vault.id + ':' + operation.id, vault: vault.id, operation, pending: 0, seq } satisfies Row;
-      decoded.push({ key: row.key, revision: await decodeRow(row, vault, cryptoKey!) });
       verified.push(row);
     }
     if (batch.cursor !== cursor || (cursor === after && batch.more)) throw new Error('同步游标无效');
-    received ||= verified.length > 0;
+    if (!verified.length) break;
+    const decoded: { key: string; revision: Revision }[] = [];
+    for (let i = 0; i < verified.length; i += 8) {
+      signal?.throwIfAborted();
+      decoded.push(...await Promise.all(verified.slice(i, i + 8).map(async row => ({
+        key: row.key, revision: await decodeRow(row, vault, cryptoKey!),
+      }))));
+    }
+    signal?.throwIfAborted();
+    received = true;
     await transaction('readwrite', tx => {
       const saved = tx.objectStore('cursor').get(vault.id);
       saved.onsuccess = () => {

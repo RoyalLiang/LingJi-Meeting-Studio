@@ -18,6 +18,7 @@ export function MobileApp() {
   const boot = useRef<Promise<boolean> | null>(null);
   const captureActive = useRef(false);
   const loginExpired = useRef(false);
+  const signingOut = useRef(false);
 
   const rememberEmail = useCallback((value: string | null) => {
     if (!value) setCsrf('');
@@ -32,6 +33,7 @@ export function MobileApp() {
   }, []);
 
   const open = useCallback((direct?: AuthSession) => {
+    if (signingOut.current) return Promise.resolve(false);
     // Skip redundant /mobile-session round-trip when login already returned email + csrf.
     if (direct?.email && direct.csrf) {
       loginExpired.current = false;
@@ -108,11 +110,17 @@ export function MobileApp() {
     return () => document.removeEventListener('meeting:theme', updateChrome);
   }, []);
 
-  const signOut = useCallback(() => {
-    void api('/auth/logout', 'POST').catch(() => {}).finally(() => {
+  const signOut = useCallback(async () => {
+    if (signingOut.current || captureActive.current) throw new Error('请先结束并保存录音');
+    signingOut.current = true;
+    try {
+      await boot.current;
+      try { await api('/auth/logout', 'POST'); }
+      catch (failure) { if (!(failure instanceof ApiError && failure.status === 401)) throw failure; }
+      loginExpired.current = false;
       rememberEmail(null);
       storeLogin();
-    });
+    } finally { signingOut.current = false; }
   }, [rememberEmail, storeLogin]);
 
   if (!email) return <Auth mobile ready={session => open(session)} accountLogin={storeLogin}/>;

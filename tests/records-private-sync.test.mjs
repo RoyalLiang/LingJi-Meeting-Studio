@@ -111,6 +111,8 @@ test('encrypted delta across authenticated accounts preserves ordering and idemp
   assert.deepEqual(Object.keys(mobile.data).sort(), ['csrf', 'email', 'expiresAt']);
   assert.ok(mobile.data.expiresAt > Date.now());
   const originalDevice = (await first('/private-sync/devices')).data.items[0];
+  await first('/bootstrap', 'GET', undefined, { 'User-Agent': 'Mozilla/5.0 (iPhone)' });
+  if (originalDevice.name === '浏览器') assert.equal((await first('/private-sync/devices')).data.items[0].name, 'iPhone / iPad');
   const identified = await first('/private-sync/mobile-session', 'GET', undefined, {
     'User-Agent': 'Mozilla/5.0', 'X-LingJi-Client': 'android',
   });
@@ -824,4 +826,28 @@ test('a compressed phone recording beyond five minutes plays locally and seals o
   assert.equal(await mobile.mobilePlayback(vault, root, id), null);
   assert.ok((await mobile.hiddenMobileRecordings(vault)).has(id));
   assert.deepEqual(await mobile.mobileRecordings(vault, root), []);
+  const wave = new Uint8Array(32_000);
+  const samples = new DataView(wave.buffer);
+  for (let offset = 0; offset < wave.length; offset += 2) samples.setUint16(offset, 13 * offset, true);
+  const wire = await mobile.packMobilePcm(wave);
+  const compact = await mobile.packLocalMobilePcm(wave, wire);
+  assert.equal(compact.codec, 'delta-gzip');
+  assert.ok(compact.bytes.length < wire.bytes.length);
+  const legacyEntry = { ...entry, id: randomUUID(), seconds: 1 };
+  await mobile.appendMobileRecording(vault, root, legacyEntry, 0, compact);
+  const playback = await mobile.mobilePlayback(vault, root, legacyEntry.id);
+  assert.deepEqual(Buffer.from(await playback.slice(44).arrayBuffer()), Buffer.from(wave));
+  await mobile.queueLiveAudio(vault, root, legacyEntry.id, legacyEntry.title, { kind: 'pcm', sequence: 0, offset: 0, pcm: wire }, true);
+  await mobile.queueLiveAudio(vault, root, legacyEntry.id, legacyEntry.title, { kind: 'finish', sequence: 1 }, true);
+  assert.equal((await mobile.pushLiveAudio(vault, 'phone', signal)).length, 2);
+  const receivedLegacy = [];
+  await mobile.pullLiveAudio(vault, root, 'desktop', signal, frame => {
+    assert.equal(frame.id, legacyEntry.id);
+    receivedLegacy.push(frame.kind);
+    if (frame.kind === 'pcm') {
+      assert.equal(frame.offset, 0);
+      assert.deepEqual(frame.pcm.bytes, wave);
+    }
+  });
+  assert.deepEqual(receivedLegacy, ['pcm', 'finish']);
 });

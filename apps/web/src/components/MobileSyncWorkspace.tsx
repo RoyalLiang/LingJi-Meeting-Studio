@@ -6,7 +6,7 @@ import { readDeviceVault, rememberDeviceVault, type DeviceVault } from '../sync/
 import { annotateMeeting, clearJournalCache, loadMeetingCopy, meetingCopies, syncMeetings, type CopySummary, type MeetingAnnotations } from '../sync/journal';
 import { pullLiveAudio, pushLiveAudio, pushMobileRecordings, queueLiveAudio } from '../sync/mobile';
 import { appendMobileRecording, clearMobileLibraryCache, deleteMobileRecording, finishMobileRecording, hiddenMobileRecordings, mobilePlayback, mobileRecordings, type MobileRecording } from '../sync/mobile-library';
-import { packMobilePcm } from '../sync/mobile-pcm';
+import { packLocalMobilePcm, packMobilePcm, type PackedLocalMobilePcm, type PackedMobilePcm } from '../sync/mobile-pcm';
 import { ShieldCheck } from '@phosphor-icons/react';
 import { Button } from './ui';
 import { FeedbackNotice } from './FeedbackNotice';
@@ -41,7 +41,7 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
   mobileActive?: (active: boolean) => void;
   online?: boolean;
   recording?: boolean;
-  signOut: () => void;
+  signOut: () => Promise<void>;
 }) {
   const [legacyAccount, setLegacyAccount] = useState(false);
   const [newLoginNeeded, setNewLoginNeeded] = useState(false);
@@ -274,7 +274,7 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
       .catch(failure => {
         if (controller.signal.aborted) return;
         if (failure instanceof ApiError && failure.status === 401 && !secret.current) {
-          signOut();
+          void signOut().catch(error => setError(syncError(error)));
           return;
         }
         setError(syncError(failure));
@@ -329,7 +329,7 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
     function runCycle() {
       window.clearTimeout(timer);
       if (signal.aborted) return;
-      timer = window.setTimeout(runCycle, meetingPage.current ? 3000 : 15_000);
+      timer = window.setTimeout(runCycle, meetingPage.current ? 2000 : 12_000);
       if (background.current) return;
       const work = cycle();
       background.current = work;
@@ -388,12 +388,15 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
   }, [ready, online, unlocked, vault, recording]);
 
   useEffect(() => {
-    if (!liveAudio || liveAudioV2 || !online || !vault || !unlocked) return;
+    if ((liveAudio && liveAudioV2) || !online || !vault || !unlocked) return;
     const controller = new AbortController();
     const probe = () => {
-      void api<{ vault: Vault | null; liveAudioV2?: boolean }>('/private-sync/vault', 'GET', undefined, controller.signal)
+      void api<{ vault: Vault | null; liveAudio?: boolean; liveAudioV2?: boolean }>('/private-sync/vault', 'GET', undefined, controller.signal)
         .then(remote => {
-          if (!controller.signal.aborted && remote.vault?.id === vault.id && remote.liveAudioV2) setLiveAudioV2(true);
+          if (!controller.signal.aborted && remote.vault?.id === vault.id) {
+            setLiveAudio(remote.liveAudio === true || remote.liveAudioV2 === true);
+            if (remote.liveAudioV2) setLiveAudioV2(true);
+          }
         }).catch(() => {});
     };
     const timer = window.setInterval(probe, 60_000);
@@ -443,7 +446,8 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
         if (pushed.status === 'rejected') throw pushed.reason;
         more = pushed.value.length === 8 || (legacy.status === 'fulfilled' && legacy.value.length === 8);
         if (activeLive.current === capture && !capture.received && !capture.uploaded &&
-          pushed.value.some(item => Array.isArray(item) && item[2] === capture.id)) {
+          [...pushed.value, ...(legacy.status === 'fulfilled' ? legacy.value : [])]
+            .some(item => Array.isArray(item) && item[2] === capture.id)) {
           capture.uploaded = true;
           setLiveStatus('音频已上传');
         }
@@ -463,8 +467,8 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
       } finally {
         key.fill(0);
         running = false;
-        const waitingReceipt = Boolean(activeLive.current.id && !activeLive.current.received);
-        schedule(woken || more ? 0 : waitingReceipt ? 1500 : (recording ? 4000 : 12_000));
+        const waitingReceipt = Boolean(liveAudioV2 && activeLive.current.id && !activeLive.current.received);
+        schedule(woken || more ? 0 : waitingReceipt ? 1000 : (recording ? 4000 : 12_000));
       }
     }
     addEventListener('lingji:live-audio-ready', wakeup);
@@ -570,21 +574,27 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
     </MobileSheet>}
   </section>;
 
+  // Each recording keeps the protocol selected when capture started.
+  const legacyLive = liveAudio && !liveAudioV2;
   const recorder = vault && unlocked && !legacyAccount ? <QuickMobileRecording
     visible={mobilePage === 'record'}
     showRecorder={() => { setMobilePage('record'); window.scrollTo(0, 0); }}
-    status={!online ? '离线保存，回网自动同步' : !liveAudioV2 ? '已在本机保存，服务更新后同步' : liveIssue || liveStatus || mobileStatus}
+    status={!online ? '离线保存，回网自动同步' : !liveAudio ? '录音保存在本机' : liveIssue || liveStatus || mobileStatus}
     append={async (entry, sequence, offset, bytes) => {
       if (!secret.current) throw new Error('资料库未解锁');
       const key = secret.current.slice();
-      let pcm;
+      let pcm: PackedMobilePcm | undefined;
+      let localPcm: PackedLocalMobilePcm | undefined;
       try {
-        pcm = await packMobilePcm(bytes);
-        await appendMobileRecording(vault, key, entry, sequence, pcm);
-        await queueLiveAudio(vault, key, entry.id, entry.title, { kind: 'pcm', sequence, offset, pcm });
+        const wire = await packMobilePcm(bytes);
+        pcm = wire;
+        localPcm = await packLocalMobilePcm(bytes, wire).catch(() => wire);
+        await appendMobileRecording(vault, key, entry, sequence, localPcm);
+        await queueLiveAudio(vault, key, entry.id, entry.title, { kind: 'pcm', sequence, offset, pcm: wire }, legacyLive);
         dispatchEvent(new Event('lingji:live-audio-ready'));
       } finally {
         key.fill(0);
+        if (localPcm && localPcm.bytes !== pcm?.bytes) localPcm.bytes.fill(0);
         if (pcm && pcm.bytes !== bytes) pcm.bytes.fill(0);
       }
     }}
@@ -599,7 +609,7 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
       const key = secret.current.slice();
       try {
         await finishMobileRecording(vault, key, entry);
-        await queueLiveAudio(vault, key, entry.id, entry.title, { kind: 'finish', sequence });
+        await queueLiveAudio(vault, key, entry.id, entry.title, { kind: 'finish', sequence }, legacyLive);
         setPhoneCopies(items => [entry, ...items.filter(item => item.id !== entry.id)]);
         dispatchEvent(new Event('lingji:live-audio-ready'));
       } finally { key.fill(0); }
@@ -616,7 +626,7 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
       </div></section>}
       {!upgradingHere && vault && !unlocked && <section className="account-section"><header><h2>恢复访问</h2></header><div className="account-panel">
         {newLoginNeeded
-          ? <Button variant="primary" disabled={busy || !online} onClick={() => { forget(); signOut(); }}>重新登录以解锁</Button>
+          ? <Button variant="primary" disabled={busy || !online} onClick={() => { void signOut().catch(error => setError(syncError(error))); }}>重新登录以解锁</Button>
           : <p>可使用恢复密钥或从已登录设备配对解锁。</p>}
         <details className="sync-options">
           <summary>其他恢复方式</summary>
@@ -641,13 +651,13 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
         {error && <p role="alert">{error}</p>}
         {online && (newLoginNeeded || error) && <div className="phone-unlock-actions">
           {!newLoginNeeded && <Button variant="primary" disabled={busy} onClick={() => run(signal => connectAccount(email, signal))}>重试</Button>}
-          <Button variant={newLoginNeeded ? 'primary' : 'ghost'} disabled={busy} onClick={() => { forget(); signOut(); }}>重新登录</Button>
+          <Button variant={newLoginNeeded ? 'primary' : 'ghost'} disabled={busy} onClick={() => { void signOut().catch(error => setError(syncError(error))); }}>重新登录</Button>
         </div>}
       </div>}
     </div>);
 
   return <>
-    <MobileWorkspace email={email} legacyAccount={legacyAccount} page={mobilePage} setPage={setMobilePage} online={online} unlocked={unlocked}
+    <MobileWorkspace email={email} legacyAccount={legacyAccount} signOut={signOut} recording={recording} page={mobilePage} setPage={setMobilePage} online={online} unlocked={unlocked}
       automatic={phoneMeetingSync} setAutomatic={enabled => {
         if (!vault) return;
         try { localStorage.setItem('lingji:phone-meetings:' + vault.id, enabled ? '1' : '0'); }
