@@ -62,7 +62,17 @@ export function QuickMobileRecording({ append, commit, status, visible, showReco
     }
   }
 
-  async function start() {
+  useEffect(() => {
+    const detect = (event: Event) => {
+      if ((event as CustomEvent<string>).detail !== 'system-audio-detected') return;
+      if (phase === 'idle' && !draft.current && !closeCapture.current) void start(true);
+      else dispatchEvent(new Event('lingji:system-audio-disarm'));
+    };
+    addEventListener('lingji:system-audio', detect);
+    return () => removeEventListener('lingji:system-audio', detect);
+  });
+
+  async function start(system = false) {
     setPhase('starting');
     onActive?.(true);
     setElapsed(0);
@@ -70,36 +80,42 @@ export function QuickMobileRecording({ append, commit, status, visible, showReco
     currentMarks.current = [];
     setError('');
     let context: AudioContext | undefined, stream: MediaStream | undefined;
+    let systemListener: ((event: Event) => void) | undefined;
     const close = () => {
       stream?.getTracks().forEach(track => track.stop());
-      dispatchEvent(new Event('lingji:recording-closed'));
+      closeCapture.current = null;
+      if (systemListener) removeEventListener('lingji:system-audio', systemListener);
+      dispatchEvent(new Event(system ? 'lingji:system-audio-disarm' : 'lingji:recording-closed'));
       if (context && context.state !== 'closed') void context.close().catch(() => {});
     };
     closeCapture.current = close;
     try {
-      if (!navigator.mediaDevices?.getUserMedia || !globalThis.AudioWorkletNode) throw new Error('此浏览器暂不支持录音');
-      context = new AudioContext({ latencyHint: 'interactive' });
-      const resumed = context.resume();
-      void resumed.catch(() => {});
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: { channelCount: { ideal: 1 }, sampleRate: { ideal: 48000 }, noiseSuppression: false, echoCancellation: false, autoGainControl: false },
-      });
-      dispatchEvent(new Event('lingji:recording-opened'));
-      if (!mounted.current) { close(); return; }
-      await resumed;
-      await context.audioWorklet.addModule('/audio-worklet.js?v=2');
-      if (!mounted.current) { close(); return; }
-      const node = new AudioWorkletNode(context, 'meeting-pcm');
-      const mute = context.createGain();
-      mute.gain.value = 0;
-      const rumble = context.createBiquadFilter();
-      rumble.type = 'highpass';
-      rumble.frequency.value = 55;
-      rumble.Q.value = 0;
-      context.createMediaStreamSource(stream).connect(rumble).connect(node).connect(mute).connect(context.destination);
+      let node: AudioWorkletNode | undefined;
+      if (!system) {
+        if (!navigator.mediaDevices?.getUserMedia || !globalThis.AudioWorkletNode) throw new Error('此浏览器暂不支持录音');
+        context = new AudioContext({ latencyHint: 'interactive' });
+        const resumed = context.resume();
+        void resumed.catch(() => {});
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: { channelCount: { ideal: 1 }, sampleRate: { ideal: 48000 }, noiseSuppression: false, echoCancellation: false, autoGainControl: false },
+        });
+        dispatchEvent(new Event('lingji:recording-opened'));
+        if (!mounted.current) { close(); return; }
+        await resumed;
+        await context.audioWorklet.addModule('/audio-worklet.js?v=2');
+        if (!mounted.current) { close(); return; }
+        node = new AudioWorkletNode(context, 'meeting-pcm');
+        const mute = context.createGain();
+        mute.gain.value = 0;
+        const rumble = context.createBiquadFilter();
+        rumble.type = 'highpass';
+        rumble.frequency.value = 55;
+        rumble.Q.value = 0;
+        context.createMediaStreamSource(stream).connect(rumble).connect(node).connect(mute).connect(context.destination);
+      }
       const pending: Uint8Array<ArrayBuffer>[] = [];
       const id = crypto.randomUUID(), at = Date.now();
-      const name = '手机录音 · ' + new Date().toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const name = (system ? '系统音频' : '手机录音') + ' · ' + new Date().toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
       let queued = 0, offset = 0;
       let writing: Promise<void> | null = null;
       function drain() {
@@ -117,11 +133,17 @@ export function QuickMobileRecording({ append, commit, status, visible, showReco
       }
       onLiveRecording?.(id);
       const levels = Array.from({ length: waveSize }, () => .15);
-      let size = 0, ending = false, finished = false, deadline = 0;
+      const systemPacket = system ? new Uint8Array(MOBILE_PCM_BYTES) : null;
+      let systemBuffered = 0;
+      let size = 0, ending = false, finished = false, deadline = 0, capturePaused = false;
       setCapturePaused.current = paused => {
         if (ending) return;
-        node.port.postMessage({ type: paused ? 'pause' : 'resume' });
+        flushSystemPacket();
+        if (finished) return;
+        capturePaused = paused;
+        node?.port.postMessage({ type: paused ? 'pause' : 'resume' });
         for (const track of stream?.getAudioTracks() ?? []) track.enabled = !paused;
+        dispatchEvent(new CustomEvent('lingji:recording-state', { detail: `${system ? 'system-' : ''}${paused ? 'pause' : 'resume'}:${Math.floor(size / MOBILE_PCM_BYTES)}` }));
         setPhase(paused ? 'paused' : 'recording');
       };
       const finish = () => {
@@ -130,7 +152,8 @@ export function QuickMobileRecording({ append, commit, status, visible, showReco
         clearTimeout(deadline);
         finishCapture.current = null;
         setCapturePaused.current = null;
-        node.port.onmessage = null;
+        flushSystemPacket();
+        if (node) node.port.onmessage = null;
         close();
         if (!mounted.current) return;
         onLiveRecording?.('');
@@ -144,10 +167,11 @@ export function QuickMobileRecording({ append, commit, status, visible, showReco
         if (ending) return;
         ending = true;
         setPhase('saving');
+        if (!node) { finish(); return; }
         node.port.postMessage({ type: 'pause', reason: 'finish' });
         deadline = window.setTimeout(finish, 2000);
       };
-      node.port.onmessage = ({ data }) => {
+      const onAudio = (data: { type: string; reason?: string; value?: number; buffer?: ArrayBuffer }) => {
         if (data.type === 'flushed') { if (ending && data.reason === 'finish') finish(); return; }
         if (data.type === 'meter') {
           levels.shift();
@@ -158,8 +182,8 @@ export function QuickMobileRecording({ append, commit, status, visible, showReco
           }
           return;
         }
-        if (data.type !== 'pcm') return;
-        const pcm = data.buffer as ArrayBuffer;
+        if (data.type !== 'pcm' || !data.buffer) return;
+        const pcm = data.buffer;
         const available = Math.min(pcm.byteLength, WAV_PCM_LIMIT - size);
         if (available > 0) {
           pending.push(new Uint8Array(available === pcm.byteLength ? pcm : pcm.slice(0, available)));
@@ -171,7 +195,30 @@ export function QuickMobileRecording({ append, commit, status, visible, showReco
         }
         if (size >= WAV_PCM_LIMIT || pending.length >= 48) finishCapture.current?.();
       };
-      stream.getAudioTracks()[0]?.addEventListener('ended', () => finishCapture.current?.(), { once: true });
+
+      function flushSystemPacket() {
+        if (!systemPacket || !systemBuffered) return;
+        const buffer = systemPacket.slice(0, systemBuffered).buffer;
+        systemBuffered = 0;
+        onAudio({ type: 'pcm', buffer });
+      }
+      if (node) node.port.onmessage = ({ data }) => onAudio(data);
+      else if (systemPacket) {
+        systemListener = event => {
+          const data = (event as CustomEvent<string>).detail;
+          if (data === 'system-audio-ended') finish();
+          if (!data.startsWith('system-audio-frame:') || ending || capturePaused) return;
+          const bytes = Uint8Array.from(atob(data.slice('system-audio-frame:'.length)), sample => sample.charCodeAt(0));
+          const pcm = new Int16Array(bytes.buffer);
+          const meanSquare = pcm.reduce((sum, sample) => sum + sample * sample, 0) / pcm.length / 32768 ** 2;
+          onAudio({ type: 'meter', value: Math.sqrt(meanSquare) });
+          systemPacket.set(bytes, systemBuffered);
+          systemBuffered += bytes.byteLength;
+          if (systemBuffered === systemPacket.length) flushSystemPacket();
+        };
+        addEventListener('lingji:system-audio', systemListener);
+      }
+      stream?.getAudioTracks()[0]?.addEventListener('ended', () => finishCapture.current?.(), { once: true });
       setPhase('recording');
     } catch (failure) {
       close();

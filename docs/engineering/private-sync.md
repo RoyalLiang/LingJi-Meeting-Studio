@@ -25,6 +25,21 @@ npm run build:web
 
 同步 API 登录挑战持久化在 `sync_challenges` 表中，支持单次消费与多实例共享。将 `RECORD_DATA_DIR/opaque-account.key` 纳入受限备份，与账号数据库一起恢复。该文件丢失会导致已升级账号无法通过密码验证。
 
+## 在同步入口启用 HTTP/3
+
+Android App 继续通过 WebView 访问同一 HTTPS 站点。入口通过 `Alt-Svc` 通告 HTTP/3 后，支持的 WebView 可使用 QUIC。TCP 443 继续提供 HTTPS，供 UDP 不可达或不支持 HTTP/3 的客户端使用。加密、身份验证和同步回执沿用现有协议。
+
+独立部署可用 [Caddy 入口配置](../../apps/web/Caddyfile.private-sync)。将 `RECORD_SYNC_HOST` 设为同步域名，`RECORD_SYNC_UPSTREAM` 设为 Web 服务地址，默认 `127.0.0.1:3000`。在使用同一域名的现有入口启用 HTTP/3 时，以入口软件的配置为准。保持域名和证书有效，确认防火墙及负载均衡同时放行 TCP 和 UDP 的 443 端口。[Caddy 协议配置](https://caddyserver.com/docs/caddyfile/options#protocols)
+
+部署后使用带 HTTP/3 支持的 curl 核对同一路径。无需登录，两个请求都应返回 401，协议版本分别为 `3` 和 `2` 或 `1.1`。
+
+```sh
+curl --http3-only -sS -o /dev/null -w '%{http_version} %{http_code}\n' https://lingji.rookiehouse.com/api/private-sync/mobile-session
+curl --http2 -sS -o /dev/null -w '%{http_version} %{http_code}\n' https://lingji.rookiehouse.com/api/private-sync/mobile-session
+```
+
+在 Android 上登录并开始录音，从 Wi-Fi 切换到移动数据。核对录音连续、切换后桌面继续接收、结束后收到完整音频，并检查网关访问记录中的协议版本。APK 安装后的默认域名仍为 `lingji.rookiehouse.com`。
+
 ## 在两台设备间验证
 
 1. 在桌面「本地空间」中注册并同步一条合成会议。在空白客户端登录同一账号，确认自动解锁并可恢复该会议。用同一账号打开手机「快速记录」，确认登录后可直接开始录音。
@@ -56,6 +71,10 @@ Web 端不再提供独立的手机浏览器快速记录入口，手机快速记�
 
 Android 测试 APK 支持 Android 9 及以上，使用 `apps/android-preview/build.sh` 和 Android SDK 35、Build Tools 35.0.0 构建。配置 `JAVA_HOME`、`ANDROID_SDK_ROOT` 和专用测试签名文件路径 `ANDROID_PREVIEW_KEYSTORE` 后，传入 APK 的绝对输出路径。
 
+
+录音通知显示正在录音或暂停以及时长，点按可返回聆记。允许应用通知后，按 Android 的锁屏通知设置显示。通过**我的 → 关于聆记**查看当前版本和查询公开 Android 测试包。点按蓝色的《音频收集告知书》可打开全文。
+
+Android 10 及以上可通过**我的 → 会议音频自动记录**授权一次监听。聆记仅检测允许被采集的飞书、Teams、Zoom 或腾讯会议播放音频，检测到连续声音后开始保存。持续静默 60 秒时结束并保存，暂停期间不计入静默时长。系统保护的通话音轨和来源 App 拒绝共享的音频无法采集。手动结束或系统撤销授权时也会停止，本次授权不会跨重启保留。[Android 播放音频捕获说明](https://developer.android.com/media/platform/av-capture)
 
 ## 设备和双重验证
 

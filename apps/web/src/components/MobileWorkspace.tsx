@@ -9,6 +9,8 @@ import { MobileAccountDevices, MobileAccountFactor, loadMobileDevices, loadMobil
 import { Brand } from './Brand';
 import { Button } from './ui';
 import { MobileSheet } from './MobileSheet';
+import { MobileAbout } from './MobileAbout';
+import { MobileAudioNotice } from './MobileAudioNotice';
 import './MobileWorkspace.css';
 
 export type MobilePage = 'record' | 'meetings' | 'account';
@@ -404,7 +406,7 @@ export function MobileWorkspace({
   email: string; legacyAccount: boolean; signOut: () => Promise<void>; recording: boolean;
   page: MobilePage; setPage: (page: MobilePage) => void; online: boolean; unlocked: boolean;
   automatic: boolean; setAutomatic: (enabled: boolean) => void;
-  copies: CopySummary[]; saved: MobileRecording[]; hidden: ReadonlySet<string>; recorder: ReactNode; account: ReactNode;
+  copies: CopySummary[]; saved: MobileRecording[]; hidden: ReadonlySet<string>; recorder: ReactNode; account: (logout: ReactNode) => ReactNode;
   read: (id: string) => Promise<MeetingCopy | null>;
   play: (id: string) => Promise<Blob | null>;
   search: (query: string) => Promise<CopySummary[]>;
@@ -416,7 +418,26 @@ export function MobileWorkspace({
   const [space, setSpace] = useState('');
   const [usage, setUsage] = useState<Usage | null>(null);
   const [usageError, setUsageError] = useState(false);
-  const [sheet, setSheet] = useState<'devices' | 'factor' | 'logout' | null>(null);
+  const [sheet, setSheet] = useState<'devices' | 'factor' | 'logout' | 'about' | 'monitor' | null>(null);
+  const [monitor, setMonitor] = useState<'idle' | 'authorizing' | 'waiting' | 'recording'>('idle');
+  const [monitorError, setMonitorError] = useState('');
+  useEffect(() => {
+    const status = (event: Event) => {
+      const value = (event as CustomEvent<string>).detail;
+      if (value === 'system-audio-armed') setMonitor('waiting');
+      if (value === 'system-audio-detected') setMonitor('recording');
+      if (value === 'system-audio-ended') setMonitor('idle');
+      if (value.startsWith('system-audio-error:')) {
+        setMonitor('idle');
+        setMonitorError(value.slice('system-audio-error:'.length));
+      }
+    };
+    addEventListener('lingji:system-audio', status);
+    return () => {
+      removeEventListener('lingji:system-audio', status);
+      dispatchEvent(new Event('lingji:system-audio-disarm'));
+    };
+  }, []);
   const [logoutBusy, setLogoutBusy] = useState(false);
   const [logoutError, setLogoutError] = useState('');
   const [factorBusy, setFactorBusy] = useState(false);
@@ -503,7 +524,9 @@ export function MobileWorkspace({
           remove={deleteLocal && chooseRemoval}/>
     </section>)}
     {page === 'account' && <>
-      {account}
+      {account(<Button className="mobile-sign-out" variant="ghost" disabled={recording || !online} onClick={() => {
+        setLogoutError(''); setSheet('logout');
+      }}>退出登录</Button>)}
       <section className="mobile-account-card mobile-quota" aria-label="同步存储">
         <h2>同步存储</h2>
         {usage && usage.quota > 0 ? <><div className="mobile-quota-list">
@@ -519,6 +542,12 @@ export function MobileWorkspace({
         <div className="mobile-account-group">
         <div><ArrowClockwise size={17} aria-hidden="true"/><span id="mobile-sync-preference">自动同步会议与纪要</span>
           <MobileSwitch labelId="mobile-sync-preference" disabled={!unlocked} checked={automatic} change={setAutomatic}/></div>
+
+        {/\bLingJi-Android\//.test(navigator.userAgent) && !legacyAccount &&
+          <button type="button" disabled={!unlocked} onClick={() => setSheet('monitor')}>
+            <Microphone size={17} aria-hidden="true"/><span>会议音频自动记录</span>
+            <small>{monitor === 'waiting' && '待命'}{monitor === 'recording' && '记录中'} <CaretRight size={14} aria-hidden="true"/></small>
+          </button>}
         <div><Moon size={17} aria-hidden="true"/><span id="mobile-theme-preference">深色外观</span>
           <MobileSwitch labelId="mobile-theme-preference" checked={dark} change={checked => {
           const value = checked ? 'dark' : 'light';
@@ -538,9 +567,22 @@ export function MobileWorkspace({
           <small>当前设备 <CaretRight size={14} aria-hidden="true"/></small></button>
         </div>
       </section>
-      <Button className="mobile-sign-out" variant="ghost" disabled={recording || !online} onClick={() => {
-        setLogoutError(''); setSheet('logout');
-      }}>退出登录</Button>
+      <div className="mobile-account-group mobile-about-link">
+        <button type="button" onClick={() => setSheet('about')}><FileText size={17} aria-hidden="true"/><span>关于聆记</span><CaretRight size={14} aria-hidden="true"/></button>
+      </div>
+      {sheet === 'about' && <MobileSheet title="关于聆记" close={() => setSheet(null)}><MobileAbout/></MobileSheet>}
+      {sheet === 'monitor' && <MobileSheet title="会议音频自动记录" close={() => setSheet(null)}>
+        <p className="mobile-sheet-note">取得参会者同意后，授权聆记监听飞书、Teams、Zoom 或腾讯会议允许共享的音频。检测到声音后自动开始，持续静默 60 秒后保存。Android 保护的通话音频无法采集。</p>
+        <MobileAudioNotice/>
+        {monitorError && <p role="alert">{monitorError}</p>}
+        <Button variant="primary" disabled={monitor === 'authorizing' || (recording && monitor !== 'recording')} onClick={() => {
+          setMonitorError('');
+          if (monitor === 'idle') {
+            setMonitor('authorizing');
+            dispatchEvent(new Event('lingji:system-audio-arm'));
+          } else dispatchEvent(new Event('lingji:system-audio-disarm'));
+        }}>{monitor === 'idle' ? '授权并开始监听' : monitor === 'authorizing' ? '等待系统授权…' : '停止自动记录'}</Button>
+      </MobileSheet>}
       {sheet === 'logout' && <MobileSheet title="退出登录？" placement="center" showClose={false}
         closeDisabled={logoutBusy} close={() => setSheet(null)}>
         <p className="mobile-sheet-note">本机录音会保留，再次登录同一账号后可继续使用。</p>

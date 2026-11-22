@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { api, ApiError, messageOf } from '../api';
 import { createVault, recoverVault, type Envelope, type Vault } from '../sync/vault';
 import { authenticateAccount, openAccountVault, wrapAccountVault } from '../sync/account';
@@ -305,6 +305,7 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
     const localVault = vault;
     const controller = new AbortController(), signal = controller.signal;
     let failures = 0, retryAt = 0, timer: number;
+    let networkFailure = false;
     async function cycle() {
       if (pending.current || !secret.current || signal.aborted || Date.now() < retryAt) return;
       if (document.hidden) return;
@@ -318,8 +319,10 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
         }
         if (!signal.aborted) setBackgroundIssue('');
         failures = 0;
+        networkFailure = false;
       } catch (failure) {
         if (signal.aborted) return;
+        networkFailure = failure instanceof ApiError && failure.status === 0;
         retryAt = Date.now() + Math.min(120_000, 8_000 * 2 ** Math.min(++failures, 4));
         setBackgroundIssue(syncError(failure));
       } finally {
@@ -336,12 +339,18 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
       void work.finally(() => { if (background.current === work) background.current = null; });
     }
     addEventListener('lingji:sync-wakeup', runCycle);
+    const onNetworkChange = () => {
+      if (networkFailure) retryAt = 0;
+      runCycle();
+    };
+    addEventListener('lingji:network-changed', onNetworkChange);
     const onVisible = () => { if (!document.hidden) runCycle(); };
     document.addEventListener('visibilitychange', onVisible);
     runCycle();
     return () => {
       window.clearTimeout(timer);
       removeEventListener('lingji:sync-wakeup', runCycle);
+      removeEventListener('lingji:network-changed', onNetworkChange);
       document.removeEventListener('visibilitychange', onVisible);
       controller.abort();
     };
@@ -356,6 +365,7 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
     const localVault = vault;
     const controller = new AbortController(), signal = controller.signal;
     let failures = 0, retryAt = 0;
+    let networkFailure = false;
     async function cycle() {
       if (pending.current || !secret.current || signal.aborted || Date.now() < retryAt) return;
       if (document.hidden && !recording) return;
@@ -364,8 +374,10 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
         signal.throwIfAborted();
         if (result.sent || result.pending) setMobileStatus(result.pending ? '正在同步到电脑…' : '已同步到云端');
         failures = 0;
+        networkFailure = false;
       } catch (failure) {
         if (signal.aborted) return;
+        networkFailure = failure instanceof ApiError && failure.status === 0;
         retryAt = Date.now() + Math.min(120_000, 8_000 * 2 ** Math.min(++failures, 4));
         setMobileStatus('同步暂缓，将自动重试');
       }
@@ -377,11 +389,17 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
       void work.finally(() => { if (archivePush.current === work) archivePush.current = null; });
     };
     const timer = setInterval(runCycle, 10_000);
+    const onNetworkChange = () => {
+      if (networkFailure) retryAt = 0;
+      runCycle();
+    };
+    addEventListener('lingji:network-changed', onNetworkChange);
     const onVisible = () => { if (!document.hidden) runCycle(); };
     document.addEventListener('visibilitychange', onVisible);
     runCycle();
     return () => {
       clearInterval(timer);
+      removeEventListener('lingji:network-changed', onNetworkChange);
       document.removeEventListener('visibilitychange', onVisible);
       controller.abort();
     };
@@ -410,6 +428,7 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
     const { signal } = controller;
     const localVault = vault;
     let timer = 0, running = false, woken = false, failures = 0, retryAt = 0;
+    let networkFailure = false;
     function schedule(delay: number) {
       window.clearTimeout(timer);
       if (!signal.aborted) timer = window.setTimeout(() => void cycle(), Math.max(delay, retryAt - Date.now()));
@@ -457,8 +476,10 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
         setLiveIssue('');
         failures = 0;
         retryAt = 0;
+        networkFailure = false;
       } catch (failure) {
         if (signal.aborted) return;
+        networkFailure = failure instanceof ApiError && failure.status === 0;
         retryAt = Date.now() + (failure instanceof ApiError && failure.status === 429
           ? 15_000 : Math.min(8000, 1000 * 2 ** Math.min(failures++, 3)));
         setLiveIssue(failure instanceof ApiError && failure.status === 413
@@ -472,12 +493,18 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
       }
     }
     addEventListener('lingji:live-audio-ready', wakeup);
+    const onNetworkChange = () => {
+      if (networkFailure) retryAt = 0;
+      wakeup();
+    };
+    addEventListener('lingji:network-changed', onNetworkChange);
     document.addEventListener('visibilitychange', wakeup);
     wakeup();
     return () => {
       controller.abort();
       window.clearTimeout(timer);
       removeEventListener('lingji:live-audio-ready', wakeup);
+      removeEventListener('lingji:network-changed', onNetworkChange);
       document.removeEventListener('visibilitychange', wakeup);
     };
   }, [ready, online, unlocked, vault, liveAudio, liveAudioV2, recording]);
@@ -553,7 +580,7 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
     ? <FeedbackNotice key={error} message={error} error/>
     : notice ? <FeedbackNotice key={notice} message={notice} warning={false}/> : null;
 
-  const account = <section className="mobile-account-card" aria-label="账号资料">
+  const account = (logout: ReactNode) => <section className="mobile-account-card" aria-label="账号资料">
     <div className="mobile-account-identity">
       <span className="account-avatar" aria-hidden="true">{(profile || email || '聆').slice(0, 1).toUpperCase()}</span>
       <div><strong>{profile || '个人账号'}</strong><small title={email}>{email}</small>
@@ -561,7 +588,10 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
           <ShieldCheck size={13} aria-hidden="true"/>{unlocked ? '端到端加密' : '资料库未解锁'}
         </span>
       </div>
-      <Button variant="ghost" onClick={() => { setName(null); setProfileError(''); setProfileEditor(true); }}>编辑资料</Button>
+      <div className="mobile-profile-actions">
+        <Button variant="ghost" onClick={() => { setName(null); setProfileError(''); setProfileEditor(true); }}>编辑资料</Button>
+        {logout}
+      </div>
     </div>
     {profileEditor && <MobileSheet title="编辑资料" close={() => { if (!profileSaving) setProfileEditor(false); }}>
       <form className="mobile-profile-form" onSubmit={saveProfile}>

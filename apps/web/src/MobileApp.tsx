@@ -85,10 +85,12 @@ export function MobileApp() {
     const onVisible = () => { if (!document.hidden) void open(); };
     const refresh = window.setInterval(() => { if (!document.hidden) void open(); }, 6 * 60 * 60_000);
     window.addEventListener('online', reconnect);
+    window.addEventListener('lingji:network-changed', reconnect);
     window.addEventListener('offline', disconnect);
     document.addEventListener('visibilitychange', onVisible);
     return () => {
       window.removeEventListener('online', reconnect);
+      window.removeEventListener('lingji:network-changed', reconnect);
       window.removeEventListener('offline', disconnect);
       document.removeEventListener('visibilitychange', onVisible);
       window.clearInterval(refresh);

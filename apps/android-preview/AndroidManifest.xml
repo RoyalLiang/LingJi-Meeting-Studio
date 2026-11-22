@@ -1,18 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.rookiehouse.lingji.preview" android:versionCode="16" android:versionName="0.4-preview.16">
+    package="com.rookiehouse.lingji.preview" android:versionCode="19" android:versionName="0.4-preview.19">
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34"/>
     <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-feature android:name="android.hardware.microphone" android:required="false"/>
+    <queries>
+        <package android:name="com.ss.android.lark"/>
+        <package android:name="com.larksuite.suite"/>
+        <package android:name="com.microsoft.teams"/>
+        <package android:name="us.zoom.videomeetings"/>
+        <package android:name="com.tencent.wemeet.app"/>
+    </queries>
     <application android:label="聆记测试版" android:icon="@drawable/lingji"
         android:allowBackup="false" android:usesCleartextTraffic="false"
         android:theme="@style/PreviewTheme">
         <service android:name=".RecordingService" android:exported="false" android:foregroundServiceType="microphone"/>
+        <service android:name=".PlaybackCaptureService" android:exported="false" android:stopWithTask="true" android:foregroundServiceType="mediaProjection"/>
         <activity android:name=".MainActivity" android:exported="true"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|uiMode"
             android:windowSoftInputMode="adjustResize">

@@ -5,12 +5,19 @@ import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.pm.PackageInfo;
 import android.content.res.Configuration;
 import android.content.res.ColorStateList;
 import android.graphics.drawable.ColorDrawable;
+import android.media.projection.MediaProjectionConfig;
+import android.media.projection.MediaProjectionManager;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.view.Gravity;
 import android.view.View;
 import android.webkit.PermissionRequest;
@@ -30,8 +37,15 @@ import android.widget.ImageView;
 import android.widget.TextView;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.URL;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import javax.net.ssl.HttpsURLConnection;
+import org.json.JSONArray;
 
 public final class MainActivity extends Activity {
     private static final String HOST = "lingji.rookiehouse.com";
@@ -45,6 +59,9 @@ public final class MainActivity extends Activity {
     private static final String DARK_TITLE = "聆记 · 快记（深色）";
     private static final int MIC = 10;
     private static final int FILE = 11;
+    private static final int NOTIFICATIONS = 12;
+    private static final int SYSTEM_AUDIO_PERMISSION = 13;
+    private static final int SYSTEM_AUDIO_CONSENT = 14;
     private WebView web;
     private FrameLayout frame;
     private FrameLayout launch;
@@ -57,6 +74,18 @@ public final class MainActivity extends Activity {
     private boolean pendingRecordingStart;
     private final Runnable timeout = () -> retry.setVisibility(View.VISIBLE);
     private WebMessagePort recordingPort;
+    private final ConnectivityManager.NetworkCallback networkCallback = new ConnectivityManager.NetworkCallback() {
+        private Network validatedNetwork;
+
+        @Override public void onCapabilitiesChanged(Network network, NetworkCapabilities capabilities) {
+            if (!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) || network.equals(validatedNetwork)) return;
+            boolean switched = validatedNetwork != null;
+            validatedNetwork = network;
+            if (switched && recordingBridgeReady && recordingPort != null) {
+                recordingPort.postMessage(new WebMessage("network-changed"));
+            }
+        }
+    };
     private boolean recordingBridgeReady;
     private PermissionRequest microphone;
     private ValueCallback<Uri[]> files;
@@ -131,6 +160,7 @@ public final class MainActivity extends Activity {
         showLaunch(null, false);
         // Start WebView creation immediately in onCreate so local APK assets load on the first frame.
         openWeb(saved);
+        getSystemService(ConnectivityManager.class).registerDefaultNetworkCallback(networkCallback, new Handler(getMainLooper()));
     }
 
     @Override protected void onResume() {
@@ -237,7 +267,12 @@ public final class MainActivity extends Activity {
         frame.addView(web, 0, new FrameLayout.LayoutParams(-1, -1));
         WebSettings settings = web.getSettings();
         settings.setJavaScriptEnabled(true);
-        settings.setUserAgentString(settings.getUserAgentString() + " LingJi-Android");
+        try {
+            settings.setUserAgentString(settings.getUserAgentString() + " LingJi-Android/"
+                + getPackageManager().getPackageInfo(getPackageName(), 0).versionName);
+        } catch (PackageManager.NameNotFoundException impossible) {
+            settings.setUserAgentString(settings.getUserAgentString() + " LingJi-Android");
+        }
         settings.setDomStorageEnabled(true);
         // Playback of the tapped recording starts after its local audio is decrypted.
         settings.setMediaPlaybackRequiresUserGesture(false);
@@ -297,11 +332,15 @@ public final class MainActivity extends Activity {
                 if (!trusted(request.getOrigin()) || !audio || microphone != null || !(resumed || hasWindowFocus())) {
                     request.deny();
                 } else if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                    if (askForNotifications()) {
+                        microphone = request;
+                        requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, NOTIFICATIONS);
+                        return;
+                    }
                     grantMicrophone(request);
                 } else {
                     microphone = request;
-                    String[] permissions = Build.VERSION.SDK_INT >= 33
-                        && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                    String[] permissions = askForNotifications()
                         ? new String[]{Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS}
                         : new String[]{Manifest.permission.RECORD_AUDIO};
                     requestPermissions(permissions, MIC);
@@ -335,6 +374,13 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private boolean askForNotifications() {
+        if (Build.VERSION.SDK_INT < 33 || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+                || getPreferences(MODE_PRIVATE).getBoolean("notificationPrompted", false)) return false;
+        getPreferences(MODE_PRIVATE).edit().putBoolean("notificationPrompted", true).apply();
+        return true;
+    }
+
     private void connectRecordingPort(WebView view) {
         if (recordingPort != null) return;
         WebMessagePort[] ports = view.createWebMessageChannel();
@@ -342,10 +388,50 @@ public final class MainActivity extends Activity {
         recordingPort.setWebMessageCallback(new WebMessagePort.WebMessageCallback() {
             @Override public void onMessage(WebMessagePort port, WebMessage message) {
                 if (port != recordingPort) return;
-                switch (message.getData()) {
+                String data = message.getData();
+                if (data == null) return;
+                if (data.matches("(?:pause|resume):[0-9]{1,7}")) {
+                    if (resumed || hasWindowFocus()) {
+                        try {
+                            startService(new Intent(MainActivity.this, RecordingService.class)
+                                .putExtra("paused", data.startsWith("pause:"))
+                                .putExtra("elapsed", Integer.parseInt(data.substring(data.indexOf(':') + 1))));
+                        } catch (IllegalStateException | SecurityException ignored) {}
+                    }
+                    return;
+                }
+                if (data.matches("system-(?:pause|resume):[0-9]{1,7}")) {
+                    PlaybackCaptureService.changePause(data.startsWith("system-pause:"), Integer.parseInt(data.substring(data.indexOf(':') + 1)));
+                    return;
+                }
+                switch (data) {
+                    case "check-update":
+                        new Thread(() -> {
+                            String result = checkAndroidUpdate();
+                            runOnUiThread(() -> {
+                                if (port == recordingPort) port.postMessage(new WebMessage("update-result:" + result));
+                            });
+                        }, "lingji-update-check").start();
+                        break;
+                    case "open-releases":
+                        try {
+                            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(
+                                "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases")));
+                        } catch (ActivityNotFoundException ignored) {}
+                        break;
                     case "ready":
                         recordingBridgeReady = true;
+                        PlaybackCaptureService.messages = MainActivity.this::postToRecorder;
                         flushPendingRecordingStart();
+                        break;
+                    case "system-audio-arm":
+                        requestSystemAudio();
+                        break;
+                    case "system-audio-disarm":
+                        stopService(new Intent(MainActivity.this, PlaybackCaptureService.class));
+                        break;
+                    case "system-audio-ack":
+                        PlaybackCaptureService.acknowledge();
                         break;
                     case "sheet-open":
                     case "sheet-closed":
@@ -353,6 +439,7 @@ public final class MainActivity extends Activity {
                         paintSystemBars();
                         break;
                     case "start":
+                        stopService(new Intent(MainActivity.this, PlaybackCaptureService.class));
                         pendingRecordingStart = true;
                         flushPendingRecordingStart();
                         break;
@@ -377,12 +464,87 @@ public final class MainActivity extends Activity {
             recordingPort = null;
         }
         stopService(new Intent(this, RecordingService.class));
+        PlaybackCaptureService.messages = null;
+        stopService(new Intent(this, PlaybackCaptureService.class));
+    }
+
+    private void postToRecorder(String data) {
+        if (recordingBridgeReady && recordingPort != null) recordingPort.postMessage(new WebMessage(data));
+    }
+
+    private void requestSystemAudio() {
+        if (Build.VERSION.SDK_INT < 29 || !resumed) {
+            postToRecorder("system-audio-error:自动记录需要 Android 10 或更新版本，请在聆记内授权");
+            return;
+        }
+        boolean microphonePermission = checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED;
+        boolean notifications = askForNotifications();
+        if (microphonePermission || notifications) {
+            String[] permissions = microphonePermission && notifications
+                ? new String[]{Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS}
+                : new String[]{microphonePermission ? Manifest.permission.RECORD_AUDIO : Manifest.permission.POST_NOTIFICATIONS};
+            requestPermissions(permissions, SYSTEM_AUDIO_PERMISSION);
+        } else {
+            showSystemAudioConsent();
+        }
+    }
+
+    private void showSystemAudioConsent() {
+        MediaProjectionManager manager = getSystemService(MediaProjectionManager.class);
+        Intent prompt = Build.VERSION.SDK_INT >= 34
+            ? manager.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
+            : manager.createScreenCaptureIntent();
+        startActivityForResult(prompt, SYSTEM_AUDIO_CONSENT);
+    }
+
+    private String checkAndroidUpdate() {
+        HttpsURLConnection request = null;
+        try {
+            PackageInfo installed = getPackageManager().getPackageInfo(getPackageName(), 0);
+            URL url = new URL("https://api.github.com/repos/RoyalLiang/LingJi-Meeting-Studio/releases?per_page=10");
+            request = (HttpsURLConnection) url.openConnection();
+            request.setConnectTimeout(5000);
+            request.setReadTimeout(6000);
+            request.setRequestProperty("Accept", "application/vnd.github+json");
+            Pattern name = Pattern.compile("LingJi-Android-preview-v([1-9][0-9]{0,8})\\.apk");
+            StringBuilder payload = new StringBuilder();
+            try (BufferedReader body = new BufferedReader(new InputStreamReader(request.getInputStream(), "UTF-8"))) {
+                char[] buffer = new char[4096];
+                int count;
+                while ((count = body.read(buffer)) != -1) {
+                    if (payload.length() + count > 2_000_000) throw new IOException("Release response too large");
+                    payload.append(buffer, 0, count);
+                }
+            }
+            JSONArray releases = new JSONArray(payload.toString());
+            int latest = 0;
+            for (int i = 0; i < releases.length(); i++) {
+                JSONArray assets = releases.getJSONObject(i).getJSONArray("assets");
+                for (int j = 0; j < assets.length(); j++) {
+                    Matcher version = name.matcher(assets.getJSONObject(j).getString("name"));
+                    if (version.matches()) latest = Math.max(latest, Integer.parseInt(version.group(1)));
+                }
+            }
+            if (latest == 0) return "公开发布页暂无 Android 测试包。";
+            if (latest <= installed.getLongVersionCode()) return "已是公开发布的最新 Android 测试版本。";
+            return "发现测试版 0.4-preview." + latest + "，可从项目发布页获取。";
+        } catch (Exception failure) {
+            return "暂时无法检查更新，请稍后重试。";
+        } finally {
+            if (request != null) request.disconnect();
+        }
     }
 
     @Override public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(code, permissions, results);
-        if (code != MIC || microphone == null) return;
-        if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
+        if (code == SYSTEM_AUDIO_PERMISSION) {
+            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                showSystemAudioConsent();
+            } else postToRecorder("system-audio-error:请先允许录音权限");
+            return;
+        }
+        if ((code != MIC && code != NOTIFICATIONS) || microphone == null) return;
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             grantMicrophone(microphone);
         } else {
             microphone.deny();
@@ -392,6 +554,18 @@ public final class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int code, int result, Intent data) {
         super.onActivityResult(code, result, data);
+        if (code == SYSTEM_AUDIO_CONSENT) {
+            if (result != RESULT_OK || data == null || !recordingBridgeReady) {
+                postToRecorder("system-audio-error:已取消系统音频授权");
+                return;
+            }
+            try {
+                startForegroundService(new Intent(this, PlaybackCaptureService.class).putExtra("result", result).putExtra("consent", data));
+            } catch (IllegalStateException | SecurityException failure) {
+                postToRecorder("system-audio-error:系统音频无法启动，请重新授权");
+            }
+            return;
+        }
         if (code != FILE || files == null) return;
         files.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(result, data));
         files = null;
@@ -412,6 +586,7 @@ public final class MainActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        getSystemService(ConnectivityManager.class).unregisterNetworkCallback(networkCallback);
         closeRecordingPort();
         if (microphone != null) microphone.deny();
         if (files != null) files.onReceiveValue(null);

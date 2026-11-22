@@ -1,0 +1,13 @@
+{
+	servers {
+		protocols h1 h2 h3
+	}
+}
+
+{$RECORD_SYNC_HOST:localhost} {
+	reverse_proxy {$RECORD_SYNC_UPSTREAM:127.0.0.1:3000} {
+		transport http {
+			keepalive 4s
+		}
+	}
+}

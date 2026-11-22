@@ -264,10 +264,11 @@ body:has(.quick-mobile-app) { background: #f4f4f5; }
   cursor: pointer; touch-action: manipulation;
 }
 .mobile-player-rate span {
-  display: grid; place-items: center; min-width: 50px; height: 28px; padding-inline: 6px;
+  display: grid; place-items: center; min-width: 46px; height: 26px; padding-inline: 7px;
   border-radius: inherit; background: var(--phone-meeting-rule);
 }
 .mobile-player-rate[data-adjusted=true] { color: var(--phone-accent); }
+.mobile-player-rate[data-adjusted=true] span { background: var(--phone-selection); }
 .mobile-player-rate:active span { background: var(--phone-selection); }
 @media (hover: hover) {
   .mobile-player-rate:hover span { background: var(--phone-selection); }
@@ -353,7 +354,31 @@ body:has(.quick-mobile-app) { background: #f4f4f5; }
   inset: 0; width: min(calc(100% - 32px), 400px); height: fit-content;
   margin: auto; padding: 22px 18px 16px; border-radius: 20px;
 }
-.mobile-workspace .mobile-sign-out { color: var(--phone-live); }
+.mobile-workspace .mobile-profile-actions .button.mobile-sign-out { color: var(--phone-live); }
+.mobile-profile-actions { display: grid; justify-items: end; }
+.mobile-profile-actions .button { min-height: 44px; padding-inline: 8px; }
+.mobile-about-link { margin-block-start: 16px; }
+.mobile-about-build {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px 12px;
+  padding: 12px 14px; margin: 8px 0 10px; border-radius: 14px; background: var(--phone-field);
+}
+.mobile-about dl { margin: 0; min-width: 0; }
+.mobile-about dt { color: var(--phone-muted); font-size: .78rem; }
+.mobile-about dd { margin: 3px 0 0; font-size: .97rem; font-weight: 670; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.mobile-about-build .button { min-height: 44px; padding-inline: 12px; white-space: nowrap; }
+.mobile-about .mobile-about-result { grid-column: 1 / -1; margin: 0; color: var(--phone-muted); font-size: .82rem; }
+.mobile-about-row {
+  display: flex; align-items: center; gap: 9px; width: 100%; min-height: 48px;
+  padding: 8px 3px; border: 0; background: transparent; color: var(--phone-ink);
+  text-align: start; font: inherit; font-size: .9rem; cursor: pointer;
+}
+.mobile-about-row span { flex: 1; }
+.mobile-about-row svg { color: var(--phone-muted); flex-shrink: 0; }
+.mobile-about .mobile-document-link { border-top: 1px solid var(--phone-line); }
+.mobile-document-link { color: #205cb5; }
+[data-theme=dark] .mobile-document-link { color: #a2c7ff; }
+.mobile-document-link svg { color: currentColor; }
+.mobile-audio-notice { color: var(--phone-muted); font-size: .9rem; }
 .mobile-source-sheet[open] { overscroll-behavior: contain; }
 .mobile-source-sheet::backdrop { background: rgb(0 0 0 / .24); }
 .mobile-sheet-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: -6px; }
@@ -400,7 +425,6 @@ body:has(.quick-mobile-app) { background: #f4f4f5; }
   --phone-tab: 0; --phone-nav-inset: 4px;
   bottom: var(--phone-dock-offset); min-height: var(--phone-dock); padding: var(--phone-nav-inset);
   border-radius: 999px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
-  box-shadow: none;
 }
 .mobile-nav[data-page=meetings] { --phone-tab: 1; }
 .mobile-nav[data-page=account] { --phone-tab: 2; }
@@ -412,12 +436,21 @@ body:has(.quick-mobile-app) { background: #f4f4f5; }
   border-radius: 999px; background: var(--phone-lens-glass); pointer-events: none;
 }
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-  .mobile-nav, .quick-mobile-mini {
+  .quick-mobile-mini {
     background: var(--phone-dock-glass);
     -webkit-backdrop-filter: grayscale(1) blur(9px);
     backdrop-filter: grayscale(1) blur(9px);
   }
-
+  .mobile-nav {
+    background: linear-gradient(165deg, var(--phone-dock-sheen), transparent 48%), var(--phone-dock-glass);
+    -webkit-backdrop-filter: blur(14px) saturate(1.35);
+    backdrop-filter: blur(14px) saturate(1.35);
+    box-shadow: inset 0 1px 1px var(--phone-dock-rim), inset 0 -1px 2px var(--phone-dock-base);
+  }
+  .mobile-nav-lens {
+    background: linear-gradient(175deg, var(--phone-dock-sheen), transparent 75%), var(--phone-lens-glass);
+    box-shadow: inset 0 1px 1px var(--phone-dock-rim), inset 0 -1px 1px var(--phone-dock-base);
+  }
 }
 .mobile-nav button {
   position: relative; display: grid; justify-items: center; align-content: center; gap: 3px;
@@ -465,4 +498,5 @@ body:has(.quick-mobile-app) { background: #f4f4f5; }
 }
 @media (prefers-reduced-transparency: reduce) {
   .mobile-nav, .quick-mobile-mini { background: var(--phone-dock-solid); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .mobile-nav-lens { background: var(--phone-selection); }
 }
