@@ -1,4 +1,5 @@
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
+import { isIP } from 'node:net';
 import { DomainError, requireThat } from '../../../packages/records/src/record.mjs';
 import { SYNC_PAGE_BYTES } from './private-sync-store.mjs';
 import { billingCatalog, billingQuote } from './account-billing.mjs';
@@ -7,6 +8,35 @@ import { validAccountEnvelope } from './auth.mjs';
 const idPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const validId = value => typeof value === 'string' && idPattern.test(value);
 const base64url = (value, min, max = min) => typeof value === 'string' && value.length >= min && value.length <= max && /^[\w-]+$/.test(value);
+const directFrameLimit = 24_000;
+const proofDigest = proof => createHash('sha256').update(proof).digest('hex');
+
+function directIceConfig(env) {
+  const urls = (value, stun) => {
+    const entries = [...new Set((value || '').split(',').map(url => url.trim()).filter(Boolean))];
+    if (entries.length > 4 || entries.some(url => {
+      const match = /^(stun|turn|turns):(\[[0-9a-f:.]+\]|[a-z\d.-]+)(?::(\d{1,5}))?(?:\?transport=(udp|tcp))?$/i.exec(url);
+      if (!match || url.length > 255) return true;
+      const [, scheme, host, port, transport] = match;
+      return (stun ? scheme !== 'stun' || transport : !['turn', 'turns'].includes(scheme) || scheme === 'turns' && transport === 'udp')
+        || host.startsWith('[') && isIP(host.slice(1, -1)) !== 6 || port && !(+port > 0 && +port <= 65535);
+    })) throw new Error(stun ? 'Invalid RECORD_SYNC_STUN_URLS' : 'Invalid RECORD_SYNC_TURN_URLS');
+    return entries;
+  };
+  const stun = urls(env.RECORD_SYNC_STUN_URLS, true);
+  const turn = urls(env.RECORD_SYNC_TURN_URLS, false);
+  const secret = env.RECORD_SYNC_TURN_SECRET;
+  if (turn.length && (!secret || Buffer.byteLength(secret) < 32)) throw new Error('Invalid RECORD_SYNC_TURN_SECRET');
+  return (owner, id, { expires, role }) => {
+    const iceServers = stun.length ? [{ urls: stun }] : [];
+    if (turn.length) {
+      const username = Math.ceil(expires / 1000) + ':' + proofDigest(JSON.stringify([owner, id, role])).slice(0, 32);
+      const credential = createHmac('sha1', secret).update(username).digest('base64');
+      iceServers.push({ urls: turn, username, credential });
+    }
+    return { iceServers };
+  };
+}
 const keyEnvelope = value => {
   requireThat(base64url(value?.nonce, 16) && base64url(value?.body, 64), 'sync_invalid_envelope', 400);
   return { nonce: value.nonce, body: value.body };
@@ -25,8 +55,9 @@ export function privateSyncOrigin(value) {
   return url;
 }
 
-export function createPrivateSyncRoutes({ store, origin, repo, auth }) {
+export function createPrivateSyncRoutes({ store, origin, repo, auth, iceEnv = process.env }) {
   const rpID = origin.hostname;
+  const iceConfig = directIceConfig(iceEnv);
   const webauthn = () => import('@simplewebauthn/server');
   const time = () => Date.now();
   async function verify(callback) {
@@ -41,6 +72,7 @@ export function createPrivateSyncRoutes({ store, origin, repo, auth }) {
     const route = path.slice('/api/private-sync/'.length);
     const liveStream = route === 'live-audio' || route === 'live-audio-v2' || route === 'live-receipts';
     if (liveStream) limit('private-sync-live:' + user.id, 360);
+    else if (route.startsWith('pair/') || route === 'direct/ice') limit('private-sync-pair:' + user.id, 160, 'request_rate_limited');
     else limit('private-sync:' + user.id, 160);
     const audioStream = route === 'audio' || liveStream;
     if (route.startsWith('passkey/')) limit('sync-passkey:' + owner, 24);
@@ -139,15 +171,21 @@ export function createPrivateSyncRoutes({ store, origin, repo, auth }) {
       }
       send(res, 200, await store.push(stream, vault, batch, audioStream ? owner : undefined));
     } else if (route === 'pair/start' && method === 'POST') {
+      const { id, proof, direct = false } = await readBody(req, 1024);
+      requireThat(validId(id) && base64url(proof, 43) && typeof direct === 'boolean', 'sync_invalid_pair', 400);
+      await store.startPair(owner, id, proofDigest(proof), time(), direct);
+      send(res, 201, { ok: true });
+    } else if (route === 'direct/ice' && method === 'POST') {
+      limit('private-sync-ice:' + user.id, 24);
       const { id, proof } = await readBody(req, 1024);
       requireThat(validId(id) && base64url(proof, 43), 'sync_invalid_pair', 400);
-      await store.startPair(owner, id, createHash('sha256').update(proof).digest('hex'), time());
-      send(res, 201, { ok: true });
+      const participant = await store.pair(owner, id, proofDigest(proof), undefined, time(), true);
+      send(res, 200, participant ? iceConfig(owner, id, participant) : { iceServers: [] });
     } else if (route === 'pair/exchange' && method === 'POST') {
-      const { id, proof, frame } = await readBody(req, 8000);
+      const { id, proof, frame } = await readBody(req, directFrameLimit + 1024);
       requireThat(validId(id) && base64url(proof, 43), 'sync_invalid_pair', 400);
-      requireThat(!frame || ([1, 2, 3, 4].includes(frame.step) && base64url(frame.data, 16, 6000)), 'sync_invalid_pair_frame', 400);
-      send(res, 200, await store.pair(owner, id, createHash('sha256').update(proof).digest('hex'), frame, time()));
+      requireThat(!frame || ([1, 2, 3, 4].includes(frame.step) && base64url(frame.data, 16, directFrameLimit)), 'sync_invalid_pair_frame', 400);
+      send(res, 200, await store.pair(owner, id, proofDigest(proof), frame, time()));
     } else if (route === 'passkey/register' && method === 'POST') {
       requireThat(await store.vault(owner), 'sync_vault_unavailable', 404);
       const { generateRegistrationOptions } = await webauthn();

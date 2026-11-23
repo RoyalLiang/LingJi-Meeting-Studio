@@ -329,7 +329,7 @@ export async function createPrivateSyncStore({ root, pool }) {
         requireThat(updated.length === 1, 'sync_credential_changed', 409);
       });
     },
-    startPair(owner, id, hostProof, now) {
+    startPair(owner, id, hostProof, now, direct = false) {
       return write(async conn => {
         const [vault] = await run(conn, 'SELECT head FROM sync_vaults WHERE owner=$1' + (pool ? ' FOR UPDATE' : ''), [owner]);
         requireThat(vault, 'sync_vault_unavailable', 404);
@@ -338,20 +338,23 @@ export async function createPrivateSyncStore({ root, pool }) {
         const active = await run(conn, 'SELECT id FROM sync_pairs WHERE owner=$1 LIMIT 8', [owner]);
         requireThat(active.length < 8, 'sync_pair_limit', 429);
         const rows = await run(conn, 'INSERT INTO sync_pairs(owner,id,expires,data) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING RETURNING id',
-          [owner, id, now + 5 * 60_000, JSON.stringify({ hostProof, frames: [] })]);
+          [owner, id, now + 5 * 60_000, JSON.stringify({ hostProof, frames: [], direct })]);
         requireThat(rows.length === 1, 'sync_pair_exists', 409);
       });
     },
-    pair(owner, id, proof, frame, now) {
+    pair(owner, id, proof, frame, now, ice = false) {
       return write(async conn => {
         const [row] = await run(conn, 'SELECT data,expires FROM sync_pairs WHERE owner=$1 AND id=$2' + (pool ? ' FOR UPDATE' : ''), [owner, id]);
         requireThat(row && Number(row.expires) > now, 'sync_pair_unavailable', 404);
-        const { hostProof, guestProof, frames } = decode(row);
+        const data = decode(row);
+        const { hostProof, guestProof, frames, direct } = data;
+        if (ice && !direct) return null;
         const host = proof === hostProof;
         // A guest claims an invitation with the first OPAQUE request. The host must verify the handshake.
-        const claim = !host && !guestProof && frame?.step === 1;
+        const claim = !host && !guestProof && (ice || frame?.step === 1);
         requireThat(host || proof === guestProof || claim, 'sync_pair_unavailable', 404);
         if (frame) {
+          requireThat(direct || frame.data.length <= 6000, 'sync_invalid_pair_frame', 400);
           requireThat((frame.step % 2 === 0) === host, 'sync_pair_role', 403);
           const previous = frames[frame.step - 1];
           if (previous) requireThat(previous === frame.data, 'sync_pair_replay', 409);
@@ -359,9 +362,12 @@ export async function createPrivateSyncStore({ root, pool }) {
             requireThat(frame.step === frames.length + 1, 'sync_pair_order', 409);
             frames.push(frame.data);
             await run(conn, 'UPDATE sync_pairs SET data=$3 WHERE owner=$1 AND id=$2',
-              [owner, id, JSON.stringify({ hostProof, guestProof: claim ? proof : guestProof, frames })]);
+              [owner, id, JSON.stringify({ ...data, guestProof: claim ? proof : guestProof })]);
           }
+        } else if (claim) {
+          await run(conn, 'UPDATE sync_pairs SET data=$3 WHERE owner=$1 AND id=$2', [owner, id, JSON.stringify({ ...data, guestProof: proof })]);
         }
+        if (ice) return { expires: Number(row.expires), role: host ? 'receiver' : 'sender' };
         return { frames, expires: Number(row.expires) };
       });
     },

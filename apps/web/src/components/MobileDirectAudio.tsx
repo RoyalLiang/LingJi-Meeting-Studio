@@ -99,7 +99,6 @@ export function MobileDirectReceive({ vault, secret, imported, online }: Account
       setNotice('在 Android 的录音详情输入接收码，两端保持前台。');
       await receiveDirectAudio(vault, root, invite.room, signal, setNotice);
       if (!signal.aborted) {
-        setNotice('直传完成，录音已保存');
         imported();
       }
     } catch (failure) {

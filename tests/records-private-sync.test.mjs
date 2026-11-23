@@ -1,6 +1,6 @@
 import { totpCode, totpStep } from '../services/records/src/account-totp.mjs';
 import assert from 'node:assert/strict';
-import { createHash, generateKeyPairSync, randomBytes, randomUUID, sign } from 'node:crypto';
+import { createHash, createHmac, generateKeyPairSync, randomBytes, randomUUID, sign } from 'node:crypto';
 import { request as httpRequest } from 'node:http';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -983,4 +983,49 @@ test('phone audio becomes a source-linked transcript and final minutes in its or
   await repo.change(desktopId, record => setAutomation(record, { enabled: false }));
   await privateRecordingResults(repo, 'local', { vault: vault.id });
   assert.equal((await repo.get(desktopId)).autoMinutes.enabled, false);
+});
+
+test('direct ICE credentials are room-scoped and stable across reconnects', async t => {
+  const secret = randomBytes(32).toString('hex');
+  const stun = 'stun:stun.example.test:3478, stun:[2001:db8::1]:3478';
+  const turn = 'turn:turn.example.test:3478?transport=udp, turns:turn.example.test:443?transport=tcp';
+  const { request, account } = await cloud(t, '', { syncIceEnv: {
+    RECORD_SYNC_STUN_URLS: stun, RECORD_SYNC_TURN_URLS: turn, RECORD_SYNC_TURN_SECRET: secret,
+  } });
+  const owner = await account('ice-owner@example.test');
+  const stranger = await account('ice-stranger@example.test');
+  const { vault } = await createVault();
+  assert.equal((await owner('/private-sync/vault', 'PUT', vault)).status, 201);
+  const usage = await Promise.all(Array.from({ length: 160 }, () => owner('/private-sync/usage')));
+  assert.ok(usage.some(result => result.status === 429));
+  const room = { id: randomUUID(), proof: newPairSecret() };
+  const guest = { ...room, proof: newPairSecret() };
+  const ice = (client, body) => client('/private-sync/direct/ice', 'POST', body);
+  const exchange = (body, step, data) => owner('/private-sync/pair/exchange', 'POST', { ...body, frame: { step, data } });
+  assert.equal((await owner('/private-sync/pair/start', 'POST', { ...room, direct: true })).status, 201);
+  assert.equal((await ice(request, room)).status, 401);
+  assert.equal((await ice(stranger, guest)).status, 404);
+  assert.equal((await ice(owner, { ...guest, id: randomUUID() })).status, 404);
+  const issued = await ice(owner, guest);
+  assert.equal(issued.status, 200);
+  assert.deepEqual(await ice(owner, guest), issued);
+  assert.equal((await ice(owner, { ...room, proof: newPairSecret() })).status, 404);
+  const [discovery, credential] = issued.data.iceServers;
+  assert.deepEqual(discovery.urls, stun.split(', '));
+  assert.deepEqual(credential.urls, turn.split(', '));
+  assert.equal(credential.credential, createHmac('sha1', secret).update(credential.username).digest('base64'));
+  const host = await ice(owner, room);
+  assert.notEqual(host.data.iceServers[1].username, credential.username);
+  const expires = Number(credential.username.split(':')[0]);
+  assert.ok(expires > Date.now() / 1000 + 290 && expires <= Date.now() / 1000 + 301);
+  assert.equal((await exchange(guest, 1, 'x'.repeat(12_000))).status, 200);
+  assert.equal((await exchange(room, 2, 'y'.repeat(12_000))).status, 200);
+  assert.equal((await exchange(guest, 3, 'z'.repeat(24_001))).status, 400);
+
+  const legacy = { id: randomUUID(), proof: newPairSecret() };
+  assert.equal((await owner('/private-sync/pair/start', 'POST', legacy)).status, 201);
+  assert.deepEqual((await ice(owner, legacy)).data, { iceServers: [] });
+  const legacyGuest = { ...legacy, proof: newPairSecret() };
+  assert.equal((await exchange(legacyGuest, 1, 'x'.repeat(6001))).status, 400);
+  assert.equal((await exchange(legacyGuest, 1, 'x'.repeat(6000))).status, 200);
 });

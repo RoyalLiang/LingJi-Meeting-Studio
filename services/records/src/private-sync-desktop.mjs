@@ -16,6 +16,7 @@ const routes = new Map([
   ['delta', new Set(['GET', 'POST'])],
   ['pair/start', new Set(['POST'])],
   ['pair/exchange', new Set(['POST'])],
+  ['direct/ice', new Set(['POST'])],
 ]);
 
 async function jsonResponse(response) {

@@ -13,6 +13,7 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder('utf-8', { fatal: true });
 const purpose = 'mobile-direct/sdp/1';
 const messageLimit = 60_000;
+const signalLimit = 24_000;
 const timeout = (signal: AbortSignal, ms: number) => AbortSignal.any([signal, AbortSignal.timeout(ms)]);
 
 function pending<T>(source: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -37,7 +38,7 @@ async function roomId(vault: Vault, root: Uint8Array<ArrayBuffer>, code: string)
 export async function createDirectRoom(vault: Vault, root: Uint8Array<ArrayBuffer>, signal: AbortSignal) {
   const code = String(crypto.getRandomValues(new Uint32Array(1))[0] % 100_000_000).padStart(8, '0');
   const room = { id: await roomId(vault, root, code), proof: newPairSecret() };
-  await api('/private-sync/pair/start', 'POST', room, timeout(signal, 8000));
+  await api('/private-sync/pair/start', 'POST', { ...room, direct: true }, timeout(signal, 8000));
   return { room, code };
 }
 
@@ -48,7 +49,7 @@ function exchange(room: Room, signal: AbortSignal, frame?: { step: number; data:
 async function postSdp(room: Room, vault: Vault, root: Uint8Array<ArrayBuffer>, step: number, sdp: string, signal: AbortSignal) {
   const encrypted = await seal(root, vault, purpose, room.id + ':' + step, encoder.encode(sdp));
   const data = encrypted.nonce + encrypted.body;
-  if (data.length > 6000) throw new Error('网络候选过多，无法建立直传');
+  if (data.length > signalLimit) throw new Error('网络候选过多，无法建立直传');
   // A retry sends the identical encrypted frame so the relay can deduplicate it.
   try { await exchange(room, signal, { step, data }); }
   catch (failure) {
@@ -113,18 +114,21 @@ async function phoneAddresses(signal: AbortSignal): Promise<string[]> {
 
 async function gather(peer: RTCPeerConnection, description: RTCSessionDescriptionInit, signal: AbortSignal, addresses: Promise<string[]>) {
   await pending(peer.setLocalDescription(description), signal);
+  const usesIceServers = Boolean(peer.getConfiguration().iceServers?.length);
   if (peer.iceGatheringState !== 'complete') {
     const gathered = new Promise<void>(resolve => {
-      peer.onicegatheringstatechange = () => { if (peer.iceGatheringState === 'complete') resolve(); };
+      const check = () => { if (peer.iceGatheringState === 'complete') resolve(); };
+      peer.onicegatheringstatechange = check;
+      check();
     });
-    try { await pending(gathered, timeout(signal, 2000)); }
+    try { await pending(gathered, timeout(signal, usesIceServers ? 4500 : 2000)); }
     catch { signal.throwIfAborted(); }
     finally { peer.onicegatheringstatechange = null; }
   }
   const sdp = peer.localDescription?.sdp;
   if (!sdp?.includes('a=candidate:')) throw new Error('当前网络没有可用的直连地址');
   const expanded = withLanCandidates(sdp, await addresses);
-  return encoder.encode(expanded).byteLength < 4450 ? expanded : sdp;
+  return encoder.encode(expanded).byteLength <= (usesIceServers ? 17_970 : 4450) ? expanded : sdp;
 }
 
 function pipe(channel: RTCDataChannel, signal: AbortSignal) {
@@ -171,9 +175,15 @@ function pipe(channel: RTCDataChannel, signal: AbortSignal) {
   };
 }
 
-function connect(signal: AbortSignal) {
+async function connect(room: Room, signal: AbortSignal) {
+  const { iceServers } = await api<{ iceServers: RTCIceServer[] }>('/private-sync/direct/ice', 'POST', room, timeout(signal, 5000))
+    .catch(failure => {
+      signal.throwIfAborted();
+      if (failure instanceof ApiError && (failure.status === 0 || failure.code === 'not_found')) return { iceServers: [] };
+      throw failure;
+    });
   signal.throwIfAborted();
-  const peer = new RTCPeerConnection({ iceServers: [] });
+  const peer = new RTCPeerConnection({ iceServers });
   const stopped = new AbortController();
   const networkChanged = () => stopped.abort(new Error('网络已切换'));
   peer.onconnectionstatechange = () => {
@@ -188,6 +198,23 @@ function connect(signal: AbortSignal) {
       peer.close();
     },
   };
+}
+
+async function connectionLabel(peer: RTCPeerConnection, signal: AbortSignal) {
+  try {
+    const stats = await pending(peer.getStats(), timeout(signal, 1000));
+    const reports = [...stats.values()];
+    const transport = reports.find(report => report.type === 'transport' && report.selectedCandidatePairId);
+    const pair = transport ? stats.get(transport.selectedCandidatePairId)
+      : reports.find(report => report.type === 'candidate-pair' && report.nominated && report.state === 'succeeded');
+    if (!pair) return '';
+    const candidates = [stats.get(pair.localCandidateId), stats.get(pair.remoteCandidateId)];
+    if (candidates.some(candidate => candidate?.candidateType === 'relay')) return '（TURN 中继）';
+    const addresses = candidates.map(candidate => candidate?.address || candidate?.ip || '');
+    if (addresses.some(address => address.includes(':'))) return '（IPv6 直连）';
+    if (addresses.some(address => /^\d+\.\d+\.\d+\.\d+$/.test(address))) return '（IPv4 直连）';
+  } catch { /* path details depend on WebView stats support */ }
+  return '';
 }
 
 function watchRoom(room: Room, signal: AbortSignal) {
@@ -207,7 +234,7 @@ export async function receiveDirectAudio(vault: Vault, root: Uint8Array<ArrayBuf
   let id: string | undefined;
   for (const step of [1, 3]) {
     const offer = await waitSdp(room, vault, root, step, invite);
-    const link = connect(invite);
+    const link = await connect(room, invite);
     const { peer } = link;
     try {
       const channel = new Promise<RTCDataChannel>(resolve => { peer.ondatachannel = event => resolve(event.channel); });
@@ -219,6 +246,7 @@ export async function receiveDirectAudio(vault: Vault, root: Uint8Array<ArrayBuf
       const active = watchRoom(room, link.signal);
       const wire = pipe(await pending(channel, timeout(active, 15_000)), active);
       await wire.ready();
+      const route = await connectionLabel(peer, active);
       const receive = createMobileAudioReceiver(vault, active);
       for (;;) {
         const packet = await wire.read<Packet>();
@@ -234,7 +262,7 @@ export async function receiveDirectAudio(vault: Vault, root: Uint8Array<ArrayBuf
           if (!receipt) throw new Error('桌面缺少录音开头，等待加密同步补齐');
           wire.send(receipt);
           if (receipt.done) {
-            progress('直传完成，录音已保存');
+            progress('传输完成，录音已保存' + route);
             try { await wire.read<string>(2500); } catch { /* The recording is already saved. */ }
             return;
           }
@@ -257,7 +285,7 @@ export async function sendDirectAudio(vault: Vault, root: Uint8Array<ArrayBuffer
   const room = {id: await roomId(vault, root, code), proof: newPairSecret()};
   let next = 0;
   for (const step of [1, 3]) {
-    const link = connect(signal);
+    const link = await connect(room, signal);
     const { peer } = link;
     let answered = false;
     try {
@@ -270,6 +298,7 @@ export async function sendDirectAudio(vault: Vault, root: Uint8Array<ArrayBuffer
       await wire.ready();
       link.watchNetwork();
       const authorized = watchRoom(room, link.signal);
+      const route = await connectionLabel(peer, authorized);
       for (;;) {
         authorized.throwIfAborted();
         const packet = await heldAudio(vault, id, next);
@@ -286,11 +315,11 @@ export async function sendDirectAudio(vault: Vault, root: Uint8Array<ArrayBuffer
           if (final.kind !== 'finish' || receipt.next !== next) throw new Error('桌面结束回执不连续');
           await releaseHeldAudio(vault, id, false);
           try { wire.send('received'); await wire.read<string>(2500); } catch { /* The durable receipt was already validated. */ }
-          progress('直传完成，Mac 已保存录音');
+          progress('传输完成，Mac 已保存录音' + route);
           return;
         }
         next = receipt.next;
-        progress(`Mac 已保存 ${next} 个录音片段`);
+        progress(`Mac 已保存 ${next} 个录音片段` + route);
       }
     } catch (failure) {
       signal.throwIfAborted();

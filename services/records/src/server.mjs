@@ -96,7 +96,7 @@ export async function createRecordServer(options = {}) {
     requireThat(repo.backend === 'postgres', 'private_sync_postgres_required', 500);
   }
   const syncStore = syncOrigin && await repo.privateSync();
-  const syncRoutes = syncOrigin && createPrivateSyncRoutes({ store: syncStore, origin: syncOrigin, repo, auth });
+  const syncRoutes = syncOrigin && createPrivateSyncRoutes({ store: syncStore, origin: syncOrigin, repo, auth, iceEnv: options.syncIceEnv });
   const accountAuth = syncOrigin && await (await import('./account-auth.mjs')).createAccountAuth({ repo, auth, store: syncStore, origin: syncOrigin });
   const desktopSync = options.localAccount && createDesktopPrivateSync(options.desktopSync);
 
