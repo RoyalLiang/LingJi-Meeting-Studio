@@ -123,7 +123,7 @@ jobs:
   build:
     name: macOS build and native verification
     needs: verify
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 90
     env:
       CARGO_BUILD_JOBS: '2'
@@ -146,6 +146,7 @@ jobs:
         with:
           path: .agent-runtime/runtimes
           key: lingji-public-runtimes-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/prepare-client-backend.mjs', 'services/records/src/local-asr-resources.json', 'scripts/asr-test-fixtures.mjs') }}
+          restore-keys: lingji-public-runtimes-${{ runner.os }}-${{ runner.arch }}-
       - name: Prepare pinned public ASR samples before package verification
         run: node scripts/asr-test-fixtures.mjs
       - name: Materialize private built-in vocabulary
@@ -370,13 +371,14 @@ jobs:
           path: .agent-runtime/wgs-windows-input
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
-          node-version: '24.21.0'
+          node-version: '26.12.1'
       - run: rustup toolchain install 1.92.0 --profile minimal; rustup default 1.92.0
       - run: npm ci
       - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: .agent-runtime/runtimes
           key: lingji-public-runtimes-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/prepare-client-backend.mjs', 'services/records/src/local-asr-resources.json', 'scripts/asr-test-fixtures.mjs') }}
+          restore-keys: lingji-public-runtimes-${{ runner.os }}-${{ runner.arch }}-
       - name: Prepare pinned public ASR samples before package verification
         run: node scripts/asr-test-fixtures.mjs
       - name: Materialize private built-in vocabulary
@@ -588,13 +590,14 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
-          node-version: '24.21.0'
+          node-version: '26.12.1'
           cache: npm
       - run: npm ci
       - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: .agent-runtime/runtimes
           key: lingji-public-runtimes-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/prepare-client-backend.mjs', 'services/records/src/local-asr-resources.json', 'scripts/asr-test-fixtures.mjs') }}
+          restore-keys: lingji-public-runtimes-${{ runner.os }}-${{ runner.arch }}-
       - name: Prepare pinned public ASR samples before package verification
         run: node scripts/asr-test-fixtures.mjs
       - name: Prepare Ubuntu verification dependencies
@@ -689,7 +692,7 @@ jobs:
     if: ${{ needs.verify.outputs.candidate != 'true' }}
     name: Upload verified macOS package to TestFlight
     needs: [verify, build, build_windows, build_wgs, verify_linux_24]
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 55
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
