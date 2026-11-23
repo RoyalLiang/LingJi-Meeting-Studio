@@ -28,6 +28,41 @@ test('native settings probe opens and closes both unmounted and retained pages',
   assert.equal(document.querySelector('.settings-page'),retained?panel:null);
   }
 });
+test('native widget probe retains a dragged position while recording reports advance',async()=>{
+  const probe=await readFile(new URL('../apps/desktop/src-tauri/src/probe.js',import.meta.url),'utf8');
+  const start=probe.indexOf('    const displaced='),end=probe.indexOf("    await invoke('client_probe',{result:{widgetAction:'pause'}});",start);
+  assert.ok(start>=0&&end>start);
+  for(const behavior of ['retained','reanchored','stalled']){
+    let elapsed=0;
+    const snapshot=()=>({placement:{width:340,topGap:behavior==='reanchored'&&elapsed>=1000?16:57,centerOffset:behavior==='reanchored'&&elapsed>=1000?0:73},widgetDurationMs:8000+(behavior==='stalled'?0:elapsed),widgetRecording:true,widgetVisible:true,mainVisible:false,mainMinimized:false});
+    const run=vm.runInNewContext('(async()=>{'+probe.slice(start,end)+'})()',{
+      invoke:async(command,{result})=>{assert.equal(command,'client_probe');assert.ok(['displace','snapshot'].includes(result.widgetAction));return snapshot();},
+      sleep:async ms=>{elapsed+=ms;},
+      until:async(check,_budget,label)=>{for(let attempt=0;attempt<32;attempt++){const result=await check();if(result)return result;elapsed+=100;}throw new Error(label+' probe timeout');},
+    });
+    if(behavior==='retained'){await run;assert.ok(elapsed>=2200,'observe at least two periodic recording reports');}
+    else await assert.rejects(run,/capsule/);
+  }
+});
+
+test('native widget probe rejects a handoff that only shows the old position',async()=>{
+  const probe=await readFile(new URL('../apps/desktop/src-tauri/src/probe.js',import.meta.url),'utf8');
+  const start=probe.indexOf("    for(const action of ['native-minimize','native-close']) {"),end=probe.indexOf("\n\n    await invoke('client_probe',{result:{widgetAction:'pause'}});",start);
+  assert.ok(start>=0&&end>start);
+  for(const reanchor of [true,false]){
+    let placement={width:340,topGap:16,centerOffset:0},widgetVisible=false;
+    const run=vm.runInNewContext('(async()=>{'+probe.slice(start,end)+'})()',{
+      invoke:async(_command,{result:{widgetAction:action}})=>{
+        if(action==='displace')placement={...placement,topGap:placement.topGap+41,centerOffset:placement.centerOffset+73};
+        if(['native-minimize','native-close'].includes(action)){widgetVisible=true;if(reanchor)placement={width:340,topGap:16,centerOffset:0};}
+        if(action==='restore')widgetVisible=false;
+        return{placement,widgetVisible,mainVisible:!widgetVisible,mainMinimized:false};
+      },until:async check=>{const result=await check();assert.ok(result);return result;},
+    });
+    if(reanchor)await run;else await assert.rejects(run,/re-anchor/);
+  }
+});
+
 test('widget initial snapshot cannot overwrite a newer recording event',async()=>{
  const {transform}=await import('esbuild');
  const source=await readFile(new URL('../apps/web/src/components/RecordingWidget.tsx',import.meta.url),'utf8');

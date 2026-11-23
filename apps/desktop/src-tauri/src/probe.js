@@ -112,10 +112,17 @@ async function verifyNativeUiLanes(record, queued) {
     const readyCapsule=await invoke('client_probe',{result:{widgetAction:'snapshot'}});
     if(!readyCapsule.widgetVisible||readyCapsule.mainVisible||Math.abs(readyCapsule.widgetLogicalHeight-42)>1)throw new Error('ready capsule handoff or compact height failed');
     if(!readyCapsule.placement||Math.abs(readyCapsule.placement.width-340)>1||Math.abs(readyCapsule.placement.topGap-16)>1||Math.abs(readyCapsule.placement.centerOffset)>1)throw new Error('capsule width or top-center placement failed');
-    const displaced=(await invoke('client_probe',{result:{widgetAction:'displace'}})).placement;
-    if(!displaced||(Math.abs(displaced.topGap-16)<=1&&Math.abs(displaced.centerOffset)<=1))throw new Error('capsule displacement did not take effect');
-    await until(async()=>{const p=(await invoke('client_probe',{result:{widgetAction:'snapshot'}})).placement;return p&&Math.abs(p.topGap-16)<=1&&Math.abs(p.centerOffset)<=1;},16000,'capsule re-anchoring');
-    await until(async()=>{const s=await invoke('client_probe',{result:{widgetAction:'snapshot'}});return s.widgetVisible&&(!s.mainVisible||s.mainMinimized);});
+    const displaced=await invoke('client_probe',{result:{widgetAction:'displace'}});
+    const draggedPlacement=displaced.placement;
+    if(!draggedPlacement||(Math.abs(draggedPlacement.topGap-16)<=1&&Math.abs(draggedPlacement.centerOffset)<=1))throw new Error('capsule displacement did not take effect');
+    let retainedDuration=displaced.widgetDurationMs;
+    for(let update=0;update<2;update++){
+      await sleep(1100);
+      const retained=await until(async()=>{const s=await invoke('client_probe',{result:{widgetAction:'snapshot'}}),p=s.placement;
+        if(!s.widgetRecording||!s.widgetVisible||(s.mainVisible&&!s.mainMinimized)||!p||Math.abs(p.topGap-draggedPlacement.topGap)>1||Math.abs(p.centerOffset-draggedPlacement.centerOffset)>1)throw new Error('capsule moved or stopped after dragging');
+        return s.widgetDurationMs>retainedDuration?s:null;},16000,'capsule recording clock');
+      retainedDuration=retained.widgetDurationMs;
+    }
     await invoke('client_probe',{result:{widgetAction:'pause'}});
     await until(async()=>{const r=await json(`/records/${healthyId}`);return r.capture==='paused'&&r.sources.every(source=>source.watermark===source.lastSequence);});
     await until(async()=>{const s=await invoke('client_probe',{result:{widgetAction:'snapshot'}});return s.widgetVisible&&(!s.mainVisible||s.mainMinimized)&&s.canResume;},16000,'paused capsule retention');
@@ -140,8 +147,11 @@ async function verifyNativeUiLanes(record, queued) {
     const lateReady=await invoke('client_probe',{result:{widgetAction:'snapshot'}});
     if(!lateReady.mainVisible||lateReady.widgetVisible)throw new Error('late ready overrode native main restore');
     for(const action of ['native-minimize','native-close']) {
+      const beforeHandoff=(await invoke('client_probe',{result:{widgetAction:'displace'}})).placement;
+      if(!beforeHandoff||(Math.abs(beforeHandoff.topGap-16)<=1&&Math.abs(beforeHandoff.centerOffset)<=1))throw new Error('capsule handoff displacement did not take effect');
       await invoke('client_probe',{result:{widgetAction:action}});
-      await until(async()=>{const s=await invoke('client_probe',{result:{widgetAction:'snapshot'}});return s.widgetVisible&&(!s.mainVisible||s.mainMinimized);},16000,'repeated capsule '+action);
+      const reanchored=await until(async()=>{const s=await invoke('client_probe',{result:{widgetAction:'snapshot'}});return s.widgetVisible&&(!s.mainVisible||s.mainMinimized)?s:null;},16000,'repeated capsule '+action);
+      if(!reanchored.placement||Math.abs(reanchored.placement.width-340)>1||Math.abs(reanchored.placement.topGap-16)>1||Math.abs(reanchored.placement.centerOffset)>1)throw new Error('capsule did not re-anchor on '+action);
       await invoke('client_probe',{result:{widgetAction:'restore'}});
       await until(async()=>{const s=await invoke('client_probe',{result:{widgetAction:'snapshot'}});return s.mainVisible&&!s.mainMinimized&&!s.widgetVisible;},16000,'repeated capsule restore');
     }
@@ -169,7 +179,7 @@ async function verifyNativeUiLanes(record, queued) {
     await until(async()=>{const state=await invoke('client_probe',{result:{widgetAction:'snapshot'}});return state.ready&&state.widgetVisible&&(!state.mainVisible||state.mainMinimized);});
     await invoke('client_probe',{result:{widgetAction:'restore'}});
     await until(async()=>{const state=await invoke('client_probe',{result:{widgetAction:'snapshot'}});return state.mainVisible&&!state.mainMinimized&&!state.widgetVisible;});
-    const recordingWidget={loadedPrivateSession:true,automaticallyMinimized:true,pause:true,resume:true,pausedCapsuleRetained:true,restoredMain:true,finishConfirmation:true,queuedAudioClock:true,coldReadyExclusive:true,nativeRestore:true,compactHeight:true,topCentered:true,compactWidth:true,reanchored:true,lateReadyCancelled:true};
+    const recordingWidget={loadedPrivateSession:true,automaticallyMinimized:true,pause:true,resume:true,pausedCapsuleRetained:true,restoredMain:true,finishConfirmation:true,queuedAudioClock:true,coldReadyExclusive:true,nativeRestore:true,compactHeight:true,topCentered:true,compactWidth:true,manualPositionRetained:true,reanchored:true,lateReadyCancelled:true};
     const widgetBefore=await invoke('client_probe',{result:{widgetAction:'snapshot'}});
     await invoke('client_probe', {result:{residentAction:'close'}});
     await until(async()=>{const state=await invoke('client_probe',{result:{residentAction:'snapshot'}});return !state.visible&&state.nativeActive;});
