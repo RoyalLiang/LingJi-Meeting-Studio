@@ -1,6 +1,7 @@
 package com.rookiehouse.lingji.preview;
 
 import android.Manifest;
+import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.app.NotificationManager;
 import android.content.ActivityNotFoundException;
@@ -21,6 +22,8 @@ import android.os.Handler;
 import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
+import android.view.animation.AccelerateDecelerateInterpolator;
+import android.window.SplashScreenView;
 import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -67,8 +70,9 @@ public final class MainActivity extends Activity {
     private FrameLayout launch;
     private TextView status;
     private Button retry;
-    private Runnable removeStartupSplash;
+    private SplashScreenView startupSplash;
     private int pageAttempt;
+    private int revealingAttempt = -1;
     private boolean dark;
     private boolean sheetOpen;
     private boolean resumed;
@@ -76,7 +80,7 @@ public final class MainActivity extends Activity {
     private boolean pendingMeetingStart;
     private final Runnable timeout = () -> {
         retry.setVisibility(View.VISIBLE);
-        dismissStartupSplash();
+        dismissStartupSplash(false);
     };
     private WebMessagePort recordingPort;
     private final ConnectivityManager.NetworkCallback networkCallback = new ConnectivityManager.NetworkCallback() {
@@ -165,10 +169,13 @@ public final class MainActivity extends Activity {
         showLaunch(null, false);
         if (Build.VERSION.SDK_INT >= 31) {
             getSplashScreen().setOnExitAnimationListener(splash -> {
-                if (launch.getVisibility() == View.VISIBLE && retry.getVisibility() != View.VISIBLE) {
-                    removeStartupSplash = splash::remove;
-                } else {
-                    splash.remove();
+                startupSplash = splash;
+                if (retry.getVisibility() == View.VISIBLE) {
+                    dismissStartupSplash(false);
+                } else if (revealingAttempt == pageAttempt || launch.getVisibility() != View.VISIBLE) {
+                    launch.animate().cancel();
+                    launch.setVisibility(View.GONE);
+                    dismissStartupSplash(true);
                 }
             });
         }
@@ -253,18 +260,36 @@ public final class MainActivity extends Activity {
 
     private void showLaunch(String message, boolean allowRetry) {
         frame.removeCallbacks(timeout);
+        launch.animate().cancel();
+        launch.setAlpha(1f);
+        revealingAttempt = -1;
         launch.setVisibility(View.VISIBLE);
         status.setText(message);
         status.setVisibility(message == null ? View.INVISIBLE : View.VISIBLE);
         retry.setVisibility(allowRetry ? View.VISIBLE : View.INVISIBLE);
-        if (allowRetry) dismissStartupSplash();
+        if (allowRetry) dismissStartupSplash(false);
         else frame.postDelayed(timeout, 8000);
     }
 
-    private void dismissStartupSplash() {
-        if (removeStartupSplash == null) return;
-        removeStartupSplash.run();
-        removeStartupSplash = null;
+    private void fadeLaunch(View cover, Runnable end) {
+        if (!ValueAnimator.areAnimatorsEnabled()) {
+            end.run();
+            return;
+        }
+        cover.animate().alpha(0f).setDuration(320)
+                .setInterpolator(new AccelerateDecelerateInterpolator()).withEndAction(end).start();
+    }
+
+    private void dismissStartupSplash(boolean fade) {
+        SplashScreenView splash = startupSplash;
+        if (splash == null) return;
+        if (fade) {
+            fadeLaunch(splash, () -> dismissStartupSplash(false));
+        } else {
+            startupSplash = null;
+            splash.animate().cancel();
+            splash.remove();
+        }
     }
 
     private void reveal(WebView view, boolean darkMode) {
@@ -274,10 +299,15 @@ public final class MainActivity extends Activity {
         int attempt = pageAttempt;
         view.postVisualStateCallback(attempt, new WebView.VisualStateCallback() {
             @Override public void onComplete(long id) {
-                if (id == pageAttempt && !isDestroyed()) {
+                if (id == pageAttempt && !isDestroyed() && revealingAttempt != id && launch.getVisibility() == View.VISIBLE) {
                     frame.removeCallbacks(timeout);
-                    launch.setVisibility(View.GONE);
-                    dismissStartupSplash();
+                    revealingAttempt = pageAttempt;
+                    if (startupSplash == null) {
+                        fadeLaunch(launch, () -> launch.setVisibility(View.GONE));
+                    } else {
+                        launch.setVisibility(View.GONE);
+                        dismissStartupSplash(true);
+                    }
                 }
             }
         });
@@ -626,11 +656,13 @@ public final class MainActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        dismissStartupSplash(false);
         getSystemService(ConnectivityManager.class).unregisterNetworkCallback(networkCallback);
         closeRecordingPort();
         if (microphone != null) microphone.deny();
         if (files != null) files.onReceiveValue(null);
         if (frame != null) frame.removeCallbacks(timeout);
+        if (launch != null) launch.animate().cancel();
         if (web != null) {
             frame.removeView(web);
             web.destroy();

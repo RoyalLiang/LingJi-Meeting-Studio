@@ -295,7 +295,7 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
         const liveIds = new Set(records.map(item => item.id));
         let seenDirty = false;
         for (const id of seen.current.keys()) if (!liveIds.has(id)) { seen.current.delete(id); seenDirty = true; }
-        const stamp = (item: RecordListItem) => JSON.stringify([item.updatedAt, item.transcriptRevision, item.minutesRevision]);
+        const stamp = (item: RecordListItem) => JSON.stringify(['recorded-at', item.updatedAt, item.transcriptRevision, item.minutesRevision]);
         const changed = records.filter(item => item.capture === 'completed' && item.segments > 0
           && seen.current.get(item.id) !== stamp(item)).slice(0, 6);
         for (const item of changed) {
@@ -761,11 +761,13 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
         </div>
         {copies.length ? <ul className="sync-copies">
           {copies.map(copy => <li key={copy.id}>
-            <div className="account-copy"><span className="account-row-icon"><FileText size={16}/></span><div><strong>{copy.title}</strong><time dateTime={new Date(copy.at).toISOString()}>{new Date(copy.at).toLocaleString()}</time></div></div>
+        <div className="account-copy"><span className="account-row-icon"><FileText size={16}/></span><div><strong>{copy.title}</strong><time dateTime={new Date(copy.recordedAt ?? copy.at).toISOString()}>{new Date(copy.recordedAt ?? copy.at).toLocaleString()}</time></div></div>
             {desktop && <Button disabled={busy} onClick={() => run(async signal => {
               const revision = await loadMeetingCopy(vault, secret.current!, copy.id);
               signal.throwIfAborted();
-              const result = await api<{ id: string }>('/private-sync/restore', 'POST', { id: revision.id, content: revision.content, notes: revision.notes }, signal);
+          const result = await api<{ id: string }>('/private-sync/restore', 'POST', {
+            id: revision.id, content: revision.content, notes: revision.notes, recordedAt: copy.recordedAt,
+          }, signal);
               setNotice('本机副本已就绪');
               restored?.(result.id);
             })}>恢复到本机</Button>}

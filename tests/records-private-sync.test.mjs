@@ -837,7 +837,7 @@ test('a compressed phone recording beyond five minutes plays locally and seals o
   await mobile.appendMobileRecording(vault, root, legacyEntry, 0, compact);
   const playback = await mobile.mobilePlayback(vault, root, legacyEntry.id);
   assert.deepEqual(Buffer.from(await playback.slice(44).arrayBuffer()), Buffer.from(wave));
-  await mobile.queueLiveAudio(vault, root, legacyEntry.id, legacyEntry.title, { kind: 'pcm', sequence: 0, offset: 0, pcm: wire }, true);
+  await mobile.queueLiveAudio(vault, root, legacyEntry.id, legacyEntry.title, { kind: 'pcm', sequence: 0, offset: 0, pcm: wire, recordedAt: legacyEntry.at }, true);
   await mobile.queueLiveAudio(vault, root, legacyEntry.id, legacyEntry.title, { kind: 'finish', sequence: 1 }, true);
   assert.equal((await mobile.pushLiveAudio(vault, 'phone', signal)).length, 2);
   const receivedLegacy = [];
@@ -845,6 +845,7 @@ test('a compressed phone recording beyond five minutes plays locally and seals o
     assert.equal(frame.id, legacyEntry.id);
     receivedLegacy.push(frame.kind);
     if (frame.kind === 'pcm') {
+      assert.equal(frame.recordedAt, legacyEntry.at);
       assert.equal(frame.offset, 0);
       assert.deepEqual(frame.pcm.bytes, wave);
     }
@@ -882,6 +883,7 @@ test('phone audio becomes a source-linked transcript and final minutes in its or
   }));
   const signal = new AbortController().signal;
   const sourceId = randomUUID(), title = '手机合成录音';
+  const recordedAt = Date.parse('2026-09-03T08:15:00+08:00');
   const otherVault = randomUUID();
   let desktopId;
   t.mock.method(globalThis, 'fetch', async (url, options) => {
@@ -907,7 +909,7 @@ test('phone audio becomes a source-linked transcript and final minutes in its or
   const originalIDB = Object.getOwnPropertyDescriptor(globalThis, 'indexedDB');
   t.after(() => Object.defineProperty(globalThis, 'indexedDB', originalIDB));
   Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: phoneDb });
-  await phoneJournal.queueLiveAudio(vault, root, sourceId, title, { kind: 'pcm', sequence: 0, offset: 0,
+  await phoneJournal.queueLiveAudio(vault, root, sourceId, title, { kind: 'pcm', sequence: 0, offset: 0, recordedAt,
     pcm: { codec: 'pcm', length: 32000, bytes: new Uint8Array(32000).fill(4) } });
   await phoneJournal.queueLiveAudio(vault, root, sourceId, title, { kind: 'finish', sequence: 1 });
   await phoneJournal.pushLiveAudio(vault, 'phone-v2', signal);
@@ -933,9 +935,36 @@ test('phone audio becomes a source-linked transcript and final minutes in its or
   assert.equal((await phoneJournal.syncMeetings(vault, root, signal)).received, true);
   const [copy] = await phoneJournal.meetingCopies(vault, root);
   assert.equal(copy.sourceId, sourceId);
+  assert.equal(copy.recordedAt, recordedAt);
   const opened = await phoneJournal.loadMeetingCopy(vault, root, copy.id);
+  assert.equal(opened.recordedAt, recordedAt);
   assert.equal(opened.content.segments[0].text, '决定周五进行发布评审');
   assert.equal(opened.content.minutes.title, '发布评审');
+
+  const oldDesktop = { ...publicRecord(final), id: randomUUID(), syncSourceId: undefined, syncRecording: false,
+    createdAt: undefined, recordedAt: undefined, sessions: undefined };
+  Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: desktopDb });
+  await desktopJournal.queueMeeting(vault, root, oldDesktop);
+  await desktopJournal.syncMeetings(vault, root, signal);
+  Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: phoneDb });
+  await phoneJournal.syncMeetings(vault, root, signal);
+  const oldCopy = (await phoneJournal.meetingCopies(vault, root)).find(item => item.sourceId === oldDesktop.id);
+  assert.equal(oldCopy.recordedAt, undefined);
+  await phoneJournal.annotateMeeting(vault, root, oldCopy.id, { notes: '手机手记' });
+  await phoneJournal.syncMeetings(vault, root, signal);
+
+  Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: desktopDb });
+  await desktopJournal.syncMeetings(vault, root, signal);
+  const desktopMeeting = { ...oldDesktop, createdAt: '2026-09-01T00:00:00Z', sessions: [{ startedAt: '2026-09-02T18:15:00Z' }] };
+  await desktopJournal.queueMeeting(vault, root, desktopMeeting);
+  await desktopJournal.queueMeeting(vault, root, desktopMeeting);
+  await desktopJournal.syncMeetings(vault, root, signal);
+  Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: phoneDb });
+  await phoneJournal.syncMeetings(vault, root, signal);
+  const updated = (await phoneJournal.meetingCopies(vault, root)).filter(item => item.sourceId === oldDesktop.id);
+  assert.equal(updated.length, 1);
+  assert.equal(updated[0].recordedAt, Date.parse('2026-09-02T18:15:00Z'));
+  assert.equal((await phoneJournal.loadMeetingCopy(vault, root, updated[0].id)).notes, '手机手记');
   await repo.change(desktopId, record => { record.autoMinutes = { enabled: false, intervalSeconds: 90 }; });
   await privateRecordingResults(repo, 'local', { vault: vault.id });
   assert.equal((await repo.get(desktopId)).autoMinutes.enabled, true);

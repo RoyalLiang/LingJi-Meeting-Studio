@@ -17,6 +17,7 @@ export async function receiveLiveAudio(
       try {
         record = await api<RecordDetail>('/private-sync/recording', 'POST', {
           vault: vault.id, id: frame.id, title: frame.title, live: true, existingOnly: frame.sequence !== 0,
+          recordedAt: frame.kind === 'pcm' && frame.sequence === 0 ? frame.recordedAt : undefined,
         }, signal);
       } catch (failure) {
         if (!(failure instanceof ApiError) || failure.code !== 'sync_recording_prefix_unavailable') throw failure;

@@ -3,7 +3,7 @@ import { createPublishedContent, normalizePublishedContent, type PublishedConten
 import type { Minutes, RecordDetail } from '../model';
 import { derivePurposeKey, seal, unsealWithKey, type EncryptedOperation, type Vault } from './vault';
 
-type MeetingMetadata = { workspace?: { id: string; name: string }; durationMs?: number; fromPhone?: boolean };
+type MeetingMetadata = { workspace?: { id: string; name: string }; durationMs?: number; fromPhone?: boolean; recordedAt?: number };
 export type MeetingAnnotations = { notes: string; completed?: number[] };
 export type MeetingCopy = MeetingMetadata & MeetingAnnotations & { content: PublishedContent };
 type Revision = MeetingCopy & { id: string; parents: string[]; at: number };
@@ -17,6 +17,10 @@ const LIMIT = 1024 * 1024;
 const UPLOAD_BATCH_BYTES = 384 * 1024;
 const identifier = /^[a-f0-9-]{36}$/;
 const decodedCache = new Map<string, Map<string, CachedRow>>();
+
+function validRecordedAt(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= 8.64e15 ? value : undefined;
+}
 
 export function clearJournalCache(vaultId?: string) {
   if (vaultId) decodedCache.delete(vaultId);
@@ -37,7 +41,7 @@ function cacheRevision(vaultId: string, key: string, revision: Revision, pending
     parents: revision.parents,
     summary: {
       id: revision.id, sourceId: revision.content.sourceRecordId, at: revision.at, title: revision.content.title,
-      workspace: revision.workspace, durationMs: revision.durationMs, fromPhone: revision.fromPhone, pending,
+      workspace: revision.workspace, durationMs: revision.durationMs, fromPhone: revision.fromPhone, recordedAt: revision.recordedAt, pending,
     },
     searchText: [revision.content.title, revision.notes, JSON.stringify(revision.content.minutes), JSON.stringify(revision.content.segments || [])].join('\n').toLowerCase(),
   };
@@ -130,7 +134,7 @@ async function decodeRow(row: Row, vault: Vault, cryptoKey: CryptoKey): Promise<
     : undefined;
   const durationMs = Number.isSafeInteger(value.durationMs) && value.durationMs >= 0 ? value.durationMs as number : undefined;
   return { id: operation.id, parents: value.parents, at: value.at, notes: value.notes, completed, workspace,
-    durationMs, fromPhone: typeof value.fromPhone === 'boolean' ? value.fromPhone : undefined, content };
+    durationMs, fromPhone: typeof value.fromPhone === 'boolean' ? value.fromPhone : undefined, recordedAt: validRecordedAt(value.recordedAt), content };
 }
 
 export async function meetingCopies(vault: Vault, root: Uint8Array<ArrayBuffer>, query = ''): Promise<CopySummary[]> {
@@ -139,6 +143,7 @@ export async function meetingCopies(vault: Vault, root: Uint8Array<ArrayBuffer>,
   const term = query.toLowerCase();
   const revisions: CopySummary[] = [];
   const superseded = new Set<string>();
+  const recordedTimes = new Map<string, number>();
   const prefix = vault.id + ':';
   let cryptoKey: CryptoKey | undefined;
   let lower = prefix;
@@ -155,12 +160,18 @@ export async function meetingCopies(vault: Vault, root: Uint8Array<ArrayBuffer>,
         cache.set(row.key, cached);
       }
       for (const parent of cached.parents) superseded.add(parent);
+      const { recordedAt, sourceId } = cached.summary;
+      if (recordedAt !== undefined) recordedTimes.set(sourceId, Math.min(recordedTimes.get(sourceId) ?? recordedAt, recordedAt));
       if (!term || cached.searchText.includes(term)) revisions.push(cached.summary);
     }
     if (rows.length < 64) break;
     lower = rows.at(-1)!.key;
   }
-  return revisions.filter(value => !superseded.has(value.id)).sort((left, right) => right.at - left.at);
+  return revisions.filter(value => !superseded.has(value.id)).map(value => (
+    value.recordedAt === undefined && recordedTimes.has(value.sourceId)
+      ? { ...value, recordedAt: recordedTimes.get(value.sourceId) }
+      : value
+  )).sort((left, right) => right.at - left.at);
 }
 
 export async function loadMeetingCopy(vault: Vault, root: Uint8Array<ArrayBuffer>, id: string) {
@@ -178,14 +189,28 @@ export async function queueMeeting(vault: Vault, root: Uint8Array<ArrayBuffer>, 
   const dbKey = vault.id + ':' + record.id;
   const previous = await dbRequest<string | undefined>(db.transaction('heads').objectStore('heads').get(dbKey)) ?? record.syncParent;
   const prior = previous && await dbRequest<Row | undefined>(db.transaction('operations').objectStore('operations').get(vault.id + ':' + previous));
-  const metadata = { workspace: workspace && { id: workspace.id, name: workspace.name }, durationMs: record.durationMs, fromPhone: Boolean(record.syncSourceId && record.syncRecording) };
+  const fromPhone = Boolean(record.syncSourceId && record.syncRecording);
+  const recordedAt = validRecordedAt(record.recordedAt) ?? (fromPhone ? undefined : (
+    validRecordedAt(Date.parse(record.sessions?.[0]?.startedAt ?? '')) ?? validRecordedAt(Date.parse(record.createdAt ?? ''))
+  ));
+  const metadata = { workspace: workspace && { id: workspace.id, name: workspace.name }, durationMs: record.durationMs, fromPhone, recordedAt };
   let completed: number[] | undefined;
   if (prior) {
     const earlier = await decodeRow(prior, vault, await derivePurposeKey(root, vault, 'revision'));
     const sameContent = JSON.stringify(earlier.content) === JSON.stringify(content);
     if (earlier.notes === notes && sameContent && earlier.durationMs === metadata.durationMs
         && earlier.fromPhone === metadata.fromPhone && earlier.workspace?.id === workspace?.id
-        && earlier.workspace?.name === workspace?.name) return;
+        && earlier.workspace?.name === workspace?.name) {
+      if (recordedAt === undefined || earlier.recordedAt === recordedAt) return;
+      // Follow the existing copy for a metadata-only correction so annotations stay on one branch.
+      const tips = (await meetingCopies(vault, root)).filter(copy => copy.sourceId === content.sourceRecordId);
+      if (tips.length !== 1 || tips[0].recordedAt === recordedAt) return;
+      const id = tips[0].id;
+      const tip = id === previous ? earlier : await loadMeetingCopy(vault, root, id);
+      if (!tip || JSON.stringify(tip.content) !== JSON.stringify(content)) return;
+      await appendRevision(vault, root, { ...tip, recordedAt }, id, id === previous ? dbKey : undefined);
+      return;
+    }
     if (sameContent) completed = earlier.completed;
   }
   await appendRevision(vault, root, { ...metadata, content, notes, completed }, previous, dbKey);

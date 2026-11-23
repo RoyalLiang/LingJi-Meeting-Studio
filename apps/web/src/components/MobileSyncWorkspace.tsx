@@ -620,7 +620,9 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
         pcm = wire;
         localPcm = await packLocalMobilePcm(bytes, wire).catch(() => wire);
         await appendMobileRecording(vault, key, entry, sequence, localPcm);
-        await queueLiveAudio(vault, key, entry.id, entry.title, { kind: 'pcm', sequence, offset, pcm: wire }, legacyLive);
+        await queueLiveAudio(vault, key, entry.id, entry.title, {
+          kind: 'pcm', sequence, offset, pcm: wire, recordedAt: sequence === 0 ? entry.at : undefined,
+        }, legacyLive);
         dispatchEvent(new Event('lingji:live-audio-ready'));
       } finally {
         key.fill(0);

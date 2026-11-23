@@ -202,11 +202,11 @@ const liveV2Purpose = 'mobile-live-audio/2';
 const liveV2Endpoint = '/private-sync/live-audio-v2';
 const receiptEndpoint = '/private-sync/live-receipts';
 export type MobileFrame =
-  | { kind: 'pcm'; sequence: number; offset: number; pcm: PackedMobilePcm }
+  | { kind: 'pcm'; sequence: number; offset: number; pcm: PackedMobilePcm; recordedAt?: number }
   | { kind: 'finish'; sequence: number };
 type LiveFrame = { id: string; title: string } & (MobileFrame | { kind: 'received' });
 
-type LegacyPcmFrame = { id: string; title: string; kind: 'pcm'; sequence: number; offset: number; data: string };
+type LegacyPcmFrame = { id: string; title: string; kind: 'pcm'; sequence: number; offset: number; data: string; recordedAt?: number };
 async function sealFrame(vault: Vault, root: Uint8Array<ArrayBuffer>, frame: LiveFrame | LegacyPcmFrame) {
   const id = crypto.randomUUID();
   const bytes = encoder.encode(JSON.stringify(frame));
@@ -221,7 +221,7 @@ export async function queueLiveAudio(vault: Vault, root: Uint8Array<ArrayBuffer>
       const bytes = await unpackMobilePcm(frame.pcm);
       try {
         operation = await sealFrame(vault, root, {
-          id, title, kind: 'pcm', sequence: frame.sequence, offset: frame.offset, data: encodeBytes(bytes),
+          id, title, kind: 'pcm', sequence: frame.sequence, offset: frame.offset, data: encodeBytes(bytes), recordedAt: frame.recordedAt,
         });
       } finally { if (bytes !== frame.pcm.bytes) bytes.fill(0); }
     } else operation = await sealFrame(vault, root, { ...frame, id, title });
@@ -229,7 +229,7 @@ export async function queueLiveAudio(vault: Vault, root: Uint8Array<ArrayBuffer>
     return;
   }
   const metadata = frame.kind === 'pcm'
-    ? { id, title, kind: frame.kind, sequence: frame.sequence, offset: frame.offset, codec: frame.pcm.codec, length: frame.pcm.length }
+    ? { id, title, kind: frame.kind, sequence: frame.sequence, offset: frame.offset, codec: frame.pcm.codec, length: frame.pcm.length, recordedAt: frame.recordedAt }
     : { ...frame, id, title };
   const header = encoder.encode(JSON.stringify(metadata) + '\n');
   const bytes = new Uint8Array(header.length + (frame.kind === 'pcm' ? frame.pcm.bytes.length : 0));

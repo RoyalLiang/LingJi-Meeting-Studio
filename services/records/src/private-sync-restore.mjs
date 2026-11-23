@@ -29,6 +29,7 @@ export async function restorePrivateMeeting(repo, owner, input) {
   if (previous) return previous;
   const record = createRecord(owner, { title: content.title, retainAudio: false });
   record.id = id;
+  if (Number.isSafeInteger(input.recordedAt) && input.recordedAt >= 0 && input.recordedAt <= 8.64e15) record.recordedAt = input.recordedAt;
   record.syncSourceId = content.sourceRecordId;
   record.syncParent = input.id;
   record.capture = 'completed';
@@ -54,7 +55,7 @@ export async function restorePrivateMeeting(repo, owner, input) {
 }
 
 export async function preparePrivateRecording(repo, owner, input) {
-  const { id: recording, vault, title, live = false, existingOnly = false } = input || {};
+  const { id: recording, vault, title, live = false, existingOnly = false, recordedAt } = input || {};
   requireThat(typeof live === 'boolean' && typeof existingOnly === 'boolean' && (!existingOnly || live), 'sync_invalid_recording', 400);
   requireThat(typeof recording === 'string' && recordingId.test(recording) && typeof vault === 'string' && recordingId.test(vault), 'sync_invalid_recording', 400);
   const id = localId('private-sync/recording/v1', owner, vault, recording);
@@ -70,6 +71,7 @@ export async function preparePrivateRecording(repo, owner, input) {
   requireThat(!existingOnly, 'sync_recording_prefix_unavailable', 404);
   const record = createRecord(owner, { title, autoMinutes: true });
   record.id = id;
+  if (Number.isSafeInteger(recordedAt) && recordedAt >= 0 && recordedAt <= 8.64e15) record.recordedAt = recordedAt;
   record.syncRecording = true;
   record.syncSourceId = recording;
   if (live) addSource(record, { kind: 'import', label: '手机麦克风' });

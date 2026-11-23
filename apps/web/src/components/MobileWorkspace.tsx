@@ -27,8 +27,9 @@ const date = new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric'
 const day = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
 const time = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 const clock = (seconds: number) => [Math.floor(seconds / 60), seconds % 60].map(value => String(value).padStart(2, '0')).join(':');
-const recordedAt = (entry: Entry) => entry.saved?.at ?? entry.at;
-const recordTitle = (entry: Entry) => entry.title === '手机录音 · ' + date.format(recordedAt(entry)) ? '手机录音' : entry.title;
+const recordedAt = (entry: Entry) => entry.saved?.at ?? entry.cloud?.recordedAt ?? entry.at;
+const recordTitle = (entry: Entry) => (entry.saved || entry.cloud?.fromPhone)
+  && /^手机录音 · (?:\d{1,2}\/\d{1,2}|\d{1,2}月\d{1,2}日)\s+\d{1,2}:\d{2}$/u.test(entry.title) ? '手机录音' : entry.title;
 
 function combined(copies: CopySummary[], saved: MobileRecording[]): Entry[] {
   const savedById = new Map(saved.map(item => [item.id, item]));
@@ -41,7 +42,7 @@ function combined(copies: CopySummary[], saved: MobileRecording[]): Entry[] {
   for (const item of saved) {
     if (!matchedSaved.has(item.id)) entries.push({ ...item, saved: item });
   }
-  return entries.sort((a, b) => b.at - a.at);
+  return entries.sort((a, b) => recordedAt(b) - recordedAt(a));
 }
 
 const RecordRow = memo(function RecordRow({ entry, opened, reveal, select, remove }: {
