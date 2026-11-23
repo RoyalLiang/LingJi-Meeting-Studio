@@ -541,3 +541,27 @@ test('automatic learning requires consent and confirmed fresh audio, deduplicate
   assert.equal(state.people[0].samples,2);
   assert.equal(state.jobs.filter(job=>job.status==='cancelled').length,1);
 }));
+
+test('a library person confirmed for a speaker applies to later turns in the same meeting', async () => fixture(async ({repo,record,input}) => {
+  const service=voiceLearning(repo),person=await service.savePerson('owner',{id:randomUUID(),name:'小林'});
+  const speaker='local-speaker-1';
+  await repo.change(record.id,current=>{
+    current.speakers=[{id:speaker,hash:speaker,label:'说话人 1'}];
+    current.segments[0].speakerId=speaker;
+  });
+  await service.annotate('owner',record.id,{...input,personId:person.id});
+  await repo.change(record.id,current=>{
+    const turns=[
+      {speakerId:speaker,startMs:0,endMs:300,text:'后续发言'},
+      {speakerId:speaker,startMs:300,endMs:600,text:'同时说话',overlap:true},
+    ];
+    current.chunks[0].state='pending';
+    commitTranscriptBatch(current,[current.chunks[0].key],'后续发言 同时说话',current.generation,'fixture',{turns});
+  });
+  const {segments}=await repo.get(record.id);
+  assert.equal(segments[1].personId,person.id);
+  assert.equal(segments[1].speaker,'小林');
+  assert.equal(segments[1].speakerConfirmed,true);
+  assert.equal(segments[2].personId,undefined);
+  assert.equal(segments[2].speaker,'说话人 1');
+}));

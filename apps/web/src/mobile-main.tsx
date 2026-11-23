@@ -13,6 +13,9 @@ window.addEventListener('message', event => {
   const chrome = () => port.postMessage(document.querySelector('.mobile-source-sheet[open]') ? 'sheet-open' : 'sheet-closed');
   document.addEventListener('meeting:chrome', chrome);
   port.onmessage = message => {
+    if (typeof message.data === 'string' && message.data.startsWith('native:')) {
+      window.dispatchEvent(new CustomEvent('lingji:native-microphone-result', { detail: message.data.slice(7) }));
+    }
     if (typeof message.data === 'string' && message.data.startsWith('system-audio-')) {
       window.dispatchEvent(new CustomEvent('lingji:system-audio', { detail: message.data }));
       if (message.data.startsWith('system-audio-frame:')) port.postMessage('system-audio-ack');
@@ -31,6 +34,7 @@ window.addEventListener('message', event => {
   window.addEventListener('lingji:recording-opened', () => port.postMessage('start'));
   window.addEventListener('lingji:recording-closed', () => port.postMessage('stop'));
   window.addEventListener('lingji:recording-state', event => port.postMessage((event as CustomEvent<string>).detail));
+  window.addEventListener('lingji:native-microphone', event => port.postMessage((event as CustomEvent<string>).detail));
   window.addEventListener('lingji:check-update', event => port.postMessage('check-update:' + (event as CustomEvent<string>).detail));
   window.addEventListener('lingji:request-direct-addresses', () => port.postMessage('direct-addresses'));
   window.addEventListener('lingji:system-audio-disarm', () => port.postMessage('system-audio-disarm'));

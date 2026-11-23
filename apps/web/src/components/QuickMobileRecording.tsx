@@ -79,19 +79,26 @@ export function QuickMobileRecording({ append, commit, status, visible, showReco
     setLastMark(-1);
     currentMarks.current = [];
     setError('');
+    const native = !system && /\bLingJi-Android\/(?:0\.4-preview\.(?:2[7-9]|[3-9]\d|\d{3,}))\b/.test(navigator.userAgent);
     let context: AudioContext | undefined, stream: MediaStream | undefined;
     let systemListener: ((event: Event) => void) | undefined;
+    let nativeListener: ((event: Event) => void) | undefined;
+    let nativePoll = 0, nativeDeadline = 0;
+    const sendNative = (detail: string) => dispatchEvent(new CustomEvent('lingji:native-microphone', { detail }));
     const close = () => {
       stream?.getTracks().forEach(track => track.stop());
       closeCapture.current = null;
       if (systemListener) removeEventListener('lingji:system-audio', systemListener);
+      if (nativeListener) removeEventListener('lingji:native-microphone-result', nativeListener);
+      clearTimeout(nativePoll);
+      clearTimeout(nativeDeadline);
       dispatchEvent(new Event(system ? 'lingji:system-audio-disarm' : 'lingji:recording-closed'));
       if (context && context.state !== 'closed') void context.close().catch(() => {});
     };
     closeCapture.current = close;
     try {
       let node: AudioWorkletNode | undefined;
-      if (!system) {
+      if (!system && !native) {
         if (!navigator.mediaDevices?.getUserMedia || !globalThis.AudioWorkletNode) throw new Error('此浏览器暂不支持录音');
         context = new AudioContext({ latencyHint: 'interactive' });
         const resumed = context.resume();
@@ -150,7 +157,7 @@ export function QuickMobileRecording({ append, commit, status, visible, showReco
         dispatchEvent(new CustomEvent('lingji:recording-state', { detail: `${system ? 'system-' : ''}${paused ? 'pause' : 'resume'}:${Math.floor(size / MOBILE_PCM_BYTES)}` }));
         setPhase(paused ? 'paused' : 'recording');
       };
-      const finish = () => {
+      const finish = (interrupted = false) => {
         if (finished) return;
         finished = true;
         clearTimeout(deadline);
@@ -165,15 +172,17 @@ export function QuickMobileRecording({ append, commit, status, visible, showReco
         void persist(async () => {
           await drain().catch(() => drain());
           await commit({ id, title: name, at, seconds: Math.floor(size / MOBILE_PCM_BYTES), marks: currentMarks.current.slice() }, queued);
+          if (interrupted && mounted.current) setError('麦克风录音已中断，可用片段已保存');
         });
       };
       finishCapture.current = () => {
         if (ending) return;
         ending = true;
         setPhase('saving');
+        if (native) { sendNative('native-finish:' + id); return; }
         if (!node) { finish(); return; }
         node.port.postMessage({ type: 'pause', reason: 'finish' });
-        deadline = window.setTimeout(finish, 2000);
+        deadline = window.setTimeout(() => finish(), 2000);
       };
       const onAudio = (data: { type: string; reason?: string; value?: number; buffer?: ArrayBuffer }) => {
         if (data.type === 'flushed') { if (ending && data.reason === 'finish') finish(); return; }
@@ -207,6 +216,47 @@ export function QuickMobileRecording({ append, commit, status, visible, showReco
         onAudio({ type: 'pcm', buffer });
       }
       if (node) node.port.onmessage = ({ data }) => onAudio(data);
+      else if (native) {
+        let captured = 0, ready = false;
+        const read = () => {
+          if (finished) return;
+          if (pending.length > 8) { nativePoll = window.setTimeout(read, 250); return; }
+          sendNative('native-read:' + id + ':' + captured);
+        };
+        const nativeError = (message: string) => {
+          if (size) { finish(true); return; }
+          finish();
+          setError(message);
+        };
+        nativeListener = event => {
+          const result = (event as CustomEvent<string>).detail;
+          if (!result.startsWith(id + ':') || finished) return;
+          const data = result.slice(id.length + 1);
+          if (data === 'error') { nativeError('麦克风录音中断，请重试'); return; }
+          if (data === 'permission') { nativeError('请允许麦克风权限后重试'); return; }
+          if (data === 'end') { finish(); return; }
+          if (data !== 'starting' && !ready) {
+            ready = true;
+            clearTimeout(nativeDeadline);
+            if (!ending) setPhase('recording');
+          }
+          if (data === 'wait' || data === 'starting') {
+            nativePoll = window.setTimeout(read, 250);
+          } else {
+            const bytes = Uint8Array.from(atob(data), sample => sample.charCodeAt(0));
+            captured += bytes.length;
+            const pcm = new Int16Array(bytes.buffer);
+            const meanSquare = pcm.reduce((sum, sample) => sum + sample * sample, 0) / pcm.length / 32768 ** 2;
+            onAudio({ type: 'meter', value: Math.sqrt(meanSquare) });
+            onAudio({ type: 'pcm', buffer: bytes.buffer });
+            nativePoll = window.setTimeout(read, 0);
+          }
+        };
+        addEventListener('lingji:native-microphone-result', nativeListener);
+        sendNative('native-start:' + id);
+        nativeDeadline = window.setTimeout(() => nativeError('无法启动麦克风录音，请重试'), 45_000);
+        read();
+      }
       else if (systemPacket) {
         systemListener = event => {
           const data = (event as CustomEvent<string>).detail;
@@ -223,7 +273,7 @@ export function QuickMobileRecording({ append, commit, status, visible, showReco
         addEventListener('lingji:system-audio', systemListener);
       }
       stream?.getAudioTracks()[0]?.addEventListener('ended', () => finishCapture.current?.(), { once: true });
-      setPhase('recording');
+      if (!native) setPhase('recording');
     } catch (failure) {
       close();
       if (!mounted.current) return;

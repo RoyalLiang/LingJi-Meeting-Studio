@@ -74,7 +74,7 @@ export function SpeakerPanel({recordId,segment,playable,unavailable,onSaved,clos
       const saved=updated.segments.find(value=>value.id===current.id);
       if(!saved)throw Error('无法确认已保存的片段，请重新加载转录。');
       sample.current=saved;
-      if(alive.current)setNotice('称谓已保存');
+      if(alive.current)setNotice(personId?'已关联到本场说话人':'称谓已保存');
       onSaved(current,saved);
       if(create){
         personRequest.current=crypto.randomUUID();
@@ -110,7 +110,7 @@ export function SpeakerPanel({recordId,segment,playable,unavailable,onSaved,clos
 
         {error&&<FeedbackNotice key={error} message={error} error persistent inline/>}
         {(notice||job)&&<p role="status" className="speaker-learning-state">{job ? jobMessages[job.status] : notice}</p>}
-        <div className="actions"><Button type="submit" disabled={busy||!name.trim()} variant={consent?'secondary':'primary'}><Check size={15}/>仅保存称谓</Button>{canLearn&&<Button type="button" variant={consent?'primary':'secondary'} disabled={busy||!consent||!name.trim()} onClick={()=>void save(true)}>保存并学习</Button>}</div>
+        <div className="actions"><Button type="submit" disabled={busy||!name.trim()} variant={consent?'secondary':'primary'}><Check size={15}/>{selected?'关联到本场说话人':'仅保存称谓'}</Button>{canLearn&&<Button type="button" variant={consent?'primary':'secondary'} disabled={busy||!consent||!name.trim()} onClick={()=>void save(true)}>保存并学习</Button>}</div>
       </footer>
     </fieldset>
   </form>;

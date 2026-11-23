@@ -36,16 +36,19 @@ export function commitSpeakerTurns(record, sourceId, fence, turns, generation) {
     }
     if (identity && providerId!==null) source.asr.speakerMap[providerId]=identity;
     const registered=record.speakers.find(s=>s.id===identity);
-    const speaker=registered?.label || old?.speaker || '';
+    const person=!turn.overlap && registered?.person;
+    const speaker=person?.label || registered?.label || old?.speaker || '';
     const identityHash=registered?.hash || old?.speakerHash || null;
     identity ||= old?.speakerId || null;
     if (old?.edited) { if(old.speakerId) old.speakerHash ||= record.speakers.find(s=>s.id===old.speakerId)?.hash;continue; }
     const chunk=record.chunks.find(c=>c.sourceId===sourceId && c.sampleOffset/16<=turn.startMs-offset && (c.sampleOffset+c.sampleCount)/16>turn.startMs-offset);
     if (old) {
-      if (old.text===turn.text.trim() && old.speaker===speaker && old.speakerHash===identityHash && old.startMs===turn.startMs && old.endMs===turn.endMs) continue;
-      Object.assign(old,{text:turn.text.trim(),speaker,speakerId:identity,speakerHash:identityHash,startMs:turn.startMs,endMs:turn.endMs,revision:old.revision+1,translation:null});
+      const currentPerson = old.speakerConfirmed ? old.personId : undefined;
+      if (old.text===turn.text.trim() && old.speaker===speaker && old.speakerHash===identityHash && currentPerson===person?.id && old.startMs===turn.startMs && old.endMs===turn.endMs) continue;
+      Object.assign(old,{text:turn.text.trim(),speaker,speakerId:identity,speakerHash:identityHash,...(person?{personId:person.id,speakerConfirmed:true}:{}),startMs:turn.startMs,endMs:turn.endMs,revision:old.revision+1,translation:null});
+      if (!person && currentPerson) { delete old.personId; delete old.speakerConfirmed; }
       for(const field of ['translationLanguage','translationLease','translationAttempts','translationRetryAt','translationError'])delete old[field];
-    } else record.segments.push({id:randomUUID(),revision:1,sourceId,chunkKey:chunk?.key,startMs:turn.startMs,endMs:turn.endMs,text:turn.text.trim(),speaker,speakerId:identity,speakerHash:identityHash,translation:null,edited:false});
+    } else record.segments.push({id:randomUUID(),revision:1,sourceId,chunkKey:chunk?.key,startMs:turn.startMs,endMs:turn.endMs,text:turn.text.trim(),speaker,speakerId:identity,speakerHash:identityHash,...(person?{personId:person.id,speakerConfirmed:true}:{}),translation:null,edited:false});
     changed=true;
   }
   if (changed) { record.transcription='processing'; record.transcriptRevision++; emit(record,'transcript.committed',{sourceId,transcriptRevision:record.transcriptRevision}); }

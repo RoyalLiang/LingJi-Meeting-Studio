@@ -68,6 +68,7 @@ public final class MainActivity extends Activity {
     private static final int NOTIFICATIONS = 12;
     private static final int SYSTEM_AUDIO_PERMISSION = 13;
     private static final int MEETING_NOTIFICATION_SETTINGS = 14;
+    private static final int NATIVE_MIC = 15;
     private WebView web;
     private FrameLayout frame;
     private FrameLayout launch;
@@ -80,6 +81,7 @@ public final class MainActivity extends Activity {
     private boolean sheetOpen;
     private boolean resumed;
     private boolean pendingRecordingStart;
+    private String pendingNativeCapture;
     private boolean pendingMeetingStart;
     private final Runnable timeout = () -> {
         retry.setVisibility(View.VISIBLE);
@@ -220,13 +222,15 @@ public final class MainActivity extends Activity {
     }
 
     private void flushPendingRecordingStart() {
-        if (!pendingRecordingStart || !recordingBridgeReady || !(resumed || hasWindowFocus())) return;
+        if ((!pendingRecordingStart && pendingNativeCapture == null) || !recordingBridgeReady || !(resumed || hasWindowFocus())) return;
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
         pendingRecordingStart = false;
+        String id = pendingNativeCapture;
+        pendingNativeCapture = null;
         try {
-            startForegroundService(new Intent(MainActivity.this, RecordingService.class));
+            startForegroundService(new Intent(MainActivity.this, RecordingService.class).putExtra("capture", id));
         } catch (IllegalStateException | SecurityException ignored) {
-            // A system transition can end while-in-use permission before dispatch.
+            if (id != null) postToRecorder("native:" + id + ":error");
         }
     }
 
@@ -469,6 +473,17 @@ public final class MainActivity extends Activity {
                 if (port != recordingPort) return;
                 String data = message.getData();
                 if (data == null) return;
+                if (data.matches("native-(?:start|finish):[a-f0-9-]{36}")) {
+                    String id = data.substring(data.indexOf(':') + 1);
+                    if (data.startsWith("native-finish:")) RecordingService.finish(id);
+                    else requestNativeCapture(id);
+                    return;
+                }
+                if (data.matches("native-read:[a-f0-9-]{36}:[0-9]{1,10}")) {
+                    String[] fields = data.split(":");
+                    postToRecorder("native:" + fields[1] + ":" + RecordingService.read(fields[1], Long.parseLong(fields[2])));
+                    return;
+                }
                 if (data.matches("(?:pause|resume):[0-9]{1,7}")) {
                     if (resumed || hasWindowFocus()) {
                         try {
@@ -524,6 +539,7 @@ public final class MainActivity extends Activity {
                         break;
                     case "stop":
                         pendingRecordingStart = false;
+                        pendingNativeCapture = null;
                         stopService(new Intent(MainActivity.this, RecordingService.class));
                         break;
                 }
@@ -538,6 +554,7 @@ public final class MainActivity extends Activity {
         sheetOpen = false;
         paintSystemBars();
         pendingRecordingStart = false;
+        pendingNativeCapture = null;
         if (recordingPort != null) {
             recordingPort.close();
             recordingPort = null;
@@ -550,6 +567,23 @@ public final class MainActivity extends Activity {
 
     private void postToRecorder(String data) {
         if (recordingBridgeReady && recordingPort != null) recordingPort.postMessage(new WebMessage(data));
+    }
+
+    private void requestNativeCapture(String id) {
+        if (!(resumed || hasWindowFocus()) || pendingNativeCapture != null) {
+            postToRecorder("native:" + id + ":error");
+            return;
+        }
+        stopService(new Intent(this, MeetingCaptureService.class));
+        pendingNativeCapture = id;
+        boolean microphonePermission = checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED;
+        boolean notifications = askForNotifications();
+        if (microphonePermission || notifications) {
+            String[] permissions = microphonePermission && notifications
+                ? new String[]{Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS}
+                : new String[]{microphonePermission ? Manifest.permission.RECORD_AUDIO : Manifest.permission.POST_NOTIFICATIONS};
+            requestPermissions(permissions, NATIVE_MIC);
+        } else flushPendingRecordingStart();
     }
 
     private ComponentName callListener() { return new ComponentName(this, MeetingCallListener.class); }
@@ -637,6 +671,14 @@ public final class MainActivity extends Activity {
 
     @Override public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(code, permissions, results);
+        if (code == NATIVE_MIC) {
+            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) flushPendingRecordingStart();
+            else {
+                if (pendingNativeCapture != null) postToRecorder("native:" + pendingNativeCapture + ":permission");
+                pendingNativeCapture = null;
+            }
+            return;
+        }
         if (code == SYSTEM_AUDIO_PERMISSION) {
             if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
                 pendingMeetingStart = true;

@@ -97,9 +97,14 @@ export function voiceLearning(repo,{library=voiceprints(repo)}={}){
       const record=rows.find(row=>row.id===recordId);
       requireThat(record.owner===owner&&!record.deleted&&Date.parse(record.deleteAt)>Date.now(),'record_not_found',404);
       const selected=record.segments.find(segment=>segment.id===input.segmentId);requireThat(selected?.revision===input.revision,'segment_revision_conflict',409);
-      const key=cluster(selected),targets=record.segments.filter(segment=>{
+      const key=cluster(selected),speaker=record.speakers?.find(value=>value.id===key);
+      if(speaker&&!selected.overlappingSpeech){
+        if(id)speaker.person={id,label};
+        else delete speaker.person;
+      }
+      const targets=record.segments.filter(segment=>{
         if(segment.id===selected.id)return !segment.speakerConfirmed||(segment.personId||null)!==id||segment.speaker!==label;
-        return key&&cluster(segment)===key&&!segment.speakerConfirmed&&!segment.edited;
+        return key&&cluster(segment)===key&&!segment.speakerConfirmed&&!segment.edited&&!segment.overlappingSpeech;
       });
       if(!targets.length)return;
       editSegments(record,targets.map(segment=>({id:segment.id,revision:segment.revision,text:segment.text,speaker:label})));

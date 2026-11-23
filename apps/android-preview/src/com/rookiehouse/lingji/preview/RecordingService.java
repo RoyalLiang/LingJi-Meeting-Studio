@@ -11,12 +11,35 @@ import android.os.IBinder;
 
 public final class RecordingService extends Service {
     private static final String CHANNEL = "recording-status";
+    private static NativeMicrophone capture;
+
+    static String read(String id, long offset) {
+        return capture != null && capture.id.equals(id) ? capture.read(offset) : "starting";
+    }
+
+    static void finish(String id) {
+        if (capture != null && capture.id.equals(id)) capture.stop();
+    }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         boolean paused = intent != null && intent.getBooleanExtra("paused", false);
         int elapsed = intent == null ? 0 : intent.getIntExtra("elapsed", 0);
         startForeground(1, notification(this, paused, elapsed, null));
+        if (capture != null && !capture.done) capture.paused = paused;
+        String id = intent == null ? null : intent.getStringExtra("capture");
+        if (id != null && (capture == null || capture.done && capture.release())) {
+            capture = new NativeMicrophone(this, id);
+            capture.start(getApplicationContext());
+        }
         return START_NOT_STICKY;
+    }
+
+    @Override public void onDestroy() {
+        if (capture != null) {
+            capture.stop();
+            if (capture.release()) capture = null;
+        }
+        super.onDestroy();
     }
 
     static Notification notification(Service service, boolean paused, int elapsed, String waiting) {
