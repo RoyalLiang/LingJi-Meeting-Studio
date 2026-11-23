@@ -17,6 +17,10 @@ public final class RecordingService extends Service {
         return capture != null && capture.id.equals(id) ? capture.read(offset) : "starting";
     }
 
+    static String status(String id) {
+        return capture != null && capture.id.equals(id) ? capture.status() : "status:starting";
+    }
+
     static void finish(String id) {
         if (capture != null && capture.id.equals(id)) capture.stop();
     }

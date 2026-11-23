@@ -1,5 +1,5 @@
 .account-page.settings-pages { padding: 0; container-type: inline-size; }
-.account-page.settings-pages > div { max-width: none; }
+.account-page.settings-pages > div { max-width: 960px; }
 .account-surface > .surface-heading { padding-inline: 26px; }
 .account-context-toggle { margin-inline-start: auto; }
 .sync-settings { min-width: 0; padding-block-end: 24px; }
@@ -73,9 +73,18 @@
 .profile-settings { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; padding-block-start: 16px; }
 .profile-settings > label { flex: 1 1 150px; max-width: 440px; }
 .account-switch { justify-content: space-between; cursor: pointer; font-size: .84rem; }
-.account-sync-status { display: flex; align-items: center; gap: 8px; padding-top: 12px; margin: 12px 0 0; border-top: 1px solid var(--border); }
-.account-sync-status i, .account-context-status i { inline-size: 7px; block-size: 7px; flex: none; border-radius: 50%; background: var(--muted); }
-.account-sync-status i.is-active, .account-context-status i.is-active { background: var(--accent); }
+.account-sign-out { margin-block-start: 16px; }
+.account-direct { display: grid; gap: 10px; }
+.account-direct output {
+  border-radius: var(--control-radius);
+  padding: 6px 12px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .1em;
+}
+.account-context-status i { inline-size: 7px; block-size: 7px; flex: none; border-radius: 50%; background: var(--muted); }
+.account-context-status i.is-active { background: var(--accent); }
 .account-context-status { display: grid; gap: 7px; margin-block: 0 18px; color: var(--ink-2); font-size: .85rem; }
 .account-context-status span { display: flex; align-items: center; gap: 8px; }
 .account-context-status small { color: var(--muted); }

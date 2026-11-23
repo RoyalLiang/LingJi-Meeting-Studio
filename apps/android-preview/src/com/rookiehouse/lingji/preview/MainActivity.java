@@ -484,6 +484,11 @@ public final class MainActivity extends Activity {
                     postToRecorder("native:" + fields[1] + ":" + RecordingService.read(fields[1], Long.parseLong(fields[2])));
                     return;
                 }
+                if (data.matches("native-status:[a-f0-9-]{36}")) {
+                    String id = data.substring("native-status:".length());
+                    postToRecorder("native:" + id + ":" + RecordingService.status(id));
+                    return;
+                }
                 if (data.matches("(?:pause|resume):[0-9]{1,7}")) {
                     if (resumed || hasWindowFocus()) {
                         try {

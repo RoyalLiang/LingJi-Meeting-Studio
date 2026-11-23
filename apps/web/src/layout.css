@@ -33,6 +33,15 @@ html:not(.recording-capsule-mode) body{background:var(--page)}
 .settings-page .settings-dependent-fields{gap:16px}.settings-page .settings-model-title{font-size:13px;margin:8px 0 2px}
 .settings-page label{font-size:var(--control-font-size);font-weight:500;gap:.5rem;line-height:var(--control-line-height)}.settings-page .settings-mode-note{font-size:12px;line-height:1.8;color:var(--ink-3)}
 .settings-page .settings-inline{display:flex;flex-direction:column;gap:12px}.settings-page .vocabulary-fields{gap:17px}
+.settings-page .settings-language { display: grid; align-content: start; gap: 16px; }
+.settings-page .settings-language > div { width: 100%; }
+.settings-language .vocabulary-settings .vocabulary-fields { margin-top: 0; }
+.settings-page .settings-language .translation-provider-module:not([hidden]) { display: block; }
+.settings-page .translation-provider-module .provider-module-fields { padding: 18px; gap: 16px; }
+.settings-page .translation-provider-module .settings-heading-row { justify-content: space-between; align-items: center; flex-wrap: wrap; }
+.settings-page .translation-provider-module .settings-heading-row > .section-title { margin: 0; }
+.settings-page .translation-provider-module .settings-heading-row > .select-enhanced { flex: 0 1 252px; }
+
 .module-connection-check{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:8px;padding:0;margin:0;min-height:var(--control-height-compact);min-width:0;max-width:100%}
 .module-connection-check>.button{align-self:start}.module-check-result{display:grid;grid-template-rows:minmax(max(var(--control-height-compact),var(--touch-target)),auto);gap:4px;min-width:0;font-size:.75rem}
 .module-check-result small{font-size:.75rem;line-height:1.7;color:var(--ink-3);overflow-wrap:anywhere}.module-check-state{display:inline-flex;align-items:center;gap:4px;align-self:center;justify-self:start;border-radius:999px;padding:2px 8px;font-size:.75rem;background:var(--accent-soft);color:var(--ink-2)}

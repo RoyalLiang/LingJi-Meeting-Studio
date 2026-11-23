@@ -37,8 +37,25 @@
 @keyframes feishu-progress-turn{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.feishu-progress-spinner{animation:none}}
 
-.feishu-automation{max-width:860px;margin-inline:auto;width:100%}
-.automation-config{background:var(--bg);padding:24px;gap:22px}
+.feishu-automation { display: grid; gap: 16px; max-width: 860px; margin-inline: auto; width: 100%; }
+.feishu-automation .collaboration-tools, .feishu-automation .automation-config {
+  padding: 18px;
+  border-radius: var(--r-sm);
+  background: var(--panel-2);
+}
+.feishu-automation .collaboration-tools { gap: 8px; }
+.feishu-automation .collaboration-tool { padding: 0; flex-wrap: wrap; }
+.feishu-automation .collaboration-tool-icon { background: var(--accent-soft); }
+.feishu-automation .collaboration-tool-controls .capability-switch { margin-block-start: -5px; }
+.feishu-automation .feishu-fields { align-items: start; }
+.feishu-automation .feishu-fields .select.select-enhanced .select-trigger,
+.feishu-automation .feishu-fields input {
+  min-height: max(42px, var(--touch-target));
+  height: max(42px, var(--touch-target));
+  border-radius: var(--control-radius);
+  padding-inline: 12px;
+}
+.automation-config{gap:18px}
 .feishu-section-heading,.feishu-section-heading>div{display:flex;align-items:center;gap:12px}
 .feishu-section-heading{justify-content:space-between;flex-wrap:wrap}
 .feishu-section-heading h2{margin:0;font-size:17px}
@@ -65,7 +82,7 @@
 .feishu-board-preview>ul{padding-left:0;border-left:0}
 .feishu-board-preview li{margin:10px 0;overflow-wrap:anywhere}
 .feishu-board-preview span{display:inline-block;padding:6px 10px;border-radius:6px;background:var(--panel-2)}
-@media(max-width:600px){.automation-config{padding:18px}.feishu-fields{grid-template-columns:1fr}.feishu-preview{padding:20px;max-height:45vh}.feishu-options{gap:10px 18px}.feishu-section-heading{gap:16px}.feishu-actions .button{min-height:max(42px,var(--touch-target))}.markdown-preview h2{font-size:20px}}
+@media(max-width:600px){.feishu-fields{grid-template-columns:1fr}.feishu-preview{padding:20px;max-height:45vh}.feishu-options{gap:10px 18px}.feishu-section-heading{gap:16px}.feishu-actions .button{min-height:max(42px,var(--touch-target))}.markdown-preview h2{font-size:20px}}
 .export-modal>.modal-footer{flex:none;padding:14px 24px;border-top:1px solid var(--border);background:var(--bg)}
 .export-modal>.modal-footer:has(>.export-footer:empty){display:none}
 .export-modal .feishu-preview{max-height:38vh}

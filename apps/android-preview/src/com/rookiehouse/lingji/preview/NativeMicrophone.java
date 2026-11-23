@@ -19,7 +19,7 @@ import java.io.RandomAccessFile;
 /** Records independently of WebView scheduling. The page drains completed PCM blocks. */
 final class NativeMicrophone {
     private static final int RATE = 16000;
-    private static final int BLOCK = RATE / 4;
+    private static final int BLOCK = RATE / 16;
     private static final long WAV_LIMIT = 0xffffffdaL;
     private final File file;
     private final PowerManager.WakeLock lock;
@@ -27,6 +27,7 @@ final class NativeMicrophone {
     volatile boolean paused, ending, ready, done;
     private volatile AudioRecord input;
     private volatile long available;
+    private volatile double level;
     private volatile boolean failed;
 
     NativeMicrophone(Context context, String id) {
@@ -42,10 +43,10 @@ final class NativeMicrophone {
     }
 
     private static AudioRecord open(int mask) {
-        int min = AudioRecord.getMinBufferSize(RATE, mask, AudioFormat.ENCODING_PCM_16BIT);
+            int min = AudioRecord.getMinBufferSize(RATE, mask, AudioFormat.ENCODING_PCM_16BIT);
         if (min <= 0) throw new IllegalStateException("Unsupported microphone format");
         AudioRecord record = new AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION,
-            RATE, mask, AudioFormat.ENCODING_PCM_16BIT, Math.max(min * 2, BLOCK * 8));
+            RATE, mask, AudioFormat.ENCODING_PCM_16BIT, Math.max(min * 2, RATE * 2));
         if (record.getState() == AudioRecord.STATE_INITIALIZED) return record;
         record.release();
         throw new IllegalStateException("Microphone unavailable");
@@ -96,6 +97,7 @@ final class NativeMicrophone {
                 if (channels == 2) {
                     for (int i = 0; i < frames; i++) correlation += (long)samples[i * 2] * samples[i * 2 + 1];
                 }
+                long energy = 0;
                 for (int i = 0; i < frames; i++) {
                     double sample = samples[i * channels];
                     // A phase-opposed stereo route would cancel speech if averaged.
@@ -105,8 +107,10 @@ final class NativeMicrophone {
                     int value = (int)Math.max(-32768, Math.min(32767, Math.round(filtered)));
                     pcm[i * 2] = (byte)value;
                     pcm[i * 2 + 1] = (byte)(value >> 8);
+                    energy += (long)value * value;
                 }
                 output.write(pcm, 0, frames * 2);
+                level = frames == 0 ? 0 : Math.sqrt((double)energy / frames) / 32768;
                 available += frames * 2;
             }
             output.getFD().sync();
@@ -119,6 +123,10 @@ final class NativeMicrophone {
             if (lock.isHeld()) lock.release();
             done = true;
         }
+    }
+
+    String status() {
+        return ready ? "status:" + available + ":" + level : "status:starting";
     }
 
     String read(long offset) {

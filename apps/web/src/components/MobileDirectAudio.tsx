@@ -82,7 +82,7 @@ export function MobileDirectReceive({ vault, secret, imported, online }: Account
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const job = useRef<AbortController | null>(null);
-  useEffect(() => () => job.current?.abort(), [vault]);
+  useEffect(() => () => job.current?.abort(), []);
 
   async function start() {
     if (job.current || !secret.current) return;
@@ -95,8 +95,9 @@ export function MobileDirectReceive({ vault, secret, imported, online }: Account
     try {
       if (typeof RTCPeerConnection !== 'function') throw new Error('当前环境不支持录音直传');
       const invite = await createDirectRoom(vault, root, signal);
+      signal.throwIfAborted();
       setCode(invite.code);
-      setNotice('在 Android 的录音详情输入接收码，两端保持前台。');
+      setNotice('在 Android 的录音详情输入接收码，保持两端应用运行。');
       await receiveDirectAudio(vault, root, invite.room, signal, setNotice);
       if (!signal.aborted) {
         imported();
@@ -110,15 +111,17 @@ export function MobileDirectReceive({ vault, secret, imported, online }: Account
     }
   }
 
-  return <div className="sync-actions">
-    {busy ? <Button type="button" onClick={() => {
-      job.current?.abort();
-      job.current = null;
-      setBusy(false);
-      setCode('');
-      setNotice('');
-    }}>停止接收</Button> : <Button type="button" disabled={!online} onClick={() => void start()}>接收手机直传</Button>}
-    {code && <output aria-label="直传接收码"><strong>{code}</strong></output>}
+  return <div className="account-direct">
+    <div className="sync-actions">
+      {busy ? <Button type="button" onClick={() => {
+        job.current?.abort();
+        job.current = null;
+        setBusy(false);
+        setCode('');
+        setNotice('');
+      }}>停止接收</Button> : <Button type="button" disabled={!online} onClick={() => void start()}>接收手机直传</Button>}
+      {code && <output aria-label="直传接收码"><strong>{code}</strong></output>}
+    </div>
     {notice && <p role="status">{notice}</p>}
   </div>;
 }

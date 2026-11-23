@@ -20,7 +20,7 @@ async function component(file,name,request,statusFeed=async()=>({enabled:true,re
 }
 function nodes(tree){if(!tree||typeof tree!=='object')return [];return [tree,...[tree.props?.children].flat(Infinity).flatMap(nodes)];}
 const words=node=>typeof node==='string'?node:!node||typeof node!=='object'?'':[node.props?.children].flat(Infinity).map(words).join('');
-const checkbox=(tree,label)=>nodes(nodes(tree).find(n=>n.type==='label'&&words(n).includes(label))).find(n=>n.type==='input');
+const syncSwitch=tree=>nodes(nodes(tree).find(n=>n.props?.className==='git-heading')).find(n=>n.type==='CapabilitySwitch'&&n.props.label==='启用 Git 自动同步');
 
 test('Git task displays recording wait and reading progress instead of an empty running message',async()=>{
   const render=await component('GitAutomation.tsx','GitTask',async()=>({}));
@@ -31,15 +31,30 @@ test('Git task displays recording wait and reading progress instead of an empty 
   assert.match(text,/正在请求模型，用量将在响应后更新/);assert.match(text,/已阅读 1\/3 页会议材料/);
 });
 
-test('Git future consent can be reselected after editing a scope-affecting option',async()=>{
-  const render=await component('GitAutomation.tsx','GitAutomation',async path=>path==='/workspaces'?{workspaces:[]}:{configured:true,enabled:true,root:'https://git.example.test/project-hub',prompt:'整理已确认内容',skillIds:['meeting-review'],projects:[],recent:[],mode:'mr'});
-  const props={extensions:[]};render(props);await new Promise(resolve=>setTimeout(resolve,0));
-  let tree=render(props);assert.equal(checkbox(tree,'允许将今后').props.checked,true);
-  nodes(tree).find(n=>n.type==='textarea').props.onChange({target:{value:'保留完整引用与人工修订'}});
-  tree=render(props);assert.equal(checkbox(tree,'允许将今后').props.checked,false);
-  checkbox(tree,'允许将今后').props.onChange({target:{checked:true}});
-  tree=render(props);assert.equal(checkbox(tree,'允许将今后').props.checked,true);
+test('Git heading switch authorizes future matching meetings on save',async()=>{
+  const requests=[];
+  const policy={configured:true,enabled:false,root:'https://git.example.test/project-hub',prompt:'整理已确认内容',skillIds:['meeting-review'],projects:[],recent:[],mode:'mr'};
+  const render=await component('GitAutomation.tsx','GitAutomation',async(path,method,body)=>{
+    if(path==='/workspaces')return {workspaces:[]};
+    if(method==='PUT'){requests.push(body);return {...policy,...body};}
+    return policy;
+  });
+  const props={extensions:[]};
+  render(props);await new Promise(resolve=>setTimeout(resolve,0));
+  let tree=render(props);
+  assert.equal(syncSwitch(tree).props.enabled,false);
+  assert.doesNotMatch(words(tree),/允许将今后符合范围/);
+  syncSwitch(tree).props.onChange(true);
+  tree=render(props);
+  const save=nodes(tree).find(node=>node.type==='Button'&&words(node)==='保存并开启');
+  assert.equal(save.props.disabled,false);
+  save.props.onClick();
+  await new Promise(resolve=>setTimeout(resolve,0));
+  assert.equal(requests.length,1);
+  assert.equal(requests[0].enabled,true);
+  assert.equal(requests[0].confirmed,true);
 });
+
 test('a removed selected task cannot prevent the latest Git task list from refreshing',async()=>{
  const old={id:'old',title:'旧任务',status:'failed',phase:'organize',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()},fresh={...old,id:'new',title:'新任务'};
  const render=await component('GitAutomation.tsx','GitAutomation',async path=>{if(path==='/workspaces')return {workspaces:[]};if(path.includes('/tasks/'))throw Object.assign(new Error('任务已不可用'),{status:404});return {configured:true,enabled:true,recent:[old],root:'https://git.example.test/root',prompt:'保持引用',skillIds:['meeting-review'],projects:[],mode:'mr'};},async()=>({enabled:true,recent:[fresh]}));
@@ -81,8 +96,8 @@ test('backend pruning preserves vendored notices and every traversed parent',asy
 test('Git save submits disabled edits and adopts the persisted normalized configuration',async()=>{
  const requests=[],policy={configured:true,enabled:true,root:'https://git.example.test/root',prompt:'原指令',skillIds:['meeting-review'],projects:[],recent:[],mode:'mr',directory:'docs/meetings'};
  const render=await component('GitAutomation.tsx','GitAutomation',async(path,method,body)=>{requests.push({path,method,body});if(path==='/workspaces')return{workspaces:[]};if(method==='PUT')return{...policy,...body,prompt:body.prompt.trim(),directory:'docs/updated'};return policy;});const props={extensions:[]};render(props);await new Promise(r=>setTimeout(r,0));let tree=render(props);
- nodes(tree).find(n=>n.type==='textarea').props.onChange({target:{value:'  已关闭时更新  '}});tree=render(props);checkbox(tree,'启用 Git').props.onChange({target:{checked:false}});tree=render(props);nodes(tree).find(n=>n.type==='Button'&&words(n)==='保存设置').props.onClick();await new Promise(r=>setTimeout(r,0));tree=render(props);
- assert.equal(requests.filter(r=>r.method==='PUT').length,1);assert.equal(requests.find(r=>r.method==='PUT').body.enabled,false);assert.equal(nodes(tree).find(n=>n.type==='textarea').props.value,'已关闭时更新');assert.equal(nodes(tree).find(n=>n.type==='input'&&n.props.placeholder==='docs/meetings').props.value,'docs/updated');assert.equal(checkbox(tree,'启用 Git').props.checked,false);
+ nodes(tree).find(n=>n.type==='textarea').props.onChange({target:{value:'  已关闭时更新  '}});tree=render(props);syncSwitch(tree).props.onChange(false);tree=render(props);nodes(tree).find(n=>n.type==='Button'&&words(n)==='保存设置').props.onClick();await new Promise(r=>setTimeout(r,0));tree=render(props);
+ assert.equal(requests.filter(r=>r.method==='PUT').length,1);assert.equal(requests.find(r=>r.method==='PUT').body.enabled,false);assert.equal(requests.find(r=>r.method==='PUT').body.confirmed,false);assert.equal(nodes(tree).find(n=>n.type==='textarea').props.value,'已关闭时更新');assert.equal(nodes(tree).find(n=>n.type==='input'&&n.props.placeholder==='docs/meetings').props.value,'docs/updated');assert.equal(syncSwitch(tree).props.enabled,false);
 });
 
 test('Git project dropdown refreshes on open, coalesces quick reopens and uses single-line options',async()=>{
@@ -90,11 +105,11 @@ test('Git project dropdown refreshes on open, coalesces quick reopens and uses s
  const render=await component('GitAutomation.tsx','GitAutomation',async path=>path==='/workspaces'?{workspaces:[{id:'workspace',name:'项目'}]}:path.endsWith('/check')?(checks++,{projects:[{id:10,name:'项目',path:'new/current/path'},{id:20,name:'新仓库',path:'new/repository'}],group:{full_path:'root'}}):policy);const props={extensions:[]};render(props);await new Promise(r=>setTimeout(r,0));let tree=render(props),select=nodes(tree).find(n=>n.type==='Select'&&n.props.label==='映射目标项目 1');assert.equal(select.props.singleLine,true);select.props.onOpen();await new Promise(r=>setTimeout(r,0));tree=render(props);select=nodes(tree).find(n=>n.type==='Select'&&n.props.label==='映射目标项目 1');assert.equal(select.props.options[0].label,'new/current/path');assert.equal(select.props.options.length,2);select.props.onOpen();await new Promise(r=>setTimeout(r,0));assert.equal(checks,1);
 });
 
-test('opening task records and returning to grouped settings preserves an unsaved draft and revoked consent',async()=>{
+test('opening task records and returning to grouped settings preserves an unsaved draft and the switch value',async()=>{
  const requests=[],policy={configured:true,enabled:true,root:'https://git.example.test/root',prompt:'原指令',skillIds:['meeting-review'],projects:[],recent:[],mode:'mr'};
  const render=await component('GitAutomation.tsx','GitAutomation',async(path,method)=>{requests.push({path,method});return path==='/workspaces'?{workspaces:[]}:policy;});const props={extensions:[]};render(props);await new Promise(r=>setTimeout(r,0));let tree=render(props);
  nodes(tree).find(n=>n.type==='textarea').props.onChange({target:{value:'尚未保存的整理指令'}});tree=render(props);nodes(tree).find(n=>n.type==='Button'&&words(n).startsWith('任务记录')).props.onClick();tree=render(props);assert.equal(nodes(tree).find(n=>n.props?.className==='git-settings').props.hidden,true);
- nodes(tree).find(n=>n.type==='Button'&&words(n)==='返回同步设置').props.onClick();tree=render(props);assert.equal(nodes(tree).find(n=>n.props?.className==='git-settings').props.hidden,false);assert.equal(nodes(tree).find(n=>n.type==='textarea').props.value,'尚未保存的整理指令');assert.equal(checkbox(tree,'允许将今后').props.checked,false);assert.equal(requests.filter(r=>r.method==='PUT').length,0);
+ nodes(tree).find(n=>n.type==='Button'&&words(n)==='返回同步设置').props.onClick();tree=render(props);assert.equal(nodes(tree).find(n=>n.props?.className==='git-settings').props.hidden,false);assert.equal(nodes(tree).find(n=>n.type==='textarea').props.value,'尚未保存的整理指令');assert.equal(syncSwitch(tree).props.enabled,true);assert.equal(requests.filter(r=>r.method==='PUT').length,0);
 });
 
 

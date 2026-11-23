@@ -639,7 +639,7 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
     <div><dt>桌面会议原音、声纹、截图和模型密钥</dt><dd>仅在本机</dd></div>
   </dl>;
   if (!ready) return <div className="sync-settings"><p role="status" className="account-muted">正在加载账号…</p></div>;
-  if (desktop && (!online || !session?.email)) return <div className="sync-settings account-access" aria-label="本地空间">
+  if (desktop && !session?.email) return <div className="sync-settings account-access" aria-label="本地空间">
     <AccountSection title={online && showLogin ? (register ? '注册账号' : '账号登录') : '本地空间'}>
       {online && showLogin ?
         <form onSubmit={signIn} className="sync-form">
@@ -719,15 +719,15 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
             <span className="account-avatar" aria-hidden="true">{(profile.trim() || accountEmail || '').slice(0,1).toUpperCase() || <User size={18}/>}</span>
             <div className="sync-intro"><strong>{profile || '个人账号'}</strong><span className="account-muted" title={accountEmail ?? undefined}>{accountEmail}</span></div>
           </div>
-          {desktop && session && <Button variant="ghost" disabled={busy} onClick={() => run(async signal => {
-            await api('/private-sync/session', 'DELETE', undefined, signal);
-            lock(); setSession({ ...session, email: null }); accountChanged?.(null); setVault(undefined); setLegacyAccount(false); setNewLoginNeeded(false); setProfile(''); setName(''); setShowLogin(false); setTab('account');
-          })}><SignOut size={16}/>退出账号</Button>}
         </div>
         <form className="sync-form profile-settings" onSubmit={saveProfile}>
           <label>显示名称<input autoComplete="nickname" maxLength={60} value={name} disabled={!online || busy} onChange={event => setName(event.target.value)}/></label>
           <Button type="submit" disabled={!online || busy || name.trim() === profile}>保存</Button>
         </form>
+        {desktop && session && <Button className="account-sign-out" variant="ghost" disabled={!online || busy} onClick={() => run(async signal => {
+          await api('/private-sync/session', 'DELETE', undefined, signal);
+          lock(); setSession({ ...session, email: null }); accountChanged?.(null); setVault(undefined); setLegacyAccount(false); setNewLoginNeeded(false); setProfile(''); setName(''); setShowLogin(false); setTab('account');
+        })}><SignOut size={16}/>退出账号</Button>}
       </AccountSection>
       {upgradeForm}
       {!upgradingHere && recoverAccess}
@@ -748,7 +748,6 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
             } catch { setError('无法在本机保存同步设置'); }
           }}/>
         </label>
-        <p className="account-sync-status"><i className={automatic ? 'is-active' : ''} aria-hidden="true"/>{automatic ? '已开启自动同步' : '自动同步已暂停'}</p>
       </AccountSection>}
       {vault && unlocked && <AccountSection title="已同步记录">
         <div className="sync-actions">
@@ -804,8 +803,8 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
       </AccountSection>}
     </div>
     <div hidden={tab !== 'phone'}>
-      {desktop && vault && unlocked && tab === 'phone' && <AccountSection title="手机录音直传">
-        <MobileDirectReceive vault={vault} secret={secret} online={online} imported={() => importedCallback.current?.()}/>
+      {desktop && vault && unlocked && <AccountSection title="手机录音直传">
+        <MobileDirectReceive key={vault.id} vault={vault} secret={secret} online={online} imported={() => importedCallback.current?.()}/>
       </AccountSection>}
       <AccountSection title="手机 App 记录">
         <div className="account-entry">
