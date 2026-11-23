@@ -184,7 +184,7 @@ test('desktop shutdown lets an owned in-flight lane finish before closing Realti
   const inflight=new Promise(resolve=>{release=resolve;});
   const repo={list:async()=>[]};
   const noop=async()=>{};
-  const context={process:{env:{},umask(){},pid:1,version:process.version},setTimeout,console,join,installNetworkProxy:()=>({close:async()=>{}}),
+  const context={process:{env:{},umask(){},pid:1,version:process.version},setTimeout,console,join,installNetworkProxy:()=>({close:async()=>{}}),installSandboxDirectories:async()=>async()=>{assert.equal(finished,true);},
     mkdir:noop,recoverTemporaryAudio:noop,migrateBundledAsr:noop,recoverLocalWork:noop,writeFile:noop,openLocalAsr(){},closeLocalAsr:noop,closeSpeakerStreams(){},
     DatabaseSync:class{prepare(){return{get:()=>({version:'3.53.4'})};}exec(){}close(){}},
     createRepository:async()=>repo,createRecordServer:async()=>({start:async()=>({port:1}),localSession:async()=>'',stop:async()=>{stopped=true;}}),

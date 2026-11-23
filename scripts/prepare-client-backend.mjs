@@ -106,6 +106,7 @@ export async function prepareClientBackend({ root = project, cacheRoot = join(pr
   await mkdir(runtime, { recursive: true });
   await rm(backend, { recursive: true, force: true });
   await mkdir(backend, { recursive: true });
+  await writeFile(join(backend,'package.json'),JSON.stringify({name:'lingji-client-backend',private:true,type:'module'})+'\n',{mode:0o644});
   const runtimeBinary = join(runtime, platform === 'win32' ? 'node.exe' : 'node');
   await copyFile(binary, runtimeBinary); await chmod(runtimeBinary, 0o755);
   await copyFile(join(extracted, 'LICENSE'), join(runtime, 'LICENSE'));
@@ -113,7 +114,9 @@ export async function prepareClientBackend({ root = project, cacheRoot = join(pr
     await cp(join(root, path), join(backend, path), { recursive: true, filter: includeBackendSource });
   }
   // Installed Linux resources are owned by root; application users must be able to read this bundle.
-  await chmod(join(backend, 'services/records/src/data/builtin-vocabulary.private.json'), 0o644);
+  const vocabularyPath=join(backend,'services/records/src/data/builtin-vocabulary.private.json'),vocabularyBytes=await readFile(vocabularyPath);
+  // Source worktrees may link this build input; the product must contain an independent regular file.
+  await rm(vocabularyPath);await writeFile(vocabularyPath,vocabularyBytes,{flag:'wx',mode:0o644});
   const bundledVocabulary = await readBuiltinVocabulary(pathToFileURL(join(backend, 'services/records/src/data/')));
   assert.equal(bundledVocabulary.hash, builtinVocabulary.sha256, 'bundled vocabulary missing or changed');
   await mkdir(join(backend,'tools/neohorse'),{recursive:true});

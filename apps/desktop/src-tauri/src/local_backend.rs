@@ -79,6 +79,8 @@ impl LocalBackend {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        #[cfg(all(target_os = "macos", feature = "app-store"))]
+        command.env("LINGJI_MACOS_SANDBOX_MODULE", resources.join("runtime/sandbox-bookmarks.node"));
         for key in ["HOME", "USERPROFILE", "TEMP", "TMP", "TMPDIR", "SystemRoot", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy", "DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR", "XDG_CURRENT_DESKTOP"] {
             if let Some(value) = std::env::var_os(key) {
                 command.env(key, value);

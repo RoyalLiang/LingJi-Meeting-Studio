@@ -1,4 +1,5 @@
-import { installNetworkProxy } from './network-proxy.mjs';
+import {installNetworkProxy} from './network-proxy.mjs';
+import {installSandboxDirectories} from './macos-sandbox.mjs';
 import { automaticMinutesAt } from '../../../packages/records/src/automation.mjs';
 import {queueLearningReview} from '../../../packages/records/src/learning.mjs';
 // Private bundled runtime entry; never imports a developer .env or starts Vite.
@@ -93,7 +94,7 @@ export function startupDiagnostic(error) {
 }
 
 export async function startDesktopBackend({ root, port = 0, workers = true } = {}) {
-  let stage='filesystem', network;
+  let stage='filesystem', network, closeDirectories;
   try {
   if (!root) throw new Error('client_data_root_required');
   process.umask(0o077);
@@ -114,6 +115,8 @@ export async function startDesktopBackend({ root, port = 0, workers = true } = {
   stage='repository';
   network = installNetworkProxy(root);
   const repo = await createRepository({ root, databaseUrl: '', s3: { bucket: '' }, compressAggregates: true, compressAudio: true });
+  stage='sandbox_directories';
+  closeDirectories=await installSandboxDirectories(repo);
   stage='asr_migration';
   await migrateBundledAsr(repo);
   stage='work_recovery';
@@ -137,9 +140,11 @@ export async function startDesktopBackend({ root, port = 0, workers = true } = {
     }
   })()) : [];
   return { repo, sqlite, url: `http://127.0.0.1:${address.port}`, session,
-    async stop() { stopping = true; await closeLocalAsr(); for (const record of await repo.list()) closeSpeakerStreams(repo, record.id); await Promise.all(loops); closeRealtime(repo); detachTunnel(); await app.stop(); await network.close(); },
+    async stop() { stopping = true; await closeLocalAsr(); for (const record of await repo.list()) closeSpeakerStreams(repo, record.id); await Promise.all(loops); closeRealtime(repo); detachTunnel(); await app.stop();
+      await closeDirectories?.(); await network.close(); },
   };
   } catch(error) {
+    await Promise.resolve(closeDirectories?.()).catch(()=>{});
     await network?.close(); if(error&&typeof error==='object'&&Object.isExtensible(error))error.startupStage=stage;throw error; }
 }
 

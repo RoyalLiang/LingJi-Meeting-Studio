@@ -1,0 +1,12 @@
+{
+  "identifier": "com.tts.meeting",
+  "bundle": {
+    "targets": ["app"],
+    "category": "Productivity",
+    "createUpdaterArtifacts": false,
+    "macOS": {
+      "hardenedRuntime": false,
+      "entitlements": "Entitlements.appstore.plist"
+    }
+  }
+}

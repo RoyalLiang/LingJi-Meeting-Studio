@@ -28,7 +28,7 @@ fn packaged_app() -> Result<bool, i32> {
         }
     }
     #[cfg(not(windows))]
-    { Ok(false) }
+    { Ok(cfg!(all(target_os = "macos", feature = "app-store"))) }
 }
 
 #[cfg(windows)]
@@ -125,7 +125,8 @@ impl Updates {
         Self {
             state: Arc::new(Mutex::new(State {
                 status: Status {
-                    channel: match package { Ok(true) => "msix", Ok(false) => "standalone", Err(_) => "unknown" },
+                    channel: match package { Ok(true) if cfg!(all(target_os = "macos", feature = "app-store")) => "app-store",
+                        Ok(true) => "msix", Ok(false) => "standalone", Err(_) => "unknown" },
                     phase: if configured { "idle" } else { "disabled" }.into(),
                     current_version,
                     version: None,
@@ -185,7 +186,7 @@ impl Updates {
         if self.preview_channel {
             view.install_label = "打开安装包".into();
         }
-        if state.status.channel == "msix" {
+        if state.status.channel == "msix" || state.status.channel == "app-store" {
             view.check_label = "通过安装渠道更新".into();
         } else if state.status.channel == "unknown" {
             view.check_label = "暂时无法检查更新".into();
@@ -545,7 +546,7 @@ mod tests {
     fn packaged_apps_reject_installer_updates_even_for_preview_builds() {
         let updates = super::Updates::for_package("0.3.30".into(), std::env::temp_dir(), true, Ok(true));
         assert_eq!(updates.status().phase, "disabled");
-        assert_eq!(updates.status().channel, "msix");
+        assert_eq!(updates.status().channel, if cfg!(all(target_os = "macos", feature = "app-store")) { "app-store" } else { "msix" });
         assert!(updates.operation().is_err());
         let menu = updates.menu(false);
         assert!(!menu.check && !menu.background && !menu.install);

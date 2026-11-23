@@ -13,11 +13,11 @@ export function ClientUpdatesPanel({ updates }: { updates: ReturnType<typeof use
   const { status, settings, installReason, saveSettings } = updates;
   const items = updateReleaseItems(status.notes || (!status.version || status.version===status.currentVersion ? currentReleaseNotes : null)), progress = updateDownloadProgress(status);
   const busy = ['checking', 'downloading', 'preparing', 'installing'].includes(status.phase);
-  const description: Record<string, string> = { idle: '', disabled: status.channel==='msix' ? '此版本由安装渠道管理更新' : status.channel==='unknown' ? '暂时无法检查更新' : '此安装包尚未配置可信更新源，请使用手动安装包', checking: '正在检查更新…',
+  const description: Record<string, string> = { idle: '', disabled: (status.channel==='msix'||status.channel==='app-store') ? '此版本由安装渠道管理更新' : status.channel==='unknown' ? '暂时无法检查更新' : '此安装包尚未配置可信更新源，请使用手动安装包', checking: '正在检查更新…',
     current: '', available: '', downloading: progress.complete ? '下载完成，正在校验更新…' : '正在下载更新…', ready: status.installer ? '安装包已下载并完成完整性校验' : '更新已下载并通过验签',
     preparing: '正在确认录音与补传已安全结束…', installing: '正在安装，即将重新启动', error: '检查更新未完成，可稍后重试' };
   return <section className="settings-section client-updates" aria-label="版本更新">
-      {status.channel!=='msix'&&status.channel!=='unknown'&&<div className="client-update-policy">
+      {status.channel!=='msix'&&status.channel!=='app-store'&&status.channel!=='unknown'&&<div className="client-update-policy">
         <Select label="更新策略" value={updatePolicy(settings)} disabled={busy} onChange={value => saveSettings(preferencesForPolicy(value))} options={[
           {value:'manual',label:'手动检查'}, {value:'check',label:'自动检查'}, {value:'background',label:'自动检查并后台下载'}
         ]}/><ClientUpdateActions updates={updates}/>

@@ -7,6 +7,7 @@ import {mkdir,open,readFile,writeFile,rename,unlink,readdir,lstat,realpath,rmdir
 import {isAbsolute,join,basename,resolve,sep} from 'node:path';
 import {digest,requireThat,emit} from '../../../packages/records/src/record.mjs';
 import {waveHeader} from './audio-wav.mjs';
+import {authorizeSandboxDirectory} from './macos-sandbox.mjs';
 
 const settingsId=owner=>`audio-backup:${digest(owner)}`;
 const baseDirectory=(directory,owner)=>join(directory,'聆记音频备份',digest(owner).slice(0,12));
@@ -32,7 +33,8 @@ async function writeAudioFile(repo,chunks,path,bytes,compress){
   }
   return {decodedSha256,decodedSize,sha256:compress?await fileHash(path):decodedSha256};
 }
-async function ownedBase(directory,owner,marker){
+async function ownedBase(repo,directory,owner,marker){
+  await authorizeSandboxDirectory(repo,directory);
   const base=baseDirectory(directory,owner);await regularDirectory(directory);await regularDirectory(join(directory,'聆记音频备份'));await regularDirectory(base);
   requireThat((await json(join(base,'.lingji-owner.json'))).marker===marker,'audio_backup_path_conflict',409);return base;
 }
@@ -44,12 +46,13 @@ export async function saveAudioBackupSettings(repo,owner,input){
   const id=settingsId(owner),previous=await repo.get(id),marker=previous?.marker||randomUUID();let directory=previous?.directory||'';
   if(input.enabled){
     requireThat(typeof input.directory==='string'&&input.directory.length<=4096&&isAbsolute(input.directory),'invalid_audio_backup_directory',400);
+    await authorizeSandboxDirectory(repo,input.directory);
     directory=await realpath(input.directory);await regularDirectory(directory);
     requireThat(directory!==resolve(repo.root)&&!directory.startsWith(resolve(repo.root)+sep),'invalid_audio_backup_directory',400);
     const base=baseDirectory(directory,owner);await mkdir(base,{recursive:true,mode:0o700});await regularDirectory(join(directory,'聆记音频备份'));await regularDirectory(base);
     const ownerFile=join(base,'.lingji-owner.json');
     try{await writeFile(ownerFile,JSON.stringify({marker}),{flag:'wx',mode:0o600});}catch(error){if(error.code!=='EEXIST')throw error;}
-    await ownedBase(directory,owner,marker);
+    await ownedBase(repo,directory,owner,marker);
     const probe=join(base,`.write-check-${randomUUID()}`),handle=await open(probe,'wx',0o600);await handle.close();await unlink(probe);
   }
   const value={id,kind:'audio-backup-settings',owner,marker,directory,enabled:input.enabled,retentionDays:input.retentionDays};
@@ -74,7 +77,7 @@ async function renameAudioBackup(repo,record,now){
   if(!targetName)return;
   try{
     requireThat(basename(backup.folder)===backup.folder&&basename(targetName)===targetName,'audio_backup_path_conflict',409);
-    const base=await ownedBase(backup.directory,record.owner,backup.marker),oldPath=join(base,backup.folder),target=join(base,targetName);
+    const base=await ownedBase(repo,backup.directory,record.owner,backup.marker),oldPath=join(base,backup.folder),target=join(base,targetName);
     const owned=async path=>{await regularDirectory(path);const marker=await json(join(path,'.lingji-owner.json'));requireThat(marker.marker===backup.marker&&marker.recordId===record.id,'audio_backup_path_conflict',409);};
     let oldExists=true;try{await owned(oldPath);}catch(error){if(!missing(error))throw error;oldExists=false;}
     if(oldExists){
@@ -101,7 +104,7 @@ export async function backupAudioRecord(repo,record,now=Date.now()){
   const active=async()=>{const access=(await repo.getRecordAccess([record.id]))[0];requireThat(access&&!access.deleted&&access.owner===record.owner&&Date.parse(access.deleteAt)>Date.now(),'record_not_found',404);};
   const temporary=[];
   try{
-    const base=await ownedBase(backup.directory,record.owner,backup.marker),folder=join(base,backup.folder);await mkdir(folder,{mode:0o700}).catch(error=>{if(error.code!=='EEXIST')throw error;});await regularDirectory(folder);
+    const base=await ownedBase(repo,backup.directory,record.owner,backup.marker),folder=join(base,backup.folder);await mkdir(folder,{mode:0o700}).catch(error=>{if(error.code!=='EEXIST')throw error;});await regularDirectory(folder);
     const ownerFile=join(folder,'.lingji-owner.json');try{await writeFile(ownerFile,JSON.stringify({marker:backup.marker,recordId:record.id}),{flag:'wx',mode:0o600});}catch(error){if(error.code!=='EEXIST')throw error;}
     const owner=await json(ownerFile);requireThat(owner.marker===backup.marker&&owner.recordId===record.id,'audio_backup_path_conflict',409);
     const files=[];
@@ -133,7 +136,7 @@ export async function cleanupAudioBackups(repo,now=Date.now()){
   for(const setting of await repo.list('audio-backup-settings')){
     if(!setting.enabled)continue;
     try{
-      const base=await ownedBase(setting.directory,setting.owner,setting.marker);let reconciled=0;
+      const base=await ownedBase(repo,setting.directory,setting.owner,setting.marker);let reconciled=0;
       for(const entry of await readdir(base,{withFileTypes:true})){
         if(!entry.isDirectory()||entry.isSymbolicLink())continue;
         const folder=join(base,entry.name);let manifest;try{manifest=await json(join(folder,'.lingji-backup.json'));}catch{continue;}

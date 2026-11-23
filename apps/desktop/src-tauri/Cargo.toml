@@ -1,6 +1,6 @@
 [package]
 name = "tts-client"
-version = "0.3.3800"
+version = "0.3.3900"
 description = "TTS desktop client with native audio capture"
 edition = "2021"
 rust-version = "1.90"
@@ -38,7 +38,7 @@ tauri-plugin-single-instance = "=2.5.4"
 objc2 = "=0.6.5"
 objc2-core-audio = { version = "=0.3.2", default-features = false, features = ["std", "AudioHardware", "objc2", "objc2-foundation"] }
 objc2-core-foundation = "=0.3.2"
-objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSArray", "NSString", "NSValue", "NSUUID", "NSObject"] }
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSArray", "NSString", "NSValue", "NSUUID", "NSObject", "NSURL", "NSData", "NSError"] }
 objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSWorkspace", "NSRunningApplication", "libc"] }
 libc = "=0.2.190"
 
@@ -54,6 +54,7 @@ futures = "0.3"
 
 [features]
 smoke-test = []
+app-store = []
 
 [profile.release]
 codegen-units = 1

@@ -7,6 +7,8 @@ mod config;
 mod integration_links;
 mod downloads;
 mod local_backend;
+#[cfg(all(target_os = "macos", feature = "app-store"))]
+mod store_sandbox;
 mod menu_status;
 mod proxy;
 mod resident;
@@ -73,7 +75,10 @@ async fn audio_backup_directory(window: WebviewWindow, state: State<'_, Client>,
         if let Some(path) = initial.filter(|path| std::path::Path::new(path).is_dir()) {
             picker = picker.set_directory(path);
         }
-        picker.blocking_pick_folder().map(|path| path.into_path().map(|path| path.to_string_lossy().into_owned()).map_err(|error| error.to_string())).transpose()
+        let chosen = picker.blocking_pick_folder().map(|path| path.into_path().map(|path| path.to_string_lossy().into_owned()).map_err(|error| error.to_string())).transpose()?;
+        #[cfg(all(target_os = "macos", feature = "app-store"))]
+        if let Some(path) = &chosen { app.state::<store_sandbox::StoreDirectories>().grant(std::path::Path::new(path))?; }
+        Ok(chosen)
     }).await.map_err(|error| error.to_string())?
 }
 
@@ -279,7 +284,7 @@ async fn client_ready(window: WebviewWindow, state: State<'_, Client>) -> Result
     authorize(&window, &state)?;
     state.resident.ready();
     #[cfg(target_os="macos")]
-    preview_updates::finish_handoff(window.app_handle());
+    if !cfg!(feature = "app-store") { preview_updates::finish_handoff(window.app_handle()); }
     // A failed prewarm is retried before a recording can hide the main window.
     let _=recording_widget::prepare(window.app_handle(), &state);
     Ok(())
@@ -494,6 +499,8 @@ fn main() {
         .setup(|app| {
             let directory = match std::env::var("TTS_CLIENT_DATA_DIR") { Ok(path) => std::path::PathBuf::from(path), Err(_) => app.path().app_config_dir().map_err(|e| std::io::Error::other(format!("client data directory: {e}")))? };
             let lock = config::acquire_lock(&directory).map_err(std::io::Error::other)?;
+            #[cfg(all(target_os = "macos", feature = "app-store"))]
+            app.manage(store_sandbox::StoreDirectories::new(directory.join("backend")).map_err(std::io::Error::other)?);
         let external_fixture = (cfg!(debug_assertions) || cfg!(feature = "smoke-test")) && std::env::var_os("TTS_RECORD_API_URL").is_some();
         let backend = if external_fixture { None } else { Some(local_backend::LocalBackend::start(app.handle(), &directory).map_err(std::io::Error::other)?) };
         let api_url = if let Some(local) = &backend { local.url.clone() } else { config::read_config(&directory).map_err(std::io::Error::other)?.api_url };
