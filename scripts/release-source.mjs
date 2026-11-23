@@ -7,6 +7,11 @@ import {parseBuiltinVocabulary} from '../services/records/src/builtin-vocabulary
 
 const paths=['package.json','package-lock.json','apps/web','apps/desktop/package.json','apps/desktop/src-tauri','apps/desktop/assets','scripts','tools/neohorse','tools/release','services/records/src','packages/records/src','docs/releases'];
 export const releaseHash=bytes=>createHash('sha256').update(bytes).digest('hex');
+export async function restoreTauriCargoManifest(path,input){
+ const actual=await readFile(path,'utf8');
+ assert.ok(actual===input||actual===input.replaceAll('features = ["tray-icon"]','features = ["macos-private-api", "tray-icon"]'),'Unexpected Cargo manifest change');
+ if(actual!==input)await writeFile(path,input);
+}
 export async function readReleaseSource(root,ref,path){
   if(ref){assert.match(ref,/^[a-f0-9]{40}$/);return execFileSync('git',['show',`${ref}:${path}`],{cwd:root,maxBuffer:8*1024*1024});}
   return readFile(join(root,path));

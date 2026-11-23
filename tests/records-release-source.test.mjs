@@ -4,7 +4,20 @@ import {mkdtemp,mkdir,writeFile,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {execFileSync} from 'node:child_process';
-import {snapshotReleaseSource,releaseHash} from '../scripts/release-source.mjs';
+import {snapshotReleaseSource,releaseHash,restoreTauriCargoManifest} from '../scripts/release-source.mjs';
+
+test('frozen Cargo manifests restore only the observed Tauri feature rewrite without requiring Git',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'lingji-frozen-cargo-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ const path=join(root,'Cargo.toml'),input=await readFile(new URL('../apps/desktop/src-tauri/Cargo.toml',import.meta.url),'utf8');
+ const rewritten=input.replaceAll('features = ["tray-icon"]','features = ["macos-private-api", "tray-icon"]');
+ assert.notEqual(rewritten,input);
+ for(const content of [input,rewritten]){
+  await writeFile(path,content);await restoreTauriCargoManifest(path,input);assert.equal(await readFile(path,'utf8'),input);
+ }
+ const unexpected=rewritten+'\n# unexpected rewrite\n';await writeFile(path,unexpected);
+ await assert.rejects(restoreTauriCargoManifest(path,input),{code:'ERR_ASSERTION'});
+ assert.equal(await readFile(path,'utf8'),unexpected);
+});
 
 test('fixed release source ignores dirty changes and retains installer/build sources',async()=>{
  const root=await mkdtemp(join(tmpdir(),'lingji-source-'));

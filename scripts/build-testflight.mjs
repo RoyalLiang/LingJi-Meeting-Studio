@@ -4,7 +4,7 @@ import {X509Certificate} from 'node:crypto';
 import {readFile,writeFile,mkdir,mkdtemp,symlink,rm,access,copyFile} from 'node:fs/promises';
 import {dirname,join,resolve} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
-import {snapshotReleaseSource} from './release-source.mjs';
+import {snapshotReleaseSource,restoreTauriCargoManifest} from './release-source.mjs';
 import {storeVersions,readStoreProfile,validateStoreProfile,buildSandboxBridge,writeStoreEntitlements,signStoreApp,fileDigest,storeBundleId} from './macos-appstore.mjs';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
@@ -23,6 +23,7 @@ export async function buildTestFlight(){
   const scratch=await mkdtemp(join(runtime,'build-')),frozen=join(scratch,'source');
   try{
     const sourceSnapshot=await snapshotReleaseSource({root,ref:source,destination:frozen});
+    const cargoPath=join(frozen,'apps/desktop/src-tauri/Cargo.toml'),cargoInput=await readFile(cargoPath,'utf8');
     for(const workspace of ['','apps/web','apps/desktop']){
       const modules=join(root,workspace,'node_modules');try{await access(modules);}catch(error){if(error.code==='ENOENT')continue;throw error;}
       await symlink(modules,join(frozen,workspace,'node_modules'));
@@ -37,6 +38,7 @@ export async function buildTestFlight(){
     const configPath=join(scratch,'tauri.appstore.conf.json');await writeFile(configPath,JSON.stringify(config));
     const target=join(runtime,'target');
     run('npm',['exec','--workspace','apps/desktop','--','tauri','build','--ci','--bundles','app','--features','app-store','--config',configPath,'--','--locked'],{cwd:frozen,env:{...process.env,CARGO_TARGET_DIR:target,APPLE_SIGNING_IDENTITY:identity}});
+    await restoreTauriCargoManifest(cargoPath,cargoInput);
     const base=JSON.parse(await readFile(join(frozen,'apps/desktop/src-tauri/tauri.conf.json'),'utf8'));
     const app=join(target,'release/bundle/macos',`${base.productName}.app`);
     await signStoreApp(app,{identity,team,mainEntitlements,helperEntitlements:join(frozen,'apps/desktop/src-tauri/Entitlements.helper.plist'),...versions});

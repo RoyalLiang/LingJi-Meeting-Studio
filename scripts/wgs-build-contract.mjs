@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import {readFile,writeFile,access,lstat} from 'node:fs/promises';
+import {readFile,access,lstat} from 'node:fs/promises';
 import {createReadStream} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {join} from 'node:path';
-import {snapshotReleaseSource} from './release-source.mjs';
+import {snapshotReleaseSource,restoreTauriCargoManifest} from './release-source.mjs';
 
 async function measuredFile(path){
  const info=await lstat(path);assert.ok(info.isFile()&&info.size>0,'Build output must be a nonempty regular file');
@@ -16,9 +16,7 @@ export async function assertCurrentSource(root,revision){
  return expected;
 }
 export async function finishCurrentBuild(root,revision,cargoInput){
- const path=join(root,'apps/desktop/src-tauri/Cargo.toml'),actual=await readFile(path,'utf8');
- assert.ok(actual===cargoInput||actual===cargoInput.replaceAll('features = ["tray-icon"]','features = ["macos-private-api", "tray-icon"]'),'Unexpected Cargo manifest change');
- if(actual!==cargoInput)await writeFile(path,cargoInput);
+ await restoreTauriCargoManifest(join(root,'apps/desktop/src-tauri/Cargo.toml'),cargoInput);
  return assertCurrentSource(root,revision);
 }
 export async function verifyWgsInput(directory,{version,sourceRevision,source}){
