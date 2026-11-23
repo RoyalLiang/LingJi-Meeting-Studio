@@ -1,3 +1,4 @@
+import { networkInterfaces } from 'node:os';
 import { restorePrivateMeeting, preparePrivateRecording, privateRecordingResults } from './private-sync-restore.mjs';
 import { createDesktopPrivateSync } from './private-sync-desktop.mjs';
 import { createPrivateSyncRoutes, privateSyncOrigin } from './private-sync-routes.mjs';
@@ -221,6 +222,12 @@ export async function createRecordServer(options = {}) {
         if (path === '/api/private-sync/account-upgrade' && accountAuth) {
           limitRequest('account-upgrade:' + user.id, 18, 'login_rate_limited');
           await accountAuth({ req, res, user, readBody, send, limit: limitRequest });
+          return;
+        }
+        if (options.localAccount && path === '/api/private-sync/direct-addresses' && req.method === 'GET') {
+          const addresses = Object.values(networkInterfaces()).flat().filter(entry => entry?.family === 'IPv4' && !entry.internal
+            && /^(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/.test(entry.address)).map(entry => entry.address);
+          send(res, 200, { addresses: [...new Set(addresses)].slice(0, 2) });
           return;
         }
         if (path === '/api/private-sync/recording' && req.method === 'POST') {

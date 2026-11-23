@@ -18,6 +18,9 @@ window.addEventListener('message', event => {
       if (message.data.startsWith('system-audio-frame:')) port.postMessage('system-audio-ack');
     }
     if (message.data === 'network-changed') window.dispatchEvent(new Event('lingji:network-changed'));
+    if (typeof message.data === 'string' && message.data.startsWith('direct-addresses:')) {
+      window.dispatchEvent(new CustomEvent('lingji:direct-addresses', { detail: message.data.slice('direct-addresses:'.length) }));
+    }
     if (typeof message.data === 'string' && message.data.startsWith('update-result:')) {
       window.dispatchEvent(new CustomEvent('lingji:update-result', { detail: message.data.slice('update-result:'.length) }));
     }
@@ -30,5 +33,6 @@ window.addEventListener('message', event => {
   window.addEventListener('lingji:recording-state', event => port.postMessage((event as CustomEvent<string>).detail));
   window.addEventListener('lingji:check-update', () => port.postMessage('check-update'));
   window.addEventListener('lingji:open-releases', () => port.postMessage('open-releases'));
+  window.addEventListener('lingji:request-direct-addresses', () => port.postMessage('direct-addresses'));
   window.addEventListener('lingji:system-audio-disarm', () => port.postMessage('system-audio-disarm'));
 });

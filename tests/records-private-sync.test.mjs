@@ -861,13 +861,16 @@ test('phone audio becomes a source-linked transcript and final minutes in its or
   const { build } = await import('esbuild');
   const { IDBFactory } = await import('fake-indexeddb');
   const browser = await build({
-    stdin: { contents: ['sync/mobile', 'sync/mobile-desktop', 'sync/journal']
+    stdin: { contents: ['sync/mobile', 'sync/mobile-desktop', 'sync/journal', 'sync/mobile-direct']
       .map(file => `export * from './apps/web/src/${file}';`).join('\n'), resolveDir: process.cwd(), loader: 'ts' },
     bundle: true, write: false, format: 'esm', platform: 'node',
   });
   const moduleURL = 'data:text/javascript;base64,' + Buffer.from(browser.outputFiles[0].text).toString('base64');
   const desktopJournal = await import(moduleURL + '#phone-roundtrip-desktop');
   const phoneJournal = await import(moduleURL + '#phone-roundtrip-phone');
+  const mdns = 'a=candidate:1 1 udp 2122260223 test.local 12345 typ host';
+  assert.equal(phoneJournal.withLanCandidates(mdns, ['8.8.8.8', '192.168.1.400', '192.168.1.5']),
+    mdns + '\r\n' + mdns.replace('test.local', '192.168.1.5'));
   const desktopDb = new IDBFactory(), phoneDb = new IDBFactory();
   const { createRepository } = await import('../services/records/src/repository.mjs');
   const { preparePrivateRecording, privateRecordingResults } = await import('../services/records/src/private-sync-restore.mjs');

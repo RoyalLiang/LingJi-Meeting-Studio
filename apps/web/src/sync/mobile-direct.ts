@@ -75,7 +75,43 @@ async function waitSdp(room: Room, vault: Vault, root: Uint8Array<ArrayBuffer>, 
   }
 }
 
-async function gather(peer: RTCPeerConnection, description: RTCSessionDescriptionInit, signal: AbortSignal) {
+export function withLanCandidates(sdp: string, addresses: string[]) {
+  const local = addresses.filter(address => {
+    const octets = address.split('.');
+    const [first, second] = octets.map(Number);
+    return octets.length === 4 && octets.every(octet => /^\d{1,3}$/.test(octet) && Number(octet) <= 255)
+      && (first === 10 || (first === 172 && second >= 16 && second <= 31) || (first === 192 && second === 168));
+  }).slice(0, 2);
+  return sdp.replace(/^a=candidate:[^\r\n]+/gm, line => {
+    const parts = line.split(' ');
+    if (parts[2]?.toLowerCase() !== 'udp' || !parts[4]?.endsWith('.local') || parts[7] !== 'host') return line;
+    return [line, ...local.map(address => [...parts.slice(0, 4), address, ...parts.slice(5)].join(' '))].join('\r\n');
+  });
+}
+
+async function phoneAddresses(signal: AbortSignal): Promise<string[]> {
+  return new Promise(resolve => {
+    const result = (event: Event) => {
+      try {
+        const addresses: unknown = JSON.parse((event as CustomEvent<string>).detail);
+        finish(Array.isArray(addresses) ? addresses.filter(value => typeof value === 'string') : []);
+      } catch { finish([]); }
+    };
+    const abort = () => finish([]);
+    const timer = setTimeout(abort, 500);
+    function finish(addresses: string[]) {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', abort);
+      removeEventListener('lingji:direct-addresses', result);
+      resolve(addresses);
+    }
+    signal.addEventListener('abort', abort, { once: true });
+    addEventListener('lingji:direct-addresses', result, { once: true });
+    dispatchEvent(new Event('lingji:request-direct-addresses'));
+  });
+}
+
+async function gather(peer: RTCPeerConnection, description: RTCSessionDescriptionInit, signal: AbortSignal, addresses: Promise<string[]>) {
   await pending(peer.setLocalDescription(description), signal);
   if (peer.iceGatheringState !== 'complete') {
     const gathered = new Promise<void>(resolve => {
@@ -87,7 +123,8 @@ async function gather(peer: RTCPeerConnection, description: RTCSessionDescriptio
   }
   const sdp = peer.localDescription?.sdp;
   if (!sdp?.includes('a=candidate:')) throw new Error('当前网络没有可用的直连地址');
-  return sdp;
+  const expanded = withLanCandidates(sdp, await addresses);
+  return encoder.encode(expanded).byteLength < 4450 ? expanded : sdp;
 }
 
 function pipe(channel: RTCDataChannel, signal: AbortSignal) {
@@ -175,7 +212,9 @@ export async function receiveDirectAudio(vault: Vault, root: Uint8Array<ArrayBuf
     try {
       const channel = new Promise<RTCDataChannel>(resolve => { peer.ondatachannel = event => resolve(event.channel); });
       await pending(peer.setRemoteDescription({type:'offer', sdp:offer}), link.signal);
-      const answer = await gather(peer, await pending(peer.createAnswer(), link.signal), link.signal);
+      const addresses = api<{ addresses: string[] }>('/private-sync/direct-addresses', 'GET', undefined, timeout(link.signal, 1500))
+        .then(response => Array.isArray(response.addresses) ? response.addresses.filter(address => typeof address === 'string') : []).catch(() => []);
+      const answer = await gather(peer, await pending(peer.createAnswer(), link.signal), link.signal, addresses);
       await postSdp(room, vault, root, step + 1, answer, link.signal);
       const active = watchRoom(room, link.signal);
       const wire = pipe(await pending(channel, timeout(active, 15_000)), active);
@@ -223,7 +262,7 @@ export async function sendDirectAudio(vault: Vault, root: Uint8Array<ArrayBuffer
     let answered = false;
     try {
       const wire = pipe(peer.createDataChannel('lingji-audio'), link.signal);
-      const offer = await gather(peer, await pending(peer.createOffer(), link.signal), link.signal);
+      const offer = await gather(peer, await pending(peer.createOffer(), link.signal), link.signal, phoneAddresses(link.signal));
       await postSdp(room, vault, root, step, offer, link.signal);
       const answer = await waitSdp(room, vault, root, step + 1, timeout(link.signal, step === 1 ? 16_000 : 30_000));
       answered = true;

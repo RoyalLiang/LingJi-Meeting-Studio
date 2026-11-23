@@ -13,6 +13,8 @@ import android.content.res.Configuration;
 import android.content.res.ColorStateList;
 import android.graphics.drawable.ColorDrawable;
 import android.net.ConnectivityManager;
+import android.net.LinkAddress;
+import android.net.LinkProperties;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.Uri;
@@ -42,6 +44,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.net.Inet4Address;
 import java.net.URL;
 import java.util.HashMap;
 import java.util.Map;
@@ -98,6 +101,23 @@ public final class MainActivity extends Activity {
     private boolean recordingBridgeReady;
     private PermissionRequest microphone;
     private ValueCallback<Uri[]> files;
+
+    private JSONArray directAddresses() {
+        JSONArray addresses = new JSONArray();
+        ConnectivityManager manager = getSystemService(ConnectivityManager.class);
+        Network network = manager.getActiveNetwork();
+        if (network == null) return addresses;
+        NetworkCapabilities caps = manager.getNetworkCapabilities(network);
+        if (caps == null || !(caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+                || caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET))) return addresses;
+        LinkProperties link = manager.getLinkProperties(network);
+        if (link != null) for (LinkAddress address : link.getLinkAddresses()) {
+            if (address.getAddress() instanceof Inet4Address && address.getAddress().isSiteLocalAddress()) {
+                addresses.put(address.getAddress().getHostAddress());
+            }
+        }
+        return addresses;
+    }
 
     private static boolean trusted(Uri url) {
         return "https".equals(url.getScheme()) && HOST.equals(url.getHost())
@@ -457,6 +477,9 @@ public final class MainActivity extends Activity {
                     return;
                 }
                 switch (data) {
+                    case "direct-addresses":
+                        postToRecorder("direct-addresses:" + directAddresses());
+                        break;
                     case "check-update":
                         new Thread(() -> {
                             String result = checkAndroidUpdate();
