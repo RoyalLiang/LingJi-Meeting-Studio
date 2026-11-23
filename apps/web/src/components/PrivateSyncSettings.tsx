@@ -13,6 +13,7 @@ import { receiveLiveAudio } from '../sync/mobile-desktop';
 import { Button } from './ui';
 import { ExternalLink } from './ExternalLink';
 import { FeedbackNotice } from './FeedbackNotice';
+import { MobileDirectReceive } from './MobileDirectAudio';
 import './PrivateSyncSettings.css';
 
 type Session = { email: string | null; companion: string };
@@ -803,6 +804,9 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
       </AccountSection>}
     </div>
     <div hidden={tab !== 'phone'}>
+      {desktop && vault && unlocked && tab === 'phone' && <AccountSection title="手机录音直传">
+        <MobileDirectReceive vault={vault} secret={secret} online={online} imported={() => importedCallback.current?.()}/>
+      </AccountSection>}
       <AccountSection title="手机 App 记录">
         <div className="account-entry">
           <span className="account-row-icon"><Phone size={18}/></span>

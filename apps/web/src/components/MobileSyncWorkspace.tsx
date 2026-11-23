@@ -4,7 +4,7 @@ import { createVault, recoverVault, type Envelope, type Vault } from '../sync/va
 import { authenticateAccount, openAccountVault, wrapAccountVault } from '../sync/account';
 import { readDeviceVault, rememberDeviceVault, type DeviceVault } from '../sync/device';
 import { annotateMeeting, clearJournalCache, loadMeetingCopy, meetingCopies, syncMeetings, type CopySummary, type MeetingAnnotations } from '../sync/journal';
-import { pullLiveAudio, pushLiveAudio, pushMobileRecordings, queueLiveAudio } from '../sync/mobile';
+import { pullLiveAudio, pushLiveAudio, pushMobileRecordings, queueLiveAudio, releaseHeldAudio } from '../sync/mobile';
 import { appendMobileRecording, clearMobileLibraryCache, deleteMobileRecording, finishMobileRecording, hiddenMobileRecordings, mobilePlayback, mobileRecordings, type MobileRecording } from '../sync/mobile-library';
 import { packLocalMobilePcm, packMobilePcm, type PackedLocalMobilePcm, type PackedMobilePcm } from '../sync/mobile-pcm';
 import { ShieldCheck } from '@phosphor-icons/react';
@@ -13,6 +13,7 @@ import { FeedbackNotice } from './FeedbackNotice';
 import { MobileWorkspace, type MobilePage } from './MobileWorkspace';
 import { QuickMobileRecording } from './QuickMobileRecording';
 import { MobileSheet } from './MobileSheet';
+import { MobileDirectSend } from './MobileDirectAudio';
 import './PrivateSyncSettings.css';
 
 function syncError(error: unknown) {
@@ -72,6 +73,7 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
   const [mobileStatus, setMobileStatus] = useState('');
   const [backgroundIssue, setBackgroundIssue] = useState('');
   const [pairCode, setPairCode] = useState('');
+  const [preferDirect, setPreferDirect] = useState(false);
   const secret = useRef<Uint8Array<ArrayBuffer> | null>(null);
   const pending = useRef<AbortController | null>(null);
   const background = useRef<Promise<void> | null>(null);
@@ -93,7 +95,10 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
     void Promise.all([mobileRecordings(vault, root), hiddenMobileRecordings(vault)]).then(([items, removed]) => {
       if (mounted) { setPhoneCopies(items); setHidden(removed); }
     }).catch(() => {}).finally(() => root.fill(0));
-    try { setPhoneMeetingSync(localStorage.getItem('lingji:phone-meetings:' + vault.id) !== '0'); } catch {}
+    try {
+      setPhoneMeetingSync(localStorage.getItem('lingji:phone-meetings:' + vault.id) !== '0');
+      setPreferDirect(localStorage.getItem('lingji:phone-direct:' + vault.id) === '1');
+    } catch {}
     return () => { mounted = false; };
   }, [vault, unlocked]);
 
@@ -138,6 +143,7 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
   const deleteLocalRecording = useCallback(async (id: string) => {
     if (!vault) throw new Error('资料库未解锁');
     await deleteMobileRecording(vault, id);
+    await releaseHeldAudio(vault, id, false);
     setPhoneCopies(items => items.filter(item => item.id !== id));
     setHidden(items => new Set([...items, id]));
   }, [vault]);
@@ -606,10 +612,12 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
 
   // Each recording keeps the protocol selected when capture started.
   const legacyLive = liveAudio && !liveAudioV2;
+  const directSupported = /\bLingJi-Android\b/.test(navigator.userAgent) && typeof RTCPeerConnection === 'function';
+  const holdForDirect = directSupported && preferDirect;
   const recorder = vault && unlocked && !legacyAccount ? <QuickMobileRecording
     visible={mobilePage === 'record'}
     showRecorder={() => { setMobilePage('record'); window.scrollTo(0, 0); }}
-    status={!online ? '离线保存，回网自动同步' : !liveAudio ? '录音保存在本机' : liveIssue || liveStatus || mobileStatus}
+    status={holdForDirect ? '结束后可选择发送到 Mac' : !online ? '离线保存，回网自动同步' : !liveAudio ? '录音保存在本机' : liveIssue || liveStatus || mobileStatus}
     append={async (entry, sequence, offset, bytes) => {
       if (!secret.current) throw new Error('资料库未解锁');
       const key = secret.current.slice();
@@ -622,7 +630,7 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
         await appendMobileRecording(vault, key, entry, sequence, localPcm);
         await queueLiveAudio(vault, key, entry.id, entry.title, {
           kind: 'pcm', sequence, offset, pcm: wire, recordedAt: sequence === 0 ? entry.at : undefined,
-        }, legacyLive);
+        }, legacyLive, holdForDirect);
         dispatchEvent(new Event('lingji:live-audio-ready'));
       } finally {
         key.fill(0);
@@ -631,6 +639,7 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
       }
     }}
     onLiveRecording={id => {
+      if (holdForDirect) return;
       activeLive.current = { id, uploaded: false, received: false };
       setLiveStatus(id ? '正在上传音频' : '');
       if (id) dispatchEvent(new Event('lingji:live-audio-ready'));
@@ -640,9 +649,10 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
       if (!secret.current) throw new Error('资料库未解锁');
       const key = secret.current.slice();
       try {
-        await finishMobileRecording(vault, key, entry);
-        await queueLiveAudio(vault, key, entry.id, entry.title, { kind: 'finish', sequence }, legacyLive);
-        setPhoneCopies(items => [entry, ...items.filter(item => item.id !== entry.id)]);
+        const saved = holdForDirect ? { ...entry, directReady: true as const } : entry;
+        await queueLiveAudio(vault, key, entry.id, entry.title, { kind: 'finish', sequence }, legacyLive, holdForDirect);
+        await finishMobileRecording(vault, key, saved);
+        setPhoneCopies(items => [saved, ...items.filter(item => item.id !== entry.id)]);
         dispatchEvent(new Event('lingji:live-audio-ready'));
       } finally { key.fill(0); }
     }}/> : mobilePage === 'record' && (!ready ? <section className="quick-mobile-recording" aria-label="正在连接">
@@ -696,7 +706,14 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
         catch { setError('无法在本机保存同步设置'); return; }
         setPhoneMeetingSync(enabled);
       }}
-      copies={copies} saved={phoneCopies} hidden={hidden} recorder={recorder} account={account}
+      direct={directSupported && vault && unlocked ? {
+        enabled: preferDirect,
+        change: enabled => {
+          try { localStorage.setItem('lingji:phone-direct:' + vault.id, enabled ? '1' : '0'); } catch { return; }
+          setPreferDirect(enabled);
+        },
+        send: entry => <MobileDirectSend vault={vault} secret={secret} entry={entry} online={online}/>,
+      } : undefined} copies={copies} saved={phoneCopies} hidden={hidden} recorder={recorder} account={account}
       read={readMobileMeeting} saveAnnotations={saveMobileAnnotations} play={playMobileRecording}
       search={searchMobileMeetings} deleteLocal={deleteLocalRecording}/>
     {feedback}

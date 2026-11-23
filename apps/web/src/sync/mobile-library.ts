@@ -6,7 +6,7 @@ export type MobileRecording = {
   title: string;
   at: number;
   seconds: number;
-  marks: number[];
+  marks: number[]; directReady?: true;
 };
 
 const metadataCache = new Map<string, MobileRecording[]>();

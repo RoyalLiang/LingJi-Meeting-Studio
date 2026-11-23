@@ -273,7 +273,8 @@ const MobileTranscriptList = memo(function MobileTranscriptList({ lines, highlig
   </div>;
 });
 
-function MobileMeeting({ entry, back, read, play, saveAnnotations }: {
+function MobileMeeting({ entry, back, read, play, saveAnnotations, send }: {
+  send?: (entry: MobileRecording) => ReactNode;
   entry: Entry; back: () => void; read: (id: string) => Promise<MeetingCopy | null>; play: (id: string) => Promise<Blob | null>;
   saveAnnotations: (parent: string, changes: MeetingAnnotations) => Promise<void>;
 }) {
@@ -348,6 +349,7 @@ function MobileMeeting({ entry, back, read, play, saveAnnotations }: {
     </header>
     {entry.saved && <MobileAudioPlayer ref={playerRef} saved={entry.saved} play={play} onError={setError}/>}
 
+    {entry.saved?.directReady && send?.(entry.saved)}
     <nav className="mobile-detail-tabs" aria-label="会议内容">
       {detailTabs.map(([id, label]) => <button key={id} type="button" aria-current={id === tab ? 'page' : undefined} onClick={() => setTab(id)}>{label}</button>)}
     </nav>
@@ -413,13 +415,13 @@ function MobileMeeting({ entry, back, read, play, saveAnnotations }: {
 
 function MobileSwitch({ labelId, checked, disabled, change }: { labelId: string; checked: boolean; disabled?: boolean; change: (checked: boolean) => void }) {
   return <span className="mobile-switch">
-    <input type="checkbox" role="switch" aria-labelledby={labelId} checked={checked} disabled={disabled} onChange={event => change(event.target.checked)}/>
+    <input id={labelId + '-switch'} type="checkbox" role="switch" aria-labelledby={labelId} checked={checked} disabled={disabled} onChange={event => change(event.target.checked)}/>
     <span className="mobile-switch-track" aria-hidden="true"/>
   </span>;
 }
 
 export function MobileWorkspace({
-  page, setPage, online, unlocked, automatic, setAutomatic, copies, saved, hidden, recorder, account, read, play, search, saveAnnotations, deleteLocal, email, legacyAccount, signOut, recording,
+  page, setPage, online, unlocked, automatic, setAutomatic, copies, saved, hidden, recorder, account, read, play, search, saveAnnotations, deleteLocal, email, legacyAccount, signOut, recording, direct,
 }: {
   email: string; legacyAccount: boolean; signOut: () => Promise<void>; recording: boolean;
   page: MobilePage; setPage: (page: MobilePage) => void; online: boolean; unlocked: boolean;
@@ -430,6 +432,7 @@ export function MobileWorkspace({
   search: (query: string) => Promise<CopySummary[]>;
   saveAnnotations: (parent: string, changes: MeetingAnnotations) => Promise<string>;
   deleteLocal?: (id: string) => Promise<void>;
+  direct?: { enabled: boolean; change: (enabled: boolean) => void; send: (entry: MobileRecording) => ReactNode };
 }) {
   const [detail, setDetail] = useState<Entry | null>(null);
   const [query, setQuery] = useState('');
@@ -505,7 +508,7 @@ export function MobileWorkspace({
     </header>
     {recorder}
     {page === 'meetings' && (opened ? <MobileMeeting key={opened.saved?.id || opened.cloud?.sourceId || opened.id} entry={opened}
-          back={() => setDetail(null)} read={read} play={play} saveAnnotations={async (parent, changes) => {
+          back={() => setDetail(null)} read={read} play={play} send={direct?.send} saveAnnotations={async (parent, changes) => {
             const id = await saveAnnotations(parent, changes);
             setDetail(current => current === detail && opened.cloud
               ? { ...opened, id, cloud: { ...opened.cloud, id } }
@@ -542,6 +545,8 @@ export function MobileWorkspace({
         <div><ArrowClockwise size={17} aria-hidden="true"/><span id="mobile-sync-preference">自动同步会议与纪要</span>
           <MobileSwitch labelId="mobile-sync-preference" disabled={!unlocked} checked={automatic} change={setAutomatic}/></div>
 
+        {direct && <div><Link size={17} aria-hidden="true"/><label id="mobile-direct-preference" htmlFor="mobile-direct-preference-switch">录音优先直传</label>
+          <MobileSwitch labelId="mobile-direct-preference" disabled={recording} checked={direct.enabled} change={direct.change}/></div>}
         <div><Moon size={17} aria-hidden="true"/><span id="mobile-theme-preference">深色外观</span>
           <MobileSwitch labelId="mobile-theme-preference" checked={dark} change={checked => {
           const value = checked ? 'dark' : 'light';

@@ -910,12 +910,21 @@ test('phone audio becomes a source-linked transcript and final minutes in its or
   t.after(() => Object.defineProperty(globalThis, 'indexedDB', originalIDB));
   Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: phoneDb });
   await phoneJournal.queueLiveAudio(vault, root, sourceId, title, { kind: 'pcm', sequence: 0, offset: 0, recordedAt,
-    pcm: { codec: 'pcm', length: 32000, bytes: new Uint8Array(32000).fill(4) } });
-  await phoneJournal.queueLiveAudio(vault, root, sourceId, title, { kind: 'finish', sequence: 1 });
+    pcm: { codec: 'pcm', length: 32000, bytes: new Uint8Array(32000).fill(4) } }, false, true);
+  await phoneJournal.queueLiveAudio(vault, root, sourceId, title, { kind: 'finish', sequence: 1 }, false, true);
+  assert.deepEqual(await phoneJournal.pushLiveAudio(vault, 'phone-v2', signal), []);
+  const packet = await phoneJournal.heldAudio(vault, sourceId, 0);
+  const frame = await desktopJournal.openLiveAudio(vault, root, packet.operation, packet.v2);
+  const receive = desktopJournal.createMobileAudioReceiver(vault, signal);
+  assert.deepEqual(await receive(frame), {next: 1, done: false, stored: true});
+  assert.equal((await signed('/private-sync/live-audio-v2?vault=' + vault.id)).data.operations.length, 0);
+  await phoneJournal.releaseHeldAudio(vault, sourceId, true);
+  assert.equal(await phoneJournal.heldAudio(vault, sourceId, 0), undefined);
   await phoneJournal.pushLiveAudio(vault, 'phone-v2', signal);
   Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: desktopDb });
   await desktopJournal.receiveLiveAudio(vault, root, signal, () => {}, true);
   assert.equal((await repo.get(desktopId)).capture, 'sealed');
+  assert.equal((await repo.get(desktopId)).chunks.length, 1);
   await runCycle(repo, { transcribe: async () => '决定周五进行发布评审' }, { lane: 'audio' });
   const finished = await repo.get(desktopId);
   assert.equal(finished.capture, 'completed');
