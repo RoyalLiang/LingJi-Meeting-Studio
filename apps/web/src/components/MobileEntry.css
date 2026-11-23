@@ -10,6 +10,7 @@
   --phone-selection: #e2ebe5;
   --phone-live: #9c4739;
   --phone-dock-glass: #ffffff4d;
+  --phone-nav-glass: #ffffff3b;
   --phone-dock-solid: #f5f5f5;
   --phone-dock-edge: #25362e18;
   --phone-lens-glass: #1d665020;
@@ -31,6 +32,7 @@
   --phone-selection: #2d4136;
   --phone-live: #f09b8d;
   --phone-dock-glass: #2c2c2e55;
+  --phone-nav-glass: #2c2c2e43;
   --phone-dock-solid: #2a2a2a;
   --phone-dock-edge: #ffffff16;
   --phone-lens-glass: #8fd1b638;

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Desktop, DeviceMobile, Globe } from '@phosphor-icons/react';
+import { Desktop, DeviceMobile, Globe, Shield, ShieldCheck } from '@phosphor-icons/react';
 import { api, ApiError, getAuthGeneration, messageOf } from '../api';
 import { Button } from './ui';
 import { MobileSheet } from './MobileSheet';
@@ -184,15 +184,19 @@ export function MobileAccountFactor({ email, legacy, onBusy, done }: {
       ? <Button variant="secondary" disabled={busy} onClick={() => void act(async () => setStatus(await loadMobileFactor(true)))}>重试</Button>
       : <p className="mobile-sheet-note" role="status">正在检查验证状态…</p>)}
     {status && !setup && !disable && !recovery && <>
-      <p className="mobile-factor-state" data-enabled={status.enabled}>{status.enabled ? '已开启' : '未开启'}</p>
-      <p className="mobile-sheet-note">{status.enabled ? '登录需要验证器代码或备用码。' : '为账号登录增加一层验证。'}</p>
-      {!status.available && <p className="mobile-sheet-note">当前同步服务未开放双重验证。</p>}
-      {status.available && legacy && <p className="mobile-sheet-note">升级账号后即可设置验证器。</p>}
+      <div className="mobile-factor-status" data-enabled={status.enabled}>
+        <span className="mobile-factor-icon" aria-hidden="true">{status.enabled ? <ShieldCheck size={21}/> : <Shield size={21}/>}</span>
+        <div>
+          <strong>{status.enabled ? '已开启' : '未开启'}</strong>
+          <p>{!status.available ? '当前同步服务未开放双重验证。' : legacy ? '升级账号后即可设置验证器。'
+            : status.enabled ? '登录时使用验证器代码或备用码。' : '登录时增加验证器代码校验。'}</p>
+        </div>
+      </div>
       {status.available && !legacy && (status.recent
         ? <Button variant={status.enabled ? 'secondary' : 'primary'} disabled={busy} onClick={() => {
           if (status.enabled) { setError(''); setDisable(true); }
           else void act(async () => setSetup((await api<{ uri: string }>('/private-sync/factor/enroll', 'POST', {})).uri));
-        }}>{status.enabled ? '关闭双重验证' : busy ? '正在准备…' : '设置 Microsoft Authenticator'}</Button>
+        }}>{busy ? '正在准备…' : status.enabled ? '关闭双重验证' : '设置 Microsoft Authenticator'}</Button>
         : <form className="mobile-security-form" onSubmit={verify}>
           <p className="mobile-sheet-note">修改设置前，请验证身份。</p>
           <label>当前密码<input name="password" type="password" autoComplete="current-password" minLength={10} maxLength={128} required/></label>
@@ -201,11 +205,14 @@ export function MobileAccountFactor({ email, legacy, onBusy, done }: {
         </form>)}
     </>}
     {setup && <div className="mobile-factor-setup">
-      <p className="mobile-sheet-note">在 Microsoft Authenticator 中选择「添加账户」→「其他账户」，扫描二维码。同一部手机可手动输入密钥。</p>
-      {image && <img src={image} alt="Microsoft Authenticator 登记二维码" width={152} height={152}/>}
+      <div className="mobile-factor-qr">
+        <strong>Microsoft Authenticator</strong>
+        <p className="mobile-sheet-note">点「添加账户 → 其他账户」，扫描二维码。</p>
+        {image && <img src={image} alt="Microsoft Authenticator 登记二维码" width={152} height={152}/>}
+      </div>
       <details>
-        <summary>在同一部手机上设置</summary>
-        <code>{new URL(setup).searchParams.get('secret')}</code>
+        <summary>在这部手机上用密钥设置</summary>
+        <code tabIndex={0}>{new URL(setup).searchParams.get('secret')}</code>
         <Button variant="ghost" onClick={async () => {
           try {
             await navigator.clipboard.writeText(new URL(setup).searchParams.get('secret') || '');
@@ -213,20 +220,22 @@ export function MobileAccountFactor({ email, legacy, onBusy, done }: {
           } catch { setError('无法复制密钥，请长按选中后复制'); }
         }}>{copiedKey ? '已复制密钥' : '复制密钥'}</Button>
       </details>
-      <p className="mobile-sheet-note">开启后，其他设备需要重新登录。</p>
     </div>}
     {(setup || disable) && <form className="mobile-security-form" onSubmit={submit}>
-      {disable && <p className="mobile-sheet-note">请使用验证器新生成的代码。关闭后，其他设备需要重新登录。</p>}
+      {disable && <p className="mobile-sheet-note">关闭后，其他设备需要重新登录。</p>}
       <label>{disable ? '验证器代码或备用码' : '六位验证码'}<input name="code" required maxLength={disable ? 24 : 6}
         pattern={disable ? undefined : '[0-9]{6}'} inputMode={disable ? 'text' : 'numeric'} autoComplete="one-time-code" spellCheck={false}/></label>
+      {setup && <p className="mobile-sheet-note">开启后，其他设备需要重新登录。</p>}
       <div className="mobile-sheet-actions mobile-sheet-paired">
         <Button variant="secondary" disabled={busy} onClick={restart}>返回</Button>
         <Button type="submit" variant={disable ? 'danger' : 'primary'} disabled={busy}>{disable ? '确认关闭' : '确认开启'}</Button>
       </div>
     </form>}
     {recovery && <>
-      <p className="mobile-factor-state" data-enabled="true">已开启</p>
-      <p className="mobile-sheet-note">请保存备用码。验证器丢失时，每个备用码可登录一次。</p>
+      <div className="mobile-factor-status" data-enabled="true">
+        <span className="mobile-factor-icon" aria-hidden="true"><ShieldCheck size={21}/></span>
+        <div><strong>双重验证已开启</strong><p>请保存备用码。每个代码可登录一次。</p></div>
+      </div>
       <ul className="mobile-recovery-codes">{recovery.map(code => <li key={code}><code>{code}</code></li>)}</ul>
       <Button variant="primary" onClick={done}>已保存备用码</Button>
     </>}

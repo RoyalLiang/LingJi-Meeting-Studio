@@ -83,7 +83,7 @@ public final class MainActivity extends Activity {
     private boolean pendingMeetingStart;
     private final Runnable timeout = () -> {
         retry.setVisibility(View.VISIBLE);
-        dismissStartupSplash(false);
+        dismissStartupSplash();
     };
     private WebMessagePort recordingPort;
     private final ConnectivityManager.NetworkCallback networkCallback = new ConnectivityManager.NetworkCallback() {
@@ -190,13 +190,8 @@ public final class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 31) {
             getSplashScreen().setOnExitAnimationListener(splash -> {
                 startupSplash = splash;
-                if (retry.getVisibility() == View.VISIBLE) {
-                    dismissStartupSplash(false);
-                } else if (revealingAttempt == pageAttempt || launch.getVisibility() != View.VISIBLE) {
-                    launch.animate().cancel();
-                    launch.setVisibility(View.GONE);
-                    dismissStartupSplash(true);
-                }
+                if (retry.getVisibility() == View.VISIBLE || launch.getVisibility() != View.VISIBLE) dismissStartupSplash();
+                else if (revealingAttempt == pageAttempt) animateReveal(pageAttempt);
             });
         }
         // Start WebView creation immediately in onCreate so local APK assets load on the first frame.
@@ -282,33 +277,50 @@ public final class MainActivity extends Activity {
         frame.removeCallbacks(timeout);
         launch.animate().cancel();
         launch.setAlpha(1f);
+        if (startupSplash != null) {
+            startupSplash.animate().cancel();
+            startupSplash.setAlpha(1f);
+        }
         revealingAttempt = -1;
         launch.setVisibility(View.VISIBLE);
         status.setText(message);
         status.setVisibility(message == null ? View.INVISIBLE : View.VISIBLE);
         retry.setVisibility(allowRetry ? View.VISIBLE : View.INVISIBLE);
-        if (allowRetry) dismissStartupSplash(false);
+        if (allowRetry) dismissStartupSplash();
         else frame.postDelayed(timeout, 8000);
     }
 
-    private void fadeLaunch(View cover, Runnable end) {
-        if (!ValueAnimator.areAnimatorsEnabled()) {
-            end.run();
-            return;
-        }
-        cover.animate().alpha(0f).setDuration(320)
+    private void fadeLaunch(View cover, long duration, Runnable end) {
+        cover.animate().alpha(0f).setDuration(duration)
                 .setInterpolator(new AccelerateDecelerateInterpolator()).withEndAction(end).start();
     }
 
-    private void dismissStartupSplash(boolean fade) {
+    private void dismissStartupSplash() {
         SplashScreenView splash = startupSplash;
         if (splash == null) return;
-        if (fade) {
-            fadeLaunch(splash, () -> dismissStartupSplash(false));
+        startupSplash = null;
+        splash.animate().cancel();
+        splash.remove();
+    }
+
+    private void animateReveal(int attempt) {
+        launch.animate().cancel();
+        launch.setAlpha(1f);
+        if (!ValueAnimator.areAnimatorsEnabled()) {
+            dismissStartupSplash();
+            launch.setVisibility(View.GONE);
+        } else if (startupSplash == null) {
+            fadeLaunch(launch, 360, () -> launch.setVisibility(View.GONE));
         } else {
-            startupSplash = null;
-            splash.animate().cancel();
-            splash.remove();
+            // The opaque cover separates the Logo fade from the first visible WebView frame.
+            fadeLaunch(startupSplash, 440, () -> {
+                dismissStartupSplash();
+                frame.postOnAnimation(() -> {
+                    if (pageAttempt == attempt && revealingAttempt == attempt && !isDestroyed()) {
+                        fadeLaunch(launch, 360, () -> launch.setVisibility(View.GONE));
+                    }
+                });
+            });
         }
     }
 
@@ -322,12 +334,7 @@ public final class MainActivity extends Activity {
                 if (id == pageAttempt && !isDestroyed() && revealingAttempt != id && launch.getVisibility() == View.VISIBLE) {
                     frame.removeCallbacks(timeout);
                     revealingAttempt = pageAttempt;
-                    if (startupSplash == null) {
-                        fadeLaunch(launch, () -> launch.setVisibility(View.GONE));
-                    } else {
-                        launch.setVisibility(View.GONE);
-                        dismissStartupSplash(true);
-                    }
+                    animateReveal(attempt);
                 }
             }
         });
@@ -476,23 +483,19 @@ public final class MainActivity extends Activity {
                     MeetingCaptureService.changePause(data.startsWith("system-pause:"), Integer.parseInt(data.substring(data.indexOf(':') + 1)));
                     return;
                 }
+                if (data.matches("check-update:[a-f0-9-]{36}")) {
+                    String id = data.substring("check-update:".length());
+                    new Thread(() -> {
+                        String result = checkAndroidUpdate();
+                        runOnUiThread(() -> {
+                            if (port == recordingPort) port.postMessage(new WebMessage("update-result:" + id + ":" + result));
+                        });
+                    }, "lingji-update-check").start();
+                    return;
+                }
                 switch (data) {
                     case "direct-addresses":
                         postToRecorder("direct-addresses:" + directAddresses());
-                        break;
-                    case "check-update":
-                        new Thread(() -> {
-                            String result = checkAndroidUpdate();
-                            runOnUiThread(() -> {
-                                if (port == recordingPort) port.postMessage(new WebMessage("update-result:" + result));
-                            });
-                        }, "lingji-update-check").start();
-                        break;
-                    case "open-releases":
-                        try {
-                            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(
-                                "https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases")));
-                        } catch (ActivityNotFoundException ignored) {}
                         break;
                     case "ready":
                         recordingBridgeReady = true;
@@ -622,11 +625,11 @@ public final class MainActivity extends Activity {
                     if (version.matches()) latest = Math.max(latest, Integer.parseInt(version.group(1)));
                 }
             }
-            if (latest == 0) return "公开发布页暂无 Android 测试包。";
-            if (latest <= installed.getLongVersionCode()) return "已是公开发布的最新 Android 测试版本。";
-            return "发现测试版 0.4-preview." + latest + "，可从项目发布页获取。";
+            if (latest == 0) return "empty";
+            if (latest <= installed.getLongVersionCode()) return "current";
+            return "available:" + latest;
         } catch (Exception failure) {
-            return "暂时无法检查更新，请稍后重试。";
+            return "error";
         } finally {
             if (request != null) request.disconnect();
         }
@@ -679,7 +682,7 @@ public final class MainActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
-        dismissStartupSplash(false);
+        dismissStartupSplash();
         getSystemService(ConnectivityManager.class).unregisterNetworkCallback(networkCallback);
         closeRecordingPort();
         if (microphone != null) microphone.deny();

@@ -31,8 +31,7 @@ window.addEventListener('message', event => {
   window.addEventListener('lingji:recording-opened', () => port.postMessage('start'));
   window.addEventListener('lingji:recording-closed', () => port.postMessage('stop'));
   window.addEventListener('lingji:recording-state', event => port.postMessage((event as CustomEvent<string>).detail));
-  window.addEventListener('lingji:check-update', () => port.postMessage('check-update'));
-  window.addEventListener('lingji:open-releases', () => port.postMessage('open-releases'));
+  window.addEventListener('lingji:check-update', event => port.postMessage('check-update:' + (event as CustomEvent<string>).detail));
   window.addEventListener('lingji:request-direct-addresses', () => port.postMessage('direct-addresses'));
   window.addEventListener('lingji:system-audio-disarm', () => port.postMessage('system-audio-disarm'));
 });
