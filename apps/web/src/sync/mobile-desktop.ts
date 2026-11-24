@@ -66,7 +66,7 @@ export async function receiveLiveAudio(
     if (receipt === 'deleted') return true;
     if (!receipt) return false;
     if (receipt.done) {
-      if (receipt.stored) changed();
+      changed();
       if (v2) await acknowledgeLiveAudio(vault, root, frame.id, frame.title, true);
     }
     if (receipt.stored && frame.kind === 'pcm' && frame.sequence === 0) {

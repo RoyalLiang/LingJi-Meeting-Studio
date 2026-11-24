@@ -633,6 +633,7 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
   const legacyLive = liveAudio && !liveAudioV2;
   const directSupported = /\bLingJi-Android\b/.test(navigator.userAgent) && typeof RTCPeerConnection === 'function';
   const holdForDirect = directSupported && preferDirect;
+  const iosShell = /\bLingJi-iOS\//.test(navigator.userAgent);
   const recorder = vault && unlocked && !legacyAccount ? <QuickMobileRecording
     visible={mobilePage === 'record'}
     showRecorder={() => { setMobilePage('record'); window.scrollTo(0, 0); }}
@@ -645,7 +646,7 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
       try {
         const wire = await packMobilePcm(bytes);
         pcm = wire;
-        localPcm = await packLocalMobilePcm(bytes, wire).catch(() => wire);
+        localPcm = iosShell ? wire : await packLocalMobilePcm(bytes, wire).catch(() => wire);
         await appendMobileRecording(vault, key, entry, sequence, localPcm);
         await queueLiveAudio(vault, key, entry.id, entry.title, {
           kind: 'pcm', sequence, offset, pcm: wire, recordedAt: sequence === 0 ? entry.at : undefined,

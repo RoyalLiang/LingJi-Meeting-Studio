@@ -81,8 +81,9 @@
 .phone-entry-indicator { color: var(--phone-muted); }
 .phone-auth {
   grid-template-columns: minmax(0, 360px);
-  align-content: start;
-  padding-top: max(env(safe-area-inset-top), clamp(36px, 16vw, 100px));
+  min-height: 100dvh;
+  align-content: safe center;
+  padding-block: calc(env(safe-area-inset-top, 0px) + 24px) calc(env(safe-area-inset-bottom, 0px) + 24px);
 }
 .phone-auth-card input { transition: none; }
 .phone-auth-card input:focus-visible {

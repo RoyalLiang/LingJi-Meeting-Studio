@@ -93,7 +93,10 @@ test('compact C player seeks by waveform click and drag, keeps both tracks align
     assert.equal(fixture.tracks[0].currentTime,75);assert.equal(fixture.tracks[1].currentTime,60);
     const speed=find(node=>node.tag==='select'&&node.props.label.startsWith('播放速度'));
     assert.ok(speed.props.triggerContent,'speed uses the shared icon trigger');
-    speed.props.onChange('1.25');assert.ok(fixture.tracks.every(track=>track.playbackRate===1.25&&track.preservesPitch));
+    const beforeRate=fixture.tracks.map(track=>[track.currentTime,track.paused,track.volume]);
+  speed.props.onChange('1.25');
+  assert.ok(fixture.tracks.every(track=>track.playbackRate===1.25&&track.preservesPitch));
+  assert.deepEqual(fixture.tracks.map(track=>[track.currentTime,track.paused,track.volume]),beforeRate);
   } finally {fixture.dispose();}
 });
 

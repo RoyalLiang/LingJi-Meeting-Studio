@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { X } from '@phosphor-icons/react';
 import { fetchDownload } from '../downloads';
 import { messageOf } from '../api';
@@ -59,7 +59,7 @@ export function Modal({ title, children, onClose, wide = false, explicitCloseOnl
   const backdropDown = useRef(false);
   const closing=useRef<ReturnType<typeof setTimeout>|null>(null);
   const requestClose=()=>{if(closing.current)return;if(matchMedia('(prefers-reduced-motion: reduce)').matches){onClose();return;}ref.current?.classList.add('is-closing');closing.current=setTimeout(onClose,140);};
-  useEffect(() => {
+  useLayoutEffect(() => {
     const dialog = ref.current;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const fallback = document.querySelector<HTMLElement>('.workspace .record-title button:not(:disabled), .workspace .topbar button:not(:disabled)');

@@ -132,7 +132,7 @@ test('closing a modal cancels its delayed callback when the modal is replaced',a
  const {transform}=await import('esbuild');const source=await readFile(new URL('../apps/web/src/components/ui.tsx',import.meta.url),'utf8');
  const code=(await transform(source.replace(/^import .*$/gm,''),{loader:'tsx',format:'cjs'})).code;
  const effects=[],timers=new Map();let next=0,closed=0;
- const box={module:{exports:{}},React:{createElement:(type,props,...children)=>({type,props,children})},useRef:initial=>({current:initial}),useId:()=> 'modal',useEffect:effect=>effects.push(effect),useState:value=>[value,()=>{}],useCallback:value=>value,HTMLElement:class{},document:{activeElement:null,querySelector:()=>null},matchMedia:()=>({matches:false}),setTimeout:run=>{timers.set(++next,run);return next;},clearTimeout:id=>timers.delete(id)};
+ const box={module:{exports:{}},React:{createElement:(type,props,...children)=>({type,props,children})},useRef:initial=>({current:initial}),useId:()=> 'modal',useLayoutEffect:effect=>effects.push(effect),useState:value=>[value,()=>{}],useCallback:value=>value,HTMLElement:class{},document:{activeElement:null,querySelector:()=>null},matchMedia:()=>({matches:false}),setTimeout:run=>{timers.set(++next,run);return next;},clearTimeout:id=>timers.delete(id)};
  vm.runInNewContext(code,box);const tree=box.module.exports.Modal({title:'会议',onClose:()=>{closed++;}});tree.props.ref.current={classList:{add(){}},showModal(){},close(){}};const cleanup=effects[0]();
  tree.children[0].children.find(child=>child?.props?.className==='modal-close').props.onClick();assert.equal(timers.size,1);cleanup();assert.equal(timers.size,0);assert.equal(closed,0);
 });

@@ -205,7 +205,7 @@ const MobileAudioPlayer = memo(forwardRef<PlayerHandle, {
       onLoadedMetadata={event => {
         const element = event.currentTarget;
         if (Number.isFinite(element.duration)) setDuration(element.duration);
-        element.playbackRate = speed;
+        if (element.playbackRate !== speed) element.playbackRate = speed;
         seek(requestedTime.current);
       }}
       onTimeUpdate={event => setPosition(event.currentTarget.currentTime)}
@@ -244,7 +244,7 @@ const MobileAudioPlayer = memo(forwardRef<PlayerHandle, {
       <button type="button" className="mobile-player-rate" data-adjusted={rateIndex !== 0} aria-label={`播放速度 ${speed} 倍，点按切换`} onClick={() => {
         const next = (rateIndex + 1) % playbackRates.length;
         setRateIndex(next);
-        if (player.current) player.current.playbackRate = playbackRates[next];
+        if (player.current && player.current.playbackRate !== playbackRates[next]) player.current.playbackRate = playbackRates[next];
       }}><span>{speed}×</span></button>
     </div>
   </div>;

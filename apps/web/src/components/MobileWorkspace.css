@@ -11,9 +11,9 @@ body:has(.quick-mobile-app) { background: #f4f4f5; }
 .mobile-workspace {
   --phone-gutter: clamp(16px, 5vw, 24px);
   --phone-dock: 58px;
-  --phone-dock-offset: calc(9px + env(safe-area-inset-bottom));
-  min-height: 100svh;
-  padding: max(6px, env(safe-area-inset-top)) var(--phone-gutter)
+  --phone-dock-offset: max(8px, env(safe-area-inset-bottom, 0px));
+  min-height: 100dvh;
+  padding: calc(env(safe-area-inset-top, 0px) + 12px) var(--phone-gutter)
     calc(var(--phone-dock) + var(--phone-dock-offset) + 15px);
 }
 .mobile-workspace :is(h1,h2,p) { margin-block: 0; }
@@ -147,7 +147,7 @@ body:has(.quick-mobile-app) { background: #f4f4f5; }
   background: var(--phone-meeting-rule); pointer-events: none;
 }
 .mobile-record-row { position: relative; overflow: hidden; }
-.mobile-record-slide { position: relative; display: flex; align-items: center; background: var(--phone-meeting-surface); touch-action: pan-y; transition: transform 180ms ease-out; }
+.mobile-record-slide { position: relative; display: flex; align-items: center; background: var(--phone-meeting-surface); touch-action: pan-y; -webkit-user-select: none; user-select: none; transition: transform 180ms ease-out; }
 .mobile-record-slide[data-dragging=true] { transition: none; }
 .mobile-sheet-close { flex: none; display: grid; place-items: center; width: 44px; min-height: 44px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--phone-muted); cursor: pointer; }
 .mobile-row-delete {
@@ -166,7 +166,6 @@ body:has(.quick-mobile-app) { background: #f4f4f5; }
   background: transparent; color: var(--phone-ink); text-align: start; cursor: pointer;
 }
 .mobile-workspace .mobile-record-card:focus-visible { outline-offset: -2px; }
-.mobile-record-card:active { background: var(--phone-panel); }
 .mobile-record-card strong, .mobile-detail-header h2 {
   overflow-wrap: anywhere; font-size: .94rem; line-height: 1.4; font-weight: 650;
 }
@@ -363,8 +362,9 @@ body:has(.quick-mobile-app) { background: #f4f4f5; }
 .mobile-switch input:disabled + .mobile-switch-track { opacity: .5; }
 
 .mobile-source-sheet {
-  position: fixed; box-sizing: border-box; width: min(100%,480px); max-width: 100%; max-height: 84svh;
-  inset: auto 0 0; margin: 0 auto; padding: 20px 18px calc(14px + env(safe-area-inset-bottom));
+  position: fixed; box-sizing: border-box; width: min(100%,480px); max-width: 100%;
+  max-height: min(88dvh, calc(100dvh - env(safe-area-inset-top, 0px) - 12px));
+  inset: auto 0 0; margin: 0 auto; padding: 16px 20px calc(18px + env(safe-area-inset-bottom, 0px));
   border: 0; border-radius: 18px 18px 0 0; background: var(--phone-paper); color: var(--phone-ink);
 }
 .mobile-source-sheet:has(.mobile-remove-title) {
@@ -376,7 +376,7 @@ body:has(.quick-mobile-app) { background: #f4f4f5; }
 /* Confirmations live in the top layer without moving the device list. */
 .mobile-source-sheet[data-placement=center] {
   inset: 0; width: min(calc(100% - 32px), 400px); height: fit-content;
-  margin: auto; padding: 22px 18px 16px; border-radius: 20px;
+  margin: auto; padding: 18px 20px; border-radius: 20px;
 }
 .mobile-workspace .mobile-profile-actions .button.mobile-sign-out { color: var(--phone-live); }
 .mobile-profile-actions { display: grid; justify-items: end; }
@@ -407,13 +407,16 @@ body:has(.quick-mobile-app) { background: #f4f4f5; }
 .mobile-sheet-heading[data-back] button { order: -1; }
 .mobile-source-sheet[open] { overscroll-behavior: contain; }
 .mobile-source-sheet::backdrop { background: rgb(0 0 0 / .24); }
-.mobile-sheet-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: -6px; }
-.mobile-sheet-close { background: var(--phone-panel); margin-right: -3px; }
+.mobile-sheet-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 44px; padding-block-end: 10px; }
+.mobile-sheet-heading h2:focus { outline: none; }
+.mobile-sheet-close { margin-inline-end: -6px; }
+.mobile-sheet-body { display: grid; gap: 14px; min-width: 0; }
+.mobile-source-sheet .mobile-sheet-body > * { margin-block: 0; }
 .mobile-source-sheet h2 { font-size: 1.16rem; line-height: 1.4; font-weight: 650; }
 .mobile-source-sheet p { margin: 10px 0; line-height: 1.55; }
 .mobile-sheet-note { color: var(--phone-muted); font-size: .83rem; }
-.mobile-sheet-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
-.mobile-profile-form, .mobile-security-form { display: grid; gap: 8px; margin-top: 14px; font-size: .88rem; }
+.mobile-sheet-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.mobile-profile-form, .mobile-security-form { display: grid; gap: 10px; font-size: .88rem; }
 .mobile-profile-form .button { justify-self: end; }
 .mobile-device { display: flex; align-items: center; justify-content: space-between; gap: 7px; }
 .mobile-device-list { margin-top: 8px; }

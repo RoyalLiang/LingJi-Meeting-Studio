@@ -3,7 +3,7 @@ run-name: Pi test packages · ${{ github.sha }}
 
 on:
   push:
-    branches: [dev_pi-chain-regression-20261031, dev_v04-sync-audit, dev_legacy-audio-retention]
+    branches: [dev_pi-chain-regression-20261031, dev_v04-sync-audit, dev_legacy-audio-retention, dev_mobile-desktop-polish]
     paths-ignore: ['docs/**', 'README.md']
   workflow_dispatch:
 
@@ -24,7 +24,7 @@ env:
 
 jobs:
   installer_hashes:
-    if: github.ref_name != 'dev_v04-sync-audit' && github.ref_name != 'dev_legacy-audio-retention'
+    if: github.ref_name != 'dev_v04-sync-audit' && github.ref_name != 'dev_legacy-audio-retention' && github.ref_name != 'dev_mobile-desktop-polish'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -93,7 +93,7 @@ jobs:
           retention-days: 14
 
   windows:
-    if: github.ref_name != 'dev_v04-sync-audit' && github.ref_name != 'dev_legacy-audio-retention'
+    if: github.ref_name != 'dev_v04-sync-audit' && github.ref_name != 'dev_legacy-audio-retention' && github.ref_name != 'dev_mobile-desktop-polish'
     needs: installer_hashes
     runs-on: windows-2025
     timeout-minutes: 90

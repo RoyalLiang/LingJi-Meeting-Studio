@@ -998,7 +998,9 @@ test('phone audio becomes a source-linked transcript and final minutes in its or
   assert.equal(await phoneJournal.heldAudio(vault, sourceId, 0), undefined);
   await phoneJournal.pushLiveAudio(vault, 'phone-v2', signal);
   Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: desktopDb });
-  await desktopJournal.receiveLiveAudio(vault, root, signal, () => {}, true);
+  const notified = [];
+  await desktopJournal.receiveLiveAudio(vault, root, signal, () => notified.push('changed'), true);
+  assert.equal(notified.length, 2, 'notify after both the first durable frame and finishing capture');
   assert.equal((await repo.get(desktopId)).capture, 'sealed');
   assert.equal((await repo.get(desktopId)).chunks.length, 1);
   await desktopJournal.pushLiveAudio(vault, 'desktop', signal);

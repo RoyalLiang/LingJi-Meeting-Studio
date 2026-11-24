@@ -491,3 +491,5 @@ html:not(.recording-capsule-mode) body{background:var(--page)}
   content-visibility: auto;
   contain-intrinsic-block-size: auto 54px;
 }
+
+:is(.v10-sidebar .record-row, .directory-records .meeting-table-row) { -webkit-user-select: none; user-select: none; }

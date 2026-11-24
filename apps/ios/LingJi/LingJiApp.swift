@@ -6,7 +6,6 @@ struct LingJiApp: App {
     var body: some Scene {
         WindowGroup {
             MeetingWebView()
-                .ignoresSafeArea(.container)
         }
     }
 }
@@ -20,19 +19,39 @@ struct MeetingWebView: UIViewRepresentable {
         configuration.applicationNameForUserAgent = "LingJi-iOS/\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] ?? "1.0")"
         configuration.allowsInlineMediaPlayback = true
         configuration.mediaTypesRequiringUserActionForPlayback = []
+        configuration.userContentController.add(context.coordinator, name: "lingjiMicrophone")
 
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.navigationDelegate = context.coordinator
         view.uiDelegate = context.coordinator
         view.scrollView.contentInsetAdjustmentBehavior = .never
+        context.coordinator.view = view
         context.coordinator.load(view)
         return view
     }
 
     func updateUIView(_ view: WKWebView, context: Context) {}
 
-    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
+    static func dismantleUIView(_ view: WKWebView, coordinator: Coordinator) {
+        coordinator.microphone.finish()
+        view.configuration.userContentController.removeScriptMessageHandler(forName: "lingjiMicrophone")
+    }
+
+    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
         private let page = URL(string: "https://lingji.rookiehouse.com/mobile-app")!
+        weak var view: WKWebView?
+        lazy var microphone = NativeMicrophone { [weak self] result in
+            guard let view = self?.view, let payload = try? JSONEncoder().encode(result),
+                  let json = String(data: payload, encoding: .utf8) else { return }
+            view.evaluateJavaScript("dispatchEvent(new CustomEvent('lingji:native-microphone-result',{detail:\(json)}))")
+        }
+
+        func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+            let frame = message.frameInfo
+            guard frame.isMainFrame, let url = frame.request.url, matchesApp(url),
+                  let command = message.body as? String else { return }
+            microphone.receive(command)
+        }
 
         func load(_ view: WKWebView) {
             guard let file = Bundle.main.url(forResource: "mobile", withExtension: "html"),
@@ -63,7 +82,10 @@ struct MeetingWebView: UIViewRepresentable {
             return .cancel
         }
 
-        func webViewWebContentProcessDidTerminate(_ view: WKWebView) { load(view) }
+        func webViewWebContentProcessDidTerminate(_ view: WKWebView) {
+            microphone.finish()
+            load(view)
+        }
 
         func webView(
             _ view: WKWebView,

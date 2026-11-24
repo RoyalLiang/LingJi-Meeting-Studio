@@ -28,12 +28,12 @@ export class PlaybackTransport {
     if (![0.75, 1, 1.25, 1.5, 2].includes(rate)) throw new RangeError('Unsupported playback rate');
     this.rate = rate;
     this.tracks().forEach(media => this.configure(media));
-    this.syncLevels();
   }
 
   private configure(media: PlaybackMedia) {
-    media.playbackRate = this.rate; media.preservesPitch = true;
-    if ('webkitPreservesPitch' in media) media.webkitPreservesPitch = true;
+    if (media.preservesPitch === false) media.preservesPitch = true;
+    if (media.playbackRate !== this.rate) media.playbackRate = this.rate;
+    if ('webkitPreservesPitch' in media && media.webkitPreservesPitch === false) media.webkitPreservesPitch = true;
   }
 
   syncLevels() {
