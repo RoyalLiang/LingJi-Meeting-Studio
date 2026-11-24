@@ -2,7 +2,7 @@
 
 macOS 商店版沿用 GitHub Actions 构建，由 Apple Distribution 签名应用、Mac Installer Distribution 签名 `.pkg`，上传 App Store Connect 后通过 TestFlight 安装和更新。安装后的名称为“聆记”，商店展示名为“聆记 LingJi”，Bundle ID 为 `com.tts.meeting`。
 
-源码已提供商店签名、App Sandbox 和上传流程。Apple 是否接受构建、测试员能否安装，以对应发布流水和 App Store Connect 的实际状态为准；普通 DMG 的运行结果不能替代商店版验证。[Tauri 商店分发](https://v2.tauri.app/distribute/app-store/)、[Apple TestFlight](https://developer.apple.com/help/app-store-connect/test-a-beta-version/testflight-overview/)。
+2026-11-24，产品 v0.3.39.1 的 TestFlight 构建 **0.3.39（166.1）** 已获 Apple 接受，完成出口合规确认并加入内部测试组；构建显示“准备测试”，仅账户持有人的邀请状态为“已邀请”。[正式流水](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/45302555949)的签名、沙盒检查和上传均已通过。真实 TestFlight 安装尚未验收，普通 DMG 的运行结果不能替代商店版验证。[Tauri 商店分发](https://v2.tauri.app/distribute/app-store/)、[Apple TestFlight](https://developer.apple.com/help/app-store-connect/test-a-beta-version/testflight-overview/)。
 
 ## 使用商店版
 
@@ -36,6 +36,8 @@ Apple Developer 团队需要有效会员资格、已接受的 App Store Connect 
 ## 构建与发布
 
 `preview-release.yml` 在原有 macOS 构建中增加真实 App Sandbox 后台探针及商店包构建。主应用与继承沙盒的后台可执行文件分别使用对应 entitlement；所有 Mach-O 文件重新签名，清除派生应用的 quarantine 属性，再核验嵌套签名、团队、Bundle ID、描述文件和版本字段。
+
+签名前只对派生 `.app` 规范目录和文件权限，保留可执行位且不跟随符号链接；签名后再次检查，避免包内文件仅 root 可读而被 Apple 以 `90255` 拒绝。私钥等签名输入保持私有权限。
 
 产品版本继续使用 `X.Y.Z.R`。Apple 的显示版本为 `X.Y.Z`，构建号为该工作流的运行计数和重试次数；当前分别限制在 1–9999 和 1–99，超过前需调整编码。签名包回执包含固定源码和控制器 SHA、文件 SHA-256、描述文件 UUID 及 Xcode/SDK 版本。
 

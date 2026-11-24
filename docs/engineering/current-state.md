@@ -1,6 +1,8 @@
 # 当前能力与验证边界
 
-最近一次已验证的 GitHub 测试版为 **[v0.3.38.0](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.3.38.0)**，源码与工作流均为 `519fe6d`。[候选流水](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/44531735392)和[正式流水](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/44553006759)的 macOS、Windows 和 Ubuntu 检查均已通过。三个安装包和更新清单的大小及 SHA-256 已核对。微软商店状态见[商店分发](microsoft-store.md)。安装后的真机使用需分别验收。
+最近一次已验证的 GitHub 测试版为 **[v0.3.39.1](https://github.com/RoyalLiang/LingJi-Meeting-Studio/releases/tag/v0.3.39.1)**，源码与工作流均为 `3f735d8`。[候选流水](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/45295844481)和[正式流水](https://github.com/RoyalLiang/LingJi-Meeting-Studio/actions/runs/45302555949)的 macOS、Windows 和 Ubuntu 检查均已通过。三个安装包和更新清单的大小及 SHA-256 已核对。微软商店状态见[商店分发](microsoft-store.md)。安装后的真机使用需分别验收。
+
+2026-11-24，macOS TestFlight 构建 **0.3.39（166.1）** 已通过 Apple 处理，完成出口合规确认并加入内部测试组，仅邀请账户持有人；构建显示“准备测试”。真实 TestFlight 安装、设备采音和旧 DMG 数据恢复尚未验收。使用要求见 [macOS TestFlight](macos-testflight.md)。
 
 当前源码可在支持窗口共享的浏览器中，经每场授权自动截取所选飞书或 Chrome 会议画面。生成纪要时，配置的模型可从关键截图提取补充观察。实现与验证边界见[用会议画面补充纪要](intelligent-minutes.md#用会议画面补充纪要)。
 
