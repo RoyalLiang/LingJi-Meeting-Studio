@@ -48,9 +48,10 @@ export function MobileAccountDevices() {
     {!devices && !error && <p role="status">正在加载设备…</p>}
     {devices && !devices.current && <p className="mobile-sheet-note">重新登录可登记当前设备。</p>}
     <ul className="mobile-record-list mobile-device-list">{devices?.items.map(device => {
-      const name = device.current && /LingJi-Android/.test(navigator.userAgent) ? '聆记 Android' : device.name;
+      const platform = device.current && /\bLingJi-(Android|iOS)\//.exec(navigator.userAgent)?.[1];
+    const name = platform ? '聆记 ' + platform : device.name;
       const unknown = name === '浏览器';
-      const Icon = /Android|iPhone|iPad/.test(name) ? DeviceMobile : unknown ? Globe : Desktop;
+      const Icon = /Android|iPhone|iPad|iOS/.test(name) ? DeviceMobile : unknown ? Globe : Desktop;
       const title = unknown ? '未识别设备' : name;
       return <li className="mobile-device" key={device.id}>
         <Icon size={20} aria-hidden="true"/>

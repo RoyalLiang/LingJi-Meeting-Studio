@@ -28,8 +28,7 @@ export function VirtualSegments({ segments, children, className = '', selector =
     const schedule=()=>{cancelAnimationFrame(frame);frame=requestAnimationFrame(measure);};
     const resize=new ResizeObserver(schedule);
     for (let node: HTMLElement | null = element; node; node = node.parentElement) {
-      resize.observe(node);
-      if (node === container) break;
+      if (node === container) { resize.observe(container); break; }
       for (let sibling = node.previousElementSibling; sibling; sibling = sibling.previousElementSibling) resize.observe(sibling);
     }
     measure();

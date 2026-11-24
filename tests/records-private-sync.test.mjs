@@ -611,6 +611,26 @@ test('a blank device can upgrade an empty legacy vault, but cannot replace meeti
   }
 });
 
+test('accepted direct audio renews only the claimed room past the invitation deadline', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'lingji-direct-renewal-'));
+  const store = await createPrivateSyncStore({ root });
+  t.after(async () => { await store.close(); await rm(root, { recursive: true, force: true }); });
+  const owner = 'direct-renewal', host = 'host-proof', guest = 'guest-proof';
+  const { vault } = await createVault();
+  await store.initialize(owner, vault);
+  const id = randomUUID(), unused = randomUUID(), now = 1000, expires = now + 300_000;
+  await store.startPair(owner, id, host, now, true);
+  await store.startPair(owner, unused, host, now, true);
+  await store.pair(owner, id, guest, { step: 1, data: 'offer' }, now);
+  await store.pair(owner, id, host, { step: 2, data: 'answer' }, now);
+  await assert.rejects(store.pair(owner, id, 'other-proof', undefined, expires - 1000), { status: 404 });
+  const lease = await store.pair(owner, id, guest, undefined, expires - 1000);
+  assert.ok(lease.expires > expires);
+  assert.deepEqual((await store.pair(owner, id, host, undefined, expires + 1000)).frames, ['offer', 'answer']);
+  await assert.rejects(store.pair(owner, unused, host, undefined, expires + 1000), { status: 404 });
+  await assert.rejects(store.pair(owner, id, host, undefined, lease.expires + 1), { status: 404 });
+});
+
 test('a full live audio journal still accepts an independent desktop receipt', async t => {
   const { DatabaseSync } = await import('node:sqlite');
   const root = await mkdtemp(join(tmpdir(), 'lingji-private-sync-full-audio-'));
@@ -754,6 +774,38 @@ test('desktop skips a trimmed recording suffix and resends a lost durable acknow
   assert.equal(await receiveLiveAudio(legacy.vault, legacy.root, signal, () => {}), false);
   assert.deepEqual(requests.filter(([method]) => method === 'DELETE').map(([, , cursor]) => cursor), ['5', '5', '5'],
     'an upgraded desktop confirms its previously consumed cursor even when the page is empty');
+});
+
+test('desktop retries skipped live frames and releases a deleted recording without recreating it', async t => {
+  const bundled = await build({ entryPoints: ['apps/web/src/sync/mobile-desktop.ts'], bundle: true, write: false, format: 'esm' });
+  const { receiveLiveAudio } = await import('data:text/javascript;base64,' + Buffer.from(bundled.outputFiles[0].text).toString('base64'));
+  const { vault, root } = await createVault();
+  const id = randomUUID(), operation = randomUUID(), signal = new AbortController().signal;
+  const frame = { kind: 'pcm', id, title: '手机录音', sequence: 1, offset: 1, data: 'AAA' };
+  const encrypted = { id: operation, seq: 1, ...await seal(root, vault,
+    'mobile-live-audio/1', operation, encoder.encode(JSON.stringify(frame))) };
+  const cursors = [];
+  let deleted = false;
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    const target = new URL(url, fixtureOrigin);
+    if (target.pathname.endsWith('/recording')) {
+      assert.equal(JSON.parse(options.body).existingOnly, true);
+      return deleted ? Response.json({ deleted: true }) :
+        Response.json({ error: 'sync_recording_prefix_unavailable' }, { status: 404 });
+    }
+    assert.ok(target.pathname.endsWith('/live-audio'));
+    if (options.method === 'DELETE') {
+      cursors.push(target.searchParams.get('before'));
+      return Response.json({ acknowledged: 1 });
+    }
+    const after = Number(target.searchParams.get('after'));
+    return Response.json({ operations: after ? [] : [encrypted], cursor: 1, more: false, acknowledged: 0 });
+  });
+  await receiveLiveAudio(vault, root, signal, () => {});
+  assert.deepEqual(cursors, []);
+  deleted = true;
+  await receiveLiveAudio(vault, root, signal, () => {});
+  assert.deepEqual(cursors, ['1']);
 });
 
 test('a compressed phone recording beyond five minutes plays locally and seals on a desktop', async t => {

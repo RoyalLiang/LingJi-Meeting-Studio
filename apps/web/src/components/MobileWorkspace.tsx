@@ -1,4 +1,4 @@
-import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
+import { forwardRef, memo, useCallback, useEffect, useLayoutEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ArrowLeft, ArrowClockwise, CircleNotch, DeviceMobile, FileText, Headphones, Keyhole, Link, MagnifyingGlass, Microphone, Moon, Pause, Play, Trash, User, WifiSlash, CaretRight } from '@phosphor-icons/react';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import type { Minutes, MinutesItem } from '../model';
@@ -49,7 +49,6 @@ const RecordRow = memo(function RecordRow({ entry, opened, reveal, select, remov
   entry: Entry; opened: boolean; reveal: (id: string | null) => void;
   select: (entry: Entry) => void; remove?: (entry: Entry) => void;
 }) {
-    const [drag, setDrag] = useState<number>();
     const tracking = useRef<{ x: number; y: number; horizontal: boolean } | undefined>(undefined);
     const suppressClick = useRef(false);
     const seconds = entry.saved?.seconds ?? (entry.cloud?.durationMs === undefined ? null : Math.floor(entry.cloud.durationMs / 1000));
@@ -57,7 +56,7 @@ const RecordRow = memo(function RecordRow({ entry, opened, reveal, select, remov
     return <li className="mobile-record-row" data-revealed={opened}>
       {remove && <button type="button" className="mobile-row-delete" tabIndex={opened ? 0 : -1} aria-hidden={!opened}
         onClick={() => { reveal(null); remove(entry); }}><Trash size={18}/>移除</button>}
-      <div className="mobile-record-slide" data-dragging={drag !== undefined} style={{ transform: `translateX(${drag ?? (opened ? -76 : 0)}px)` }}
+      <div className="mobile-record-slide" style={{ transform: `translateX(${opened ? -76 : 0}px)` }}
         onPointerDown={event => {
           suppressClick.current = false;
           if (remove && event.isPrimary && event.button === 0) tracking.current = { x: event.clientX, y: event.clientY, horizontal: false };
@@ -73,17 +72,26 @@ const RecordRow = memo(function RecordRow({ entry, opened, reveal, select, remov
             suppressClick.current = true;
             event.currentTarget.setPointerCapture(event.pointerId);
           }
-          setDrag(Math.min(0, Math.max(-88, (opened ? -76 : 0) + dx)));
+          event.currentTarget.dataset.dragging = 'true';
+          event.currentTarget.style.transform = `translateX(${Math.min(0, Math.max(-88, (opened ? -76 : 0) + dx))}px)`;
         }}
         onPointerUp={event => {
-          if (tracking.current?.horizontal) {
-            const dx = event.clientX - tracking.current.x;
-            reveal((opened ? dx < 26 : dx < -34) ? entry.id : null);
+          const start = tracking.current;
+          let next = opened;
+          if (start?.horizontal) {
+            const dx = event.clientX - start.x;
+            next = opened ? dx < 26 : dx < -34;
+            reveal(next ? entry.id : null);
           }
           tracking.current = undefined;
-          setDrag(undefined);
+          delete event.currentTarget.dataset.dragging;
+          event.currentTarget.style.transform = `translateX(${next ? -76 : 0}px)`;
         }}
-        onPointerCancel={() => { tracking.current = undefined; setDrag(undefined); }}
+        onPointerCancel={event => {
+          tracking.current = undefined;
+          delete event.currentTarget.dataset.dragging;
+          event.currentTarget.style.transform = `translateX(${opened ? -76 : 0}px)`;
+        }}
         onClickCapture={event => {
           if (suppressClick.current && event.detail > 0) { event.stopPropagation(); suppressClick.current = false; }
         }}>
@@ -246,11 +254,24 @@ const MobileTranscriptList = memo(function MobileTranscriptList({ lines, highlig
   lines: TranscriptLine[]; highlight: string; hasLocal: boolean; onPlayAt: (seconds: number) => void;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
+  const [margin, setMargin] = useState(0);
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const measure = () => setMargin(list.getBoundingClientRect().top + window.scrollY);
+    const observer = new ResizeObserver(measure);
+    for (let node: HTMLElement | null = list; node?.parentElement; node = node.parentElement) {
+      for (let sibling = node.previousElementSibling; sibling; sibling = sibling.previousElementSibling) observer.observe(sibling);
+    }
+    window.addEventListener('resize', measure);
+    measure();
+    return () => { observer.disconnect(); window.removeEventListener('resize', measure); };
+  }, []);
   const virtualizer = useWindowVirtualizer({
     count: lines.length,
     estimateSize: () => 96,
     overscan: 6,
-    scrollMargin: listRef.current?.offsetTop ?? 0,
+    scrollMargin: margin,
   });
   useEffect(() => {
     if (!highlight) return;

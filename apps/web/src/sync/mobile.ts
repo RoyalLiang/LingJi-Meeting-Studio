@@ -361,27 +361,37 @@ export async function pullLiveAudio(
     receiver === 'desktop' ? request<number | undefined>(stored.get(confirmedKey)) : undefined,
   ]);
   const after = saved ?? 0;
-  const delta = await api<Delta>(path + '?vault=' + encodeURIComponent(vault.id) + '&after=' + after, 'GET', undefined, signal);
-  let cursor = after;
-  const acknowledged = delta.acknowledged;
-  // Older clients only advanced their live cursor after the local consumer completed.
-  let confirmed = Math.max(savedConfirmation ?? after, acknowledged !== undefined && Number.isSafeInteger(acknowledged) ? acknowledged : 0);
-  for (let i = 0; i < delta.operations.length; i++) {
-    const { seq, ...operation } = delta.operations[i];
-    signal.throwIfAborted();
-    const allowedJump = i === 0 && delta.trimmed && seq > cursor;
-    if (!Number.isSafeInteger(seq) || (!allowedJump && seq !== cursor + 1) || !uuid.test(operation.id)) throw new Error('实时录音同步游标不连续');
-    cursor = seq;
-    const frame = await openLiveAudio(vault, root, operation, v2);
-    if ((frame.kind === 'received') !== (receiver === 'phone')) throw new Error('实时录音事件类型无效');
-    let durable;
-    try { durable = await consume(frame); }
-    finally { if (frame.kind === 'pcm') frame.pcm.bytes.fill(0); }
-    if (durable !== false && seq === confirmed + 1) confirmed = seq;
+  let confirmed = savedConfirmation ?? after;
+  const pull = async (start: number) => {
+    const delta = await api<Delta>(path + '?vault=' + encodeURIComponent(vault.id) + '&after=' + start, 'GET', undefined, signal);
+    const acknowledged = delta.acknowledged;
+    if (receiver === 'desktop' && acknowledged !== undefined && Number.isSafeInteger(acknowledged) && acknowledged >= 0) {
+      confirmed = Math.max(confirmed, acknowledged);
+    }
+    let cursor = start;
+    for (const { seq, ...operation } of delta.operations) {
+      signal.throwIfAborted();
+      const allowedJump = cursor === start && delta.trimmed && seq > cursor;
+      if (!Number.isSafeInteger(seq) || (!allowedJump && seq !== cursor + 1) || !uuid.test(operation.id)) throw new Error('实时录音同步游标不连续');
+      cursor = seq;
+      const frame = await openLiveAudio(vault, root, operation, v2);
+      try {
+        if ((frame.kind === 'received') !== (receiver === 'phone')) throw new Error('实时录音事件类型无效');
+        if (await consume(frame) !== false && seq === confirmed + 1) confirmed = seq;
+      } finally { if (frame.kind === 'pcm') frame.pcm.bytes.fill(0); }
+    }
+    if (!delta.operations.length && delta.trimmed && delta.cursor > cursor) cursor = delta.cursor;
+    if (cursor !== delta.cursor || (cursor === start && delta.more)) throw new Error('实时录音同步游标无效');
+    return delta;
+  };
+  // Repair previously skipped frames before reading new ones. An unresolved prefix must not starve newer recordings.
+  let delta = await pull(receiver === 'desktop' ? Math.min(after, confirmed) : after);
+  if (receiver === 'desktop' && delta.cursor <= after && delta.more && confirmed < delta.cursor) {
+    delta = await pull(after);
   }
-  if (!delta.operations.length && delta.trimmed && delta.cursor > cursor) cursor = delta.cursor;
-  if (cursor !== delta.cursor || (cursor === after && delta.more)) throw new Error('实时录音同步游标无效');
-  if (cursor > after || (receiver === 'desktop' && savedConfirmation === undefined && after > 0)) await change(['live-cursor'], tx => {
+  const cursor = Math.max(after, delta.cursor);
+  const durable = Math.min(confirmed, cursor);
+  if (cursor > after || (receiver === 'desktop' && durable > (savedConfirmation ?? 0))) await change(['live-cursor'], tx => {
     const store = tx.objectStore('live-cursor');
     const advance = (storageKey: string[], value: number) => {
       const prior = store.get(storageKey);
@@ -390,10 +400,8 @@ export async function pullLiveAudio(
       };
     };
     advance(key, cursor);
-    if (receiver === 'desktop') advance(confirmedKey, Math.min(confirmed, cursor));
+    if (receiver === 'desktop') advance(confirmedKey, durable);
   });
-  if (receiver === 'desktop') {
-    await acknowledgeRemoteAudio(path, vault, Math.min(confirmed, cursor), delta.acknowledged, signal);
-  }
+  if (receiver === 'desktop') await acknowledgeRemoteAudio(path, vault, durable, delta.acknowledged, signal);
   return delta.more;
 }

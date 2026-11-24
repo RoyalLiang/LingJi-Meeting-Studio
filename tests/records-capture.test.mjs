@@ -123,7 +123,7 @@ async function captureHarness({ noDisplayAudio = false, micFailure = false, disp
     createGain() { return { gain: { value: 1 } }; }
   }
   class AudioWorkletNode { constructor() { this.port = { postMessage: message => { if (message.type === 'flush' || message.type === 'pause') queueMicrotask(() => this.port.onmessage?.({ data: { type: 'flushed' } })); } }; nodes.push(this); } }
-  const sandbox = { exports: {}, AudioContext, AudioWorkletNode, DOMException, Error, window: { setTimeout, clearTimeout, isSecureContext: true }, setTimeout, clearTimeout,
+  const sandbox = { exports: {}, AudioContext, AudioWorkletNode, AbortController, DOMException, Error, window: { setTimeout, clearTimeout, isSecureContext: true }, setTimeout, clearTimeout,
     navigator: { mediaDevices: {
       getUserMedia: async () => { calls.push('microphone'); if (micFailure) throw new Error('麦克风权限被拒绝'); return calls.filter(call => call === 'microphone').length === 1 ? mic : stream('测试麦克风'); },
       getDisplayMedia: displayUnsupported ? undefined : async options => { calls.push({ display: options }); if (displayDenied) throw new DOMException('Permission denied', 'NotAllowedError'); return display; },

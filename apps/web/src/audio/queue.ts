@@ -113,35 +113,45 @@ function parallelism(){try{return sessionStorage.getItem('meeting-queue-serial')
 const lane=(entry:Pending)=>`${entry.recordId}:${entry.chunk.sourceId}:${entry.chunk.epoch}`;
 async function heads(blocked:Set<string>,limit:number):Promise<Pending[]>{
   if(limit<=0||!permittedRecords.size)return [];
-  const connection=await db(),keys:IDBValidKey[]=[],pending=new Set<string>();
-  // Discover only records with queued keys; empty historical meetings cost no individual IPC query.
+  const connection=await db();
+  const store=connection.transaction('chunks').objectStore('chunks'),entries:Pending[]=[];
+  const pending=new Set<string>();
   await new Promise<void>((resolve,reject)=>{
-    const request=connection.transaction('chunks').objectStore('chunks').index('lane').openKeyCursor();
-    request.onsuccess=()=>{
-      const cursor=request.result;if(!cursor){resolve();return;}
-      const [recordId]=cursor.key as [string,string,string,number];
-      if(permittedRecords.has(recordId))pending.add(recordId);
-      cursor.continue([recordId,[]]);
-    };request.onerror=()=>reject(request.error);
+    const discovery=store.index('lane').openKeyCursor();
+    discovery.onsuccess=()=>{
+      const cursor=discovery.result;
+      if(!cursor){resolve();return;}
+      const [id]=cursor.key as [string,string,string,number];
+      if(permittedRecords.has(id))pending.add(id);
+      cursor.continue([id,[]]);
+    };
+    discovery.onerror=()=>reject(discovery.error);
   });
-  for(const id of permittedRecords){
-    if(!pending.has(id))continue;
-    await new Promise<void>((resolve,reject)=>{
-      const request=connection.transaction('chunks').objectStore('chunks').index('lane').openKeyCursor(IDBKeyRange.bound([id],[id,[]]));
+  const records=[...permittedRecords].filter(id=>pending.has(id)).values();
+  const candidates=connection.transaction('chunks').objectStore('chunks');
+  await new Promise<void>((resolve,reject)=>{
+    function readRecord(){
+      const {value:id,done}=records.next();
+      if(done){resolve();return;}
+      const request=candidates.index('lane').openKeyCursor(IDBKeyRange.bound([id],[id,[]]));
       request.onsuccess=()=>{
-        const cursor=request.result;if(!cursor||keys.length>=limit){resolve();return;}
+        const cursor=request.result;
+        if(!cursor){readRecord();return;}
         const [recordId,sourceId,epoch]=cursor.key as [string,string,string,number];
-        if(!blocked.has(`${recordId}:${sourceId}:${epoch}`))keys.push(cursor.primaryKey);
-        if(keys.length>=limit){resolve();return;}
-        cursor.continue([recordId,sourceId,epoch,Number.MAX_SAFE_INTEGER]);
-      };request.onerror=()=>reject(request.error);
-    });
-    if(keys.length>=limit)break;
-  }
-  if(!keys.length)return [];
-  const store=connection.transaction('chunks').objectStore('chunks');
-  const entries=await Promise.all(keys.map(key=>result<Pending|undefined>(store.get(key))));
-  return entries.filter((entry):entry is Pending=>Boolean(entry));
+        const next=()=>cursor.continue([recordId,sourceId,epoch,Number.MAX_SAFE_INTEGER]);
+        if(blocked.has(`${recordId}:${sourceId}:${epoch}`)){next();return;}
+        const load=candidates.get(cursor.primaryKey);
+        load.onsuccess=()=>{
+          if(load.result)entries.push(load.result as Pending);
+          if(entries.length>=limit)resolve();else next();
+        };
+        load.onerror=()=>reject(load.error);
+      };
+      request.onerror=()=>reject(request.error);
+    }
+    readRecord();
+  });
+  return entries;
 }
 async function remove(entry:Pending){
   const connection=await db();await new Promise<void>((resolve,reject)=>{

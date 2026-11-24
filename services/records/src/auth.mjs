@@ -58,6 +58,7 @@ export async function createAuth(repo, options = {}) {
     || /\bLingJi-Android\b/.test(request?.headers['user-agent'] || '');
   const appLabel = request => {
     if (androidApp(request)) return '聆记 Android';
+    if (/\bLingJi-iOS\//.test(request?.headers['user-agent'] || '')) return '聆记 iOS';
     const desktop = /^LingJi-Desktop-(macOS|Windows|Linux)$/.exec(request?.headers['user-agent'] || '');
     return desktop ? '聆记 ' + desktop[1] : '';
   };

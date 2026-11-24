@@ -37,6 +37,7 @@ export async function proxySettings(root) { return publicSettings(await readProx
 let activeAgent;
 export const networkAgent = () => activeAgent;
 const saves = new Map();
+const settingReads = new Map();
 export async function saveProxySettings(root, input) {
   const previous = saves.get(root) || Promise.resolve();
   const operation = previous.catch(() => {}).then(async () => {
@@ -55,7 +56,7 @@ export async function saveProxySettings(root, input) {
     requireThat(next.mode !== 'manual' || next.url, 'invalid_proxy_url', 400);
     if (!next.password && !input.clearPassword && next.url === current.url && next.username === current.username) next.password = current.password;
     const temporary = file(root) + '.' + randomUUID();
-    try { await writeFile(temporary, JSON.stringify(next) + '\n', { mode: 0o600, flag: 'wx' }); await rename(temporary, file(root)); }
+    try { await writeFile(temporary, JSON.stringify(next) + '\n', { mode: 0o600, flag: 'wx' }); await rename(temporary, file(root)); settingReads.delete(root); }
     finally { await rm(temporary, { force: true }); }
     return publicSettings(next);
   });
@@ -119,7 +120,13 @@ export function createProxyResolver(root, { env = process.env, readSystem = () =
   return async value => {
     const url = new URL(value);
     if (loopback(url.hostname)) return '';
-    const settings = await readProxySettings(root);
+    let entry = settingReads.get(root);
+    if (!entry || Date.now() >= entry.expires) {
+      entry = { expires: Date.now() + 1000, value: readProxySettings(root) };
+      if (settingReads.size >= 16) settingReads.delete(settingReads.keys().next().value);
+      settingReads.set(root, entry);
+    }
+    const settings = await entry.value;
     if (settings.mode === 'direct') return '';
     if (settings.mode === 'manual') {
       const proxy = new URL(settings.url);

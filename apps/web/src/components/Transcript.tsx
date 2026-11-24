@@ -51,11 +51,11 @@ export const TranscriptHistory = memo(function TranscriptHistory({record, save, 
   const [loaded,setLoaded]=useState(false),[open,setOpen]=useState(false);
   const details=useRef<HTMLDetailsElement>(null),visibleRecord=useRef(record),id=useId(),external=actionsTarget!==undefined;
   useEffect(()=>{if(expanded&&details.current){details.current.open=true;setLoaded(true);setOpen(true);}},[expanded]);
-  if(!loaded || open)visibleRecord.current=record;
+  if(visible && (!loaded || open))visibleRecord.current=record;
   // Keep mounted after the first opening so collapsing never discards an edit draft.
   return <details id={id} ref={details} className={`transcript-disclosure${external ? ' is-toolbar' : ''}`} onToggle={event=>{setOpen(event.currentTarget.open);if(event.currentTarget.open)setLoaded(true);}}>
     <summary role="button" tabIndex={0} aria-label={`逐字记录与纠错 · ${record.segments.length} 段`} title={`逐字记录与纠错 · ${record.segments.length} 段`}><TextAlignLeft size={18}/></summary>
-    {loaded && <><CorrectionSuggestions record={visibleRecord.current} changed={changed} active={open}/><Transcript visible={visible&&open} record={visibleRecord.current} highlighted="" save={save} changed={changed}/></>}
+    {loaded && <><CorrectionSuggestions record={visibleRecord.current} changed={changed} active={visible&&open}/><Transcript visible={visible&&open} record={visibleRecord.current} highlighted="" save={save} changed={changed}/></>}
     {actionsTarget && !expanded && createPortal(<Button variant="ghost" aria-label={`逐字记录与纠错 · ${record.segments.length} 段`} title="逐字记录与纠错" aria-controls={id} aria-expanded={open} onClick={()=>{if(details.current)details.current.open=!details.current.open;}}><TextAlignLeft size={18}/></Button>,actionsTarget)}
   </details>;
 });

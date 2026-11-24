@@ -246,6 +246,26 @@ export async function runCycle(repo, providers = {}, { lane = 'all', cacheConfig
     while (next < records.length) await processCandidate(records[next++]);
   }));
 }
+export async function runWorkerLane(repo, lane, wakeup, stopped, floor, onError) {
+  let earliest = 0, first = true;
+  while (!stopped()) {
+    while (!stopped() && Date.now() < earliest) await wakeup.wait(wakeup.cursor(), earliest - Date.now());
+    if (stopped()) break;
+    const cursor = wakeup.cursor(); earliest = Date.now() + floor;
+    let due = Infinity;
+    try {
+      due = await repo.nextWorkAt(lane);
+      if (first || lane === 'audio' || lane === 'realtime' || due <= Date.now()) {
+        await runCycle(repo, {}, { lane, cacheConfig: true }); due = await repo.nextWorkAt(lane);
+      }
+      if(!['audio','realtime'].includes(lane)&&wakeup.cursor()===cursor&&due<=Date.now())due=Date.now()+30000;
+      first = false;
+    } catch (error) { onError(error); due = Date.now() + 1000; }
+    if (stopped()) break;
+    await wakeup.wait(cursor, Math.min(30000, Math.max(floor, due - Date.now())));
+  }
+}
+
 export async function startWorker() {
   const repo = await createRepository(), wakeup = createWorkerWakeup(repo);
   const network = installNetworkProxy(repo.root);
@@ -254,26 +274,8 @@ export async function startWorker() {
   process.on('SIGTERM', shutdown); process.on('SIGINT', shutdown);
   console.log(`[record-worker] ${repo.backend}; durable audio and minutes queue`);
   try {
-    await Promise.all(['audio', 'realtime', 'minutes', 'intents', 'translation', 'translation-live', 'translation-preview', 'workspace', 'learning', 'voiceprints'].map(async lane => {
-      let earliest = 0, first = true;
-      const floor = lane === 'audio' ? 250 : 500;
-      while (!stop) {
-        while (!stop && Date.now() < earliest) await wakeup.wait(wakeup.cursor(), earliest - Date.now());
-        if (stop) break;
-        const cursor = wakeup.cursor(); earliest = Date.now() + floor;
-        let due = Infinity;
-        try {
-          due = await repo.nextWorkAt(lane);
-          if (first || lane === 'audio' || lane === 'realtime' || due <= Date.now()) {
-            await runCycle(repo, {}, { lane, cacheConfig: true }); due = await repo.nextWorkAt(lane);
-          }
-          if(!['audio','realtime'].includes(lane)&&wakeup.cursor()===cursor&&due<=Date.now())due=Date.now()+30000;
-          first = false;
-        } catch (error) { console.error('[record-worker]', lane, error.code || error.name); due = Date.now() + 1000; }
-        if (stop) break;
-        await wakeup.wait(cursor, Math.min(30000, Math.max(floor, due - Date.now())));
-      }
-    }));
+    await Promise.all(['audio', 'realtime', 'minutes', 'intents', 'translation', 'translation-live', 'translation-preview', 'workspace', 'learning', 'voiceprints'].map(lane => runWorkerLane(repo, lane, wakeup, () => stop,
+      lane === 'audio' ? 250 : 500, error => console.error('[record-worker]', lane, error.code || error.name))));
   } finally {
     shutdown(); process.off('SIGTERM', shutdown); process.off('SIGINT', shutdown);
     closeSpeakerStreams(repo); closeRealtime(repo); await repo.close();

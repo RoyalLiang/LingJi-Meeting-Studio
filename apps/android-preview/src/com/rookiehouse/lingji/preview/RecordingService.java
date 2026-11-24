@@ -14,11 +14,13 @@ public final class RecordingService extends Service {
     private static NativeMicrophone capture;
 
     static String read(String id, long offset) {
-        return capture != null && capture.id.equals(id) ? capture.read(offset) : "starting";
+        NativeMicrophone active = capture;
+        return active != null && active.id.equals(id) ? active.read(offset) : "starting";
     }
 
     static String status(String id) {
-        return capture != null && capture.id.equals(id) ? capture.status() : "status:starting";
+        NativeMicrophone active = capture;
+        return active != null && active.id.equals(id) ? active.status() : "status:starting";
     }
 
     static void finish(String id) {

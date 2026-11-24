@@ -19,14 +19,17 @@ export function encodeStorage(input) {
 
 export function decodeStorage(input, expectedHash) {
   const bytes = Buffer.from(input);
+  if (bytes.length >= headerBytes && bytes.subarray(0, 4).equals(magic) && bytes[4] === 1) {
+    const size = bytes.readUInt32BE(5);
+    if (size > 0 && size <= maxBytes) {
+      try {
+        const decoded = inflateRawSync(bytes.subarray(headerBytes), { maxOutputLength: size });
+        const actual = hash(decoded);
+        if (decoded.length === size && timingSafeEqual(actual, bytes.subarray(9, headerBytes)) &&
+            (!expectedHash || actual.toString('hex') === expectedHash)) return decoded;
+      } catch { /* A raw PCM object can also start with the compressed magic. */ }
+    }
+  }
   if (expectedHash && hash(bytes).toString('hex') === expectedHash) return bytes;
-  if (bytes.length < headerBytes || !bytes.subarray(0, 4).equals(magic) || bytes[4] !== 1) throw new DomainError('storage_corrupt', 500);
-  const size = bytes.readUInt32BE(5);
-  if (!size || size > maxBytes) throw new DomainError('storage_corrupt', 500);
-  let decoded;
-  try { decoded = inflateRawSync(bytes.subarray(headerBytes), { maxOutputLength: size }); }
-  catch { throw new DomainError('storage_corrupt', 500); }
-  const actual = hash(decoded);
-  if (decoded.length !== size || !timingSafeEqual(actual, bytes.subarray(9, headerBytes)) || (expectedHash && actual.toString('hex') !== expectedHash)) throw new DomainError('storage_corrupt', 500);
-  return decoded;
+  throw new DomainError('storage_corrupt', 500);
 }

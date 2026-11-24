@@ -464,6 +464,9 @@ public final class MainActivity extends Activity {
         return true;
     }
 
+    private final java.util.concurrent.ExecutorService recordingReads =
+        java.util.concurrent.Executors.newSingleThreadExecutor();
+
     private void connectRecordingPort(WebView view) {
         if (recordingPort != null) return;
         WebMessagePort[] ports = view.createWebMessageChannel();
@@ -481,7 +484,12 @@ public final class MainActivity extends Activity {
                 }
                 if (data.matches("native-read:[a-f0-9-]{36}:[0-9]{1,10}")) {
                     String[] fields = data.split(":");
-                    postToRecorder("native:" + fields[1] + ":" + RecordingService.read(fields[1], Long.parseLong(fields[2])));
+                    recordingReads.execute(() -> {
+                        String result = RecordingService.read(fields[1], Long.parseLong(fields[2]));
+                        runOnUiThread(() -> {
+                            if (port == recordingPort) postToRecorder("native:" + fields[1] + ":" + result);
+                        });
+                    });
                     return;
                 }
                 if (data.matches("native-status:[a-f0-9-]{36}")) {
@@ -729,6 +737,7 @@ public final class MainActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        recordingReads.shutdownNow();
         dismissStartupSplash();
         getSystemService(ConnectivityManager.class).unregisterNetworkCallback(networkCallback);
         closeRecordingPort();

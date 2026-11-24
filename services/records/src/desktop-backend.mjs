@@ -10,7 +10,8 @@ import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { createRepository } from './repository.mjs';
 import { createRecordServer } from './server.mjs';
-import { runCycle } from './worker.mjs';
+import { runWorkerLane } from './worker.mjs';
+import { createWorkerWakeup } from './worker-wakeup.mjs';
 import { closeRealtime } from './realtime-minutes.mjs';
 import { closeSpeakerStreams } from './speaker-streams.mjs';
 import { emit } from '../../../packages/records/src/record.mjs';
@@ -133,14 +134,14 @@ export async function startDesktopBackend({ root, port = 0, workers = true } = {
   await writeFile(join(root, 'runtime-state.json'), JSON.stringify(state) + '\n', { mode: 0o600 });
   openLocalAsr();
   let stopping = false;
-  const loops = workers ? ['audio', 'realtime', 'minutes', 'translation', 'translation-live', 'translation-preview', 'intents', 'workspace', 'learning'].map(lane => (async () => {
-    while (!stopping) {
-      try { await runCycle(repo, {}, { lane, cacheConfig:true }); } catch (error) { console.error('[client-worker]', error.code || error.name); }
-      if (!stopping) await new Promise(resolve => setTimeout(resolve, lane === 'audio' ? 100 : 250));
-    }
-  })()) : [];
+  const wakeup = workers ? createWorkerWakeup(repo) : undefined;
+  const loops = wakeup ? ['audio', 'realtime', 'minutes', 'translation', 'translation-live', 'translation-preview',
+    'intents', 'workspace', 'learning', 'voiceprints'].map(lane => runWorkerLane(repo, lane, wakeup, () => stopping,
+    lane === 'audio' ? 100 : 250, error => console.error('[client-worker]', lane, error.code || error.name))) : [];
   return { repo, sqlite, url: `http://127.0.0.1:${address.port}`, session,
-    async stop() { stopping = true; await closeLocalAsr(); for (const record of await repo.list()) closeSpeakerStreams(repo, record.id); await Promise.all(loops); closeRealtime(repo); detachTunnel(); await app.stop();
+    async stop() { stopping = true;
+      wakeup?.close();
+      await closeLocalAsr(); for (const record of await repo.list()) closeSpeakerStreams(repo, record.id); await Promise.all(loops); closeRealtime(repo); detachTunnel(); await app.stop();
       await closeDirectories?.(); await network.close(); },
   };
   } catch(error) {
@@ -150,6 +151,8 @@ export async function startDesktopBackend({ root, port = 0, workers = true } = {
 
 // Node resolves module paths; argv can retain Windows 8.3 paths or directory aliases.
 if (process.argv[1] && await realpath(process.argv[1]).catch(() => null) === fileURLToPath(import.meta.url)) {
+  // The native parent closes its stdout reader after the one-line handshake.
+  process.stdout.on('error', error => { if (error.code !== 'EPIPE') throw error; });
   let backend;
   try {
     if (!process.argv[2]) throw new Error('client_data_root_required');

@@ -24,7 +24,10 @@ export async function createAudioArchive({root,db,pool,header}) {
    requireThat(/^[a-f0-9-]{36}\/archive-[a-f0-9-]{36}\.pcm(?:\.pack)?$/.test(row.archive),'audio_object_corrupt',500);
       requireThat(Number.isSafeInteger(Number(row.byte_offset))&&Number(row.byte_offset)>=0&&Number.isSafeInteger(Number(row.byte_length))&&Number(row.byte_length)>0&&Number(row.byte_length)<=32*1024*1024,'audio_object_corrupt',500);
       let entry=handles.get(row.archive);
-      if(!entry){entry={file:open(join(root,'audio',row.archive),'r'),readers:0,retired:false};handles.set(row.archive,entry);}
+      if(!entry){entry={file:open(join(root,'audio',row.archive),'r'),readers:0,retired:false};
+        handles.set(row.archive,entry);
+        const opened=entry;
+        opened.file.catch(()=>{if(handles.get(row.archive)===opened)handles.delete(row.archive);});}
       entry.readers++;
       try {
         const file=await entry.file,bytes=Buffer.alloc(Number(row.byte_length));let offset=0;

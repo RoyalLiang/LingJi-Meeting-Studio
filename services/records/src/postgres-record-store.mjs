@@ -50,13 +50,13 @@ export async function createPostgresRecordStore(pool) {
   }
   async function decode(value,client=pool) {
     if(value?.$collections!==2)return value;
-    let entry=cache.get(value.id);
+    let entry=loaded?.entry ?? cache.get(value.id);
     if(!entry || entry.version!==value.$version){
     const rows=Object.fromEntries(collectionFields.map(field=>[field,[]]));
-    for(const row of (await client.query('SELECT field,position,data FROM record_collections WHERE record_id=$1 ORDER BY field,position',[value.id])).rows){
+    for(const row of loaded?.collections ?? (await client.query('SELECT field,position,data FROM record_collections WHERE record_id=$1 ORDER BY field,position',[value.id])).rows){
       requireThat(collectionFields.includes(row.field)&&row.position===rows[row.field].length+(value.$offsets?.[row.field]||0),'storage_corrupt',500);rows[row.field].push(JSON.stringify(row.data));
     }
-    const documents=Object.fromEntries((await client.query('SELECT field,data FROM record_documents WHERE record_id=$1 ORDER BY field',[value.id])).rows.map(row=>[row.field,JSON.stringify(row.data)]));
+    const documents=Object.fromEntries((loaded?.documents ?? (await client.query('SELECT field,data FROM record_documents WHERE record_id=$1 ORDER BY field',[value.id])).rows).map(row=>[row.field,JSON.stringify(row.data)]));
       entry={rows,documents,offsets:value.$offsets||{},version:value.$version,bytes:Object.values(rows).flat().reduce((sum,row)=>sum+Buffer.byteLength(row),0)+Object.values(documents).reduce((sum,row)=>sum+Buffer.byteLength(row),0)};remember(value.id,entry);
     }
     if (entry.patches?.size) {
@@ -83,7 +83,35 @@ export async function createPostgresRecordStore(pool) {
     patchHeader,
     decode,
     read(id){return snapshotRead(async client=>decode((await client.query('SELECT data FROM record_aggregates WHERE id=$1',[id])).rows[0]?.data || null,client));},
-    list(kind){return snapshotRead(async client=>{const rows=(await client.query("SELECT data FROM record_aggregates WHERE data->>'kind'=$1 ORDER BY id",[kind])).rows;const values=[];for(const row of rows)values.push(await decode(row.data,client));return values;});},
+    list(kind){return snapshotRead(async client=>{
+      const values=[];
+      let after='';
+      for(;;){
+        const {rows}=await client.query("SELECT id,data FROM record_aggregates WHERE data->>'kind'=$1 AND id>$2 ORDER BY id LIMIT 32",[kind,after]);
+        const pages=new Map();
+        const missing=[];
+        for(const {data} of rows){
+          if(data?.$collections!==2)continue;
+          const entry=cache.get(data.id);
+          if(entry?.version===data.$version)pages.set(data.id,{entry});
+          else {
+            missing.push(data.id);
+            pages.set(data.id,{collections:[],documents:[]});
+          }
+        }
+        if(missing.length){
+          const ids=missing;
+          const {rows:collections}=await client.query('SELECT record_id,field,position,data FROM record_collections WHERE record_id=ANY($1::text[]) ORDER BY record_id,field,position',[ids]);
+          for(const row of collections)pages.get(row.record_id).collections.push(row);
+          const {rows:documents}=await client.query('SELECT record_id,field,data FROM record_documents WHERE record_id=ANY($1::text[]) ORDER BY record_id,field',[ids]);
+          for(const row of documents)pages.get(row.record_id).documents.push(row);
+        }
+        for(const row of rows)values.push(await decode(row.data,client,pages.get(row.id)));
+        if(rows.length<32)break;
+        after=rows.at(-1).id;
+      }
+      return values;
+    });},
     async write(client,value,insert=false){
       if(value.kind!=='record'){
         await client.query(insert?'INSERT INTO record_aggregates(id,data) VALUES($1,$2)':'UPDATE record_aggregates SET data=$2 WHERE id=$1',[value.id,JSON.stringify(value)]);return;

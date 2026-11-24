@@ -15,7 +15,9 @@ export function encodeBytes(bytes: Uint8Array) {
 export function decodeBytes(value: string) {
   if (!/^[\w-]+$/.test(value)) throw new Error('密文或恢复密钥格式有误');
   const data = atob(value.replace(/-/g, '+').replace(/_/g, '/'));
-  return Uint8Array.from(data, character => character.charCodeAt(0));
+  const bytes = new Uint8Array(data.length);
+  for (let i = 0; i < data.length; i++) bytes[i] = data.charCodeAt(i);
+  return bytes;
 }
 
 export type BinaryEnvelope = { nonce: Uint8Array<ArrayBuffer>; body: ArrayBuffer };
@@ -55,12 +57,12 @@ export async function sealBinary(material: Uint8Array<ArrayBuffer>, vault: Pick<
   return { nonce, body };
 }
 
-export async function unsealBinary(material: Uint8Array<ArrayBuffer>, vault: Pick<Vault, 'id' | 'salt'>, purpose: string, id: string, envelope: Envelope | BinaryEnvelope) {
+export async function unsealBinary(material: Uint8Array<ArrayBuffer>, vault: Pick<Vault, 'id' | 'salt'>, purpose: string, id: string, envelope: Envelope | BinaryEnvelope, key?: CryptoKey) {
   const iv = typeof envelope.nonce === 'string' ? decodeBytes(envelope.nonce) : envelope.nonce;
   const ciphertext = typeof envelope.body === 'string' ? decodeBytes(envelope.body) : envelope.body;
   const plain = await crypto.subtle.decrypt({
     name: 'AES-GCM', iv, additionalData: encoder.encode(JSON.stringify([version, vault.id, purpose, id])),
-  }, await derivePurposeKey(material, vault, purpose), ciphertext);
+  }, key ?? await derivePurposeKey(material, vault, purpose), ciphertext);
   return new Uint8Array(plain);
 }
 

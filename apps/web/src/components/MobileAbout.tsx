@@ -14,7 +14,7 @@ const updateLabels = {
 type UpdateState = keyof typeof updateLabels;
 
 export function MobileAbout({ openNotice }: { openNotice: () => void }) {
-  const version = /\bLingJi-Android\/([\w.-]+)/.exec(navigator.userAgent)?.[1];
+  const version = /\bLingJi-(Android|iOS)\/([\w.-]+)/.exec(navigator.userAgent);
   const [state, setState] = useState<UpdateState>('idle');
   const [available, setAvailable] = useState('');
   const pending = useRef<{ id: string; timeout: number } | null>(null);
@@ -38,8 +38,8 @@ export function MobileAbout({ openNotice }: { openNotice: () => void }) {
   }, []);
   return <div className="mobile-about">
     {version && <div className="mobile-about-build">
-      <span className="mobile-about-version">{version}</span>
-      <Button variant="secondary" data-update-state={state} aria-live="polite" aria-busy={state === 'checking'}
+      <span className="mobile-about-version">{version[2]}</span>
+      {version[1] === 'Android' && <Button variant="secondary" data-update-state={state} aria-live="polite" aria-busy={state === 'checking'}
         title={available || undefined} disabled={state === 'checking'} onClick={() => {
           if (pending.current) return;
           setAvailable('');
@@ -51,7 +51,7 @@ export function MobileAbout({ openNotice }: { openNotice: () => void }) {
           }, 15000);
           pending.current = { id, timeout };
           dispatchEvent(new CustomEvent('lingji:check-update', { detail: id }));
-        }}>{updateLabels[state]}</Button>
+        }}>{updateLabels[state]}</Button>}
     </div>}
     <button type="button" className="mobile-about-row mobile-document-link" onClick={openNotice}>
       <span>{audioNoticeTitle}</span><CaretRight size={16} aria-hidden="true"/>

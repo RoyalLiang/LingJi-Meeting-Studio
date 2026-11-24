@@ -7,12 +7,13 @@ import { newPairSecret, seal, unseal, type EncryptedOperation, type Vault } from
 type Room = { id: string; proof: string };
 type PairState = { frames: string[]; expires: number };
 type Packet = { v2: boolean; operation: EncryptedOperation };
-type Receipt = { next: number; done: boolean };
+type Receipt = { next: number; done: boolean; window?: number };
 type Progress = (message: string) => void;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder('utf-8', { fatal: true });
 const purpose = 'mobile-direct/sdp/1';
 const messageLimit = 60_000;
+const transferWindow = 8;
 const signalLimit = 24_000;
 const timeout = (signal: AbortSignal, ms: number) => AbortSignal.any([signal, AbortSignal.timeout(ms)]);
 
@@ -137,7 +138,7 @@ function pipe(channel: RTCDataChannel, signal: AbortSignal) {
     start(controller) {
       channel.onmessage = ({data}) => {
         if (typeof data !== 'string' || data.length > 12_001 || !/^[01]/.test(data)
-          || partial.length + data.length > messageLimit || controller.desiredSize! <= 0) {
+          || partial.length + data.length - 1 > messageLimit || controller.desiredSize! <= 0) {
           channel.close();
           return;
         }
@@ -147,7 +148,7 @@ function pipe(channel: RTCDataChannel, signal: AbortSignal) {
       channel.onclose = () => controller.error(new Error('直传通道已断开'));
       channel.onerror = () => channel.close();
     },
-  }).getReader();
+  }, { highWaterMark: transferWindow }).getReader();
   return {
     async ready() {
       if (channel.readyState === 'open') return;
@@ -233,8 +234,8 @@ export async function receiveDirectAudio(vault: Vault, root: Uint8Array<ArrayBuf
   const invite = timeout(signal, 5 * 60_000);
   let id: string | undefined;
   for (const step of [1, 3]) {
-    const offer = await waitSdp(room, vault, root, step, invite);
-    const link = await connect(room, invite);
+    const offer = await waitSdp(room, vault, root, step, step === 1 ? invite : timeout(signal, 30_000));
+    const link = await connect(room, signal);
     const { peer } = link;
     try {
       const channel = new Promise<RTCDataChannel>(resolve => { peer.ondatachannel = event => resolve(event.channel); });
@@ -246,6 +247,7 @@ export async function receiveDirectAudio(vault: Vault, root: Uint8Array<ArrayBuf
       const active = watchRoom(room, link.signal);
       const wire = pipe(await pending(channel, timeout(active, 15_000)), active);
       await wire.ready();
+      link.watchNetwork();
       const route = await connectionLabel(peer, active);
       const receive = createMobileAudioReceiver(vault, active);
       for (;;) {
@@ -259,8 +261,9 @@ export async function receiveDirectAudio(vault: Vault, root: Uint8Array<ArrayBuf
           }
           id = frame.id;
           const receipt = await receive(frame);
-          if (!receipt) throw new Error('桌面缺少录音开头，等待加密同步补齐');
-          wire.send(receipt);
+          if (receipt === 'deleted') throw new Error('桌面已删除该录音');
+        if (!receipt) throw new Error('桌面缺少录音开头，等待加密同步补齐');
+          wire.send({ ...receipt, window: transferWindow });
           if (receipt.done) {
             progress('传输完成，录音已保存' + route);
             try { await wire.read<string>(2500); } catch { /* The recording is already saved. */ }
@@ -272,7 +275,7 @@ export async function receiveDirectAudio(vault: Vault, root: Uint8Array<ArrayBuf
         }
       }
     } catch (failure) {
-      invite.throwIfAborted();
+      signal.throwIfAborted();
       if (step === 3) throw failure;
       progress('连接中断，等待手机续传');
     } finally {
@@ -299,26 +302,35 @@ export async function sendDirectAudio(vault: Vault, root: Uint8Array<ArrayBuffer
       link.watchNetwork();
       const authorized = watchRoom(room, link.signal);
       const route = await connectionLabel(peer, authorized);
+      let window = 1;
       for (;;) {
         authorized.throwIfAborted();
-        const packet = await heldAudio(vault, id, next);
-        if (!packet) throw new Error('本机直传队列缺少录音片段');
-        wire.send(packet);
-        const receipt = await pending(wire.read<Receipt>(), authorized);
-        if (typeof receipt?.done !== 'boolean' || !Number.isSafeInteger(receipt.next)
-            || receipt.next < next || receipt.next > 200_000 || (!receipt.done && receipt.next === next)) {
-          throw new Error('直传回执无效');
+        const first = next;
+        const batch: Packet[] = [];
+        for (let i = 0; i < window; i++) {
+          const packet = await heldAudio(vault, id, first + i);
+          if (!packet) break;
+          wire.send(packet);
+          batch.push(packet);
         }
-        if (receipt.done) {
-          const final = await openLiveAudio(vault, root, packet.operation, packet.v2);
-          if (final.kind === 'pcm') final.pcm.bytes.fill(0);
-          if (final.kind !== 'finish' || receipt.next !== next) throw new Error('桌面结束回执不连续');
-          await releaseHeldAudio(vault, id, false);
-          try { wire.send('received'); await wire.read<string>(2500); } catch { /* The durable receipt was already validated. */ }
-          progress('传输完成，Mac 已保存录音' + route);
-          return;
+        if (!batch.length) throw new Error('本机直传队列缺少录音片段');
+        for (const [index, packet] of batch.entries()) {
+          const receipt = await pending(wire.read<Receipt>(), authorized);
+          const sequence = first + index;
+          if (typeof receipt?.done !== 'boolean' || !Number.isSafeInteger(receipt.next) || receipt.next < next ||
+              receipt.next > 200_000 || (!receipt.done && receipt.next <= sequence)) throw new Error('直传回执无效');
+          if (receipt.done) {
+            const final = await openLiveAudio(vault, root, packet.operation, packet.v2);
+            if (final.kind === 'pcm') final.pcm.bytes.fill(0);
+            if (final.kind !== 'finish' || receipt.next !== sequence) throw new Error('桌面结束回执不连续');
+            await releaseHeldAudio(vault, id, false);
+            try { wire.send('received'); await wire.read<string>(2500); } catch { /* The durable receipt is already validated. */ }
+            progress('传输完成，Mac 已保存录音' + route);
+            return;
+          }
+          next = receipt.next;
+          if (receipt.window === transferWindow) window = transferWindow;
         }
-        next = receipt.next;
         progress(`Mac 已保存 ${next} 个录音片段` + route);
       }
     } catch (failure) {

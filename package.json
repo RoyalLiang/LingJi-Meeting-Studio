@@ -31,6 +31,7 @@
     "dev": "node scripts/dev.mjs",
     "build:web": "npm run build -w apps/web",
     "build:mobile": "npm run build:mobile -w apps/web",
+    "build:ios": "npm run build:ios -w apps/web && node apps/ios/bundle-web.mjs",
     "test:records": "node --test --test-concurrency=1 tests/records.test.mjs tests/records-resilience.test.mjs tests/records-providers.test.mjs",
     "start": "node scripts/dev.mjs --production",
     "test:records:postgres": "node --test tests/records-postgres.test.mjs",

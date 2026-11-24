@@ -421,7 +421,7 @@ export async function createRecordServer(options = {}) {
         res.on('drain', drained);
         if (!write(': connected\n\n')) return;
         unsubscribe = repo.subscribeChanges(ids => {
-          if (!ids.length || ids.includes(id)) void flush();
+          if (ids.includes(id)) void flush();
         }, { all: true });
         // Separate API/worker processes retain a bounded cross-process fallback.
         timer = setInterval(flush, 1000);

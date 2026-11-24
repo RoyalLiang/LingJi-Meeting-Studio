@@ -29,6 +29,7 @@ export const WorkspaceHome = memo(function WorkspaceHome({active=true,overviewCh
   useEffect(()=>{if(!active)return;void refresh();const timer=setInterval(()=>{if(document.visibilityState==='visible')void refresh();},working?1000:15000);return()=>clearInterval(timer);},[refresh,working,active]);
   useEffect(()=>{setSelected(ids=>ids.filter(id=>records.some(r=>r.id===id&&r.capture!=='recording')));},[records]);
   async function analyze(cancel=false) {setBusy(true);setError('');try{await api(`/workspaces/${scope}/analysis${cancel?'/cancel':''}`,'POST',cancel?{runId:view?.analysis?.runId}:{});await refresh();}catch(e){setError(messageOf(e));}finally{setBusy(false);}}
+  if(!active)return null;
   if(!view)return <section className="workspace-home">{error?<FeedbackNotice key={error} message={error} error action={{label:'重试',run:()=>void refresh()}}/>:<p className="muted" role="status">正在整理工作目录…</p>}</section>;
   const {totals,activity,analysis}=view, maximum=Math.max(1,...activity.map(d=>d.meetings)), selectable=records.filter(r=>r.capture!=='recording'), allSelected=selectable.length>0&&selectable.every(r=>selected.includes(r.id));
   const draft=analysis?draftSummary(analysis.preview):'';

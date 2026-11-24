@@ -34,6 +34,7 @@ function elements(node,predicate,result=[]){if(!node||typeof node!=='object')ret
 test('virtual transcript range stays bounded and retains an offscreen editing row',async()=>{
   const {segmentRange}=await import('../apps/web/src/virtual-segments.ts');
   const visible=segmentRange(500,510,10000,10);assert.ok(visible.length<=50);assert.ok(visible.includes(500)&&visible.includes(510)&&visible.includes(10));
+  assert.ok(segmentRange(100,180,10000).includes(180));
   assert.equal(segmentRange(0,5,10000).length,30);assert.deepEqual(segmentRange(0,0,0),[]);
 });
 

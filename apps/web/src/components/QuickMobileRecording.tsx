@@ -1,3 +1,4 @@
+import audioWorkletSource from '../../public/audio-worklet.js?raw';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { BookmarkSimple, Microphone, Pause, Play, Stop } from '@phosphor-icons/react';
 import { MOBILE_PCM_BYTES, WAV_PCM_LIMIT } from '../sync/mobile-pcm';
@@ -63,14 +64,20 @@ export function QuickMobileRecording({ append, commit, status, visible, showReco
     }
   }
 
+  const detectSystemAudio = useRef<() => void>(() => {});
   useEffect(() => {
     const detect = (event: Event) => {
       if ((event as CustomEvent<string>).detail !== 'system-audio-detected') return;
-      if (phase === 'idle' && !draft.current && !closeCapture.current) void start(true);
-      else dispatchEvent(new Event('lingji:system-audio-disarm'));
+      detectSystemAudio.current();
     };
     addEventListener('lingji:system-audio', detect);
     return () => removeEventListener('lingji:system-audio', detect);
+  }, []);
+  useLayoutEffect(() => {
+    detectSystemAudio.current = () => {
+      if (phase === 'idle' && !draft.current && !closeCapture.current) void start(true);
+      else dispatchEvent(new Event('lingji:system-audio-disarm'));
+    };
   });
 
   async function start(system = false) {
@@ -117,7 +124,10 @@ export function QuickMobileRecording({ append, commit, status, visible, showReco
         dispatchEvent(new Event('lingji:recording-opened'));
         if (!mounted.current) { close(); return; }
         await resumed;
-        await context.audioWorklet.addModule('/audio-worklet.js?v=2');
+        if (/\bLingJi-iOS\//.test(navigator.userAgent)) {
+          const module = URL.createObjectURL(new Blob([audioWorkletSource], { type: 'text/javascript' }));
+          try { await context.audioWorklet.addModule(module); } finally { URL.revokeObjectURL(module); }
+        } else await context.audioWorklet.addModule('/audio-worklet.js?v=2');
         if (!mounted.current) { close(); return; }
         node = new AudioWorkletNode(context, 'meeting-pcm');
         const mute = context.createGain();

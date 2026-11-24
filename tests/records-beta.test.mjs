@@ -188,7 +188,8 @@ test('desktop shutdown lets an owned in-flight lane finish before closing Realti
     mkdir:noop,recoverTemporaryAudio:noop,migrateBundledAsr:noop,recoverLocalWork:noop,writeFile:noop,openLocalAsr(){},closeLocalAsr:noop,closeSpeakerStreams(){},
     DatabaseSync:class{prepare(){return{get:()=>({version:'3.53.4'})};}exec(){}close(){}},
     createRepository:async()=>repo,createRecordServer:async()=>({start:async()=>({port:1}),localSession:async()=>'',stop:async()=>{stopped=true;}}),
-    runCycle:async(_repo,_providers,{lane})=>{if(lane==='minutes'){await inflight;finished=true;}},
+    createWorkerWakeup:()=>({close(){}}),
+    runWorkerLane:async(_repo,lane)=>{if(lane==='minutes'){await inflight;finished=true;}},
     closeRealtime(){assert.equal(finished,true);closed=true;}
   };
   const start=vm.runInNewContext(`(${startDesktopBackend.toString()})`,context);

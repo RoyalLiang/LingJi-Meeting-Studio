@@ -29,6 +29,7 @@ export class CaptureController {
   private disconnected = new WeakSet<AudioWorkletNode>();
   private streams: MediaStream[] = []; private contexts: AudioContext[] = []; private nodes: AudioWorkletNode[] = [];
   private writes = new Set<Promise<void>>(); private flushes = new Map<AudioWorkletNode, () => void>();
+  private listeners = new Map<AudioWorkletNode, AbortController>();
   private disconnecting = new Map<CaptureKind, Promise<void>>();
   private writeFailure: Error | undefined;
   private signals: CaptureSignal[] = [];
@@ -87,8 +88,11 @@ export class CaptureController {
         Object.assign(signal, signalMessage(signal, quietSeconds, !track.enabled || track.muted, context!.state));
         this.onSignals(this.signals.map(item => ({ ...item })));
       };
-      track.addEventListener('mute', report); track.addEventListener('unmute', report);
-      context.addEventListener('statechange', report); report();
+      const listeners = new AbortController();
+      this.listeners.set(node, listeners);
+      const listening = { signal: listeners.signal };
+      track.addEventListener('mute', report, listening); track.addEventListener('unmute', report, listening);
+      context.addEventListener('statechange', report, listening); report();
       node.port.onmessage = event => {
         if (this.disconnected.has(node)) return;
         if (event.data.type === 'meter') { this.onMeter(event.data.value); return; }
@@ -111,7 +115,7 @@ export class CaptureController {
           if (!this.active) this.onEnded();
           this.onFailure(new Error(`${kind === 'display' ? '会议声音' : '我的声音'}已中断，已保存采集到的音频。${this.active ? '其他音源继续录制，可重新接入此音源。' : '会议已暂停，可恢复录制；尚未结束本场。'}`), true);
         }).catch(error => this.onFailure(error));
-      }, { once: true });
+      }, { ...listening, once: true });
       this.streams.push(stream); this.contexts.push(context); this.nodes.push(node); this.sources.push(source); this.active = true;
       return source;
     } catch (error) { stream.getTracks().forEach(t => t.stop()); await context?.close(); throw error; }
@@ -144,6 +148,8 @@ export class CaptureController {
     if (index < 0) return;
     const [stream] = this.streams.splice(index, 1), [context] = this.contexts.splice(index, 1), [source] = this.sources.splice(index, 1);
     this.nodes.splice(index, 1);
+    this.listeners.get(node)?.abort();
+    this.listeners.delete(node);
     this.disconnected.add(node); node.port.onmessage = null; stream.getTracks().forEach(track => track.stop());
     this.signals = this.signals.filter(signal => signal.sourceId !== source.id);
     this.active = this.streams.length > 0; this.onMeter(0); this.onSignals(this.signals.map(signal => ({ ...signal })));
@@ -168,6 +174,8 @@ export class CaptureController {
     });
     await Promise.all(this.contexts.map(context => context.close()));
     await Promise.all(this.writes);
+    this.listeners.forEach(controller => controller.abort());
+    this.listeners.clear();
     this.nodes.forEach(node => { this.disconnected.add(node); node.port.onmessage = null; });
     this.streams = []; this.nodes = []; this.contexts = []; this.sources = []; this.writeFailure = undefined; this.onMeter(0); this.signals = []; this.onSignals([]);
   }

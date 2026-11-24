@@ -1,4 +1,4 @@
-import { seal, sealBinary, unseal, unsealBinary, type BinaryEnvelope, type EncryptedOperation, type Envelope, type Vault } from './vault';
+import { derivePurposeKey, seal, sealBinary, unseal, unsealBinary, type BinaryEnvelope, type EncryptedOperation, type Envelope, type Vault } from './vault';
 import { unpackLocalMobilePcm, wavHeader, WAV_PCM_LIMIT, type PackedLocalMobilePcm } from './mobile-pcm';
 
 export type MobileRecording = {
@@ -116,6 +116,7 @@ export async function mobilePlayback(vault: Vault, root: Uint8Array<ArrayBuffer>
   }
   const pieces: Blob[] = [];
   let size = 0;
+  const pcmKey = await derivePurposeKey(root, vault, 'phone-pcm/2');
   for (;;) {
     const snapshot = db.transaction('audio').objectStore('audio');
     const range = IDBKeyRange.bound([vault.id, id, pieces.length], [vault.id, id, []]);
@@ -124,7 +125,7 @@ export async function mobilePlayback(vault: Vault, root: Uint8Array<ArrayBuffer>
     for (let index = 0; index < chunks.length; index++) {
       const sequence = (keys[index] as [string, string, number])[2];
       if (sequence !== pieces.length) throw new Error('手机录音片段不连续');
-      const packet = await unsealBinary(root, vault, 'phone-pcm/2', id + ':' + sequence, chunks[index]);
+      const packet = await unsealBinary(root, vault, 'phone-pcm/2', id + ':' + sequence, chunks[index], pcmKey);
       try {
         if (packet.length < 4 || packet[0] > 2) throw new Error('手机录音片段无效');
         const length = new DataView(packet.buffer, packet.byteOffset).getUint16(1);

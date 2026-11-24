@@ -8,9 +8,9 @@ import type { Vault } from './vault';
 export function createMobileAudioReceiver(vault: Vault, signal: AbortSignal) {
   const records = new Map<string, RecordDetail>();
   const incomplete = new Set<string>();
-  return async (frame: LiveFrame): Promise<{ next: number; done: boolean; stored?: true } | null> => {
+  return async (frame: LiveFrame): Promise<{ next: number; done: boolean; stored?: true } | 'deleted' | null> => {
     signal.throwIfAborted();
-    if (frame.kind === 'received' || incomplete.has(frame.id)) return null;
+    if (frame.kind === 'received' || (frame.sequence !== 0 && incomplete.has(frame.id))) return null;
     let record = records.get(frame.id);
     if (!record) {
       try {
@@ -23,9 +23,10 @@ export function createMobileAudioReceiver(vault: Vault, signal: AbortSignal) {
         incomplete.add(frame.id);
         return null;
       }
+      incomplete.delete(frame.id);
       records.set(frame.id, record);
     }
-    if (record.deleted) return null;
+    if (record.deleted) return 'deleted';
     const source = record.sources.find((entry: Source) => entry.kind === 'import');
     if (!source) throw new Error('手机录音音源不可用');
     if (record.capture === 'sealed' || record.capture === 'completed') {
@@ -35,10 +36,7 @@ export function createMobileAudioReceiver(vault: Vault, signal: AbortSignal) {
         : source.watermark >= frame.sequence;
       return durable ? { next: source.watermark + 1, done } : null;
     }
-    if (frame.sequence > source.watermark + 1) {
-      incomplete.add(frame.id);
-      return null;
-    }
+    if (frame.sequence > source.watermark + 1) return null;
     if (frame.kind === 'finish') {
       await api('/records/' + record.id + '/seal', 'POST', {
         sources: [{ sourceId: source.id, sessionId: source.sessionId, epoch: source.epoch, lastSequence: frame.sequence - 1 }],
@@ -65,6 +63,7 @@ export async function receiveLiveAudio(
   const receive = createMobileAudioReceiver(vault, signal);
   return pullLiveAudio(vault, root, 'desktop', signal, async frame => {
     const receipt = await receive(frame);
+    if (receipt === 'deleted') return true;
     if (!receipt) return false;
     if (receipt.stored && receipt.done) changed();
     if (receipt.stored && frame.kind === 'pcm' && frame.sequence === 0) {

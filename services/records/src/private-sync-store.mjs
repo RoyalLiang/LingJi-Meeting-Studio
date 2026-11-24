@@ -353,6 +353,7 @@ export async function createPrivateSyncStore({ root, pool }) {
         // A guest claims an invitation with the first OPAQUE request. The host must verify the handshake.
         const claim = !host && !guestProof && (ice || frame?.step === 1);
         requireThat(host || proof === guestProof || claim, 'sync_pair_unavailable', 404);
+        let changed = false;
         if (frame) {
           requireThat(direct || frame.data.length <= 6000, 'sync_invalid_pair_frame', 400);
           requireThat((frame.step % 2 === 0) === host, 'sync_pair_role', 403);
@@ -361,14 +362,24 @@ export async function createPrivateSyncStore({ root, pool }) {
           else {
             requireThat(frame.step === frames.length + 1, 'sync_pair_order', 409);
             frames.push(frame.data);
-            await run(conn, 'UPDATE sync_pairs SET data=$3 WHERE owner=$1 AND id=$2',
-              [owner, id, JSON.stringify({ ...data, guestProof: claim ? proof : guestProof })]);
+            if (direct && frame.step === 2) data.transferUntil = now + 2 * 60 * 60_000;
+            changed = true;
           }
-        } else if (claim) {
-          await run(conn, 'UPDATE sync_pairs SET data=$3 WHERE owner=$1 AND id=$2', [owner, id, JSON.stringify({ ...data, guestProof: proof })]);
         }
-        if (ice) return { expires: Number(row.expires), role: host ? 'receiver' : 'sender' };
-        return { frames, expires: Number(row.expires) };
+        if (claim) {
+          data.guestProof = proof;
+          changed = true;
+        }
+        let expires = Number(row.expires);
+        if (data.transferUntil && expires - now < 45_000) {
+          expires = Math.max(expires, Math.min(data.transferUntil, now + 90_000));
+        }
+        if (changed || expires !== Number(row.expires)) {
+          await run(conn, 'UPDATE sync_pairs SET data=$3,expires=$4 WHERE owner=$1 AND id=$2',
+            [owner, id, JSON.stringify(data), expires]);
+        }
+        if (ice) return { expires, role: host ? 'receiver' : 'sender' };
+        return { frames, expires };
       });
     },
     close: () => serialized(() => { readDb?.close(); readDb = null; db?.close(); }),
