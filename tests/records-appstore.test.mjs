@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,rm,writeFile,readFile,mkdir,access,realpath} from 'node:fs/promises';
+import {mkdtemp,rm,writeFile,readFile,mkdir,access,realpath,chmod,stat,symlink} from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';
 import {createRequire} from 'node:module';
 import {fileURLToPath} from 'node:url';
@@ -10,8 +10,31 @@ import {tmpdir} from 'node:os';
 import {createRepository} from '../services/records/src/repository.mjs';
 import {installSandboxDirectories,authorizeSandboxDirectory} from '../services/records/src/macos-sandbox.mjs';
 import {saveAudioBackupSettings} from '../services/records/src/audio-backup.mjs';
-import {storeVersions,validateStoreProfile,buildSandboxBridge} from '../scripts/macos-appstore.mjs';
+import {storeVersions,validateStoreProfile,buildSandboxBridge,storeBundlePermissions,machoFiles} from '../scripts/macos-appstore.mjs';
 import {storeJwt,matchingStoreBuild,validateTestFlightReceipt} from '../scripts/upload-testflight.mjs';
+
+test('Store bundle permissions make private resources readable without following symlinks',{skip:process.platform==='win32'},async t=>{
+  const root=await mkdtemp(join(tmpdir(),'lingji-store-permissions-'));
+  t.after(()=>rm(root,{recursive:true,force:true}));
+  const app=join(root,'LingJi.app'),contents=join(app,'Contents'),profile=join(contents,'embedded.provisionprofile'),executable=join(contents,'node'),outside=join(root,'private.key');
+  await mkdir(contents,{recursive:true});
+  await writeFile(profile,'public provisioning profile');
+  await writeFile(executable,'executable fixture');
+  await writeFile(outside,'private signing input');
+  for(const path of [app,contents,executable])await chmod(path,0o700);
+  for(const path of [profile,outside])await chmod(path,0o600);
+  await symlink(outside,join(contents,'escape'));
+  await assert.rejects(storeBundlePermissions(app),/App Store bundle permissions/);
+  await storeBundlePermissions(app,{repair:true});
+  await storeBundlePermissions(app);
+  for(const path of [app,contents,executable])assert.equal((await stat(path)).mode&0o7777,0o755);
+  assert.equal((await stat(profile)).mode&0o7777,0o644);
+  assert.equal(await readFile(profile,'utf8'),'public provisioning profile');
+  assert.equal((await stat(outside)).mode&0o7777,0o600);
+  await assert.rejects(machoFiles(app),/Bundle symlink escapes app/);
+  await chmod(profile,0o600);
+  await assert.rejects(storeBundlePermissions(app),/App Store bundle permissions/);
+});
 
 async function fixture(t){
   const root=await mkdtemp(join(tmpdir(),'lingji-appstore-')),repo=await createRepository({root:join(root,'repo'),databaseUrl:''});

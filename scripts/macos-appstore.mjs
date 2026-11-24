@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
-import {open,readdir,readFile,mkdir,writeFile,realpath} from 'node:fs/promises';
+import {open,readdir,readFile,mkdir,writeFile,realpath,lstat,chmod} from 'node:fs/promises';
 import {dirname,join,relative,isAbsolute} from 'node:path';
 
 export const storeBundleId='com.tts.meeting';
@@ -42,6 +42,18 @@ export async function buildSandboxBridge(root,output){
   execFileSync('xcrun',['clang',`-mmacosx-version-min=${minimum}`,'-fobjc-arc','-bundle','-undefined','dynamic_lookup','-framework','Foundation',join(root,'apps/desktop/src-tauri/native/sandbox-bookmarks.m'),'-o',output],{stdio:'inherit'});
   assert.equal(execFileSync('vtool',['-show-build',output],{encoding:'utf8'}).match(/\bminos\s+(\S+)/)?.[1],minimum,'Sandbox bridge deployment target mismatch');
 }
+export async function storeBundlePermissions(app,{repair=false}={}){
+  async function visit(path){
+    const info=await lstat(path);
+    if(info.isSymbolicLink())return;
+    assert.ok(info.isDirectory()||info.isFile(),`Unsupported bundle entry: ${path}`);
+    const mode=info.isDirectory()||(info.mode&0o111)?0o755:0o644;
+    if(repair)await chmod(path,mode);
+    else assert.equal(info.mode&0o7777,mode,`App Store bundle permissions: ${path}`);
+    if(info.isDirectory())for(const name of await readdir(path))await visit(join(path,name));
+  }
+  await visit(app);
+}
 export async function machoFiles(root){
   const found=[];
   async function walk(directory){
@@ -77,6 +89,7 @@ export async function signStoreApp(app,{identity,team,mainEntitlements,helperEnt
   assert.ok(identity.endsWith(`(${team})`),'Application signing identity Team ID mismatch');
   // Apple rejects quarantined macOS bundles; clear derived resource attributes before sealing.
   execFileSync('xattr',['-cr',app]);
+  await storeBundlePermissions(app,{repair:true});
   const main=join(app,'Contents/MacOS/tts-client'),files=await machoFiles(app);
   assert.ok(files.some(file=>file.path.endsWith('/runtime/node')),'Bundled Node executable missing');
   assert.ok(files.some(file=>file.path.endsWith('/runtime/sandbox-bookmarks.node')),'Sandbox bridge missing');
@@ -92,6 +105,7 @@ export async function signStoreApp(app,{identity,team,mainEntitlements,helperEnt
   await verifyStoreApp(app,{team,marketingVersion,buildVersion});
 }
 export async function verifyStoreApp(app,{team,marketingVersion,buildVersion}){
+  await storeBundlePermissions(app);
   execFileSync('codesign',['--verify','--deep','--strict',app],{stdio:'inherit'});
   const main=signatureEntitlements(app),info=plistJson(await readFile(join(app,'Contents/Info.plist')));
   assert.equal(main['com.apple.security.app-sandbox'],true);
