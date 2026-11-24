@@ -14,6 +14,7 @@ import { Button } from './ui';
 import { ExternalLink } from './ExternalLink';
 import { FeedbackNotice } from './FeedbackNotice';
 import { MobileDirectReceive } from './MobileDirectAudio';
+import { MobileAccountDevices, MobileAccountFactor } from './MobileAccountPanels';
 import './PrivateSyncSettings.css';
 
 type Session = { email: string | null; companion: string };
@@ -31,6 +32,15 @@ const accountTabs = [
   ['account', '账号与同步'], ['security', '设备与安全'],
   ['phone', '手机记录'], ['space', '空间与权益'],
 ] as const;
+
+const desktopTabs = [
+  ['overview', '概览'], ['account', '账号资料'], ['sync', '会议同步'],
+  ['devices', '设备'], ['security', '安全与恢复'], ['space', '存储'],
+] as const;
+type Usage = { meetings: number; audio: number; quota: number };
+const sizeLabel = (bytes: number) => bytes >= 1024 ** 3
+  ? (bytes / 1024 ** 3).toLocaleString('zh-CN', { maximumFractionDigits: 2 }) + ' GiB'
+  : (bytes / 1024 ** 2).toLocaleString('zh-CN', { maximumFractionDigits: 1 }) + ' MiB';
 
 function AccountSection({ title, children }: { title: string; children: ReactNode }) {
   return <section className="account-section">
@@ -95,12 +105,14 @@ function writeSeenMap(storageKey: string | undefined, map: Map<string, string>) 
   } catch {}
 }
 
-export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, email, accountLogin, accountChanged, record, restored, imported, overviewChanged, localRecords, directories, online = true, visible = true, recording = false }: {
+export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, email, accountLogin, accountChanged, record, restored, imported, overviewChanged, onCopies, copyOpener, localRecords, directories, online = true, visible = true, recording = false }: {
   desktop: boolean;
   email?: string;
   accountLogin?: { email: string; material: Uint8Array<ArrayBuffer> };
   accountChanged?: (email: string | null) => void;
   overviewChanged?: (overview: AccountOverview) => void;
+  onCopies?: (copies: CopySummary[]) => void;
+  copyOpener?: { current: ((copy: CopySummary, onFailure: (error: string) => void) => void) | null };
   localRecords?: RecordListItem[];
   directories?: WorkspaceDirectory[];
   record?: RecordDetail | null;
@@ -110,7 +122,8 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
   visible?: boolean;
   recording?: boolean;
 }) {
-  const [tab, setTab] = useState<typeof accountTabs[number][0]>('account');
+  const [tab, setTab] = useState<typeof accountTabs[number][0] | typeof desktopTabs[number][0]>(desktop ? 'overview' : 'account');
+  const [storage, setStorage] = useState<{ email: string; usage: Usage | null }>();
   const [session, setSession] = useState<Session | null>(null);
   const [register, setRegister] = useState(false);
   const [legacyPrompt, setLegacyPrompt] = useState(false);
@@ -143,6 +156,24 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
   const workspaceDirectories = useRef(directories);
   workspaceDirectories.current = directories;
   const accountEmail = desktop ? session?.email : email;
+  useEffect(() => {
+    if (!desktop || !visible || !online || !accountEmail || !unlocked || (tab !== 'overview' && tab !== 'space')) return;
+    const controller = new AbortController();
+    void api<Usage>('/private-sync/usage', 'GET', undefined, controller.signal).then(usage => {
+      if (!controller.signal.aborted) setStorage({ email: accountEmail, usage });
+    }).catch(() => {
+      if (!controller.signal.aborted) setStorage({ email: accountEmail, usage: null });
+    });
+    return () => controller.abort();
+  }, [desktop, visible, online, accountEmail, unlocked, tab]);
+  useEffect(() => {
+    onCopies?.(unlocked && accountEmail ? copies : []);
+  }, [onCopies, unlocked, accountEmail, copies]);
+  useEffect(() => {
+    if (!copyOpener || !unlocked || !accountEmail) return;
+    copyOpener.current = restoreCopy;
+    return () => { copyOpener.current = null; };
+  });
   const automationKey = vault ? 'lingji:auto-sync:' + vault.id : undefined;
   const seenStorageKey = vault ? 'lingji:seen-records:' + vault.id : undefined;
 
@@ -252,8 +283,8 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
     return () => { controller.abort(); forget(); };
   }, [desktop, email, accountChanged, accountLogin]);
 
-  function run(action: (signal: AbortSignal) => Promise<void>) {
-    if (pending.current) return;
+  function run(action: (signal: AbortSignal) => Promise<void>, onFailure: (error: string) => void = setError) {
+    if (pending.current) return onFailure('等待当前同步操作完成后重试');
     const controller = new AbortController();
     pending.current = controller;
     setBusy(true); setError(''); setNotice('');
@@ -263,10 +294,24 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
       await action(controller.signal);
     };
     void start().catch(failure => {
-      if (!controller.signal.aborted) setError(syncError(failure));
+      if (!controller.signal.aborted) onFailure(syncError(failure));
     }).finally(() => {
       if (pending.current === controller) { pending.current = null; setBusy(false); }
     });
+  }
+
+  function restoreCopy(copy: CopySummary, onFailure: (error: string) => void = setError) {
+    if (!vault || !secret.current) return onFailure('请先解锁会议同步');
+    run(async signal => {
+      const revision = await loadMeetingCopy(vault, secret.current!, copy.id);
+      signal.throwIfAborted();
+      const result = await api<{ id: string }>('/private-sync/restore', 'POST', {
+        id: revision.id, content: revision.content, notes: revision.notes, recordedAt: copy.recordedAt,
+      }, signal);
+      signal.throwIfAborted();
+      setNotice('本机副本已就绪');
+      restored?.(result.id);
+    }, onFailure);
   }
 
   async function update(localVault: Vault, key: Uint8Array<ArrayBuffer>, signal: AbortSignal, explicit = true) {
@@ -705,11 +750,45 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
     });
   }
 
-  return <div className="sync-settings" aria-label="个人中心">
+  const usage = storage?.email === accountEmail ? storage?.usage : undefined;
+  const usageView = usage && usage.quota > 0 ? <>
+    <div className="account-usage-label"><span>同步存储</span><b>{sizeLabel(usage.meetings + usage.audio)} / {sizeLabel(usage.quota)}</b></div>
+    <meter aria-label="同步存储用量" min={0} max={usage.quota} value={Math.min(usage.meetings + usage.audio, usage.quota)}/>
+    <small>会议与纪要 {sizeLabel(usage.meetings)} · 手机录音 {sizeLabel(usage.audio)}</small>
+  </> : <small role="status">{!online ? '联网后查看用量' : !unlocked ? '解锁后查看用量' : usage === null ? '暂时无法读取用量' : '正在读取用量…'}</small>;
+  return <div className={desktop ? 'sync-settings account-desktop' : 'sync-settings'} aria-label="个人中心">
+    {desktop && <section className="account-overview-banner" aria-label="账号概览">
+      <div>
+        <div className="account-identity">
+          <span className="account-avatar" aria-hidden="true">{(profile.trim() || accountEmail || '').slice(0, 1).toUpperCase() || <User size={18}/>}</span>
+          <div className="sync-intro"><h2>{profile || '个人账号'}</h2><span title={accountEmail ?? undefined}>{accountEmail}</span></div>
+        </div>
+        <Button className="account-profile-action" onClick={() => setTab('account')}>编辑资料</Button>
+      </div>
+      <div className="account-usage">{usageView}</div>
+    </section>}
     <nav className="surface-tabs account-tabs" aria-label="个人中心分类">
-      {accountTabs.map(([id, label]) => <button type="button" key={id} aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(id)}>{label}</button>)}
+      {(desktop ? desktopTabs : accountTabs).map(([id, label]) => <button type="button" key={id} aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(id)}>{label}</button>)}
     </nav>
 
+    {desktop && tab === 'overview' && <div className="account-overview-grid">
+      <section className="account-overview-card">
+        <header><h2>最近同步</h2><Button variant="ghost" onClick={() => setTab('sync')}>查看全部</Button></header>
+        {unlocked && copies.length > 0 ? <ul className="sync-copies">
+          {copies.slice(0, 3).map(copy => <li key={copy.id}>
+            <div className="account-copy">
+              <span className="account-row-icon"><FileText size={16}/></span>
+              <div><strong>{copy.title}</strong><time>{new Date(copy.recordedAt ?? copy.at).toLocaleString('zh-CN')}</time></div>
+            </div>
+            <span className="account-sync-label">{copy.pending ? '待同步' : copy.hasMinutes ? '纪要已同步' : '已同步'}</span>
+          </li>)}
+        </ul> : <p className="account-card-empty">{unlocked ? '暂无已同步会议' : '解锁后查看已同步会议'}</p>}
+      </section>
+      <section className="account-overview-card">
+        <header><h2>已登录设备</h2><Button variant="ghost" onClick={() => setTab('devices')}>管理设备</Button></header>
+        {visible && online ? <MobileAccountDevices desktop summary/> : <p className="account-card-empty">联网后查看设备</p>}
+      </section>
+    </div>}
     {feedback}
     {backgroundIssue && <p className="account-feedback" role="status">{backgroundIssue}。将自动重试。</p>}
     <div hidden={tab !== 'account'}>
@@ -726,9 +805,11 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
         </form>
         {desktop && session && <Button className="account-sign-out" variant="ghost" disabled={!online || busy} onClick={() => run(async signal => {
           await api('/private-sync/session', 'DELETE', undefined, signal);
-          lock(); setSession({ ...session, email: null }); accountChanged?.(null); setVault(undefined); setLegacyAccount(false); setNewLoginNeeded(false); setProfile(''); setName(''); setShowLogin(false); setTab('account');
+          lock(); setSession({ ...session, email: null }); accountChanged?.(null); setVault(undefined); setLegacyAccount(false); setNewLoginNeeded(false); setProfile(''); setName(''); setShowLogin(false); setTab('overview');
         })}><SignOut size={16}/>退出账号</Button>}
       </AccountSection>
+    </div>
+    <div hidden={tab !== (desktop ? 'sync' : 'account')}>
       {upgradeForm}
       {!upgradingHere && recoverAccess}
       {!vault && <AccountSection title="会议同步">
@@ -762,20 +843,19 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
         {copies.length ? <ul className="sync-copies">
           {copies.map(copy => <li key={copy.id}>
         <div className="account-copy"><span className="account-row-icon"><FileText size={16}/></span><div><strong>{copy.title}</strong><time dateTime={new Date(copy.recordedAt ?? copy.at).toISOString()}>{new Date(copy.recordedAt ?? copy.at).toLocaleString()}</time></div></div>
-            {desktop && <Button disabled={busy} onClick={() => run(async signal => {
-              const revision = await loadMeetingCopy(vault, secret.current!, copy.id);
-              signal.throwIfAborted();
-          const result = await api<{ id: string }>('/private-sync/restore', 'POST', {
-            id: revision.id, content: revision.content, notes: revision.notes, recordedAt: copy.recordedAt,
-          }, signal);
-              setNotice('本机副本已就绪');
-              restored?.(result.id);
-            })}>恢复到本机</Button>}
+            {desktop && <Button disabled={busy} onClick={() => restoreCopy(copy)}>恢复到本机</Button>}
           </li>)}
         </ul> : <p className="account-muted">暂无已同步会议</p>}
       </AccountSection>}
     </div>
+    {desktop && tab === 'devices' && <AccountSection title="已登录设备">
+      {visible && online ? <MobileAccountDevices desktop/> : <p className="account-muted">联网后查看设备。</p>}
+      {unlocked && <Button disabled={busy || !online} onClick={() => { setTab('security'); pair(); }}>配对新设备</Button>}
+    </AccountSection>}
     <div hidden={tab !== 'security'}>
+      {desktop && tab === 'security' && visible && online && accountEmail && <AccountSection title="双重验证">
+        <MobileAccountFactor email={accountEmail} desktop legacy={legacyAccount} done={() => setNotice('双重验证设置已更新')}/>
+      </AccountSection>}
       <AccountSection title="资料保护"><p>会议内容在设备上加密，云端保存密文。</p></AccountSection>
       {vault && unlocked && <AccountSection title="备份与恢复">
         <details className="sync-options" open={invitation ? true : undefined}>
@@ -799,10 +879,10 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
         </details>
       </AccountSection>}
       {vault && !unlocked && tab === 'security' && <AccountSection title="恢复资料库">
-        <Button type="button" onClick={() => setTab('account')}>查看解锁方式</Button>
+        <Button type="button" onClick={() => setTab(desktop ? 'sync' : 'account')}>查看解锁方式</Button>
       </AccountSection>}
     </div>
-    <div hidden={tab !== 'phone'}>
+    <div hidden={tab !== (desktop ? 'sync' : 'phone')}>
       {desktop && vault && unlocked && <AccountSection title="手机录音直传">
         <MobileDirectReceive key={vault.id} vault={vault} secret={secret} online={online} imported={() => importedCallback.current?.()}/>
       </AccountSection>}
@@ -817,6 +897,7 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
       </AccountSection>
     </div>
     <div hidden={tab !== 'space'}>
+      {desktop && <AccountSection title="同步用量"><div className="account-usage">{usageView}</div></AccountSection>}
       {localSpace}
       <AccountSection title="同步范围">{protection}</AccountSection>
     </div>

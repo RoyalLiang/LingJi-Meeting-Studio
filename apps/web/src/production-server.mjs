@@ -1,5 +1,7 @@
 import {sendHttpPayload} from '../../../services/records/src/http-response.mjs';
 import http from 'node:http';
+import { isIP } from 'node:net';
+import { pipeline } from 'node:stream';
 import { readFile, stat } from 'node:fs/promises';
 import { resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,9 +24,9 @@ self.addEventListener('activate', event => event.waitUntil((async () => {
 })()));
 `);
 
-export function createProductionServer({ root = defaultRoot, apiUrl = process.env.RECORD_API_URL || 'http://127.0.0.1:3030' } = {}) {
+export function createProductionServer({ root = defaultRoot, apiUrl = process.env.RECORD_API_URL || 'http://127.0.0.1:3030', syncOrigin = process.env.RECORD_SYNC_ORIGIN } = {}) {
 const target = new URL(apiUrl);
-  const syncHost = process.env.RECORD_SYNC_ORIGIN ? new URL(process.env.RECORD_SYNC_ORIGIN).host : null;
+  const syncHost = syncOrigin ? new URL(syncOrigin).host : null;
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.svg': 'image/svg+xml', '.woff2': 'font/woff2' };
 const files=new Map();let fileBytes=0;
 async function content(file){
@@ -37,10 +39,34 @@ async function content(file){
 }
 const server = http.createServer(async (req, res) => {
   if (req.url.startsWith('/api/')) {
-    const upstream = http.request(new URL(req.url, target), { method: req.method, headers: { ...req.headers, 'x-record-client-ip': req.socket.remoteAddress } }, response => {
-      res.writeHead(response.statusCode, response.headers); response.pipe(res);
-    }); upstream.on('error', () => { if (!res.headersSent) res.writeHead(502, { 'Content-Type': 'application/json' }); res.end('{"error":"service_unavailable"}'); });
-    req.pipe(upstream); res.on('close', () => upstream.destroy()); return;
+      const address = req.socket.remoteAddress;
+      const { 'x-lingji-ingress-ip': ingress, ...headers } = req.headers;
+      const loopback = address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
+      const trustedIngress = loopback && syncHost && req.headers.host === syncHost && typeof ingress === 'string' && isIP(ingress);
+      headers['x-record-client-ip'] = trustedIngress ? ingress : address;
+      const readOnly = (req.method === 'GET' || req.method === 'HEAD') &&
+        !headers['transfer-encoding'] && (!headers['content-length'] || headers['content-length'] === '0');
+      const upstreamUrl = new URL(req.url, target);
+      let upstream;
+      function forward(retry = false) {
+        const request = http.request(upstreamUrl, { method: req.method, headers, ...(retry ? { agent: false } : {}) }, response => {
+          res.writeHead(response.statusCode, response.headers);
+          pipeline(response, res, () => {});
+        });
+        upstream = request;
+        request.on('error', error => {
+          if (res.destroyed) return;
+          if (res.headersSent) { res.destroy(error); return; }
+          if (!retry && readOnly && request.reusedSocket && error.code === 'ECONNRESET') { forward(true); return; }
+          res.writeHead(502, { 'Content-Type': 'application/json' });
+          res.end('{"error":"service_unavailable"}');
+        });
+        if (readOnly) request.end();
+        else req.pipe(request);
+      }
+      res.on('close', () => upstream?.destroy());
+      forward();
+      return;
   }
   try {
     const pathname = decodeURIComponent(new URL(req.url, 'http://local').pathname);

@@ -38,3 +38,34 @@ test('legacy APK sees an upgrade page without restoring the web recorder or its 
  assert.match((await raw(server,'identity')).body.toString(),/Desktop workbench/);
  assert.match((await raw(server,'identity','GET','/shared/meeting')).body.toString(),/Desktop workbench/);
 });
+
+test('production proxy trusts ingress on the sync host and aborts a broken event stream',async t=>{
+  const api=http.createServer((req,res)=>{
+    if(req.url==='/api/address'){res.end(req.headers['x-record-client-ip']);return;}
+    res.writeHead(200,{'Content-Type':'text/event-stream'});
+    res.write('data: first\n\n');
+    setTimeout(()=>res.destroy(),50);
+  });
+  await listen(api);
+  t.after(()=>api.close());
+  const web=createProductionServer({apiUrl:'http://127.0.0.1:'+api.address().port,syncOrigin:'https://meet.example.test'});
+  await listen(web);
+  t.after(()=>web.close());
+  const origin='http://127.0.0.1:'+web.address().port;
+  const edge=await new Promise((resolve,reject)=>{
+    http.get(origin+'/api/address',{headers:{host:'meet.example.test','x-lingji-ingress-ip':'192.0.2.11'}},async response=>{
+      const chunks=[];
+      for await(const chunk of response)chunks.push(chunk);
+      resolve(Buffer.concat(chunks).toString());
+    }).on('error',reject);
+  });
+  assert.equal(edge,'192.0.2.11');
+  const direct=await fetch(origin+'/api/address',{headers:{'x-lingji-ingress-ip':'192.0.2.11'}});
+  assert.equal(await direct.text(),'127.0.0.1');
+  const stream=await fetch(origin+'/api/events');
+  assert.equal(stream.headers.get('content-type'),'text/event-stream');
+  const reader=stream.body.getReader();
+  const first=await reader.read();
+  assert.equal(new TextDecoder().decode(first.value),'data: first\n\n');
+  await assert.rejects(reader.read());
+});

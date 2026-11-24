@@ -7,6 +7,8 @@ export const SYNC_PAGE_BYTES = 512 * 1024;
 const PAGE_OPERATIONS = 64;
 const VAULT_QUOTA = 1024 * 1024 * 1024;
 const LIVE_RECEIPT_QUOTA = 1024 * 1024;
+const PAIR_WINDOW = 5 * 60_000;
+const TRANSFER_WINDOW = 2 * 60 * 60_000;
 const audioOwners = owner => [owner + ':audio', owner + ':live-audio', owner + ':live-audio-v2'];
 const schema = [
   'CREATE TABLE IF NOT EXISTS sync_vaults (owner TEXT PRIMARY KEY, data TEXT NOT NULL, head BIGINT NOT NULL, bytes BIGINT NOT NULL)',
@@ -338,7 +340,7 @@ export async function createPrivateSyncStore({ root, pool }) {
         const active = await run(conn, 'SELECT id FROM sync_pairs WHERE owner=$1 LIMIT 8', [owner]);
         requireThat(active.length < 8, 'sync_pair_limit', 429);
         const rows = await run(conn, 'INSERT INTO sync_pairs(owner,id,expires,data) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING RETURNING id',
-          [owner, id, now + 5 * 60_000, JSON.stringify({ hostProof, frames: [], direct })]);
+        [owner, id, now + PAIR_WINDOW, JSON.stringify({ hostProof, frames: [], direct })]);
         requireThat(rows.length === 1, 'sync_pair_exists', 409);
       });
     },
@@ -362,7 +364,7 @@ export async function createPrivateSyncStore({ root, pool }) {
           else {
             requireThat(frame.step === frames.length + 1, 'sync_pair_order', 409);
             frames.push(frame.data);
-            if (direct && frame.step === 2) data.transferUntil = now + 2 * 60 * 60_000;
+          if (direct && frame.step === 2) data.transferUntil = now + TRANSFER_WINDOW;
             changed = true;
           }
         }
@@ -378,7 +380,7 @@ export async function createPrivateSyncStore({ root, pool }) {
           await run(conn, 'UPDATE sync_pairs SET data=$3,expires=$4 WHERE owner=$1 AND id=$2',
             [owner, id, JSON.stringify(data), expires]);
         }
-        if (ice) return { expires, role: host ? 'receiver' : 'sender' };
+      if (ice) return { expires: data.transferUntil ?? expires + TRANSFER_WINDOW, role: host ? 'receiver' : 'sender' };
         return { frames, expires };
       });
     },

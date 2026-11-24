@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
-import { CaretRight, FileText, Folder, FolderPlus, GearSix, House, MagnifyingGlass, Microphone, Plus, Sparkle, User, UsersThree, X } from '@phosphor-icons/react';
+import { CaretRight, CloudArrowDown, FileText, Folder, FolderPlus, GearSix, House, MagnifyingGlass, Microphone, Plus, Sparkle, User, UsersThree, X } from '@phosphor-icons/react';
 import type { RecordListItem } from '../model';
+import type { CopySummary } from '../sync/journal';
 import type { WorkspaceDirectory } from '../workspace-model';
 import { Brand } from './Brand';
 import {ThemeToggle} from './ThemeToggle';
@@ -10,7 +11,7 @@ import { Button } from './ui';
 
 export type WorkspacePage = 'overview' | 'meetings' | 'knowledge' | 'workspaces';
 type Props = {
-  directories: WorkspaceDirectory[]; scope: string; records: RecordListItem[]; recordId: string;
+  directories: WorkspaceDirectory[]; scope: string; records: RecordListItem[]; syncedCopies?: CopySummary[]; openSyncedCopy?: (copy: CopySummary) => void; recordId: string;
   page: WorkspacePage; extensionOpen: boolean; settingsOpen: boolean; voiceOpen?:boolean; open: boolean; disabled: boolean; canRecord: boolean;
   name: string; account: string; version: ReactNode; tools?: ReactNode; notice?: ReactNode;
   openAccount?: () => void; accountOpen?: boolean;
@@ -38,6 +39,11 @@ export function AppSidebar(props: Props) {
     addEventListener('resize',resize);document.addEventListener('keydown',key);
     return()=>{removeEventListener('resize',resize);document.removeEventListener('keydown',key);if(main)main.inert=false;if(opener?.isConnected)opener.focus({preventScroll:true});};
   },[props.open,props.close]);
+  const localIds = new Set(props.records.flatMap(record => [record.id, record.syncParent]));
+  const synced = props.syncedCopies?.filter(copy =>
+    !copy.pending && !localIds.has(copy.sourceId) && !localIds.has(copy.id) &&
+    (props.scope === 'all' || copy.workspace?.id === props.scope),
+  ).slice(0, 4) ?? [];
   const active=!props.recordId&&!props.extensionOpen&&!props.settingsOpen&&!props.voiceOpen;
   return <><aside ref={ref} id="project-sidebar" className={`sidebar v10-sidebar ${props.open?'is-open':''}`} aria-label="项目与会议导航">
     <div className="sidebar-head"><div className="rail-brand"><div className="rail-identity"><Brand/><div className="rail-version">{props.version}</div></div><div className="rail-top-actions"><Button variant="ghost" aria-label="搜索会议" disabled={props.disabled} onClick={props.search}><MagnifyingGlass size={17}/></Button><Button variant="ghost" aria-label="提前准备会议" disabled={props.disabled} onClick={props.prepare}><Plus size={19}/></Button><Button variant="ghost" aria-label="设置与诊断" aria-current={props.settingsOpen?'page':undefined} onClick={props.settings}><GearSix size={17}/></Button><ThemeToggle/><Button variant="ghost" className="sidebar-close" aria-label="关闭项目导航" onClick={props.close}><X size={18}/></Button></div></div>
@@ -51,7 +57,13 @@ export function AppSidebar(props: Props) {
       <Button variant="ghost" aria-current={!props.voiceOpen&&props.extensionOpen&&!props.settingsOpen?'page':undefined} disabled={props.disabled} onClick={props.extensions}><Sparkle size={17}/>扩展与助手</Button>
       <Button variant="ghost" aria-current={props.voiceOpen?'page':undefined} onClick={props.voices}><UsersThree size={17}/>声纹库</Button>
     </nav><div className="rail-section-label recent-heading"><span>最近讨论</span><Button variant="ghost" disabled={props.disabled} onClick={()=>props.navigate('meetings')}>全部</Button></div>
-    <div className="sidebar-scroll"><nav className="record-list" aria-label="会议记录">{props.records.slice(0,8).map(r=><button key={r.id} className={`record-row ${r.id===props.recordId&&!props.extensionOpen&&!props.settingsOpen?'selected':''}`} aria-current={r.id===props.recordId&&!props.extensionOpen&&!props.settingsOpen?'page':undefined} title={r.title} disabled={props.disabled&&r.id!==props.recordId} onClick={()=>props.selectRecord(r.id)}><span className="record-icon">{r.hasMinutes?<FileText size={16}/>:<Microphone size={16}/>}</span><span><b><SearchHighlights text={r.title} ranges={r.search?.titleHighlights}/></b><small>{new Date(r.createdAt).toLocaleDateString('zh-CN',{month:'short',day:'numeric'})}<span className="record-duration-pill">{r.capture==='recording'?'录音中':`${Math.ceil(r.seconds/60)} 分钟`}</span></small></span></button>)}{!props.records.length&&<p className="rail-empty">这个范围还没有会议。</p>}</nav>
+    <div className="sidebar-scroll">{synced.length>0&&<nav className="record-list" aria-label="已同步记录">
+      {synced.map(copy=><button key={copy.id} className="record-row" disabled={props.disabled} title={copy.title} onClick={()=>props.openSyncedCopy?.(copy)}>
+        <span className="record-icon"><CloudArrowDown size={16}/></span><span><b>{copy.title}</b>
+          <small>{new Date(copy.recordedAt??copy.at).toLocaleDateString('zh-CN',{month:'short',day:'numeric'})}<span className="record-duration-pill">已同步</span></small>
+        </span>
+      </button>)}
+    </nav>}<nav className="record-list" aria-label="会议记录">{props.records.slice(0,8).map(r=><button key={r.id} className={`record-row ${r.id===props.recordId&&!props.extensionOpen&&!props.settingsOpen?'selected':''}`} aria-current={r.id===props.recordId&&!props.extensionOpen&&!props.settingsOpen?'page':undefined} title={r.title} disabled={props.disabled&&r.id!==props.recordId} onClick={()=>props.selectRecord(r.id)}><span className="record-icon">{r.hasMinutes?<FileText size={16}/>:<Microphone size={16}/>}</span><span><b><SearchHighlights text={r.title} ranges={r.search?.titleHighlights}/></b><small>{new Date(r.createdAt).toLocaleDateString('zh-CN',{month:'short',day:'numeric'})}<span className="record-duration-pill">{r.capture==='recording'?'录音中':`${Math.ceil(r.seconds/60)} 分钟`}</span></small></span></button>)}{!props.records.length&&!synced.length&&<p className="rail-empty">这个范围还没有会议。</p>}</nav>
     </div><footer className="rail-footer">{props.openAccount ? (
       <button type="button" className="account sidebar-account" aria-label={props.account ? '打开个人中心' : '打开本地空间'} aria-current={props.accountOpen ? 'page' : undefined} onClick={props.openAccount}>
         <span className="avatar" aria-hidden="true">{props.name ? props.name.slice(0,1).toUpperCase() : <User size={15}/>}</span>

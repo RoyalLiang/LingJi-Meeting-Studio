@@ -57,10 +57,14 @@ async function cloud(t, databaseUrl = '', options = {}) {
   return { request, account, restart };
 }
 
-test('desktop account registration authenticates once and logout clears the sync session', async t => {
+test('desktop account reuses its named device after logout and restart', async t => {
   const { request } = await cloud(t);
-  const desktop = createDesktopPrivateSync({
+  const root = await mkdtemp(join(tmpdir(), 'lingji-desktop-device-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const desktopOptions = {
     origin: fixtureOrigin,
+    root,
+    deviceName: '会议室电脑.local',
     fetcher: async (url, options) => {
       const response = await request(url.pathname.slice('/api'.length) + url.search, options.method,
         options.body ? JSON.parse(options.body) : undefined, options.headers);
@@ -68,7 +72,8 @@ test('desktop account registration authenticates once and logout clears the sync
       for (const cookie of response.cookies) headers.append('Set-Cookie', cookie);
       return new Response(JSON.stringify(response.data), { status: response.status, headers });
     },
-  });
+  };
+  let desktop = createDesktopPrivateSync(desktopOptions);
   async function call(route, method, body) {
     const path = '/api/private-sync/' + route;
     let result;
@@ -85,7 +90,7 @@ test('desktop account registration authenticates once and logout clears the sync
   const platform = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' }[process.platform];
   if (platform) {
     const { items } = (await call('devices', 'GET')).data;
-    assert.equal(items.find(device => device.current)?.name, '聆记 ' + platform);
+    assert.equal(items.find(device => device.current)?.name, '会议室电脑');
   }
   assert.deepEqual((await call('profile', 'PATCH', { name: '  设备验收  ' })).data, { name: '设备验收' });
   assert.deepEqual((await call('profile', 'GET')).data, { name: '设备验收' });
@@ -94,7 +99,14 @@ test('desktop account registration authenticates once and logout clears the sync
   await call('session', 'DELETE');
   assert.equal((await call('session', 'GET')).data.email, null);
   await assert.rejects(call('vault', 'GET'), { code: 'sync_sign_in_required' });
+  desktop = createDesktopPrivateSync(desktopOptions);
   assert.equal((await call('session', 'POST', { email, password })).data.email, email);
+  if (platform) {
+    const { items } = (await call('devices', 'GET')).data;
+    assert.equal(items.length, 1);
+    assert.equal(items[0].name, '会议室电脑');
+    assert.equal(items[0].current, true);
+  }
 });
 
 test('encrypted delta across authenticated accounts preserves ordering and idempotent retry', async t => {
@@ -785,6 +797,9 @@ test('desktop retries skipped live frames and releases a deleted recording witho
   const encrypted = { id: operation, seq: 1, ...await seal(root, vault,
     'mobile-live-audio/1', operation, encoder.encode(JSON.stringify(frame))) };
   const cursors = [];
+  const pulledFrom = [];
+  let now = Date.now();
+  t.mock.method(Date, 'now', () => now);
   let deleted = false;
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     const target = new URL(url, fixtureOrigin);
@@ -799,12 +814,18 @@ test('desktop retries skipped live frames and releases a deleted recording witho
       return Response.json({ acknowledged: 1 });
     }
     const after = Number(target.searchParams.get('after'));
+    pulledFrom.push(after);
     return Response.json({ operations: after ? [] : [encrypted], cursor: 1, more: false, acknowledged: 0 });
   });
   await receiveLiveAudio(vault, root, signal, () => {});
   assert.deepEqual(cursors, []);
-  deleted = true;
   await receiveLiveAudio(vault, root, signal, () => {});
+  assert.deepEqual(pulledFrom, [0, 1], 'the live tail advances without replaying an unresolved gap');
+  assert.deepEqual(cursors, []);
+  deleted = true;
+  now += 30_001;
+  await receiveLiveAudio(vault, root, signal, () => {});
+  assert.deepEqual(pulledFrom, [0, 1, 0]);
   assert.deepEqual(cursors, ['1']);
 });
 
@@ -980,6 +1001,15 @@ test('phone audio becomes a source-linked transcript and final minutes in its or
   await desktopJournal.receiveLiveAudio(vault, root, signal, () => {}, true);
   assert.equal((await repo.get(desktopId)).capture, 'sealed');
   assert.equal((await repo.get(desktopId)).chunks.length, 1);
+  await desktopJournal.pushLiveAudio(vault, 'desktop', signal);
+  Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: phoneDb });
+  const receipts = [];
+  await phoneJournal.pullLiveAudio(vault, root, 'phone', signal, receipt => { receipts.push(receipt); });
+  assert.deepEqual(receipts, [
+    { id: sourceId, title, kind: 'received' },
+    { id: sourceId, title, kind: 'received', complete: true },
+  ]);
+  Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: desktopDb });
   await runCycle(repo, { transcribe: async () => '决定周五进行发布评审' }, { lane: 'audio' });
   const finished = await repo.get(desktopId);
   assert.equal(finished.capture, 'completed');
@@ -998,6 +1028,7 @@ test('phone audio becomes a source-linked transcript and final minutes in its or
   Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: phoneDb });
   assert.equal((await phoneJournal.syncMeetings(vault, root, signal)).received, true);
   const [copy] = await phoneJournal.meetingCopies(vault, root);
+  assert.equal(copy.hasMinutes, true);
   assert.equal(copy.sourceId, sourceId);
   assert.equal(copy.recordedAt, recordedAt);
   const opened = await phoneJournal.loadMeetingCopy(vault, root, copy.id);
@@ -1069,9 +1100,11 @@ test('direct ICE credentials are room-scoped and stable across reconnects', asyn
   const host = await ice(owner, room);
   assert.notEqual(host.data.iceServers[1].username, credential.username);
   const expires = Number(credential.username.split(':')[0]);
-  assert.ok(expires > Date.now() / 1000 + 290 && expires <= Date.now() / 1000 + 301);
+  assert.ok(expires > Date.now() / 1000 + 7490 && expires <= Date.now() / 1000 + 7501);
   assert.equal((await exchange(guest, 1, 'x'.repeat(12_000))).status, 200);
   assert.equal((await exchange(room, 2, 'y'.repeat(12_000))).status, 200);
+  const reissued = Number((await ice(owner, guest)).data.iceServers[1].username.split(':')[0]);
+  assert.ok(reissued > Date.now() / 1000 + 7190 && reissued <= Date.now() / 1000 + 7201);
   assert.equal((await exchange(guest, 3, 'z'.repeat(24_001))).status, 400);
 
   const legacy = { id: randomUUID(), proof: newPairSecret() };

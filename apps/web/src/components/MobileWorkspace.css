@@ -484,16 +484,34 @@ body:has(.quick-mobile-app) { background: #f4f4f5; }
   border-radius: 999px; background: var(--phone-lens-glass); pointer-events: none;
 }
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-  .quick-mobile-mini {
-    background: var(--phone-dock-glass);
-    -webkit-backdrop-filter: grayscale(1) blur(9px);
-    backdrop-filter: grayscale(1) blur(9px);
+  .mobile-nav, .quick-mobile-mini {
+    --glass-light: rgb(255 255 255 / .73);
+    --glass-shade: rgb(69 77 72 / .15);
+    background:
+      radial-gradient(ellipse at 15% 0%, var(--glass-light), transparent 64%),
+      linear-gradient(160deg, transparent 54%, var(--glass-shade)),
+      var(--phone-nav-glass);
+    box-shadow: inset 0 1px 1px var(--glass-light), inset 0 -1px 2px var(--glass-shade),
+      0 0 0 1px var(--phone-dock-edge), 0 5px 19px rgb(0 0 0 / .09);
   }
   .mobile-nav {
-    background: var(--phone-nav-glass);
-    -webkit-backdrop-filter: blur(14px) saturate(1.1);
-    backdrop-filter: blur(14px) saturate(1.1);
-    box-shadow: inset 0 0 0 1px var(--phone-dock-edge);
+    -webkit-backdrop-filter: blur(7px) saturate(1.25);
+    backdrop-filter: blur(7px) saturate(1.25);
+  }
+  .quick-mobile-mini {
+    background: linear-gradient(155deg, var(--glass-light), transparent 52%), var(--phone-dock-solid);
+  }
+  [data-theme=dark] :is(.mobile-nav, .quick-mobile-mini) {
+    --glass-light: rgb(237 247 244 / .19);
+    --glass-shade: rgb(1 8 7 / .23);
+  }
+  .mobile-nav-lens {
+    background:
+      radial-gradient(ellipse at 80% 100%, var(--glass-light), transparent 64%),
+      linear-gradient(155deg, var(--glass-light), transparent 32%, transparent 70%, var(--glass-shade)),
+      var(--phone-lens-glass);
+    box-shadow: inset 0 0 0 1px var(--glass-light), inset 0 -2px 4px var(--glass-shade),
+      0 1px 5px var(--glass-shade);
   }
 }
 .mobile-nav button {
@@ -541,6 +559,11 @@ body:has(.quick-mobile-app) { background: #f4f4f5; }
   .quick-mobile-symbol, .mobile-connecting-dot { animation: none; }
 }
 @media (prefers-reduced-transparency: reduce) {
-  .mobile-nav, .quick-mobile-mini { background: var(--phone-dock-solid); -webkit-backdrop-filter: none; backdrop-filter: none; }
-  .mobile-nav-lens { background: var(--phone-selection); }
+  .mobile-nav, .quick-mobile-mini { background: var(--phone-dock-solid); -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: inset 0 0 0 1px var(--phone-dock-edge); }
+  .mobile-nav-lens { background: var(--phone-selection); box-shadow: none; }
+}
+
+.mobile-record-groups .mobile-record-list > li {
+  content-visibility: auto;
+  contain-intrinsic-block-size: auto 64px;
 }

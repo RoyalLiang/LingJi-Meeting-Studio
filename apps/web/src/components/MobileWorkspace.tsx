@@ -294,7 +294,8 @@ const MobileTranscriptList = memo(function MobileTranscriptList({ lines, highlig
   </div>;
 });
 
-function MobileMeeting({ entry, back, read, play, saveAnnotations, send }: {
+function MobileMeeting({ entry, back, read, play, saveAnnotations, send, syncStatus }: {
+  syncStatus?: string;
   send?: (entry: MobileRecording) => ReactNode;
   entry: Entry; back: () => void; read: (id: string) => Promise<MeetingCopy | null>; play: (id: string) => Promise<Blob | null>;
   saveAnnotations: (parent: string, changes: MeetingAnnotations) => Promise<void>;
@@ -371,6 +372,7 @@ function MobileMeeting({ entry, back, read, play, saveAnnotations, send }: {
     {entry.saved && <MobileAudioPlayer ref={playerRef} saved={entry.saved} play={play} onError={setError}/>}
 
     {entry.saved?.directReady && send?.(entry.saved)}
+    {syncStatus && !entry.cloud?.hasMinutes && <p role="status" className="mobile-save-status">{syncStatus}</p>}
     <nav className="mobile-detail-tabs" aria-label="会议内容">
       {detailTabs.map(([id, label]) => <button key={id} type="button" aria-current={id === tab ? 'page' : undefined} onClick={() => setTab(id)}>{label}</button>)}
     </nav>
@@ -442,7 +444,7 @@ function MobileSwitch({ labelId, checked, disabled, change }: { labelId: string;
 }
 
 export function MobileWorkspace({
-  page, setPage, online, unlocked, automatic, setAutomatic, copies, saved, hidden, recorder, account, read, play, search, saveAnnotations, deleteLocal, email, legacyAccount, signOut, recording, direct,
+  page, setPage, online, unlocked, automatic, setAutomatic, copies, saved, hidden, recorder, account, read, play, search, saveAnnotations, deleteLocal, email, legacyAccount, signOut, recording, direct, syncProgress,
 }: {
   email: string; legacyAccount: boolean; signOut: () => Promise<void>; recording: boolean;
   page: MobilePage; setPage: (page: MobilePage) => void; online: boolean; unlocked: boolean;
@@ -453,6 +455,7 @@ export function MobileWorkspace({
   search: (query: string) => Promise<CopySummary[]>;
   saveAnnotations: (parent: string, changes: MeetingAnnotations) => Promise<string>;
   deleteLocal?: (id: string) => Promise<void>;
+  syncProgress?: { id: string; status: string };
   direct?: { enabled: boolean; change: (enabled: boolean) => void; send: (entry: MobileRecording) => ReactNode };
 }) {
   const [detail, setDetail] = useState<Entry | null>(null);
@@ -529,6 +532,7 @@ export function MobileWorkspace({
     </header>
     {recorder}
     {page === 'meetings' && (opened ? <MobileMeeting key={opened.saved?.id || opened.cloud?.sourceId || opened.id} entry={opened}
+          syncStatus={syncProgress?.id === opened.saved?.id ? syncProgress?.status : undefined}
           back={() => setDetail(null)} read={read} play={play} send={direct?.send} saveAnnotations={async (parent, changes) => {
             const id = await saveAnnotations(parent, changes);
             setDetail(current => current === detail && opened.cloud
@@ -566,7 +570,7 @@ export function MobileWorkspace({
         <div><ArrowClockwise size={17} aria-hidden="true"/><span id="mobile-sync-preference">自动同步会议与纪要</span>
           <MobileSwitch labelId="mobile-sync-preference" disabled={!unlocked} checked={automatic} change={setAutomatic}/></div>
 
-        {direct && <div><Link size={17} aria-hidden="true"/><label id="mobile-direct-preference" htmlFor="mobile-direct-preference-switch">录音优先直传</label>
+        {direct && <div><Link size={17} aria-hidden="true"/><label id="mobile-direct-preference" htmlFor="mobile-direct-preference-switch">录完后手动配对直传</label>
           <MobileSwitch labelId="mobile-direct-preference" disabled={recording} checked={direct.enabled} change={direct.change}/></div>}
         <div><Moon size={17} aria-hidden="true"/><span id="mobile-theme-preference">深色外观</span>
           <MobileSwitch labelId="mobile-theme-preference" checked={dark} change={checked => {

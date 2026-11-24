@@ -9,9 +9,9 @@ type DeviceList = { current: boolean; items: Device[] };
 type FactorStatus = { available: boolean; enabled: boolean; recent: boolean };
 
 let deviceRequest: { generation: number; until: number; promise: Promise<DeviceList> } | undefined;
-export function loadMobileDevices() {
+export function loadMobileDevices(force = false) {
   const generation = getAuthGeneration();
-  if (deviceRequest?.generation === generation && deviceRequest.until > Date.now()) return deviceRequest.promise;
+  if (!force && deviceRequest?.generation === generation && deviceRequest.until > Date.now()) return deviceRequest.promise;
   const promise = api<DeviceList>('/private-sync/devices').catch(error => {
     if (deviceRequest?.promise === promise) deviceRequest = undefined;
     throw error;
@@ -20,17 +20,17 @@ export function loadMobileDevices() {
   return promise;
 }
 
-export function MobileAccountDevices() {
+export function MobileAccountDevices({ desktop = false, summary = false }: { desktop?: boolean; summary?: boolean } = {}) {
   const [devices, setDevices] = useState<DeviceList>();
   const [error, setError] = useState('');
   const [revoke, setRevoke] = useState<Device>();
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     let active = true;
-    void loadMobileDevices().then(value => { if (active) setDevices(value); })
+    void loadMobileDevices(desktop).then(value => { if (active) setDevices(value); })
       .catch(error => { if (active) setError(messageOf(error)); });
     return () => { active = false; };
-  }, []);
+  }, [desktop]);
   async function remove() {
     if (!revoke || busy) return;
     setBusy(true);
@@ -47,7 +47,8 @@ export function MobileAccountDevices() {
     {error && !revoke && <p role="alert">{error}</p>}
     {!devices && !error && <p role="status">正在加载设备…</p>}
     {devices && !devices.current && <p className="mobile-sheet-note">重新登录可登记当前设备。</p>}
-    <ul className="mobile-record-list mobile-device-list">{devices?.items.map(device => {
+    {devices && !devices.items.length && <p className="mobile-sheet-note">暂无已登录设备</p>}
+    <ul className="mobile-record-list mobile-device-list">{(summary ? devices?.items.slice(0, 3) : devices?.items)?.map(device => {
       const platform = device.current && /\bLingJi-(Android|iOS)\//.exec(navigator.userAgent)?.[1];
     const name = platform ? '聆记 ' + platform : device.name;
       const unknown = name === '浏览器';
@@ -56,8 +57,8 @@ export function MobileAccountDevices() {
       return <li className="mobile-device" key={device.id}>
         <Icon size={20} aria-hidden="true"/>
         <div><strong>{title}</strong><small>{new Date(device.issuedAt).toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' })}</small></div>
-        {device.current ? <small className="mobile-device-current">当前设备</small> :
-          <Button variant="ghost" disabled={!devices.current} aria-label={'移除 ' + title} onClick={() => { setError(''); setRevoke({ ...device, name: title }); }}>移除</Button>}
+        {device.current ? <small className="mobile-device-current">当前设备</small> : !summary &&
+          <Button variant="ghost" disabled={!devices?.current} aria-label={'移除 ' + title} onClick={() => { setError(''); setRevoke({ ...device, name: title }); }}>移除</Button>}
       </li>;
     })}</ul>
     {revoke && <MobileSheet title="移除设备？" placement="center" showClose={false}
@@ -85,8 +86,8 @@ export function loadMobileFactor(force = false) {
   return promise;
 }
 
-export function MobileAccountFactor({ email, legacy, onBusy, done }: {
-  email: string; legacy: boolean; onBusy: (busy: boolean) => void; done: () => void;
+export function MobileAccountFactor({ email, legacy, onBusy, done, desktop = false }: {
+  email: string; legacy: boolean; onBusy?: (busy: boolean) => void; done: () => void; desktop?: boolean;
 }) {
   const [status, setStatus] = useState<FactorStatus>();
   const [setup, setSetup] = useState('');
@@ -100,10 +101,10 @@ export function MobileAccountFactor({ email, legacy, onBusy, done }: {
 
   useEffect(() => {
     let active = true;
-    void loadMobileFactor().then(value => { if (active) setStatus(value); })
+    void loadMobileFactor(desktop).then(value => { if (active) setStatus(value); })
       .catch(failure => { if (active) setError(messageOf(failure)); });
     return () => { active = false; };
-  }, []);
+  }, [desktop]);
   useEffect(() => {
     if (!setup) return;
     let active = true;
@@ -116,7 +117,7 @@ export function MobileAccountFactor({ email, legacy, onBusy, done }: {
     if (request.current) return;
     request.current = true;
     setBusy(true);
-    onBusy(true);
+    onBusy?.(true);
     setError('');
     try {
       await action();
@@ -130,7 +131,7 @@ export function MobileAccountFactor({ email, legacy, onBusy, done }: {
     } finally {
       request.current = false;
       setBusy(false);
-      onBusy(false);
+      onBusy?.(false);
     }
   }
 
@@ -150,7 +151,7 @@ export function MobileAccountFactor({ email, legacy, onBusy, done }: {
       const { authenticateAccount } = await import('../sync/account');
       const { material } = await authenticateAccount({
         email, password: String(fields.get('password')),
-        factor: String(fields.get('factor') || '') || undefined, desktop: false,
+        factor: String(fields.get('factor') || '') || undefined, desktop,
       });
       material.fill(0);
       deviceRequest = undefined;

@@ -7,6 +7,34 @@ import {join} from 'node:path';
 import {createRepository} from '../services/records/src/repository.mjs';
 import {createRecord,addSource,digest} from '../packages/records/src/record.mjs';
 import {searchGrams} from '../services/records/src/record-search.mjs';
+import {createPostgresRecordStore} from '../services/records/src/postgres-record-store.mjs';
+import {encodedCollections,encodedDocuments,storageHeader} from '../services/records/src/record-storage-shape.mjs';
+
+test('Postgres v2 list hydrates its prefetched collections and documents', async () => {
+  const record = createRecord('pg-read-test', {title:'会议'});
+  const collections = encodedCollections(record), documents = encodedDocuments(record);
+  const header = storageHeader(record, collections, documents, randomUUID());
+  const client = {
+    async query(sql) {
+      if (sql.startsWith('SELECT id,data FROM record_aggregates')) return {rows:[{id:record.id,data:header}]};
+      if (sql.includes('FROM record_collections WHERE record_id=ANY')) {
+        return {rows:Object.entries(collections).flatMap(([field, rows])=>
+          rows.map((data,position)=>({record_id:record.id,field,position,data:JSON.parse(data)})))};
+      }
+      if (sql.includes('FROM record_documents WHERE record_id=ANY')) {
+        return {rows:Object.entries(documents).map(([field, data])=>({record_id:record.id,field,data:JSON.parse(data)}))};
+      }
+      assert.match(sql, /^(?:BEGIN |COMMIT$)/);
+      return {rows:[]};
+    },
+    release() {},
+  };
+  const store = await createPostgresRecordStore({query:async()=>({rows:[]}),connect:async()=>client});
+  const [hydrated] = await store.list('record');
+  assert.equal(hydrated.id, record.id);
+  assert.equal(hydrated.title, record.title);
+  assert.deepEqual(hydrated.segments, []);
+});
 
 test('Postgres CJK and mixed-case knowledge search share indexed grams and warm speech writes preserve snapshots',{skip:!process.env.RECORD_TEST_DATABASE_URL},async t=>{
   const databaseUrl=process.env.RECORD_TEST_DATABASE_URL;assert.match(new URL(databaseUrl).pathname,/test/i);

@@ -19,6 +19,7 @@ struct MeetingWebView: UIViewRepresentable {
         configuration.websiteDataStore = .default()
         configuration.applicationNameForUserAgent = "LingJi-iOS/\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] ?? "1.0")"
         configuration.allowsInlineMediaPlayback = true
+        configuration.mediaTypesRequiringUserActionForPlayback = []
 
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.navigationDelegate = context.coordinator

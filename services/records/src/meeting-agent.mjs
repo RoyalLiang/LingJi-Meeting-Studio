@@ -108,7 +108,6 @@ export async function createMeetingAgentRuntime({ repo, extensions, env = proces
   let operations = Promise.resolve(), gitSyncHandler; const inputWaiters=new Map();
   const jobs = new Map(), sourceHashes = new Map(), directory = join(repo.root, 'meeting-agent-jobs');
   const enqueue = operation => { const result = operations.then(operation); operations = result.catch(() => {}); return result; };
-  if(!injectedModels)await discoverModelFacts(repo.root,await readConfig(repo.root,env,{role:'analysis'}));
   const selectedModel = injectedModels ? { models: injectedModels, model: injectedModel } : configuredModels(repo.root, await readConfig(repo.root,env,{role:'analysis'}), timeoutMs);
   const registry = createRegistry();
   function snapshot(record, includeNotes = false, minutesOnly = false) {

@@ -7,7 +7,7 @@ type MeetingMetadata = { workspace?: { id: string; name: string }; durationMs?: 
 export type MeetingAnnotations = { notes: string; completed?: number[] };
 export type MeetingCopy = MeetingMetadata & MeetingAnnotations & { content: PublishedContent };
 type Revision = MeetingCopy & { id: string; parents: string[]; at: number };
-export type CopySummary = MeetingMetadata & { id: string; sourceId: string; title: string; at: number; pending?: boolean };
+export type CopySummary = MeetingMetadata & { id: string; sourceId: string; title: string; at: number; pending?: boolean; hasMinutes?: boolean };
 type Row = { key: string; vault: string; pending: 0 | 1; operation: EncryptedOperation; seq: number };
 type Delta = { cursor: number; more: boolean; operations: (EncryptedOperation & { seq: number })[] };
 type CachedRow = { parents: string[]; summary: CopySummary; searchText: string };
@@ -41,7 +41,8 @@ function cacheRevision(vaultId: string, key: string, revision: Revision, pending
     parents: revision.parents,
     summary: {
       id: revision.id, sourceId: revision.content.sourceRecordId, at: revision.at, title: revision.content.title,
-      workspace: revision.workspace, durationMs: revision.durationMs, fromPhone: revision.fromPhone, recordedAt: revision.recordedAt, pending,
+      workspace: revision.workspace, durationMs: revision.durationMs, fromPhone: revision.fromPhone, recordedAt: revision.recordedAt,
+      pending, hasMinutes: Boolean(revision.content.minutes),
     },
     searchText: [revision.content.title, revision.notes, JSON.stringify(revision.content.minutes), JSON.stringify(revision.content.segments || [])].join('\n').toLowerCase(),
   };

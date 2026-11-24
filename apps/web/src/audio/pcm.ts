@@ -1,5 +1,9 @@
 export function pcmBytes(pcm: string | Uint8Array<ArrayBuffer>): Uint8Array<ArrayBuffer> {
-  return typeof pcm === 'string' ? Uint8Array.from(atob(pcm), char => char.charCodeAt(0)) : pcm;
+  if (typeof pcm !== 'string') return pcm;
+  const binary = atob(pcm);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
 }
 
 export function pcmBase64(pcm: string | Uint8Array): string {

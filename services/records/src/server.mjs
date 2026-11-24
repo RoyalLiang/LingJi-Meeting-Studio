@@ -98,7 +98,7 @@ export async function createRecordServer(options = {}) {
   const syncStore = syncOrigin && await repo.privateSync();
   const syncRoutes = syncOrigin && createPrivateSyncRoutes({ store: syncStore, origin: syncOrigin, repo, auth, iceEnv: options.syncIceEnv });
   const accountAuth = syncOrigin && await (await import('./account-auth.mjs')).createAccountAuth({ repo, auth, store: syncStore, origin: syncOrigin });
-  const desktopSync = options.localAccount && createDesktopPrivateSync(options.desktopSync);
+  const desktopSync = options.localAccount && createDesktopPrivateSync({ root: repo.root, ...options.desktopSync });
 
   const encryptedSharing = createEncryptedSharing(repo, options.encryptedSharing);
   const feishu = await createFeishu(repo, options.feishuOptions);

@@ -201,10 +201,11 @@ const liveEndpoint = '/private-sync/live-audio';
 const liveV2Purpose = 'mobile-live-audio/2';
 const liveV2Endpoint = '/private-sync/live-audio-v2';
 const receiptEndpoint = '/private-sync/live-receipts';
+const liveGapRetry = new WeakMap<Vault, Map<string, number>>();
 export type MobileFrame =
   | { kind: 'pcm'; sequence: number; offset: number; pcm: PackedMobilePcm; recordedAt?: number }
   | { kind: 'finish'; sequence: number };
-export type LiveFrame = { id: string; title: string } & (MobileFrame | { kind: 'received' });
+export type LiveFrame = { id: string; title: string } & (MobileFrame | { kind: 'received'; complete?: true });
 
 type LegacyPcmFrame = { id: string; title: string; kind: 'pcm'; sequence: number; offset: number; data: string; recordedAt?: number };
 async function sealFrame(vault: Vault, root: Uint8Array<ArrayBuffer>, frame: LiveFrame | LegacyPcmFrame) {
@@ -306,11 +307,11 @@ export async function pushLiveAudio(vault: Vault, receiver: 'phone' | 'phone-v2'
   return keys;
 }
 
-export async function acknowledgeLiveAudio(vault: Vault, root: Uint8Array<ArrayBuffer>, id: string, title: string) {
-  const operation = await sealFrame(vault, root, { kind: 'received', id, title });
+export async function acknowledgeLiveAudio(vault: Vault, root: Uint8Array<ArrayBuffer>, id: string, title: string, complete?: true) {
+  const operation = await sealFrame(vault, root, { kind: 'received', id, title, complete });
   await change(['live-outbox'], tx => {
     const store = tx.objectStore('live-outbox');
-    const key = [vault.id, 'desktop', id];
+    const key = complete ? [vault.id, 'desktop', id, 1] : [vault.id, 'desktop', id];
     const pending = store.getKey(key);
     pending.onsuccess = () => { if (pending.result === undefined) store.add(operation, key); };
   });
@@ -385,12 +386,20 @@ export async function pullLiveAudio(
     return delta;
   };
   // Repair previously skipped frames before reading new ones. An unresolved prefix must not starve newer recordings.
-  let delta = await pull(receiver === 'desktop' ? Math.min(after, confirmed) : after);
-  if (receiver === 'desktop' && delta.cursor <= after && delta.more && confirmed < delta.cursor) {
+  const gaps = liveGapRetry.get(vault) ?? new Map<string, number>();
+  const replay = receiver === 'desktop' && Date.now() >= (gaps.get(path) ?? 0);
+  const start = replay ? Math.min(after, confirmed) : after;
+  let delta = await pull(start);
+  if (start < after && delta.cursor <= after && delta.more && confirmed < delta.cursor) {
     delta = await pull(after);
   }
   const cursor = Math.max(after, delta.cursor);
   const durable = Math.min(confirmed, cursor);
+  if (receiver === 'desktop') {
+    if (durable >= cursor) gaps.delete(path);
+    else if (replay) gaps.set(path, Date.now() + 30_000);
+    if (gaps.size) liveGapRetry.set(vault, gaps);
+  }
   if (cursor > after || (receiver === 'desktop' && durable > (savedConfirmation ?? 0))) await change(['live-cursor'], tx => {
     const store = tx.objectStore('live-cursor');
     const advance = (storageKey: string[], value: number) => {

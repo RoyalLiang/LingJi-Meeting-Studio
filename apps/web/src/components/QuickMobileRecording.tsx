@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { BookmarkSimple, Microphone, Pause, Play, Stop } from '@phosphor-icons/react';
 import { MOBILE_PCM_BYTES, WAV_PCM_LIMIT } from '../sync/mobile-pcm';
 import type { MobileRecording } from '../sync/mobile-library';
+import { pcmBytes } from '../audio/pcm';
 import { Button } from './ui';
 
 const waveSize = 28;
@@ -193,8 +194,13 @@ export function QuickMobileRecording({ append, commit, status, visible, showReco
         if (node) node.port.onmessage = null;
         close();
         if (!mounted.current) return;
-        onLiveRecording?.('');
-        if (!size) { setError('没有录到音频'); setPhase('idle'); onActive?.(false); return; }
+        if (!size) {
+          onLiveRecording?.('');
+          setError('没有录到音频');
+          setPhase('idle');
+          onActive?.(false);
+          return;
+        }
         void persist(async () => {
           await drain().catch(() => drain());
           await commit({ id, title: name, at, seconds: Math.floor(size / MOBILE_PCM_BYTES), marks: currentMarks.current.slice() }, queued);
@@ -294,7 +300,7 @@ export function QuickMobileRecording({ append, commit, status, visible, showReco
           if (data === 'wait' || data === 'starting') {
             nativePoll = window.setTimeout(read, 250);
           } else {
-            const bytes = Uint8Array.from(atob(data), sample => sample.charCodeAt(0));
+                const bytes = pcmBytes(data);
             captured += bytes.length;
             if (!nativeMeter) {
               const pcm = new Int16Array(bytes.buffer);
@@ -327,7 +333,7 @@ export function QuickMobileRecording({ append, commit, status, visible, showReco
           const data = (event as CustomEvent<string>).detail;
           if (data === 'system-audio-ended') finish();
           if (!data.startsWith('system-audio-frame:') || ending || capturePaused) return;
-          const bytes = Uint8Array.from(atob(data.slice('system-audio-frame:'.length)), sample => sample.charCodeAt(0));
+          const bytes = pcmBytes(data.slice('system-audio-frame:'.length));
           const pcm = new Int16Array(bytes.buffer);
           const meanSquare = pcm.reduce((sum, sample) => sum + sample * sample, 0) / pcm.length / 32768 ** 2;
           onAudio({ type: 'meter', value: Math.sqrt(meanSquare) });

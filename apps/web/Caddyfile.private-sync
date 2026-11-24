@@ -6,6 +6,7 @@
 
 {$RECORD_SYNC_HOST:localhost} {
 	reverse_proxy {$RECORD_SYNC_UPSTREAM:127.0.0.1:3000} {
+		header_up X-LingJi-Ingress-IP {remote_host}
 		transport http {
 			keepalive 4s
 		}

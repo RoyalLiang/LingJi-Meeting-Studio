@@ -486,3 +486,8 @@ html:not(.recording-capsule-mode) body{background:var(--page)}
   .workspace > .topbar > .workbench-page-identity { flex-basis: 72px; }
   .workspace > .topbar > .sync-state { max-width: min(32%, 150px); }
 }
+
+.directory-records .meeting-table-row {
+  content-visibility: auto;
+  contain-intrinsic-block-size: auto 54px;
+}

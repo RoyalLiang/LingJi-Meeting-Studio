@@ -32,18 +32,14 @@ export function MobileDirectSend({ vault, secret, entry, online }: Account & { e
     setNotice(direct ? '正在连接 Mac…' : '正在排入加密同步队列…');
     try {
       if (direct) {
-        try {
-          await sendDirectAudio(vault, root, entry.id, code.trim(), signal, setNotice);
-          setAvailable(false);
-          return;
-        } catch {
-          signal.throwIfAborted();
-        }
+        await sendDirectAudio(vault, root, entry.id, code.trim(), signal, setNotice);
+        setAvailable(false);
+        return;
       }
       await releaseHeldAudio(vault, entry.id, true);
       dispatchEvent(new Event('lingji:live-audio-ready'));
       setAvailable(false);
-      setNotice(direct ? '直传失败，已排入加密同步队列' : '已排入加密同步队列');
+      setNotice('已排入加密同步队列');
     } catch (failure) {
       if (!signal.aborted) setNotice(messageOf(failure));
     } finally {
@@ -62,10 +58,10 @@ export function MobileDirectSend({ vault, secret, entry, online }: Account & { e
   }
 
   return <>
-    {available && <Button className="mobile-direct-button" onClick={() => setOpen(true)}>发送到 Mac</Button>}
-    {open && <MobileSheet title="发送到 Mac" close={close}>
+    {available && <Button className="mobile-direct-button" onClick={() => setOpen(true)}>发送到电脑</Button>}
+    {open && <MobileSheet title="发送到电脑" close={close}>
       {available && <form className="sync-form" onSubmit={event => { event.preventDefault(); void send(true); }}>
-        <p>在 Mac 的「手机记录」获取接收码。直传失败后自动改用加密同步。</p>
+        <p>在电脑个人中心的「会议同步」获取接收码。</p>
         <label>8 位接收码<input value={code} onChange={event => setCode(event.target.value)} inputMode="numeric" maxLength={8} pattern="[0-9]{8}" required autoComplete="off" disabled={busy}/></label>
         <div className="mobile-sheet-actions">
           <Button type="submit" variant="primary" disabled={!online || busy || !/^\d{8}$/.test(code)}>开始直传</Button>

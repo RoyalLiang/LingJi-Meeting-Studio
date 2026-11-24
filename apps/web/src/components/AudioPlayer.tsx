@@ -22,7 +22,7 @@ function clock(value: number) {
 const SavedWaveform=memo(function SavedWaveform({peaks,reveal}:{peaks:number[];reveal:RefObject<HTMLSpanElement|null>}) {
   const path=peaks.map((peak,index)=>{const height=Math.max(2,Math.sqrt(peak)*42);return `M${index*4+1} ${25-height/2}v${height-2}`;}).join('');
   const bars=<path d={path} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>;
-  return <><svg className="player-waveform" viewBox="0 0 768 48" preserveAspectRatio="none" aria-hidden="true">{bars}</svg><span className="player-wave-fill"><span className="player-wave-reveal" ref={reveal}><svg className="player-waveform player-waveform-played" viewBox="0 0 768 48" preserveAspectRatio="none" aria-hidden="true">{bars}</svg></span></span></>;
+  return <><svg className="player-waveform" viewBox="0 0 768 48" preserveAspectRatio="none" aria-hidden="true">{bars}</svg><span className="player-wave-fill" ref={reveal}><span className="player-wave-reveal"><svg className="player-waveform player-waveform-played" viewBox="0 0 768 48" preserveAspectRatio="none" aria-hidden="true">{bars}</svg></span></span></>;
 });
 
 export function AudioPlayer(props: Props) {
@@ -42,9 +42,13 @@ function PlaybackControls({ sources, durationMs = 0, onError }: Props) {
   function paint(position=progressClock.read(transport.time,performance.now(),advancing.current&&transport.playing,transport.leader?.playbackRate || 1)) {
     const length=transport.duration;
     const percent=length ? Math.max(0,Math.min(100,position/length*100)) : 0;
-    if(reveal.current)reveal.current.style.clipPath=`inset(0 ${100-percent}% 0 0)`;
+    const progress = percent.toFixed(1) + '%';
+    if(reveal.current && reveal.current.style.getPropertyValue('--wave-progress') !== progress) {
+      reveal.current.style.setProperty('--wave-progress', progress);
+    }
     if(cursor.current)cursor.current.style.transform=`translateX(min(${percent}%,calc(100% - 1px)))`;
-    if(positionLabel.current?.firstElementChild)positionLabel.current.firstElementChild.textContent=clock(position);
+    const label = positionLabel.current?.firstElementChild, timeText = clock(position);
+    if(label && label.textContent !== timeText) label.textContent = timeText;
     if(positionLabel.current)positionLabel.current.style.transform=`translateX(clamp(0px,calc(${percent}% - 30px),calc(100% - 60px)))`;
   }
   const [scrub] = useState(() => new PlaybackScrub(transport, position=>{progressClock.reset(position,performance.now());paint(position);setTime(position);}));

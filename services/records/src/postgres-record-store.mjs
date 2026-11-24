@@ -48,7 +48,7 @@ export async function createPostgresRecordStore(pool) {
     if(collectionFields.some(field=>rows[field].length!==value.$counts[field])||value.$documents.some(field=>!Object.hasOwn(documents,field)))return cache.delete(value.id);
     remember(value.id,{version:value.$version,rows,documents,offsets,bytes,patches});
   }
-  async function decode(value,client=pool) {
+  async function decode(value,client=pool,loaded) {
     if(value?.$collections!==2)return value;
     let entry=loaded?.entry ?? cache.get(value.id);
     if(!entry || entry.version!==value.$version){

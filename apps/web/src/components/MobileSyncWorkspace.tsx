@@ -51,7 +51,7 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
   const [liveAudio, setLiveAudio] = useState(false);
   const [liveAudioV2, setLiveAudioV2] = useState(false);
   const [liveIssue, setLiveIssue] = useState('');
-  const activeLive = useRef({ id: '', uploaded: false, received: false });
+  const activeLive = useRef({ id: '', uploaded: false, received: false, complete: false, finishedAt: 0 });
   const [liveStatus, setLiveStatus] = useState('');
   const [unlocked, setUnlocked] = useState(false);
   const [copies, setCopies] = useState<CopySummary[]>([]);
@@ -160,6 +160,7 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
     pending.current = null;
     secret.current?.fill(0);
     secret.current = null;
+    activeLive.current = { id: '', uploaded: false, received: false, complete: false, finishedAt: 0 };
     clearJournalCache();
     clearMobileLibraryCache();
   }
@@ -321,7 +322,15 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
         signal.throwIfAborted();
         if (synced.received) {
           const next = await meetingCopies(localVault, key);
-          if (!signal.aborted) setCopies(next);
+          if (!signal.aborted) {
+            setCopies(next);
+            const capture = activeLive.current;
+            if (capture.id && next.some(copy => copy.sourceId === capture.id && copy.hasMinutes)) {
+              capture.complete = true;
+              capture.finishedAt = 0;
+              setLiveStatus('纪要已同步到手机');
+            }
+          }
         }
         if (!signal.aborted) setBackgroundIssue('');
         failures = 0;
@@ -338,7 +347,9 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
     function runCycle() {
       window.clearTimeout(timer);
       if (signal.aborted) return;
-      timer = window.setTimeout(runCycle, meetingPage.current ? 2000 : 12_000);
+      const finishedAt = activeLive.current.finishedAt;
+      const awaitingMinutes = finishedAt > 0 && Date.now() - finishedAt < 150_000;
+      timer = window.setTimeout(runCycle, meetingPage.current || awaitingMinutes ? 2000 : 12_000);
       if (background.current) return;
       const work = cycle();
       background.current = work;
@@ -458,11 +469,17 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
         const [legacy, pushed, pulled] = await Promise.allSettled([
           pushLiveAudio(localVault, 'phone', signal),
           liveAudioV2 ? pushLiveAudio(localVault, 'phone-v2', signal) : [],
-          liveAudioV2 && capture.id && !capture.received
+          liveAudioV2 && capture.id && !capture.complete && (!capture.received || capture.finishedAt)
             ? pullLiveAudio(localVault, key, 'phone', signal, frame => {
-              if (frame.id === activeLive.current.id && !signal.aborted) {
-                activeLive.current.received = true;
-                setLiveStatus('电脑已接收');
+              if (frame.kind === 'received' && frame.id === activeLive.current.id && !signal.aborted) {
+                capture.received = true;
+                if (frame.complete) {
+                  capture.complete = true;
+                  setLiveStatus('电脑已收齐录音，等待纪要');
+                  dispatchEvent(new Event('lingji:sync-wakeup'));
+                } else if (!capture.complete) {
+                  setLiveStatus(capture.finishedAt ? '电脑正在接收剩余音频' : '电脑正在接收录音');
+                }
               }
             })
             : false,
@@ -494,7 +511,9 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
       } finally {
         key.fill(0);
         running = false;
-        const waitingReceipt = Boolean(liveAudioV2 && activeLive.current.id && !activeLive.current.received);
+        const live = activeLive.current;
+        const waitingReceipt = liveAudioV2 && live.id && !live.complete &&
+          (live.finishedAt ? Date.now() - live.finishedAt < 45_000 : !live.received);
         schedule(woken || more ? 0 : waitingReceipt ? 1000 : (recording ? 4000 : 12_000));
       }
     }
@@ -617,7 +636,7 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
   const recorder = vault && unlocked && !legacyAccount ? <QuickMobileRecording
     visible={mobilePage === 'record'}
     showRecorder={() => { setMobilePage('record'); window.scrollTo(0, 0); }}
-    status={holdForDirect ? '结束后可选择发送到 Mac' : !online ? '离线保存，回网自动同步' : !liveAudio ? '录音保存在本机' : liveIssue || liveStatus || mobileStatus}
+    status={holdForDirect ? '结束后可选择发送到电脑' : !online ? '离线保存，回网自动同步' : !liveAudio ? '录音保存在本机' : liveIssue || (activeLive.current.id ? liveStatus : '') || mobileStatus}
     append={async (entry, sequence, offset, bytes) => {
       if (!secret.current) throw new Error('资料库未解锁');
       const key = secret.current.slice();
@@ -640,7 +659,7 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
     }}
     onLiveRecording={id => {
       if (holdForDirect) return;
-      activeLive.current = { id, uploaded: false, received: false };
+      activeLive.current = { id, uploaded: false, received: false, complete: false, finishedAt: 0 };
       setLiveStatus(id ? '正在上传音频' : '');
       if (id) dispatchEvent(new Event('lingji:live-audio-ready'));
     }}
@@ -652,6 +671,12 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
         const saved = holdForDirect ? { ...entry, directReady: true as const } : entry;
         await queueLiveAudio(vault, key, entry.id, entry.title, { kind: 'finish', sequence }, legacyLive, holdForDirect);
         await finishMobileRecording(vault, key, saved);
+        const capture = activeLive.current;
+        if (capture.id === entry.id && liveAudio) {
+          capture.finishedAt = Date.now();
+          setLiveStatus(capture.complete ? '电脑已收齐录音，等待纪要' : '录音已保存，正在同步到电脑');
+          dispatchEvent(new Event('lingji:sync-wakeup'));
+        }
         setPhoneCopies(items => [saved, ...items.filter(item => item.id !== entry.id)]);
         dispatchEvent(new Event('lingji:live-audio-ready'));
       } finally { key.fill(0); }
@@ -713,7 +738,8 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
           setPreferDirect(enabled);
         },
         send: entry => <MobileDirectSend vault={vault} secret={secret} entry={entry} online={online}/>,
-      } : undefined} copies={copies} saved={phoneCopies} hidden={hidden} recorder={recorder} account={account}
+      } : undefined} copies={copies} saved={phoneCopies}
+      syncProgress={activeLive.current.id ? { id: activeLive.current.id, status: online ? liveIssue || liveStatus : '离线，联网后继续同步' } : undefined} hidden={hidden} recorder={recorder} account={account}
       read={readMobileMeeting} saveAnnotations={saveMobileAnnotations} play={playMobileRecording}
       search={searchMobileMeetings} deleteLocal={deleteLocalRecording}/>
     {feedback}

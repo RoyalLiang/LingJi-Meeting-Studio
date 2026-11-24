@@ -71,6 +71,19 @@ export async function createAuth(repo, options = {}) {
     if (/Linux/i.test(agent)) return 'Linux';
     return '浏览器';
   };
+  const desktopIdentity = request => {
+    if (!/^LingJi-Desktop-(macOS|Windows|Linux)$/.test(request?.headers['user-agent'] || '')) return;
+    const installationId = request.headers['x-lingji-device-id'];
+    if (typeof installationId !== 'string' || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(installationId)) return;
+    const encoded = request.headers['x-lingji-device-name'];
+    if (typeof encoded === 'string' && encoded.length <= 960) {
+      try {
+        const name = [...decodeURIComponent(encoded).replace(/[\p{Cc}\p{Cf}]/gu, '').trim()].slice(0, 80).join('');
+        if (name) return { installationId, name };
+      } catch { /* Use the platform label for malformed input. */ }
+    }
+    return { installationId, name: appLabel(request) };
+  };
   function requireFresh(current, token) {
     requireThat(totp && token.sid && token.issuedAt > Date.now() - freshFor &&
       active(current).some(device => device.id === token.sid), 'account_recent_login_required', 403);
@@ -106,15 +119,17 @@ export async function createAuth(repo, options = {}) {
         }
         token.sid = randomUUID();
         token.issuedAt = now;
+        const desktop = desktopIdentity(request);
         await repo.change(user.id, current => {
           requireThat(current.authVersion === user.authVersion, 'session_expired', 401);
           if (current.totp) {
             requireThat(totp, 'account_factor_unavailable', 503);
             totp.consume(current, factor);
           }
-          const entries = active(current, now).filter(device => device.id !== previousId);
-          const name = appLabel(request) || label(request);
-          current.devices = [{ id: token.sid, name, issuedAt: now, expires: token.expires, version: token.version }, ...entries].slice(0, 32);
+          const entries = active(current, now).filter(device =>
+            device.id !== previousId && (!desktop || device.installationId !== desktop.installationId));
+          const identity = desktop || { name: appLabel(request) || label(request) };
+          current.devices = [{ id: token.sid, ...identity, issuedAt: now, expires: token.expires, version: token.version }, ...entries].slice(0, 32);
         });
       }
       const data = Buffer.from(JSON.stringify(token)).toString('base64url');
@@ -132,10 +147,10 @@ export async function createAuth(repo, options = {}) {
       if (name === '浏览器') return;
       const token = session(request);
       const device = active(user).find(entry => entry.id === token.sid);
-      if (!device || device.name === name || (!app && device.name !== '浏览器')) return;
+      if (!device || device.installationId || device.name === name || (!app && device.name !== '浏览器')) return;
       await repo.change(user.id, current => {
         const currentDevice = active(current).find(entry => entry.id === token.sid);
-        if (currentDevice && (app || currentDevice.name === '浏览器')) currentDevice.name = name;
+        if (currentDevice && !currentDevice.installationId && (app || currentDevice.name === '浏览器')) currentDevice.name = name;
       });
     },
     async refreshSession(user, request) {
@@ -165,8 +180,8 @@ export async function createAuth(repo, options = {}) {
     },
     devices(user, request) {
       const token = session(request);
-      return { current: Boolean(token.sid), items: active(user).map(({ id, name, issuedAt }) => ({
-        id, name: id === token.sid ? appLabel(request) || (name === '浏览器' ? label(request) : name) : name,
+      return { current: Boolean(token.sid), items: active(user).map(({ id, name, issuedAt, installationId }) => ({
+        id, name: id === token.sid && !installationId ? appLabel(request) || (name === '浏览器' ? label(request) : name) : name,
           issuedAt, current: id === token.sid,
       })) };
     },

@@ -1,5 +1,9 @@
 import { DomainError, requireThat } from '../../../packages/records/src/record.mjs';
 import { SYNC_PAGE_BYTES } from './private-sync-store.mjs';
+import { randomUUID } from 'node:crypto';
+import { link, readFile, rm, writeFile } from 'node:fs/promises';
+import { hostname } from 'node:os';
+import { join } from 'node:path';
 
 export const PRIVATE_SYNC_COMPANION = 'https://lingji.rookiehouse.com';
 const routes = new Map([
@@ -31,9 +35,28 @@ async function jsonResponse(response) {
   catch { throw new DomainError('sync_server_unavailable', 502); }
 }
 
-export function createDesktopPrivateSync({ origin = PRIVATE_SYNC_COMPANION, fetcher = fetch } = {}) {
+async function installationId(root) {
+  const path = join(root, 'private-sync-device.id');
+  try { return (await readFile(path, 'utf8')).trim(); } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+  const id = randomUUID(), temporary = path + '.' + id;
+  await writeFile(temporary, id, { mode: 0o600, flag: 'wx' });
+  try {
+    await link(temporary, path);
+    return id;
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error;
+    return (await readFile(path, 'utf8')).trim();
+  } finally {
+    await rm(temporary, { force: true }).catch(() => {});
+  }
+}
+
+export function createDesktopPrivateSync({ origin = PRIVATE_SYNC_COMPANION, fetcher = fetch, root, deviceName = hostname() } = {}) {
   const platform = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' }[process.platform];
-  let session, generation = 0;
+  const name = [...deviceName.replace(/\.local$/i, '').trim()].slice(0, 80).join('').toWellFormed();
+  let session, deviceId, generation = 0;
   function startSession(upstream, data, current) {
     const cookie = upstream.headers.getSetCookie().map(value => value.split(';')[0]).find(value => value.startsWith('record_session='));
     requireThat(cookie && typeof data.csrf === 'string' && typeof data.email === 'string', 'sync_sign_in_failed', 502);
@@ -48,6 +71,13 @@ export function createDesktopPrivateSync({ origin = PRIVATE_SYNC_COMPANION, fetc
         headers: {
           Origin: origin,
           ...(platform ? { 'User-Agent': 'LingJi-Desktop-' + platform } : {}),
+          ...(root && platform ? {
+            'X-LingJi-Device-ID': await (deviceId ??= installationId(root).catch(error => {
+              deviceId = undefined;
+              throw error;
+            })),
+            'X-LingJi-Device-Name': encodeURIComponent(name),
+          } : {}),
           ...(body ? { 'Content-Type': 'application/json' } : {}),
           ...(auth ? { Cookie: auth.cookie, 'X-CSRF-Token': auth.csrf } : {}),
         },
