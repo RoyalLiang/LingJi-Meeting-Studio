@@ -1,3 +1,4 @@
+import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import type { CopySummary } from './sync/journal';
 import type { AccountOverview } from './components/PrivateSyncSettings';
 import {useMeetingScreenshots} from './audio/meeting-screenshots';
@@ -30,7 +31,6 @@ import { useClientUpdates } from './useClientUpdates';
 import { ClientVersion } from './components/ClientUpdates';
 import { useNativeMenuBar } from './useNativeMenuBar';
 import { trace, traceCommit } from './telemetry';
-import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { Archive, ArrowDown, ArrowSquareOut, Folder, FolderPlus, House, Check, FileText, GearSix, Microphone, Moon,
   Plus, Translate, MagnifyingGlass, ShareNetwork, SignOut, Sparkle, Sun, Trash, WarningCircle, X } from '@phosphor-icons/react';
 import { api, messageOf, setCsrf, setAudioTransport, ApiError } from './api';

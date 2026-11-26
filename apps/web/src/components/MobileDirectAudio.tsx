@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
-import { createDirectRoom, receiveDirectAudio, sendDirectAudio } from '../sync/mobile-direct';
+import { createDirectRoom, DirectUnavailableError, receiveDirectAudio, sendDirectAudio } from '../sync/mobile-direct';
 import { heldAudio, releaseHeldAudio } from '../sync/mobile';
 import type { Vault } from '../sync/vault';
 import type { MobileRecording } from '../sync/mobile-library';
-import { messageOf } from '../api';
+import { ApiError, messageOf } from '../api';
 import { MobileSheet } from './MobileSheet';
 import { Button } from './ui';
 
@@ -29,17 +29,26 @@ export function MobileDirectSend({ vault, secret, entry, online }: Account & { e
     const root = secret.current.slice();
     job.current = controller;
     setBusy(true);
-    setNotice(direct ? '正在连接 Mac…' : '正在排入加密同步队列…');
+    setNotice(direct ? '正在连接电脑…' : '正在排入加密同步队列…');
     try {
       if (direct) {
-        await sendDirectAudio(vault, root, entry.id, code.trim(), signal, setNotice);
-        setAvailable(false);
-        return;
+        try {
+          await sendDirectAudio(vault, root, entry.id, code.trim(), signal, setNotice);
+          if (!signal.aborted) setAvailable(false);
+          return;
+        } catch (failure) {
+          signal.throwIfAborted();
+          const unavailable = failure instanceof ApiError && failure.code === 'sync_pair_unavailable';
+          const timedOut = failure instanceof DOMException && failure.name === 'TimeoutError';
+          if (!unavailable && !timedOut && !(failure instanceof DirectUnavailableError)) throw failure;
+        }
       }
       await releaseHeldAudio(vault, entry.id, true);
       dispatchEvent(new Event('lingji:live-audio-ready'));
-      setAvailable(false);
-      setNotice('已排入加密同步队列');
+      if (!signal.aborted) {
+        setAvailable(false);
+        setNotice(direct ? '直传未连通，已排入加密同步队列' : '已排入加密同步队列');
+      }
     } catch (failure) {
       if (!signal.aborted) setNotice(messageOf(failure));
     } finally {
@@ -61,7 +70,7 @@ export function MobileDirectSend({ vault, secret, entry, online }: Account & { e
     {available && <Button className="mobile-direct-button" onClick={() => setOpen(true)}>发送到电脑</Button>}
     {open && <MobileSheet title="发送到电脑" close={close}>
       {available && <form className="sync-form" onSubmit={event => { event.preventDefault(); void send(true); }}>
-        <p>在电脑个人中心的「会议同步」获取接收码。</p>
+        <p>在电脑个人中心的「会议同步」获取接收码。连不上时将改用加密同步。</p>
         <label>8 位接收码<input value={code} onChange={event => setCode(event.target.value)} inputMode="numeric" maxLength={8} pattern="[0-9]{8}" required autoComplete="off" disabled={busy}/></label>
         <div className="mobile-sheet-actions">
           <Button type="submit" variant="primary" disabled={!online || busy || !/^\d{8}$/.test(code)}>开始直传</Button>

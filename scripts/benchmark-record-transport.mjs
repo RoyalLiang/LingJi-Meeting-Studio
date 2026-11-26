@@ -24,8 +24,8 @@ try {
   const stream = await fetch(`${base}/api/records/${record.id}/events?after=${record.cursor}`, { headers, signal: abort.signal });
   const reader = stream.body.getReader();
   let buffered = '';
-  async function until(pattern) {
-    const timeout = setTimeout(() => abort.abort(), 5000);
+  async function until(pattern, timeoutMs = 5000) {
+    const timeout = setTimeout(() => abort.abort(), timeoutMs);
     try {
       while (!pattern.test(buffered)) {
         const { done, value } = await reader.read();
@@ -38,7 +38,7 @@ try {
   const samples = [];
   for (let sequence = 0; sequence < 5; sequence++) {
     // Commit just after a heartbeat to expose the actual polling wait.
-    await until(/: heartbeat/);
+    await until(/event: heartbeat/, 20000);
     const started = performance.now();
     await repo.change(record.id, r => { r.notes = `Synthetic ${sequence}`; emit(r, 'transcript.updated'); });
     await until(/"type":"transcript.updated"/);

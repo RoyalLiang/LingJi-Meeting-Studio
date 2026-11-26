@@ -15,7 +15,30 @@ const purpose = 'mobile-direct/sdp/1';
 const messageLimit = 60_000;
 const transferWindow = 8;
 const signalLimit = 24_000;
-const timeout = (signal: AbortSignal, ms: number) => AbortSignal.any([signal, AbortSignal.timeout(ms)]);
+function linkedSignal(signals: AbortSignal[], ms?: number) {
+  if (typeof AbortSignal.any === 'function' && (ms === undefined || typeof AbortSignal.timeout === 'function')) {
+    return AbortSignal.any(ms === undefined ? signals : [...signals, AbortSignal.timeout(ms)]);
+  }
+  const aborted = signals.find(signal => signal.aborted);
+  if (aborted) return aborted;
+  const controller = new AbortController();
+  const aborts = signals.map(signal => {
+    const abort = () => controller.abort(signal.reason);
+    signal.addEventListener('abort', abort, { once: true });
+    return abort;
+  });
+  const timer = ms === undefined ? undefined : setTimeout(() => {
+    controller.abort(new DOMException('直传连接超时', 'TimeoutError'));
+  }, ms);
+  controller.signal.addEventListener('abort', () => {
+    clearTimeout(timer);
+    signals.forEach((signal, index) => signal.removeEventListener('abort', aborts[index]));
+  }, { once: true });
+  return controller.signal;
+}
+const timeout = (signal: AbortSignal, ms: number) => linkedSignal([signal], ms);
+
+export class DirectUnavailableError extends Error {}
 
 function pending<T>(source: Promise<T>, signal: AbortSignal): Promise<T> {
   signal.throwIfAborted();
@@ -127,7 +150,7 @@ async function gather(peer: RTCPeerConnection, description: RTCSessionDescriptio
     finally { peer.onicegatheringstatechange = null; }
   }
   const sdp = peer.localDescription?.sdp;
-  if (!sdp?.includes('a=candidate:')) throw new Error('当前网络没有可用的直连地址');
+  if (!sdp?.includes('a=candidate:')) throw new DirectUnavailableError('当前网络没有可用的直连地址');
   const expanded = withLanCandidates(sdp, await addresses);
   return encoder.encode(expanded).byteLength <= (usesIceServers ? 17_970 : 4450) ? expanded : sdp;
 }
@@ -188,10 +211,11 @@ async function connect(room: Room, signal: AbortSignal) {
   const stopped = new AbortController();
   const networkChanged = () => stopped.abort(new Error('网络已切换'));
   peer.onconnectionstatechange = () => {
-    if (['failed', 'closed'].includes(peer.connectionState)) stopped.abort(new Error('直传通道已断开'));
+    if (peer.connectionState === 'failed') stopped.abort(new DirectUnavailableError('无法建立直传连接'));
+    if (peer.connectionState === 'closed') stopped.abort(new Error('直传通道已断开'));
   };
   return {
-    peer, signal: AbortSignal.any([signal, stopped.signal]),
+    peer, signal: linkedSignal([signal, stopped.signal]),
     watchNetwork() { addEventListener('lingji:network-changed', networkChanged); },
     close() {
       removeEventListener('lingji:network-changed', networkChanged);
@@ -219,8 +243,9 @@ async function connectionLabel(peer: RTCPeerConnection, signal: AbortSignal) {
 }
 
 function watchRoom(room: Room, signal: AbortSignal) {
+  signal.throwIfAborted();
   const revoked = new AbortController();
-  const active = AbortSignal.any([signal, revoked.signal]);
+  const active = linkedSignal([signal, revoked.signal]);
   const timer = setInterval(() => {
     void exchange(room, active).catch(failure => {
       if (failure instanceof ApiError && [401, 403, 404].includes(failure.status)) revoked.abort(failure);

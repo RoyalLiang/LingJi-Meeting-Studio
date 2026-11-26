@@ -136,7 +136,7 @@ const RecordCards = memo(function RecordCards({ entries, select, empty, remove }
 type PlayerHandle = { playAt: (seconds: number) => void };
 const MobileAudioPlayer = memo(forwardRef<PlayerHandle, {
   saved: MobileRecording;
-  play: (id: string) => Promise<Blob | null>;
+  play: (id: string, signal: AbortSignal) => Promise<Blob | null>;
   onError: (message: string) => void;
 }>(function MobileAudioPlayer({ saved, play, onError }, ref) {
   const [audio, setAudio] = useState('');
@@ -148,11 +148,8 @@ const MobileAudioPlayer = memo(forwardRef<PlayerHandle, {
   const [rateIndex, setRateIndex] = useState(0);
   const speed = playbackRates[rateIndex];
   const [audioLoading, setAudioLoading] = useState(false);
-  const mounted = useRef(false);
-  useEffect(() => {
-    mounted.current = true;
-    return () => { mounted.current = false; };
-  }, []);
+  const loading = useRef<AbortController | null>(null);
+  useEffect(() => () => loading.current?.abort(), []);
   useEffect(() => {
     const element = player.current;
     if (!audio || !element) return;
@@ -176,7 +173,7 @@ const MobileAudioPlayer = memo(forwardRef<PlayerHandle, {
   }, []);
 
   const playLocal = useCallback(async (seconds = 0) => {
-    if (audioLoading) return;
+    if (audioLoading || loading.current) return;
     onError('');
     if (player.current) {
       seek(seconds);
@@ -184,17 +181,21 @@ const MobileAudioPlayer = memo(forwardRef<PlayerHandle, {
       return;
     }
     requestedTime.current = seconds;
+    const controller = new AbortController();
+    loading.current = controller;
     setAudioLoading(true);
     try {
-      const blob = await play(saved.id);
-      if (!mounted.current) return;
+      const blob = await play(saved.id, controller.signal);
+      if (controller.signal.aborted) return;
       if (!blob) throw new Error('本机没有保存这段音频');
       setAudio(URL.createObjectURL(blob));
     } catch (failure) {
-      if (mounted.current) {
+      if (!controller.signal.aborted) {
         onError(failure instanceof Error ? failure.message : '无法播放录音');
         setAudioLoading(false);
       }
+    } finally {
+      loading.current = null;
     }
   }, [audioLoading, onError, play, saved.id, seek]);
 
@@ -297,11 +298,13 @@ const MobileTranscriptList = memo(function MobileTranscriptList({ lines, highlig
 function MobileMeeting({ entry, back, read, play, saveAnnotations, send, syncStatus }: {
   syncStatus?: string;
   send?: (entry: MobileRecording) => ReactNode;
-  entry: Entry; back: () => void; read: (id: string) => Promise<MeetingCopy | null>; play: (id: string) => Promise<Blob | null>;
+  entry: Entry; back: () => void; read: (id: string) => Promise<MeetingCopy | null>; play: (id: string, signal: AbortSignal) => Promise<Blob | null>;
   saveAnnotations: (parent: string, changes: MeetingAnnotations) => Promise<void>;
 }) {
   const [tab, setTab] = useState<(typeof detailTabs)[number][0]>('minutes');
-  const [copy, setCopy] = useState<MeetingCopy | null>();
+  const [copy, setCopy] = useState<MeetingCopy>();
+  const [readFailed, setReadFailed] = useState(false);
+  const [readAttempt, setReadAttempt] = useState(0);
   const playerRef = useRef<PlayerHandle>(null);
   const [draft, setDraft] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -318,10 +321,12 @@ function MobileMeeting({ entry, back, read, play, saveAnnotations, send, syncSta
     if (!entry.cloud) return;
     let active = true;
     void read(entry.cloud.id).then(value => {
-      if (active) { setCopy(value); setError(''); }
-    }).catch(() => { if (active) setError('无法读取此会议'); });
+      if (!active) return;
+      if (value) setCopy(value);
+      setReadFailed(value === null);
+    }, () => { if (active) setReadFailed(true); });
     return () => { active = false; };
-  }, [entry.cloud?.id, read]);
+  }, [entry.cloud?.id, read, readAttempt]);
   const playAt = useCallback((seconds: number) => {
     playerRef.current?.playAt(seconds);
   }, []);
@@ -378,7 +383,10 @@ function MobileMeeting({ entry, back, read, play, saveAnnotations, send, syncSta
     </nav>
     {error && <p role="alert" className="mobile-empty">{error}</p>}
     {savedNotice && !error && <p role="status" className="mobile-save-status">{savedNotice}</p>}
-    {entry.cloud && copy === undefined && <p role="status" className="mobile-empty">正在打开会议…</p>}
+    {entry.cloud && (readFailed ? <div className="mobile-empty">
+      <p role="alert">无法读取此会议</p>
+      <Button type="button" variant="ghost" onClick={() => { setReadFailed(false); setReadAttempt(value => value + 1); }}>重试</Button>
+    </div> : !copy && <p role="status" className="mobile-empty">正在打开会议…</p>)}
     {tab === 'minutes' && <>
       {minutes ? <div className="mobile-minutes">
         {minutes.highlights && minutes.highlights.length > 0 && <section className="mobile-detail-group mobile-minutes-highlights">
@@ -423,7 +431,7 @@ function MobileMeeting({ entry, back, read, play, saveAnnotations, send, syncSta
       {entry.saved?.marks.length ? <section className="mobile-detail-group"><h2>录音重点</h2>
         <ul className="mobile-record-list">{entry.saved.marks.map(mark => <li className="mobile-card" key={mark}><button className="mobile-time-link" type="button"
           onClick={() => playAt(mark)} aria-label={`回听重点 ${clock(mark)}`}>{clock(mark)}</button></li>)}</ul>
-      </section> : !copy && <p className="mobile-empty">暂无手记</p>}
+      </section> : !entry.cloud && <p className="mobile-empty">暂无手记</p>}
     </>}
     {citation && <MobileSheet title="来源原文" close={() => setCitation(undefined)}>
       <p className="mobile-sheet-note">{citation.speaker} · {clock(Math.floor(citation.startMs / 1000))}</p>
@@ -451,7 +459,7 @@ export function MobileWorkspace({
   automatic: boolean; setAutomatic: (enabled: boolean) => void;
   copies: CopySummary[]; saved: MobileRecording[]; hidden: ReadonlySet<string>; recorder: ReactNode; account: (logout: ReactNode) => ReactNode;
   read: (id: string) => Promise<MeetingCopy | null>;
-  play: (id: string) => Promise<Blob | null>;
+  play: (id: string, signal: AbortSignal) => Promise<Blob | null>;
   search: (query: string) => Promise<CopySummary[]>;
   saveAnnotations: (parent: string, changes: MeetingAnnotations) => Promise<string>;
   deleteLocal?: (id: string) => Promise<void>;

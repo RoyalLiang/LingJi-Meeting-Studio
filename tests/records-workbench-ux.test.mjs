@@ -136,3 +136,126 @@ test('closing a modal cancels its delayed callback when the modal is replaced',a
  vm.runInNewContext(code,box);const tree=box.module.exports.Modal({title:'会议',onClose:()=>{closed++;}});tree.props.ref.current={classList:{add(){}},showModal(){},close(){}};const cleanup=effects[0]();
  tree.children[0].children.find(child=>child?.props?.className==='modal-close').props.onClick();assert.equal(timers.size,1);cleanup();assert.equal(timers.size,0);assert.equal(closed,0);
 });
+
+test('mobile meeting can retry failed or missing copies and ignores an obsolete read', async () => {
+  const { transform } = await import('esbuild');
+  const source = await readFile(new URL('../apps/web/src/components/MobileWorkspace.tsx', import.meta.url), 'utf8');
+  const component = source.slice(source.indexOf('function MobileMeeting('), source.indexOf('\nfunction MobileSwitch('));
+  const hooks = [], effects = [];
+  let cursor = 0;
+  const slot = initial => (hooks[cursor++] ||= { value: initial });
+  const box = {
+    exports: {}, React: { createElement: (type, props, ...children) => ({ type, props, children }) },
+    Button: 'button', ArrowLeft: 'svg', date: new Intl.DateTimeFormat('zh-CN'),
+    detailTabs: [['minutes', '纪要'], ['notes', '手记']], recordedAt: entry => entry.at, recordTitle: entry => entry.title,
+    useRef: value => slot({ current: value }).value,
+    useState(initial) {
+      const state = slot(initial);
+      return [state.value, value => { state.value = typeof value === 'function' ? value(state.value) : value; }];
+    },
+    useMemo: run => run(), useCallback: callback => callback,
+    useEffect(run, dependencies) {
+      const effect = slot();
+      if (effect.value?.every((value, index) => value === dependencies[index])) return;
+      effect.value = dependencies;
+      effects.push(() => { effect.cleanup?.(); effect.cleanup = run(); });
+    },
+  };
+  vm.runInNewContext((await transform(`${component}\nexports.render=MobileMeeting;`, { loader: 'tsx' })).code, box);
+  const calls = [];
+  const oldRead = Promise.withResolvers();
+  const responses = [() => Promise.reject(new Error('read failed')), () => oldRead.promise, () => Promise.resolve(null), () => Promise.resolve({ notes: '最新手记' })];
+  const read = id => { calls.push(id); return responses.shift()(); };
+  const nodes = node => node && typeof node === 'object' ? [node, ...node.children.flat(Infinity).flatMap(nodes)] : [];
+  function render(id) {
+    cursor = 0;
+    const entry = { title: '跨端交接会议', at: 0, cloud: { id } };
+    const elements = nodes(box.exports.render({ entry, back() {}, read }));
+    effects.splice(0).forEach(effect => effect());
+    return elements;
+  }
+  const isLoading = node => node.props?.role === 'status' && node.children.includes('正在打开会议…');
+  const isFailure = node => node.props?.role === 'alert' && node.children.includes('无法读取此会议');
+  const button = (elements, label) => elements.find(node => node.type === 'button' && node.children.includes(label));
+
+  assert.ok(render('old').some(isLoading));
+  await Promise.resolve();
+  const rejected = render('old');
+  assert.ok(rejected.some(isFailure));
+  assert.ok(!rejected.some(isLoading));
+  button(rejected, '重试').props.onClick();
+  assert.ok(render('old').some(isLoading));
+
+  render('new');
+  await Promise.resolve();
+  const missing = render('new');
+  assert.ok(missing.some(isFailure));
+  assert.ok(!missing.some(isLoading));
+  button(missing, '重试').props.onClick();
+  render('new');
+  await Promise.resolve();
+  oldRead.resolve({ notes: '已切换会议的旧手记' });
+  await oldRead.promise;
+  const succeeded = render('new');
+  assert.ok(!succeeded.some(isFailure));
+  assert.ok(!succeeded.some(isLoading));
+  button(succeeded, '手记').props.onClick();
+  assert.equal(render('new').find(node => node.type === 'textarea').props.value, '最新手记');
+  assert.deepEqual(calls, ['old', 'old', 'new', 'new']);
+});
+
+test('mobile direct transfer preference reports storage failure and clears it after a successful retry', async () => {
+  const source = await readFile(new URL('../apps/web/src/components/MobileSyncWorkspace.tsx', import.meta.url), 'utf8');
+  const start = source.indexOf('change: enabled => {') + 'change: '.length;
+  const end = source.indexOf('\n        send:', start);
+  let canStore = false, enabled = false, error = '';
+  const writes = new Map();
+  const change = vm.runInNewContext(`(${source.slice(start, end).trimEnd().slice(0, -1)})`, {
+    vault: { id: 'fixture' },
+    localStorage: { setItem(key, value) { if (!canStore) throw new DOMException('storage full', 'QuotaExceededError'); writes.set(key, value); } },
+    setPreferDirect: value => { enabled = value; },
+    setError: value => { error = typeof value === 'function' ? value(error) : value; },
+  });
+  change(true);
+  assert.equal(enabled, false);
+  assert.equal(writes.size, 0);
+  assert.equal(error, '无法在本机保存直传设置');
+  canStore = true;
+  change(true);
+  assert.equal(enabled, true);
+  assert.equal(writes.get('lingji:phone-direct:fixture'), '1');
+  assert.equal(error, '');
+});
+
+test('mobile direct transfer queues encrypted fallback only when the peer cannot be reached', async () => {
+  const source = await readFile(new URL('../apps/web/src/components/MobileDirectAudio.tsx', import.meta.url), 'utf8');
+  const send = source.slice(source.indexOf('  async function send('), source.indexOf('  function close()'));
+  class ApiError extends Error { constructor(code) { super(code); this.code = code; } }
+  class DirectUnavailableError extends Error {}
+  for (const [failure, expected] of [
+    [new ApiError('sync_pair_unavailable'), true],
+    [new DirectUnavailableError('no ICE candidate'), true],
+    [new DOMException('peer unreachable', 'TimeoutError'), true],
+    [new Error('invalid receipt'), false],
+    [new DOMException('cancelled', 'AbortError'), false],
+  ]) {
+    const notices = [], released = [], events = [];
+    const box = {
+      exports: {}, ApiError, DirectUnavailableError, DOMException, AbortController, Event,
+      job: { current: null }, secret: { current: new Uint8Array(32) }, vault: {}, entry: { id: 'fixture' }, code: '12345678',
+      setBusy() {}, setAvailable() {}, setNotice: value => notices.push(value), messageOf: error => error.message,
+      async sendDirectAudio(_vault, _root, _id, _code, signal) {
+        if (failure.name === 'AbortError') box.job.current.abort(failure);
+        signal.throwIfAborted();
+        throw failure;
+      },
+      async releaseHeldAudio(_vault, id, fallback) { released.push([id, fallback]); },
+      dispatchEvent: event => events.push(event.type),
+    };
+    vm.runInNewContext(transpileTypeScript(send) + '\nexports.send = send;', box);
+    await box.exports.send(true);
+    assert.deepEqual(released, expected ? [['fixture', true]] : []);
+    assert.deepEqual(events, expected ? ['lingji:live-audio-ready'] : []);
+    assert.equal(notices.at(-1).includes('已排入加密同步队列'), expected);
+  }
+});

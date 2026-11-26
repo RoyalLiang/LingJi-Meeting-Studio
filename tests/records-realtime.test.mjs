@@ -41,6 +41,7 @@ test('a committed event wakes SSE immediately after an empty read, including con
       let data = '', timer;
       try {
         await Promise.race([(async () => {while (!data.includes('"type":"transcript.updated"')) {const next = await reader.read(); assert.equal(next.done, false); data += new TextDecoder().decode(next.value);}})(), new Promise((_, reject) => {timer = setTimeout(() => reject(new Error('SSE wake waited for the one-second recovery poll')), 600);})]);
+        assert.match(data, /event: heartbeat\ndata: \{\}\n\n/);
       } finally {clearTimeout(timer);}
     }));
     assert.ok(performance.now() - started < 600);
@@ -77,6 +78,35 @@ test('SSE HTTP failure recreates the stream with a freshly validated snapshot cu
   h.streams[1].onopen();assert.equal(h.states.at(-1),'connected');
   first.onopen();first.onerror();assert.equal(h.states.at(-1),'connected');assert.equal(h.timers.size,0);
   h.stop();assert.ok(h.streams.every(s=>s.closed));
+});
+
+test('heartbeat-enabled SSE recovers from a silent stream without probing a comment-only server', async () => {
+  let reads = 0;
+  const h = harness(async () => ({cursor: String(++reads)}));
+  await settle();
+  const first = h.streams[0];
+  first.onopen();
+  assert.equal(h.timers.size, 0);
+  first.listeners.heartbeat();
+  const initialWatchdog = h.timers.keys().next().value;
+  first.onmessage({data: JSON.stringify({projection: true})});
+  assert.equal(h.timers.has(initialWatchdog), false);
+  assert.equal(h.timers.size, 1);
+  assert.equal(reads, 1);
+
+  assert.equal(await h.tick(), 35000);
+  assert.equal(first.closed, true);
+  assert.equal(h.states.at(-1), 'reconnecting');
+  assert.equal(h.records.at(-1).cursor, '1');
+  assert.equal(await h.tick(), 1000);
+  const second = h.streams[1];
+  assert.match(second.url, /after=2$/);
+  first.listeners.heartbeat();
+  assert.equal(h.timers.size, 0);
+  second.listeners.heartbeat();
+  assert.equal(h.timers.size, 1);
+  h.stop();
+  assert.equal(h.timers.size, 0);
 });
 
 test('initial transient API failures retry with capped backoff; auth and access failures stop',async()=>{

@@ -17,6 +17,19 @@ test('caller cancellation stays distinguishable and no request is silently retri
 test('an aborted response body is a recoverable service interruption',async()=>{
   const h=client(()=>{});await assert.rejects(h.readServiceJson({status:200,json:async()=>{throw new DOMException('timeout','AbortError');}}),{code:'service_unavailable'});
 });
+test('cancelling a search while reading its response body stays a caller cancellation', async () => {
+  let reading;
+  const bodyStarted = new Promise(resolve => { reading = resolve; });
+  const h = client(async (_path, {signal}) => ({status: 200, ok: true, json: () => new Promise((_, reject) => {
+    signal.addEventListener('abort', () => reject(signal.reason), {once: true});
+    reading();
+  })}));
+  const controller = new AbortController();
+  const pending = h.api('/records?q=notes', 'GET', undefined, controller.signal);
+  await bodyStarted;
+  controller.abort();
+  await assert.rejects(pending, {name: 'AbortError'});
+});
 
 test('long downloads keep caller cancellation without the JSON upload deadline',async()=>{
   let signal;const h=client(async(_,init)=>{signal=init.signal;return{};});

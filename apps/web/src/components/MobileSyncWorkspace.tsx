@@ -133,10 +133,10 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
     } finally { root.fill(0); }
   }, [vault]);
 
-  const playMobileRecording = useCallback(async (id: string) => {
+  const playMobileRecording = useCallback(async (id: string, signal: AbortSignal) => {
     if (!vault || !secret.current) return null;
     const root = secret.current.slice();
-    try { return await mobilePlayback(vault, root, id); }
+    try { return await mobilePlayback(vault, root, id, signal); }
     finally { root.fill(0); }
   }, [vault]);
 
@@ -735,8 +735,11 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
       direct={directSupported && vault && unlocked ? {
         enabled: preferDirect,
         change: enabled => {
-          try { localStorage.setItem('lingji:phone-direct:' + vault.id, enabled ? '1' : '0'); } catch { return; }
+          const errorMessage = '无法在本机保存直传设置';
+          try { localStorage.setItem('lingji:phone-direct:' + vault.id, enabled ? '1' : '0'); }
+          catch { setError(errorMessage); return; }
           setPreferDirect(enabled);
+          setError(previous => previous === errorMessage ? '' : previous);
         },
         send: entry => <MobileDirectSend vault={vault} secret={secret} entry={entry} online={online}/>,
       } : undefined} copies={copies} saved={phoneCopies}

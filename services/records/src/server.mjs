@@ -376,6 +376,7 @@ export async function createRecordServer(options = {}) {
         send(res,200,ack);return;
       }
       if (action === 'events' && req.method === 'GET') {
+        const heartbeat = 'event: heartbeat\ndata: {}\n\n';
         const record = deltaEnabled ? await readableRecordAccess(id, user) : await owned(id, user);
         let cursor = String(req.headers['last-event-id'] || url.searchParams.get('after') || record.cursor);
         requireThat(/^\d{1,20}$/.test(cursor), 'invalid_cursor', 400);
@@ -409,7 +410,7 @@ export async function createRecordServer(options = {}) {
               if (!write(`id: ${event.cursor}\ndata: ${JSON.stringify(event)}\n\n`)) return;
               cursor = event.cursor; if (draining) break;
             }
-            if (!draining && Date.now() - lastHeartbeat >= 15000) { lastHeartbeat = Date.now(); write(': heartbeat\n\n'); }
+            if (!draining && Date.now() - lastHeartbeat >= 15000) { lastHeartbeat = Date.now(); write(heartbeat); }
           } catch {
             if (!ended()) { write('event: revoked\ndata: {}\n\n'); finish(); }
           } finally { busy = false; }
@@ -419,7 +420,7 @@ export async function createRecordServer(options = {}) {
           void flush();
         };
         res.on('drain', drained);
-        if (!write(': connected\n\n')) return;
+        if (!write(`: connected\n\n${heartbeat}`)) return;
         unsubscribe = repo.subscribeChanges(ids => {
           if (ids.includes(id)) void flush();
         }, { all: true });

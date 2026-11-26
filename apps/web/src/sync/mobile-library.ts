@@ -106,31 +106,39 @@ export async function mobileRecordings(vault: Vault, root: Uint8Array<ArrayBuffe
   return list;
 }
 
-export async function mobilePlayback(vault: Vault, root: Uint8Array<ArrayBuffer>, id: string) {
+export async function mobilePlayback(vault: Vault, root: Uint8Array<ArrayBuffer>, id: string, signal?: AbortSignal) {
+  signal?.throwIfAborted();
   const db = await database();
   const operation = await request<Envelope | BinaryEnvelope | undefined>(db.transaction('audio').objectStore('audio').get([vault.id, id]));
+  signal?.throwIfAborted();
   if (operation) {
     const bytes = await unsealBinary(root, vault, 'phone-wav/1', id, operation);
-    try { return new Blob([bytes], { type: 'audio/wav' }); }
-    finally { bytes.fill(0); }
+    try {
+      signal?.throwIfAborted();
+      return new Blob([bytes], { type: 'audio/wav' });
+    } finally { bytes.fill(0); }
   }
   const pieces: Blob[] = [];
   let size = 0;
   const pcmKey = await derivePurposeKey(root, vault, 'phone-pcm/2');
   for (;;) {
+    signal?.throwIfAborted();
     const snapshot = db.transaction('audio').objectStore('audio');
     const range = IDBKeyRange.bound([vault.id, id, pieces.length], [vault.id, id, []]);
     const [keys, chunks] = await Promise.all([request(snapshot.getAllKeys(range, 16)), request<BinaryEnvelope[]>(snapshot.getAll(range, 16))]);
+    signal?.throwIfAborted();
     if (!chunks.length) break;
     for (let index = 0; index < chunks.length; index++) {
       const sequence = (keys[index] as [string, string, number])[2];
       if (sequence !== pieces.length) throw new Error('手机录音片段不连续');
       const packet = await unsealBinary(root, vault, 'phone-pcm/2', id + ':' + sequence, chunks[index], pcmKey);
       try {
+        signal?.throwIfAborted();
         if (packet.length < 4 || packet[0] > 2) throw new Error('手机录音片段无效');
         const length = new DataView(packet.buffer, packet.byteOffset).getUint16(1);
         const pcm = await unpackLocalMobilePcm({ codec: packet[0] === 2 ? 'delta-gzip' : packet[0] ? 'gzip' : 'pcm', length, bytes: packet.subarray(3) });
         try {
+          signal?.throwIfAborted();
           size += pcm.length;
           if (size > WAV_PCM_LIMIT) throw new Error('录音超过 WAV 格式容量');
           pieces.push(new Blob([pcm]));

@@ -926,6 +926,30 @@ test('a compressed phone recording beyond five minutes plays locally and seals o
   assert.deepEqual(receivedLegacy, ['pcm', 'finish']);
 });
 
+test('leaving mobile playback cancels decryption before decoding remaining frames', async t => {
+  const bundled = await build({
+    stdin: { contents: "export * from './apps/web/src/sync/mobile-library';", resolveDir: process.cwd() },
+    bundle: true, write: false, format: 'esm', platform: 'node',
+  });
+  const mobile = await import('data:text/javascript;base64,' + Buffer.from(bundled.outputFiles[0].text).toString('base64'));
+  const { vault, root } = await createVault();
+  t.after(() => root.fill(0));
+  const entry = { id: randomUUID(), title: '手机录音', at: Date.now(), seconds: 3, marks: [] };
+  const pcm = { codec: 'pcm', length: 32_000, bytes: new Uint8Array(32_000) };
+  for (let sequence = 0; sequence < entry.seconds; sequence++) {
+    await mobile.appendMobileRecording(vault, root, entry, sequence, pcm);
+  }
+  await mobile.finishMobileRecording(vault, root, entry);
+  const controller = new AbortController();
+  const decrypt = crypto.subtle.decrypt;
+  const spy = t.mock.method(crypto.subtle, 'decrypt', function (...args) {
+    controller.abort();
+    return decrypt.apply(this, args);
+  });
+  await assert.rejects(mobile.mobilePlayback(vault, root, entry.id, controller.signal), { name: 'AbortError' });
+  assert.equal(spy.mock.callCount(), 1);
+});
+
 test('phone audio becomes a source-linked transcript and final minutes in its original vault', async t => {
   const { account } = await cloud(t);
   const signed = await account('phone-roundtrip@example.test');
@@ -1068,6 +1092,48 @@ test('phone audio becomes a source-linked transcript and final minutes in its or
   await repo.change(desktopId, record => setAutomation(record, { enabled: false }));
   await privateRecordingResults(repo, 'local', { vault: vault.id });
   assert.equal((await repo.get(desktopId)).autoMinutes.enabled, false);
+});
+
+test('a direct room opens and observes cancellation and deadline without AbortSignal statics', async t => {
+  const bundled = await build({
+    stdin: { contents: "export * from './apps/web/src/sync/mobile-direct';", resolveDir: process.cwd() },
+    bundle: true, write: false, format: 'esm', platform: 'node',
+  });
+  const { createDirectRoom } = await import('data:text/javascript;base64,' + Buffer.from(bundled.outputFiles[0].text).toString('base64'));
+  const { vault, root } = await createVault();
+  t.after(() => root.fill(0));
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  for (const name of ['any', 'timeout']) {
+    const original = AbortSignal[name];
+    AbortSignal[name] = undefined;
+    t.after(() => { AbortSignal[name] = original; });
+  }
+  const fetcher = t.mock.method(globalThis, 'fetch', async (url, init) => {
+    assert.match(url, /\/private-sync\/pair\/start$/);
+    assert.equal(init.method, 'POST');
+    return Response.json({});
+  });
+  const opened = new AbortController();
+  const { code } = await createDirectRoom(vault, root, opened.signal);
+  assert.match(code, /^\d{8}$/);
+  assert.equal(fetcher.mock.callCount(), 1);
+  opened.abort();
+
+  for (const name of ['AbortError', 'TimeoutError']) {
+    let requestStarted;
+    const started = new Promise(resolve => { requestStarted = resolve; });
+    fetcher.mock.mockImplementationOnce(async (_url, { signal }) => {
+      requestStarted();
+      return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
+    });
+    const controller = new AbortController();
+    const pending = createDirectRoom(vault, root, controller.signal);
+    const rejected = assert.rejects(pending, { name });
+    await started;
+    if (name === 'AbortError') controller.abort();
+    else t.mock.timers.tick(8000);
+    await rejected;
+  }
 });
 
 test('direct ICE credentials are room-scoped and stable across reconnects', async t => {

@@ -1,5 +1,7 @@
 export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'offline' | 'unavailable' | 'inaccessible';
 
+const HEARTBEAT_TIMEOUT_MS = 35000;
+
 interface SubscriptionOptions<T extends { cursor: string }> {
   recordId: string;
   localBackend?: boolean;
@@ -15,16 +17,23 @@ export function subscribeToRecord<T extends { cursor: string }>(options: Subscri
   let disposed = false, generation = 0, retries = 0;
   let source: EventSource | undefined, controller: AbortController | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let heartbeatTimer: ReturnType<typeof setTimeout> | undefined;
   const current = (version: number) => !disposed && generation === version;
 
+  function closeStream() {
+    clearTimeout(heartbeatTimer);
+    heartbeatTimer = undefined;
+    source?.close(); source = undefined; controller?.abort();
+  }
   function dispose() {
     disposed = true; generation++;
     if (timer !== undefined) clearTimeout(timer);
-    timer = undefined; source?.close(); source = undefined; controller?.abort();
+    timer = undefined;
+    closeStream();
   }
   function retry(state: ConnectionState = 'reconnecting') {
     if (disposed || timer !== undefined) return;
-    generation++; source?.close(); source = undefined; controller?.abort();
+    generation++; closeStream();
     if (!navigator.onLine && !options.localBackend) { options.onState('offline'); return; }
     options.onState(state);
     const delay = Math.min(15000, 1000 * 2 ** Math.min(retries++, 4));
@@ -53,6 +62,13 @@ export function subscribeToRecord<T extends { cursor: string }>(options: Subscri
       source = stream;
       stream.onopen = () => { if (current(version)) { retries = 0; options.onState('connected'); } };
       stream.onerror = () => { if (current(version)) retry(); };
+      function bumpHeartbeat() {
+        if (!current(version)) return;
+        clearTimeout(heartbeatTimer);
+        heartbeatTimer = setTimeout(() => { if (current(version)) retry(); }, HEARTBEAT_TIMEOUT_MS);
+      }
+      // Older servers only send comments, which EventSource does not expose.
+      stream.addEventListener('heartbeat', bumpHeartbeat);
       // Revalidate a revoked stream: permanent access failures stop, transient API errors retry.
       stream.addEventListener('revoked', () => { if (current(version)) retry(); });
       let refreshing = false, dirty = false;
@@ -82,6 +98,7 @@ export function subscribeToRecord<T extends { cursor: string }>(options: Subscri
       }
       stream.onmessage = event => {
         if (!current(version)) return;
+        if (heartbeatTimer !== undefined) bumpHeartbeat();
         try {
           const message = JSON.parse(event.data);
           if (message.delta && options.applyDelta) {
@@ -94,7 +111,10 @@ export function subscribeToRecord<T extends { cursor: string }>(options: Subscri
         } catch { /* Malformed or incompatible event requires fresh snapshot. */ }
         void refresh();
       };
-      stream.addEventListener('reset', () => { void refresh(); });
+      stream.addEventListener('reset', () => {
+        if (heartbeatTimer !== undefined) bumpHeartbeat();
+        void refresh();
+      });
     } catch (error) { failed(error, version); }
   }
   void connect();
