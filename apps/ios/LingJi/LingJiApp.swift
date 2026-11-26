@@ -3,15 +3,21 @@ import WebKit
 
 @main
 struct LingJiApp: App {
+    @State private var theme: ColorScheme?
+
     var body: some Scene {
         WindowGroup {
-            MeetingWebView()
+            MeetingWebView { theme = $0 }
+                .ignoresSafeArea(.container)
+                .preferredColorScheme(theme)
         }
     }
 }
 
 struct MeetingWebView: UIViewRepresentable {
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    let onTheme: (ColorScheme?) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onTheme: onTheme) }
 
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
@@ -20,6 +26,16 @@ struct MeetingWebView: UIViewRepresentable {
         configuration.allowsInlineMediaPlayback = true
         configuration.mediaTypesRequiringUserActionForPlayback = []
         configuration.userContentController.add(context.coordinator, name: "lingjiMicrophone")
+        configuration.userContentController.add(context.coordinator, name: "lingjiTheme")
+        configuration.userContentController.addUserScript(WKUserScript(source: """
+            const syncLingJiTheme = () => {
+                let theme;
+                try { theme = localStorage.getItem('meeting-theme'); } catch {}
+                window.webkit.messageHandlers.lingjiTheme.postMessage(theme === 'light' || theme === 'dark' ? theme : 'system');
+            };
+            document.addEventListener('meeting:theme', syncLingJiTheme);
+            syncLingJiTheme();
+            """, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
 
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.navigationDelegate = context.coordinator
@@ -35,10 +51,12 @@ struct MeetingWebView: UIViewRepresentable {
     static func dismantleUIView(_ view: WKWebView, coordinator: Coordinator) {
         coordinator.microphone.finish()
         view.configuration.userContentController.removeScriptMessageHandler(forName: "lingjiMicrophone")
+        view.configuration.userContentController.removeScriptMessageHandler(forName: "lingjiTheme")
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
         private let page = URL(string: "https://lingji.rookiehouse.com/mobile-app")!
+        private let onTheme: (ColorScheme?) -> Void
         weak var view: WKWebView?
         lazy var microphone = NativeMicrophone { [weak self] result in
             guard let view = self?.view, let payload = try? JSONEncoder().encode(result),
@@ -46,11 +64,19 @@ struct MeetingWebView: UIViewRepresentable {
             view.evaluateJavaScript("dispatchEvent(new CustomEvent('lingji:native-microphone-result',{detail:\(json)}))")
         }
 
+        init(onTheme: @escaping (ColorScheme?) -> Void) { self.onTheme = onTheme }
+
         func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
             let frame = message.frameInfo
             guard frame.isMainFrame, let url = frame.request.url, matchesApp(url),
                   let command = message.body as? String else { return }
-            microphone.receive(command)
+            switch message.name {
+            case "lingjiMicrophone": microphone.receive(command)
+            case "lingjiTheme" where command == "dark" || command == "light":
+                onTheme(command == "dark" ? .dark : .light)
+            case "lingjiTheme" where command == "system": onTheme(nil)
+            default: break
+            }
         }
 
         func load(_ view: WKWebView) {

@@ -1,9 +1,12 @@
-export function initializeTheme(defaultTheme: 'dark' | 'light' = 'light'){
+export function initializeTheme(defaultTheme: 'dark' | 'light' | MediaQueryList = 'light'){
   const apply=(value:string|null)=>{
-    document.documentElement.dataset.theme=value==='dark'||value==='light'?value:defaultTheme;
+    const fallback = typeof defaultTheme === 'string' ? defaultTheme : defaultTheme.matches ? 'dark' : 'light';
+    document.documentElement.dataset.theme=value==='dark'||value==='light'?value:fallback;
     document.dispatchEvent(new Event('meeting:theme'));
   };
-  try{apply(localStorage.getItem('meeting-theme'));}catch{apply(null);}
+  const refresh = () => { try{apply(localStorage.getItem('meeting-theme'));}catch{apply(null);} };
+  refresh();
+  if (typeof defaultTheme !== 'string') defaultTheme.addEventListener('change',refresh);
   window.addEventListener('storage',event=>{
     if(event.key==='meeting-theme'||event.key===null)apply(event.newValue);
   });

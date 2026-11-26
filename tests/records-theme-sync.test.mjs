@@ -21,6 +21,24 @@ test('preloaded recording windows follow stored theme changes and resets',async(
   vm.runInNewContext(source+'\ninitializeTheme();',{window:new EventTarget(),document:fallback,localStorage:{getItem(){throw Error('storage unavailable');}},Event});
   assert.equal(fallback.documentElement.dataset.theme,'light');
 });
+test('mobile theme follows system changes until the user chooses an appearance', async () => {
+  const source = stripTypeScriptTypes(await readFile(new URL('../apps/web/src/native-theme.ts', import.meta.url), 'utf8')).replace(/^export /gm, '');
+  const system = Object.assign(new EventTarget(), { matches: false });
+  const document = Object.assign(new EventTarget(), { documentElement: { dataset: {} } });
+  let preference = null;
+  vm.runInNewContext(source + '\ninitializeTheme(system);', {
+    system, window: new EventTarget(), document, localStorage: { getItem: () => preference }, Event,
+  });
+  assert.equal(document.documentElement.dataset.theme, 'light');
+  system.matches = true;
+  system.dispatchEvent(new Event('change'));
+  assert.equal(document.documentElement.dataset.theme, 'dark');
+  preference = 'dark';
+  system.matches = false;
+  system.dispatchEvent(new Event('change'));
+  assert.equal(document.documentElement.dataset.theme, 'dark');
+});
+
 test('theme changes coalesce and the latest choice follows an in-flight native update',async()=>{
  const calls=[];let release;const sync=nativeThemeSync(async theme=>{calls.push(theme);if(calls.length===1)await new Promise(resolve=>release=resolve);});
  const first=sync.set('light');await new Promise(resolve=>setImmediate(resolve));

@@ -494,6 +494,12 @@ export function MobileWorkspace({
   }, [page, online, unlocked, copies.length, saved.length]);
   const [matches, setMatches] = useState<CopySummary[] | null>(null);
   const [dark, setDark] = useState(() => document.documentElement.dataset.theme === 'dark');
+  useEffect(() => {
+    const syncTheme = () => setDark(document.documentElement.dataset.theme === 'dark');
+    document.addEventListener('meeting:theme', syncTheme);
+    syncTheme();
+    return () => document.removeEventListener('meeting:theme', syncTheme);
+  }, []);
   const searchTerm = query.trim().toLowerCase();
   useEffect(() => {
     setMatches(null);
@@ -584,7 +590,6 @@ export function MobileWorkspace({
           <MobileSwitch labelId="mobile-theme-preference" checked={dark} change={checked => {
           const value = checked ? 'dark' : 'light';
           document.documentElement.dataset.theme = value;
-          setDark(checked);
           try { localStorage.setItem('meeting-theme', value); } catch {}
           document.dispatchEvent(new Event('meeting:theme'));
         }}/></div>
