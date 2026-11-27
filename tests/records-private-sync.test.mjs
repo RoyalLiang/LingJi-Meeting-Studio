@@ -829,6 +829,73 @@ test('desktop retries skipped live frames and releases a deleted recording witho
   assert.deepEqual(cursors, ['1']);
 });
 
+test('desktop uploads a newer receipt queued while an older upload is in flight', async t => {
+  const bundled = await build({ entryPoints: ['apps/web/src/sync/mobile.ts'], bundle: true, write: false, format: 'esm' });
+  const { acknowledgeLiveAudio, pushLiveAudio } = await import('data:text/javascript;base64,' + Buffer.from(bundled.outputFiles[0].text).toString('base64'));
+  const { account } = await cloud(t);
+  const signed = await account('concurrent-receipts@example.test');
+  const { vault, root } = await createVault();
+  const signal = new AbortController().signal;
+  assert.equal((await signed('/private-sync/vault', 'PUT', vault)).status, 201);
+  const committed = Promise.withResolvers(), release = Promise.withResolvers();
+  let count = 0;
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    const response = await signed(new URL(url, fixtureOrigin).pathname.slice(4), options.method, JSON.parse(options.body));
+    if (++count === 1) {
+      committed.resolve();
+      await release.promise;
+    }
+    return Response.json(response.data, { status: response.status });
+  });
+
+  await acknowledgeLiveAudio(vault, root, randomUUID(), '正在接收');
+  const uploading = pushLiveAudio(vault, 'desktop', signal);
+  try {
+    await Promise.race([committed.promise, uploading]);
+    await acknowledgeLiveAudio(vault, root, randomUUID(), '录音已接收', true);
+  } finally {
+    release.resolve();
+  }
+  assert.equal((await uploading).length, 1);
+  assert.equal((await pushLiveAudio(vault, 'desktop', signal)).length, 1);
+  assert.equal((await signed('/private-sync/live-receipts?vault=' + vault.id)).data.cursor, 2);
+});
+
+test('phone respects the V2 upload byte limit and retries a committed batch by the same IDs', async t => {
+  const bundled = await build({ entryPoints: ['apps/web/src/sync/mobile.ts'], bundle: true, write: false, format: 'esm' });
+  const { queueLiveAudio, pushLiveAudio } = await import('data:text/javascript;base64,' + Buffer.from(bundled.outputFiles[0].text).toString('base64'));
+  const { account } = await cloud(t);
+  const signed = await account('adaptive-audio@example.test');
+  const { vault, root } = await createVault();
+  const id = randomUUID(), signal = new AbortController().signal;
+  assert.equal((await signed('/private-sync/vault', 'PUT', vault)).status, 201);
+  const pcm = { codec: 'pcm', length: 32000, bytes: new Uint8Array(32000) };
+  for (let sequence = 0; sequence < 25; sequence++) {
+    await queueLiveAudio(vault, root, id, '录音', { kind: 'pcm', sequence, offset: sequence * 16000, pcm });
+  }
+  await queueLiveAudio(vault, root, id, '录音', { kind: 'finish', sequence: 25 });
+
+  const posted = [];
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    assert.ok(Buffer.byteLength(options.body) <= 512 * 1024);
+    const input = JSON.parse(options.body);
+    posted.push(input.operations.map(({ id }) => id));
+    const response = await signed(new URL(url, fixtureOrigin).pathname.slice(4), options.method, input);
+    assert.equal(response.status, 200);
+    if (posted.length === 1) throw new TypeError('response lost after commit');
+    return Response.json(response.data);
+  });
+
+  await assert.rejects(pushLiveAudio(vault, 'phone-v2', signal), error => error.status === 0);
+  const first = await pushLiveAudio(vault, 'phone-v2', signal);
+  assert.ok(first.length > 8 && first.length < 25);
+  assert.deepEqual(posted[1], posted[0]);
+  while ((await pushLiveAudio(vault, 'phone-v2', signal)).length) { /* drain the remaining bounded batches */ }
+  const operations = posted.slice(1).flat();
+  assert.equal(operations.length, 26);
+  assert.equal(new Set(operations).size, 26);
+});
+
 test('a compressed phone recording beyond five minutes plays locally and seals on a desktop', async t => {
   const bundled = await build({
     stdin: { contents: ['mobile', 'mobile-desktop', 'mobile-library', 'mobile-pcm']
@@ -885,6 +952,7 @@ test('a compressed phone recording beyond five minutes plays locally and seals o
     const response = await signed(target.pathname.slice(4) + target.search, options.method, input);
     return Response.json(response.data, { status: response.status });
   });
+  assert.equal((await mobile.pushLiveAudio(vault, 'phone-v2', signal)).length, 32, 'small compressed fragments share one bounded upload');
   while ((await mobile.pushLiveAudio(vault, 'phone-v2', signal)).length) { /* drain all durable batches */ }
   assert.deepEqual((await signed('/private-sync/live-audio?vault=' + vault.id)).data.operations, [], 'older desktops never see v2 packets');
   while (await mobile.receiveLiveAudio(vault, root, signal, () => {}, true)) { /* consume all pages */ }

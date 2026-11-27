@@ -8,7 +8,7 @@ import { readDeviceVault, rememberDeviceVault, type DeviceVault } from '../sync/
 import { clearJournalCache, loadMeetingCopy, meetingCopies, queueMeeting, syncMeetings, type CopySummary } from '../sync/journal';
 import type { WorkspaceDirectory } from '../workspace-model';
 import { enrollPasskey, unlockPasskey } from '../sync/passkey';
-import { acknowledgeMobileRecording, nextMobileRecording, pushLiveAudio, receiveMobileRecordings } from '../sync/mobile';
+import { LIVE_AUDIO_FLUSH_THRESHOLD, acknowledgeMobileRecording, nextMobileRecording, pushLiveAudio, receiveMobileRecordings } from '../sync/mobile';
 import { receiveLiveAudio } from '../sync/mobile-desktop';
 import { Button } from './ui';
 import { ExternalLink } from './ExternalLink';
@@ -447,7 +447,8 @@ export const PrivateSyncSettings = memo(function PrivateSyncSettings({ desktop, 
           }
           more = current.value || (legacy.status === 'fulfilled' && legacy.value);
         } finally {
-          await pushLiveAudio(localVault, 'desktop', signal, firstRun);
+          const sent = await pushLiveAudio(localVault, 'desktop', signal, firstRun);
+          more ||= sent.length >= LIVE_AUDIO_FLUSH_THRESHOLD;
           firstRun = false;
         }
         failures = 0;

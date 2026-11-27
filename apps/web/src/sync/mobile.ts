@@ -15,7 +15,10 @@ type Recording = { id: string; title: string; mime: string; total: number };
 type AudioPart = Recording & { index: number; data: string };
 type Outbox = { id: string; operations: EncryptedOperation[]; next: number };
 type Delta = { cursor: number; more: boolean; trimmed?: boolean; acknowledged?: number; operations: (EncryptedOperation & { seq: number })[] };
-const pendingDesktopReceipts = new Set<string>();
+const pendingDesktopReceipts = new Map<string, symbol>();
+export const LIVE_AUDIO_FLUSH_THRESHOLD = 8;
+const LIVE_V2_UPLOAD_LIMIT = 32;
+const LIVE_UPLOAD_BYTES = 512 * 1024;
 
 let opening: Promise<IDBDatabase> | undefined;
 function request<T>(operation: IDBRequest<T>) {
@@ -287,24 +290,40 @@ async function pushLive(path: string, vault: Vault, operations: EncryptedOperati
 }
 
 export async function pushLiveAudio(vault: Vault, receiver: 'phone' | 'phone-v2' | 'desktop', signal: AbortSignal, force = false) {
-  if (receiver === 'desktop' && !force && !pendingDesktopReceipts.has(vault.id)) return [];
+  const pendingReceipt = receiver === 'desktop' ? pendingDesktopReceipts.get(vault.id) : undefined;
+  if (receiver === 'desktop' && !force && !pendingReceipt) return [];
   const db = await database();
   const store = db.transaction('live-outbox').objectStore('live-outbox');
   const range = IDBKeyRange.bound([vault.id, receiver], [vault.id, receiver, []]);
+  const limit = receiver === 'phone-v2' ? LIVE_V2_UPLOAD_LIMIT : LIVE_AUDIO_FLUSH_THRESHOLD;
   const [keys, operations] = await Promise.all([
-    request(store.getAllKeys(range, 8)),
-    request<EncryptedOperation[]>(store.getAll(range, 8))
+    request(store.getAllKeys(range, limit)),
+    request<EncryptedOperation[]>(store.getAll(range, limit)),
   ]);
-  if (!operations.length) {
-    if (receiver === 'desktop') pendingDesktopReceipts.delete(vault.id);
-    return [];
+  let count = operations.length;
+  if (count && receiver === 'phone-v2') {
+    // UUID and base64url fields are ASCII. Budget the JSON envelope as well as the encrypted audio.
+    let bytes = JSON.stringify({ vault: vault.id, operations: [] }).length;
+    count = 0;
+    for (const operation of operations) {
+      bytes += JSON.stringify(operation).length + 1;
+      if (bytes > LIVE_UPLOAD_BYTES) break;
+      count++;
+    }
+    if (!count) throw new Error('实时录音分片超过同步上限');
   }
-  await pushLive(receiver === 'desktop' ? receiptEndpoint : receiver === 'phone-v2' ? liveV2Endpoint : liveEndpoint, vault, operations, signal);
-  await change(['live-outbox'], tx => {
-    for (const key of keys) tx.objectStore('live-outbox').delete(key);
-  });
-  if (receiver === 'desktop' && operations.length < 8) pendingDesktopReceipts.delete(vault.id);
-  return keys;
+  const sent = keys.slice(0, count);
+  if (count) {
+    await pushLive(receiver === 'desktop' ? receiptEndpoint : receiver === 'phone-v2' ? liveV2Endpoint : liveEndpoint, vault, operations.slice(0, count), signal);
+    await change(['live-outbox'], tx => {
+      const outbox = tx.objectStore('live-outbox');
+      for (const key of sent) outbox.delete(key);
+    });
+  }
+  if (receiver === 'desktop' && count < limit && pendingDesktopReceipts.get(vault.id) === pendingReceipt) {
+    pendingDesktopReceipts.delete(vault.id);
+  }
+  return sent;
 }
 
 export async function acknowledgeLiveAudio(vault: Vault, root: Uint8Array<ArrayBuffer>, id: string, title: string, complete?: true) {
@@ -315,7 +334,7 @@ export async function acknowledgeLiveAudio(vault: Vault, root: Uint8Array<ArrayB
     const pending = store.getKey(key);
     pending.onsuccess = () => { if (pending.result === undefined) store.add(operation, key); };
   });
-  pendingDesktopReceipts.add(vault.id);
+  pendingDesktopReceipts.set(vault.id, Symbol());
 }
 
 function decodeLiveFrame(plain: Uint8Array<ArrayBuffer>, v2: boolean): LiveFrame {
