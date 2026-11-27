@@ -204,7 +204,7 @@ const messages: Record<string, string> = {
   invalid_asr_context: '识别场景背景最多 400 字，请移除控制字符。',
   asr_context_requires_second_pass: '识别场景背景需要 bigmodel_async 二遍接口；切换接口前请清空背景。'
 };
-export class ApiError extends Error { constructor(public code: string, public status: number) { super(messages[code] || `操作未完成（${code}）`); } }
+export class ApiError extends Error { constructor(public code: string, public status: number, options?: ErrorOptions) { super(messages[code] || `操作未完成（${code}）`, options); } }
 const settingsCache=createSettingsCache(getAuthGeneration);
 export async function api<T>(path:string,method='GET',body?:unknown,signal?:AbortSignal):Promise<T>{
  const cached=['/settings/providers','/settings/audio-backup'].includes(path);
@@ -256,7 +256,7 @@ export async function serviceFetch(input: RequestInfo | URL, init?: RequestInit,
   try { return await fetch(input, { ...init, signal }); }
   catch (error) {
     if (init?.signal?.aborted || ((error as Error)?.name === 'AbortError' && !signal?.aborted)) throw error;
-    throw new ApiError('service_unavailable', 0);
+    throw new ApiError('service_unavailable', 0, { cause: signal?.reason ?? error });
   }
 }
 export async function readServiceJson<T>(response: Response, signal?: AbortSignal): Promise<T> {

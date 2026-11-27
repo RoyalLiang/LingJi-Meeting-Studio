@@ -861,7 +861,7 @@ test('desktop uploads a newer receipt queued while an older upload is in flight'
   assert.equal((await signed('/private-sync/live-receipts?vault=' + vault.id)).data.cursor, 2);
 });
 
-test('phone respects the V2 upload byte limit and retries a committed batch by the same IDs', async t => {
+test('phone bounds V2 upload size, retries lost acknowledgements by ID, and reduces the batch on timeout', async t => {
   const bundled = await build({ entryPoints: ['apps/web/src/sync/mobile.ts'], bundle: true, write: false, format: 'esm' });
   const { queueLiveAudio, pushLiveAudio } = await import('data:text/javascript;base64,' + Buffer.from(bundled.outputFiles[0].text).toString('base64'));
   const { account } = await cloud(t);
@@ -880,6 +880,7 @@ test('phone respects the V2 upload byte limit and retries a committed batch by t
     assert.ok(Buffer.byteLength(options.body) <= 512 * 1024);
     const input = JSON.parse(options.body);
     posted.push(input.operations.map(({ id }) => id));
+    if (posted.length === 3) throw new DOMException('upload deadline expired', 'TimeoutError');
     const response = await signed(new URL(url, fixtureOrigin).pathname.slice(4), options.method, input);
     assert.equal(response.status, 200);
     if (posted.length === 1) throw new TypeError('response lost after commit');
@@ -890,8 +891,12 @@ test('phone respects the V2 upload byte limit and retries a committed batch by t
   const first = await pushLiveAudio(vault, 'phone-v2', signal);
   assert.ok(first.length > 8 && first.length < 25);
   assert.deepEqual(posted[1], posted[0]);
+  await assert.rejects(pushLiveAudio(vault, 'phone-v2', signal), error => error.cause?.name === 'TimeoutError');
+  const reduced = await pushLiveAudio(vault, 'phone-v2', signal);
+  assert.ok(reduced.length > 0 && reduced.length < posted[2].length);
+  assert.deepEqual(posted[3], posted[2].slice(0, reduced.length));
   while ((await pushLiveAudio(vault, 'phone-v2', signal)).length) { /* drain the remaining bounded batches */ }
-  const operations = posted.slice(1).flat();
+  const operations = [posted[1], ...posted.slice(3)].flat();
   assert.equal(operations.length, 26);
   assert.equal(new Set(operations).size, 26);
 });

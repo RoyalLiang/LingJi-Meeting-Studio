@@ -4,7 +4,7 @@ import { createVault, recoverVault, type Envelope, type Vault } from '../sync/va
 import { authenticateAccount, openAccountVault, wrapAccountVault } from '../sync/account';
 import { readDeviceVault, rememberDeviceVault, type DeviceVault } from '../sync/device';
 import { annotateMeeting, clearJournalCache, loadMeetingCopy, meetingCopies, syncMeetings, type CopySummary, type MeetingAnnotations } from '../sync/journal';
-import { LIVE_AUDIO_FLUSH_THRESHOLD, pullLiveAudio, pushLiveAudio, pushMobileRecordings, queueLiveAudio, releaseHeldAudio } from '../sync/mobile';
+import { LIVE_AUDIO_FLUSH_THRESHOLD, liveV2FlushThreshold, pullLiveAudio, pushLiveAudio, pushMobileRecordings, queueLiveAudio, releaseHeldAudio } from '../sync/mobile';
 import { appendMobileRecording, clearMobileLibraryCache, deleteMobileRecording, finishMobileRecording, hiddenMobileRecordings, mobilePlayback, mobileRecordings, type MobileRecording } from '../sync/mobile-library';
 import { packLocalMobilePcm, packMobilePcm, type PackedLocalMobilePcm, type PackedMobilePcm } from '../sync/mobile-pcm';
 import { ShieldCheck } from '@phosphor-icons/react';
@@ -486,7 +486,7 @@ export function MobileSyncWorkspace({ email, accountLogin, mobileActive, signOut
         ]);
         signal.throwIfAborted();
         if (pushed.status === 'rejected') throw pushed.reason;
-        more = pushed.value.length >= LIVE_AUDIO_FLUSH_THRESHOLD || (legacy.status === 'fulfilled' && legacy.value.length >= LIVE_AUDIO_FLUSH_THRESHOLD);
+        more = pushed.value.length >= liveV2FlushThreshold(localVault) || (legacy.status === 'fulfilled' && legacy.value.length >= LIVE_AUDIO_FLUSH_THRESHOLD);
         if (activeLive.current === capture && !capture.received && !capture.uploaded &&
           [...pushed.value, ...(legacy.status === 'fulfilled' ? legacy.value : [])]
             .some(item => Array.isArray(item) && item[2] === capture.id)) {

@@ -1,4 +1,4 @@
-import { api } from '../api';
+import { api, ApiError } from '../api';
 import { decodeBytes, encodeBytes, seal, unseal, type EncryptedOperation, type Vault } from './vault';
 import { MOBILE_PCM_BYTES, unpackMobilePcm, WAV_PCM_LIMIT, type PackedMobilePcm } from './mobile-pcm';
 
@@ -19,6 +19,7 @@ const pendingDesktopReceipts = new Map<string, symbol>();
 export const LIVE_AUDIO_FLUSH_THRESHOLD = 8;
 const LIVE_V2_UPLOAD_LIMIT = 32;
 const LIVE_UPLOAD_BYTES = 512 * 1024;
+const liveV2UploadLimits = new WeakMap<Vault, number>();
 
 let opening: Promise<IDBDatabase> | undefined;
 function request<T>(operation: IDBRequest<T>) {
@@ -289,13 +290,17 @@ async function pushLive(path: string, vault: Vault, operations: EncryptedOperati
   )) throw new Error('实时录音同步回执无效');
 }
 
+export function liveV2FlushThreshold(vault: Vault) {
+  return Math.min(LIVE_AUDIO_FLUSH_THRESHOLD, liveV2UploadLimits.get(vault) ?? LIVE_V2_UPLOAD_LIMIT);
+}
+
 export async function pushLiveAudio(vault: Vault, receiver: 'phone' | 'phone-v2' | 'desktop', signal: AbortSignal, force = false) {
   const pendingReceipt = receiver === 'desktop' ? pendingDesktopReceipts.get(vault.id) : undefined;
   if (receiver === 'desktop' && !force && !pendingReceipt) return [];
   const db = await database();
   const store = db.transaction('live-outbox').objectStore('live-outbox');
   const range = IDBKeyRange.bound([vault.id, receiver], [vault.id, receiver, []]);
-  const limit = receiver === 'phone-v2' ? LIVE_V2_UPLOAD_LIMIT : LIVE_AUDIO_FLUSH_THRESHOLD;
+  const limit = receiver === 'phone-v2' ? liveV2UploadLimits.get(vault) ?? LIVE_V2_UPLOAD_LIMIT : LIVE_AUDIO_FLUSH_THRESHOLD;
   const [keys, operations] = await Promise.all([
     request(store.getAllKeys(range, limit)),
     request<EncryptedOperation[]>(store.getAll(range, limit)),
@@ -314,7 +319,16 @@ export async function pushLiveAudio(vault: Vault, receiver: 'phone' | 'phone-v2'
   }
   const sent = keys.slice(0, count);
   if (count) {
-    await pushLive(receiver === 'desktop' ? receiptEndpoint : receiver === 'phone-v2' ? liveV2Endpoint : liveEndpoint, vault, operations.slice(0, count), signal);
+    try {
+      await pushLive(receiver === 'desktop' ? receiptEndpoint : receiver === 'phone-v2' ? liveV2Endpoint : liveEndpoint, vault, operations.slice(0, count), signal);
+    } catch (error) {
+      if (receiver === 'phone-v2' && count > 1 && !signal.aborted && error instanceof ApiError &&
+        (error.status === 413 || (error.cause as Error | undefined)?.name === 'TimeoutError')) {
+        const current = liveV2UploadLimits.get(vault) ?? LIVE_V2_UPLOAD_LIMIT;
+        liveV2UploadLimits.set(vault, Math.min(current, Math.floor(count / 2)));
+      }
+      throw error;
+    }
     await change(['live-outbox'], tx => {
       const outbox = tx.objectStore('live-outbox');
       for (const key of sent) outbox.delete(key);
