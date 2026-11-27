@@ -13,6 +13,7 @@
 
 ## 运行和开发
 
+- [系统架构与能力分层](engineering/system-architecture.md)、[功能泳道与状态流转](engineering/system-workflows.md)：从客户端入口追踪录音、转录、纪要、存储和跨设备交接。
 - [当前能力与边界](engineering/current-state.md)：区分源码行为、验证层和仍需现场确认的项目。
 - [运行手册](engineering/runbook.md)、[接口](engineering/api.md)、[Record 传输协议](engineering/record-transport.md)。
 - [存储与性能边界](engineering/storage-and-performance.md)、[飞书与 Git 连接器协议](engineering/connectors.md)。
