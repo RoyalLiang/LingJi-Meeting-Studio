@@ -114,13 +114,13 @@
 @media (max-height: 475px) {
   .mobile-workspace[data-page=record]:has(.quick-mobile-recording) { min-height: 480px; }
 }
-.mobile-list-tools { position: relative; margin-bottom: 16px; }
+.mobile-list-tools { position: relative; width: 100%; margin: 0 auto 16px; }
 .mobile-list-tools svg {
   position: absolute; inset-inline-start: 13px; top: 50%; transform: translateY(-50%);
   color: var(--phone-muted); pointer-events: none;
 }
 .mobile-workspace .mobile-list-tools input[type=search] {
-  padding-inline-start: 38px; border-color: transparent;
+  display: block; width: 100%; padding-inline-start: 38px; border-color: transparent;
   background: var(--phone-meeting-surface); border-radius: 12px;
 }
 .mobile-workspace .mobile-list-tools input[type=search]:focus {
