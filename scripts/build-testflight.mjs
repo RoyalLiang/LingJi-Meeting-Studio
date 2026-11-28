@@ -42,6 +42,8 @@ export async function buildTestFlight(){
     const base=JSON.parse(await readFile(join(frozen,'apps/desktop/src-tauri/tauri.conf.json'),'utf8'));
     const app=join(target,'release/bundle/macos',`${base.productName}.app`);
     await signStoreApp(app,{identity,team,mainEntitlements,helperEntitlements:join(frozen,'apps/desktop/src-tauri/Entitlements.helper.plist'),...versions});
+    const encryption=execFileSync('/usr/bin/plutil',['-extract','ITSAppUsesNonExemptEncryption','raw','-expect','bool','-o','-',join(app,'Contents/Info.plist')],{encoding:'utf8'}).trim();
+    assert.equal(encryption,'false','macOS package must carry the approved export compliance declaration');
     for(const file of sourceSnapshot.files)if(file.sha256)assert.equal(fileDigest(await readFile(join(frozen,file.path))),file.sha256,`Frozen source changed during build: ${file.path}`);
     const embedded=readStoreProfile(join(app,'Contents/embedded.provisionprofile'));assert.equal(embedded.uuid,profile.uuid);
     const output=join(root,'testflight-artifacts');await mkdir(output,{recursive:true});

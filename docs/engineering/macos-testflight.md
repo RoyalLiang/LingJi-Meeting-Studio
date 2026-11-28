@@ -43,6 +43,8 @@ Apple Developer 团队需要有效会员资格、已接受的 App Store Connect 
 
 先按[构建和发布](local-release-options.md)执行固定 SHA、`publish=false` 的全部候选检查。候选通过后才创建不可变版本标签并运行发布流水。正式流水下载同次构建的签名包，验证来源与摘要后上传，等待 Apple 返回有效构建；同一显示版本与构建号已存在时复用处理结果。上传失败不会把构建标成已交付。
 
+macOS App Store 构建在签名后的 `Info.plist` 中校验 `ITSAppUsesNonExemptEncryption=false`，沿用账户持有人确认的出口合规声明。加密实现或所用依赖的加密行为有变更时，需重新核对声明。 [Apple 属性说明](https://developer.apple.com/documentation/bundleresources/information-property-list/itsappusesnonexemptencryption)
+
 上传成功与可供测试是不同状态。还需在 App Store Connect 核对出口合规问题、内部测试组和测试员可用性。外部测试需要额外的测试资料与 Beta App Review；发布到公开 Mac App Store 也需要独立提交，不由本流程自动完成。[上传构建](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds/)。
 
 ## 验证边界
