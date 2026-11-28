@@ -1,0 +1,81 @@
+name: Recover LingJi iOS search beta
+on:
+  push:
+    branches: [dev_ios-search-recovery]
+    paths: ['.github/workflows/ios-search-recovery.yml']
+permissions:
+  contents: read
+concurrency:
+  group: lingji-ios-search-beta
+  cancel-in-progress: false
+jobs:
+  upload:
+    runs-on: macos-26
+    timeout-minutes: 20
+    env:
+      PRODUCT_SHA: b764913edb4e9d11926657a5d19a880bdc448afc
+      ASC_RUN: c7b793a8-e99b-4c2a-83b2-073a61daaea1
+      ASC_ACTION: cbe7eee7-4ba1-4710-a1f0-9b265b1d07bd
+      ASC_EXPORT: 4ef2e7e1-d3ef-436d-b504-13bfb318ee48
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: b764913edb4e9d11926657a5d19a880bdc448afc
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '26.12.1'
+          package-manager-cache: false
+      - name: Verify and upload the signed LingJi iOS archive
+        env:
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+          APPLE_API_KEY_ID: ${{ vars.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ vars.APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$PRODUCT_SHA"
+          umask 077
+          work=$(mktemp -d "$RUNNER_TEMP/lingji-ios-search.XXXXXX")
+          trap 'rm -rf -- "$work"' EXIT
+          export LINGJI_EXPORT_DIR="$work"
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import {writeFile} from 'node:fs/promises';
+          import {join} from 'node:path';
+          import {storeJwt} from './scripts/upload-testflight.mjs';
+          const e=process.env;
+          const token=storeJwt({privateKey:e.APPLE_API_PRIVATE_KEY,keyId:e.APPLE_API_KEY_ID,issuer:e.APPLE_API_ISSUER});
+          async function api(path) {
+            const r=await fetch('https://api.appstoreconnect.apple.com/v1/'+path,{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(15000)});
+            assert.ok(r.ok,'App Store Connect returned '+r.status);
+            return (await r.json()).data;
+          }
+          const run=await api('ciBuildRuns/'+e.ASC_RUN);
+          assert.equal(run.attributes.sourceCommit.commitSha,e.PRODUCT_SHA);
+          assert.equal(run.attributes.number,10);
+          const actions=await api('ciBuildRuns/'+e.ASC_RUN+'/actions?limit=50');
+          assert.ok(actions.some(item=>item.id===e.ASC_ACTION&&item.attributes.actionType==='ARCHIVE'));
+          const artifacts=await api('ciBuildActions/'+e.ASC_ACTION+'/artifacts?limit=50');
+          assert.ok(artifacts.some(item=>item.id===e.ASC_EXPORT&&item.attributes.fileType==='ARCHIVE_EXPORT'));
+          const archive=await api('ciArtifacts/'+e.ASC_EXPORT);
+          const url=new URL(archive.attributes.downloadUrl);
+          assert.equal(url.protocol,'https:');
+          const response=await fetch(url,{signal:AbortSignal.timeout(60000)});
+          assert.ok(response.ok,'Apple artifact host returned '+response.status);
+          await writeFile(join(e.LINGJI_EXPORT_DIR,'export.zip'),Buffer.from(await response.arrayBuffer()));
+          JS
+          cd "$work"
+          printf '%s  %s\n' e6e51e3bb6fb99ec135f8ea2378bb4e27b13b6dcf02c73369bde7329328b3c6d export.zip | shasum -a 256 -c -
+          unzip -p export.zip 'TM Markdown app-store/LingJi.ipa' > LingJi.ipa
+          printf '%s  %s\n' d3d3ffc49e17b18a70f04a819805faf38dc4881d84688d1fe0a66e9e848d7b60 LingJi.ipa | shasum -a 256 -c -
+          unzip -q LingJi.ipa
+          app=Payload/LingJi.app
+          /usr/bin/codesign --verify --strict --deep "$app"
+          /usr/bin/codesign -dv "$app" 2> signature.log
+          grep -Fx "TeamIdentifier=$APPLE_TEAM_ID" signature.log
+          test "$(/usr/bin/plutil -extract CFBundleIdentifier raw -o - "$app/Info.plist")" = com.tts.meeting
+          test "$(/usr/bin/plutil -extract CFBundleVersion raw -o - "$app/Info.plist")" = 10
+          mkdir private_keys
+          printf '%s' "$APPLE_API_PRIVATE_KEY" > "private_keys/AuthKey_$APPLE_API_KEY_ID.p8"
+          xcrun altool --upload-app --type ios --file LingJi.ipa --apiKey "$APPLE_API_KEY_ID" --apiIssuer "$APPLE_API_ISSUER" --output-format json
