@@ -1,9 +1,9 @@
 name: Desktop preview release
-run-name: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' && !inputs.publish) && 'Candidate' || 'Preview' }} ${{ inputs.tag || github.ref_name }} · ${{ inputs.source_sha || github.sha }}
+run-name: ${{ github.ref_name == 'dev_desktop-test-delivery' && 'Desktop internal' || ((github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' && !inputs.publish) && 'Candidate' || 'Preview') }} ${{ inputs.tag || github.ref_name }} · ${{ inputs.source_sha || github.sha }}
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev_desktop-test-delivery]
     paths: ['apps/**', 'services/**', 'packages/**', 'scripts/**', 'tests/**', 'package.json', 'package-lock.json', 'docs/releases/**', '.github/workflows/preview-release.yml']
     tags: ['v[0-9]*.[0-9]*.[0-9]*']
   workflow_dispatch:
@@ -49,6 +49,7 @@ jobs:
       version: ${{ steps.source.outputs.version }}
       controller_sha: ${{ steps.source.outputs.controller_sha }}
       candidate: ${{ steps.source.outputs.candidate }}
+      internal: ${{ steps.source.outputs.internal }}
       vocabulary_version: ${{ steps.source.outputs.vocabulary_version }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -63,10 +64,16 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
           EXPECTED_SOURCE_SHA: ${{ inputs.source_sha }}
-          CANDIDATE_ONLY: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' && !inputs.publish }}
+          CANDIDATE_ONLY: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev_desktop-test-delivery') || github.event_name == 'workflow_dispatch' && !inputs.publish }}
+          DESKTOP_INTERNAL: ${{ github.event_name == 'push' && github.ref == 'refs/heads/dev_desktop-test-delivery' }}
         run: |
           set -euo pipefail
-          if [[ "$CANDIDATE_ONLY" == true && "$GITHUB_EVENT_NAME" == push ]]; then
+          if [[ "$DESKTOP_INTERNAL" == true ]]; then
+            EXPECTED_SOURCE_SHA=$(git rev-parse --verify "$GITHUB_SHA^")
+            git merge-base --is-ancestor "$EXPECTED_SOURCE_SHA" origin/dev_mobile-desktop-polish
+            git diff --quiet "$EXPECTED_SOURCE_SHA" "$GITHUB_SHA" -- . ':(exclude).github/workflows/preview-release.yml'
+            RELEASE_TAG="v$(node -p 'const manifest=require("./package.json");manifest.releaseVersion||manifest.version')"
+          elif [[ "$CANDIDATE_ONLY" == true && "$GITHUB_EVENT_NAME" == push ]]; then
             RELEASE_TAG="v$(node -p 'const manifest=require("./package.json");manifest.releaseVersion||manifest.version')"
             EXPECTED_SOURCE_SHA="$GITHUB_SHA"
           fi
@@ -77,7 +84,9 @@ jobs:
             SOURCE_SHA=$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")
           fi
           WORKFLOW_SHA=$(git rev-parse --verify HEAD)
-          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
+          if [[ "$DESKTOP_INTERNAL" == true ]]; then
+            [[ "$CANDIDATE_ONLY" == true && "$GITHUB_REF" == refs/heads/dev_desktop-test-delivery ]]
+          elif [[ "$GITHUB_EVENT_NAME" == push ]]; then
             [[ "$GITHUB_REF" == "refs/tags/$RELEASE_TAG" || ( "$CANDIDATE_ONLY" == true && "$GITHUB_REF" == refs/heads/main ) ]]
             EXPECTED_SOURCE_SHA=$(git rev-parse --verify "$GITHUB_SHA^{commit}")
           else
@@ -85,14 +94,14 @@ jobs:
           fi
           [[ "$EXPECTED_SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
           [[ "$SOURCE_SHA" == "$EXPECTED_SOURCE_SHA" ]]
-          git merge-base --is-ancestor "$SOURCE_SHA" origin/main
-          export SOURCE_SHA WORKFLOW_SHA
+          if [[ "$DESKTOP_INTERNAL" != true ]]; then git merge-base --is-ancestor "$SOURCE_SHA" origin/main; fi
+          export SOURCE_SHA WORKFLOW_SHA DESKTOP_INTERNAL
           node --input-type=module <<'NODE'
           import {execFileSync} from 'node:child_process';
           import {appendFileSync} from 'node:fs';
           import assert from 'node:assert/strict';
           import {assertReleaseEvent} from './scripts/publish-preview-release.mjs';
-          assertReleaseEvent({eventName:process.env.GITHUB_EVENT_NAME,ref:process.env.GITHUB_REF,tag:process.env.RELEASE_TAG,commit:process.env.SOURCE_SHA,workflowSha:process.env.WORKFLOW_SHA,candidateOnly:process.env.CANDIDATE_ONLY==='true'});
+          if(process.env.DESKTOP_INTERNAL!=='true')assertReleaseEvent({eventName:process.env.GITHUB_EVENT_NAME,ref:process.env.GITHUB_REF,tag:process.env.RELEASE_TAG,commit:process.env.SOURCE_SHA,workflowSha:process.env.WORKFLOW_SHA,candidateOnly:process.env.CANDIDATE_ONLY==='true'});
           const cfg=JSON.parse(execFileSync('git',['show',process.env.SOURCE_SHA+':apps/desktop/src-tauri/tauri.preview.conf.json']));
           const manifest=JSON.parse(execFileSync('git',['show',process.env.SOURCE_SHA+':package.json']));
           assert.equal('v'+(manifest.releaseVersion||cfg.version),process.env.RELEASE_TAG);
@@ -104,6 +113,7 @@ jobs:
           echo "version=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
           echo "controller_sha=$WORKFLOW_SHA" >> "$GITHUB_OUTPUT"
           echo "candidate=$CANDIDATE_ONLY" >> "$GITHUB_OUTPUT"
+          echo "internal=$DESKTOP_INTERNAL" >> "$GITHUB_OUTPUT"
 
       - name: Require matching successful candidate before publication
         if: ${{ steps.source.outputs.candidate != 'true' }}
@@ -236,6 +246,26 @@ jobs:
           path: preview-artifacts/*
           if-no-files-found: error
           retention-days: 14
+      - name: Upload internal macOS TestFlight build
+        if: ${{ needs.verify.outputs.internal == 'true' }}
+        env:
+          SOURCE_SHA: ${{ needs.verify.outputs.sha }}
+          WORKFLOW_SHA: ${{ needs.verify.outputs.controller_sha }}
+          APPLE_APP_ID: ${{ vars.APPLE_APP_ID }}
+          APPLE_API_KEY_ID: ${{ vars.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ vars.APPLE_API_ISSUER }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        run: node scripts/upload-testflight.mjs testflight-artifacts
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: ${{ always() && needs.verify.outputs.internal == 'true' }}
+        with:
+          name: internal-testflight-receipt-${{ needs.verify.outputs.sha }}
+          path: |
+            testflight-artifacts/testflight-publication.json
+            testflight-artifacts/testflight-upload-error.json
+          if-no-files-found: warn
+          retention-days: 14
+
   store_icons:
     name: Prepare Windows Store visual resources
     needs: verify
@@ -273,7 +303,7 @@ jobs:
   build_wgs:
     name: WGS build - Linux and Windows
     needs: [verify, store_icons]
-    runs-on: [self-hosted, Linux, X64, lingji-wgs]
+    runs-on: [self-hosted, Linux, X64, "${{ needs.verify.outputs.internal == 'true' && 'lingji-wgs-desktop-b764913e' || 'lingji-wgs' }}"]
     timeout-minutes: 90
     env:
       TTS_RELEASE_SOURCE_REF: ${{ needs.verify.outputs.sha }}
@@ -318,17 +348,17 @@ jobs:
         run: node "$GITHUB_WORKSPACE/scripts/collect-preview-artifacts.mjs" linux "$LINUX_BUILD_DIRECTORY"
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: preview-linux-x64-${{ needs.verify.outputs.sha }}
-          path: /home/westwell/builds/lingji-preview-20261107/source-240245aa/preview-artifacts/*
-          if-no-files-found: error
-          retention-days: 14
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
           name: wgs-windows-input-${{ needs.verify.outputs.sha }}
           path: ${{ steps.packages.outputs.windows }}/*
           if-no-files-found: error
           retention-days: 2
 
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: preview-linux-x64-${{ needs.verify.outputs.sha }}
+          path: /home/westwell/builds/lingji-preview-20261107/source-240245aa/preview-artifacts/*
+          if-no-files-found: error
+          retention-days: 14
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         if: steps.packages.outputs.reused == 'true'
         with:
